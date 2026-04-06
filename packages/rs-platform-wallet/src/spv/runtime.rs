@@ -1,22 +1,23 @@
-//! SPV client runtime — manages DashSpvClient lifecycle and finality tracking.
+//! SPV client runtime — manages the DashSpvClient lifecycle.
 //!
 //! Extracted from `PlatformWalletManager` so the same SPV coordination can be
 //! used both with a multi-wallet manager and with a standalone `PlatformWallet`.
+//!
+//! Asset-lock finality tracking (IS/CL proof waiting) is handled by
+//! `AssetLockManager` directly — it subscribes to the shared event channel.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
-use dashcore::Txid;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::{ClientConfig, DashSpvClient};
 
 use crate::error::PlatformWalletError;
-use crate::events::{PlatformWalletEvent, SpvEvent};
+use crate::events::PlatformWalletEvent;
 use crate::spv::event_forwarder::SpvEventForwarder;
 use crate::spv::wallet_adapter::SpvWalletAdapter;
 use crate::wallet::platform_wallet::WalletId;
@@ -25,18 +26,20 @@ use crate::wallet::PlatformWallet;
 type SpvClient =
     DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
 
-/// SPV client runtime — owns the `DashSpvClient`, tracks sync height, and
-/// manages asset-lock finality proof waiting.
+/// SPV client runtime — owns the `DashSpvClient` and tracks sync height.
 ///
 /// Holds references to the wallets collection and event channel at construction
 /// time, so callers just need `start(config)` / `stop()`.
+///
+/// Asset-lock finality tracking (InstantLock / ChainLock waiting) is handled
+/// directly by `AssetLockManager` via SPV event subscriptions — the runtime
+/// only drives SPV sync and forwards events.
 pub struct SpvRuntime {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
     /// Shared with `SpvWalletAdapter` — bump to signal bloom filter rebuild.
     monitor_revision: Arc<AtomicU64>,
-    finality_waiters: Mutex<BTreeMap<Txid, Option<dpp::prelude::AssetLockProof>>>,
     client: RwLock<Option<SpvClient>>,
 }
 
@@ -51,7 +54,6 @@ impl SpvRuntime {
             event_tx,
             synced_height: AtomicU32::new(0),
             monitor_revision: Arc::new(AtomicU64::new(0)),
-            finality_waiters: Mutex::new(BTreeMap::new()),
             client: RwLock::new(None),
         }
     }
@@ -117,80 +119,6 @@ impl SpvRuntime {
         Ok(())
     }
 
-    // ── Finality tracking ──────────────────────────────────────────────
-
-    /// Register a transaction to wait for finality proof.
-    /// Call BEFORE broadcasting to prevent race where proof arrives first.
-    pub async fn register_for_finality(&self, txid: Txid) {
-        let mut waiters = self.finality_waiters.lock().await;
-        waiters.insert(txid, None);
-    }
-
-    /// Wait for a finality proof (InstantLock or ChainLock) for a registered
-    /// transaction.
-    pub async fn wait_for_finality(
-        &self,
-        txid: &Txid,
-        timeout: Duration,
-    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        let mut rx = self.event_tx.subscribe();
-
-        loop {
-            {
-                let waiters = self.finality_waiters.lock().await;
-                if let Some(Some(proof)) = waiters.get(txid) {
-                    let proof = proof.clone();
-                    drop(waiters);
-                    self.finality_waiters.lock().await.remove(txid);
-                    return Ok(proof);
-                }
-            }
-
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                self.finality_waiters.lock().await.remove(txid);
-                return Err(PlatformWalletError::FinalityTimeout(*txid));
-            }
-
-            tokio::select! {
-                event = rx.recv() => {
-                    match event {
-                        Ok(PlatformWalletEvent::Spv(SpvEvent::Sync(dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. }))) => {
-                            if instant_lock.txid == *txid {
-                                // TODO: Build proper InstantAssetLockProof from instant_lock data
-                                let mut waiters = self.finality_waiters.lock().await;
-                                if let Some(entry) = waiters.get_mut(txid) {
-                                    *entry = Some(dpp::prelude::AssetLockProof::default());
-                                }
-                            }
-                        }
-                        Ok(PlatformWalletEvent::Spv(SpvEvent::Sync(dash_spv::sync::SyncEvent::ChainLockReceived { .. }))) => {
-                            // TODO: Build proper ChainAssetLockProof with height + outpoint
-                            let mut waiters = self.finality_waiters.lock().await;
-                            if let Some(entry) = waiters.get_mut(txid) {
-                                if entry.is_none() {
-                                    *entry = Some(dpp::prelude::AssetLockProof::default());
-                                }
-                            }
-                        }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => {
-                            self.finality_waiters.lock().await.remove(txid);
-                            return Err(PlatformWalletError::SpvError(
-                                "Event channel closed".to_string(),
-                            ));
-                        }
-                    }
-                }
-                _ = tokio::time::sleep(remaining) => {
-                    self.finality_waiters.lock().await.remove(txid);
-                    return Err(PlatformWalletError::FinalityTimeout(*txid));
-                }
-            }
-        }
-    }
 }
 
 impl std::fmt::Debug for SpvRuntime {

@@ -49,7 +49,7 @@ impl PlatformWalletManager {
         &self.sdk
     }
 
-    /// Access the SPV runtime for sync control and finality tracking.
+    /// Access the SPV runtime for sync control.
     pub fn spv(&self) -> &SpvRuntime {
         &self.spv
     }
@@ -57,6 +57,15 @@ impl PlatformWalletManager {
     /// Subscribe to platform wallet events.
     pub fn subscribe_events(&self) -> broadcast::Receiver<PlatformWalletEvent> {
         self.event_tx.subscribe()
+    }
+
+    /// Get a clone of the event broadcast sender.
+    ///
+    /// Pass this to [`PlatformWallet::from_wallet_and_info_with_event_tx`]
+    /// when creating wallets that should share the manager's event channel,
+    /// so their `AssetLockManager` can subscribe to SPV events.
+    pub fn event_tx(&self) -> broadcast::Sender<PlatformWalletEvent> {
+        self.event_tx.clone()
     }
 
     /// Add a wallet to the manager. Returns a clone for the caller.

@@ -253,8 +253,6 @@ impl IdentityWallet {
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
                         identity_index,
-                        #[cfg(feature = "manager")]
-                        None,
                     )
                     .await?;
                 (proof, key)
@@ -275,8 +273,6 @@ impl IdentityWallet {
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
                         identity_index,
-                        #[cfg(feature = "manager")]
-                        None,
                     )
                     .await?;
                 (proof, key)
@@ -496,8 +492,6 @@ impl IdentityWallet {
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
                         identity_index,
-                        #[cfg(feature = "manager")]
-                        None,
                     )
                     .await?;
                 (proof, key, Some(txid))
@@ -569,8 +563,6 @@ impl IdentityWallet {
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
                         identity_index,
-                        #[cfg(feature = "manager")]
-                        None,
                     )
                     .await?;
                 (proof, key, Some(txid))
@@ -886,8 +878,6 @@ impl IdentityWallet {
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
                         identity_index,
-                        #[cfg(feature = "manager")]
-                        None,
                     )
                     .await?;
                 (proof, key)
@@ -908,8 +898,6 @@ impl IdentityWallet {
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
                         identity_index,
-                        #[cfg(feature = "manager")]
-                        None,
                     )
                     .await?;
                 (proof, key)

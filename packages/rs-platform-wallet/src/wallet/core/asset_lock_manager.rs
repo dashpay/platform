@@ -6,8 +6,8 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::Address as DashAddress;
 use dashcore::{PrivateKey, Transaction, TxOut, Txid};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
@@ -15,9 +15,10 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
 };
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 
 use crate::error::PlatformWalletError;
+use crate::events::PlatformWalletEvent;
 
 use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
 
@@ -34,6 +35,11 @@ pub struct AssetLockManager {
     sdk: Arc<dash_sdk::Sdk>,
     wallet: Arc<RwLock<Wallet>>,
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+    /// Broadcast channel for platform wallet events (SPV sync, locks, etc.).
+    ///
+    /// Used by `wait_for_proof()` to subscribe to InstantLock / ChainLock
+    /// events from the SPV layer.
+    event_tx: broadcast::Sender<PlatformWalletEvent>,
     /// Tracked asset locks, keyed by transaction ID.
     ///
     /// Tracks each asset lock from build through broadcast and finality.
@@ -47,11 +53,13 @@ impl AssetLockManager {
         sdk: Arc<dash_sdk::Sdk>,
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+        event_tx: broadcast::Sender<PlatformWalletEvent>,
     ) -> Self {
         Self {
             sdk,
             wallet,
             wallet_info,
+            event_tx,
             tracked: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
@@ -304,25 +312,21 @@ impl AssetLockManager {
     ///
     /// 1. Build the asset lock transaction via the key-wallet builder.
     /// 2. Track the lifecycle as `Built`, then `Broadcast`.
-    /// 3. If an `SpvRuntime` is provided, register for finality *before*
-    ///    broadcasting, then wait for the SPV proof. Otherwise fall back to
-    ///    the DAPI instant-send lock stream.
-    /// 4. Track the lifecycle as `ProofAvailable`.
-    /// 5. Return `(proof, private_key, txid)`.
+    /// 3. Subscribe to SPV events *before* broadcasting (prevents race).
+    /// 4. Wait for an InstantLock or ChainLock proof via the event channel.
+    /// 5. Track the lifecycle as `InstantSendLocked`.
+    /// 6. Return `(proof, private_key, txid)`.
     ///
     /// ## Parameters
     ///
     /// * `amount_duffs` — Amount to lock.
     /// * `funding_type` — Which account to derive the one-time key from.
     /// * `identity_index` — HD identity index.
-    /// * `spv_runtime` — Optional SPV runtime for IS/CL finality via SPV.
-    ///   When `None`, falls back to the DAPI transaction stream.
     pub async fn create_funded_asset_lock_proof(
         &self,
         amount_duffs: u64,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        #[cfg(feature = "manager")] spv_runtime: Option<&crate::spv::SpvRuntime>,
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey, Txid), PlatformWalletError> {
         // 1. Build the asset lock transaction.
         let (tx, key) = self
@@ -343,39 +347,19 @@ impl AssetLockManager {
         })
         .await;
 
-        // 3. Register for finality BEFORE broadcasting (prevents race).
-        #[cfg(feature = "manager")]
-        if let Some(spv) = spv_runtime {
-            spv.register_for_finality(txid).await;
-        }
-
-        // 4. Broadcast.
+        // 3. Broadcast.
         self.broadcast_transaction(&tx).await?;
 
-        // 5. Transition to Broadcast.
+        // 4. Transition to Broadcast.
         self.advance_asset_lock_status(&txid, AssetLockStatus::Broadcast, None)
             .await;
 
-        // 6. Wait for proof.
-        let proof = {
-            #[cfg(feature = "manager")]
-            {
-                if let Some(spv) = spv_runtime {
-                    // SPV path — wait via SpvRuntime finality tracking.
-                    spv.wait_for_finality(&txid, std::time::Duration::from_secs(300))
-                        .await?
-                } else {
-                    // DAPI fallback — stream-based waiting.
-                    self.wait_for_proof_via_dapi(&tx, &key).await?
-                }
-            }
-            #[cfg(not(feature = "manager"))]
-            {
-                self.wait_for_proof_via_dapi(&tx, &key).await?
-            }
-        };
+        // 5. Wait for proof via SPV events.
+        let proof = self
+            .wait_for_proof(&txid, &tx, Duration::from_secs(300))
+            .await?;
 
-        // 7. Attach proof — mark as InstantSendLocked (IS proofs are the
+        // 6. Attach proof — mark as InstantSendLocked (IS proofs are the
         //    common path; ChainLocked will be advanced later if applicable).
         self.advance_asset_lock_status(
             &txid,
@@ -387,77 +371,77 @@ impl AssetLockManager {
         Ok((proof, key, txid))
     }
 
-    /// DAPI-based fallback for waiting on an asset lock proof.
+    /// Wait for an asset lock proof by subscribing to SPV events.
     ///
-    /// Used when SPV is not available. Opens a DAPI instant-send lock stream
-    /// and waits for the proof with a 5-minute timeout.
-    async fn wait_for_proof_via_dapi(
+    /// Subscribes to the platform wallet event channel and listens for
+    /// `InstantLockReceived` (primary) or `ChainLockReceived` (fallback)
+    /// events matching the given transaction.
+    ///
+    /// Returns a properly-constructed `AssetLockProof` on success, or
+    /// `FinalityTimeout` if the timeout elapses first.
+    async fn wait_for_proof(
         &self,
-        transaction: &Transaction,
-        one_time_private_key: &PrivateKey,
+        txid: &Txid,
+        tx: &Transaction,
+        timeout: Duration,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::GetBlockchainStatusRequest;
-        use std::time::Duration;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 
-        let secp = Secp256k1::new();
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut rx = self.event_tx.subscribe();
 
-        // 1. Get the best block hash for the stream subscription.
-        let status_response = self
-            .sdk
-            .execute(GetBlockchainStatusRequest {}, RequestSettings::default())
-            .await
-            .into_inner()
-            .map_err(|e| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Failed to get blockchain status: {}",
-                    e
-                ))
-            })?;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(PlatformWalletError::FinalityTimeout(*txid));
+            }
 
-        let best_block_hash = status_response
-            .chain
-            .ok_or_else(|| {
-                PlatformWalletError::AssetLockProofWait(
-                    "Blockchain status missing chain info".to_string(),
-                )
-            })?
-            .best_block_hash;
+            tokio::select! {
+                event = rx.recv() => {
+                    match event {
+                        #[cfg(feature = "manager")]
+                        Ok(PlatformWalletEvent::Spv(crate::events::SpvEvent::Sync(
+                            dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. },
+                        ))) => {
+                            if instant_lock.txid == *txid {
+                                let proof = dpp::prelude::AssetLockProof::Instant(
+                                    InstantAssetLockProof::new(
+                                        instant_lock,
+                                        tx.clone(),
+                                        0,
+                                    ),
+                                );
+                                return Ok(proof);
+                            }
+                        }
+                        #[cfg(feature = "manager")]
+                        Ok(PlatformWalletEvent::Spv(crate::events::SpvEvent::Sync(
+                            dash_spv::sync::SyncEvent::ChainLockReceived { chain_lock, .. },
+                        ))) => {
+                            use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
-        // 2. Derive the one-time key's P2PKH address for the bloom filter.
-        let one_time_public_key = one_time_private_key.public_key(&secp);
-        let asset_lock_address = DashAddress::p2pkh(&one_time_public_key, self.sdk.network);
-
-        // 3. Start the instant-send lock stream BEFORE broadcasting to avoid
-        //    missing the proof.
-        let stream = self
-            .sdk
-            .start_instant_send_lock_stream(best_block_hash, &asset_lock_address)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Failed to start instant-send lock stream: {}",
-                    e
-                ))
-            })?;
-
-        // 4. Wait for the asset lock proof with a 5-minute timeout.
-        let proof = self
-            .sdk
-            .wait_for_asset_lock_proof_for_transaction(
-                stream,
-                transaction,
-                Some(Duration::from_secs(300)),
-            )
-            .await
-            .map_err(|e| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Failed to receive asset lock proof: {}",
-                    e
-                ))
-            })?;
-
-        Ok(proof)
+                            let proof = dpp::prelude::AssetLockProof::Chain(
+                                ChainAssetLockProof {
+                                    core_chain_locked_height: chain_lock.block_height,
+                                    out_point: dashcore::OutPoint::new(*txid, 0),
+                                },
+                            );
+                            return Ok(proof);
+                        }
+                        Ok(_) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => {
+                            return Err(PlatformWalletError::SpvError(
+                                "Event channel closed".to_string(),
+                            ));
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(remaining) => {
+                    return Err(PlatformWalletError::FinalityTimeout(*txid));
+                }
+            }
+        }
     }
 }
 

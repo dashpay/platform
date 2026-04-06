@@ -7,9 +7,10 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::{Mnemonic, Network, Seed};
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 
 use crate::error::PlatformWalletError;
+use crate::events::PlatformWalletEvent;
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 
 use super::core::asset_lock_manager::AssetLockManager;
@@ -43,6 +44,12 @@ pub struct PlatformWallet {
     /// Shared asset lock manager — builds, broadcasts, tracks, and provides
     /// proofs for asset lock transactions. Shared across sub-wallets.
     pub(crate) asset_locks: Arc<AssetLockManager>,
+    /// Broadcast channel for platform wallet events.
+    ///
+    /// Used by `AssetLockManager` to subscribe to SPV InstantLock / ChainLock
+    /// events. A standalone wallet creates its own channel; a managed wallet
+    /// shares the channel from `PlatformWalletManager`.
+    pub(crate) event_tx: broadcast::Sender<PlatformWalletEvent>,
     /// Optional persistence backend.  Set via [`set_persister`](Self::set_persister).
     persister: Option<Arc<Mutex<Box<dyn PlatformWalletPersistence>>>>,
 }
@@ -99,6 +106,20 @@ impl PlatformWallet {
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
     ) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
+        Self::from_wallet_and_info_with_event_tx(sdk, wallet, wallet_info, event_tx)
+    }
+
+    /// Construct a PlatformWallet with an externally-owned event channel.
+    ///
+    /// Used by `PlatformWalletManager` so that the manager's event channel
+    /// is shared with all wallets (and their `AssetLockManager` instances).
+    pub(crate) fn from_wallet_and_info_with_event_tx(
+        sdk: Arc<dash_sdk::Sdk>,
+        wallet: Wallet,
+        wallet_info: ManagedWalletInfo,
+        event_tx: broadcast::Sender<PlatformWalletEvent>,
+    ) -> Self {
         let wallet_id = wallet_info.wallet_id;
         let wallet = Arc::new(RwLock::new(wallet));
         let wallet_info = Arc::new(RwLock::new(wallet_info));
@@ -110,6 +131,7 @@ impl PlatformWallet {
             Arc::clone(&sdk),
             wallet.clone(),
             wallet_info.clone(),
+            event_tx.clone(),
         ));
 
         let identity = IdentityWallet {
@@ -141,6 +163,7 @@ impl PlatformWallet {
             platform,
             tokens,
             asset_locks,
+            event_tx,
             persister: None,
         }
     }
@@ -375,6 +398,7 @@ impl Clone for PlatformWallet {
             platform: self.platform.clone(),
             tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),
+            event_tx: self.event_tx.clone(),
             // Cloned instances do not inherit the persister.
             persister: None,
         }
