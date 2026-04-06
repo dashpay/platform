@@ -17,7 +17,7 @@ use key_wallet_manager::{
 };
 use tokio::sync::{broadcast, RwLock};
 
-use crate::events::{PlatformWalletEvent, TransactionStatus};
+use crate::events::PlatformWalletEvent;
 use crate::changeset::{ChainChangeSet, PlatformWalletChangeSet};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -56,18 +56,6 @@ impl SpvWalletAdapter {
         }
     }
 
-    /// Update transaction status in a wallet's CoreWallet.
-    async fn track_status_for_wallet(
-        &self,
-        wallet: &PlatformWallet,
-        txid: Txid,
-        new_status: TransactionStatus,
-    ) {
-        wallet
-            .core
-            .update_transaction_status(txid, new_status)
-            .await;
-    }
 }
 
 #[async_trait]
@@ -138,13 +126,8 @@ impl WalletInterface for SpvWalletAdapter {
             self.monitor_revision.fetch_add(1, Ordering::Relaxed);
         }
 
-        // Track all relevant transactions as Confirmed and refresh cached balance.
-        for wallet in wallets.values() {
-            for txid in new_txids.iter().chain(existing_txids.iter()) {
-                self.track_status_for_wallet(wallet, *txid, TransactionStatus::Confirmed)
-                    .await;
-            }
-        }
+        // Transaction status is tracked natively in key-wallet's TransactionRecord.context
+        // via check_core_transaction — no separate status tracking needed.
 
         BlockProcessingResult {
             new_txids,
@@ -183,15 +166,7 @@ impl WalletInterface for SpvWalletAdapter {
                     combined.is_outgoing = true;
                 }
 
-                let status = if is_instant_send {
-                    TransactionStatus::InstantSendLocked
-                } else {
-                    TransactionStatus::Unconfirmed
-                };
-                self.track_status_for_wallet(wallet, tx.txid(), status)
-                    .await;
-
-                // key-wallet's changeset has the full delta.
+                // key-wallet's changeset has the full delta (including status).
                 let changeset = PlatformWalletChangeSet {
                     wallet: if result.changeset.is_empty() {
                         None
@@ -283,14 +258,8 @@ impl WalletInterface for SpvWalletAdapter {
                     key_wallet::changeset::UtxoChangeSet::default()
                 };
 
-                if let Ok(mut statuses) = wallet.core.transaction_statuses.try_write() {
-                    let new_status = TransactionStatus::InstantSendLocked;
-                    let old = statuses.get(&txid).copied();
-                    if old.map_or(true, |old| new_status > old) {
-                        statuses.insert(txid, new_status);
-                        status_changed = true;
-                    }
-                }
+                // IS-lock status tracked in key-wallet via mark_instant_send_utxos above.
+                status_changed = !utxo_cs.instant_locked.is_empty();
 
                 // Stage a minimal changeset recording the IS-lock status change
                 // and the UTXO IS-lock deltas.

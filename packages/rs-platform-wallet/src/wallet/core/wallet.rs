@@ -21,7 +21,6 @@ use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
 
-use crate::events::TransactionStatus;
 
 /// Write guard for `ManagedWalletInfo` that automatically refreshes
 /// `WalletBalance` when dropped. Ensures the lock-free balance is always
@@ -63,7 +62,6 @@ pub struct CoreWallet {
     /// `WalletInfoWriteGuard` which auto-refreshes `WalletBalance` on drop.
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     /// Per-transaction finality status tracking.
-    pub(crate) transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,
     /// Tracked asset lock transactions and their lifecycle status.
     pub(crate) tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
@@ -82,7 +80,6 @@ impl CoreWallet {
             sdk,
             wallet,
             wallet_info,
-            transaction_statuses: Arc::new(RwLock::new(std::collections::BTreeMap::new())),
             tracked_asset_locks: Arc::new(RwLock::new(Vec::new())),
             balance: WalletBalance::new(),
         }
@@ -353,46 +350,7 @@ impl CoreWallet {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Transaction status tracking
-// ---------------------------------------------------------------------------
-
-impl CoreWallet {
-    /// Get the finality status of a tracked transaction.
-    pub async fn transaction_status(&self, txid: &Txid) -> Option<TransactionStatus> {
-        let statuses = self.transaction_statuses.read().await;
-        statuses.get(txid).copied()
-    }
-
-    /// Get all tracked transaction statuses.
-    pub async fn all_transaction_statuses(&self) -> BTreeMap<Txid, TransactionStatus> {
-        let statuses = self.transaction_statuses.read().await;
-        statuses.clone()
-    }
-
-    /// Update a transaction's status. Returns the old status if the transaction
-    /// was already tracked and the status actually changed (new > old).
-    /// Returns `None` if no change occurred.
-    pub(crate) async fn update_transaction_status(
-        &self,
-        txid: Txid,
-        new_status: TransactionStatus,
-    ) -> Option<TransactionStatus> {
-        let mut statuses = self.transaction_statuses.write().await;
-        let old_status = statuses.get(&txid).copied();
-        match old_status {
-            Some(old) if new_status > old => {
-                statuses.insert(txid, new_status);
-                Some(old)
-            }
-            None => {
-                statuses.insert(txid, new_status);
-                None
-            }
-            _ => None, // new_status <= old, no change
-        }
-    }
-}
+// Transaction status is tracked natively in key-wallet's TransactionRecord.context.
 
 // ---------------------------------------------------------------------------
 // Asset lock tracking
