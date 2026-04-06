@@ -22,6 +22,7 @@ use tokio::sync::RwLock;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use dash_sdk::platform::transition::transfer::TransferToIdentity;
@@ -208,11 +209,13 @@ impl IdentityWallet {
         amount_duffs: u64,
         identity_index: u32,
         key_count: u32,
+        settings: Option<PutSettings>,
     ) -> Result<Identity, PlatformWalletError> {
         self.register_identity_with_funding(
             IdentityFundingMethod::FundWithWallet { amount_duffs },
             identity_index,
             key_count,
+            settings,
         )
         .await
     }
@@ -250,6 +253,7 @@ impl IdentityWallet {
         funding: IdentityFundingMethod,
         identity_index: u32,
         key_count: u32,
+        settings: Option<PutSettings>,
     ) -> Result<Identity, PlatformWalletError> {
         if key_count == 0 {
             return Err(PlatformWalletError::InvalidIdentityData(
@@ -394,7 +398,7 @@ impl IdentityWallet {
                 asset_lock_proof,
                 &asset_lock_private_key,
                 &signer,
-                None,
+                settings,
             )
             .await
         {
@@ -414,7 +418,7 @@ impl IdentityWallet {
                             chain_proof,
                             &asset_lock_private_key,
                             &signer,
-                            None,
+                            settings,
                         )
                         .await
                         .map_err(|e| {
@@ -465,6 +469,7 @@ impl IdentityWallet {
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: &dashcore::PrivateKey,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<Identity, dash_sdk::Error> {
         identity
             .put_to_platform_and_wait_for_response(
@@ -472,7 +477,7 @@ impl IdentityWallet {
                 asset_lock_proof,
                 asset_lock_private_key,
                 signer,
-                None,
+                settings,
             )
             .await
     }
@@ -495,14 +500,15 @@ impl IdentityWallet {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: &dashcore::PrivateKey,
+        settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
         identity
             .top_up_identity(
                 &self.sdk,
                 asset_lock_proof,
                 asset_lock_private_key,
-                None, // user_fee_increase
-                None, // settings
+                settings.and_then(|s| s.user_fee_increase),
+                settings,
             )
             .await
     }
@@ -534,6 +540,7 @@ impl IdentityWallet {
         funding: IdentityFunding,
         identity_index: u32,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<Identity, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -575,6 +582,7 @@ impl IdentityWallet {
                 asset_lock_proof,
                 &asset_lock_private_key,
                 signer,
+                settings,
             )
             .await
         {
@@ -592,6 +600,7 @@ impl IdentityWallet {
                         chain_proof,
                         &asset_lock_private_key,
                         signer,
+                        settings,
                     )
                     .await
                     .map_err(PlatformWalletError::Sdk)?
@@ -636,6 +645,7 @@ impl IdentityWallet {
         identity: &Identity,
         funding: IdentityFunding,
         identity_index: u32,
+        settings: Option<PutSettings>,
     ) -> Result<u64, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -672,7 +682,7 @@ impl IdentityWallet {
         let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         let new_balance = match self
-            .top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key)
+            .top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key, settings)
             .await
         {
             Ok(balance) => balance,
@@ -684,7 +694,7 @@ impl IdentityWallet {
                         out_point.txid
                     );
                     let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
-                    self.top_up_identity_with_signer(identity, chain_proof, &asset_lock_private_key)
+                    self.top_up_identity_with_signer(identity, chain_proof, &asset_lock_private_key, settings)
                         .await
                         .map_err(PlatformWalletError::Sdk)?
                 } else {
@@ -934,11 +944,13 @@ impl IdentityWallet {
         identity_id: &Identifier,
         topup_index: u32,
         amount_duffs: u64,
+        settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {
         self.top_up_identity_with_funding(
             identity_id,
             TopUpFundingMethod::FundWithWallet { amount_duffs },
             topup_index,
+            settings,
         )
         .await
     }
@@ -962,6 +974,7 @@ impl IdentityWallet {
         identity_id: &Identifier,
         funding: TopUpFundingMethod,
         topup_index: u32,
+        settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
@@ -1020,13 +1033,14 @@ impl IdentityWallet {
         let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         // Step 2: Submit the top-up state transition.
+        let user_fee_increase = settings.and_then(|s| s.user_fee_increase);
         let new_balance = match identity
             .top_up_identity(
                 &self.sdk,
                 asset_lock_proof,
                 &asset_lock_private_key,
-                None, // user_fee_increase
-                None, // settings
+                user_fee_increase,
+                settings,
             )
             .await
         {
@@ -1045,8 +1059,8 @@ impl IdentityWallet {
                             &self.sdk,
                             chain_proof,
                             &asset_lock_private_key,
-                            None,
-                            None,
+                            user_fee_increase,
+                            settings,
                         )
                         .await
                         .map_err(|e| {
@@ -1103,6 +1117,7 @@ impl IdentityWallet {
         identity_id: &Identifier,
         amount: u64,
         to_address: &DashAddress,
+        settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
@@ -1127,7 +1142,7 @@ impl IdentityWallet {
                 None, // core_fee_per_byte
                 None, // signing_withdrawal_key_to_use
                 signer,
-                None, // settings
+                settings,
             )
             .await
             .map_err(|e| {
@@ -1166,6 +1181,7 @@ impl IdentityWallet {
         amount: u64,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
+        settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
         identity
             .withdraw(
@@ -1175,7 +1191,7 @@ impl IdentityWallet {
                 Some(1), // core_fee_per_byte
                 signing_withdrawal_key_to_use,
                 signer,
-                None, // settings
+                settings,
             )
             .await
     }
@@ -1202,6 +1218,7 @@ impl IdentityWallet {
         from_id: &Identifier,
         to_id: &Identifier,
         amount: u64,
+        settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the sending identity and its HD index from the manager.
         let (identity, identity_index) = {
@@ -1221,7 +1238,7 @@ impl IdentityWallet {
         let (sender_balance, _receiver_balance) = identity
             .transfer_credits(
                 &self.sdk, *to_id, amount, None, // signing_transfer_key_to_use
-                signer, None, // settings
+                signer, settings,
             )
             .await
             .map_err(|e| {
@@ -1256,6 +1273,7 @@ impl IdentityWallet {
         amount: u64,
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
+        settings: Option<PutSettings>,
     ) -> Result<(u64, u64), dash_sdk::Error> {
         identity
             .transfer_credits(
@@ -1264,7 +1282,7 @@ impl IdentityWallet {
                 amount,
                 signing_transfer_key_to_use,
                 signer,
-                None, // settings
+                settings,
             )
             .await
     }
@@ -1290,6 +1308,7 @@ impl IdentityWallet {
         identity_id: &Identifier,
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<u32>,
+        settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
@@ -1333,8 +1352,12 @@ impl IdentityWallet {
         // Get identity nonce from Platform.
         let identity_nonce = self
             .sdk
-            .get_identity_nonce(identity.id(), true, None)
+            .get_identity_nonce(identity.id(), true, settings)
             .await?;
+
+        let user_fee_increase = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
 
         // Build the update transition.
         let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
@@ -1343,7 +1366,7 @@ impl IdentityWallet {
             add_public_keys,
             disable_public_keys,
             identity_nonce,
-            0, // user_fee_increase
+            user_fee_increase,
             &signer,
             self.sdk.version(),
             None,
@@ -1357,7 +1380,7 @@ impl IdentityWallet {
 
         // Broadcast and wait for confirmation.
         state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, None)
+            .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, settings)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -1384,6 +1407,7 @@ impl IdentityWallet {
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<u32>,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error>
     {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -1393,8 +1417,12 @@ impl IdentityWallet {
         // Get identity nonce from Platform.
         let identity_nonce = self
             .sdk
-            .get_identity_nonce(identity.id(), true, None)
+            .get_identity_nonce(identity.id(), true, settings)
             .await?;
+
+        let user_fee_increase = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
 
         // Build the update transition.
         let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
@@ -1403,7 +1431,7 @@ impl IdentityWallet {
             add_public_keys,
             disable_public_keys,
             identity_nonce,
-            0, // user_fee_increase
+            user_fee_increase,
             signer,
             self.sdk.version(),
             None,
@@ -1411,7 +1439,9 @@ impl IdentityWallet {
         .map_err(|e| dash_sdk::Error::Protocol(e))?;
 
         // Broadcast and wait for confirmation.
-        let result = state_transition.broadcast_and_wait(&self.sdk, None).await?;
+        let result = state_transition
+            .broadcast_and_wait(&self.sdk, settings)
+            .await?;
 
         Ok(result)
     }
@@ -1437,6 +1467,7 @@ impl IdentityWallet {
         identity_id: &Identifier,
         inputs: BTreeMap<PlatformAddress, Credits>,
         platform_address_wallet: &PlatformAddressWallet,
+        settings: Option<PutSettings>,
     ) -> Result<Credits, PlatformWalletError> {
         let identity = {
             let manager = self.identity_manager.read().await;
@@ -1451,7 +1482,7 @@ impl IdentityWallet {
                 &self.sdk,
                 inputs,
                 platform_address_wallet,
-                None, // settings
+                settings,
             )
             .await
             .map_err(|e| {
@@ -1490,6 +1521,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         recipient_addresses: BTreeMap<PlatformAddress, Credits>,
+        settings: Option<PutSettings>,
     ) -> Result<Credits, PlatformWalletError> {
         let (identity, identity_index) = {
             let manager = self.identity_manager.read().await;
@@ -1511,7 +1543,7 @@ impl IdentityWallet {
                 recipient_addresses,
                 None, // signing_transfer_key_to_use
                 &signer,
-                None, // settings
+                settings,
             )
             .await
             .map_err(|e| {

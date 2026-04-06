@@ -815,12 +815,44 @@ impl AssetLockManager {
         output_index: u32,
         timeout: Duration,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use key_wallet::transaction_checking::TransactionContext;
 
         let deadline = tokio::time::Instant::now() + timeout;
         let mut rx = self.event_tx.subscribe();
 
         loop {
+            // Check if SPV already synced the proof before we started waiting.
+            {
+                let info = self.wallet_info.read().await;
+                if let Some(record) = info
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&account_index)
+                    .and_then(|a| a.transactions.get(txid))
+                {
+                    match &record.context {
+                        TransactionContext::InChainLockedBlock(_) => {
+                            if let Some(height) = record.height() {
+                                return Ok(dpp::prelude::AssetLockProof::Chain(
+                                    ChainAssetLockProof {
+                                        core_chain_locked_height: height,
+                                        out_point: OutPoint::new(*txid, output_index),
+                                    },
+                                ));
+                            }
+                        }
+                        TransactionContext::InstantSend => {
+                            // TX has IS context but we don't have the IS-lock
+                            // data here. Continue waiting for the actual
+                            // InstantLockReceived event which carries the lock.
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 return Err(PlatformWalletError::FinalityTimeout(*txid));
@@ -848,8 +880,6 @@ impl AssetLockManager {
                         Ok(PlatformWalletEvent::Spv(crate::events::SpvEvent::Sync(
                             dash_spv::sync::SyncEvent::ChainLockReceived { chain_lock, .. },
                         ))) => {
-                            use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-
                             // Verify that our asset lock transaction is actually
                             // confirmed at a height <= the chain-locked height.
                             // A ChainLock on block N guarantees finality for all
