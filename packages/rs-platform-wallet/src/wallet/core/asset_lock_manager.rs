@@ -70,8 +70,8 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
-    /// Insert a tracked asset lock.
-    pub async fn track_asset_lock(&self, lock: TrackedAssetLock) {
+    /// Insert a tracked asset lock (internal — callers use create_funded_asset_lock_proof or recover_asset_lock).
+    async fn track_asset_lock(&self, lock: TrackedAssetLock) {
         let mut map = self.tracked.write().await;
         map.insert(lock.txid, lock);
     }
@@ -197,7 +197,7 @@ impl AssetLockManager {
     }
 
     /// Blocking version of [`track_asset_lock`](Self::track_asset_lock).
-    pub fn blocking_track_asset_lock(&self, lock: TrackedAssetLock) {
+    fn blocking_track_asset_lock(&self, lock: TrackedAssetLock) {
         let mut map = self.tracked.blocking_write();
         map.insert(lock.txid, lock);
     }
