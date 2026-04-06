@@ -73,7 +73,7 @@ impl PlatformWalletManager {
     /// Persisted state (transactions, UTXOs, balances, identities) is loaded
     /// from the shared persister and applied before the wallet is registered,
     /// so the returned wallet is fully configured and ready for use.
-    pub fn create_wallet_from_seed_bytes(
+    pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
         seed_bytes: [u8; 64],
@@ -100,27 +100,22 @@ impl PlatformWalletManager {
         );
 
         // Load persisted state and apply it to the in-memory wallet.
-        match self.persister.initialize(wallet_id) {
-            Ok(changeset) => {
-                if !changeset.is_empty() {
-                    platform_wallet.apply(&changeset);
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "Failed to load persisted wallet state"
-                );
-            }
+        let changeset = self.persister.initialize(wallet_id).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to load persisted wallet state: {}",
+                e
+            ))
+        })?;
+        if !changeset.is_empty() {
+            platform_wallet.apply(&changeset);
         }
 
         let platform_wallet = Arc::new(platform_wallet);
 
         // Register with the manager so SPV processes this wallet.
-        if let Ok(mut wallets) = self.wallets.try_write() {
-            wallets.insert(wallet_id, Arc::clone(&platform_wallet));
-        }
+        let mut wallets = self.wallets.write().await;
+        wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+        drop(wallets);
         self.spv.notify_wallets_changed();
 
         Ok(platform_wallet)
