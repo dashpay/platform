@@ -17,7 +17,6 @@ use key_wallet_manager::{
 };
 use tokio::sync::{broadcast, RwLock};
 
-use crate::events::PlatformWalletEvent;
 use crate::changeset::{ChainChangeSet, PlatformWalletChangeSet};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -31,31 +30,22 @@ use crate::wallet::PlatformWallet;
 /// regardless of which wallet was added first.
 pub(crate) struct SpvWalletAdapter {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    event_tx: broadcast::Sender<WalletEvent>,
-    platform_event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
     filter_committed_height: AtomicU32,
-    /// Shared with `SpvRuntime` so wallet add/remove can bump it externally.
-    monitor_revision: Arc<AtomicU64>,
+    pub(crate) monitor_revision: AtomicU64,
 }
 
 impl SpvWalletAdapter {
     pub(crate) fn new(
         wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-        platform_event_tx: broadcast::Sender<PlatformWalletEvent>,
-        monitor_revision: Arc<AtomicU64>,
     ) -> Self {
-        let (event_tx, _) = broadcast::channel(256);
         Self {
             wallets,
-            event_tx,
-            platform_event_tx,
             synced_height: AtomicU32::new(0),
             filter_committed_height: AtomicU32::new(0),
-            monitor_revision,
+            monitor_revision: AtomicU64::new(0),
         }
     }
-
 }
 
 #[async_trait]
@@ -312,7 +302,10 @@ impl WalletInterface for SpvWalletAdapter {
     }
 
     fn subscribe_events(&self) -> broadcast::Receiver<WalletEvent> {
-        self.event_tx.subscribe()
+        // Required by WalletInterface trait but not used — create a channel on the fly.
+        let (tx, rx) = broadcast::channel(1);
+        drop(tx);
+        rx
     }
 
     async fn earliest_required_height(&self) -> u32 {

@@ -7,7 +7,7 @@
 //! `AssetLockManager` directly — it subscribes to the shared event channel.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
@@ -15,6 +15,8 @@ use tokio::sync::{broadcast, RwLock};
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::{ClientConfig, DashSpvClient};
+
+use key_wallet_manager::WalletInterface;
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
@@ -35,11 +37,8 @@ type SpvClient =
 /// directly by `AssetLockManager` via SPV event subscriptions — the runtime
 /// only drives SPV sync and forwards events.
 pub struct SpvRuntime {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
-    synced_height: AtomicU32,
-    /// Shared with `SpvWalletAdapter` — bump to signal bloom filter rebuild.
-    monitor_revision: Arc<AtomicU64>,
+    adapter: Arc<RwLock<SpvWalletAdapter>>,
     client: RwLock<Option<SpvClient>>,
 }
 
@@ -49,24 +48,28 @@ impl SpvRuntime {
         wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
     ) -> Self {
+        let adapter = Arc::new(RwLock::new(SpvWalletAdapter::new(wallets)));
         Self {
-            wallets,
             event_tx,
-            synced_height: AtomicU32::new(0),
-            monitor_revision: Arc::new(AtomicU64::new(0)),
+            adapter,
             client: RwLock::new(None),
         }
     }
 
     /// Current synced height.
     pub fn synced_height(&self) -> u32 {
-        self.synced_height.load(Ordering::Relaxed)
+        self.adapter
+            .try_read()
+            .map(|a| a.synced_height())
+            .unwrap_or(0)
     }
 
     /// Signal that the wallet set changed (added/removed).
     /// SPV will rebuild the bloom filter on the next tick.
     pub fn notify_wallets_changed(&self) {
-        self.monitor_revision.fetch_add(1, Ordering::Relaxed);
+        if let Ok(adapter) = self.adapter.try_read() {
+            adapter.monitor_revision.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Start SPV sync.
@@ -78,11 +81,6 @@ impl SpvRuntime {
             }
         }
 
-        let adapter = SpvWalletAdapter::new(
-            Arc::clone(&self.wallets),
-            self.event_tx.clone(),
-            Arc::clone(&self.monitor_revision),
-        );
         let forwarder = SpvEventForwarder::new(self.event_tx.clone());
 
         let network_manager = PeerNetworkManager::new(&config)
@@ -96,7 +94,7 @@ impl SpvRuntime {
             config,
             network_manager,
             storage_manager,
-            Arc::new(RwLock::new(adapter)),
+            Arc::clone(&self.adapter),
             Arc::new(forwarder),
         )
         .await
@@ -124,7 +122,7 @@ impl SpvRuntime {
 impl std::fmt::Debug for SpvRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SpvRuntime")
-            .field("synced_height", &self.synced_height.load(Ordering::Relaxed))
+            .field("synced_height", &self.synced_height())
             .finish()
     }
 }
