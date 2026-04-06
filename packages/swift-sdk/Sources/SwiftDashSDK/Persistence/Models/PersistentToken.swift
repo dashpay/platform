@@ -67,9 +67,6 @@ public final class PersistentToken {
     @Relationship(deleteRule: .cascade)
     public var balances: [PersistentTokenBalance]?
 
-    @Relationship(deleteRule: .cascade)
-    public var historyEvents: [PersistentTokenHistoryEvent]?
-
     public init(contractId: Data, position: Int, name: String, baseSupply: String, decimals: Int = 8) {
         // Create unique ID by combining contract ID and position
         var idData = contractId
@@ -236,39 +233,6 @@ extension PersistentToken {
     }
 }
 
-// MARK: - Control Rules Methods
-extension PersistentToken {
-    public func getChangeControlRules(for type: ChangeControlRuleType) -> ChangeControlRules? {
-        switch type {
-        case .conventions: return conventionsChangeRules
-        case .maxSupply: return maxSupplyChangeRules
-        case .manualMinting: return manualMintingRules
-        case .manualBurning: return manualBurningRules
-        case .freeze: return freezeRules
-        case .unfreeze: return unfreezeRules
-        case .destroyFrozenFunds: return destroyFrozenFundsRules
-        case .emergencyAction: return emergencyActionRules
-        case .tradeMode: return tradeModeChangeRules
-        }
-    }
-
-    public func setChangeControlRules(_ rules: ChangeControlRules, for type: ChangeControlRuleType) {
-        switch type {
-        case .conventions: conventionsChangeRules = rules
-        case .maxSupply: maxSupplyChangeRules = rules
-        case .manualMinting: manualMintingRules = rules
-        case .manualBurning: manualBurningRules = rules
-        case .freeze: freezeRules = rules
-        case .unfreeze: unfreezeRules = rules
-        case .destroyFrozenFunds: destroyFrozenFundsRules = rules
-        case .emergencyAction: emergencyActionRules = rules
-        case .tradeMode: tradeModeChangeRules = rules
-        }
-
-        lastUpdatedAt = Date()
-    }
-}
-
 // MARK: - Query Helpers
 extension PersistentToken {
     public static func mintableTokensPredicate() -> Predicate<PersistentToken> {
@@ -304,43 +268,6 @@ extension PersistentToken {
     public static func tokensByContractPredicate(contractId: Data) -> Predicate<PersistentToken> {
         #Predicate<PersistentToken> { token in
             token.contractId == contractId
-        }
-    }
-
-    public static func tokensWithControlRulePredicate(rule: ControlRuleType) -> Predicate<PersistentToken> {
-        switch rule {
-        case .manualMinting:
-            return #Predicate<PersistentToken> { token in
-                token.manualMintingRules != nil
-            }
-        case .manualBurning:
-            return #Predicate<PersistentToken> { token in
-                token.manualBurningRules != nil
-            }
-        case .freeze:
-            return #Predicate<PersistentToken> { token in
-                token.freezeRules != nil
-            }
-        case .unfreeze:
-            return #Predicate<PersistentToken> { token in
-                token.unfreezeRules != nil
-            }
-        case .destroyFrozenFunds:
-            return #Predicate<PersistentToken> { token in
-                token.destroyFrozenFundsRules != nil
-            }
-        case .emergencyAction:
-            return #Predicate<PersistentToken> { token in
-                token.emergencyActionRules != nil
-            }
-        case .conventions:
-            return #Predicate<PersistentToken> { token in
-                token.conventionsChangeRules != nil
-            }
-        case .maxSupply:
-            return #Predicate<PersistentToken> { token in
-                token.maxSupplyChangeRules != nil
-            }
         }
     }
 }

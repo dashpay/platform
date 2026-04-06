@@ -41,7 +41,6 @@ class AppState: ObservableObject {
     var useLocalPlatform: Bool { useDockerSetup }
     var useLocalCore: Bool { useDockerSetup }
 
-    private let testSigner = TestSigner()
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 

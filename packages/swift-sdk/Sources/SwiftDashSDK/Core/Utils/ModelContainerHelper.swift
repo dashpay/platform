@@ -15,7 +15,6 @@ public struct ModelContainerHelper {
             PersistentDataContract.self,
             PersistentToken.self,
             PersistentDocumentType.self,
-            PersistentTokenHistoryEvent.self,
             PersistentKeyword.self
         ])
 

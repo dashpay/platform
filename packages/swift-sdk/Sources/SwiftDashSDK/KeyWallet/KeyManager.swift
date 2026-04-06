@@ -110,25 +110,6 @@ public final class KeyManager: Sendable {
     })
   }
 
-  /// Find a key by purpose for an identity
-  /// - Parameters:
-  ///   - identity: The identity to find a key for
-  ///   - purpose: The key purpose to find
-  /// - Returns: A key with the specified purpose if found, nil otherwise
-  /// - Note: This only returns the public key. Use `getPrivateKey(for:keyIndex:from:)` to check if private key is available.
-  public func getKeyByPurpose(for identity: DPPIdentity, purpose: KeyPurpose) -> IdentityPublicKey? {
-    // Prefer critical key, then any key with the purpose
-    if let criticalKey = identity.publicKeys.values.first(where: {
-      $0.purpose == purpose && $0.securityLevel == .critical && !$0.isDisabled
-    }) {
-      return criticalKey
-    }
-
-    return identity.publicKeys.values.first(where: {
-      $0.purpose == purpose && !$0.isDisabled
-    })
-  }
-
   /// Find a key that meets specific requirements
   /// - Parameters:
   ///   - identity: The identity to find a key for
@@ -187,17 +168,6 @@ public final class KeyManager: Sendable {
       throw KeyManagerError.privateKeyNotFound(keyIndex)
     }
     return privateKeyData
-  }
-
-  /// Check if a private key is available for a key
-  /// - Parameters:
-  ///   - identity: The identity
-  ///   - keyIndex: The key index to check
-  /// - Returns: True if private key is available in keychain
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func hasPrivateKey(for identity: DPPIdentity, keyIndex: KeyID) -> Bool {
-    return keychainManager.hasPrivateKey(identityId: identity.id, keyIndex: Int32(keyIndex))
   }
 
   /// Find a key with available private key that meets requirements
@@ -299,23 +269,6 @@ public final class KeyManager: Sendable {
     return (transferKey, signer)
   }
 
-  /// Create an authentication signer for an identity (convenience method)
-  /// - Parameter identity: The identity to create an authentication signer for
-  /// - Returns: A tuple containing the authentication key and signer handle
-  /// - Throws: `KeyManagerError.noSuitableKey` if no authentication key with private key is found
-  /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
-  /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  /// - Note: This method must be called from a MainActor context
-  @MainActor
-  public func createAuthenticationSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
-    guard let authKey = getAuthenticationKey(for: identity) else {
-      throw KeyManagerError.noSuitableKey("No authentication key found for identity")
-    }
-
-    let signer = try createSigner(for: identity, keyIndex: authKey.id)
-    return (authKey, signer)
-  }
-
   /// Create a signer for a key that meets specific requirements
   /// - Parameters:
   ///   - identity: The identity to create a signer for
@@ -355,71 +308,11 @@ public final class KeyManager: Sendable {
     let signerPtr = UnsafeMutablePointer<SignerHandle>(signer)
     dash_sdk_signer_destroy(signerPtr)
   }
-
-  // MARK: - Key Validation
-
-  /// Validate that a private key matches a public key
-  /// - Parameters:
-  ///   - privateKeyData: The private key data
-  ///   - publicKey: The public key to validate against
-  ///   - isTestnet: Whether this is for testnet (default: true)
-  /// - Returns: True if the private key matches the public key
-  public func validatePrivateKey(
-    _ privateKeyData: Data,
-    matches publicKey: IdentityPublicKey,
-    isTestnet: Bool = true
-  ) -> Bool {
-    let privateKeyHex = privateKeyData.toHexString()
-    let publicKeyHex = publicKey.data.toHexString()
-
-    return KeyValidation.validatePrivateKeyForPublicKey(
-      privateKeyHex: privateKeyHex,
-      publicKeyHex: publicKeyHex,
-      keyType: publicKey.keyType,
-      isTestnet: isTestnet
-    )
-  }
-
-  /// Validate private key format and length
-  /// - Parameter privateKeyData: The private key data to validate
-  /// - Returns: True if the private key has valid format (32 bytes)
-  public func validatePrivateKeyFormat(_ privateKeyData: Data) -> Bool {
-    return privateKeyData.count == 32
-  }
 }
 
 // MARK: - Convenience Extensions
 
 extension KeyManager {
-  /// Find a key suitable for document operations (requires AUTHENTICATION purpose)
-  /// - Parameters:
-  ///   - identity: The identity to find a key for
-  ///   - minimumSecurityLevel: The minimum security level required (default: .high)
-  /// - Returns: A key suitable for document operations if found, nil otherwise
-  public func findDocumentSigningKey(
-    for identity: DPPIdentity,
-    minimumSecurityLevel: SecurityLevel = .high
-  ) -> IdentityPublicKey? {
-    return findKey(
-      for: identity,
-      purpose: .authentication,
-      minimumSecurityLevel: minimumSecurityLevel,
-      preferCritical: true
-    )
-  }
-
-  /// Find a key suitable for contract operations (requires CRITICAL + AUTHENTICATION)
-  /// - Parameter identity: The identity to find a key for
-  /// - Returns: A key suitable for contract operations if found, nil otherwise
-  public func findContractSigningKey(for identity: DPPIdentity) -> IdentityPublicKey? {
-    return findKey(
-      for: identity,
-      purpose: .authentication,
-      minimumSecurityLevel: .critical,
-      preferCritical: true
-    )
-  }
-
   /// Create a signer for document operations
   /// - Parameters:
   ///   - identity: The identity to create a signer for

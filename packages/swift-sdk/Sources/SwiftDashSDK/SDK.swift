@@ -1,6 +1,8 @@
 import Foundation
 import DashSDKFFI
 
+@_exported import DashSDKFFI
+
 // MARK: - Data Extensions
 extension Data {
   /// Convert Data to Base58 string
@@ -52,7 +54,7 @@ public final class SDK: @unchecked Sendable {
   public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
 
   /// The network this SDK instance is connected to
-  public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+  public private(set) var network: DashSDKNetwork = DashSDKNetwork(rawValue: 1) // Default to testnet
 
   /// Identities operations
   public lazy var identities = Identities(sdk: self)
@@ -153,7 +155,7 @@ public final class SDK: @unchecked Sendable {
   /// This uses a trusted context provider that fetches quorum keys and
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
-  public init(network: Network) throws {
+  public init(network: DashSDKNetwork) throws {
     var config = DashSDKConfig()
     config.network = network
     config.dapi_addresses = nil

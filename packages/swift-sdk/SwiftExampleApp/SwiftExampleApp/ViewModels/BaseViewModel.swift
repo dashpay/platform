@@ -12,11 +12,6 @@ class BaseViewModel: ObservableObject {
     @Published var showResult = false
     @Published var currentError: UserFacingError?
 
-    /// Whether the current error is retryable
-    var isErrorRetryable: Bool {
-        currentError?.isRetryable ?? false
-    }
-
     /// Recovery suggestion for the current error
     var errorRecoverySuggestion: String? {
         currentError?.recoverySuggestion

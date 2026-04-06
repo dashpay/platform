@@ -1321,17 +1321,6 @@ extension SDK {
 
     // MARK: - Token State Transitions
 
-    /// Transfer tokens between identities
-    public func tokenTransfer(
-        tokenId: String,
-        fromIdentityId: String,
-        toIdentityId: String,
-        amount: UInt64
-    ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Token transfer not yet implemented")
-    }
-
     /// Mint new tokens
     public func tokenMint(
         contractId: String,
@@ -2707,31 +2696,6 @@ extension SDK {
             amount: amount,
             publicKeyId: 0, // Auto-select TRANSFER key
             signer: signer
-        )
-    }
-
-    /// Top up identity with instant lock (convenience method with DPPIdentity)
-    public func topUpIdentity(
-        _ identity: DPPIdentity,
-        instantLock: Data,
-        transaction: Data,
-        outputIndex: UInt32,
-        privateKey: Data
-    ) async throws -> UInt64 {
-        // Convert DPPIdentity to handle
-        let identityHandle = try identityToHandle(identity)
-        defer {
-            // Clean up the handle when done
-            dash_sdk_identity_destroy(idMut(identityHandle))
-        }
-
-        // Call the lower-level method
-        return try await identityTopUp(
-            identity: identityHandle,
-            instantLock: instantLock,
-            transaction: transaction,
-            outputIndex: outputIndex,
-            privateKey: privateKey
         )
     }
 

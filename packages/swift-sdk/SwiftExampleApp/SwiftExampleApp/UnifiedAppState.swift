@@ -38,9 +38,6 @@ class UnifiedAppState: ObservableObject {
     // State from Platform
     let platformState: AppState
 
-    // Unified state manager
-    let unifiedState: UnifiedStateManager
-
     // SwiftData container
     let modelContainer: ModelContainer
 
@@ -69,8 +66,6 @@ class UnifiedAppState: ObservableObject {
         // Initialize services
         self.platformState = AppState()
         self.walletService = WalletService(modelContainer: modelContainer, network: platformState.currentNetwork)
-        // Initialize unified state (will be updated with real SDKs during async init)
-        self.unifiedState = UnifiedStateManager()
     }
 
     func initialize() async {

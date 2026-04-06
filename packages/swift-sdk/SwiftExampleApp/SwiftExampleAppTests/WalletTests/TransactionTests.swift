@@ -7,35 +7,6 @@ import XCTest
 // MARK: - Transaction Tests
 
 final class TransactionTests: XCTestCase {
-
-  // MARK: - Transaction Builder Tests (using SDKTransactionBuilder)
-
-  func testTransactionBuilderBasic() {
-    let builder = SDKTransactionBuilder(feePerKB: 1000)
-    XCTAssertNotNil(builder)
-  }
-
-  func testTransactionBuilderAddInput() throws {
-    let builder = SDKTransactionBuilder(feePerKB: 1000)
-    XCTAssertNotNil(builder)
-    // SDKTransactionBuilder.addInput takes Input(txid:vout:scriptPubKey:privateKey), not HDUTXO
-  }
-
-
-
-  func testTransactionBuilderInsufficientBalance() throws {
-    let builder = SDKTransactionBuilder(feePerKB: 1000)
-    try builder.addOutput(
-      SDKTransactionBuilder.Output(
-        address: "yXdUfGBfX6rQmNq5speeNGD5HfL2qkYBNe", amount: 100_000_000))
-    do {
-      _ = try builder.build()
-      XCTFail("Should have thrown")
-    } catch {
-      // SDK currently throws SDKTxError.notImplemented; any throw is acceptable here
-    }
-  }
-
   // MARK: - UTXO Manager Tests (skipped: UTXOManager / WalletManager(modelContainer:) not in SDK)
 
   @MainActor

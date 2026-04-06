@@ -222,21 +222,6 @@ public struct AddressPoolInfo {
     }
 }
 
-/// Transaction check result
-public struct TransactionCheckResult {
-    public let isRelevant: Bool
-    public let totalReceived: UInt64
-    public let totalSent: UInt64
-    public let affectedAccountsCount: UInt32
-
-    init(ffiResult: FFITransactionCheckResult) {
-        self.isRelevant = ffiResult.is_relevant
-        self.totalReceived = ffiResult.total_received
-        self.totalSent = ffiResult.total_sent
-        self.affectedAccountsCount = ffiResult.affected_accounts_count
-    }
-}
-
 /// UTXO information
 public struct UTXO: Identifiable, Equatable, Sendable {
     public let txid: Data
@@ -307,60 +292,6 @@ public struct UTXO: Identifiable, Equatable, Sendable {
 }
 
 // MARK: - Account Collection Types
-
-/// Summary of accounts in a collection
-public struct AccountCollectionSummary {
-    public let bip44Indices: [UInt32]
-    public let bip32Indices: [UInt32]
-    public let coinJoinIndices: [UInt32]
-    public let identityTopUpIndices: [UInt32]
-    public let hasIdentityRegistration: Bool
-    public let hasIdentityInvitation: Bool
-    public let hasIdentityTopUpNotBound: Bool
-    public let hasProviderVotingKeys: Bool
-    public let hasProviderOwnerKeys: Bool
-    public let hasProviderOperatorKeys: Bool
-    public let hasProviderPlatformKeys: Bool
-
-    init(ffiSummary: FFIAccountCollectionSummary) {
-        // Convert BIP44 indices
-        if ffiSummary.bip44_count > 0, let indices = ffiSummary.bip44_indices {
-            self.bip44Indices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.bip44_count))
-        } else {
-            self.bip44Indices = []
-        }
-
-        // Convert BIP32 indices
-        if ffiSummary.bip32_count > 0, let indices = ffiSummary.bip32_indices {
-            self.bip32Indices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.bip32_count))
-        } else {
-            self.bip32Indices = []
-        }
-
-        // Convert CoinJoin indices
-        if ffiSummary.coinjoin_count > 0, let indices = ffiSummary.coinjoin_indices {
-            self.coinJoinIndices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.coinjoin_count))
-        } else {
-            self.coinJoinIndices = []
-        }
-
-        // Convert identity top-up indices
-        if ffiSummary.identity_topup_count > 0, let indices = ffiSummary.identity_topup_indices {
-            self.identityTopUpIndices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.identity_topup_count))
-        } else {
-            self.identityTopUpIndices = []
-        }
-
-        // Copy boolean flags
-        self.hasIdentityRegistration = ffiSummary.has_identity_registration
-        self.hasIdentityInvitation = ffiSummary.has_identity_invitation
-        self.hasIdentityTopUpNotBound = ffiSummary.has_identity_topup_not_bound
-        self.hasProviderVotingKeys = ffiSummary.has_provider_voting_keys
-        self.hasProviderOwnerKeys = ffiSummary.has_provider_owner_keys
-        self.hasProviderOperatorKeys = ffiSummary.has_provider_operator_keys
-        self.hasProviderPlatformKeys = ffiSummary.has_provider_platform_keys
-    }
-}
 
 /// Summary of managed accounts in a collection
 public struct ManagedAccountCollectionSummary {

@@ -84,16 +84,6 @@ public final class DataManager: ObservableObject {
         return persistentIdentities.map { $0.toIdentityModel() }
     }
 
-    /// Fetch local identities only
-    public func fetchLocalIdentities() throws -> [IdentityModel] {
-        let descriptor = FetchDescriptor<PersistentIdentity>(
-            predicate: PersistentIdentity.localIdentitiesPredicate(network: currentNetwork.rawValue),
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-        let persistentIdentities = try modelContext.fetch(descriptor)
-        return persistentIdentities.map { $0.toIdentityModel() }
-    }
-
     /// Delete an identity
     public func deleteIdentity(withId identityId: Data) throws {
         let predicate = PersistentIdentity.predicate(identityId: identityId)
@@ -140,28 +130,6 @@ public final class DataManager: ObservableObject {
         return persistentDocuments.map { $0.toDocumentModel() }
     }
 
-    /// Fetch documents owned by an identity
-    public func fetchDocuments(ownerId: Data) throws -> [DocumentModel] {
-        let predicate = PersistentDocument.predicate(ownerId: ownerId)
-        let descriptor = FetchDescriptor<PersistentDocument>(
-            predicate: predicate,
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-        let persistentDocuments = try modelContext.fetch(descriptor)
-        return persistentDocuments.map { $0.toDocumentModel() }
-    }
-
-    /// Delete a document
-    public func deleteDocument(withId documentId: String) throws {
-        let predicate = PersistentDocument.predicate(documentId: documentId)
-        let descriptor = FetchDescriptor<PersistentDocument>(predicate: predicate)
-
-        if let document = try modelContext.fetch(descriptor).first {
-            document.markAsDeleted()
-            try modelContext.save()
-        }
-    }
-
     // MARK: - Contract Operations
 
     /// Save or update a contract
@@ -199,110 +167,7 @@ public final class DataManager: ObservableObject {
         return persistentContracts.map { $0.toContractModel() }
     }
 
-    /// Fetch contracts with tokens
-    public func fetchContractsWithTokens() throws -> [ContractModel] {
-        let descriptor = FetchDescriptor<PersistentDataContract>(
-            predicate: PersistentDataContract.contractsWithTokensPredicate(network: currentNetwork.rawValue),
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-        let persistentContracts = try modelContext.fetch(descriptor)
-        return persistentContracts.map { $0.toContractModel() }
-    }
-
-    // MARK: - Token Balance Operations
-
-    /// Save or update a token balance
-    public func saveTokenBalance(tokenId: String, identityId: Data, balance: UInt64, frozen: Bool = false, tokenInfo: (name: String, symbol: String, decimals: Int32)? = nil) throws {
-        let predicate = PersistentTokenBalance.predicate(tokenId: tokenId, identityId: identityId)
-        let descriptor = FetchDescriptor<PersistentTokenBalance>(predicate: predicate)
-
-        if let existingBalance = try modelContext.fetch(descriptor).first {
-            // Update existing balance
-            existingBalance.updateBalance(Int64(balance))
-            if frozen != existingBalance.frozen {
-                if frozen {
-                    existingBalance.freeze()
-                } else {
-                    existingBalance.unfreeze()
-                }
-            }
-            if let info = tokenInfo {
-                existingBalance.updateTokenInfo(name: info.name, symbol: info.symbol, decimals: info.decimals)
-            }
-        } else {
-            // Create new balance
-            let persistentBalance = PersistentTokenBalance(
-                tokenId: tokenId,
-                identityId: identityId,
-                balance: Int64(balance),
-                frozen: frozen,
-                tokenName: tokenInfo?.name,
-                tokenSymbol: tokenInfo?.symbol,
-                tokenDecimals: tokenInfo?.decimals
-            )
-            modelContext.insert(persistentBalance)
-        }
-
-        try modelContext.save()
-    }
-
-    /// Fetch token balances for an identity
-    public func fetchTokenBalances(identityId: Data) throws -> [(tokenId: String, balance: UInt64, frozen: Bool)] {
-        let predicate = PersistentTokenBalance.predicate(identityId: identityId)
-        let descriptor = FetchDescriptor<PersistentTokenBalance>(
-            predicate: predicate,
-            sortBy: [SortDescriptor(\.balance, order: .reverse)]
-        )
-        let persistentBalances = try modelContext.fetch(descriptor)
-        return persistentBalances.map { $0.toTokenBalance() }
-    }
-
-    // MARK: - Sync Operations
-
-    /// Mark an identity as synced
-    func markIdentityAsSynced(identityId: Data) throws {
-        let predicate = PersistentIdentity.predicate(identityId: identityId)
-        let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
-
-        if let identity = try modelContext.fetch(descriptor).first {
-            identity.markAsSynced()
-            try modelContext.save()
-        }
-    }
-
-    /// Get identities that need syncing
-    public func fetchIdentitiesNeedingSync(olderThan hours: Int = 1) throws -> [IdentityModel] {
-        let date = Date().addingTimeInterval(-Double(hours) * 3600)
-        let predicate = PersistentIdentity.needsSyncPredicate(olderThan: date)
-        let descriptor = FetchDescriptor<PersistentIdentity>(
-            predicate: predicate,
-            sortBy: [SortDescriptor(\.lastSyncedAt)]
-        )
-        let persistentIdentities = try modelContext.fetch(descriptor)
-        return persistentIdentities.map { $0.toIdentityModel() }
-    }
-
     // MARK: - Utility Operations
-
-    /// Clear all data (for testing or reset)
-    func clearAllData() throws {
-        // Delete all identities
-        try modelContext.delete(model: PersistentIdentity.self)
-
-        // Delete all documents
-        try modelContext.delete(model: PersistentDocument.self)
-
-        // Delete all contracts
-        try modelContext.delete(model: PersistentDataContract.self)
-
-        // Delete all public keys
-        try modelContext.delete(model: PersistentPublicKey.self)
-
-        // Delete all token balances
-        try modelContext.delete(model: PersistentTokenBalance.self)
-
-        try modelContext.save()
-    }
 
     /// Get statistics about stored data
     public func getDataStatistics() throws -> (identities: Int, documents: Int, contracts: Int, tokenBalances: Int) {

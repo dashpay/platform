@@ -89,7 +89,6 @@ public struct DPPDataContract: Identifiable, Codable, Equatable, Sendable {
 
 public struct DocumentType: Codable, Equatable, Sendable {
     public let name: String
-    public let schema: JsonSchema
     public let indices: [Index]
     public let properties: [String: DocumentProperty]
     public let security: DocumentTypeSecurity
@@ -112,7 +111,6 @@ public struct DocumentType: Codable, Equatable, Sendable {
 
     public init(
         name: String,
-        schema: JsonSchema,
         indices: [Index],
         properties: [String: DocumentProperty],
         security: DocumentTypeSecurity,
@@ -125,7 +123,6 @@ public struct DocumentType: Codable, Equatable, Sendable {
         tradeMode: TradeMode
     ) {
         self.name = name
-        self.schema = schema
         self.indices = indices
         self.properties = properties
         self.security = security
@@ -451,95 +448,3 @@ public struct TokenEveryoneRules: Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - Json Schema
-
-public struct JsonSchema: Codable, Equatable, Sendable {
-    public let type: String
-    public let properties: [String: JsonSchemaProperty]
-    public let required: [String]
-    public let additionalProperties: Bool
-
-    public init(type: String, properties: [String: JsonSchemaProperty], required: [String], additionalProperties: Bool = false) {
-        self.type = type
-        self.properties = properties
-        self.required = required
-        self.additionalProperties = additionalProperties
-    }
-}
-
-public indirect enum JsonSchemaPropertyValue: Codable, Equatable, Sendable {
-    case property(JsonSchemaProperty)
-}
-
-public struct JsonSchemaProperty: Codable, Equatable, Sendable {
-    public let type: String
-    public let schemaDescription: String?
-    public let format: String?
-    public let pattern: String?
-    public let minLength: Int?
-    public let maxLength: Int?
-    public let minimum: Double?
-    public let maximum: Double?
-    public let items: JsonSchemaPropertyValue?
-
-    public init(
-        type: String,
-        schemaDescription: String? = nil,
-        format: String? = nil,
-        pattern: String? = nil,
-        minLength: Int? = nil,
-        maxLength: Int? = nil,
-        minimum: Double? = nil,
-        maximum: Double? = nil,
-        items: JsonSchemaPropertyValue? = nil
-    ) {
-        self.type = type
-        self.schemaDescription = schemaDescription
-        self.format = format
-        self.pattern = pattern
-        self.minLength = minLength
-        self.maxLength = maxLength
-        self.minimum = minimum
-        self.maximum = maximum
-        self.items = items
-    }
-}
-
-// MARK: - Factory Methods
-
-extension DPPDataContract {
-    /// Create a simple data contract
-    public static func create(
-        id: Identifier? = nil,
-        ownerId: Identifier,
-        documentTypes: [DocumentName: DocumentType] = [:],
-        contractDescription: String? = nil
-    ) -> DPPDataContract {
-        let contractId = id ?? Data(UUID().uuidString.utf8).prefix(32).paddedToLength(32)
-
-        return DPPDataContract(
-            id: contractId,
-            version: 0,
-            ownerId: ownerId,
-            documentTypes: documentTypes,
-            config: DataContractConfig(
-                canBeDeleted: false,
-                readOnly: false,
-                keepsHistory: true,
-                documentsKeepRevisionLogForPassedTimeMs: nil,
-                documentsMutableContractDefaultStored: true
-            ),
-            schemaDefs: nil,
-            createdAt: TimestampMillis(Date().timeIntervalSince1970 * 1000),
-            updatedAt: nil,
-            createdAtBlockHeight: nil,
-            updatedAtBlockHeight: nil,
-            createdAtEpoch: nil,
-            updatedAtEpoch: nil,
-            groups: [:],
-            tokens: [:],
-            keywords: [],
-            contractDescription: contractDescription
-        )
-    }
-}

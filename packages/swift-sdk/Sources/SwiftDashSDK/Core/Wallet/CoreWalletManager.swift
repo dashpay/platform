@@ -283,33 +283,6 @@ public class CoreWalletManager: ObservableObject {
         return wallet
     }
 
-    public func decryptSeed(_ encryptedSeed: Data?) -> Data? {
-        // This method is used internally by other services
-        // In a real implementation, this would decrypt using the current PIN
-        // For now, return nil to indicate manual unlock is needed
-        return nil
-    }
-
-    public func changeWalletPIN(currentPIN: String, newPIN: String) async throws {
-        // Retrieve seed with current PIN
-        let seed = try storage.retrieveSeed(pin: currentPIN)
-
-        // Re-encrypt with new PIN
-        _ = try storage.storeSeed(seed, pin: newPIN)
-    }
-
-    public func enableBiometricProtection(pin: String) async throws {
-        // First verify PIN and get seed
-        let seed = try storage.retrieveSeed(pin: pin)
-
-        // Enable biometric protection
-        try storage.enableBiometricProtection(for: seed)
-    }
-
-    public func unlockWithBiometric() async throws -> Data {
-        return try storage.retrieveSeedWithBiometric()
-    }
-
     // MARK: - Account Management
 
     /// Build a signed transaction

@@ -31,7 +31,7 @@ class SPVClient: @unchecked Sendable {
         return false
     }()
 
-    init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, eventHandlers: SPVEventHandlers? = nil) throws {
+    init(network: DashSDKNetwork = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, eventHandlers: SPVEventHandlers? = nil) throws {
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")

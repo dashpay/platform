@@ -96,28 +96,4 @@ public class Mnemonic {
 
         return seed
     }
-
-    /// Get word count from a mnemonic phrase
-    /// - Parameter mnemonic: The mnemonic phrase
-    /// - Returns: The number of words
-    public static func wordCount(of mnemonic: String) throws -> UInt32 {
-        var error = FFIError()
-
-        let count = mnemonic.withCString { mnemonicCStr in
-            mnemonic_word_count(mnemonicCStr, &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        // Check if there was an error
-        if error.code != FFIErrorCode(rawValue: 0) {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        return count
-    }
 }

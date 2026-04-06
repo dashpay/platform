@@ -206,59 +206,6 @@ public enum KeyValidator {
 
         return .invalid("Private key does not match any public key")
     }
-
-    /// Validates a private key string against an identity's public keys.
-    /// - Parameters:
-    ///   - privateKeyInput: The private key string (hex or WIF).
-    ///   - publicKeys: List of public keys to match against.
-    ///   - isTestnet: Whether to use testnet parameters.
-    /// - Returns: ValidationResult with the matched key or error.
-    public static func validatePrivateKeyInput(
-        _ privateKeyInput: String,
-        against publicKeys: [IdentityPublicKey],
-        isTestnet: Bool = true
-    ) -> ValidationResult {
-        let parseResult = PrivateKeyParser.parse(privateKeyInput)
-
-        guard let privateKey = parseResult.data else {
-            return .invalid(parseResult.error ?? "Failed to parse private key")
-        }
-
-        return validatePrivateKey(privateKey, against: publicKeys, isTestnet: isTestnet)
-    }
-}
-
-// MARK: - Key Size Validator
-
-/// Validates key sizes for different key types.
-public enum KeySizeValidator {
-
-    /// Expected private key size for a given key type.
-    /// - Parameter keyType: The type of key.
-    /// - Returns: Expected size in bytes.
-    public static func expectedPrivateKeySize(for keyType: KeyType) -> Int {
-        switch keyType {
-        case .ecdsaSecp256k1:
-            return 32  // 256 bits
-        case .bls12_381:
-            return 32  // 256 bits
-        case .ecdsaHash160:
-            return 32  // 256 bits for the actual key
-        case .bip13ScriptHash:
-            return 32  // 256 bits
-        case .eddsa25519Hash160:
-            return 32  // 256 bits
-        }
-    }
-
-    /// Validates that a private key has the correct size for its type.
-    /// - Parameters:
-    ///   - privateKey: The private key data.
-    ///   - keyType: The type of key.
-    /// - Returns: True if the size is correct.
-    public static func isValidSize(_ privateKey: Data, for keyType: KeyType) -> Bool {
-        privateKey.count == expectedPrivateKeySize(for: keyType)
-    }
 }
 
 // MARK: - Key Formatter
@@ -280,30 +227,5 @@ public enum KeyFormatter {
     /// - Returns: WIF string or nil if encoding fails.
     public static func toWIF(_ privateKey: Data, isTestnet: Bool = true) -> String? {
         WIFParser.encodeToWIF(privateKey, isTestnet: isTestnet)
-    }
-
-    /// Format a public key for display.
-    /// - Parameters:
-    ///   - publicKey: The public key.
-    ///   - truncate: If true, shows only first and last 8 characters.
-    /// - Returns: Formatted string.
-    public static func formatPublicKey(_ publicKey: IdentityPublicKey, truncate: Bool = false) -> String {
-        let hex = AddressTransformer.dataToHex(publicKey.data)
-        if truncate && hex.count > 20 {
-            return "\(hex.prefix(8))...\(hex.suffix(8))"
-        }
-        return hex
-    }
-
-    /// Format key information for display.
-    /// - Parameter publicKey: The public key to format.
-    /// - Returns: Multi-line description of the key.
-    public static func formatKeyInfo(_ publicKey: IdentityPublicKey) -> String {
-        """
-        Key ID: #\(publicKey.id)
-        Purpose: \(publicKey.purpose.name)
-        Type: \(publicKey.keyType.name)
-        Security: \(publicKey.securityLevel.name)
-        """
     }
 }

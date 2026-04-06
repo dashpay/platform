@@ -7,24 +7,6 @@ public class WalletManager {
     internal let network: KeyWalletNetwork
     private let ownsHandle: Bool
 
-    /// Create a new standalone wallet manager
-    /// Note: Consider using SPVClient.getWalletManager() instead if you have an SPV client
-    public init(network: KeyWalletNetwork = .mainnet,) throws {
-        var error = FFIError()
-      guard let managerHandle = wallet_manager_create(network.ffiValue, &error) else {
-            defer {
-                if error.message != nil {
-                    error_message_free(error.message)
-                }
-            }
-            throw KeyWalletError(ffiError: error)
-        }
-
-        self.handle = managerHandle
-        self.network = network
-        self.ownsHandle = true
-    }
-
     /// Create a wallet manager wrapper from an existing handle (does not own the handle)
     /// - Parameter handle: The FFI wallet manager handle
     internal init(handle: UnsafeMutablePointer<FFIWalletManager>) throws {
@@ -55,93 +37,6 @@ public class WalletManager {
 
     // MARK: - Wallet Management
 
-    /// Add a wallet from mnemonic
-    /// - Parameters:
-    ///   - mnemonic: The mnemonic phrase
-    ///   - passphrase: Optional BIP39 passphrase
-    ///   - accountOptions: Account creation options
-    /// - Returns: The wallet ID
-    @discardableResult
-    public func addWallet(mnemonic: String, passphrase: String? = nil,
-                          accountOptions: AccountCreationOption = .default) throws -> Data {
-        var error = FFIError()
-
-        let success = mnemonic.withCString { mnemonicCStr in
-            if case .specificAccounts = accountOptions {
-                var options = accountOptions.toFFIOptions()
-
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic_with_options(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &options, &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic_with_options(
-                        handle, mnemonicCStr, nil,
-                        &options, &error)
-                }
-            } else {
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic(
-                        handle, mnemonicCStr, nil,
-                        &error)
-        }
-            }
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        // Get the wallet IDs to return the newly added wallet ID
-        return try getWalletIds().last ?? Data()
-    }
-
-    /// Get all wallet IDs
-    /// - Returns: Array of wallet IDs (32-byte Data objects)
-    public func getWalletIds() throws -> [Data] {
-        var error = FFIError()
-        var walletIdsPtr: UnsafeMutablePointer<UInt8>?
-        var count: size_t = 0
-
-        let success = wallet_manager_get_wallet_ids(handle, &walletIdsPtr, &count, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            if let ptr = walletIdsPtr {
-                wallet_manager_free_wallet_ids(ptr, count)
-            }
-        }
-
-        guard success, let ptr = walletIdsPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        var walletIds: [Data] = []
-        for i in 0..<count {
-            let offset = i * 32
-            let idData = Data(bytes: ptr.advanced(by: offset), count: 32)
-            walletIds.append(idData)
-        }
-
-        return walletIds
-    }
-
     /// Get a wallet by ID
     /// - Parameter walletId: The wallet ID (32 bytes)
     /// - Returns: The wallet if found
@@ -168,27 +63,6 @@ public class WalletManager {
         // Wrap as non-owning wallet; the manager retains ownership
         let wallet = Wallet(nonOwningHandle: UnsafeRawPointer(ptr))
         return wallet
-    }
-
-    /// Get the number of wallets
-    public var walletCount: Int {
-        get throws {
-            var error = FFIError()
-            let count = wallet_manager_wallet_count(handle, &error)
-
-            defer {
-                if error.message != nil {
-                    error_message_free(error.message)
-                }
-            }
-
-            // Check if there was an error
-            if error.code != FFIErrorCode(rawValue: 0) {
-                throw KeyWalletError(ffiError: error)
-            }
-
-            return count
-        }
     }
 
     // MARK: - Address Management
@@ -255,101 +129,7 @@ public class WalletManager {
         return address
     }
 
-    /// Get next change address for a wallet
-    /// - Parameters:
-    ///   - walletId: The wallet ID
-    ///   - accountIndex: The account index
-    /// - Returns: The next change address
-    public func getChangeAddress(walletId: Data, accountIndex: UInt32 = 0) throws -> String {
-        guard walletId.count == 32 else {
-            throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
-        }
-
-        var error = FFIError()
-
-        // First get the managed wallet info
-        guard let managedInfo = walletId.withUnsafeBytes({ idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_get_managed_wallet_info(handle, idPtr, &error)
-        }) else {
-            defer {
-                if error.message != nil {
-                    error_message_free(error.message)
-                }
-            }
-            throw KeyWalletError(ffiError: error)
-        }
-
-        defer {
-            managed_wallet_info_free(managedInfo)
-        }
-
-        // Get the wallet
-        guard let wallet = walletId.withUnsafeBytes({ idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_get_wallet(handle, idPtr, &error)
-        }) else {
-            defer {
-                if error.message != nil {
-                    error_message_free(error.message)
-                }
-            }
-            throw KeyWalletError(ffiError: error)
-        }
-
-        // Now get the change address
-        let addressPtr = managed_wallet_get_next_bip44_change_address(
-            managedInfo, wallet, accountIndex, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard let ptr = addressPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        let address = String(cString: ptr)
-        address_free(ptr)
-
-        return address
-    }
-
-
     // MARK: - Balance
-
-    /// Get wallet balance
-    /// - Parameter walletId: The wallet ID
-    /// - Returns: Tuple of (confirmed, unconfirmed) balance
-    public func getWalletBalance(walletId: Data) throws -> (confirmed: UInt64, unconfirmed: UInt64) {
-        guard walletId.count == 32 else {
-            throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
-        }
-
-        var error = FFIError()
-        var confirmed: UInt64 = 0
-        var unconfirmed: UInt64 = 0
-
-        let success = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_get_wallet_balance(
-                handle, idPtr, &confirmed, &unconfirmed, &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        return (confirmed: confirmed, unconfirmed: unconfirmed)
-    }
 
     /// Build a signed transaction
     /// - Parameters:
@@ -409,30 +189,6 @@ public class WalletManager {
         return (txData, fee)
     }
 
-    // MARK: - Block Height Management
-
-    /// Get the current block height for a network
-    /// - Parameter network: The network type
-    /// - Returns: The current block height
-    public func currentHeight() throws -> UInt32 {
-        var error = FFIError()
-
-        let height = wallet_manager_current_height(handle, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        // Check if there was an error
-        if error.code != FFIErrorCode(rawValue: 0) {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        return height
-    }
-
     // MARK: - Managed Accounts
 
     /// Get a managed account from a wallet
@@ -449,36 +205,6 @@ public class WalletManager {
         var result = walletId.withUnsafeBytes { idBytes in
             let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
             return managed_wallet_get_account(handle, idPtr, accountIndex, accountType.ffiValue)
-        }
-
-        defer {
-            if result.error_message != nil {
-                managed_core_account_result_free_error(&result)
-            }
-        }
-
-        guard let accountHandle = result.account else {
-            let errorMessage = result.error_message != nil ? String(cString: result.error_message!) : "Unknown error"
-            throw KeyWalletError.walletError(errorMessage)
-        }
-
-        return ManagedAccount(handle: accountHandle, manager: self)
-    }
-
-    /// Get a managed top-up account with a specific registration index
-    /// - Parameters:
-    ///   - walletId: The wallet ID
-    ///   - registrationIndex: The registration index
-    /// - Returns: The managed account
-    public func getManagedTopUpAccount(walletId: Data, registrationIndex: UInt32) throws -> ManagedAccount {
-        guard walletId.count == 32 else {
-            throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
-        }
-
-        var result = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
-            return managed_wallet_get_top_up_account_with_registration_index(
-                handle, idPtr, registrationIndex)
         }
 
         defer {

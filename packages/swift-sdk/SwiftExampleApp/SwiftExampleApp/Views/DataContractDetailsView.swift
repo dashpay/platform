@@ -1,5 +1,5 @@
 import SwiftUI
-import SwiftData
+import SwiftDashSDK
 import UIKit
 
 struct DataContractDetailsView: View {

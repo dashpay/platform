@@ -72,58 +72,6 @@ public struct IdentityModel: Identifiable, Equatable, Hashable {
         self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dpnsName: dpnsName, mainDpnsName: mainDpnsName, dpnsNames: dpnsNames, contestedDpnsNames: contestedDpnsNames, contestedDpnsInfo: contestedDpnsInfo, publicKeys: publicKeys, walletId: walletId, network: network)
     }
 
-    public init?(from identity: SwiftDashSDK.Identity) {
-        guard let idData = Data(hexString: identity.id), idData.count == 32 else { return nil }
-        self.id = idData
-        self._base58String = idData.toBase58String()
-        self.balance = identity.balance
-        self.isLocal = false
-        self.alias = nil
-        self.type = .user
-        self.privateKeys = []
-        self.votingPrivateKey = nil
-        self.ownerPrivateKey = nil
-        self.payoutPrivateKey = nil
-        self.dpnsName = nil
-        self.mainDpnsName = nil
-        self.dpnsNames = []
-        self.contestedDpnsNames = []
-        self.contestedDpnsInfo = [:]
-        self.publicKeys = []
-        self.walletId = nil
-        self.network = "testnet"
-    }
-
-    /// Create from DPP Identity
-    public init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], dpnsName: String? = nil, mainDpnsName: String? = nil, dpnsNames: [String] = [], contestedDpnsNames: [String] = [], contestedDpnsInfo: [String: Any] = [:], walletId: Data? = nil, network: String = "testnet") {
-        self.id = dppIdentity.id  // DPPIdentity already uses Data for id
-        self._base58String = dppIdentity.id.toBase58String()
-        self.balance = dppIdentity.balance
-        self.isLocal = false
-        self.alias = alias
-        self.type = type
-        self.privateKeys = privateKeys
-        self.dpnsName = dpnsName
-        self.mainDpnsName = mainDpnsName
-        self.dpnsNames = dpnsNames
-        self.contestedDpnsNames = contestedDpnsNames
-        self.contestedDpnsInfo = contestedDpnsInfo
-        self.publicKeys = Array(dppIdentity.publicKeys.values)
-        self.walletId = walletId
-        self.network = network
-
-        // Extract specific keys for masternodes
-        if type == .masternode || type == .evonode {
-            self.votingPrivateKey = nil // Would be set separately
-            self.ownerPrivateKey = nil  // Would be set separately
-            self.payoutPrivateKey = nil // Would be set separately
-        } else {
-            self.votingPrivateKey = nil
-            self.ownerPrivateKey = nil
-            self.payoutPrivateKey = nil
-        }
-    }
-
     public var formattedBalance: String {
         let dashAmount = Double(balance) / 100_000_000_000 // 1 DASH = 100B credits
         return String(format: "%.8f DASH", dashAmount)

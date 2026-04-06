@@ -118,11 +118,6 @@ public class ManagedAccountCollection {
         return ManagedAccount(handle: accountHandle, manager: manager)
     }
 
-    /// Check if identity registration account exists
-    public var hasIdentityRegistration: Bool {
-        return managed_account_collection_has_identity_registration(handle)
-    }
-
     /// Get an identity top-up account by registration index
     /// - Parameter registrationIndex: The registration index
     /// - Returns: The managed account if it exists
@@ -201,11 +196,6 @@ public class ManagedAccountCollection {
         return ManagedAccount(handle: accountHandle, manager: manager)
     }
 
-    /// Check if provider owner keys account exists
-    public var hasProviderOwnerKeys: Bool {
-        return managed_account_collection_has_provider_owner_keys(handle)
-    }
-
     /// Get the provider operator keys account
     public func getProviderOperatorKeysAccount() -> ManagedAccount? {
         guard let rawPointer = managed_account_collection_get_provider_operator_keys(handle) else {
@@ -213,11 +203,6 @@ public class ManagedAccountCollection {
         }
         let accountHandle = rawPointer.assumingMemoryBound(to: FFIManagedCoreAccount.self)
         return ManagedAccount(handle: accountHandle, manager: manager)
-    }
-
-    /// Check if provider operator keys account exists
-    public var hasProviderOperatorKeys: Bool {
-        return managed_account_collection_has_provider_operator_keys(handle)
     }
 
     /// Get the provider platform keys account
@@ -258,42 +243,5 @@ public class ManagedAccountCollection {
             return nil
         }
         return ManagedPlatformAccount(handle: accountHandle)
-    }
-
-    /// Get all platform payment account keys from this collection.
-    /// - Returns: Array of account key identifiers (account index + key class).
-    public func getPlatformPaymentKeys() -> [PlatformPaymentAccountKey] {
-        var keysPtr: UnsafeMutablePointer<FFIPlatformPaymentAccountKey>?
-        var count: Int = 0
-
-        let success = managed_account_collection_get_platform_payment_keys(handle, &keysPtr, &count)
-
-        guard success, let ptr = keysPtr, count > 0 else {
-            return []
-        }
-
-        defer {
-            managed_account_collection_free_platform_payment_keys(ptr, count)
-        }
-
-        return (0..<count).map { i in
-            let ffiKey = ptr[i]
-            return PlatformPaymentAccountKey(account: ffiKey.account, keyClass: ffiKey.key_class)
-        }
-    }
-
-    // MARK: - Summary
-
-    /// Get a summary of all accounts in this collection
-    public func getSummary() -> ManagedAccountCollectionSummary? {
-        guard let summaryPtr = managed_account_collection_summary_data(handle) else {
-            return nil
-        }
-
-        defer {
-            managed_account_collection_summary_free(summaryPtr)
-        }
-
-        return ManagedAccountCollectionSummary(ffiSummary: summaryPtr.pointee)
     }
 }

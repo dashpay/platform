@@ -14,7 +14,6 @@ import SwiftDashSDK
 @main
 struct SwiftExampleAppApp: App {
     @StateObject private var unifiedState = UnifiedAppState()
-    @State private var shouldResetApp = false
 
     init() {
         // Suppress auto layout constraint warnings in debug builds
@@ -26,45 +25,19 @@ struct SwiftExampleAppApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if shouldResetApp {
-                // Show reset view
-                VStack(spacing: 20) {
-                    ProgressView("Resetting app...")
-                        .scaleEffect(1.5)
-                    Text("The app is being reset to its initial state.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            ContentView()
+                .environmentObject(unifiedState)
+                .environmentObject(unifiedState.walletService)
+                .environmentObject(unifiedState.platformState)
+                .environmentObject(unifiedState.shieldedService)
+                .environmentObject(unifiedState.platformBalanceSyncService)
+                .environmentObject(unifiedState.zkSyncService)
+                .environment(\.modelContext, unifiedState.modelContainer.mainContext)
+                .task {
+                    SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
+                    await unifiedState.initialize()
+                    SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear {
-                    Task {
-                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                        await resetAppState()
-                    }
-                }
-            } else {
-                ContentView()
-                    .environmentObject(unifiedState)
-                    .environmentObject(unifiedState.walletService)
-                    .environmentObject(unifiedState.platformState)
-                    .environmentObject(unifiedState.unifiedState)
-                    .environmentObject(unifiedState.shieldedService)
-                    .environmentObject(unifiedState.platformBalanceSyncService)
-                    .environmentObject(unifiedState.zkSyncService)
-                    .environment(\.modelContext, unifiedState.modelContainer.mainContext)
-                    .task {
-                        SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
-                        await unifiedState.initialize()
-                        SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
-                    }
-            }
         }
-    }
-
-    @MainActor
-    private func resetAppState() async {
-        await unifiedState.reset()
-        await unifiedState.initialize()
-        shouldResetApp = false
     }
 }

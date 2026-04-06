@@ -55,7 +55,6 @@ public struct UserFacingError: Error, LocalizedError, Sendable, Equatable {
     public let category: ErrorCategory
     public let recoverySuggestion: String?
     public let underlyingError: String?
-    public let isRetryable: Bool
 
     public init(
         title: String,
@@ -63,14 +62,12 @@ public struct UserFacingError: Error, LocalizedError, Sendable, Equatable {
         category: ErrorCategory = .unknown,
         recoverySuggestion: String? = nil,
         underlyingError: String? = nil,
-        isRetryable: Bool = false
     ) {
         self.title = title
         self.message = message
         self.category = category
         self.recoverySuggestion = recoverySuggestion
         self.underlyingError = underlyingError
-        self.isRetryable = isRetryable
     }
 
     public var errorDescription: String? {
@@ -114,12 +111,6 @@ public enum ErrorFormatter {
             return description
         }
         return error.localizedDescription
-    }
-
-    /// Format an error with its category prefix
-    public static func formatWithCategory(_ error: Error, category: ErrorCategory) -> String {
-        let message = formatForDisplay(error)
-        return "[\(category.rawValue)] \(message)"
     }
 
     /// Extract a user-friendly message from any error
@@ -168,30 +159,12 @@ public enum ErrorFormatter {
             .map { "\($0.offset + 1). \($0.element)" }
             .joined(separator: "\n")
     }
-
-    /// Format an error for logging (includes more technical details)
-    public static func formatForLogging(_ error: Error, context: String? = nil) -> String {
-        var result = ""
-        if let ctx = context {
-            result += "[\(ctx)] "
-        }
-        result += String(describing: type(of: error))
-        result += ": "
-        result += error.localizedDescription
-
-        if let underlying = (error as NSError).userInfo[NSUnderlyingErrorKey] as? Error {
-            result += " (underlying: \(underlying.localizedDescription))"
-        }
-
-        return result
-    }
 }
 
 // MARK: - Error Recovery
 
 /// Provides recovery suggestions for common error types.
 public enum ErrorRecovery {
-
     /// Get recovery suggestion for an error category
     public static func suggestion(for category: ErrorCategory) -> String {
         switch category {
@@ -221,44 +194,6 @@ public enum ErrorRecovery {
             return "A system error occurred. Please try again later."
         case .unknown:
             return "An unexpected error occurred. Please try again."
-        }
-    }
-
-    /// Get recovery suggestion based on error message content
-    public static func suggestionFromMessage(_ message: String) -> String? {
-        let lowercased = message.lowercased()
-
-        if lowercased.contains("network") || lowercased.contains("connection") {
-            return suggestion(for: .network)
-        }
-        if lowercased.contains("timeout") || lowercased.contains("timed out") {
-            return suggestion(for: .timeout)
-        }
-        if lowercased.contains("invalid") || lowercased.contains("validation") {
-            return suggestion(for: .validation)
-        }
-        if lowercased.contains("not found") || lowercased.contains("notfound") {
-            return suggestion(for: .notFound)
-        }
-        if lowercased.contains("unauthorized") || lowercased.contains("authentication") {
-            return suggestion(for: .authentication)
-        }
-        if lowercased.contains("permission") || lowercased.contains("forbidden") {
-            return suggestion(for: .authorization)
-        }
-
-        return nil
-    }
-
-    /// Determine if an error is retryable based on its category
-    public static func isRetryable(category: ErrorCategory) -> Bool {
-        switch category {
-        case .network, .timeout, .system:
-            return true
-        case .validation, .userInput, .authentication, .authorization,
-             .notFound, .serialization, .cryptography, .storage,
-             .configuration, .unknown:
-            return false
         }
     }
 }
@@ -326,7 +261,6 @@ public enum ErrorCategorizer {
         let category = categorize(error)
         let message = ErrorFormatter.userFriendlyMessage(from: error)
         let suggestion = ErrorRecovery.suggestion(for: category)
-        let isRetryable = ErrorRecovery.isRetryable(category: category)
 
         return UserFacingError(
             title: category.rawValue,
@@ -334,205 +268,6 @@ public enum ErrorCategorizer {
             category: category,
             recoverySuggestion: suggestion,
             underlyingError: String(describing: error),
-            isRetryable: isRetryable
         )
-    }
-}
-
-// MARK: - Error Builder
-
-/// Fluent builder for creating UserFacingError instances.
-public final class ErrorBuilder: @unchecked Sendable {
-    private var title: String = "Error"
-    private var message: String = ""
-    private var category: ErrorCategory = .unknown
-    private var recoverySuggestion: String?
-    private var underlyingError: String?
-    private var isRetryable: Bool = false
-
-    public init() {}
-
-    @discardableResult
-    public func withTitle(_ title: String) -> ErrorBuilder {
-        self.title = title
-        return self
-    }
-
-    @discardableResult
-    public func withMessage(_ message: String) -> ErrorBuilder {
-        self.message = message
-        return self
-    }
-
-    @discardableResult
-    public func withCategory(_ category: ErrorCategory) -> ErrorBuilder {
-        self.category = category
-        return self
-    }
-
-    @discardableResult
-    public func withRecoverySuggestion(_ suggestion: String) -> ErrorBuilder {
-        self.recoverySuggestion = suggestion
-        return self
-    }
-
-    @discardableResult
-    public func withUnderlyingError(_ error: Error) -> ErrorBuilder {
-        self.underlyingError = String(describing: error)
-        return self
-    }
-
-    @discardableResult
-    public func retryable(_ isRetryable: Bool = true) -> ErrorBuilder {
-        self.isRetryable = isRetryable
-        return self
-    }
-
-    public func build() -> UserFacingError {
-        UserFacingError(
-            title: title,
-            message: message,
-            category: category,
-            recoverySuggestion: recoverySuggestion ?? ErrorRecovery.suggestion(for: category),
-            underlyingError: underlyingError,
-            isRetryable: isRetryable
-        )
-    }
-
-    // MARK: - Convenience Factory Methods
-
-    public static func validation(_ message: String) -> UserFacingError {
-        ErrorBuilder()
-            .withTitle("Validation Error")
-            .withMessage(message)
-            .withCategory(.validation)
-            .build()
-    }
-
-    public static func network(_ message: String) -> UserFacingError {
-        ErrorBuilder()
-            .withTitle("Network Error")
-            .withMessage(message)
-            .withCategory(.network)
-            .retryable()
-            .build()
-    }
-
-    public static func notFound(_ message: String) -> UserFacingError {
-        ErrorBuilder()
-            .withTitle("Not Found")
-            .withMessage(message)
-            .withCategory(.notFound)
-            .build()
-    }
-
-    public static func timeout(_ message: String = "The request took too long") -> UserFacingError {
-        ErrorBuilder()
-            .withTitle("Timeout")
-            .withMessage(message)
-            .withCategory(.timeout)
-            .retryable()
-            .build()
-    }
-
-    public static func authentication(_ message: String) -> UserFacingError {
-        ErrorBuilder()
-            .withTitle("Authentication Error")
-            .withMessage(message)
-            .withCategory(.authentication)
-            .build()
-    }
-
-    public static func userInput(_ message: String) -> UserFacingError {
-        ErrorBuilder()
-            .withTitle("Input Error")
-            .withMessage(message)
-            .withCategory(.userInput)
-            .build()
-    }
-}
-
-// MARK: - Result Extensions
-
-public extension Result where Failure == Error {
-    /// Convert a Result to a UserFacingError result
-    func mapToUserFacingError() -> Result<Success, UserFacingError> {
-        mapError { ErrorCategorizer.toUserFacingError($0) }
-    }
-
-    /// Get the error message if this is a failure
-    var errorMessage: String? {
-        if case .failure(let error) = self {
-            return ErrorFormatter.formatForDisplay(error)
-        }
-        return nil
-    }
-}
-
-// MARK: - Error Aggregator
-
-/// Aggregates multiple errors into a single error representation.
-public struct ErrorAggregator: Sendable {
-    private var errors: [UserFacingError] = []
-
-    public init() {}
-
-    public mutating func add(_ error: Error) {
-        errors.append(ErrorCategorizer.toUserFacingError(error))
-    }
-
-    public mutating func add(_ message: String, category: ErrorCategory = .unknown) {
-        errors.append(UserFacingError(
-            title: category.rawValue,
-            message: message,
-            category: category
-        ))
-    }
-
-    public mutating func addValidation(_ message: String) {
-        add(message, category: .validation)
-    }
-
-    public var hasErrors: Bool {
-        !errors.isEmpty
-    }
-
-    public var count: Int {
-        errors.count
-    }
-
-    public var allErrors: [UserFacingError] {
-        errors
-    }
-
-    public var messages: [String] {
-        errors.map { $0.message }
-    }
-
-    public var combinedMessage: String {
-        ErrorFormatter.formatValidationErrors(messages)
-    }
-
-    /// Get the most severe error (by category priority)
-    public var primaryError: UserFacingError? {
-        // Priority: system > network > authentication > validation > unknown
-        let priority: [ErrorCategory] = [
-            .system, .cryptography, .storage,
-            .network, .timeout,
-            .authentication, .authorization,
-            .serialization, .configuration,
-            .validation, .userInput, .notFound,
-            .unknown
-        ]
-
-        return errors.min { e1, e2 in
-            let p1 = priority.firstIndex(of: e1.category) ?? priority.count
-            let p2 = priority.firstIndex(of: e2.category) ?? priority.count
-            return p1 < p2
-        }
-    }
-
-    public mutating func clear() {
-        errors.removeAll()
     }
 }

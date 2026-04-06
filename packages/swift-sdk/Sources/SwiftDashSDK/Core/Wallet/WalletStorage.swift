@@ -84,19 +84,6 @@ public class WalletStorage {
         return try decryptData(encryptedSeed, with: key)
     }
 
-    public func deleteSeed() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: seedKeychainAccount
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
-
     // MARK: - PIN Management
 
     private func storePINHash(_ pin: String) throws {
@@ -139,58 +126,6 @@ public class WalletStorage {
         let hash = SHA256.hash(data: pinData)
 
         return Data(hash) == storedHash
-    }
-
-    // MARK: - Biometric Protection
-
-    public func enableBiometricProtection(for seed: Data) throws {
-        // Create access control with biometric authentication
-        var error: Unmanaged<CFError>?
-        guard let access = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .biometryCurrentSet,
-            &error
-        ) else {
-            throw WalletStorageError.biometricSetupFailed
-        }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: biometricKeychainAccount,
-            kSecValueData as String: seed,
-            kSecAttrAccessControl as String: access
-        ]
-
-        SecItemDelete(query as CFDictionary)
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
-
-    public func retrieveSeedWithBiometric() throws -> Data {
-        let context = LAContext()
-        context.localizedReason = "Authenticate to access your wallet"
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: biometricKeychainAccount,
-            kSecReturnData as String: true,
-            kSecUseAuthenticationContext as String: context
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let seed = result as? Data else {
-            throw WalletStorageError.biometricAuthenticationFailed
-        }
-
-        return seed
     }
 
     // MARK: - Encryption Helpers

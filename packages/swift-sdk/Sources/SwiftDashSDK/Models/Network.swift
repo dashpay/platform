@@ -41,22 +41,4 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
             return DashSDKNetwork(rawValue: 3)
         }
     }
-
-    public static var defaultNetwork: AppNetwork {
-        return .testnet
-    }
-
-    // Convert to KeyWalletNetwork for wallet operations
-    public func toKeyWalletNetwork() -> KeyWalletNetwork {
-        switch self {
-        case .mainnet:
-            return .mainnet
-        case .testnet:
-            return .testnet
-        case .regtest:
-            return .regtest
-        case .devnet:
-            return .devnet
-        }
-    }
 }

@@ -93,19 +93,6 @@ final class ValidationTests: XCTestCase {
         XCTAssertFalse(AddressValidator.validateBech32mAddress("notanaddress"))
     }
 
-    func testValidateAddress_autoDetect() {
-        // Hex address
-        let hexAddr = "00aaff11223344556677889900aabbccddeeff0011"
-        XCTAssertTrue(AddressValidator.validateAddress(hexAddr))
-
-        // Bech32m address (if valid)
-        let bech32mAddr = "tdashevo1qz4242424242424242424242424242424g4dj6u7"
-        XCTAssertTrue(AddressValidator.validateAddress(bech32mAddr))
-
-        // Invalid
-        XCTAssertFalse(AddressValidator.validateAddress("invalid"))
-    }
-
     // MARK: - TransferInputValidator Tests
 
     func testTransferInputValidator_allValid() {
@@ -381,11 +368,6 @@ final class ValidationTests: XCTestCase {
     }
 
     // MARK: - Identity ID Hex Validation Tests
-
-    func testValidateIdentityIdHex_valid() {
-        let validId = "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"
-        XCTAssertTrue(AddressValidator.validateIdentityIdHex(validId))
-    }
 
     func testIsHexIdentityId_valid() {
         let validId = "aaff11223344556677889900aabbccddeeff0011223344556677889900112233"

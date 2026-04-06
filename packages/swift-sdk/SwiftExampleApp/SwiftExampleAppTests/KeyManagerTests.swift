@@ -123,35 +123,6 @@ final class KeyManagerTests: XCTestCase {
         XCTAssertEqual(result.format, .unknown)
     }
 
-    // MARK: - KeySizeValidator Tests
-
-    func testExpectedPrivateKeySizeECDSA() {
-        XCTAssertEqual(KeySizeValidator.expectedPrivateKeySize(for: .ecdsaSecp256k1), 32)
-    }
-
-    func testExpectedPrivateKeySizeBLS() {
-        XCTAssertEqual(KeySizeValidator.expectedPrivateKeySize(for: .bls12_381), 32)
-    }
-
-    func testExpectedPrivateKeySizeEdDSA() {
-        XCTAssertEqual(KeySizeValidator.expectedPrivateKeySize(for: .eddsa25519Hash160), 32)
-    }
-
-    func testIsValidSizeCorrect() {
-        let key = Data(repeating: 0x00, count: 32)
-        XCTAssertTrue(KeySizeValidator.isValidSize(key, for: .ecdsaSecp256k1))
-    }
-
-    func testIsValidSizeTooShort() {
-        let key = Data(repeating: 0x00, count: 16)
-        XCTAssertFalse(KeySizeValidator.isValidSize(key, for: .ecdsaSecp256k1))
-    }
-
-    func testIsValidSizeTooLong() {
-        let key = Data(repeating: 0x00, count: 64)
-        XCTAssertFalse(KeySizeValidator.isValidSize(key, for: .ecdsaSecp256k1))
-    }
-
     // MARK: - KeyFormatter Tests
 
     func testToHex() {
@@ -208,15 +179,5 @@ final class KeyManagerTests: XCTestCase {
         let result = KeyValidator.validatePrivateKey(key, against: [])
         XCTAssertFalse(result.isValid)
         XCTAssertTrue(result.error?.contains("No public keys") ?? false)
-    }
-
-    func testValidatePrivateKeyInputEmpty() {
-        let result = KeyValidator.validatePrivateKeyInput("", against: [])
-        XCTAssertFalse(result.isValid)
-    }
-
-    func testValidatePrivateKeyInputInvalidFormat() {
-        let result = KeyValidator.validatePrivateKeyInput("not-a-key", against: [])
-        XCTAssertFalse(result.isValid)
     }
 }

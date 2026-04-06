@@ -4,12 +4,6 @@ import DashSDKFFI
 // MARK: - Platform Query Extensions for SDK
 @MainActor
 extension SDK {
-    // Helper to pass non-Sendable pointers across @Sendable closures when safe
-    private final class SendablePtr<T>: @unchecked Sendable {
-        let ptr: UnsafeMutablePointer<T>
-        init(_ p: UnsafeMutablePointer<T>) { self.ptr = p }
-    }
-
     // MARK: - Helper Functions
 
     /// Process DashSDKResult and extract JSON
