@@ -263,6 +263,7 @@ impl IdentityWallet {
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
+                        0,
                         AssetLockFundingType::IdentityRegistration,
                         identity_index,
                     )
@@ -283,6 +284,7 @@ impl IdentityWallet {
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
+                        0,
                         AssetLockFundingType::IdentityRegistration,
                         identity_index,
                     )
@@ -537,6 +539,7 @@ impl IdentityWallet {
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
+                        0,
                         AssetLockFundingType::IdentityRegistration,
                         identity_index,
                     )
@@ -635,6 +638,7 @@ impl IdentityWallet {
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
+                        0,
                         AssetLockFundingType::IdentityTopUp,
                         identity_index,
                     )
@@ -972,6 +976,7 @@ impl IdentityWallet {
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
+                        0,
                         AssetLockFundingType::IdentityTopUp,
                         identity_index,
                     )
@@ -992,6 +997,7 @@ impl IdentityWallet {
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
+                        0,
                         AssetLockFundingType::IdentityTopUp,
                         identity_index,
                     )

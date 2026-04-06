@@ -110,7 +110,7 @@ impl CoreWallet {
     ///
     /// Panics if called from an async context (use `wallet_info().await`
     /// instead).
-    pub fn blocking_wallet_info(&self) -> tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo> {
+    pub fn wallet_info_blocking(&self) -> tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo> {
         self.wallet_info.blocking_read()
     }
 
@@ -146,7 +146,7 @@ impl CoreWallet {
     ///
     /// # Panics
     /// Panics if called from an async context (use `wallet().await` instead).
-    pub fn blocking_wallet(&self) -> tokio::sync::RwLockReadGuard<'_, Wallet> {
+    pub fn wallet_blocking(&self) -> tokio::sync::RwLockReadGuard<'_, Wallet> {
         self.wallet.blocking_read()
     }
 
@@ -154,7 +154,7 @@ impl CoreWallet {
     ///
     /// # Panics
     /// Panics if called from an async context (use `wallet().write().await` instead).
-    pub fn blocking_wallet_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, Wallet> {
+    pub fn wallet_mut_blocking(&self) -> tokio::sync::RwLockWriteGuard<'_, Wallet> {
         self.wallet.blocking_write()
     }
 
@@ -188,14 +188,14 @@ impl CoreWallet {
     }
 
     /// Blocking version of `next_receive_address` for sync contexts.
-    pub fn blocking_next_receive_address(
+    pub fn next_receive_address_blocking(
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        self.blocking_next_receive_address_for_account(0)
+        self.next_receive_address_for_account_blocking(0)
     }
 
     /// Blocking version of `next_receive_address_for_account`.
-    pub fn blocking_next_receive_address_for_account(
+    pub fn next_receive_address_for_account_blocking(
         &self,
         account_index: u32,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
@@ -235,14 +235,14 @@ impl CoreWallet {
     }
 
     /// Blocking version of `next_change_address` for sync contexts.
-    pub fn blocking_next_change_address(
+    pub fn next_change_address_blocking(
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        self.blocking_next_change_address_for_account(0)
+        self.next_change_address_for_account_blocking(0)
     }
 
     /// Blocking version of `next_change_address_for_account`.
-    pub fn blocking_next_change_address_for_account(
+    pub fn next_change_address_for_account_blocking(
         &self,
         account_index: u32,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {

@@ -82,14 +82,19 @@ impl AssetLockManager {
         txid: &Txid,
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
-    ) {
+    ) -> Result<(), PlatformWalletError> {
         let mut map = self.tracked.write().await;
-        if let Some(entry) = map.get_mut(txid) {
-            entry.status = new_status;
-            if proof.is_some() {
-                entry.proof = proof;
-            }
+        let entry = map.get_mut(txid).ok_or_else(|| {
+            PlatformWalletError::AssetLockProofWait(format!(
+                "Asset lock {} is not tracked",
+                txid
+            ))
+        })?;
+        entry.status = new_status;
+        if proof.is_some() {
+            entry.proof = proof;
         }
+        Ok(())
     }
 }
 
@@ -100,12 +105,18 @@ impl AssetLockManager {
 impl AssetLockManager {
     /// Blocking version of [`recover_asset_lock`](Self::recover_asset_lock).
     ///
-    /// Uses `tokio::sync::RwLock::blocking_write` -- must NOT be called from
-    /// within a tokio async context.
-    pub fn blocking_recover_asset_lock(
+    /// Uses `tokio::sync::RwLock::blocking_write` / `blocking_read` — must NOT
+    /// be called from within a tokio async context.
+    ///
+    /// When `proof` is `None`, the method looks up the transaction's actual
+    /// on-chain context from `ManagedWalletInfo` to determine the correct
+    /// status (and constructs a `ChainAssetLockProof` if the TX is in a
+    /// chain-locked block).
+    pub fn recover_asset_lock_blocking(
         &self,
         tx: Transaction,
         amount: u64,
+        account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
         proof: Option<dpp::prelude::AssetLockProof>,
@@ -117,15 +128,21 @@ impl AssetLockManager {
             return;
         }
 
-        let status = match &proof {
-            Some(dpp::prelude::AssetLockProof::Instant(_)) => AssetLockStatus::InstantSendLocked,
-            Some(dpp::prelude::AssetLockProof::Chain(_)) => AssetLockStatus::ChainLocked,
-            None => AssetLockStatus::Broadcast,
+        let (status, proof) = match proof {
+            Some(ref p) => {
+                let status = match p {
+                    dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+                    dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+                };
+                (status, proof)
+            }
+            None => self.resolve_status_from_wallet_info(account_index, &txid),
         };
 
         let lock = TrackedAssetLock {
             txid,
             transaction: tx,
+            account_index,
             funding_type,
             identity_index,
             amount,
@@ -133,6 +150,48 @@ impl AssetLockManager {
             proof,
         };
         map.insert(txid, lock);
+    }
+
+    /// Determine asset lock status by looking up the transaction in
+    /// `ManagedWalletInfo`.
+    ///
+    /// If the TX is in a chain-locked block, returns `ChainLocked` with a
+    /// constructed `ChainAssetLockProof`. If the TX has an InstantSend
+    /// context, returns `InstantSendLocked` (without a proof, since we lack
+    /// the IS-lock data). Otherwise defaults to `Broadcast`.
+    fn resolve_status_from_wallet_info(
+        &self,
+        account_index: u32,
+        txid: &Txid,
+    ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let info = self.wallet_info.blocking_read();
+        let record = info
+            .accounts
+            .standard_bip44_accounts
+            .get(&account_index)
+            .and_then(|a| a.transactions.get(txid));
+
+        match record {
+            Some(record) => match &record.context {
+                TransactionContext::InChainLockedBlock(_) => {
+                    if let Some(height) = record.height() {
+                        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+                        let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                            core_chain_locked_height: height,
+                            out_point: dashcore::OutPoint::new(*txid, 0),
+                        });
+                        (AssetLockStatus::ChainLocked, Some(proof))
+                    } else {
+                        (AssetLockStatus::ChainLocked, None)
+                    }
+                }
+                TransactionContext::InstantSend => (AssetLockStatus::InstantSendLocked, None),
+                _ => (AssetLockStatus::Broadcast, None),
+            },
+            None => (AssetLockStatus::Broadcast, None),
+        }
     }
 }
 
@@ -190,12 +249,14 @@ impl AssetLockManager {
     /// # Arguments
     ///
     /// * `amount_duffs` — Amount to lock in duffs.
+    /// * `account_index` — BIP44 account index to select UTXOs from.
     /// * `funding_type` — Which account to derive the one-time key from
     ///   (e.g., `IdentityRegistration`, `IdentityTopUp`).
     /// * `identity_index` — Identity index (used by `IdentityTopUp`, ignored by others).
     pub async fn build_asset_lock_transaction(
         &self,
         amount_duffs: u64,
+        account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
     ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
@@ -229,9 +290,9 @@ impl AssetLockManager {
             identity_index,
         };
 
-        // 3. Delegate to the key-wallet builder (account 0 for UTXOs).
+        // 3. Delegate to the key-wallet builder.
         let result = wallet_info
-            .build_asset_lock(&wallet, 0, vec![funding], DEFAULT_FEE_PER_KB)
+            .build_asset_lock(&wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Asset lock builder failed: {}",
@@ -301,11 +362,73 @@ impl AssetLockManager {
                     })?;
                 (account, xpub)
             }
-            other => {
-                return Err(PlatformWalletError::AssetLockTransaction(format!(
-                    "Unsupported funding type for asset lock: {:?}",
-                    other
-                )));
+            AssetLockFundingType::IdentityTopUpNotBound => {
+                let xpub = wallet
+                    .accounts
+                    .identity_topup_not_bound
+                    .as_ref()
+                    .map(|a| a.account_xpub);
+                let account = wallet_info
+                    .accounts
+                    .identity_topup_not_bound
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Identity top-up (unbound) account not found".to_string(),
+                        )
+                    })?;
+                (account, xpub)
+            }
+            AssetLockFundingType::IdentityInvitation => {
+                let xpub = wallet
+                    .accounts
+                    .identity_invitation
+                    .as_ref()
+                    .map(|a| a.account_xpub);
+                let account = wallet_info
+                    .accounts
+                    .identity_invitation
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Identity invitation account not found".to_string(),
+                        )
+                    })?;
+                (account, xpub)
+            }
+            AssetLockFundingType::AssetLockAddressTopUp => {
+                let xpub = wallet
+                    .accounts
+                    .asset_lock_address_topup
+                    .as_ref()
+                    .map(|a| a.account_xpub);
+                let account = wallet_info
+                    .accounts
+                    .asset_lock_address_topup
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Asset lock address top-up account not found".to_string(),
+                        )
+                    })?;
+                (account, xpub)
+            }
+            AssetLockFundingType::AssetLockShieldedAddressTopUp => {
+                let xpub = wallet
+                    .accounts
+                    .asset_lock_shielded_address_topup
+                    .as_ref()
+                    .map(|a| a.account_xpub);
+                let account = wallet_info
+                    .accounts
+                    .asset_lock_shielded_address_topup
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Asset lock shielded address top-up account not found".to_string(),
+                        )
+                    })?;
+                (account, xpub)
             }
         };
 
@@ -352,18 +475,20 @@ impl AssetLockManager {
     /// ## Parameters
     ///
     /// * `amount_duffs` — Amount to lock.
+    /// * `account_index` — BIP44 account index to select UTXOs from.
     /// * `funding_type` — Which account to derive the one-time key from.
     /// * `identity_index` — HD identity index (for `IdentityTopUp`, this is
     ///   the registration index identifying which identity is being topped up).
     pub async fn create_funded_asset_lock_proof(
         &self,
         amount_duffs: u64,
+        account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey, Txid), PlatformWalletError> {
         // 1. Build the asset lock transaction.
         let (tx, key) = self
-            .build_asset_lock_transaction(amount_duffs, funding_type, identity_index)
+            .build_asset_lock_transaction(amount_duffs, account_index, funding_type, identity_index)
             .await?;
 
         let txid = tx.txid();
@@ -376,6 +501,7 @@ impl AssetLockManager {
                 TrackedAssetLock {
                     txid,
                     transaction: tx.clone(),
+                    account_index,
                     funding_type,
                     identity_index,
                     amount: amount_duffs,
@@ -400,17 +526,17 @@ impl AssetLockManager {
 
         // 4. Transition to Broadcast.
         self.advance_asset_lock_status(&txid, AssetLockStatus::Broadcast, None)
-            .await;
+            .await?;
 
         // 5. Wait for proof via SPV events.
         let proof = self
-            .wait_for_proof(&txid, &tx, Duration::from_secs(300))
+            .wait_for_proof(account_index, &txid, &tx, Duration::from_secs(300))
             .await?;
 
         // 5b. If we got an IS-lock proof, check whether the transaction is
         // old enough that Platform might reject it. If so, upgrade to a
         // ChainLock proof proactively.
-        let proof = self.validate_or_upgrade_proof(proof, &txid).await?;
+        let proof = self.validate_or_upgrade_proof(proof, account_index, &txid).await?;
 
         // 6. Attach proof — status matches the proof type received.
         let status = match &proof {
@@ -418,7 +544,7 @@ impl AssetLockManager {
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
         self.advance_asset_lock_status(&txid, status, Some(proof.clone()))
-            .await;
+            .await?;
 
         Ok((proof, key, txid))
     }
@@ -438,83 +564,59 @@ impl AssetLockManager {
     async fn validate_or_upgrade_proof(
         &self,
         proof: dpp::prelude::AssetLockProof,
+        account_index: u32,
         txid: &Txid,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use key_wallet::transaction_checking::TransactionContext;
 
         if !matches!(&proof, dpp::prelude::AssetLockProof::Instant(_)) {
             return Ok(proof);
         }
 
-        // Fetch transaction info from DAPI to check confirmation depth.
-        let tx_info = self.get_transaction_info(txid).await?;
+        let info = self.wallet_info.read().await;
+        let synced_height = info.metadata.synced_height;
 
-        if tx_info.is_chain_locked && tx_info.height > 0 && tx_info.confirmations > 8 {
-            // Transaction is old enough that the IS-lock quorum may have
-            // rotated. Check if Platform has verified this Core block.
+        let record = info
+            .accounts
+            .standard_bip44_accounts
+            .get(&account_index)
+            .and_then(|a| a.transactions.get(txid))
+            .ok_or_else(|| {
+                PlatformWalletError::AssetLockProofWait(format!(
+                    "Transaction {} not found in account {}",
+                    txid, account_index
+                ))
+            })?;
+
+        let is_chain_locked = matches!(record.context, TransactionContext::InChainLockedBlock(_));
+        let height = record.height().unwrap_or(0);
+        let confirmations = record.confirmations(synced_height);
+
+        // Drop the read lock before making the DAPI call.
+        drop(info);
+
+        if is_chain_locked && height > 0 && confirmations > 8 {
             let platform_height = self.get_platform_core_chain_locked_height().await?;
 
-            if tx_info.height <= platform_height {
+            if height <= platform_height {
                 tracing::info!(
                     "Upgrading IS-lock proof to ChainLock proof for tx {} \
                      (height={}, confirmations={}, platform_cl_height={})",
                     txid,
-                    tx_info.height,
-                    tx_info.confirmations,
+                    height,
+                    confirmations,
                     platform_height,
                 );
 
                 return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
-                    core_chain_locked_height: tx_info.height,
+                    core_chain_locked_height: height,
                     out_point: dashcore::OutPoint::new(*txid, 0),
                 }));
             }
         }
 
         Ok(proof)
-    }
-
-    /// Get transaction info from key-wallet's ManagedWalletInfo (local, no DAPI call).
-    ///
-    /// Asset lock transactions spend from the standard BIP44 account, so the
-    /// transaction record lives there. Falls back to scanning all accounts.
-    async fn get_transaction_info(
-        &self,
-        txid: &Txid,
-    ) -> Result<TransactionInfo, PlatformWalletError> {
-        use key_wallet::transaction_checking::TransactionContext;
-
-        let info = self.wallet_info.read().await;
-        let synced_height = info.metadata.synced_height;
-
-        // Check standard BIP44 account 0 first (most likely location).
-        let record = info
-            .accounts
-            .standard_bip44_accounts
-            .get(&0)
-            .and_then(|a| a.transactions.get(txid))
-            .or_else(|| {
-                // Fallback: scan all accounts.
-                info.accounts
-                    .all_accounts()
-                    .iter()
-                    .find_map(|a| a.transactions.get(txid))
-            });
-
-        match record {
-            Some(record) => Ok(TransactionInfo {
-                is_chain_locked: matches!(
-                    record.context,
-                    TransactionContext::InChainLockedBlock(_)
-                ),
-                height: record.height().unwrap_or(0),
-                confirmations: record.confirmations(synced_height),
-            }),
-            None => Err(PlatformWalletError::AssetLockProofWait(format!(
-                "Transaction {} not found in wallet",
-                txid
-            ))),
-        }
     }
 
     /// Fetch Platform's current `core_chain_locked_height` by querying the
@@ -542,22 +644,52 @@ impl AssetLockManager {
         txid: &Txid,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use key_wallet::transaction_checking::TransactionContext;
 
-        let tx_info = self.get_transaction_info(txid).await?;
+        let account_index = {
+            let map = self.tracked.read().await;
+            map.get(txid)
+                .map(|lock| lock.account_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockProofWait(format!(
+                        "Asset lock {} is not tracked",
+                        txid
+                    ))
+                })?
+        };
 
-        if !tx_info.is_chain_locked || tx_info.height == 0 {
+        let (is_chain_locked, height) = {
+            let info = self.wallet_info.read().await;
+            let record = info
+                .accounts
+                .standard_bip44_accounts
+                .get(&account_index)
+                .and_then(|a| a.transactions.get(txid))
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockProofWait(format!(
+                        "Transaction {} not found in account {}",
+                        txid, account_index
+                    ))
+                })?;
+            (
+                matches!(record.context, TransactionContext::InChainLockedBlock(_)),
+                record.height().unwrap_or(0),
+            )
+        };
+
+        if !is_chain_locked || height == 0 {
             return Err(PlatformWalletError::AssetLockNotChainLocked(format!(
                 "Transaction {} is not chain-locked (is_chain_locked={}, height={})",
-                txid, tx_info.is_chain_locked, tx_info.height
+                txid, is_chain_locked, height
             )));
         }
 
         let platform_height = self.get_platform_core_chain_locked_height().await?;
 
-        if tx_info.height > platform_height {
+        if height > platform_height {
             return Err(PlatformWalletError::AssetLockExpired(format!(
                 "Transaction {} is at height {} but Platform has only verified up to height {}",
-                txid, tx_info.height, platform_height
+                txid, height, platform_height
             )));
         }
 
@@ -565,12 +697,12 @@ impl AssetLockManager {
             "Building ChainLock proof for tx {} after IS-lock rejection \
              (height={}, platform_cl_height={})",
             txid,
-            tx_info.height,
+            height,
             platform_height,
         );
 
         Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
-            core_chain_locked_height: tx_info.height,
+            core_chain_locked_height: height,
             out_point: dashcore::OutPoint::new(*txid, 0),
         }))
     }
@@ -585,6 +717,7 @@ impl AssetLockManager {
     /// `FinalityTimeout` if the timeout elapses first.
     async fn wait_for_proof(
         &self,
+        account_index: u32,
         txid: &Txid,
         tx: &Transaction,
         timeout: Duration,
@@ -633,14 +766,8 @@ impl AssetLockManager {
                             let record = info
                                 .accounts
                                 .standard_bip44_accounts
-                                .get(&0)
-                                .and_then(|a| a.transactions.get(txid))
-                                .or_else(|| {
-                                    info.accounts
-                                        .all_accounts()
-                                        .iter()
-                                        .find_map(|a| a.transactions.get(txid))
-                                });
+                                .get(&account_index)
+                                .and_then(|a| a.transactions.get(txid));
 
                             if let Some(record) = record {
                                 if let Some(tx_height) = record.height() {
@@ -673,13 +800,6 @@ impl AssetLockManager {
             }
         }
     }
-}
-
-/// Transaction info returned by DAPI's Core gRPC endpoint.
-struct TransactionInfo {
-    is_chain_locked: bool,
-    height: u32,
-    confirmations: u32,
 }
 
 impl std::fmt::Debug for AssetLockManager {

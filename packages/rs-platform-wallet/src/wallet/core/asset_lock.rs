@@ -25,6 +25,8 @@ pub enum AssetLockStatus {
 pub struct TrackedAssetLock {
     pub txid: Txid,
     pub transaction: Transaction,
+    /// BIP44 account index that funded this asset lock (UTXO source).
+    pub account_index: u32,
     pub funding_type: AssetLockFundingType,
     pub identity_index: u32,
     pub amount: u64,
