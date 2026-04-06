@@ -4196,6 +4196,7 @@ chain height, reproducing the missing changesets.
 - No direct DB writes outside the changeset path
 - Recovery works correctly after crash at any point
 - Audit confirms no atomicity gaps (all cross-struct changes bundled)
+- SingleKeyWallet migrated to changeset path (currently uses direct DB writes — separate code path)
 
 #### Implementation Plan
 
