@@ -315,32 +315,24 @@ impl CoreWallet {
     /// Derive the BIP-44 account-level extended public key at
     /// `m/44'/coin_type'/account_index'`.
     ///
-    /// Used internally by address-generation methods that need the xpub
-    /// to derive child addresses.
+    /// Uses `AccountType::Standard` to build the derivation path, matching
+    /// the same approach used by the blocking address methods.
     async fn derive_account_xpub(
         &self,
         account_index: u32,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError> {
-        use key_wallet::bip32::{ChildNumber, DerivationPath};
-
-        let coin_type = if self.sdk.network == key_wallet::Network::Mainnet {
-            5u32 // DASH mainnet
-        } else {
-            1u32 // testnet/devnet/regtest all use coin_type 1
-        };
-
-        let path = DerivationPath::from(vec![
-            ChildNumber::from_hardened_idx(44).expect("valid"),
-            ChildNumber::from_hardened_idx(coin_type).expect("valid"),
-            ChildNumber::from_hardened_idx(account_index).map_err(|e| {
-                crate::error::PlatformWalletError::WalletCreation(format!(
-                    "Invalid account index: {}",
-                    e
-                ))
-            })?,
-        ]);
-
         let wallet = self.wallet.read().await;
+        let path = key_wallet::account::AccountType::Standard {
+            index: account_index,
+            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+        }
+        .derivation_path(wallet.network)
+        .map_err(|e| {
+            crate::error::PlatformWalletError::WalletCreation(format!(
+                "Invalid account index: {}",
+                e
+            ))
+        })?;
         wallet.derive_extended_public_key(&path).map_err(|e| {
             crate::error::PlatformWalletError::WalletCreation(format!(
                 "Failed to derive account xpub: {}",

@@ -56,7 +56,7 @@ fn build_message_hash(
 }
 
 /// Derive the auto-accept private key at `m/9'/coin'/16'/timestamp'`.
-fn derive_auto_accept_private_key(
+pub fn derive_auto_accept_private_key(
     wallet: &Wallet,
     network: Network,
     timestamp: u32,

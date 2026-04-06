@@ -6,6 +6,7 @@ pub mod established_contact;
 pub mod validation;
 pub mod wallet;
 
+pub use auto_accept::derive_auto_accept_private_key;
 pub use contact_request::ContactRequest;
 pub use dip14::{
     calculate_account_reference, derive_contact_payment_address, derive_contact_payment_addresses,

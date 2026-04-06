@@ -21,7 +21,8 @@ pub use wallet::core::{AssetLockStatus, CoreAddressInfo, CoreWallet, TrackedAsse
 pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;
 pub use wallet::dashpay::{
-    calculate_account_reference, derive_contact_payment_address, derive_contact_payment_addresses,
+    calculate_account_reference, derive_auto_accept_private_key,
+    derive_contact_payment_address, derive_contact_payment_addresses,
     derive_contact_xpub, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::identity::managed_identity::BlockTime;
