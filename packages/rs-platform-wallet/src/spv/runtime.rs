@@ -120,9 +120,9 @@ impl SpvRuntime {
 
     /// Broadcast a transaction to all connected SPV peers.
     ///
-    /// After a successful broadcast the transaction is also fed into the local
-    /// wallet adapter so that balances update immediately without waiting for
-    /// SPV to relay it back.
+    /// The transaction will be relayed back to us through SPV's bloom filter
+    /// matching, at which point the wallet adapter processes it and updates
+    /// balances automatically.
     pub async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
@@ -196,7 +196,11 @@ impl SpvRuntime {
             }
         };
 
-        self.stop().await?;
+        // Always attempt cleanup, but don't let a stop() failure mask the
+        // actual SPV run result.
+        if let Err(e) = self.stop().await {
+            tracing::warn!("SPV stop error during cleanup: {}", e);
+        }
         result
     }
 
