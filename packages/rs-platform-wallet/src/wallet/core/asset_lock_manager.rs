@@ -541,37 +541,33 @@ impl AssetLockManager {
         Ok(proof)
     }
 
-    /// Fetch transaction info (height, confirmations, chain-lock status) from
-    /// DAPI's Core gRPC endpoint.
+    /// Get transaction info from key-wallet's ManagedWalletInfo (local, no DAPI call).
     async fn get_transaction_info(
         &self,
         txid: &Txid,
     ) -> Result<TransactionInfo, PlatformWalletError> {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::GetTransactionRequest;
+        use key_wallet::transaction_checking::TransactionContext;
 
-        let response = self
-            .sdk
-            .execute(
-                GetTransactionRequest {
-                    id: txid.to_string(),
-                },
-                RequestSettings::default(),
-            )
-            .await
-            .into_inner()
-            .map_err(|e| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Failed to fetch transaction info for {}: {}",
-                    txid, e
-                ))
-            })?;
+        let info = self.wallet_info.read().await;
+        let synced_height = info.metadata.synced_height;
 
-        Ok(TransactionInfo {
-            is_chain_locked: response.is_chain_locked,
-            height: response.height,
-            confirmations: response.confirmations,
-        })
+        for account in info.accounts.all_accounts() {
+            if let Some(record) = account.transactions.get(txid) {
+                return Ok(TransactionInfo {
+                    is_chain_locked: matches!(
+                        record.context,
+                        TransactionContext::InChainLockedBlock(_)
+                    ),
+                    height: record.height().unwrap_or(0),
+                    confirmations: record.confirmations(synced_height),
+                });
+            }
+        }
+
+        Err(PlatformWalletError::AssetLockProofWait(format!(
+            "Transaction {} not found in wallet",
+            txid
+        )))
     }
 
     /// Fetch Platform's current `core_chain_locked_height` by querying the
