@@ -39,10 +39,11 @@ date: 2026-03-13
 17. **PR-17** ✅: Use dashcore asset lock builder — replaced ~190 lines of manual UTXO selection/fee/signing with `key-wallet::asset_lock_builder`. Updated dashcore to latest v0.42-dev (3f650020).
 18. **PR-18** ✅: Replace evo-tool Wallet model with CoreWallet — embedded PlatformWallet in Wallet struct, migrated all UI reads to lock-free WalletBalance + blocking_wallet_info(), removed platform_wallets bridge map, removed 6 duplicate fields. Migrated RPC send payment + all asset lock building to PlatformWallet. Removed ~1,600 lines of duplicate wallet code (transaction building, UTXO selection, balance caching, fallback paths). Remaining: utxos/known_addresses/watched_addresses/transactions fields for address derivation and QR-funded-UTXO flow.
 19. **PR-19** ✅: Migrate remaining Wallet fields — removed ALL 10 duplicate fields (balance, UTXO, address, transaction). DashPay contact accounts in ManagedWalletInfo. Arc<Sdk>, Arc<PlatformWallet>. ~2,700 lines removed.
-20. **PR-20**: Comprehensive test suite — port evo-tool tests to platform-wallet, mock SDK integration tests, E2E framework
-21. **PR-21**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
-22. **PR-22**: Serialization + persistence — ManagedWalletInfo blob, remove dead DB tables, FFI update
-21. **PR-21**: FFI update + serialization / persistence — fix `rs-platform-wallet-ffi` broken type paths from refactoring, update exports, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+20. **PR-20**: Complete identity/asset lock lifecycle in platform-wallet — one-call API for register/top-up, SPV finality integrated, remove evo-tool orchestration code
+21. **PR-21**: Remove remaining duplication — send_transaction via TransactionBuilder, remove dead asset lock code (TrackedAssetLock, DAPI streaming)
+22. **PR-22** ✅: ChangeSet-based persistence — compute-then-apply, persister on wallet, FlushStrategy
+23. **PR-23**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
+24. **PR-24**: Comprehensive test suite + FFI update + final cleanup
 
 ---
 
@@ -3818,7 +3819,109 @@ Summary of completed work:
 
 ---
 
-### PR-21: Merge Wallet + ManagedWalletInfo (dashcore)
+### PR-20: Complete Identity/Asset Lock Lifecycle
+
+**Goal**: Platform-wallet provides one-call APIs for identity registration and
+top-up. Apps never touch asset locks, finality tracking, or proof construction.
+
+#### Current problem
+
+Identity registration is split across repos:
+1. **Evo-tool** builds asset lock, broadcasts, tracks finality via SPV, waits for proof
+2. **Platform-wallet** has the identity state transition but expects pre-built proof
+3. **Platform-wallet SPV runtime** has `register_for_finality()`/`wait_for_finality()` but they're NEVER CALLED
+4. **Platform-wallet** has `broadcast_and_wait_for_asset_lock_proof()` that uses DAPI streaming instead of SPV
+
+This means:
+- Every app must reimplement asset lock orchestration (200+ lines)
+- SPV finality infrastructure exists but is unused
+- DAPI streaming approach is fragile (5min hardcoded timeout)
+- `TrackedAssetLock.status` never updates beyond `Broadcast`
+
+#### Proposed API
+
+```rust
+impl IdentityWallet {
+    /// Register identity — complete flow, one call.
+    /// Builds asset lock → broadcasts → waits for SPV proof → submits to Platform.
+    pub async fn register_identity(
+        &self,
+        amount_credits: u64,
+        keys: IdentityKeys,
+        identity_index: u32,
+    ) -> Result<Identity, PlatformWalletError>
+
+    /// Top up identity — complete flow, one call.
+    pub async fn top_up_identity(
+        &self,
+        identity_id: Identifier,
+        amount_credits: u64,
+        identity_index: u32,
+    ) -> Result<u64, PlatformWalletError>  // new balance
+}
+```
+
+#### Implementation steps
+
+**Step 1 — Wire SPV finality into CoreWallet:**
+- Replace `broadcast_and_wait_for_asset_lock_proof()` (DAPI streaming) with SPV-based waiting
+- Use existing `SpvRuntime::register_for_finality()` + `wait_for_finality()`
+- Build proper `AssetLockProof` from SPV events (InstantLock → InstantAssetLockProof, ChainLock → ChainAssetLockProof)
+- CoreWallet needs access to SpvRuntime (add reference or pass as parameter)
+
+**Step 2 — Unified `create_funded_asset_lock_proof()` on CoreWallet:**
+```rust
+pub async fn create_funded_asset_lock_proof(
+    &self,
+    amount_duffs: u64,
+    funding_type: AssetLockFundingType,
+    identity_index: u32,
+) -> Result<(AssetLockProof, PrivateKey, Txid), PlatformWalletError>
+```
+This: builds TX → registers for SPV finality → broadcasts → waits → returns proof.
+Single method, no caller-side orchestration.
+
+**Step 3 — IdentityWallet one-call methods:**
+- `register_identity()` calls `core.create_funded_asset_lock_proof()` then `register_identity_with_signer()`
+- `top_up_identity()` calls `core.create_funded_asset_lock_proof()` then `top_up_identity_with_signer()`
+- Handle proof type conversion (InstantLock expiry → ChainLock fallback) internally
+
+**Step 4 — Remove dead code from platform-wallet:**
+- Delete `create_registration_asset_lock_proof()` / `create_topup_asset_lock_proof()` (thin wrappers)
+- Delete `broadcast_and_wait_for_asset_lock_proof()` (DAPI streaming approach)
+- Delete `TrackedAssetLock`, `AssetLockStatus`, `tracked_asset_locks` field (never properly used)
+- Delete `asset_lock.rs` module if empty
+
+**Step 5 — Simplify evo-tool:**
+- `register_identity.rs` FundWithWallet path: replace 40 lines of asset lock orchestration with `platform_wallet.identity().register_identity()`
+- `top_up_identity.rs` FundWithWallet path: same
+- Remove `broadcast_and_commit_asset_lock()` (moves to platform-wallet)
+- Remove `transactions_waiting_for_finality` map from AppContext
+- Remove `wait_for_asset_lock_proof()` polling
+- Remove `spv_setup_finality_listener()` / `handle_spv_finality_event()` / `received_asset_lock_finality()` for asset locks
+- Keep SPV finality listener for non-asset-lock transaction status (if needed)
+- `create_asset_lock.rs`: either delete or simplify to call `core.create_funded_asset_lock_proof()`
+
+**Step 6 — Handle `unused_asset_locks` in evo-tool:**
+- `Wallet.unused_asset_locks` tracks asset locks created but not yet used (user created for later)
+- This is app-level state — stays in evo-tool
+- Platform-wallet doesn't need to know about "unused" locks — it just builds and uses them
+- Could move to a separate `AssetLockStore` in evo-tool for clarity
+
+---
+
+### PR-21: Remove Remaining Duplication
+
+**Goal**: Clean up remaining duplicated code identified in the duplication audit.
+
+- Replace CoreWallet's `send_transaction()` manual UTXO selection with key-wallet's `TransactionBuilder`
+- Remove dead `derive_account_xpub()` (already simplified to use AccountType)
+- Remove blocking address derivation path construction duplication
+- Clean up any remaining evo-tool code that duplicates platform-wallet
+
+---
+
+### PR-23: Merge Wallet + ManagedWalletInfo (dashcore)
 
 Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` — both are mutable and always used
 together. Single `Arc<RwLock<Wallet>>` containing all state.
