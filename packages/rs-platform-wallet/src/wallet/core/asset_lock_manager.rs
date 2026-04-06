@@ -112,6 +112,129 @@ impl AssetLockManager {
         let map = self.tracked.read().await;
         map.get(txid).cloned()
     }
+
+    /// Register a recovered asset lock (found on chain but not previously tracked).
+    ///
+    /// The caller is responsible for discovering the transaction (e.g. via Core
+    /// RPC `list_unspent` scan).  This method simply inserts it into the tracked
+    /// set so that it can be consumed for identity operations.
+    ///
+    /// If a lock with the same txid is already tracked, this is a no-op.
+    pub async fn recover_asset_lock(
+        &self,
+        tx: Transaction,
+        amount: u64,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        proof: Option<dpp::prelude::AssetLockProof>,
+    ) {
+        let txid = tx.txid();
+
+        let mut map = self.tracked.write().await;
+        if map.contains_key(&txid) {
+            return;
+        }
+
+        let status = match &proof {
+            Some(dpp::prelude::AssetLockProof::Instant(_)) => AssetLockStatus::InstantSendLocked,
+            Some(dpp::prelude::AssetLockProof::Chain(_)) => AssetLockStatus::ChainLocked,
+            None => AssetLockStatus::Broadcast,
+        };
+
+        let lock = TrackedAssetLock {
+            txid,
+            transaction: tx,
+            funding_type,
+            identity_index,
+            amount,
+            status,
+            proof,
+        };
+        map.insert(txid, lock);
+    }
+
+    /// Return a snapshot of all tracked asset locks.
+    pub async fn all_tracked_asset_locks(&self) -> BTreeMap<Txid, TrackedAssetLock> {
+        self.tracked.read().await.clone()
+    }
+
+    /// Return the number of tracked asset locks.
+    pub async fn tracked_count(&self) -> usize {
+        self.tracked.read().await.len()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Blocking accessors (for synchronous / UI contexts)
+// ---------------------------------------------------------------------------
+
+impl AssetLockManager {
+    /// Blocking version of [`unused_asset_locks`](Self::unused_asset_locks).
+    ///
+    /// Uses `tokio::sync::RwLock::blocking_read` -- must NOT be called from
+    /// within a tokio async context.
+    pub fn blocking_unused_asset_locks(&self) -> BTreeMap<Txid, TrackedAssetLock> {
+        let map = self.tracked.blocking_read();
+        map.iter()
+            .filter(|(_, v)| v.proof.is_some())
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
+    }
+
+    /// Blocking version of [`all_tracked_asset_locks`](Self::all_tracked_asset_locks).
+    pub fn blocking_all_tracked_asset_locks(&self) -> BTreeMap<Txid, TrackedAssetLock> {
+        self.tracked.blocking_read().clone()
+    }
+
+    /// Blocking version of [`get_asset_lock`](Self::get_asset_lock).
+    pub fn blocking_get_asset_lock(&self, txid: &Txid) -> Option<TrackedAssetLock> {
+        self.tracked.blocking_read().get(txid).cloned()
+    }
+
+    /// Blocking version of [`remove_asset_lock`](Self::remove_asset_lock).
+    pub fn blocking_remove_asset_lock(&self, txid: &Txid) {
+        self.tracked.blocking_write().remove(txid);
+    }
+
+    /// Blocking version of [`track_asset_lock`](Self::track_asset_lock).
+    pub fn blocking_track_asset_lock(&self, lock: TrackedAssetLock) {
+        let mut map = self.tracked.blocking_write();
+        map.insert(lock.txid, lock);
+    }
+
+    /// Blocking version of [`recover_asset_lock`](Self::recover_asset_lock).
+    pub fn blocking_recover_asset_lock(
+        &self,
+        tx: Transaction,
+        amount: u64,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        proof: Option<dpp::prelude::AssetLockProof>,
+    ) {
+        let txid = tx.txid();
+
+        let mut map = self.tracked.blocking_write();
+        if map.contains_key(&txid) {
+            return;
+        }
+
+        let status = match &proof {
+            Some(dpp::prelude::AssetLockProof::Instant(_)) => AssetLockStatus::InstantSendLocked,
+            Some(dpp::prelude::AssetLockProof::Chain(_)) => AssetLockStatus::ChainLocked,
+            None => AssetLockStatus::Broadcast,
+        };
+
+        let lock = TrackedAssetLock {
+            txid,
+            transaction: tx,
+            funding_type,
+            identity_index,
+            amount,
+            status,
+            proof,
+        };
+        map.insert(txid, lock);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +542,7 @@ impl AssetLockManager {
                         ))) => {
                             use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
+                            // TODO: How do we know that transaction is actually included in the locked block?
                             let proof = dpp::prelude::AssetLockProof::Chain(
                                 ChainAssetLockProof {
                                     core_chain_locked_height: chain_lock.block_height,
