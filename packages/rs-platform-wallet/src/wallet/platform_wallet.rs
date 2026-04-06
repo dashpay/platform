@@ -309,6 +309,25 @@ impl PlatformWallet {
         Ok(())
     }
 
+    /// Load persisted state from the attached persistence backend and apply it
+    /// to the in-memory wallet.
+    ///
+    /// Calls [`PlatformWalletPersistence::initialize`] to read the stored
+    /// changeset, then [`apply`](Self::apply) to hydrate in-memory state.
+    /// Returns `Ok(())` if no persister is attached (nothing to load).
+    pub fn load_persisted_state(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(persister) = &self.persister {
+            let changeset = persister.lock().map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("persister lock poisoned: {}", e),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?.initialize()?;
+            self.apply(&changeset);
+        }
+        Ok(())
+    }
+
     /// Apply a changeset to in-memory wallet state.
     ///
     /// Currently applies key-wallet sub-changesets to `ManagedWalletInfo`.
