@@ -8,6 +8,7 @@ use tokio::sync::{broadcast, RwLock};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 
+use crate::changeset::{Merge, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 use crate::spv::SpvRuntime;
@@ -31,11 +32,12 @@ pub struct PlatformWalletManager {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     spv: SpvRuntime,
+    persister: Arc<dyn PlatformWalletPersistence>,
 }
 
 impl PlatformWalletManager {
     /// Create a new PlatformWalletManager.
-    pub fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
+    pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<dyn PlatformWalletPersistence>) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let wallets = Arc::new(RwLock::new(BTreeMap::new()));
         let spv = SpvRuntime::new(Arc::clone(&wallets), event_tx.clone());
@@ -44,6 +46,7 @@ impl PlatformWalletManager {
             wallets,
             event_tx,
             spv,
+            persister,
         }
     }
 
@@ -62,16 +65,20 @@ impl PlatformWalletManager {
         self.event_tx.subscribe()
     }
 
-    /// Create a PlatformWallet from raw seed bytes and register it.
+    /// Create a PlatformWallet from raw seed bytes, initialize persisted
+    /// state, register it with the manager and return an `Arc` handle.
     ///
     /// The wallet is created with the manager's shared event channel so
     /// SPV events (InstantLock / ChainLock) reach the `AssetLockManager`.
+    /// Persisted state (transactions, UTXOs, balances, identities) is loaded
+    /// from the shared persister and applied before the wallet is registered,
+    /// so the returned wallet is fully configured and ready for use.
     pub fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
         seed_bytes: [u8; 64],
         options: WalletAccountCreationOptions,
-    ) -> Result<PlatformWallet, PlatformWalletError> {
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::wallet::Wallet;
 
@@ -82,12 +89,41 @@ impl PlatformWalletManager {
             ))
         })?;
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(PlatformWallet::new(
+        let wallet_id = wallet_info.wallet_id;
+
+        let platform_wallet = PlatformWallet::new(
             Arc::clone(&self.sdk),
             wallet,
             wallet_info,
             self.event_tx.clone(),
-        ))
+            Arc::clone(&self.persister),
+        );
+
+        // Load persisted state and apply it to the in-memory wallet.
+        match self.persister.initialize(wallet_id) {
+            Ok(changeset) => {
+                if !changeset.is_empty() {
+                    platform_wallet.apply(&changeset);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "Failed to load persisted wallet state"
+                );
+            }
+        }
+
+        let platform_wallet = Arc::new(platform_wallet);
+
+        // Register with the manager so SPV processes this wallet.
+        if let Ok(mut wallets) = self.wallets.try_write() {
+            wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+        }
+        self.spv.notify_wallets_changed();
+
+        Ok(platform_wallet)
     }
 
     /// Remove a wallet from the manager.

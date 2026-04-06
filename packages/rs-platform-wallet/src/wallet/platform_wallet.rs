@@ -1,7 +1,6 @@
 //! The main PlatformWallet struct combining core, identity, dashpay, and platform sub-wallets.
 
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -50,8 +49,9 @@ pub struct PlatformWallet {
     /// events. A standalone wallet creates its own channel; a managed wallet
     /// shares the channel from `PlatformWalletManager`.
     pub(crate) event_tx: broadcast::Sender<PlatformWalletEvent>,
-    /// Optional persistence backend.  Set via [`set_persister`](Self::set_persister).
-    persister: Option<Arc<Mutex<Box<dyn PlatformWalletPersistence>>>>,
+    /// Shared persistence backend. Set during construction — all wallets
+    /// under the same [`PlatformWalletManager`] share a single persister.
+    persister: Arc<dyn PlatformWalletPersistence>,
 }
 
 impl PlatformWallet {
@@ -110,9 +110,10 @@ impl PlatformWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        Self::new(sdk, wallet, wallet_info, event_tx)
+        Self::new(sdk, wallet, wallet_info, event_tx, persister)
     }
 
     /// Create a PlatformWallet from a BIP-39 mnemonic.
@@ -122,6 +123,7 @@ impl PlatformWallet {
         mnemonic: &str,
         passphrase: &str,
         options: WalletAccountCreationOptions,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Result<Self, PlatformWalletError> {
         let mnemonic_obj: Mnemonic = mnemonic.parse().map_err(|e| {
             PlatformWalletError::WalletCreation(format!("Failed to parse mnemonic: {}", e))
@@ -145,7 +147,7 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
     }
 
     /// Create a PlatformWallet from an extended private key string.
@@ -155,6 +157,7 @@ impl PlatformWallet {
         sdk: Arc<dash_sdk::Sdk>,
         xprv: &str,
         options: WalletAccountCreationOptions,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Result<Self, PlatformWalletError> {
         use key_wallet::bip32::ExtendedPrivKey;
 
@@ -173,7 +176,7 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
     }
 
     /// Create a watch-only PlatformWallet from an extended public key string.
@@ -181,6 +184,7 @@ impl PlatformWallet {
         sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         xpub: &str,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Result<Self, PlatformWalletError> {
         use key_wallet::bip32::ExtendedPubKey;
         use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
@@ -199,7 +203,7 @@ impl PlatformWallet {
         );
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
     }
 
     /// Create a PlatformWallet from a BIP-39 Seed.
@@ -208,13 +212,14 @@ impl PlatformWallet {
         network: Network,
         seed: Seed,
         options: WalletAccountCreationOptions,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Result<Self, PlatformWalletError> {
         let wallet = Wallet::from_seed(seed, network, options).map_err(|e| {
             PlatformWalletError::WalletCreation(format!("Failed to create wallet from seed: {}", e))
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
     }
 
     /// Create a PlatformWallet from raw seed bytes (64 bytes).
@@ -227,6 +232,7 @@ impl PlatformWallet {
         network: Network,
         seed_bytes: [u8; 64],
         options: WalletAccountCreationOptions,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Result<Self, PlatformWalletError> {
         let wallet = Wallet::from_seed_bytes(seed_bytes, network, options).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
@@ -236,7 +242,7 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
     }
 
     /// Create a PlatformWallet with a random mnemonic. Returns the wallet and the mnemonic.
@@ -244,6 +250,7 @@ impl PlatformWallet {
         sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         options: WalletAccountCreationOptions,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Result<(Self, Mnemonic), PlatformWalletError> {
         let mnemonic =
             Mnemonic::generate(12, key_wallet::mnemonic::Language::English).map_err(|e| {
@@ -262,7 +269,7 @@ impl PlatformWallet {
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
         Ok((
-            Self::new_with_dummy_event(sdk, wallet, wallet_info),
+            Self::new_with_dummy_event(sdk, wallet, wallet_info, persister),
             mnemonic,
         ))
     }
@@ -277,6 +284,7 @@ impl PlatformWallet {
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
+        persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Self {
         let wallet_id = wallet_info.wallet_id;
         let wallet = Arc::new(RwLock::new(wallet));
@@ -322,63 +330,20 @@ impl PlatformWallet {
             tokens,
             asset_locks,
             event_tx,
-            persister: None,
+            persister,
         }
     }
 }
 
 impl PlatformWallet {
-    /// Attach a persistence backend.
-    ///
-    /// The persister is wrapped in `Arc<Mutex<..>>` so it can be shared across
-    /// clones and accessed from synchronous contexts (SPV callbacks).
-    pub fn set_persister(&mut self, persister: Box<dyn PlatformWalletPersistence>) {
-        self.persister = Some(Arc::new(Mutex::new(persister)));
-    }
-
     /// Queue a changeset for later persistence.
-    ///
-    /// If no persister is attached this is a no-op.
     pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
-        if let Some(persister) = &self.persister {
-            if let Ok(mut p) = persister.lock() {
-                p.queue(changeset);
-            }
-        }
+        self.persister.queue(self.wallet_id, changeset);
     }
 
     /// Flush all queued changesets to the storage backend.
-    ///
-    /// Returns `Ok(())` if no persister is attached or the flush succeeds.
     pub fn flush_persist(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if let Some(persister) = &self.persister {
-            if let Ok(mut p) = persister.lock() {
-                p.flush()?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Load persisted state from the attached persistence backend and apply it
-    /// to the in-memory wallet.
-    ///
-    /// Calls [`PlatformWalletPersistence::initialize`] to read the stored
-    /// changeset, then [`apply`](Self::apply) to hydrate in-memory state.
-    /// Returns `Ok(())` if no persister is attached (nothing to load).
-    pub fn load_persisted_state(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if let Some(persister) = &self.persister {
-            let changeset = persister
-                .lock()
-                .map_err(|e| {
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("persister lock poisoned: {}", e),
-                    )) as Box<dyn std::error::Error + Send + Sync>
-                })?
-                .initialize()?;
-            self.apply(&changeset);
-        }
-        Ok(())
+        self.persister.flush(self.wallet_id)
     }
 
     /// Apply a changeset to in-memory wallet state.
@@ -417,8 +382,7 @@ impl Clone for PlatformWallet {
             tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),
             event_tx: self.event_tx.clone(),
-            // Cloned instances do not inherit the persister.
-            persister: None,
+            persister: Arc::clone(&self.persister),
         }
     }
 }
