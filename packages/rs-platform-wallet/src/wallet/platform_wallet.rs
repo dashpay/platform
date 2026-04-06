@@ -381,6 +381,10 @@ impl PlatformWallet {
                 // exposes an apply(WalletChangeSet) method.
             }
         }
+        // Apply asset lock changeset — restore tracked locks from persisted state.
+        if let Some(asset_lock_cs) = &changeset.asset_locks {
+            self.asset_locks.restore_from_changeset_blocking(asset_lock_cs);
+        }
         // TODO: apply contacts changeset
         // TODO: apply identities changeset
         // TODO: apply platform_addresses changeset
