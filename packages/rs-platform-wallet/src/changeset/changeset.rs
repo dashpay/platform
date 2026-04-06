@@ -20,6 +20,8 @@ use dpp::prelude::{CoreBlockHeight, Identifier};
 
 use key_wallet::dip9::DerivationPathReference;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::merge::Merge;
@@ -318,7 +320,7 @@ pub struct AssetLockChangeSet {
 
 /// A single asset lock entry in the changeset.
 ///
-/// Contains all fields needed to fully reconstruct a [`TrackedAssetLock`](crate::wallet::core::asset_lock::TrackedAssetLock).
+/// Contains all fields needed to fully reconstruct a [`TrackedAssetLock`](crate::wallet::asset_lock::tracked::TrackedAssetLock).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssetLockEntry {
     /// The outpoint identifying this credit output (txid + vout).
@@ -333,14 +335,8 @@ pub struct AssetLockEntry {
     pub identity_index: u32,
     /// The amount locked (in duffs).
     pub amount_duffs: u64,
-    /// Whether the lock has an InstantSend proof.
-    pub is_instant_locked: bool,
-    /// Whether the lock is in a ChainLocked block.
-    pub is_chain_locked: bool,
-    /// Whether the lock has been consumed (used for registration or top-up).
-    pub is_used: bool,
-    /// The identity this lock was used for, if any.
-    pub identity_id: Option<Identifier>,
+    /// Current status on Core chain.
+    pub status: AssetLockStatus,
     /// The asset lock proof, available once IS-locked or ChainLocked.
     pub proof: Option<AssetLockProof>,
 }

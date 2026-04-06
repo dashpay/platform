@@ -13,7 +13,7 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 
-use super::core::asset_lock_manager::AssetLockManager;
+use super::asset_lock::manager::AssetLockManager;
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};

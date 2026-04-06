@@ -21,7 +21,7 @@ use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 
-use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
+use super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 /// Default fee rate in duffs per kilobyte for asset lock transactions.
 const DEFAULT_FEE_PER_KB: u64 = 1000;
@@ -90,10 +90,7 @@ impl AssetLockManager {
                         funding_type: lock.funding_type,
                         identity_index: lock.identity_index,
                         amount_duffs: lock.amount,
-                        is_instant_locked: lock.status == AssetLockStatus::InstantSendLocked,
-                        is_chain_locked: lock.status == AssetLockStatus::ChainLocked,
-                        is_used: false, // still tracked = not consumed
-                        identity_id: None,
+                        status: lock.status.clone(),
                         proof: lock.proof.clone(),
                     },
                 )
@@ -110,16 +107,6 @@ impl AssetLockManager {
     pub(crate) fn restore_from_changeset_blocking(&self, changeset: &AssetLockChangeSet) {
         let mut map = self.tracked.blocking_write();
         for (out_point, entry) in &changeset.asset_locks {
-            if entry.is_used {
-                continue; // skip consumed locks
-            }
-            let status = if entry.is_chain_locked {
-                AssetLockStatus::ChainLocked
-            } else if entry.is_instant_locked {
-                AssetLockStatus::InstantSendLocked
-            } else {
-                AssetLockStatus::Broadcast
-            };
             map.insert(
                 *out_point,
                 TrackedAssetLock {
@@ -129,7 +116,7 @@ impl AssetLockManager {
                     funding_type: entry.funding_type,
                     identity_index: entry.identity_index,
                     amount: entry.amount_duffs,
-                    status,
+                    status: entry.status.clone(),
                     proof: entry.proof.clone(),
                 },
             );
@@ -670,6 +657,7 @@ impl AssetLockManager {
         // Drop the read lock before making the DAPI call.
         drop(info);
 
+        // TODO: This is weird - why would we wait for 8 confirmations if we already know it's chain-locked?
         if is_chain_locked && height > 0 && confirmations > 8 {
             let platform_height = self.get_platform_core_chain_locked_height().await?;
 

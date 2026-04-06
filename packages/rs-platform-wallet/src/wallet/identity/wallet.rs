@@ -33,7 +33,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::core::asset_lock_manager::AssetLockManager;
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_addresses::PlatformAddressWallet;
 use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 

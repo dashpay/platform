@@ -1,3 +1,4 @@
+pub mod asset_lock;
 pub mod core;
 pub mod dashpay;
 pub mod identity;
