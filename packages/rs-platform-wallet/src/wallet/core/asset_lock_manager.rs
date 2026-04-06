@@ -191,11 +191,9 @@ impl AssetLockManager {
         account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-        output_index: u32,
+        out_point: OutPoint,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) {
-        let out_point = OutPoint::new(tx.txid(), output_index);
-
         let mut map = self.tracked.blocking_write();
         if map.contains_key(&out_point) {
             return;
@@ -209,9 +207,7 @@ impl AssetLockManager {
                 };
                 (status, proof)
             }
-            None => {
-                self.resolve_status_from_wallet_info(account_index, &out_point.txid, output_index)
-            }
+            None => self.resolve_status_from_wallet_info(account_index, &out_point),
         };
 
         let lock = TrackedAssetLock {
@@ -237,8 +233,7 @@ impl AssetLockManager {
     fn resolve_status_from_wallet_info(
         &self,
         account_index: u32,
-        txid: &Txid,
-        output_index: u32,
+        out_point: &OutPoint,
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
         use key_wallet::transaction_checking::TransactionContext;
 
@@ -247,7 +242,7 @@ impl AssetLockManager {
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
-            .and_then(|a| a.transactions.get(txid));
+            .and_then(|a| a.transactions.get(&out_point.txid));
 
         match record {
             Some(record) => match &record.context {
@@ -256,7 +251,7 @@ impl AssetLockManager {
                         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
                         let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
                             core_chain_locked_height: height,
-                            out_point: OutPoint::new(*txid, output_index),
+                            out_point: *out_point,
                         });
                         (AssetLockStatus::ChainLocked, Some(proof))
                     } else {
@@ -679,7 +674,7 @@ impl AssetLockManager {
             let platform_height = self.get_platform_core_chain_locked_height().await?;
 
             if height <= platform_height {
-                tracing::info!(
+                tracing::debug!(
                     "Upgrading IS-lock proof to ChainLock proof for tx {} \
                      (height={}, confirmations={}, platform_cl_height={})",
                     out_point.txid,
@@ -915,12 +910,10 @@ impl AssetLockManager {
             {
                 if let TransactionContext::InChainLockedBlock(_) = &record.context {
                     if let Some(height) = record.height() {
-                        return Ok(dpp::prelude::AssetLockProof::Chain(
-                            ChainAssetLockProof {
-                                core_chain_locked_height: height,
-                                out_point: *out_point,
-                            },
-                        ));
+                        return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                            core_chain_locked_height: height,
+                            out_point: *out_point,
+                        }));
                     }
                 }
             }
@@ -1042,17 +1035,13 @@ impl AssetLockManager {
                 self.broadcast_transaction(&tx).await?;
                 self.advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
-                let proof = self
-                    .wait_for_proof(out_point, timeout)
-                    .await?;
+                let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
             AssetLockStatus::Broadcast => {
                 // Already broadcast — just wait for proof.
-                let proof = self
-                    .wait_for_proof(out_point, timeout)
-                    .await?;
+                let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
