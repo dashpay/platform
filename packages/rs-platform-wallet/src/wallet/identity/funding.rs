@@ -6,13 +6,13 @@
 //! ## Type overview
 //!
 //! * [`IdentityFunding`] — unified funding enum used by the new
-//!   `create_funded_asset_lock_proof` flow. Covers wallet-balance,
-//!   pre-existing asset locks, and specific-UTXO funding.
+//!   `create_funded_asset_lock_proof` flow. Covers wallet-balance and
+//!   pre-existing asset locks.
 //! * [`IdentityFundingMethod`] / [`TopUpFundingMethod`] — original per-operation
 //!   enums consumed by `register_identity_with_funding` and
 //!   `top_up_identity_with_funding`. Retained for backwards compatibility.
 
-use dashcore::{Address, OutPoint, PrivateKey, TxOut};
+use dashcore::{OutPoint, PrivateKey};
 use dpp::prelude::AssetLockProof;
 
 // ─── Unified funding enum ────────────────────────────────────────────────────
@@ -38,15 +38,6 @@ pub enum IdentityFunding {
         /// The outpoint identifying the tracked asset lock (txid + output index).
         out_point: OutPoint,
     },
-    /// Build an asset lock from a specific UTXO (e.g. QR-funded flow).
-    FromUtxo {
-        /// The outpoint identifying the UTXO to spend.
-        outpoint: OutPoint,
-        /// The transaction output being spent.
-        tx_out: TxOut,
-        /// The address that owns the UTXO.
-        address: Address,
-    },
 }
 
 // ─── Per-operation funding enums (original API) ──────────────────────────────
@@ -67,15 +58,6 @@ pub enum IdentityFundingMethod {
     FundWithWallet {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
-    },
-    /// Build an asset lock from a specific UTXO.
-    FundWithUtxo {
-        /// The outpoint identifying the UTXO to spend.
-        outpoint: OutPoint,
-        /// The transaction output being spent.
-        txout: TxOut,
-        /// The address that owns the UTXO.
-        address: Address,
     },
     // NOTE: FundFromAddresses (platform address funding, no asset lock) is
     // intentionally omitted for now. It requires a different state transition
@@ -99,14 +81,5 @@ pub enum TopUpFundingMethod {
     FundWithWallet {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
-    },
-    /// Build an asset lock from a specific UTXO.
-    FundWithUtxo {
-        /// The outpoint identifying the UTXO to spend.
-        outpoint: OutPoint,
-        /// The transaction output being spent.
-        txout: TxOut,
-        /// The address that owns the UTXO.
-        address: Address,
     },
 }

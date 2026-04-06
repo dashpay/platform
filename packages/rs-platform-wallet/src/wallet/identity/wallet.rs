@@ -311,9 +311,6 @@ impl IdentityWallet {
     ///
     /// * `UseAssetLock` - Use a pre-existing proof and private key directly.
     /// * `FundWithWallet` - Build an asset lock from wallet UTXOs (default).
-    /// * `FundWithUtxo` - Build an asset lock from a specific UTXO (TODO:
-    ///   requires a dedicated CoreWallet method; currently falls back to
-    ///   `FundWithWallet` using the UTXO's value).
     ///
     /// # IS -> CL fallback
     ///
@@ -343,27 +340,6 @@ impl IdentityWallet {
             IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             IdentityFundingMethod::FundWithWallet { amount_duffs } => {
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _out_point) = self
-                    .asset_locks
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
-                        0,
-                        AssetLockFundingType::IdentityRegistration,
-                        identity_index,
-                    )
-                    .await?;
-                (proof, key)
-            }
-            IdentityFundingMethod::FundWithUtxo {
-                outpoint: _,
-                txout,
-                address: _,
-            } => {
-                // TODO: Add an AssetLockManager method that builds an asset lock from
-                // a specific UTXO instead of selecting from the full UTXO set.
-                // For now, fall back to FundWithWallet using the UTXO's value.
-                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let amount_duffs = txout.value;
                 let (proof, key, _out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
@@ -602,7 +578,6 @@ impl IdentityWallet {
     /// * **`FromExistingAssetLock`** — resumes a tracked asset lock by outpoint,
     ///   re-deriving the proof and private key from whatever stage the lock
     ///   is at.
-    /// * **`FromUtxo`** — not yet implemented; returns an error.
     ///
     /// Unlike [`register_identity_with_funding`](Self::register_identity_with_funding),
     /// this method does **not** derive keys or manage the internal
@@ -640,12 +615,6 @@ impl IdentityWallet {
                     .resume_asset_lock(&out_point, Duration::from_secs(300))
                     .await?;
                 (proof, key, Some(out_point))
-            }
-            IdentityFunding::FromUtxo { .. } => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "FromUtxo funding is not yet implemented for funded_register_identity"
-                        .to_string(),
-                ));
             }
         };
 
@@ -708,7 +677,6 @@ impl IdentityWallet {
     /// * **`FromExistingAssetLock`** — resumes a tracked asset lock by outpoint,
     ///   re-deriving the proof and private key from whatever stage the lock
     ///   is at.
-    /// * **`FromUtxo`** — not yet implemented; returns an error.
     ///
     /// Unlike [`top_up_identity_with_funding`](Self::top_up_identity_with_funding),
     /// this method does **not** look up the identity in the internal
@@ -745,12 +713,6 @@ impl IdentityWallet {
                     .resume_asset_lock(&out_point, Duration::from_secs(300))
                     .await?;
                 (proof, key, Some(out_point))
-            }
-            IdentityFunding::FromUtxo { .. } => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "FromUtxo funding is not yet implemented for funded_top_up_identity"
-                        .to_string(),
-                ));
             }
         };
 
@@ -1038,9 +1000,6 @@ impl IdentityWallet {
     ///
     /// * `UseAssetLock` - Use a pre-existing proof and private key directly.
     /// * `FundWithWallet` - Build an asset lock from wallet UTXOs (default).
-    /// * `FundWithUtxo` - Build an asset lock from a specific UTXO (TODO:
-    ///   requires a dedicated CoreWallet method; currently falls back to
-    ///   `FundWithWallet` using the UTXO's value).
     ///
     /// # IS -> CL fallback
     ///
@@ -1071,27 +1030,6 @@ impl IdentityWallet {
             TopUpFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             TopUpFundingMethod::FundWithWallet { amount_duffs } => {
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _out_point) = self
-                    .asset_locks
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
-                        0,
-                        AssetLockFundingType::IdentityTopUp,
-                        identity_index,
-                    )
-                    .await?;
-                (proof, key)
-            }
-            TopUpFundingMethod::FundWithUtxo {
-                outpoint: _,
-                txout,
-                address: _,
-            } => {
-                // TODO: Add an AssetLockManager method that builds an asset lock from
-                // a specific UTXO instead of selecting from the full UTXO set.
-                // For now, fall back to FundWithWallet using the UTXO's value.
-                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let amount_duffs = txout.value;
                 let (proof, key, _out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
