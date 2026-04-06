@@ -48,6 +48,8 @@ pub struct AssetLockManager {
     /// credit outputs (DIP-0027), each consumable separately.
     /// Removed once consumed by a successful identity operation.
     tracked: Arc<RwLock<BTreeMap<OutPoint, TrackedAssetLock>>>,
+    /// Transaction broadcaster — DAPI or SPV depending on configuration.
+    broadcaster: Arc<dyn super::broadcaster::TransactionBroadcaster>,
 }
 
 impl AssetLockManager {
@@ -57,6 +59,7 @@ impl AssetLockManager {
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
+        broadcaster: Arc<dyn super::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         Self {
             sdk,
@@ -64,6 +67,7 @@ impl AssetLockManager {
             wallet_info,
             event_tx,
             tracked: Arc::new(RwLock::new(BTreeMap::new())),
+            broadcaster,
         }
     }
 }
@@ -279,40 +283,15 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
-    // TODO: Use SPV to broadcast
-    /// Broadcast a signed transaction to the network via DAPI.
+    /// Broadcast a signed transaction to the network.
     ///
-    /// Serializes the transaction using consensus encoding and sends it
-    /// through the SDK's DAPI client using the `BroadcastTransactionRequest`
-    /// gRPC call.
-    ///
-    /// Returns the transaction ID on success.
+    /// Delegates to the [`TransactionBroadcaster`] injected at construction —
+    /// either DAPI (gRPC) or SPV (P2P peers) depending on configuration.
     pub async fn broadcast_transaction(
         &self,
         transaction: &Transaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-        use dashcore::consensus;
-
-        let tx_bytes = consensus::serialize(transaction);
-
-        let request = BroadcastTransactionRequest {
-            transaction: tx_bytes,
-            allow_high_fees: false,
-            bypass_limits: false,
-        };
-
-        let _response = self
-            .sdk
-            .execute(request, RequestSettings::default())
-            .await
-            .into_inner()
-            .map_err(|e| {
-                PlatformWalletError::TransactionBroadcast(format!("DAPI broadcast failed: {}", e))
-            })?;
-
-        Ok(transaction.txid())
+        self.broadcaster.broadcast(transaction).await
     }
 }
 

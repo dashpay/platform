@@ -294,11 +294,15 @@ impl PlatformWallet {
 
         let core = CoreWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
 
+        let broadcaster = Arc::new(
+            crate::wallet::asset_lock::broadcaster::DapiBroadcaster::new(Arc::clone(&sdk)),
+        );
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             wallet.clone(),
             wallet_info.clone(),
             event_tx.clone(),
+            broadcaster,
         ));
 
         let identity = IdentityWallet {
