@@ -178,6 +178,62 @@ impl<'a> DriveDocumentCountQuery<'a> {
         }
     }
 
+    /// Executes the count query and generates a GroveDB proof.
+    ///
+    /// Returns the raw proof bytes. The caller is responsible for verifying
+    /// the proof and extracting the count from the verified result.
+    #[cfg(feature = "server")]
+    pub fn execute_with_proof(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let drive_version = &platform_version.drive;
+
+        // Build the same path as execute_no_proof
+        let mut path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+
+        // Walk the index properties, pushing property keys and equality values
+        for prop in &self.index.properties {
+            let matching_clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
+
+            if let Some(clause) = matching_clause {
+                path.push(prop.name.as_bytes().to_vec());
+                let serialized_value = self.document_type.serialize_value_for_key(
+                    prop.name.as_str(),
+                    &clause.value,
+                    platform_version,
+                )?;
+                path.push(serialized_value);
+            } else {
+                break;
+            }
+        }
+
+        // Build a path query that covers the count tree and its contents
+        let mut query = Query::new();
+        query.insert_all();
+
+        let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
+
+        let proof = drive
+            .grove
+            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
+            .unwrap()
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+
+        Ok(proof)
+    }
+
     /// Executes the total count query, returning a single u64 count.
     #[cfg(feature = "server")]
     fn execute_total_count(
@@ -579,6 +635,12 @@ mod tests {
             results[0].key.is_empty(),
             "expected empty key for total count"
         );
+
+        // Also verify proof generation works
+        let proof = query
+            .execute_with_proof(&drive, None, platform_version)
+            .expect("expected proof generation to succeed");
+        assert!(!proof.is_empty(), "expected non-empty proof");
     }
 
     #[test]
@@ -611,6 +673,12 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].count, 0, "expected count of 0 documents");
+
+        // Also verify proof generation works on empty index
+        let proof = query
+            .execute_with_proof(&drive, None, platform_version)
+            .expect("expected proof generation to succeed");
+        assert!(!proof.is_empty(), "expected non-empty proof");
     }
 
     #[test]
@@ -651,6 +719,12 @@ mod tests {
             assert!(!entry.key.is_empty(), "expected non-empty split key");
             assert!(entry.count > 0, "expected positive count per split");
         }
+
+        // Also verify proof generation works for split query
+        let proof = query
+            .execute_with_proof(&drive, None, platform_version)
+            .expect("expected proof generation to succeed");
+        assert!(!proof.is_empty(), "expected non-empty proof");
     }
 
     #[test]
