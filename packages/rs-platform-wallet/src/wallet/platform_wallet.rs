@@ -331,7 +331,11 @@ impl PlatformWallet {
             token_balances: BTreeMap::new(),
         }));
 
-        let core = CoreWallet::new(Arc::clone(&sdk), Arc::clone(&state));
+        let core = CoreWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&state),
+            Arc::clone(&broadcaster),
+        );
 
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),

@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use super::balance::WalletBalance;
 
-use dashcore::consensus;
 use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sighash::SighashCache;
 use dashcore::Address as DashAddress;
@@ -52,6 +51,9 @@ pub struct CoreWallet {
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
     pub(crate) balance: WalletBalance,
+    /// Injected broadcaster — delegates to SPV or DAPI depending on how
+    /// the wallet was constructed by `PlatformWalletManager`.
+    broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
 }
 
 impl CoreWallet {
@@ -59,11 +61,13 @@ impl CoreWallet {
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         state: Arc<RwLock<PlatformWalletInfo>>,
+        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         Self {
             sdk,
             state,
             balance: WalletBalance::new(),
+            broadcaster,
         }
     }
 
@@ -164,14 +168,7 @@ impl CoreWallet {
     pub fn next_receive_address_blocking(
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        self.next_receive_address_for_account_blocking(0)
-    }
-
-    /// Blocking version of `next_receive_address_for_account`.
-    pub fn next_receive_address_for_account_blocking(
-        &self,
-        account_index: u32,
-    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        let account_index = 0u32;
         let mut info = self.state.blocking_write();
         let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
         let account = info
@@ -191,7 +188,7 @@ impl CoreWallet {
     }
 
     /// Get the next unused change address for the default account.
-    pub async fn next_change_address(
+    pub(crate) async fn next_change_address(
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
         self.next_change_address_for_account(0).await
@@ -201,14 +198,7 @@ impl CoreWallet {
     pub fn next_change_address_blocking(
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        self.next_change_address_for_account_blocking(0)
-    }
-
-    /// Blocking version of `next_change_address_for_account`.
-    pub fn next_change_address_for_account_blocking(
-        &self,
-        account_index: u32,
-    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        let account_index = 0u32;
         let mut info = self.state.blocking_write();
         let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
         let account = info
@@ -288,39 +278,17 @@ impl CoreWallet {
 // ---------------------------------------------------------------------------
 
 impl CoreWallet {
-    // TODO: we already have one in AssetLockManager; also one in SPV. I guess we should utilize one which in SPV everywhere.
-    /// Broadcast a signed transaction to the network via DAPI.
+    /// Broadcast a signed transaction to the network.
     ///
-    /// Serializes the transaction using consensus encoding and sends it
-    /// through the SDK's DAPI client using the `BroadcastTransactionRequest`
-    /// gRPC call.
+    /// Delegates to the injected [`TransactionBroadcaster`] which may use
+    /// SPV (P2P) or DAPI (gRPC) depending on how the wallet was constructed.
     ///
     /// Returns the transaction ID on success.
     pub async fn broadcast_transaction(
         &self,
         transaction: &Transaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-
-        let tx_bytes = consensus::serialize(transaction);
-
-        let request = BroadcastTransactionRequest {
-            transaction: tx_bytes,
-            allow_high_fees: false,
-            bypass_limits: false,
-        };
-
-        let _response = self
-            .sdk
-            .execute(request, RequestSettings::default())
-            .await
-            .into_inner()
-            .map_err(|e| {
-                PlatformWalletError::TransactionBroadcast(format!("DAPI broadcast failed: {}", e))
-            })?;
-
-        Ok(transaction.txid())
+        self.broadcaster.broadcast(transaction).await
     }
 }
 
@@ -339,7 +307,7 @@ impl CoreWallet {
     /// 3. Builds the transaction with the requested outputs and a change
     ///    output (if above dust threshold).
     /// 4. Signs all inputs using the private keys derived from the wallet.
-    /// 5. Broadcasts the transaction via DAPI.
+    /// 5. Broadcasts the transaction via the injected [`TransactionBroadcaster`].
     ///
     /// Returns the signed and broadcast transaction.
     pub async fn send_transaction(
