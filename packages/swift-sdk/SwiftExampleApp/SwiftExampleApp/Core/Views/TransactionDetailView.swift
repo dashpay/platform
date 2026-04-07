@@ -66,10 +66,12 @@ struct TransactionDetailView: View {
                             value: !transaction.isConfirmed ? "Pending" : "Confirmed"
                         )
 
-                        TransactionDetailRow(
-                            label: "Date",
-                            value: formatDate(transaction.date)
-                        )
+                        if transaction.isConfirmed {
+                            TransactionDetailRow(
+                                label: "Date",
+                                value: formatDate(transaction.date)
+                            )
+                        }
 
                         if transaction.height != 0 {
                             TransactionDetailRow(
