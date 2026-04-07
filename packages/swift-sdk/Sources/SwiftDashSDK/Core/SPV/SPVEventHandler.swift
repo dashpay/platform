@@ -82,7 +82,7 @@ public protocol SPVProgressUpdateEventHandler: AnyObject {
 }
 
 extension SPVProgressUpdateEventHandler {
-    func intoFFIProgressCallback() -> FFIProgressCallback {
+    public func intoFFIProgressCallback() -> FFIProgressCallback {
         return FFIProgressCallback(
             on_progress: onSpvProgressUpdateCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
@@ -143,7 +143,7 @@ public protocol SPVSyncEventsHandler: AnyObject {
 }
 
 extension SPVSyncEventsHandler {
-    func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
+    public func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
         FFISyncEventCallbacks(
             on_sync_start: onSpvSyncStartCallbackC,
             on_block_headers_stored: onSpvBlockHeadersStoredCallbackC,
@@ -357,7 +357,7 @@ public protocol SPVNetworkEventsHandler: AnyObject {
 }
 
 extension SPVNetworkEventsHandler {
-    func intoFFINetworkEventCallbacks() -> FFINetworkEventCallbacks {
+    public func intoFFINetworkEventCallbacks() -> FFINetworkEventCallbacks {
         FFINetworkEventCallbacks(
             on_peer_connected: onSpvPeerConnectedCallbackC,
             on_peer_disconnected: onSpvPeerDisconnectedCallbackC,
@@ -441,7 +441,7 @@ public protocol SPVClientErrorEventsHandler: AnyObject {
 }
 
 extension SPVClientErrorEventsHandler {
-    func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
+    public func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
         FFIClientErrorCallback(
             on_error: onSpvClientErrorCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
@@ -502,7 +502,7 @@ public protocol SPVWalletEventsHandler: AnyObject {
 }
 
 extension SPVWalletEventsHandler {
-    func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
+    public func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
         FFIWalletEventCallbacks(
             on_transaction_received: onSpvTransactionReceivedCallbackC,
             on_transaction_status_changed: nil,
