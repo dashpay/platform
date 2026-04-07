@@ -91,14 +91,11 @@ mod tests {
                 platform_version,
             );
 
-            // This may return an empty map or error depending on whether the identity
-            // exists. With no identity inserted, the path query should return empty results.
-            match result {
-                Ok(map) => assert!(map.is_empty()),
-                Err(_) => {
-                    // Expected: path does not exist for non-existent identity
-                }
-            }
+            let map = result.expect("expected Ok result for non-existent identity");
+            assert!(
+                map.is_empty(),
+                "expected empty map for non-existent identity"
+            );
         }
 
         #[test]
@@ -139,12 +136,11 @@ mod tests {
                 platform_version,
             );
 
-            match result {
-                Ok(map) => assert!(map.is_empty()),
-                Err(_) => {
-                    // Also acceptable - contract info subtree may not exist
-                }
-            }
+            let map = result.expect("expected Ok result for identity without contract keys");
+            assert!(
+                map.is_empty(),
+                "expected empty map when no contract keys exist"
+            );
         }
 
         #[test]

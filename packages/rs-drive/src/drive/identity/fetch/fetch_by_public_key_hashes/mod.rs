@@ -279,15 +279,14 @@ mod tests {
             let non_unique_key = identity
                 .public_keys()
                 .values()
-                .find(|k| !k.key_type().is_unique_key_type());
+                .find(|k| !k.key_type().is_unique_key_type())
+                .expect("random identity should have at least one non-unique key");
 
-            if let Some(key) = non_unique_key {
-                let hash = key.public_key_hash().expect("should hash");
-                let result = drive
-                    .has_non_unique_public_key_hash(hash, None, &platform_version.drive)
-                    .expect("should not error");
-                assert!(result);
-            }
+            let hash = non_unique_key.public_key_hash().expect("should hash");
+            let result = drive
+                .has_non_unique_public_key_hash(hash, None, &platform_version.drive)
+                .expect("should not error");
+            assert!(result, "expected non-unique key hash to be found");
         }
     }
 

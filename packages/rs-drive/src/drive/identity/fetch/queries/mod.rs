@@ -713,6 +713,9 @@ mod tests {
 
             assert!(!pq.path.is_empty());
             assert!(pq.query.limit.is_none());
+            // Note: currently the document type parameter does not affect the
+            // query path structure. This may be a bug or an intentional
+            // simplification in the current implementation.
         }
 
         #[test]
