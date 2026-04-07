@@ -510,4 +510,223 @@ mod tests {
             MAX_P2SH_SIGNATURES + 1,
         );
     }
+
+    // --- Additional encode/decode round-trip tests ---
+
+    #[test]
+    fn test_p2pkh_empty_signature_round_trip() {
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+        assert!(decoded.is_p2pkh());
+    }
+
+    #[test]
+    fn test_p2pkh_65_byte_signature_round_trip() {
+        // Typical recoverable ECDSA signature is 65 bytes
+        let signature_data: Vec<u8> = (0..65).collect();
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(signature_data),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_p2sh_single_signature_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![BinaryData::new(vec![0x30, 0x44, 0x02, 0x20])],
+            redeem_script: BinaryData::new(vec![0x51, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+        assert!(decoded.is_p2sh());
+        assert_eq!(
+            decoded.redeem_script(),
+            Some(&BinaryData::new(vec![0x51, 0xae]))
+        );
+    }
+
+    #[test]
+    fn test_p2sh_empty_signatures_vec_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![],
+            redeem_script: BinaryData::new(vec![0x52, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_p2sh_empty_redeem_script_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![BinaryData::new(vec![0x00])],
+            redeem_script: BinaryData::new(vec![]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+    }
+
+    // --- Error path tests ---
+
+    #[test]
+    fn test_invalid_discriminant_decode_fails() {
+        // Manually craft a payload with discriminant 2 (invalid)
+        let mut data = vec![];
+        bincode::encode_into_std_write(&2u8, &mut data, config::standard()).unwrap();
+        // Add some dummy data
+        data.extend_from_slice(&[0x00, 0x00, 0x00]);
+
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Invalid AddressWitness discriminant"));
+    }
+
+    #[test]
+    fn test_invalid_discriminant_255_decode_fails() {
+        let mut data = vec![];
+        bincode::encode_into_std_write(&255u8, &mut data, config::standard()).unwrap();
+
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_truncated_p2pkh_payload_fails() {
+        // Encode only the discriminant, no signature data
+        let data = vec![0u8]; // discriminant for P2pkh
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_truncated_p2sh_payload_fails() {
+        // Encode discriminant for P2sh but no signatures/redeem_script
+        let data = vec![1u8]; // discriminant for P2sh
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_payload_fails() {
+        let data: Vec<u8> = vec![];
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
+
+    // --- Accessor tests ---
+
+    #[test]
+    fn test_redeem_script_returns_none_for_p2pkh() {
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0x30]),
+        };
+        assert!(witness.redeem_script().is_none());
+    }
+
+    #[test]
+    fn test_redeem_script_returns_some_for_p2sh() {
+        let script = BinaryData::new(vec![0x52, 0xae]);
+        let witness = AddressWitness::P2sh {
+            signatures: vec![],
+            redeem_script: script.clone(),
+        };
+        assert_eq!(witness.redeem_script(), Some(&script));
+    }
+
+    // --- BorrowDecode path tests ---
+
+    #[test]
+    fn test_borrow_decode_p2pkh_round_trip() {
+        let witness = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0xAB, 0xCD, 0xEF]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        // borrow_decode is exercised through decode_from_slice
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_borrow_decode_p2sh_round_trip() {
+        let witness = AddressWitness::P2sh {
+            signatures: vec![
+                BinaryData::new(vec![0x00]),
+                BinaryData::new(vec![0x30, 0x44]),
+                BinaryData::new(vec![0x30, 0x45]),
+            ],
+            redeem_script: BinaryData::new(vec![0x52, 0x53, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+        assert_eq!(witness, decoded);
+    }
+
+    #[test]
+    fn test_borrow_decode_rejects_excessive_signatures() {
+        // Ensure BorrowDecode also rejects > MAX_P2SH_SIGNATURES
+        let signatures: Vec<BinaryData> = (0..MAX_P2SH_SIGNATURES + 1)
+            .map(|_| BinaryData::new(vec![0x30]))
+            .collect();
+
+        let witness = AddressWitness::P2sh {
+            signatures,
+            redeem_script: BinaryData::new(vec![0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&encoded, config::standard());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_borrow_decode_invalid_discriminant_fails() {
+        let mut data = vec![];
+        bincode::encode_into_std_write(&3u8, &mut data, config::standard()).unwrap();
+        data.extend_from_slice(&[0x00; 10]);
+
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&data, config::standard());
+        assert!(result.is_err());
+    }
 }
