@@ -173,7 +173,12 @@ impl SpvRuntime {
         config: ClientConfig,
         cancel_token: CancellationToken,
     ) -> Result<(), PlatformWalletError> {
+        tracing::info!("SpvRuntime::run() starting client...");
         self.start(config).await?;
+        tracing::info!("SpvRuntime::run() client started, entering sync loop");
+
+        let is_cancelled = cancel_token.is_cancelled();
+        tracing::info!("SpvRuntime::run() cancel_token already cancelled? {}", is_cancelled);
 
         let result = {
             let client_guard = self.client.read().await;
@@ -187,20 +192,24 @@ impl SpvRuntime {
 
             tokio::select! {
                 res = &mut run_future => {
+                    tracing::info!("SpvRuntime::run() client.run() completed: {:?}", res.is_ok());
                     res.map_err(|e| PlatformWalletError::SpvError(e.to_string()))
                 }
                 _ = cancel_token.cancelled() => {
+                    tracing::info!("SpvRuntime::run() cancel_token fired, cancelling client");
                     run_cancel.cancel();
                     Ok(())
                 }
             }
         };
 
+        tracing::info!("SpvRuntime::run() exiting sync loop, result ok={}", result.is_ok());
         // Always attempt cleanup, but don't let a stop() failure mask the
         // actual SPV run result.
         if let Err(e) = self.stop().await {
             tracing::warn!("SPV stop error during cleanup: {}", e);
         }
+        tracing::info!("SpvRuntime::run() done");
         result
     }
 
