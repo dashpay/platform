@@ -9,6 +9,17 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 
 use crate::changeset::{Merge, PlatformWalletPersistence};
+
+/// Options for creating a wallet via [`PlatformWalletManager::create_wallet_from_seed_bytes`].
+#[derive(Debug, Clone, Default)]
+pub struct WalletCreationOptions {
+    /// Which accounts to create (BIP44, CoinJoin, identity, etc.).
+    pub accounts: WalletAccountCreationOptions,
+    /// Block height at which the wallet was created. SPV filter scanning
+    /// starts from this height instead of genesis. `None` means scan from
+    /// genesis (appropriate for wallets with unknown creation time).
+    pub birth_height: Option<u32>,
+}
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 use crate::spv::SpvRuntime;
@@ -85,18 +96,23 @@ impl PlatformWalletManager {
         &self,
         network: Network,
         seed_bytes: [u8; 64],
-        options: WalletAccountCreationOptions,
+        options: WalletCreationOptions,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::wallet::Wallet;
 
-        let wallet = Wallet::from_seed_bytes(seed_bytes, network, options).map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to create wallet from seed bytes: {}",
-                e
-            ))
-        })?;
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        let wallet =
+            Wallet::from_seed_bytes(seed_bytes, network, options.accounts).map_err(|e| {
+                PlatformWalletError::WalletCreation(format!(
+                    "Failed to create wallet from seed bytes: {}",
+                    e
+                ))
+            })?;
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        if let Some(height) = options.birth_height {
+            wallet_info.set_birth_height(height);
+        }
         let wallet_id = wallet_info.wallet_id;
 
         let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(&self.spv)));
@@ -118,6 +134,10 @@ impl PlatformWalletManager {
         })?;
         if !changeset.is_empty() {
             platform_wallet.apply(&changeset);
+            // TODO: Once apply() actually restores wallet state (transactions,
+            // UTXOs) from the changeset, set birth_height from the persisted
+            // chain height here so SPV doesn't rescan from genesis on restart.
+            // Until then, birth_height must come from WalletCreationOptions.
         }
 
         let platform_wallet = Arc::new(platform_wallet);

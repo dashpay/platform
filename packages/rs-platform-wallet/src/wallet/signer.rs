@@ -9,25 +9,25 @@ use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
-use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
 use crate::wallet::identity::wallet::IdentityWallet;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// A signer that uses wallet-derived keys to sign identity state transitions.
 pub struct IdentitySigner {
-    wallet: Arc<RwLock<Wallet>>,
+    state: Arc<RwLock<PlatformWalletInfo>>,
     network: Network,
     identity_index: u32,
 }
 
 impl IdentitySigner {
     /// Create a new IdentitySigner for a specific identity index.
-    pub(crate) fn new(wallet: Arc<RwLock<Wallet>>, network: Network, identity_index: u32) -> Self {
+    pub(crate) fn new(state: Arc<RwLock<PlatformWalletInfo>>, network: Network, identity_index: u32) -> Self {
         Self {
-            wallet,
+            state,
             network,
             identity_index,
         }
@@ -39,12 +39,6 @@ impl IdentitySigner {
         self.identity_index
     }
 
-    /// Get a reference to the wallet.
-    #[allow(dead_code)]
-    pub(crate) fn wallet(&self) -> &Arc<RwLock<Wallet>> {
-        &self.wallet
-    }
-
     /// Derive the raw private key bytes for a given identity public key.
     ///
     /// Delegates to [`IdentityWallet::derive_identity_key_bytes`] for the
@@ -53,14 +47,14 @@ impl IdentitySigner {
     /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
     /// wiped from memory when the value is dropped.
     ///
-    /// The wallet lock is acquired and released within this method.
+    /// The shared lock is acquired and released within this method.
     fn derive_private_key_bytes(
         &self,
         identity_public_key: &IdentityPublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
-        let wallet = self.wallet.blocking_read();
+        let info_guard = self.state.blocking_read();
         IdentityWallet::derive_identity_key_bytes(
-            &wallet,
+            &info_guard.wallet,
             self.network,
             self.identity_index,
             identity_public_key,
@@ -171,7 +165,7 @@ use crate::wallet::identity::managed_identity::key_storage::{KeyStorage, Private
 /// derivation (same logic as [`IdentitySigner`]).
 pub struct ManagedIdentitySigner {
     key_storage: KeyStorage,
-    wallet: Arc<RwLock<Wallet>>,
+    state: Arc<RwLock<PlatformWalletInfo>>,
     identity_index: u32,
     network: Network,
 }
@@ -180,13 +174,13 @@ impl ManagedIdentitySigner {
     /// Create a new `ManagedIdentitySigner`.
     pub fn new(
         key_storage: KeyStorage,
-        wallet: Arc<RwLock<Wallet>>,
+        state: Arc<RwLock<PlatformWalletInfo>>,
         identity_index: u32,
         network: Network,
     ) -> Self {
         Self {
             key_storage,
-            wallet,
+            state,
             identity_index,
             network,
         }
@@ -212,8 +206,8 @@ impl ManagedIdentitySigner {
                 PrivateKeyData::AtWalletDerivationPath {
                     derivation_path, ..
                 } => {
-                    let wallet = self.wallet.blocking_read();
-                    let secret_key = wallet.derive_private_key(derivation_path).map_err(|e| {
+                    let info_guard = self.state.blocking_read();
+                    let secret_key = info_guard.wallet.derive_private_key(derivation_path).map_err(|e| {
                         ProtocolError::Generic(format!(
                             "Failed to derive private key for identity key {}: {}",
                             key_id, e
@@ -225,9 +219,9 @@ impl ManagedIdentitySigner {
         }
 
         // Fallback: standard DIP-9 derivation from identity_index + key_id.
-        let wallet = self.wallet.blocking_read();
+        let info_guard = self.state.blocking_read();
         IdentityWallet::derive_identity_key_bytes(
-            &wallet,
+            &info_guard.wallet,
             self.network,
             self.identity_index,
             identity_public_key,

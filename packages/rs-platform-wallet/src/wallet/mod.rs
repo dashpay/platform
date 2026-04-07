@@ -14,6 +14,6 @@ pub use self::core::CoreWallet;
 pub use dashpay::DashPayWallet;
 pub use identity::IdentityWallet;
 pub use platform_addresses::PlatformAddressWallet;
-pub use platform_wallet::{PlatformWallet, WalletId};
+pub use platform_wallet::{PlatformWallet, PlatformWalletInfo, WalletId};
 pub use signer::{IdentitySigner, ManagedIdentitySigner};
 pub use tokens::TokenWallet;

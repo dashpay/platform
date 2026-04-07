@@ -9,6 +9,7 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use tokio::sync::RwLock;
 
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
 
 /// Default gap limit for HD wallet address scanning.
@@ -83,8 +84,8 @@ pub(crate) struct PlatformPaymentAddressProvider {
     resolved: std::collections::BTreeSet<u32>,
     /// Highest index found with a non-zero balance.
     highest_found: Option<u32>,
-    /// Wallet reference for lazy address extension during gap limit scanning.
-    wallet: Arc<RwLock<Wallet>>,
+    /// Shared wallet state for lazy address extension during gap limit scanning.
+    state: Arc<RwLock<PlatformWalletInfo>>,
     /// Account index.
     account: u32,
     /// Key class.
@@ -97,7 +98,7 @@ impl PlatformPaymentAddressProvider {
     /// Pre-derives the initial set of addresses (up to the gap limit).
     /// The wallet must support private key derivation (not watch-only).
     pub(crate) fn from_wallet(
-        wallet: Arc<RwLock<Wallet>>,
+        state: Arc<RwLock<PlatformWalletInfo>>,
         network: Network,
     ) -> Result<Self, String> {
         let mut provider = Self {
@@ -106,7 +107,7 @@ impl PlatformPaymentAddressProvider {
             pending: BTreeMap::new(),
             resolved: std::collections::BTreeSet::new(),
             highest_found: None,
-            wallet,
+            state,
             account: 0,
             key_class: 0,
         };
@@ -127,11 +128,11 @@ impl PlatformPaymentAddressProvider {
             return Ok(());
         }
 
-        let wallet = self.wallet.blocking_read();
+        let info_guard = self.state.blocking_read();
         for index in start..=max_index {
             if !self.pending.contains_key(&index) && !self.resolved.contains(&index) {
                 let (key, address) = derive_platform_address_at(
-                    &wallet,
+                    &info_guard.wallet,
                     self.network,
                     self.account,
                     self.key_class,

@@ -2,11 +2,11 @@
 
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::Identifier;
-use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -85,10 +85,10 @@ impl ManagedIdentity {
     /// used to derive the private key on demand. For keys not in the storage
     /// the signer falls back to the standard DIP-9 identity authentication
     /// path derivation.
-    pub fn signer(&self, wallet: Arc<RwLock<Wallet>>, network: Network) -> ManagedIdentitySigner {
+    pub fn signer(&self, info: Arc<RwLock<PlatformWalletInfo>>, network: Network) -> ManagedIdentitySigner {
         ManagedIdentitySigner::new(
             self.key_storage.clone(),
-            wallet,
+            info,
             self.identity_index,
             network,
         )

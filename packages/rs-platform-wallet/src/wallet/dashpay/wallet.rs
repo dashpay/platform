@@ -14,7 +14,6 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyType};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
-use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use platform_encryption::CryptoError;
 use tokio::sync::RwLock;
@@ -24,18 +23,17 @@ use dash_sdk::platform::dashpay::{EcdhProvider, SendContactRequestInput};
 use crate::error::PlatformWalletError;
 use crate::wallet::dashpay::contact_request::ContactRequest;
 use crate::wallet::dashpay::established_contact::EstablishedContact;
-use crate::wallet::identity::IdentityManager;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::signer::IdentitySigner;
 
 /// DashPay wallet providing contact request and payment functionality.
 ///
-/// Shares the same `identity_manager` Arc as `IdentityWallet`.
+/// Shares the same `PlatformWalletInfo` lock as all other sub-wallets.
 #[derive(Clone)]
 pub struct DashPayWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    pub(crate) wallet: Arc<RwLock<Wallet>>,
-    pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-    pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
+    /// The single shared lock for all mutable wallet state.
+    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
 }
 
 impl std::fmt::Debug for DashPayWallet {
@@ -149,8 +147,9 @@ impl DashPayWallet {
         // 1. Retrieve the sender identity and its HD index from the local manager
         //    via a single managed_identity() call.
         let (sender_identity, identity_index) = {
-            let manager = self.identity_manager.read().await;
-            let managed = manager
+            let info_guard = self.state.read().await;
+            let managed = info_guard
+                .identity_manager
                 .managed_identity(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
             let index = Some(managed.identity_index).ok_or(
@@ -198,10 +197,10 @@ impl DashPayWallet {
             })?;
 
         // 4. Derive both the DashPay receiving-account xpub and the ECDH
-        //    private key under a single wallet read lock.
+        //    private key under a single read lock.
         let account_index: u32 = 0;
         let (xpub_bytes, ecdh_private_key) = {
-            let wallet = self.wallet.read().await;
+            let info_guard = self.state.read().await;
 
             let account_type = AccountType::DashpayReceivingFunds {
                 index: account_index,
@@ -215,7 +214,8 @@ impl DashPayWallet {
                         "Failed to derive DashPay receiving account path: {err}"
                     ))
                 })?;
-            let account_xpub = wallet
+            let account_xpub = info_guard
+                .wallet
                 .derive_extended_public_key(&account_path)
                 .map_err(|err| {
                     PlatformWalletError::InvalidIdentityData(format!(
@@ -225,7 +225,7 @@ impl DashPayWallet {
             let xpub = account_xpub.encode();
 
             let ecdh_key = Self::derive_encryption_private_key(
-                &wallet,
+                &info_guard.wallet,
                 self.sdk.network,
                 identity_index,
                 &sender_encryption_key,
@@ -235,7 +235,7 @@ impl DashPayWallet {
         };
 
         // 5. Build the signing key and signer.
-        let signer = IdentitySigner::new(self.wallet.clone(), self.sdk.network, identity_index);
+        let signer = IdentitySigner::new(self.state.clone(), self.sdk.network, identity_index);
         let identity_public_key = sender_identity
             .public_keys()
             .values()
@@ -320,8 +320,9 @@ impl DashPayWallet {
         );
 
         {
-            let mut manager = self.identity_manager.write().await;
-            let managed = manager
+            let mut info_guard = self.state.write().await;
+            let managed = info_guard
+                .identity_manager
                 .managed_identity_mut(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
             managed.add_sent_contact_request(contact_request.clone());
@@ -353,8 +354,8 @@ impl DashPayWallet {
     /// Returns all newly discovered incoming contact requests.
     pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
         let identity_ids: Vec<Identifier> = {
-            let manager = self.identity_manager.read().await;
-            manager.identities().keys().copied().collect()
+            let info_guard = self.state.read().await;
+            info_guard.identity_manager.identities().keys().copied().collect()
         };
 
         let mut all_requests = Vec::new();
@@ -370,8 +371,8 @@ impl DashPayWallet {
                     ))
                 })?;
 
-            let mut manager = self.identity_manager.write().await;
-            let managed = match manager.managed_identity_mut(&identity_id) {
+            let mut info_guard = self.state.write().await;
+            let managed = match info_guard.identity_manager.managed_identity_mut(&identity_id) {
                 Some(m) => m,
                 None => continue,
             };
@@ -498,8 +499,9 @@ impl DashPayWallet {
 
         // 1. Verify the incoming request is known.
         {
-            let manager = self.identity_manager.read().await;
-            let managed = manager
+            let info_guard = self.state.read().await;
+            let managed = info_guard
+                .identity_manager
                 .managed_identity(&our_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
             if !managed.incoming_contact_requests.contains_key(&sender_id) {
@@ -515,8 +517,9 @@ impl DashPayWallet {
 
         // 3. The auto-establish logic in ManagedIdentity should have created
         //    the established contact. Retrieve and return it.
-        let manager = self.identity_manager.read().await;
-        let managed = manager
+        let info_guard = self.state.read().await;
+        let managed = info_guard
+            .identity_manager
             .managed_identity(&our_identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
 
@@ -537,8 +540,9 @@ impl DashPayWallet {
     ///
     /// Returns a flat list; each element includes the contact's identity ID.
     pub async fn established_contacts(&self) -> Vec<EstablishedContact> {
-        let manager = self.identity_manager.read().await;
-        manager
+        let info_guard = self.state.read().await;
+        info_guard
+            .identity_manager
             .identities
             .values()
             .flat_map(|managed| managed.established_contacts.values().cloned())
@@ -569,9 +573,9 @@ impl DashPayWallet {
         sender_id: &Identifier,
         recipient_id: &Identifier,
     ) -> Result<super::dip14::ContactXpubData, PlatformWalletError> {
-        let wallet = self.wallet.read().await;
+        let info_guard = self.state.read().await;
         super::dip14::derive_contact_xpub(
-            &wallet,
+            &info_guard.wallet,
             self.sdk.network,
             account_index,
             sender_id,
@@ -604,39 +608,34 @@ impl DashPayWallet {
         };
 
         // Derive the account xpub and add to both Wallet and ManagedWalletInfo
-        let account = {
-            let mut wallet = self.wallet.write().await;
-            let path = account_type
-                .derivation_path(self.sdk.network)
-                .map_err(|err| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive DashPay contact account path: {err}"
-                    ))
-                })?;
-            let account_xpub = wallet.derive_extended_public_key(&path).map_err(|err| {
+        let mut info_guard = self.state.write().await;
+        let path = account_type
+            .derivation_path(self.sdk.network)
+            .map_err(|err| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to derive DashPay contact xpub: {err}"
+                    "Failed to derive DashPay contact account path: {err}"
                 ))
             })?;
+        let account_xpub = info_guard.wallet.derive_extended_public_key(&path).map_err(|err| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to derive DashPay contact xpub: {err}"
+            ))
+        })?;
 
-            let account = key_wallet::Account {
-                parent_wallet_id: Some(wallet.wallet_id),
-                account_type,
-                network: self.sdk.network,
-                account_xpub,
-                is_watch_only: false,
-            };
-
-            // Add to Wallet's AccountCollection (key store)
-            let _ = wallet.accounts.insert(account.clone());
-
-            account
+        let account = key_wallet::Account {
+            parent_wallet_id: Some(info_guard.wallet.wallet_id),
+            account_type,
+            network: self.sdk.network,
+            account_xpub,
+            is_watch_only: false,
         };
+
+        // Add to Wallet's AccountCollection (key store)
+        let _ = info_guard.wallet.accounts.insert(account.clone());
 
         // Add managed wrapper to ManagedWalletInfo (address pools, state tracking)
         let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
-        let mut info = self.wallet_info.write().await;
-        info.accounts.insert(managed).map_err(|e| {
+        info_guard.wallet_info.accounts.insert(managed).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to register contact account: {e}"
             ))
@@ -660,9 +659,9 @@ impl DashPayWallet {
         start_index: u32,
         count: u32,
     ) -> Result<Vec<dashcore::Address>, PlatformWalletError> {
-        let wallet = self.wallet.read().await;
+        let info_guard = self.state.read().await;
         let data = super::dip14::derive_contact_xpub(
-            &wallet,
+            &info_guard.wallet,
             self.sdk.network,
             account_index,
             sender_id,
@@ -874,8 +873,9 @@ impl DashPayWallet {
         identity_id: &Identifier,
         contact_identity_id: &Identifier,
     ) -> Result<(), PlatformWalletError> {
-        let mut manager = self.identity_manager.write().await;
-        let managed = manager
+        let mut info_guard = self.state.write().await;
+        let managed = info_guard
+            .identity_manager
             .managed_identity_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 

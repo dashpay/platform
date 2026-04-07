@@ -4,12 +4,11 @@
 //! waiting for proofs, and tracking lifecycle status. Shared across sub-wallets
 //! via `Arc<AssetLockManager>`.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
-use dashcore::{OutPoint, PrivateKey, Transaction, TxOut, Txid};
+use dashcore::{OutPoint, PrivateKey, Transaction, TxOut};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };
@@ -20,6 +19,7 @@ use tokio::sync::{broadcast, RwLock};
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 
@@ -34,20 +34,13 @@ const DEFAULT_FEE_PER_KB: u64 = 1000;
 #[derive(Clone)]
 pub struct AssetLockManager {
     sdk: Arc<dash_sdk::Sdk>,
-    wallet: Arc<RwLock<Wallet>>,
-    wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+    /// The single shared lock for all mutable wallet state.
+    state: Arc<RwLock<PlatformWalletInfo>>,
     /// Broadcast channel for platform wallet events (SPV sync, locks, etc.).
     ///
     /// Used by `wait_for_proof()` to subscribe to InstantLock / ChainLock
     /// events from the SPV layer.
     event_tx: broadcast::Sender<PlatformWalletEvent>,
-    /// Tracked asset locks, keyed by outpoint (txid + output index).
-    ///
-    /// Each credit output in an asset lock transaction is tracked
-    /// independently because a single transaction can have up to 255
-    /// credit outputs (DIP-0027), each consumable separately.
-    /// Removed once consumed by a successful identity operation.
-    tracked: Arc<RwLock<BTreeMap<OutPoint, TrackedAssetLock>>>,
     /// Transaction broadcaster — pluggable so the same `AssetLockManager`
     /// works with different broadcast backends:
     ///
@@ -65,17 +58,14 @@ impl AssetLockManager {
     /// Create a new `AssetLockManager`.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet: Arc<RwLock<Wallet>>,
-        wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+        state: Arc<RwLock<PlatformWalletInfo>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         Self {
             sdk,
-            wallet,
-            wallet_info,
+            state,
             event_tx,
-            tracked: Arc::new(RwLock::new(BTreeMap::new())),
             broadcaster,
         }
     }
@@ -90,8 +80,8 @@ impl AssetLockManager {
     pub(crate) async fn to_changeset(&self) -> AssetLockChangeSet {
         use crate::changeset::changeset::AssetLockEntry;
 
-        let map = self.tracked.read().await;
-        let entries = map
+        let info_guard = self.state.read().await;
+        let entries = info_guard.tracked_asset_locks
             .iter()
             .map(|(out_point, lock)| {
                 (
@@ -118,9 +108,9 @@ impl AssetLockManager {
     ///
     /// Uses `blocking_write` — must NOT be called from within a tokio async context.
     pub(crate) fn restore_from_changeset_blocking(&self, changeset: &AssetLockChangeSet) {
-        let mut map = self.tracked.blocking_write();
+        let mut info_guard = self.state.blocking_write();
         for (out_point, entry) in &changeset.asset_locks {
-            map.insert(
+            info_guard.tracked_asset_locks.insert(
                 *out_point,
                 TrackedAssetLock {
                     out_point: *out_point,
@@ -147,14 +137,14 @@ impl AssetLockManager {
     /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from
     /// within a tokio async context.
     pub fn list_tracked_locks_blocking(&self) -> Vec<TrackedAssetLock> {
-        let map = self.tracked.blocking_read();
-        map.values().cloned().collect()
+        let info_guard = self.state.blocking_read();
+        info_guard.tracked_asset_locks.values().cloned().collect()
     }
 
     /// List all tracked asset locks (async version).
     pub async fn list_tracked_locks(&self) -> Vec<TrackedAssetLock> {
-        let map = self.tracked.read().await;
-        map.values().cloned().collect()
+        let info_guard = self.state.read().await;
+        info_guard.tracked_asset_locks.values().cloned().collect()
     }
 }
 
@@ -165,8 +155,8 @@ impl AssetLockManager {
 impl AssetLockManager {
     /// Remove an asset lock after successful consumption (registration or top-up).
     pub(crate) async fn remove_asset_lock(&self, out_point: &OutPoint) {
-        let mut map = self.tracked.write().await;
-        map.remove(out_point);
+        let mut info_guard = self.state.write().await;
+        info_guard.tracked_asset_locks.remove(out_point);
     }
 
     /// Advance the status of a tracked asset lock and optionally attach the proof.
@@ -176,8 +166,8 @@ impl AssetLockManager {
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<(), PlatformWalletError> {
-        let mut map = self.tracked.write().await;
-        let entry = map.get_mut(out_point).ok_or_else(|| {
+        let mut info_guard = self.state.write().await;
+        let entry = info_guard.tracked_asset_locks.get_mut(out_point).ok_or_else(|| {
             PlatformWalletError::AssetLockProofWait(format!(
                 "Asset lock {} is not tracked",
                 out_point
@@ -215,8 +205,8 @@ impl AssetLockManager {
         out_point: OutPoint,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) {
-        let mut map = self.tracked.blocking_write();
-        if map.contains_key(&out_point) {
+        let mut info_guard = self.state.blocking_write();
+        if info_guard.tracked_asset_locks.contains_key(&out_point) {
             return;
         }
 
@@ -241,7 +231,7 @@ impl AssetLockManager {
             status,
             proof,
         };
-        map.insert(out_point, lock);
+        info_guard.tracked_asset_locks.insert(out_point, lock);
     }
 
     /// Determine asset lock status by looking up the transaction in
@@ -258,8 +248,9 @@ impl AssetLockManager {
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
         use key_wallet::transaction_checking::TransactionContext;
 
-        let info = self.wallet_info.blocking_read();
-        let record = info
+        let info_ref = self.state.blocking_read();
+        let record = info_ref
+            .wallet_info
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
@@ -322,14 +313,14 @@ impl AssetLockManager {
             ));
         }
 
-        let wallet = self.wallet.read().await;
-        let mut wallet_info = self.wallet_info.write().await;
+        let mut info_guard = self.state.write().await;
+        let pi = &mut *info_guard;
 
         // 1. Peek at the next unused address from the funding account to
         //    build the credit output P2PKH script.
         let funding_address = Self::peek_next_funding_address(
-            &mut wallet_info,
-            &wallet,
+            &mut pi.wallet_info,
+            &pi.wallet,
             funding_type,
             identity_index,
         )?;
@@ -347,8 +338,8 @@ impl AssetLockManager {
         };
 
         // 3. Delegate to the key-wallet builder.
-        let result = wallet_info
-            .build_asset_lock(&wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
+        let result = pi.wallet_info
+            .build_asset_lock(&pi.wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Asset lock builder failed: {}",
@@ -552,8 +543,8 @@ impl AssetLockManager {
 
         // 2. Track as Built.
         {
-            let mut map = self.tracked.write().await;
-            map.insert(
+            let mut info_guard = self.state.write().await;
+            info_guard.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
                     out_point,
@@ -633,10 +624,11 @@ impl AssetLockManager {
             return Ok(proof);
         }
 
-        let info = self.wallet_info.read().await;
-        let synced_height = info.metadata.synced_height;
+        let info_guard = self.state.read().await;
+        let synced_height = info_guard.wallet_info.metadata.synced_height;
 
-        let record = info
+        let record = info_guard
+            .wallet_info
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
@@ -653,7 +645,7 @@ impl AssetLockManager {
         let confirmations = record.confirmations(synced_height);
 
         // Drop the read lock before making the DAPI call.
-        drop(info);
+        drop(info_guard);
 
         // TODO: This is weird - why would we wait for 8 confirmations if we already know it's chain-locked?
         if is_chain_locked && height > 0 && confirmations > 8 {
@@ -711,8 +703,8 @@ impl AssetLockManager {
         let txid = out_point.txid;
 
         let account_index = {
-            let map = self.tracked.read().await;
-            map.get(out_point)
+            let info_guard = self.state.read().await;
+            info_guard.tracked_asset_locks.get(out_point)
                 .map(|lock| lock.account_index)
                 .ok_or_else(|| {
                     PlatformWalletError::AssetLockProofWait(format!(
@@ -724,8 +716,8 @@ impl AssetLockManager {
 
         // Check if already chain-locked.
         let height = {
-            let info = self.wallet_info.read().await;
-            let record = info
+            let info_guard = self.state.read().await;
+            let record = info_guard.wallet_info
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
@@ -807,8 +799,9 @@ impl AssetLockManager {
         loop {
             // Re-check — might have been updated by SPV sync while we waited.
             {
-                let info = self.wallet_info.read().await;
-                if let Some(record) = info
+                let info_guard = self.state.read().await;
+                if let Some(record) = info_guard
+                    .wallet_info
                     .accounts
                     .standard_bip44_accounts
                     .get(&account_index)
@@ -875,8 +868,8 @@ impl AssetLockManager {
         // Read account_index and transaction from the tracked lock.
         // These don't change during the wait.
         let (account_index, tracked_tx) = {
-            let map = self.tracked.read().await;
-            let lock = map.get(out_point).ok_or_else(|| {
+            let info_guard = self.state.read().await;
+            let lock = info_guard.tracked_asset_locks.get(out_point).ok_or_else(|| {
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Asset lock {} is not tracked",
                     out_point.txid
@@ -887,8 +880,8 @@ impl AssetLockManager {
 
         // Check if SPV already synced the proof before we started waiting.
         {
-            let info = self.wallet_info.read().await;
-            if let Some(record) = info
+            let info_guard = self.state.read().await;
+            if let Some(record) = info_guard.wallet_info
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
@@ -933,8 +926,9 @@ impl AssetLockManager {
                         ))) => {
                             // Verify that our asset lock transaction is actually
                             // confirmed at a height <= the chain-locked height.
-                            let info = self.wallet_info.read().await;
-                            let record = info
+                            let info_guard = self.state.read().await;
+                            let record = info_guard
+                                .wallet_info
                                 .accounts
                                 .standard_bip44_accounts
                                 .get(&account_index)
@@ -999,8 +993,8 @@ impl AssetLockManager {
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
         // 1. Look up the tracked lock — snapshot the fields we need.
         let (tx, status, existing_proof, account_index) = {
-            let map = self.tracked.read().await;
-            let lock = map.get(out_point).ok_or_else(|| {
+            let info_guard = self.state.read().await;
+            let lock = info_guard.tracked_asset_locks.get(out_point).ok_or_else(|| {
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Asset lock {} is not tracked",
                     out_point
@@ -1054,8 +1048,8 @@ impl AssetLockManager {
 
         // 4. Re-derive the one-time private key.
         let private_key = {
-            let map = self.tracked.read().await;
-            let lock = map.get(out_point).ok_or_else(|| {
+            let info_guard = self.state.read().await;
+            let lock = info_guard.tracked_asset_locks.get(out_point).ok_or_else(|| {
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Asset lock {} disappeared during resume",
                     out_point
@@ -1113,26 +1107,26 @@ impl AssetLockManager {
                 ))
             })?;
 
-        // 3. Find the derivation path in the funding account.
-        let wallet_info = self.wallet_info.read().await;
+        // 3. Find the derivation path in the funding account and derive key under a single lock.
+        let info_guard = self.state.read().await;
         let funding_account = match lock.funding_type {
             AssetLockFundingType::IdentityRegistration => {
-                wallet_info.accounts.identity_registration.as_ref()
+                info_guard.wallet_info.accounts.identity_registration.as_ref()
             }
-            AssetLockFundingType::IdentityTopUp => wallet_info
+            AssetLockFundingType::IdentityTopUp => info_guard.wallet_info
                 .accounts
                 .identity_topup
                 .get(&lock.identity_index),
             AssetLockFundingType::IdentityTopUpNotBound => {
-                wallet_info.accounts.identity_topup_not_bound.as_ref()
+                info_guard.wallet_info.accounts.identity_topup_not_bound.as_ref()
             }
             AssetLockFundingType::IdentityInvitation => {
-                wallet_info.accounts.identity_invitation.as_ref()
+                info_guard.wallet_info.accounts.identity_invitation.as_ref()
             }
             AssetLockFundingType::AssetLockAddressTopUp => {
-                wallet_info.accounts.asset_lock_address_topup.as_ref()
+                info_guard.wallet_info.accounts.asset_lock_address_topup.as_ref()
             }
-            AssetLockFundingType::AssetLockShieldedAddressTopUp => wallet_info
+            AssetLockFundingType::AssetLockShieldedAddressTopUp => info_guard.wallet_info
                 .accounts
                 .asset_lock_shielded_address_topup
                 .as_ref(),
@@ -1154,12 +1148,8 @@ impl AssetLockManager {
                 ))
             })?;
 
-        // Drop the wallet_info lock before acquiring the wallet lock.
-        drop(wallet_info);
-
         // 4. Derive the private key from the wallet's root key.
-        let wallet = self.wallet.read().await;
-        let secret_key = wallet.derive_private_key(&derivation_path).map_err(|e| {
+        let secret_key = info_guard.wallet.derive_private_key(&derivation_path).map_err(|e| {
             PlatformWalletError::AssetLockTransaction(format!(
                 "Failed to derive private key for asset lock: {}",
                 e

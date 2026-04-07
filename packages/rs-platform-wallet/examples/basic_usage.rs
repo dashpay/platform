@@ -1,44 +1,97 @@
 //! Example demonstrating basic usage of PlatformWallet
+//!
+//! Creates a wallet from a mnemonic and shows how to access
+//! balances, addresses, identities, and asset locks.
+
+use std::sync::Arc;
 
 use dash_sdk::Sdk;
-use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
+use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::error::PlatformWalletError;
 use platform_wallet::PlatformWallet;
 
-fn main() -> Result<(), PlatformWalletError> {
-    // Create a mock SDK (no network needed for this example)
-    let sdk = Sdk::new_mock();
+/// Minimal no-op persister for the example.
+struct NoopPersister;
+impl PlatformWalletPersistence for NoopPersister {
+    fn store(
+        &self,
+        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+        _changeset: platform_wallet::changeset::PlatformWalletChangeSet,
+    ) {
+    }
+    fn flush(
+        &self,
+        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+    fn load(
+        &self,
+        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+    ) -> Result<platform_wallet::changeset::PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>>
+    {
+        Ok(Default::default())
+    }
+}
 
-    // Create a platform wallet from a mnemonic
+fn main() -> Result<(), PlatformWalletError> {
+    let sdk = Arc::new(Sdk::new_mock());
+    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
     let network = Network::Testnet;
     let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-    let options = WalletAccountCreationOptions::default();
 
-    let wallet =
-        PlatformWallet::from_mnemonic(sdk.clone(), network, mnemonic, "", options.clone())?;
+    // Create a wallet from a BIP-39 mnemonic
+    let wallet = PlatformWallet::from_mnemonic(
+        sdk.clone(),
+        network,
+        mnemonic,
+        "",
+        Default::default(),
+        persister.clone(),
+    )?;
 
-    println!("Created wallet: {:?}", wallet);
-
-    // Access sub-wallets
     println!("Wallet ID: {}", hex::encode(wallet.wallet_id()));
 
-    // Core wallet manages UTXOs, balances, and addresses
-    let _core = wallet.core();
+    // --- Core wallet: balances and addresses ---
+    let core = wallet.core();
 
-    // Identity wallet manages Platform identities
-    let _identity = wallet.identity();
+    // Lock-free balance (AtomicU64, no lock needed)
+    let balance = core.balance();
+    println!(
+        "Balance: spendable={}, unconfirmed={}, total={}",
+        balance.spendable(),
+        balance.unconfirmed(),
+        balance.total()
+    );
 
-    // DashPay wallet manages contact requests and social payments
-    let _dashpay = wallet.dashpay();
+    // Derive a receive address (blocking, acquires lock internally)
+    let address = core.next_receive_address_blocking()?;
+    println!("Receive address: {}", address);
 
-    // Token wallet manages Platform token balances
-    let _tokens = wallet.tokens();
+    // Read wallet info (UTXOs, transaction history, accounts, identities)
+    // All mutable state is behind a single lock — one acquisition gives
+    // access to everything.
+    {
+        let info = core.state_blocking();
+        let utxos = info.wallet_info.get_spendable_utxos();
+        let tx_count = info.wallet_info.transaction_history().len();
+        let birth = info.wallet_info.birth_height();
+        let id_count = info.identity_manager.identities().len();
+        println!("UTXOs: {}, transactions: {}, birth_height: {}", utxos.len(), tx_count, birth);
+        println!("Managed identities: {}", id_count);
+    }
 
-    // You can also create a wallet with a random mnemonic
-    let (random_wallet, generated_mnemonic) = PlatformWallet::random(sdk, network, options)?;
+    // --- Asset locks ---
+    let asset_locks = wallet.asset_locks();
+    let tracked = asset_locks.list_tracked_locks_blocking();
+    println!("Tracked asset locks: {}", tracked.len());
 
-    println!("Random wallet: {:?}", random_wallet);
+    // --- Generate a random wallet ---
+    let (random_wallet, generated_mnemonic) =
+        PlatformWallet::random(sdk, network, Default::default(), persister)?;
+    println!("Random wallet: {}", hex::encode(random_wallet.wallet_id()));
     println!("Save this mnemonic: {}", generated_mnemonic);
 
     Ok(())

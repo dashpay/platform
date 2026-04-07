@@ -4,7 +4,7 @@
 //! [`watch`](TokenWallet::watch). [`sync`](TokenWallet::sync) queries Platform
 //! for balances of all watched identity+token pairs.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dpp::balances::credits::TokenAmount;
@@ -12,14 +12,13 @@ use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
-use key_wallet::wallet::Wallet;
 use tokio::sync::RwLock;
 
 use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 use dash_sdk::platform::FetchMany;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::IdentityManager;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::wallet::signer::IdentitySigner;
 
 /// Key for the balance cache and watch registry: (identity_id, token_id).
@@ -33,27 +32,19 @@ type IdentityTokenKey = (Identifier, Identifier);
 #[derive(Clone)]
 pub struct TokenWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    pub(crate) wallet: Arc<RwLock<Wallet>>,
-    pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
-    /// Per-identity set of watched token IDs.
-    watched: Arc<RwLock<BTreeMap<Identifier, BTreeSet<Identifier>>>>,
-    /// Cached balances keyed by (identity_id, token_id).
-    balances: Arc<RwLock<BTreeMap<IdentityTokenKey, TokenAmount>>>,
+    /// The single shared lock for all mutable wallet state.
+    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
 }
 
 impl TokenWallet {
     /// Create a new TokenWallet.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet: Arc<RwLock<Wallet>>,
-        identity_manager: Arc<RwLock<IdentityManager>>,
+        state: Arc<RwLock<PlatformWalletInfo>>,
     ) -> Self {
         Self {
             sdk,
-            wallet,
-            identity_manager,
-            watched: Arc::new(RwLock::new(BTreeMap::new())),
-            balances: Arc::new(RwLock::new(BTreeMap::new())),
+            state,
         }
     }
 }
@@ -65,39 +56,33 @@ impl TokenWallet {
 impl TokenWallet {
     /// Register a token for balance tracking on a specific identity.
     pub async fn watch(&self, identity_id: Identifier, token_id: Identifier) {
-        let mut watched = self.watched.write().await;
-        watched.entry(identity_id).or_default().insert(token_id);
+        let mut info_guard = self.state.write().await;
+        info_guard.token_watched.entry(identity_id).or_default().insert(token_id);
     }
 
     /// Unregister a token from a specific identity and clear its cached balance.
     pub async fn unwatch(&self, identity_id: &Identifier, token_id: &Identifier) {
-        let mut watched = self.watched.write().await;
-        if let Some(tokens) = watched.get_mut(identity_id) {
+        let mut info_guard = self.state.write().await;
+        if let Some(tokens) = info_guard.token_watched.get_mut(identity_id) {
             tokens.remove(token_id);
             if tokens.is_empty() {
-                watched.remove(identity_id);
+                info_guard.token_watched.remove(identity_id);
             }
         }
-        drop(watched);
-
-        let mut balances = self.balances.write().await;
-        balances.remove(&(*identity_id, *token_id));
+        info_guard.token_balances.remove(&(*identity_id, *token_id));
     }
 
     /// Unregister all tokens for a specific identity and clear cached balances.
     pub async fn unwatch_identity(&self, identity_id: &Identifier) {
-        let mut watched = self.watched.write().await;
-        watched.remove(identity_id);
-        drop(watched);
-
-        let mut balances = self.balances.write().await;
-        balances.retain(|(iid, _), _| iid != identity_id);
+        let mut info_guard = self.state.write().await;
+        info_guard.token_watched.remove(identity_id);
+        info_guard.token_balances.retain(|(iid, _), _| iid != identity_id);
     }
 
     /// Get the watched token IDs for a specific identity.
     pub async fn watched_for(&self, identity_id: &Identifier) -> Vec<Identifier> {
-        let watched = self.watched.read().await;
-        watched
+        let info_guard = self.state.read().await;
+        info_guard.token_watched
             .get(identity_id)
             .map(|tokens| tokens.iter().copied().collect())
             .unwrap_or_default()
@@ -105,8 +90,8 @@ impl TokenWallet {
 
     /// Get all watched (identity_id, token_id) pairs.
     pub async fn watched(&self) -> Vec<IdentityTokenKey> {
-        let watched = self.watched.read().await;
-        watched
+        let info_guard = self.state.read().await;
+        info_guard.token_watched
             .iter()
             .flat_map(|(iid, tokens)| tokens.iter().map(move |tid| (*iid, *tid)))
             .collect()
@@ -123,9 +108,11 @@ impl TokenWallet {
     /// Queries Platform per identity, fetching only the tokens that identity
     /// is watching. Updates the local cache.
     pub async fn sync(&self) -> Result<(), PlatformWalletError> {
+        // Snapshot the watched tokens while holding the lock briefly.
         let snapshot: BTreeMap<Identifier, Vec<Identifier>> = {
-            let w = self.watched.read().await;
-            w.iter()
+            let info_guard = self.state.read().await;
+            info_guard.token_watched
+                .iter()
                 .map(|(iid, tokens)| (*iid, tokens.iter().copied().collect()))
                 .collect()
         };
@@ -144,6 +131,7 @@ impl TokenWallet {
                 token_ids: token_ids.clone(),
             };
 
+            // No locks held during the network call.
             let result: dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalances =
                 TokenAmount::fetch_many(&self.sdk, query)
                     .await
@@ -154,15 +142,15 @@ impl TokenWallet {
                         ))
                     })?;
 
-            let mut balances = self.balances.write().await;
+            let mut info_guard = self.state.write().await;
             for (token_id, maybe_balance) in result.iter() {
                 let key = (*identity_id, *token_id);
                 match maybe_balance {
                     Some(amount) => {
-                        balances.insert(key, *amount);
+                        info_guard.token_balances.insert(key, *amount);
                     }
                     None => {
-                        balances.remove(&key);
+                        info_guard.token_balances.remove(&key);
                     }
                 }
             }
@@ -183,8 +171,8 @@ impl TokenWallet {
         identity_id: &Identifier,
         token_id: &Identifier,
     ) -> Option<TokenAmount> {
-        let balances = self.balances.read().await;
-        balances.get(&(*identity_id, *token_id)).copied()
+        let info_guard = self.state.read().await;
+        info_guard.token_balances.get(&(*identity_id, *token_id)).copied()
     }
 
     /// Get all cached token balances for an identity.
@@ -192,8 +180,8 @@ impl TokenWallet {
         &self,
         identity_id: &Identifier,
     ) -> BTreeMap<Identifier, TokenAmount> {
-        let balances = self.balances.read().await;
-        balances
+        let info_guard = self.state.read().await;
+        info_guard.token_balances
             .iter()
             .filter(|((iid, _), _)| iid == identity_id)
             .map(|((_, tid), &amount)| (*tid, amount))
@@ -202,8 +190,8 @@ impl TokenWallet {
 
     /// Get all cached balances as (identity_id, token_id) -> amount.
     pub async fn all_balances(&self) -> BTreeMap<IdentityTokenKey, TokenAmount> {
-        let balances = self.balances.read().await;
-        balances.clone()
+        let info_guard = self.state.read().await;
+        info_guard.token_balances.clone()
     }
 }
 
@@ -218,18 +206,18 @@ impl TokenWallet {
         identity_id: &Identifier,
     ) -> Result<(dpp::identity::Identity, IdentitySigner, IdentityPublicKey), PlatformWalletError>
     {
-        let manager = self.identity_manager.read().await;
+        let info_guard = self.state.read().await;
 
-        let identity = manager
+        let identity = info_guard.identity_manager
             .identity(identity_id)
             .cloned()
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        let identity_index = manager
+        let identity_index = info_guard.identity_manager
             .identity_index(identity_id)
             .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
 
-        let signer = IdentitySigner::new(self.wallet.clone(), self.sdk.network, identity_index);
+        let signer = IdentitySigner::new(self.state.clone(), self.sdk.network, identity_index);
 
         let signing_key = identity
             .get_first_public_key_matching(

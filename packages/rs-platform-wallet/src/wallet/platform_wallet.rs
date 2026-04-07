@@ -1,7 +1,13 @@
 //! The main PlatformWallet struct combining core, identity, dashpay, and platform sub-wallets.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use dashcore::OutPoint;
+use dpp::address_funds::PlatformAddress;
+use dpp::balances::credits::TokenAmount;
+use dpp::fee::Credits;
+use dpp::prelude::Identifier;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -9,6 +15,7 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::{broadcast, RwLock};
 
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use super::asset_lock::tracked::TrackedAssetLock;
 use super::persister::WalletPersister;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
@@ -23,6 +30,24 @@ use super::tokens::TokenWallet;
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
 
+// TODO: Rename to PlatformWalletState
+/// Consolidated mutable state for a platform wallet.
+///
+/// All fields that were previously behind independent `Arc<RwLock<...>>` are now
+/// collected into a single struct behind one `Arc<RwLock<PlatformWalletInfo>>`.
+/// Sub-wallets hold a clone of that shared `Arc` and manage locking internally.
+///
+/// `WalletBalance` stays OUTSIDE the lock (AtomicU64, lock-free reads).
+pub struct PlatformWalletInfo {
+    pub wallet: Wallet,
+    pub wallet_info: ManagedWalletInfo,
+    pub identity_manager: IdentityManager,
+    pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    pub platform_address_balances: BTreeMap<PlatformAddress, Credits>,
+    pub token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
+    pub token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>,
+}
+
 /// A platform wallet that combines core UTXO functionality with identity management.
 ///
 /// This is SPV-free. It needs only key material and an `Sdk`.
@@ -30,9 +55,10 @@ pub type WalletId = [u8; 32];
 ///
 /// # Cloning
 ///
-/// `PlatformWallet` is cheaply cloneable (~35 atomic ops). A clone is a **shared
-/// handle** to the same mutable state — not an independent copy. All clones see
-/// the same UTXOs, balances, and identities through shared `Arc<RwLock<...>>` fields.
+/// `PlatformWallet` is cheaply cloneable (a few atomic increments). A clone is a
+/// **shared handle** to the same mutable state — not an independent copy. All
+/// clones see the same UTXOs, balances, and identities through the single shared
+/// `Arc<RwLock<PlatformWalletInfo>>`.
 pub struct PlatformWallet {
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
@@ -53,6 +79,9 @@ pub struct PlatformWallet {
     /// Per-wallet persistence handle — thin wrapper around the shared
     /// persister that binds this wallet's ID.
     persister: WalletPersister,
+    /// The single shared lock for all mutable wallet state.
+    /// All sub-wallets reference this same `Arc`.
+    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
 }
 
 impl PlatformWallet {
@@ -290,39 +319,41 @@ impl PlatformWallet {
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         let wallet_id = wallet_info.wallet_id;
-        let wallet = Arc::new(RwLock::new(wallet));
-        let wallet_info = Arc::new(RwLock::new(wallet_info));
-        let identity_manager = Arc::new(RwLock::new(IdentityManager::new()));
 
-        let core = CoreWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
+        // Build the single shared lock containing all mutable wallet state.
+        let state = Arc::new(RwLock::new(PlatformWalletInfo {
+            wallet,
+            wallet_info,
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            platform_address_balances: BTreeMap::new(),
+            token_watched: BTreeMap::new(),
+            token_balances: BTreeMap::new(),
+        }));
+
+        let core = CoreWallet::new(Arc::clone(&sdk), Arc::clone(&state));
 
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
-            wallet.clone(),
-            wallet_info.clone(),
+            Arc::clone(&state),
             event_tx.clone(),
             broadcaster,
         ));
 
         let identity = IdentityWallet {
             sdk: Arc::clone(&sdk),
-            wallet: wallet.clone(),
-            wallet_info: wallet_info.clone(),
-            identity_manager: identity_manager.clone(),
+            state: Arc::clone(&state),
             asset_locks: Arc::clone(&asset_locks),
         };
 
         let dashpay = DashPayWallet {
             sdk: Arc::clone(&sdk),
-            wallet: wallet.clone(),
-            wallet_info: wallet_info.clone(),
-            identity_manager: identity_manager.clone(),
+            state: Arc::clone(&state),
         };
 
-        let platform =
-            PlatformAddressWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
+        let platform = PlatformAddressWallet::new(Arc::clone(&sdk), Arc::clone(&state));
 
-        let tokens = TokenWallet::new(Arc::clone(&sdk), wallet.clone(), identity_manager.clone());
+        let tokens = TokenWallet::new(Arc::clone(&sdk), Arc::clone(&state));
 
         Self {
             wallet_id,
@@ -335,6 +366,7 @@ impl PlatformWallet {
             asset_locks,
             event_tx,
             persister: WalletPersister::new(wallet_id, persister),
+            state,
         }
     }
 }
@@ -358,7 +390,7 @@ impl PlatformWallet {
     pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
         // Apply key-wallet changeset to ManagedWalletInfo if present.
         if let Some(_wallet_cs) = &changeset.wallet {
-            if let Some(mut _info) = self.core.try_wallet_info_mut() {
+            if let Ok(_info) = self.state.try_write() {
                 // TODO: apply wallet_cs to info once ManagedWalletInfo
                 // exposes an apply(WalletChangeSet) method.
             }
@@ -387,6 +419,7 @@ impl Clone for PlatformWallet {
             asset_locks: self.asset_locks.clone(),
             event_tx: self.event_tx.clone(),
             persister: self.persister.clone(),
+            state: self.state.clone(),
         }
     }
 }

@@ -10,8 +10,6 @@ use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
 use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
-use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::wallet::Wallet;
 use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
@@ -20,6 +18,7 @@ use dashcore::PrivateKey;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 use dash_sdk::platform::address_sync::AddressSyncResult;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
@@ -31,25 +30,19 @@ use super::provider::PlatformPaymentAddressProvider;
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    pub(crate) wallet: Arc<RwLock<Wallet>>,
-    pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-    /// Cached platform address balances from the last sync.
-    /// TODO: Make them lock free as we did for core balances in the core wallet, by using a single atomic pointer to an immutable map that gets swapped out on updates. Does it make sense? How we use it in evo tool?
-    balances: Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>,
+    /// The single shared lock for all mutable wallet state.
+    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
 }
 
 impl PlatformAddressWallet {
     /// Create a new PlatformAddressWallet.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet: Arc<RwLock<Wallet>>,
-        wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+        state: Arc<RwLock<PlatformWalletInfo>>,
     ) -> Self {
         Self {
             sdk,
-            wallet,
-            wallet_info,
-            balances: Arc::new(RwLock::new(BTreeMap::new())),
+            state,
         }
     }
 
@@ -65,7 +58,7 @@ impl PlatformAddressWallet {
     pub async fn sync_balances(&self) -> Result<AddressSyncResult, PlatformWalletError> {
         // Build the address provider from the wallet.
         let mut provider =
-            PlatformPaymentAddressProvider::from_wallet(self.wallet.clone(), self.sdk.network)
+            PlatformPaymentAddressProvider::from_wallet(self.state.clone(), self.sdk.network)
                 .map_err(|e| {
                     PlatformWalletError::AddressSync(format!(
                         "Failed to create address provider: {}",
@@ -79,12 +72,12 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the sync results.
-        let mut balances = self.balances.write().await;
-        balances.clear();
+        let mut info_guard = self.state.write().await;
+        info_guard.platform_address_balances.clear();
         for ((_, key), funds) in &result.found {
             match PlatformAddress::from_bytes(key) {
                 Ok(platform_addr) => {
-                    balances.insert(platform_addr, funds.balance);
+                    info_guard.platform_address_balances.insert(platform_addr, funds.balance);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -121,14 +114,14 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the proof-verified response.
-        let mut balances = self.balances.write().await;
+        let mut info_guard = self.state.write().await;
         for (addr, maybe_info) in address_infos.iter() {
             match maybe_info {
-                Some(info) => {
-                    balances.insert(*addr, info.balance);
+                Some(ai) => {
+                    info_guard.platform_address_balances.insert(*addr, ai.balance);
                 }
                 None => {
-                    balances.remove(addr);
+                    info_guard.platform_address_balances.remove(addr);
                 }
             }
         }
@@ -176,14 +169,14 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the proof-verified response.
-        let mut balances = self.balances.write().await;
+        let mut info_guard = self.state.write().await;
         for (addr, maybe_info) in address_infos.iter() {
             match maybe_info {
-                Some(info) => {
-                    balances.insert(*addr, info.balance);
+                Some(ai) => {
+                    info_guard.platform_address_balances.insert(*addr, ai.balance);
                 }
                 None => {
-                    balances.remove(addr);
+                    info_guard.platform_address_balances.remove(addr);
                 }
             }
         }
@@ -196,16 +189,16 @@ impl PlatformAddressWallet {
     /// Returns the balances from the last call to [`sync_balances`](Self::sync_balances),
     /// [`transfer`](Self::transfer), or [`withdraw`](Self::withdraw).
     pub async fn addresses_with_balances(&self) -> Vec<(PlatformAddress, Credits)> {
-        let balances = self.balances.read().await;
-        balances.iter().map(|(addr, &bal)| (*addr, bal)).collect()
+        let info_guard = self.state.read().await;
+        info_guard.platform_address_balances.iter().map(|(addr, &bal)| (*addr, bal)).collect()
     }
 
     /// Get total platform credits across all addresses.
     ///
     /// Returns the sum of all cached balances.
     pub async fn total_credits(&self) -> Credits {
-        let balances = self.balances.read().await;
-        balances.values().sum()
+        let info_guard = self.state.read().await;
+        info_guard.platform_address_balances.values().sum()
     }
 
     /// Fund platform addresses from a Core L1 asset lock.
@@ -245,14 +238,14 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the proof-verified response.
-        let mut balances = self.balances.write().await;
+        let mut info_guard = self.state.write().await;
         for (addr, maybe_info) in address_infos.iter() {
             match maybe_info {
-                Some(info) => {
-                    balances.insert(*addr, info.balance);
+                Some(ai) => {
+                    info_guard.platform_address_balances.insert(*addr, ai.balance);
                 }
                 None => {
-                    balances.remove(addr);
+                    info_guard.platform_address_balances.remove(addr);
                 }
             }
         }
@@ -277,38 +270,33 @@ impl PlatformAddressWallet {
 
         let target = PlatformP2PKHAddress::new(*hash);
 
-        // Step 1: find the derivation path (only needs wallet_info lock)
-        let derivation_path = {
-            let wallet_info = self.wallet_info.blocking_read();
-            let mut found_path = None;
-            for account in wallet_info.accounts.platform_payment_accounts.values() {
-                for addr_info in account.addresses.addresses.values() {
-                    let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address)
-                    else {
-                        continue;
-                    };
-                    if pool_addr == target {
-                        found_path = Some(addr_info.path.clone());
-                        break;
-                    }
-                }
-                if found_path.is_some() {
+        // Find the derivation path and derive the private key under a single lock.
+        let info_guard = self.state.blocking_read();
+        let mut found_path = None;
+        for account in info_guard.wallet_info.accounts.platform_payment_accounts.values() {
+            for addr_info in account.addresses.addresses.values() {
+                let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address)
+                else {
+                    continue;
+                };
+                if pool_addr == target {
+                    found_path = Some(addr_info.path.clone());
                     break;
                 }
             }
-            found_path
-        }; // wallet_info lock dropped here
+            if found_path.is_some() {
+                break;
+            }
+        }
 
-        let path = derivation_path.ok_or_else(|| {
+        let path = found_path.ok_or_else(|| {
             ProtocolError::Generic(format!(
                 "Platform address {:?} not found in wallet",
                 platform_address
             ))
         })?;
 
-        // Step 2: derive the private key (only needs wallet lock)
-        let wallet = self.wallet.blocking_read();
-        let secret_key = wallet.derive_private_key(&path).map_err(|e| {
+        let secret_key = info_guard.wallet.derive_private_key(&path).map_err(|e| {
             ProtocolError::Generic(format!(
                 "Failed to derive private key for platform address: {}",
                 e

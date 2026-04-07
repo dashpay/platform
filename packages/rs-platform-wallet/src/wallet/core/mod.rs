@@ -4,4 +4,4 @@ pub mod wallet;
 
 pub use balance::WalletBalance;
 pub use types::CoreAddressInfo;
-pub use wallet::{CoreWallet, WalletInfoWriteGuard};
+pub use wallet::{CoreWallet, PlatformWalletInfoWriteGuard};
