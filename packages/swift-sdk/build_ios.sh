@@ -37,14 +37,13 @@ log_error() { echo -e "${RED}$1${NC}"; }
 # Help
 # -------------------------------
 show_help() {
-  echo "Usage: $0 --target <ios|sim|mac|intel-mac> [--profile <dev|release>]"
+  echo "Usage: $0 --target <ios|sim|mac> [--profile <dev|release>]"
   echo ""
   echo "Targets:"
   echo "  ios         -> iPhone device"
   echo "  sim         -> auto-detected iOS simulator"
   echo "  mac         -> Apple Silicon Mac"
-  echo "  intel-mac   -> Intel Mac"
-  echo "  all         -> all targets except Intel Mac"
+  echo "  all         -> all targets"
   echo ""
   echo "Profile:"
   echo "  dev (default)"
@@ -53,18 +52,6 @@ show_help() {
   echo "Examples:"
   echo "  $0 --target sim --profile release"
   exit 1
-}
-
-# -------------------------------
-# Detect simulator target
-# -------------------------------
-detect_sim_target() {
-  ARCH=$(uname -m)
-  if [[ "$ARCH" == "arm64" ]]; then
-    echo "aarch64-apple-ios-sim"
-  else
-    echo "x86_64-apple-ios"
-  fi
 }
 
 # -------------------------------
@@ -81,7 +68,6 @@ while [[ $# -gt 0 ]]; do
         ios) BUILD_IOS=true ;;
         sim) BUILD_SIM=true ;;
         mac) BUILD_MAC=true ;;
-        intel-mac) BUILD_INTEL_MAC=true ;;
         all) BUILD_IOS=true; BUILD_SIM=true; BUILD_MAC=true ;;
         *) log_error "Unknown target $2"; show_help ;;
       esac
@@ -183,7 +169,7 @@ fi
 
 # iOS simulator
 if $BUILD_SIM; then
-  SIM_TARGET=$(detect_sim_target)
+  SIM_TARGET="aarch64-apple-ios-sim"
   log_info "Building iOS simulator ($SIM_TARGET)..."
   cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET"
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
@@ -201,16 +187,6 @@ if $BUILD_MAC; then
   inject_modulemap "$MAC_HEADERS"
 fi
 
-# Intel Mac
-if $BUILD_INTEL_MAC; then
-  INTEL_MAC_TARGET="x86_64-apple-darwin"
-  log_info "Building Intel macOS ($INTEL_MAC_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$INTEL_MAC_TARGET"
-  INTEL_MAC_LIB="$TARGET_DIR/$INTEL_MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
-  INTEL_MAC_HEADERS="$TARGET_DIR/$INTEL_MAC_TARGET/$OUTPUT_DIR/include"
-  inject_modulemap "$INTEL_MAC_HEADERS"
-fi
-
 # -------------------------------
 # Create XCFramework
 # -------------------------------
@@ -220,7 +196,6 @@ rm -rf "$XCFRAMEWORK"
 xcodebuild -create-xcframework \
   ${IOS_LIB:+-library "$IOS_LIB" -headers "$IOS_HEADERS"} \
   ${MAC_LIB:+-library "$MAC_LIB" -headers "$MAC_HEADERS"} \
-  ${INTEL_MAC_LIB:+-library "$INTEL_MAC_LIB" -headers "$INTEL_MAC_HEADERS"} \
   ${SIM_LIB:+-library "$SIM_LIB" -headers "$SIM_HEADERS"} \
   -output "$XCFRAMEWORK"
 
