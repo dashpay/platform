@@ -21,6 +21,7 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 
 use super::asset_lock::manager::AssetLockManager;
+use super::core::wallet::PlatformWalletInfoWriteGuard;
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
@@ -128,6 +129,41 @@ impl PlatformWallet {
     /// Get a reference to the SDK.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
+    }
+
+    /// Read access to the shared wallet state.
+    pub async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
+        self.state.read().await
+    }
+
+    /// Write access with auto-balance-refresh on drop.
+    pub async fn state_mut(&self) -> PlatformWalletInfoWriteGuard<'_> {
+        let guard = self.state.write().await;
+        PlatformWalletInfoWriteGuard {
+            guard,
+            balance: &self.core.balance,
+        }
+    }
+
+    /// Blocking read.
+    pub fn state_blocking(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
+        self.state.blocking_read()
+    }
+
+    /// Non-blocking read.
+    pub fn try_state(&self) -> Option<tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo>> {
+        self.state.try_read().ok()
+    }
+
+    /// Non-blocking write with auto-balance-refresh.
+    pub fn try_state_mut(&self) -> Option<PlatformWalletInfoWriteGuard<'_>> {
+        self.state
+            .try_write()
+            .ok()
+            .map(|guard| PlatformWalletInfoWriteGuard {
+                guard,
+                balance: &self.core.balance,
+            })
     }
 
     /// Construct a PlatformWallet from an existing key-wallet Wallet and ManagedWalletInfo.

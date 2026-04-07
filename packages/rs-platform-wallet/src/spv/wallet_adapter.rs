@@ -66,7 +66,7 @@ impl WalletInterface for SpvWalletAdapter {
         let mut new_addresses = Vec::new();
 
         for wallet in wallets.values() {
-            let mut info_guard = wallet.core.state_mut().await;
+            let mut info_guard = wallet.state_mut().await;
             let pi = &mut *info_guard;
 
             // Accumulate key-wallet changesets across all transactions in the block.
@@ -144,7 +144,7 @@ impl WalletInterface for SpvWalletAdapter {
         let mut combined = MempoolTransactionResult::default();
 
         for wallet in wallets.values() {
-            let mut info_guard = wallet.core.state_mut().await;
+            let mut info_guard = wallet.state_mut().await;
             let pi = &mut *info_guard;
 
             let result = pi
@@ -186,8 +186,7 @@ impl WalletInterface for SpvWalletAdapter {
             let addresses: Vec<DashAddress> = wallets
                 .values()
                 .flat_map(|w| {
-                    let addrs = w.core
-                        .try_state()
+                    let addrs = w.try_state()
                         .map(|wi| wi.wallet_info.monitored_addresses())
                         .unwrap_or_default();
                     tracing::debug!("SpvWalletAdapter::monitored_addresses: wallet {} has {} addresses", hex::encode(w.wallet_id()), addrs.len());
@@ -207,8 +206,7 @@ impl WalletInterface for SpvWalletAdapter {
             wallets
                 .values()
                 .flat_map(|w| {
-                    w.core
-                        .try_state()
+                    w.try_state()
                         .map(|wi| {
                             wi.wallet_info.get_spendable_utxos()
                                 .iter()
@@ -249,7 +247,7 @@ impl WalletInterface for SpvWalletAdapter {
                 let mut status_changed = false;
 
                 // Capture the UTXO IS-lock changeset from mark_instant_send_utxos.
-                let utxo_cs = if let Some(mut wi) = wallet.core.try_state_mut() {
+                let utxo_cs = if let Some(mut wi) = wallet.try_state_mut() {
                     let (_changed, utxo_cs) = wi.wallet_info.mark_instant_send_utxos(&txid);
                     utxo_cs
                 } else {
@@ -264,7 +262,7 @@ impl WalletInterface for SpvWalletAdapter {
                 // We don't have the full transaction here, so we only stage if the
                 // wallet already tracks this txid (status actually changed).
                 if status_changed {
-                    if let Some(wi) = wallet.core.try_state() {
+                    if let Some(wi) = wallet.try_state() {
                         // Build a key-wallet changeset from the transaction record.
                         let mut kw_changeset = KwWalletChangeSet::default();
                         for account in wi.wallet_info.accounts.all_accounts() {
@@ -317,7 +315,7 @@ impl WalletInterface for SpvWalletAdapter {
         if let Ok(wallets) = self.wallets.try_read() {
             wallets
                 .values()
-                .filter_map(|w| w.core.try_state().map(|wi| wi.wallet_info.birth_height()))
+                .filter_map(|w| w.try_state().map(|wi| wi.wallet_info.birth_height()))
                 .min()
                 .unwrap_or(0)
         } else {

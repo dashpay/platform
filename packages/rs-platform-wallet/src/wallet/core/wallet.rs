@@ -19,8 +19,8 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// `WalletBalance` when dropped. Ensures the lock-free balance is always
 /// consistent with the wallet info after any mutation.
 pub struct PlatformWalletInfoWriteGuard<'a> {
-    guard: tokio::sync::RwLockWriteGuard<'a, PlatformWalletInfo>,
-    balance: &'a WalletBalance,
+    pub(crate) guard: tokio::sync::RwLockWriteGuard<'a, PlatformWalletInfo>,
+    pub(crate) balance: &'a WalletBalance,
 }
 
 impl<'a> std::ops::Deref for PlatformWalletInfoWriteGuard<'a> {
@@ -81,7 +81,7 @@ impl CoreWallet {
     ///
     /// Use this when you need multiple reads in a single lock acquisition
     /// (balance + UTXOs + addresses, etc.) to avoid redundant locking.
-    pub async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
+    pub(crate) async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
         self.state.read().await
     }
 
@@ -89,7 +89,7 @@ impl CoreWallet {
     ///
     /// Returns a guard that automatically refreshes `WalletBalance` when dropped,
     /// so the lock-free balance is always consistent with `ManagedWalletInfo`.
-    pub async fn state_mut(&self) -> PlatformWalletInfoWriteGuard<'_> {
+    pub(crate) async fn state_mut(&self) -> PlatformWalletInfoWriteGuard<'_> {
         let guard = self.state.write().await;
         PlatformWalletInfoWriteGuard {
             guard,
@@ -107,7 +107,7 @@ impl CoreWallet {
     ///
     /// Panics if called from an async context (use `state().await`
     /// instead).
-    pub fn state_blocking(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
+    pub(crate) fn state_blocking(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
         self.state.blocking_read()
     }
 
@@ -116,7 +116,7 @@ impl CoreWallet {
     /// Returns `None` if a writer currently holds the lock. Useful in
     /// synchronous contexts (e.g. `spawn_blocking`) where awaiting is not
     /// possible.
-    pub fn try_state(&self) -> Option<tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo>> {
+    pub(crate) fn try_state(&self) -> Option<tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo>> {
         self.state.try_read().ok()
     }
 
@@ -124,7 +124,7 @@ impl CoreWallet {
     ///
     /// Returns `None` if the lock is currently held. Useful in synchronous
     /// contexts (e.g. `spawn_blocking`) where awaiting is not possible.
-    pub fn try_state_mut(&self) -> Option<PlatformWalletInfoWriteGuard<'_>> {
+    pub(crate) fn try_state_mut(&self) -> Option<PlatformWalletInfoWriteGuard<'_>> {
         self.state
             .try_write()
             .ok()
