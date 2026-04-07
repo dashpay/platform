@@ -524,3 +524,381 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+    use grovedb::QueryItem;
+
+    use crate::drive::votes::paths::vote_contested_resource_contract_documents_indexes_path_vec;
+
+    /// Build a `ResolvedVotePollsByDocumentTypeQuery` from a DPNS contract.
+    ///
+    /// The DPNS "domain" doc type has the contested index "parentNameAndLabel"
+    /// with properties: [normalizedParentDomainName, normalizedLabel].
+    ///
+    /// For testing `construct_path_query`, we provide `start_index_values` that
+    /// fill the first property, leaving `normalizedLabel` as the middle property
+    /// that the query will range over.
+    fn build_query(
+        contract: &dpp::data_contract::DataContract,
+        start_index_values: Vec<Value>,
+        end_index_values: Vec<Value>,
+        start_at_value: Option<(Value, bool)>,
+        limit: Option<u16>,
+        order_ascending: bool,
+    ) -> VotePollsByDocumentTypeQuery {
+        VotePollsByDocumentTypeQuery {
+            contract_id: *contract.id_ref(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            start_index_values,
+            end_index_values,
+            start_at_value,
+            limit,
+            order_ascending,
+        }
+    }
+
+    fn resolve_query<'a>(
+        query: &'a VotePollsByDocumentTypeQuery,
+        contract: &'a dpp::data_contract::DataContract,
+    ) -> ResolvedVotePollsByDocumentTypeQuery<'a> {
+        query
+            .resolve_with_provided_borrowed_contract(contract)
+            .expect("should resolve")
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_with_provided_borrowed_contract
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_with_correct_contract_succeeds() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            None,
+            Some(10),
+            true,
+        );
+
+        let resolved = query.resolve_with_provided_borrowed_contract(&contract);
+        assert!(resolved.is_ok());
+    }
+
+    #[test]
+    fn resolve_with_wrong_contract_fails() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        // Build query with a different contract_id
+        let mut query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            None,
+            Some(10),
+            true,
+        );
+        query.contract_id = Identifier::from([0xFF; 32]); // wrong ID
+
+        let resolved = query.resolve_with_provided_borrowed_contract(&contract);
+        assert!(resolved.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // construct_path_query_with_known_index
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn construct_path_query_ascending_no_start_at_no_end_values() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        // Provide 1 start_index_value (normalizedParentDomainName="dash"),
+        // leaving normalizedLabel as the middle property to range over.
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            None,     // no start_at_value
+            Some(10), // limit
+            true,     // ascending
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let pq = resolved
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("should build path query");
+
+        // Path should start with the base indexes path and then the serialized
+        // start_index_values appended.
+        let base = vote_contested_resource_contract_documents_indexes_path_vec(
+            contract.id_ref().as_ref(),
+            "domain",
+        );
+        assert!(pq.path.len() > base.len());
+        for (i, component) in base.iter().enumerate() {
+            assert_eq!(&pq.path[i], component);
+        }
+
+        assert_eq!(pq.query.limit, Some(10));
+        assert!(pq.query.query.left_to_right);
+
+        // No start_at -> insert_all -> RangeFull
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], QueryItem::RangeFull(..)));
+
+        // No end index values means no subquery_path on default branch
+        assert!(pq
+            .query
+            .query
+            .default_subquery_branch
+            .subquery_path
+            .is_none());
+    }
+
+    #[test]
+    fn construct_path_query_descending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            None,
+            Some(10),
+            false, // descending
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let pq = resolved
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("should build path query");
+
+        assert!(!pq.query.query.left_to_right);
+    }
+
+    #[test]
+    fn construct_path_query_with_start_at_value_ascending_included() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            Some((Value::Text("alice".to_string()), true)), // start_at included
+            Some(10),
+            true,
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let pq = resolved
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("should build path query");
+
+        // Ascending + included -> RangeFrom
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeFrom(..)),
+            "expected RangeFrom for ascending + included"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_with_start_at_value_ascending_excluded() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            Some((Value::Text("alice".to_string()), false)), // excluded
+            Some(10),
+            true,
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let pq = resolved
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfter(..)),
+            "expected RangeAfter for ascending + excluded"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_with_start_at_value_descending_included() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            Some((Value::Text("alice".to_string()), true)),
+            Some(10),
+            false, // descending
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let pq = resolved
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeToInclusive(..)),
+            "expected RangeToInclusive for descending + included"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_with_start_at_value_descending_excluded() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            Some((Value::Text("alice".to_string()), false)),
+            Some(10),
+            false,
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let pq = resolved
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeTo(..)),
+            "expected RangeTo for descending + excluded"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // helper methods: result_is_in_key, result_path_index
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn result_is_in_key_when_end_index_values_empty() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query_no_end = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            None,
+            None,
+            true,
+        );
+        let resolved = resolve_query(&query_no_end, &contract);
+        assert!(resolved.result_is_in_key());
+    }
+
+    #[test]
+    fn result_path_index_with_one_start_value() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())], // 1 start value
+            vec![],
+            None,
+            None,
+            true,
+        );
+        let resolved = resolve_query(&query, &contract);
+
+        // result_path_index = 6 + start_index_values.len()
+        assert_eq!(resolved.result_path_index(), 7);
+    }
+
+    // -----------------------------------------------------------------------
+    // indexes_vectors error: too many end index values
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn too_many_start_index_values_error() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        // The contested index has 2 properties. Providing 2 start values
+        // leaves no room for a middle property.
+        let query = build_query(
+            &contract,
+            vec![
+                Value::Text("dash".to_string()),
+                Value::Text("extra".to_string()),
+            ],
+            vec![],
+            None,
+            None,
+            true,
+        );
+        let resolved = resolve_query(&query, &contract);
+        let index = resolved.index().expect("should find contested index");
+        let result = resolved.construct_path_query_with_known_index(index, platform_version);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // index() method: wrong index name should fail
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn index_method_wrong_name_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let mut query = build_query(
+            &contract,
+            vec![Value::Text("dash".to_string())],
+            vec![],
+            None,
+            None,
+            true,
+        );
+        query.index_name = "nonexistent_index".to_string();
+
+        let resolved = resolve_query(&query, &contract);
+        let result = resolved.index();
+        assert!(result.is_err());
+    }
+}
