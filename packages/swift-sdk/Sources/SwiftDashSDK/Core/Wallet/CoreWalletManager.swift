@@ -33,36 +33,6 @@ public class CoreWalletManager: ObservableObject {
         }
     }
 
-    /// Public convenience initializer for one-shot / migration use cases.
-    ///
-    /// Constructs an `SPVClient` with no on-disk data directory (`dataDir: nil`)
-    /// and an in-process SwiftData `ModelContainer` using the SDK's standard
-    /// schema, then chains to the designated initializer. Suitable for callers
-    /// that need to perform offline wallet operations — e.g. importing a wallet
-    /// from an existing mnemonic during a key migration — without configuring
-    /// an SPV peer set or owning their own persistence stack.
-    ///
-    /// The created `CoreWalletManager` is fully functional for `createWallet`,
-    /// `addAccount`, and other in-process operations. It does not start any
-    /// network sync; consumers that need a live SPV peer connection should
-    /// continue to use the designated initializer with a fully configured
-    /// `SPVClient`.
-    ///
-    /// - Parameter keyWalletNetwork: The Dash network to operate against
-    ///   (`.mainnet`, `.testnet`, `.regtest`, or `.devnet`).
-    /// - Throws: Any error raised by `ModelContainerHelper.createContainer()`,
-    ///   `SPVClient.init`, or the designated initializer.
-    public convenience init(keyWalletNetwork: KeyWalletNetwork) throws {
-        let modelContainer = try ModelContainerHelper.createContainer()
-        let dashSDKNetwork = DashSDKNetwork(rawValue: keyWalletNetwork.rawValue)
-        let spvClient = try SPVClient(
-            network: dashSDKNetwork,
-            dataDir: nil,
-            startHeight: 0,
-            eventHandlers: nil)
-        try self.init(spvClient: spvClient, modelContainer: modelContainer)
-    }
-
     // MARK: - Wallet Management
     public func createWallet(label: String, mnemonic: String, pin: String, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
