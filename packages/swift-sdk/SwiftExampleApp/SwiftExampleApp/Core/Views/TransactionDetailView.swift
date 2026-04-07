@@ -229,9 +229,8 @@ struct TransactionDetailRow: View {
             netAmount: 50000000,
             height: 12345,
             blockHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            timestamp: UInt64(Date().timeIntervalSince1970),
+            timestamp: UInt32(Date().timeIntervalSince1970),
             fee: 226,
-            isOurs: false
         )
     )
 }

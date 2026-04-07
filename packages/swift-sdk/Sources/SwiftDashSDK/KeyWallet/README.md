@@ -165,19 +165,6 @@ let address = try manager.getReceiveAddress(
     network: .mainnet,
     accountIndex: 0
 )
-
-// Process transaction across all wallets
-let isRelevant = try manager.processTransaction(
-    txData,
-    network: .mainnet,
-    contextDetails: TransactionContextDetails(
-        context: .inBlock,
-        height: 1000000,
-        blockHash: blockHashData,
-        timestamp: UInt32(Date().timeIntervalSince1970)
-    ),
-    updateStateIfFound: true
-)
 ```
 
 ### Managed Accounts (New API)
