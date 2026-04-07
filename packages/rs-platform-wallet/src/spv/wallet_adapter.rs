@@ -180,16 +180,22 @@ impl WalletInterface for SpvWalletAdapter {
 
     fn monitored_addresses(&self) -> Vec<DashAddress> {
         if let Ok(wallets) = self.wallets.try_read() {
-            wallets
+            let count = wallets.len();
+            let addresses: Vec<DashAddress> = wallets
                 .values()
                 .flat_map(|w| {
-                    w.core
+                    let addrs = w.core
                         .try_wallet_info()
                         .map(|wi| wi.monitored_addresses())
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    tracing::debug!("SpvWalletAdapter::monitored_addresses: wallet {} has {} addresses", hex::encode(w.wallet_id()), addrs.len());
+                    addrs
                 })
-                .collect()
+                .collect();
+            tracing::debug!("SpvWalletAdapter::monitored_addresses: {} wallets, {} total addresses", count, addresses.len());
+            addresses
         } else {
+            tracing::warn!("SpvWalletAdapter::monitored_addresses: wallets lock contention, returning empty");
             Vec::new()
         }
     }
