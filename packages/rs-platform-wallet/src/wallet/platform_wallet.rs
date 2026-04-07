@@ -386,6 +386,13 @@ impl PlatformWallet {
         self.persister.flush()
     }
 
+    /// Load persisted state for this wallet.
+    pub fn load_persisted(
+        &self,
+    ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>> {
+        self.persister.load()
+    }
+
     /// Apply a changeset to in-memory wallet state.
     ///
     /// Currently applies key-wallet sub-changesets to `ManagedWalletInfo`.
