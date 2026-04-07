@@ -78,6 +78,16 @@ impl SpvRuntime {
         self.sync_state.bump_monitor_revision();
     }
 
+    /// Reset filter_committed_height to 0, forcing a filter rescan from
+    /// birth_height on the next SPV start. Call BEFORE `run()`.
+    ///
+    /// Useful when wallet state isn't persisted: cached committed height
+    /// from a previous run would skip historical blocks, leaving the
+    /// wallet with zero balance.
+    pub fn reset_filter_committed_height(&self) {
+        self.sync_state.update_filter_committed_height(0);
+    }
+
     /// Start SPV sync.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         {

@@ -194,7 +194,7 @@ impl WalletInterface for SpvWalletAdapter {
                     addrs
                 })
                 .collect();
-            tracing::debug!("SpvWalletAdapter::monitored_addresses: {} wallets, {} total addresses", count, addresses.len());
+            tracing::info!("SpvWalletAdapter::monitored_addresses: {} wallets, {} total addresses", count, addresses.len());
             addresses
         } else {
             tracing::warn!("SpvWalletAdapter::monitored_addresses: wallets lock contention, returning empty");
