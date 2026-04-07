@@ -30,6 +30,9 @@ use crate::wallet::PlatformWallet;
 pub(crate) struct SpvWalletAdapter {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     sync_state: Arc<super::sync_state::SpvSyncState>,
+    /// Wallet event sender — required by `WalletInterface::subscribe_events()`.
+    /// The SPV client's event monitor subscribes to this channel.
+    event_tx: broadcast::Sender<WalletEvent>,
 }
 
 impl SpvWalletAdapter {
@@ -37,9 +40,11 @@ impl SpvWalletAdapter {
         wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         sync_state: Arc<super::sync_state::SpvSyncState>,
     ) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
         Self {
             wallets,
             sync_state,
+            event_tx,
         }
     }
 }
@@ -297,10 +302,7 @@ impl WalletInterface for SpvWalletAdapter {
     }
 
     fn subscribe_events(&self) -> broadcast::Receiver<WalletEvent> {
-        // Required by WalletInterface trait but not used — create a channel on the fly.
-        let (tx, rx) = broadcast::channel(1);
-        drop(tx);
-        rx
+        self.event_tx.subscribe()
     }
 
     async fn earliest_required_height(&self) -> u32 {
