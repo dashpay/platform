@@ -15,7 +15,7 @@ import Foundation
 ///    FFIDashSpvClient locks the dir to avoid concurrency corruption and its only possible to
 ///    ensure is unlocked by freeing the pointer, FFI limitation
 ///  - Clearing the storage stops the SPVClient, a new one has to be created, FFI limitation
-class SPVClient: @unchecked Sendable {
+public class SPVClient: @unchecked Sendable {
     private var spvEventHandlers: SPVEventHandlers?
 
     // FFI handles
@@ -31,7 +31,7 @@ class SPVClient: @unchecked Sendable {
         return false
     }()
 
-    init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, eventHandlers: SPVEventHandlers? = nil) throws {
+    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, eventHandlers: SPVEventHandlers? = nil) throws {
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
@@ -150,7 +150,7 @@ class SPVClient: @unchecked Sendable {
             .filter { !$0.isEmpty }
     }
 
-    func getSyncProgress() -> SPVSyncProgress {
+    public func getSyncProgress() -> SPVSyncProgress {
         guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else {
             print("[SPV][GetSyncProgress] Failed to get sync progress (Should only fail if client is nil, but client is not nil)")
             return SPVSyncProgress.default()
@@ -167,7 +167,7 @@ class SPVClient: @unchecked Sendable {
     }
 
     /// Enable/disable masternode sync. If the client is running, apply the update immediately.
-    func setMasternodeSyncEnabled(_ enabled: Bool) throws {
+    public func setMasternodeSyncEnabled(_ enabled: Bool) throws {
         var rc = dash_spv_ffi_config_set_masternode_sync_enabled(config, enabled)
         if rc != 0 { throw SPVError.configurationFailed }
 
@@ -176,7 +176,7 @@ class SPVClient: @unchecked Sendable {
     }
 
     /// Clear all persisted SPV storage (headers, filters, metadata, sync state).
-    func clearStorage() throws {
+    public func clearStorage() throws {
         let rc = dash_spv_ffi_client_clear_storage(client)
         if rc != 0 {
             throw SPVError.storageOperationFailed(SPVClient.getLastDashFFIError())
@@ -188,7 +188,7 @@ class SPVClient: @unchecked Sendable {
         spvEventHandlers?.progress.onProgressUpdate(getSyncProgress())
     }
 
-    func destroy() {
+    public func destroy() {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
 
@@ -198,7 +198,7 @@ class SPVClient: @unchecked Sendable {
 
     // MARK: - Broadcast Transactions
 
-    func broadcastTransaction(_ transactionData: Data) throws {
+    public func broadcastTransaction(_ transactionData: Data) throws {
         try transactionData.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
             guard let txBytes = ptr.bindMemory(to: UInt8.self).baseAddress else {
                 throw SPVError.transactionBroadcastFailed("Invalid transaction data pointer")
@@ -217,7 +217,7 @@ class SPVClient: @unchecked Sendable {
 
     // MARK: - Synchronization
 
-    func startSync() async throws {
+    public func startSync() async throws {
         let result = dash_spv_ffi_client_run(
             client
         )
@@ -227,7 +227,7 @@ class SPVClient: @unchecked Sendable {
         }
     }
 
-    func stopSync() {
+    public func stopSync() {
         let cancelResult = dash_spv_ffi_client_stop(client)
         if cancelResult != 0 {
             let message = SPVClient.getLastDashFFIError()
@@ -241,7 +241,7 @@ class SPVClient: @unchecked Sendable {
 
     /// Produce a Swift wallet manager that shares the SPV client's underlying wallet state.
     /// Callers are responsible for retaining the returned instance for as long as needed.
-    func getWalletManager() throws -> WalletManager {
+    public func getWalletManager() throws -> WalletManager {
         // This ffi call is expected to never fail
         let ffiWalletManager = dash_spv_ffi_client_get_wallet_manager(client)!
 
