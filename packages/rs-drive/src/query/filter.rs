@@ -1741,4 +1741,952 @@ mod tests {
             panic!("expected Create action clauses");
         }
     }
+
+    // ---- validate: unknown document type ----
+
+    #[test]
+    fn validate_rejects_unknown_document_type() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "doesNotExist".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: InternalClauses::default(),
+            },
+        };
+        let result = filter.validate();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.first_error(),
+            Some(QuerySyntaxError::DocumentTypeNotFound(_))
+        ));
+    }
+
+    // ---- validate: owner clause with In operator ----
+
+    #[test]
+    fn validate_transfer_owner_clause_in_with_identifiers_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Transfer {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::Identifier([1u8; 32]),
+                        Value::Identifier([2u8; 32]),
+                    ]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_transfer_owner_clause_in_with_non_identifiers_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Transfer {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![Value::Text("not-an-id".to_string())]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_transfer_owner_clause_greater_than_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Transfer {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::GreaterThan,
+                    value: Value::Identifier([1u8; 32]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    // ---- validate: purchase owner clause ----
+
+    #[test]
+    fn validate_purchase_owner_clause_in_with_identifiers_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Purchase {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::Identifier([3u8; 32]),
+                        Value::Identifier([4u8; 32]),
+                    ]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_purchase_owner_clause_non_identifier_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Purchase {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::Equal,
+                    value: Value::U64(42),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_purchase_owner_clause_in_with_non_array_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Purchase {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Identifier([1u8; 32]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    // ---- validate: price clause coverage ----
+
+    #[test]
+    fn validate_price_clause_starts_with_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::StartsWith,
+                    value: Value::Text("1".to_string()),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_price_clause_in_with_integers_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![Value::U64(10), Value::U64(20), Value::U64(30)]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_in_with_non_integer_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![Value::Text("not_int".to_string())]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_price_clause_in_with_non_array_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::U64(10),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_price_clause_between_with_valid_integers_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::Between,
+                    value: Value::Array(vec![Value::U64(10), Value::U64(100)]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_between_with_descending_bounds_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::Between,
+                    value: Value::Array(vec![Value::U64(100), Value::U64(10)]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_price_clause_between_with_non_array_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::Between,
+                    value: Value::U64(50),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn validate_price_clause_less_than_with_integer_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::LessThan,
+                    value: Value::U64(1000),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_less_than_or_equals_with_integer_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::LessThanOrEquals,
+                    value: Value::U64(500),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_greater_than_or_equals_with_integer_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::GreaterThanOrEquals,
+                    value: Value::U64(50),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    // ---- validate: delete action ----
+
+    #[test]
+    fn validate_delete_with_empty_clauses_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Delete {
+                original_document_clauses: InternalClauses::default(),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_delete_with_primary_key_clause_is_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Delete {
+                original_document_clauses: InternalClauses {
+                    primary_key_equal_clause: Some(WhereClause {
+                        field: "$id".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Identifier([99u8; 32]),
+                    }),
+                    ..Default::default()
+                },
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    // ---- matches_original_document: Create action returns false ----
+
+    #[test]
+    fn matches_original_document_returns_false_for_create_action() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: InternalClauses::default(),
+            },
+        };
+
+        let doc = Document::V0(DocumentV0 {
+            id: Identifier::from([1u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: BTreeMap::new(),
+            ..Default::default()
+        });
+        // Create has no original document path
+        assert!(!filter.matches_original_document(&doc));
+    }
+
+    // ---- evaluate_clauses: primary_key_in_clause ----
+
+    #[test]
+    fn evaluate_clauses_primary_key_in_clause_matches() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let target_id_1 = Identifier::from([10u8; 32]);
+        let target_id_2 = Identifier::from([20u8; 32]);
+
+        let internal_clauses = InternalClauses {
+            primary_key_in_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![target_id_1.into(), target_id_2.into()]),
+            }),
+            ..Default::default()
+        };
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
+            },
+        };
+
+        // Matching ID
+        let id_value: Value = target_id_1.into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+
+        // Non-matching ID
+        let other_id: Value = Identifier::from([99u8; 32]).into();
+        assert!(!filter.evaluate_clauses(&internal_clauses, &other_id, &BTreeMap::new()));
+    }
+
+    // ---- evaluate_clauses: combined primary_key and field clauses ----
+
+    #[test]
+    fn evaluate_clauses_primary_key_plus_equal_clause() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let target_id = Identifier::from([50u8; 32]);
+
+        let mut equal_clauses = BTreeMap::new();
+        equal_clauses.insert(
+            "name".to_string(),
+            WhereClause {
+                field: "name".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("test".to_string()),
+            },
+        );
+
+        let internal_clauses = InternalClauses {
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: target_id.into(),
+            }),
+            equal_clauses,
+            ..Default::default()
+        };
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
+            },
+        };
+
+        // Both match
+        let id_value: Value = target_id.into();
+        let mut data = BTreeMap::new();
+        data.insert("name".to_string(), Value::Text("test".to_string()));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data));
+
+        // ID matches but field doesn't
+        let mut bad_data = BTreeMap::new();
+        bad_data.insert("name".to_string(), Value::Text("other".to_string()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &bad_data));
+
+        // Field matches but ID doesn't
+        let wrong_id: Value = Identifier::from([99u8; 32]).into();
+        assert!(!filter.evaluate_clauses(&internal_clauses, &wrong_id, &data));
+    }
+
+    // ---- get_value_by_path ----
+
+    #[test]
+    fn get_value_by_path_simple_key() {
+        let mut root = BTreeMap::new();
+        root.insert("name".to_string(), Value::Text("alice".to_string()));
+        let result = get_value_by_path(&root, "name");
+        assert_eq!(result, Some(&Value::Text("alice".to_string())));
+    }
+
+    #[test]
+    fn get_value_by_path_missing_key_returns_none() {
+        let root = BTreeMap::new();
+        let result = get_value_by_path(&root, "nonexistent");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_value_by_path_empty_path_returns_none() {
+        let mut root = BTreeMap::new();
+        root.insert("x".to_string(), Value::I64(1));
+        let result = get_value_by_path(&root, "");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_value_by_path_nested_map() {
+        let nested = vec![(
+            Value::Text("level2".to_string()),
+            Value::Text("deep_value".to_string()),
+        )];
+        let mut root = BTreeMap::new();
+        root.insert("level1".to_string(), Value::Map(nested));
+
+        let result = get_value_by_path(&root, "level1.level2");
+        assert_eq!(result, Some(&Value::Text("deep_value".to_string())));
+    }
+
+    #[test]
+    fn get_value_by_path_intermediate_non_map_returns_none() {
+        let mut root = BTreeMap::new();
+        root.insert("scalar".to_string(), Value::I64(42));
+
+        // Trying to traverse through a scalar value
+        let result = get_value_by_path(&root, "scalar.child");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_value_by_path_deeply_nested() {
+        let level3 = vec![(Value::Text("val".to_string()), Value::U64(999))];
+        let level2 = vec![(Value::Text("c".to_string()), Value::Map(level3))];
+        let mut root = BTreeMap::new();
+        root.insert("a".to_string(), Value::Map(level2));
+
+        let result = get_value_by_path(&root, "a.c.val");
+        assert_eq!(result, Some(&Value::U64(999)));
+    }
+
+    #[test]
+    fn get_value_by_path_missing_intermediate_key_returns_none() {
+        let nested = vec![(Value::Text("exists".to_string()), Value::I64(1))];
+        let mut root = BTreeMap::new();
+        root.insert("a".to_string(), Value::Map(nested));
+
+        let result = get_value_by_path(&root, "a.not_here.val");
+        assert!(result.is_none());
+    }
+
+    // ---- evaluate_clauses: range clause with missing field ----
+
+    #[test]
+    fn evaluate_clauses_range_clause_missing_field_returns_false() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let internal_clauses = InternalClauses {
+            range_clause: Some(WhereClause {
+                field: "nonexistent".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(0),
+            }),
+            ..Default::default()
+        };
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
+            },
+        };
+
+        let id_value: Value = Identifier::from([1u8; 32]).into();
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+    }
+
+    // ---- evaluate_clauses: in clause with missing field ----
+
+    #[test]
+    fn evaluate_clauses_in_clause_missing_field_returns_false() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let internal_clauses = InternalClauses {
+            in_clause: Some(WhereClause {
+                field: "nonexistent".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::I64(1)]),
+            }),
+            ..Default::default()
+        };
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
+            },
+        };
+
+        let id_value: Value = Identifier::from([1u8; 32]).into();
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+    }
+
+    // ---- matches_original_document: UpdatePrice with original clauses ----
+
+    #[test]
+    fn matches_original_document_update_price_evaluates_original_clauses() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let mut eq = BTreeMap::new();
+        eq.insert(
+            "kind".to_string(),
+            WhereClause {
+                field: "kind".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("premium".to_string()),
+            },
+        );
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses {
+                    equal_clauses: eq,
+                    ..Default::default()
+                },
+                price_clause: None,
+            },
+        };
+
+        // Matching original
+        let mut props = BTreeMap::new();
+        props.insert("kind".to_string(), Value::Text("premium".to_string()));
+        let doc = Document::V0(DocumentV0 {
+            id: Identifier::from([15u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: props,
+            ..Default::default()
+        });
+        assert!(filter.matches_original_document(&doc));
+
+        // Non-matching original
+        let mut bad_props = BTreeMap::new();
+        bad_props.insert("kind".to_string(), Value::Text("basic".to_string()));
+        let bad_doc = Document::V0(DocumentV0 {
+            id: Identifier::from([15u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: bad_props,
+            ..Default::default()
+        });
+        assert!(!filter.matches_original_document(&bad_doc));
+    }
+
+    // ---- matches_original_document: Purchase with original clauses ----
+
+    #[test]
+    fn matches_original_document_purchase_evaluates_original_clauses() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let mut eq = BTreeMap::new();
+        eq.insert(
+            "status".to_string(),
+            WhereClause {
+                field: "status".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("for_sale".to_string()),
+            },
+        );
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Purchase {
+                original_document_clauses: InternalClauses {
+                    equal_clauses: eq,
+                    ..Default::default()
+                },
+                owner_clause: None,
+            },
+        };
+
+        let mut props = BTreeMap::new();
+        props.insert("status".to_string(), Value::Text("for_sale".to_string()));
+        let doc = Document::V0(DocumentV0 {
+            id: Identifier::from([20u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: props,
+            ..Default::default()
+        });
+        assert!(filter.matches_original_document(&doc));
+    }
+
+    // ---- validate: Replace with invalid original clauses ----
+
+    #[test]
+    fn validate_replace_with_invalid_original_clauses_fails() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        // Put an invalid field name in original clauses
+        let mut eq = BTreeMap::new();
+        eq.insert(
+            "nonexistentField".to_string(),
+            WhereClause {
+                field: "nonexistentField".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::I64(1),
+            },
+        );
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Replace {
+                original_document_clauses: InternalClauses {
+                    equal_clauses: eq,
+                    ..Default::default()
+                },
+                new_document_clauses: InternalClauses::default(),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    // ---- validate: Transfer with invalid original clauses ----
+
+    #[test]
+    fn validate_transfer_with_invalid_original_clauses_fails() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let mut eq = BTreeMap::new();
+        eq.insert(
+            "badField".to_string(),
+            WhereClause {
+                field: "badField".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::I64(1),
+            },
+        );
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Transfer {
+                original_document_clauses: InternalClauses {
+                    equal_clauses: eq,
+                    ..Default::default()
+                },
+                owner_clause: None,
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    // ---- validate: UpdatePrice with invalid original clauses ----
+
+    #[test]
+    fn validate_update_price_with_invalid_original_clauses_fails() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let mut eq = BTreeMap::new();
+        eq.insert(
+            "badField".to_string(),
+            WhereClause {
+                field: "badField".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::I64(1),
+            },
+        );
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses {
+                    equal_clauses: eq,
+                    ..Default::default()
+                },
+                price_clause: None,
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    // ---- validate: Purchase with invalid original clauses ----
+
+    #[test]
+    fn validate_purchase_with_invalid_original_clauses_fails() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let mut eq = BTreeMap::new();
+        eq.insert(
+            "badField".to_string(),
+            WhereClause {
+                field: "badField".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::I64(1),
+            },
+        );
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Purchase {
+                original_document_clauses: InternalClauses {
+                    equal_clauses: eq,
+                    ..Default::default()
+                },
+                owner_clause: None,
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
+
+    // ---- evaluate_clauses: starts_with on field ----
+
+    #[test]
+    fn evaluate_clauses_starts_with_range_clause() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let internal_clauses = InternalClauses {
+            range_clause: Some(WhereClause {
+                field: "name".to_string(),
+                operator: WhereOperator::StartsWith,
+                value: Value::Text("Ali".to_string()),
+            }),
+            ..Default::default()
+        };
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
+            },
+        };
+
+        let id_value: Value = Identifier::from([1u8; 32]).into();
+
+        let mut matching = BTreeMap::new();
+        matching.insert("name".to_string(), Value::Text("Alice".to_string()));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching));
+
+        let mut non_matching = BTreeMap::new();
+        non_matching.insert("name".to_string(), Value::Text("Bob".to_string()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching));
+    }
+
+    // ---- validate: price clause between_exclude variants ----
+
+    #[test]
+    fn validate_price_clause_between_exclude_left_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::BetweenExcludeLeft,
+                    value: Value::Array(vec![Value::U64(5), Value::U64(50)]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_between_exclude_right_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::BetweenExcludeRight,
+                    value: Value::Array(vec![Value::U64(5), Value::U64(50)]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_between_exclude_bounds_valid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::BetweenExcludeBounds,
+                    value: Value::Array(vec![Value::U64(5), Value::U64(50)]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_valid());
+    }
+
+    // ---- validate: transfer In with non-array ----
+
+    #[test]
+    fn validate_transfer_owner_clause_in_with_non_array_is_invalid() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+
+        let filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::Transfer {
+                original_document_clauses: InternalClauses::default(),
+                owner_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Identifier([1u8; 32]),
+                }),
+            },
+        };
+        assert!(filter.validate().is_err());
+    }
 }
