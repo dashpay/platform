@@ -215,7 +215,8 @@ impl DashPayWallet {
                     ))
                 })?;
             let account_xpub = info_guard
-                .wallet
+                .managed_state
+                .wallet()
                 .derive_extended_public_key(&account_path)
                 .map_err(|err| {
                     PlatformWalletError::InvalidIdentityData(format!(
@@ -225,7 +226,7 @@ impl DashPayWallet {
             let xpub = account_xpub.encode();
 
             let ecdh_key = Self::derive_encryption_private_key(
-                &info_guard.wallet,
+                info_guard.managed_state.wallet(),
                 self.sdk.network,
                 identity_index,
                 &sender_encryption_key,
@@ -575,7 +576,7 @@ impl DashPayWallet {
     ) -> Result<super::dip14::ContactXpubData, PlatformWalletError> {
         let info_guard = self.state.read().await;
         super::dip14::derive_contact_xpub(
-            &info_guard.wallet,
+            info_guard.managed_state.wallet(),
             self.sdk.network,
             account_index,
             sender_id,
@@ -616,14 +617,14 @@ impl DashPayWallet {
                     "Failed to derive DashPay contact account path: {err}"
                 ))
             })?;
-        let account_xpub = info_guard.wallet.derive_extended_public_key(&path).map_err(|err| {
+        let account_xpub = info_guard.managed_state.wallet().derive_extended_public_key(&path).map_err(|err| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to derive DashPay contact xpub: {err}"
             ))
         })?;
 
         let account = key_wallet::Account {
-            parent_wallet_id: Some(info_guard.wallet.wallet_id),
+            parent_wallet_id: Some(info_guard.managed_state.wallet().wallet_id),
             account_type,
             network: self.sdk.network,
             account_xpub,
@@ -631,11 +632,11 @@ impl DashPayWallet {
         };
 
         // Add to Wallet's AccountCollection (key store)
-        let _ = info_guard.wallet.accounts.insert(account.clone());
+        let _ = info_guard.managed_state.wallet_mut().accounts.insert(account.clone());
 
         // Add managed wrapper to ManagedWalletInfo (address pools, state tracking)
         let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
-        info_guard.wallet_info.accounts.insert(managed).map_err(|e| {
+        info_guard.managed_state.wallet_info_mut().accounts.insert(managed).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to register contact account: {e}"
             ))
@@ -661,7 +662,7 @@ impl DashPayWallet {
     ) -> Result<Vec<dashcore::Address>, PlatformWalletError> {
         let info_guard = self.state.read().await;
         let data = super::dip14::derive_contact_xpub(
-            &info_guard.wallet,
+            info_guard.managed_state.wallet(),
             self.sdk.network,
             account_index,
             sender_id,

@@ -6,7 +6,6 @@
 //! Asset-lock finality tracking (IS/CL proof waiting) is handled by
 //! `AssetLockManager` directly — it subscribes to the shared event channel.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
@@ -19,63 +18,55 @@ use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::{ClientConfig, DashSpvClient, Hash};
 
-use key_wallet_manager::WalletInterface;
+use key_wallet_manager::{WalletInterface, WalletManager};
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 use crate::spv::event_forwarder::SpvEventForwarder;
-use crate::spv::wallet_adapter::SpvWalletAdapter;
-use crate::wallet::platform_wallet::WalletId;
-use crate::wallet::PlatformWallet;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient =
-    DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
+    DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
 
 /// SPV client runtime — owns the `DashSpvClient` and tracks sync height.
 ///
-/// Holds references to the wallets collection and event channel at construction
-/// time, so callers just need `start(config)` / `stop()`.
+/// Holds a reference to the shared `WalletManager<PlatformWalletInfo>` and
+/// event channel at construction time, so callers just need `start(config)` /
+/// `stop()`.
 ///
 /// Asset-lock finality tracking (InstantLock / ChainLock waiting) is handled
 /// directly by `AssetLockManager` via SPV event subscriptions — the runtime
 /// only drives SPV sync and forwards events.
 pub struct SpvRuntime {
     event_tx: broadcast::Sender<PlatformWalletEvent>,
-    /// Shared sync state — atomics accessible without holding the adapter lock.
-    sync_state: Arc<super::sync_state::SpvSyncState>,
-    adapter: Arc<RwLock<SpvWalletAdapter>>,
+    /// Shared `WalletManager<PlatformWalletInfo>` — implements `WalletInterface`,
+    /// so DashSpvClient can drive block/mempool processing directly through it.
+    /// `WalletManager` bumps its own structural revision when wallets are
+    /// added/removed, so no external `notify_wallets_changed()` is needed.
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
 }
 
 impl SpvRuntime {
-    /// Create a new SPV runtime bound to a wallets collection and event channel.
+    /// Create a new SPV runtime bound to a wallet manager and event channel.
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
     ) -> Self {
-        let sync_state = Arc::new(super::sync_state::SpvSyncState::new());
-        let adapter = Arc::new(RwLock::new(SpvWalletAdapter::new(
-            wallets,
-            Arc::clone(&sync_state),
-        )));
         Self {
             event_tx,
-            sync_state,
-            adapter,
+            wallet_manager,
             client: RwLock::new(None),
         }
     }
 
-    /// Current synced height. Always returns the correct value even during
-    /// block processing (atomics are outside the adapter's RwLock).
+    /// Current synced height. Reads a plain field on WalletManager (sync, no
+    /// per-wallet lock).
     pub fn synced_height(&self) -> u32 {
-        self.sync_state.synced_height()
-    }
-
-    /// Signal that the wallet set changed (added/removed).
-    /// SPV will rebuild the bloom filter on the next tick.
-    pub fn notify_wallets_changed(&self) {
-        self.sync_state.bump_monitor_revision();
+        self.wallet_manager
+            .try_read()
+            .map(|wm| wm.synced_height())
+            .unwrap_or(0)
     }
 
     /// Reset filter_committed_height to 0, forcing a filter rescan from
@@ -84,8 +75,9 @@ impl SpvRuntime {
     /// Useful when wallet state isn't persisted: cached committed height
     /// from a previous run would skip historical blocks, leaving the
     /// wallet with zero balance.
-    pub fn reset_filter_committed_height(&self) {
-        self.sync_state.update_filter_committed_height(0);
+    pub async fn reset_filter_committed_height(&self) {
+        let mut wm = self.wallet_manager.write().await;
+        wm.update_filter_committed_height(0).await;
     }
 
     /// Start SPV sync.
@@ -110,7 +102,7 @@ impl SpvRuntime {
             config,
             network_manager,
             storage_manager,
-            Arc::clone(&self.adapter),
+            Arc::clone(&self.wallet_manager),
             Arc::new(forwarder),
         )
         .await

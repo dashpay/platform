@@ -132,7 +132,7 @@ impl PlatformPaymentAddressProvider {
         for index in start..=max_index {
             if !self.pending.contains_key(&index) && !self.resolved.contains(&index) {
                 let (key, address) = derive_platform_address_at(
-                    &info_guard.wallet,
+                    info_guard.managed_state.wallet(),
                     self.network,
                     self.account,
                     self.key_class,

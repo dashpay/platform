@@ -6,7 +6,6 @@
 use std::sync::Arc;
 
 use dash_sdk::Sdk;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
 use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::error::PlatformWalletError;
@@ -74,10 +73,10 @@ fn main() -> Result<(), PlatformWalletError> {
     // All mutable state is behind a single lock — one acquisition gives
     // access to everything.
     {
-        let info = core.state_blocking();
-        let utxos = info.wallet_info.get_spendable_utxos();
-        let tx_count = info.wallet_info.transaction_history().len();
-        let birth = info.wallet_info.birth_height();
+        let info = wallet.state_blocking();
+        let utxos = info.managed_state.wallet_info().get_spendable_utxos();
+        let tx_count = info.managed_state.wallet_info().transaction_history().len();
+        let birth = info.managed_state.wallet_info().birth_height();
         let id_count = info.identity_manager.identities().len();
         println!("UTXOs: {}, transactions: {}, birth_height: {}", utxos.len(), tx_count, birth);
         println!("Managed identities: {}", id_count);

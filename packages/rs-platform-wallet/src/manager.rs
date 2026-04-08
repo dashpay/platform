@@ -1,12 +1,12 @@
 //! Multi-wallet manager with SPV coordination.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
 
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
+use key_wallet_manager::WalletManager;
 
 use crate::changeset::{Merge, PlatformWalletPersistence};
 
@@ -23,8 +23,10 @@ pub struct WalletCreationOptions {
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 use crate::spv::SpvRuntime;
-use crate::wallet::platform_wallet::WalletId;
+use crate::wallet::persister::PlatformWalletPersisterBridge;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
+use crate::wallet::core::WalletBalance;
 
 /// Multi-wallet coordinator with SPV sync and event broadcasting.
 ///
@@ -34,13 +36,20 @@ use crate::wallet::PlatformWallet;
 /// broadcasts unified [`PlatformWalletEvent`]s (sync progress, network
 /// changes, wallet updates, finality proofs) to subscribers.
 ///
-/// Each managed [`PlatformWallet`] shares its underlying `Wallet` and
-/// `ManagedWalletInfo` with the SPV adapter through `Arc<RwLock<…>>`,
-/// so balance and UTXO updates from SPV are immediately visible to all
-/// wallet operations.
+/// Internally holds a `WalletManager<PlatformWalletInfo>` that implements
+/// `WalletInterface` for DashSpvClient, and a separate map of
+/// `PlatformWallet` handles. Both share the same `Arc<RwLock<PlatformWalletInfo>>`
+/// per wallet, so balance and UTXO updates from SPV are immediately visible
+/// to all wallet operations.
 pub struct PlatformWalletManager {
     sdk: Arc<dash_sdk::Sdk>,
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    /// Core-layer wallet manager implementing `WalletInterface`.
+    /// Shared with `SpvRuntime` so DashSpvClient drives block/mempool
+    /// processing directly through it.
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    /// Platform-level wallet handles (sub-wallets, identity, dashpay, etc.).
+    /// Interior mutability via `RwLock` so methods take `&self`.
+    wallets: RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     spv: Arc<SpvRuntime>,
     persister: Arc<dyn PlatformWalletPersistence>,
@@ -50,11 +59,15 @@ impl PlatformWalletManager {
     /// Create a new PlatformWalletManager.
     pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<dyn PlatformWalletPersistence>) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        let wallets = Arc::new(RwLock::new(BTreeMap::new()));
-        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallets), event_tx.clone()));
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let spv = Arc::new(SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            event_tx.clone(),
+        ));
         Self {
             sdk,
-            wallets,
+            wallet_manager,
+            wallets: RwLock::new(std::collections::BTreeMap::new()),
             event_tx,
             spv,
             persister,
@@ -98,9 +111,9 @@ impl PlatformWalletManager {
         seed_bytes: [u8; 64],
         options: WalletCreationOptions,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::wallet::Wallet;
+        use key_wallet_manager::ManagedWalletState;
 
         let wallet =
             Wallet::from_seed_bytes(seed_bytes, network, options.accounts).map_err(|e| {
@@ -115,11 +128,40 @@ impl PlatformWalletManager {
         }
         let wallet_id = wallet_info.wallet_id;
 
+        // Build ManagedWalletState with the persister bridge.
+        let bridge = PlatformWalletPersisterBridge::new(wallet_id, Arc::clone(&self.persister));
+        let managed_state = ManagedWalletState::new(wallet, wallet_info, bridge);
+        let balance = Arc::new(WalletBalance::new());
+
+        // Build the shared state Arc.
+        let state = Arc::new(RwLock::new(PlatformWalletInfo {
+            managed_state,
+            balance: Arc::clone(&balance),
+            identity_manager: crate::wallet::identity::IdentityManager::new(),
+            tracked_asset_locks: std::collections::BTreeMap::new(),
+            platform_address_balances: std::collections::BTreeMap::new(),
+            token_watched: std::collections::BTreeMap::new(),
+            token_balances: std::collections::BTreeMap::new(),
+        }));
+
+        // Insert into WalletManager (shares the same Arc).
+        {
+            let mut wm = self.wallet_manager.write().await;
+            wm.insert_wallet_state(wallet_id, Arc::clone(&state))
+                .map_err(|e| {
+                    PlatformWalletError::WalletCreation(format!(
+                        "Failed to register wallet in WalletManager: {}",
+                        e
+                    ))
+                })?;
+        }
+
+        // Build the PlatformWallet handle from the shared state.
         let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(&self.spv)));
-        let platform_wallet = PlatformWallet::new(
+        let platform_wallet = PlatformWallet::from_shared_state(
             Arc::clone(&self.sdk),
-            wallet,
-            wallet_info,
+            wallet_id,
+            state,
             self.event_tx.clone(),
             Arc::clone(&self.persister),
             broadcaster,
@@ -134,19 +176,15 @@ impl PlatformWalletManager {
         })?;
         if !changeset.is_empty() {
             platform_wallet.apply(&changeset);
-            // TODO: Once apply() actually restores wallet state (transactions,
-            // UTXOs) from the changeset, set birth_height from the persisted
-            // chain height here so SPV doesn't rescan from genesis on restart.
-            // Until then, birth_height must come from WalletCreationOptions.
         }
 
         let platform_wallet = Arc::new(platform_wallet);
 
-        // Register with the manager so SPV processes this wallet.
-        let mut wallets = self.wallets.write().await;
-        wallets.insert(wallet_id, Arc::clone(&platform_wallet));
-        drop(wallets);
-        self.spv.notify_wallets_changed();
+        // Register the PlatformWallet handle.
+        {
+            let mut wallets = self.wallets.write().await;
+            wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+        }
 
         Ok(platform_wallet)
     }
@@ -156,11 +194,18 @@ impl PlatformWalletManager {
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let mut wallets = self.wallets.write().await;
-        let removed = wallets
-            .remove(wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
-        self.spv.notify_wallets_changed();
+        // Remove from PlatformWallet handles.
+        let removed = {
+            let mut wallets = self.wallets.write().await;
+            wallets
+                .remove(wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
+        };
+        // Remove from WalletManager.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let _ = wm.remove_wallet(wallet_id);
+        }
         Ok(removed)
     }
 

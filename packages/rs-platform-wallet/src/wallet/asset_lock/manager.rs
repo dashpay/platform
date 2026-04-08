@@ -250,7 +250,8 @@ impl AssetLockManager {
 
         let info_ref = self.state.blocking_read();
         let record = info_ref
-            .wallet_info
+            .managed_state
+            .wallet_info()
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
@@ -314,13 +315,13 @@ impl AssetLockManager {
         }
 
         let mut info_guard = self.state.write().await;
-        let pi = &mut *info_guard;
+        let (wallet, wallet_info) = info_guard.managed_state.wallet_and_info_mut();
 
         // 1. Peek at the next unused address from the funding account to
         //    build the credit output P2PKH script.
         let funding_address = Self::peek_next_funding_address(
-            &mut pi.wallet_info,
-            &pi.wallet,
+            wallet_info,
+            wallet,
             funding_type,
             identity_index,
         )?;
@@ -338,8 +339,8 @@ impl AssetLockManager {
         };
 
         // 3. Delegate to the key-wallet builder.
-        let result = pi.wallet_info
-            .build_asset_lock(&pi.wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
+        let result = wallet_info
+            .build_asset_lock(wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Asset lock builder failed: {}",
@@ -625,10 +626,11 @@ impl AssetLockManager {
         }
 
         let info_guard = self.state.read().await;
-        let synced_height = info_guard.wallet_info.metadata.synced_height;
+        let synced_height = info_guard.managed_state.wallet_info().metadata.synced_height;
 
         let record = info_guard
-            .wallet_info
+            .managed_state
+            .wallet_info()
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
@@ -717,7 +719,7 @@ impl AssetLockManager {
         // Check if already chain-locked.
         let height = {
             let info_guard = self.state.read().await;
-            let record = info_guard.wallet_info
+            let record = info_guard.managed_state.wallet_info()
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
@@ -801,7 +803,8 @@ impl AssetLockManager {
             {
                 let info_guard = self.state.read().await;
                 if let Some(record) = info_guard
-                    .wallet_info
+                    .managed_state
+                    .wallet_info()
                     .accounts
                     .standard_bip44_accounts
                     .get(&account_index)
@@ -881,7 +884,7 @@ impl AssetLockManager {
         // Check if SPV already synced the proof before we started waiting.
         {
             let info_guard = self.state.read().await;
-            if let Some(record) = info_guard.wallet_info
+            if let Some(record) = info_guard.managed_state.wallet_info()
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
@@ -928,7 +931,8 @@ impl AssetLockManager {
                             // confirmed at a height <= the chain-locked height.
                             let info_guard = self.state.read().await;
                             let record = info_guard
-                                .wallet_info
+                                .managed_state
+                                .wallet_info()
                                 .accounts
                                 .standard_bip44_accounts
                                 .get(&account_index)
@@ -1109,24 +1113,25 @@ impl AssetLockManager {
 
         // 3. Find the derivation path in the funding account and derive key under a single lock.
         let info_guard = self.state.read().await;
+        let wi = info_guard.managed_state.wallet_info();
         let funding_account = match lock.funding_type {
             AssetLockFundingType::IdentityRegistration => {
-                info_guard.wallet_info.accounts.identity_registration.as_ref()
+                wi.accounts.identity_registration.as_ref()
             }
-            AssetLockFundingType::IdentityTopUp => info_guard.wallet_info
+            AssetLockFundingType::IdentityTopUp => wi
                 .accounts
                 .identity_topup
                 .get(&lock.identity_index),
             AssetLockFundingType::IdentityTopUpNotBound => {
-                info_guard.wallet_info.accounts.identity_topup_not_bound.as_ref()
+                wi.accounts.identity_topup_not_bound.as_ref()
             }
             AssetLockFundingType::IdentityInvitation => {
-                info_guard.wallet_info.accounts.identity_invitation.as_ref()
+                wi.accounts.identity_invitation.as_ref()
             }
             AssetLockFundingType::AssetLockAddressTopUp => {
-                info_guard.wallet_info.accounts.asset_lock_address_topup.as_ref()
+                wi.accounts.asset_lock_address_topup.as_ref()
             }
-            AssetLockFundingType::AssetLockShieldedAddressTopUp => info_guard.wallet_info
+            AssetLockFundingType::AssetLockShieldedAddressTopUp => wi
                 .accounts
                 .asset_lock_shielded_address_topup
                 .as_ref(),
@@ -1149,7 +1154,7 @@ impl AssetLockManager {
             })?;
 
         // 4. Derive the private key from the wallet's root key.
-        let secret_key = info_guard.wallet.derive_private_key(&derivation_path).map_err(|e| {
+        let secret_key = info_guard.managed_state.wallet().derive_private_key(&derivation_path).map_err(|e| {
             PlatformWalletError::AssetLockTransaction(format!(
                 "Failed to derive private key for asset lock: {}",
                 e

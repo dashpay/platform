@@ -273,7 +273,7 @@ impl PlatformAddressWallet {
         // Find the derivation path and derive the private key under a single lock.
         let info_guard = self.state.blocking_read();
         let mut found_path = None;
-        for account in info_guard.wallet_info.accounts.platform_payment_accounts.values() {
+        for account in info_guard.managed_state.wallet_info().accounts.platform_payment_accounts.values() {
             for addr_info in account.addresses.addresses.values() {
                 let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address)
                 else {
@@ -296,7 +296,7 @@ impl PlatformAddressWallet {
             ))
         })?;
 
-        let secret_key = info_guard.wallet.derive_private_key(&path).map_err(|e| {
+        let secret_key = info_guard.managed_state.wallet().derive_private_key(&path).map_err(|e| {
             ProtocolError::Generic(format!(
                 "Failed to derive private key for platform address: {}",
                 e
