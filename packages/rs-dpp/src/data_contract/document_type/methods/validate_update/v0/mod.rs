@@ -1,6 +1,8 @@
 use crate::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
@@ -172,6 +174,36 @@ impl DocumentTypeRef<'_> {
                         "document type can not change the security level requirement for its updates: changing from {:?} to {:?}",
                         self.security_level_requirement(),
                         new_document_type.security_level_requirement()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.documents_countable() != self.documents_countable() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether its documents are countable: changing from {} to {}",
+                        self.documents_countable(),
+                        new_document_type.documents_countable()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.range_countable() != self.range_countable() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it is range countable: changing from {} to {}",
+                        self.range_countable(),
+                        new_document_type.range_countable()
                     ),
                 )
                     .into(),

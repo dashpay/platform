@@ -443,6 +443,23 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty provable count tree at the given path and key
+    pub fn for_known_path_key_empty_provable_count_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::new_provable_count_tree_with_flags(
+                None,
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     pub fn for_estimated_path_key_empty_tree(
         path: KeyInfoPath,

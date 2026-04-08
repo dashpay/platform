@@ -663,6 +663,12 @@ impl DocumentTypeV1 {
                 .transpose()
         };
 
+        // Note: documentsCountable / rangeCountable schema keys are intentionally
+        // ignored here. The v1 parser produces DocumentTypeV1 which has no countable
+        // fields. When protocol v12+ is active, the v2 parser is used instead, which
+        // reads these keys and produces DocumentTypeV2. The v1 parser should never
+        // reject unknown keys — it simply doesn't map them to its output type.
+
         let token_costs = TokenCostsV0 {
             create: extract_cost("create")?,
             replace: extract_cost("replace")?,

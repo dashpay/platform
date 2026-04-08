@@ -2,6 +2,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
+use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentType, DocumentTypeRef, Index, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
@@ -594,6 +595,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 impl DocumentTypeV0MethodsVersioned for DocumentTypeV0 {}
 
 impl DocumentTypeV0MethodsVersioned for DocumentTypeV1 {}
+impl DocumentTypeV0MethodsVersioned for DocumentTypeV2 {}
 impl DocumentTypeV0MethodsVersioned for DocumentType {}
 
 impl DocumentTypeV0MethodsVersioned for DocumentTypeRef<'_> {}

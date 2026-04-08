@@ -505,6 +505,14 @@
       ],
       "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Multiple, 2 - Multiple with reference to latest key."
     },
+    "documentsCountable": {
+      "type": "boolean",
+      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries. Only effective from protocol version 12."
+    },
+    "rangeCountable": {
+      "type": "boolean",
+      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Only effective from protocol version 12. Implies documentsCountable."
+    },
     "tokenCost": {
       "type": "object",
       "properties": {

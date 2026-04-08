@@ -1,3 +1,4 @@
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use dpp::data_contract::document_type::DocumentPropertyType;
 
 use grovedb::batch::key_info::KeyInfo;
@@ -67,6 +68,9 @@ impl Drive {
         let drive_version = &platform_version.drive;
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
+
+        let primary_key_tree_type = document_type.primary_key_tree_type(platform_version)?;
+
         let primary_key_path = contract_documents_primary_key_path(
             contract.id_ref().as_bytes(),
             document_type.name().as_str(),
@@ -122,11 +126,14 @@ impl Drive {
                     inserted_storage_flags,
                 )
             };
+
+            // The per-document history subtree is always NormalTree.
+            // The parent (primary key tree) may be CountTree/ProvableCountTree.
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
                 BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                    in_tree_type: TreeType::NormalTree,
+                    in_tree_type: primary_key_tree_type,
                     tree_type: TreeType::NormalTree,
                     flags_len: storage_flags
                         .map(|s| s.serialized_size())
@@ -134,6 +141,7 @@ impl Drive {
                 }
             };
             // we first insert an empty tree if the document is new
+            // The per-document subtree is always NormalTree (it holds history entries)
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
                 TreeType::NormalTree,
@@ -438,7 +446,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_type: TreeType::NormalTree,
+                    in_tree_type: primary_key_tree_type,
                     target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
                 }
             };
