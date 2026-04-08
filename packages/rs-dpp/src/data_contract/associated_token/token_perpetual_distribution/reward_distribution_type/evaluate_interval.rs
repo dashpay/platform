@@ -7,6 +7,7 @@ use crate::data_contract::associated_token::token_perpetual_distribution::distri
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 impl RewardDistributionType {
     /// Computes the total rewards emitted in a given interval based on the provided distribution moments.
@@ -36,6 +37,7 @@ impl RewardDistributionType {
         start_at_moment: RewardDistributionMoment,
         current_moment_included: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
+        platform_version: &PlatformVersion,
     ) -> Result<TokenAmount, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -46,6 +48,7 @@ impl RewardDistributionType {
             current_moment_included,
             self.interval(),
             get_epoch_reward_ratio,
+            platform_version,
         )
     }
 
@@ -80,6 +83,7 @@ impl RewardDistributionType {
         current_moment_included: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
         is_first_claim: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<IntervalEvaluationExplanation, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -91,6 +95,7 @@ impl RewardDistributionType {
             self.interval(),
             get_epoch_reward_ratio,
             is_first_claim,
+            platform_version,
         )
     }
 }

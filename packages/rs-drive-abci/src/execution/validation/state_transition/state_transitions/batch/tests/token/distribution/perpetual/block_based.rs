@@ -2353,9 +2353,9 @@ mod inverted_logarithmic {
             (2, 100_001, false),
             (50000, 100_001, false),
         ];
-        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        let x_1 = dist.evaluate(0, 1, PlatformVersion::latest()).expect("expected to evaluate");
         assert_eq!(x_1, 1); // This is ln (1/ (1 - 1 + 1)), or basically ln(1) = 1
-        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2, PlatformVersion::latest()).expect("expected to evaluate");
         assert_eq!(x_2, 0); // This is ln (1/ (1 - 1 + 2)), or basically ln(1/2) = 0
         run_test(dist, &steps, 1).await
     }
@@ -2387,12 +2387,12 @@ mod inverted_logarithmic {
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
-        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
-        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
-        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
-        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
-        let x_5000 = dist.evaluate(0, 5000).expect("expected to evaluate");
-        let x_6000 = dist.evaluate(0, 6000).expect("expected to evaluate");
+        let x_1 = dist.evaluate(0, 1, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_1000 = dist.evaluate(0, 1000, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_4000 = dist.evaluate(0, 4000, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_5000 = dist.evaluate(0, 5000, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_6000 = dist.evaluate(0, 6000, PlatformVersion::latest()).expect("expected to evaluate");
         assert_eq!(x_1, 85171);
         assert_eq!(x_2, 78240);
         assert_eq!(x_1000, 16094);
@@ -2470,10 +2470,10 @@ mod inverted_logarithmic {
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
-        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
-        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
-        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
-        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
+        let x_1 = dist.evaluate(0, 1, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_1000 = dist.evaluate(0, 1000, PlatformVersion::latest()).expect("expected to evaluate");
+        let x_4000 = dist.evaluate(0, 4000, PlatformVersion::latest()).expect("expected to evaluate");
         assert_eq!(x_1, 1351);
         assert_eq!(x_2, 1352);
         assert_eq!(x_1000, 1984);
