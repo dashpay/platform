@@ -23,6 +23,7 @@ use dpp::prelude::AssetLockProof;
 /// [`CoreWallet::create_funded_asset_lock_proof`](crate::wallet::core::CoreWallet::create_funded_asset_lock_proof).
 /// It replaces the earlier pattern of having separate funding enums per
 /// operation type.
+#[derive(Debug, Clone)]
 pub enum IdentityFunding {
     /// Build an asset lock from wallet UTXOs for the given amount.
     FromWalletBalance {
