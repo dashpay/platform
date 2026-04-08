@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 use versioned_feature_core::FeatureVersion;
 
@@ -16,4 +17,8 @@ pub struct DPPTokenVersions {
     /// v0: uses only minimum_purchase_amount_and_price().1 (vulnerable to schedule swap)
     /// v1: includes the full serialized TokenPricingSchedule in the hash
     pub token_set_price_action_id_version: FeatureVersion,
+    /// Version for distribution function floating-point evaluation.
+    /// v0: uses std f64 transcendental methods (.powf(), .exp(), .ln()) -- platform-dependent
+    /// v1: uses libm functions (pow, exp, log) -- cross-platform deterministic
+    pub distribution_function_evaluate_version: FeatureVersion,
 }

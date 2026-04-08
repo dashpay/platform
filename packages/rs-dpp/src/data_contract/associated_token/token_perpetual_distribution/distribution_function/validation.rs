@@ -266,7 +266,7 @@ impl DistributionFunction {
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(0, start_moment)?;
+                .evaluate(0, start_moment, platform_version)?;
 
                 if *a > 0 {
                     // we want to put in the max value to see if we are starting off at the max
@@ -444,7 +444,7 @@ impl DistributionFunction {
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(0, start_moment)?;
+                .evaluate(0, start_moment, platform_version)?;
 
                 // Now, based on the monotonicity implied by (*a) * (*m),
                 // check for incoherence:
@@ -634,7 +634,7 @@ impl DistributionFunction {
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(0, start_moment)?;
+                .evaluate(0, start_moment, platform_version)?;
 
                 if *m > 0 {
                     // we want to put in the max value to see if we are starting off at the max
@@ -812,7 +812,7 @@ impl DistributionFunction {
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(0, start_moment)?;
+                .evaluate(0, start_moment, platform_version)?;
 
                 if let Some(max) = max_value {
                     if start_token_amount == *max {
@@ -976,7 +976,7 @@ impl DistributionFunction {
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(0, start_moment)?;
+                .evaluate(0, start_moment, platform_version)?;
 
                 // Determine the function's monotonicity.
                 // For InvertedLogarithmic, f'(x) = -a / (d * (x - s + o)).
@@ -1822,7 +1822,7 @@ mod tests {
                 min_value: Some(0),
                 max_value: Some(100),
             };
-            let eval_result = dist.evaluate(0, 4);
+            let eval_result = dist.evaluate(0, 4, PlatformVersion::latest());
             assert_eq!(
                 eval_result.unwrap(),
                 8,

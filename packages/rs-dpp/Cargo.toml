@@ -46,6 +46,7 @@ jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "confi
   "draft202012",
 ], optional = true }
 lazy_static = { version = "1.4" }
+libm = "0.2"
 num_enum = "0.7"
 bincode = { version = "=2.0.1", features = ["serde"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
