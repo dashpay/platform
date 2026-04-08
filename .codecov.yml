@@ -114,6 +114,15 @@ ignore:
   - "packages/rs-dpp/src/**/random_*.rs"
   # Batch transition resolvers — From/TryFrom conversion boilerplate
   - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/batched_transition/resolvers.rs"
+  # State transition mechanical trait implementations — StateTransitionLike dispatch,
+  # value/JSON conversion, identity_signed delegation, fee strategy constants
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/state_transition_like.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/value_conversion.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/json_conversion.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/identity_signed.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/state_transition_fee_strategy.rs"
+  # State transition estimated fee validation — mechanical fee calculation dispatch
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/state_transition_estimated_fee_validation.rs"
   # Drive-ABCI infrastructure — binary entrypoints, query service dispatch,
   # RPC wrappers, metrics, logging, runtime context providers, replay tooling
   - "packages/rs-drive-abci/src/main.rs"
