@@ -93,3 +93,120 @@ impl StateTransitionFieldTypes for IdentityTopUpTransition {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    use crate::state_transition::{
+        StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
+        StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned,
+        StateTransitionType, StateTransitionValueConvert,
+    };
+    use crate::version::LATEST_PLATFORM_VERSION;
+    use platform_value::{BinaryData, Identifier, Value};
+
+    fn make_topup() -> IdentityTopUpTransition {
+        IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
+            asset_lock_proof: AssetLockProof::default(),
+            identity_id: Identifier::random(),
+            user_fee_increase: 1,
+            signature: [0u8; 65].to_vec().into(),
+        })
+    }
+
+    #[test]
+    fn test_default_versioned() {
+        let t = IdentityTopUpTransition::default_versioned(LATEST_PLATFORM_VERSION)
+            .expect("should create default");
+        match t {
+            IdentityTopUpTransition::V0(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_state_transition_like() {
+        let t = make_topup();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityTopUp
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        let ids = t.modified_data_ids();
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn test_owner_id() {
+        let t = make_topup();
+        match &t {
+            IdentityTopUpTransition::V0(v0) => {
+                assert_eq!(t.owner_id(), v0.identity_id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_topup();
+        assert_eq!(t.user_fee_increase(), 1);
+        t.set_user_fee_increase(50);
+        assert_eq!(t.user_fee_increase(), 50);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_topup();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![7, 8, 9]));
+        assert_eq!(t.signature().as_slice(), &[7, 8, 9]);
+        t.set_signature_bytes(vec![10, 11]);
+        assert_eq!(t.signature().as_slice(), &[10, 11]);
+    }
+
+    #[test]
+    fn test_field_types() {
+        let sig = IdentityTopUpTransition::signature_property_paths();
+        assert_eq!(sig.len(), 1);
+        let ids = IdentityTopUpTransition::identifiers_property_paths();
+        assert_eq!(ids.len(), 1);
+        let bin = IdentityTopUpTransition::binary_property_paths();
+        assert!(bin.is_empty());
+    }
+
+    #[test]
+    fn test_estimated_fee() {
+        let t = make_topup();
+        let fee = t
+            .calculate_min_required_fee(LATEST_PLATFORM_VERSION)
+            .expect("fee calc should work");
+        assert!(fee > 0);
+    }
+
+    #[test]
+    fn test_from_object_unknown_version() {
+        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
+        let result = <IdentityTopUpTransition as StateTransitionValueConvert>::from_object(
+            value,
+            LATEST_PLATFORM_VERSION,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clean_value_unknown_version() {
+        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
+        let result =
+            <IdentityTopUpTransition as StateTransitionValueConvert>::clean_value(&mut value);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_into_from_v0() {
+        let v0 = IdentityTopUpTransitionV0::default();
+        let t: IdentityTopUpTransition = v0.clone().into();
+        match t {
+            IdentityTopUpTransition::V0(inner) => assert_eq!(inner, v0),
+        }
+    }
+}

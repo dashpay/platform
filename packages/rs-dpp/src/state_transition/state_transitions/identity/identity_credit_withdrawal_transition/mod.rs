@@ -118,3 +118,241 @@ impl StateTransitionFieldTypes for IdentityCreditWithdrawalTransition {
 }
 
 impl OptionallyAssetLockProved for IdentityCreditWithdrawalTransition {}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::identity::core_script::CoreScript;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+    use crate::state_transition::{
+        StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
+        StateTransitionIdentityEstimatedFeeValidation, StateTransitionLike, StateTransitionOwned,
+        StateTransitionSingleSigned, StateTransitionType, StateTransitionValueConvert,
+    };
+    use crate::version::LATEST_PLATFORM_VERSION;
+    use crate::withdrawal::Pooling;
+    use platform_value::{BinaryData, Identifier, Value};
+
+    fn make_withdrawal_v0() -> IdentityCreditWithdrawalTransition {
+        IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::random(),
+            amount: 300_000,
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 3,
+            user_fee_increase: 1,
+            signature_public_key_id: 1,
+            signature: [0u8; 65].to_vec().into(),
+        })
+    }
+
+    fn make_withdrawal_v1() -> IdentityCreditWithdrawalTransition {
+        IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
+            identity_id: Identifier::random(),
+            amount: 400_000,
+            core_fee_per_byte: 2,
+            pooling: Pooling::Standard,
+            output_script: None,
+            nonce: 5,
+            user_fee_increase: 2,
+            signature_public_key_id: 3,
+            signature: [0u8; 65].to_vec().into(),
+        })
+    }
+
+    #[test]
+    fn test_default_versioned() {
+        let t = IdentityCreditWithdrawalTransition::default_versioned(LATEST_PLATFORM_VERSION)
+            .expect("should create default");
+        match t {
+            IdentityCreditWithdrawalTransition::V0(_)
+            | IdentityCreditWithdrawalTransition::V1(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_serialization_roundtrip_v0() {
+        let t = make_withdrawal_v0();
+        let bytes = t.serialize_to_bytes().expect("should serialize");
+        let restored = IdentityCreditWithdrawalTransition::deserialize_from_bytes(&bytes)
+            .expect("should deserialize");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_serialization_roundtrip_v1() {
+        let t = make_withdrawal_v1();
+        let bytes = t.serialize_to_bytes().expect("should serialize");
+        let restored = IdentityCreditWithdrawalTransition::deserialize_from_bytes(&bytes)
+            .expect("should deserialize");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_state_transition_like_v0() {
+        let t = make_withdrawal_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreditWithdrawal
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+    }
+
+    #[test]
+    fn test_state_transition_like_v1() {
+        let t = make_withdrawal_v1();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreditWithdrawal
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+    }
+
+    #[test]
+    fn test_owner_id() {
+        let t = make_withdrawal_v0();
+        assert_eq!(t.owner_id(), t.identity_id());
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.user_fee_increase(), 1);
+        t.set_user_fee_increase(50);
+        assert_eq!(t.user_fee_increase(), 50);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2]));
+        assert_eq!(t.signature().as_slice(), &[1, 2]);
+        t.set_signature_bytes(vec![3, 4]);
+        assert_eq!(t.signature().as_slice(), &[3, 4]);
+    }
+
+    #[test]
+    fn test_accessors() {
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.amount(), 300_000);
+        t.set_amount(500_000);
+        assert_eq!(t.amount(), 500_000);
+        assert_eq!(t.nonce(), 3);
+        t.set_nonce(99);
+        assert_eq!(t.nonce(), 99);
+        assert_eq!(t.pooling(), Pooling::Never);
+        t.set_pooling(Pooling::Standard);
+        assert_eq!(t.pooling(), Pooling::Standard);
+        assert_eq!(t.core_fee_per_byte(), 1);
+        t.set_core_fee_per_byte(5);
+        assert_eq!(t.core_fee_per_byte(), 5);
+    }
+
+    #[test]
+    fn test_accessors_v1_output_script_none() {
+        let t = make_withdrawal_v1();
+        assert!(t.output_script().is_none());
+    }
+
+    #[test]
+    fn test_field_types() {
+        let sig = IdentityCreditWithdrawalTransition::signature_property_paths();
+        assert_eq!(sig.len(), 2);
+        let ids = IdentityCreditWithdrawalTransition::identifiers_property_paths();
+        assert_eq!(ids.len(), 1);
+        let bin = IdentityCreditWithdrawalTransition::binary_property_paths();
+        assert_eq!(bin.len(), 2);
+    }
+
+    #[test]
+    fn test_value_conversion_roundtrip_v0() {
+        let t = make_withdrawal_v0();
+        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
+        let restored =
+            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
+                obj,
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_value_conversion_roundtrip_v1() {
+        let t = make_withdrawal_v1();
+        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
+        let restored =
+            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
+                obj,
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_from_value_map_v0() {
+        let t = make_withdrawal_v0();
+        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        let restored =
+            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_value_map(
+                map,
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_from_object_unknown_version() {
+        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
+        let result =
+            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
+                value,
+                LATEST_PLATFORM_VERSION,
+            );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clean_value_unknown_version() {
+        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
+        let result =
+            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::clean_value(
+                &mut value,
+            );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_estimated_fee_sufficient() {
+        let t = make_withdrawal_v0();
+        let fee = t
+            .calculate_min_required_fee(LATEST_PLATFORM_VERSION)
+            .expect("fee calc should work");
+        assert!(fee > 0);
+        let result = t
+            .validate_estimated_fee(fee + t.amount() + 1000, LATEST_PLATFORM_VERSION)
+            .expect("validation should succeed");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_estimated_fee_insufficient() {
+        let t = make_withdrawal_v0();
+        let result = t
+            .validate_estimated_fee(0, LATEST_PLATFORM_VERSION)
+            .expect("validation should succeed");
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn test_min_withdrawal_amount_constant() {
+        assert!(MIN_WITHDRAWAL_AMOUNT > 0);
+        assert!(MIN_CORE_FEE_PER_BYTE == 1);
+    }
+}

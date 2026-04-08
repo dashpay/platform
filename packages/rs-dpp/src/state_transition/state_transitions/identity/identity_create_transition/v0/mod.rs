@@ -130,3 +130,122 @@ impl IdentityCreateTransitionV0 {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use crate::state_transition::{
+        StateTransitionHasUserFeeIncrease, StateTransitionLike, StateTransitionOwned,
+        StateTransitionSingleSigned, StateTransitionType,
+    };
+    use platform_value::BinaryData;
+
+    fn make_create_v0() -> IdentityCreateTransitionV0 {
+        IdentityCreateTransitionV0 {
+            public_keys: vec![],
+            asset_lock_proof: AssetLockProof::default(),
+            user_fee_increase: 0,
+            signature: [0u8; 65].to_vec().into(),
+            identity_id: Identifier::random(),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let t = IdentityCreateTransitionV0::default();
+        assert_eq!(t.user_fee_increase, 0);
+        assert!(t.public_keys.is_empty());
+        assert!(t.signature.is_empty());
+    }
+
+    #[test]
+    fn test_state_transition_like() {
+        let t = make_create_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreate
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.identity_id]);
+    }
+
+    #[test]
+    fn test_unique_identifiers() {
+        let t = make_create_v0();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_owner_id() {
+        let t = make_create_v0();
+        assert_eq!(t.owner_id(), t.identity_id);
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_create_v0();
+        assert_eq!(t.user_fee_increase(), 0);
+        t.set_user_fee_increase(7);
+        assert_eq!(t.user_fee_increase(), 7);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_create_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn test_into_state_transition() {
+        use crate::state_transition::StateTransition;
+        let t = make_create_v0();
+        let st: StateTransition = t.into();
+        match st {
+            StateTransition::IdentityCreate(_) => {}
+            _ => panic!("expected IdentityCreate"),
+        }
+    }
+
+    #[test]
+    fn test_accessors() {
+        let mut t = make_create_v0();
+        assert!(t.public_keys().is_empty());
+        assert_eq!(t.identity_id(), t.identity_id);
+
+        // Test set_public_keys and add_public_keys
+        t.set_public_keys(vec![]);
+        assert!(t.public_keys().is_empty());
+    }
+
+    #[test]
+    fn test_to_object_produces_value() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_create_v0();
+        let obj = t.to_object(false).expect("to_object should work");
+        assert!(obj.is_map());
+    }
+
+    #[test]
+    fn test_value_conversion_skip_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_create_v0();
+        let obj = t.to_object(true).expect("to_object should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_cleaned_object() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_create_v0();
+        let obj = t.to_cleaned_object(false).expect("should work");
+        assert!(obj.is_map());
+    }
+}
