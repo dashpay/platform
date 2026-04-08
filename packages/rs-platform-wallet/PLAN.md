@@ -26,31 +26,11 @@ updated: 2026-04-08
 **Test results:**
 - 76 platform-wallet lib tests: **PASS**
 - 347 evo-tool lib tests: **PASS**
-- Backend E2E tests (testnet): **NEED FIXING** (see below)
-
-### What's broken: E2E tests
-
-Backend E2E tests (`tests/backend-e2e/`) run against live Dash testnet via SPV. They are currently failing after the locking refactoring + SPV migration. Balance sync did work once (warm SPV cache, 4 seconds), but subsequent runs failed after corrupted SPV state from killed test processes.
-
-**Known fixes already applied:**
-- birth_height=0 → set to 1,400,000 for testnet
-- blocking_write panic in async context → use async methods
-- std::sync::RwLock held across .await → extract PlatformWallet before await
-- Masternode sync errors → non-fatal (testnet QRInfo failures)
-- SPV Running timeout → accept Syncing state
-- filter_committed_height reset for fresh rescan
-
-**E2E test environment requirements (CRITICAL):**
-1. **E2E_WALLET_MNEMONIC must be correct** — set in `dash-evo-tool/.env`
-2. **DAPI addresses must start with `68.67.122.*`** (testnet) — the `.env.example` has correct addresses, and `ensure_env_file()` copies it to the workdir at `/tmp/dash-evo-e2e-testnet/.env`
-3. **Tests should complete in 2-3 minutes max**, even from fresh SPV state (headers/filters already cached)
-4. **SPV cache dir**: `/tmp/dash-evo-e2e-testnet/` — do NOT delete headers/filters (90 min to re-download)
+- Backend E2E tests (testnet): **PASS** (cleanup_only in ~7s, 2026-04-08)
 
 ### Next steps (immediate)
 
-1. **FIX E2E TESTS** — verify base branch (v1.0-dev) passes first, then compare with feat/platform-wallet
-2. If base passes but feat/platform-wallet fails, diff the SPV/wallet code path between branches
-3. Key test: `cargo test --test backend-e2e --features testing cleanup_only -- --ignored --nocapture`
+**PR-30: Switch to dashcore WalletManager** — see detailed spec below.
 
 ### Remaining PRs (future)
 
@@ -58,13 +38,132 @@ Backend E2E tests (`tests/backend-e2e/`) run against live Dash testnet via SPV. 
 |----|-------------|--------|
 | PR-20 | Complete identity/asset lock lifecycle — one-call API, SPV finality | Planned |
 | PR-21 | Remove remaining duplication — TransactionBuilder, dead asset lock code | Planned |
-| PR-23 | Merge Wallet + ManagedWalletInfo in key-wallet (dashcore) | Planned |
+| PR-23 | ~~Merge Wallet + ManagedWalletInfo in key-wallet~~ **Superseded** by PR-30 | Superseded |
 | PR-24 | Comprehensive test suite + FFI update + final cleanup | Planned |
 | PR-25 | Switch asset lock broadcast from DAPI to SPV | Planned |
 | PR-26 | ~~Fix lock ordering deadlock~~ **RESOLVED** by single-lock refactoring | Done |
-| PR-27 | Merge SpvRuntime + SpvWalletAdapter — shared SpvSyncState | Planned |
+| PR-27 | ~~Merge SpvRuntime + SpvWalletAdapter~~ **Superseded** by PR-30 | Superseded |
 | PR-28 | Full SPV replacement — migrate evo-tool SpvManager to PlatformWalletManager | Planned |
 | PR-29 | Asset lock test coverage | Planned |
+| PR-30 | Switch to dashcore WalletManager — delete SpvWalletAdapter, use BalanceUpdated events | **Next** |
+
+---
+
+## PR-30: Switch to dashcore WalletManager
+
+### Goal
+
+Replace platform-wallet's custom `SpvWalletAdapter` (~330 lines), `SpvSyncState` (~55 lines), and `PlatformWalletInfoWriteGuard` (Drop-based balance update) with dashcore's `WalletManager<T>`. This eliminates duplicated multi-wallet iteration logic, duplicated sync height tracking, and the Drop-based balance workaround.
+
+### Why
+
+`SpvWalletAdapter` reimplements exactly what `WalletManager` already does: iterate all wallets for each block/mempool transaction, call `check_core_transaction`, track synced heights, and (in WalletManager's case) emit `BalanceUpdated` events. `DashSpvClient` already accepts `Arc<RwLock<W: WalletInterface>>`, and `WalletManager<T>` implements `WalletInterface`. We can pass it directly.
+
+### Architecture
+
+```
+PlatformWalletManager
+  ├─ wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>
+  │     └─ wallets: BTreeMap<WalletId, Arc<RwLock<PlatformWalletInfo>>>
+  │
+  ├─ spv_client: DashSpvClient<WalletManager<PlatformWalletInfo>, ..., SpvEventForwarder>
+  │     └─ wallet: Arc<RwLock<WalletManager<...>>>  (same Arc as above)
+  │     └─ handler: SpvEventForwarder  (on_wallet_event fires automatically)
+  │
+  ├─ wallets: BTreeMap<WalletId, PlatformWallet>  (handles for consumers)
+  │     └─ each holds clone of Arc<RwLock<PlatformWalletInfo>> from wallet_manager
+  │
+  ├─ event_tx: broadcast::Sender<PlatformWalletEvent>
+  └─ sdk: Arc<Sdk>
+```
+
+**Lock hierarchy during block processing:**
+1. DashSpvClient acquires `Arc<RwLock<WalletManager>>` write lock
+2. WalletManager iterates `wallets` map (`&mut self` access)
+3. For each wallet: acquires `Arc<RwLock<PlatformWalletInfo>>` write lock
+4. `check_core_transaction` runs → mutates state → persists changeset → releases per-wallet lock
+5. WalletManager emits `BalanceUpdated` events via broadcast channel
+6. DashSpvClient releases WalletManager write lock
+
+Sub-wallets (CoreWallet, IdentityWallet) go directly to their `Arc<RwLock<PlatformWalletInfo>>` — skip the manager lock.
+
+**Event flow:**
+```
+WalletManager.event_sender (broadcast) → spawn_broadcast_monitor task
+  → SpvEventForwarder.on_wallet_event() → PlatformWalletEvent::Wallet(WalletEvent)
+  → consumers (evo-tool balance updater, asset lock manager, etc.)
+```
+
+### dashcore changes (rust-dashcore repo)
+
+**1. New `ManagedWalletState` struct** — bundles Wallet + ManagedWalletInfo + Persister.
+`ManagedWalletInfo` stays unchanged (pure UTXO/balance/account state).
+
+```rust
+pub struct ManagedWalletState<P: WalletPersistence = NoPersistence> {
+    pub wallet: Wallet,
+    pub wallet_info: ManagedWalletInfo,
+    pub persister: P,
+}
+impl<P: WalletPersistence> WalletInfoInterface for ManagedWalletState<P> {
+    // All ~25 methods delegate to self.wallet_info
+}
+```
+
+**2. `WalletPersistence` trait** — `store(changeset)`, `flush()`. `NoPersistence` for default/tests.
+
+**3. `WalletInfoInterface` gains `wallet()` / `wallet_mut()`** — so WalletManager can access
+the Wallet through T without knowing the concrete type.
+
+**4. Remove `wallet: &mut Wallet` param from `check_core_transaction`** — T provides its
+own wallet. Extract existing logic into `ManagedWalletInfo::check_core_transaction_with_wallet(&mut self, wallet: &Wallet, ...)` helper. `ManagedWalletState` impl calls helper with `&self.wallet` (disjoint field borrow, no borrow-checker issue). Persists changeset synchronously inside the method.
+
+**5. WalletManager struct change** — single map with per-wallet locks:
+```rust
+pub struct WalletManager<T: WalletInfoInterface = ManagedWalletState> {
+    wallets: BTreeMap<WalletId, Arc<RwLock<T>>>,  // was: two separate maps
+    // synced_height, filter_committed_height, event_sender unchanged
+}
+```
+
+**6. Update all WalletManager methods** — wallet creation inserts `Arc::new(RwLock::new(T::from_wallet(&wallet)))`. `check_transaction_in_all_wallets` acquires per-wallet write locks. `get_receive_address`/`get_change_address` extract xpub before mutable borrow. Accessors rewritten for single map.
+
+### platform-wallet changes
+
+**1. `PlatformWalletInfo` implements `WalletInfoInterface`** — delegates to `self.wallet_info`. Persister moves from `PlatformWallet` into `PlatformWalletInfo`. `check_core_transaction` calls `self.wallet_info.check_core_transaction_with_wallet(&self.wallet, ...)` and persists `PlatformWalletChangeSet` synchronously.
+
+**2. Delete `SpvWalletAdapter`** (~330 lines) — replaced by WalletManager's WalletInterface impl.
+
+**3. Delete `SpvSyncState`** (~55 lines) — WalletManager tracks heights internally.
+
+**4. Delete `PlatformWalletInfoWriteGuard`** (~25 lines) — balance atomics updated via `BalanceUpdated` events through `SpvEventForwarder.on_wallet_event()`.
+
+**5. Update `SpvRuntime`** — `DashSpvClient<WalletManager<PlatformWalletInfo>, ...>`.
+
+**6. Restructure `PlatformWalletManager`** — holds `wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>`, `wallets: BTreeMap<WalletId, PlatformWallet>` (handles sharing same Arc), `spv_client`.
+
+**7. Wire `BalanceUpdated` events** — add `update_from_parts(spendable, unconfirmed, immature, locked)` to `WalletBalance`. Event bridge updates atomics.
+
+### evo-tool changes
+
+- Update `SpvEventBridge` to handle `PlatformWalletEvent::Wallet(BalanceUpdated{...})`
+- Update E2E test harness for new API surface
+
+### What gets deleted (~410 lines)
+
+| File | Lines |
+|------|-------|
+| `spv/wallet_adapter.rs` | ~330 |
+| `spv/sync_state.rs` | ~55 |
+| `PlatformWalletInfoWriteGuard` | ~25 |
+
+### Implementation sequence
+
+Phase 1 (dashcore): Add wallet()/wallet_mut() to trait → extract check_core_transaction helper → create ManagedWalletState + WalletPersistence → change WalletManager to single Arc<RwLock<T>> map → update all methods/tests/FFI.
+
+Phase 2 (platform-wallet): Move persister into PlatformWalletInfo → implement WalletInfoInterface → delete SpvWalletAdapter/SpvSyncState/WriteGuard → update SpvRuntime → restructure PlatformWalletManager → wire events.
+
+Phase 3 (evo-tool): Update event bridge → update E2E tests.
 
 ---
 
