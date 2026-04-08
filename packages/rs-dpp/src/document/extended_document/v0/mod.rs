@@ -540,3 +540,523 @@ impl ExtendedDocumentV0 {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+    use crate::document::DocumentV0Getters;
+    use crate::tests::json_document::json_document_to_contract;
+    use platform_version::version::PlatformVersion;
+
+    fn load_dashpay_contract(platform_version: &PlatformVersion) -> crate::prelude::DataContract {
+        json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to load dashpay contract")
+    }
+
+    fn make_extended_document(
+        platform_version: &PlatformVersion,
+    ) -> (ExtendedDocumentV0, crate::prelude::DataContract) {
+        let contract = load_dashpay_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected profile document type");
+        let document = document_type
+            .random_document(Some(42), platform_version)
+            .expect("expected random document");
+        let ext_doc = ExtendedDocumentV0::from_document_with_additional_info(
+            document,
+            contract.clone(),
+            "profile".to_string(),
+            None,
+        );
+        (ext_doc, contract)
+    }
+
+    // ================================================================
+    //  Construction: from_document_with_additional_info
+    // ================================================================
+
+    #[test]
+    fn from_document_with_additional_info_sets_fields_correctly() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, contract) = make_extended_document(platform_version);
+
+        assert_eq!(ext_doc.document_type_name, "profile");
+        assert_eq!(ext_doc.data_contract_id, contract.id());
+        assert!(ext_doc.metadata.is_none());
+        assert_eq!(ext_doc.entropy, Bytes32::default());
+        assert!(ext_doc.token_payment_info.is_none());
+    }
+
+    // ================================================================
+    //  Property access methods
+    // ================================================================
+
+    #[test]
+    fn get_optional_value_returns_existing_property() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        // Random dashpay profile documents have "displayName"
+        let display_name = ext_doc.get_optional_value("displayName");
+        assert!(
+            display_name.is_some(),
+            "displayName should exist in random profile document"
+        );
+    }
+
+    #[test]
+    fn get_optional_value_returns_none_for_missing_key() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let missing = ext_doc.get_optional_value("nonExistentField");
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn properties_returns_the_document_properties() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let props = ext_doc.properties();
+        assert!(
+            !props.is_empty(),
+            "random profile document should have properties"
+        );
+    }
+
+    #[test]
+    fn properties_as_mut_allows_modification() {
+        let platform_version = PlatformVersion::latest();
+        let (mut ext_doc, _) = make_extended_document(platform_version);
+
+        ext_doc
+            .properties_as_mut()
+            .insert("newField".to_string(), Value::Text("newValue".to_string()));
+        assert_eq!(
+            ext_doc.get_optional_value("newField"),
+            Some(&Value::Text("newValue".to_string()))
+        );
+    }
+
+    // ================================================================
+    //  ID delegation methods
+    // ================================================================
+
+    #[test]
+    fn id_and_owner_id_delegate_to_inner_document() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        assert_eq!(ext_doc.id(), ext_doc.document.id());
+        assert_eq!(ext_doc.owner_id(), ext_doc.document.owner_id());
+    }
+
+    // ================================================================
+    //  document_type lookup
+    // ================================================================
+
+    #[test]
+    fn document_type_returns_correct_type_ref() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let doc_type = ext_doc
+            .document_type()
+            .expect("document_type should succeed for valid profile");
+        assert_eq!(doc_type.name(), "profile");
+    }
+
+    #[test]
+    fn document_type_fails_for_invalid_type_name() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected profile type");
+        let document = document_type
+            .random_document(Some(1), platform_version)
+            .expect("random document");
+
+        let ext_doc = ExtendedDocumentV0 {
+            document_type_name: "nonExistentType".to_string(),
+            data_contract_id: contract.id(),
+            document,
+            data_contract: contract,
+            metadata: None,
+            entropy: Default::default(),
+            token_payment_info: None,
+        };
+
+        let result = ext_doc.document_type();
+        assert!(
+            result.is_err(),
+            "document_type should fail for unknown type name"
+        );
+    }
+
+    // ================================================================
+    //  can_be_modified and requires_revision
+    // ================================================================
+
+    #[test]
+    fn can_be_modified_returns_value_from_document_type() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        // The profile document type in dashpay is mutable
+        let can_modify = ext_doc
+            .can_be_modified()
+            .expect("can_be_modified should succeed");
+        assert!(can_modify, "dashpay profile should be mutable");
+    }
+
+    #[test]
+    fn requires_revision_returns_value_from_document_type() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        // Mutable documents require revision
+        let requires_rev = ext_doc
+            .requires_revision()
+            .expect("requires_revision should succeed");
+        assert!(
+            requires_rev,
+            "mutable dashpay profile should require revision"
+        );
+    }
+
+    // ================================================================
+    //  Timestamp delegation methods
+    // ================================================================
+
+    #[test]
+    fn timestamp_methods_delegate_to_inner_document() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        assert_eq!(ext_doc.created_at(), ext_doc.document.created_at());
+        assert_eq!(ext_doc.updated_at(), ext_doc.document.updated_at());
+        assert_eq!(ext_doc.revision(), ext_doc.document.revision());
+        assert_eq!(
+            ext_doc.created_at_block_height(),
+            ext_doc.document.created_at_block_height()
+        );
+        assert_eq!(
+            ext_doc.updated_at_block_height(),
+            ext_doc.document.updated_at_block_height()
+        );
+        assert_eq!(
+            ext_doc.created_at_core_block_height(),
+            ext_doc.document.created_at_core_block_height()
+        );
+        assert_eq!(
+            ext_doc.updated_at_core_block_height(),
+            ext_doc.document.updated_at_core_block_height()
+        );
+    }
+
+    // ================================================================
+    //  set and get for path-based property access
+    // ================================================================
+
+    #[test]
+    fn set_and_get_inserts_and_retrieves_value() {
+        let platform_version = PlatformVersion::latest();
+        let (mut ext_doc, _) = make_extended_document(platform_version);
+
+        ext_doc
+            .set("customPath", Value::U64(999))
+            .expect("set should succeed");
+        let val = ext_doc.get("customPath");
+        assert_eq!(val, Some(&Value::U64(999)));
+    }
+
+    #[test]
+    fn get_returns_none_for_nonexistent_path() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        assert!(ext_doc.get("no.such.path").is_none());
+    }
+
+    // ================================================================
+    //  to_map_value and into_map_value
+    // ================================================================
+
+    #[test]
+    fn to_map_value_contains_type_and_contract_id() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, contract) = make_extended_document(platform_version);
+
+        let map = ext_doc.to_map_value().expect("to_map_value should succeed");
+        assert_eq!(
+            map.get(property_names::DOCUMENT_TYPE_NAME),
+            Some(&Value::Text("profile".to_string()))
+        );
+        assert_eq!(
+            map.get(property_names::DATA_CONTRACT_ID),
+            Some(&Value::Identifier(contract.id().to_buffer()))
+        );
+    }
+
+    #[test]
+    fn into_map_value_contains_feature_version() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let map = ext_doc
+            .into_map_value()
+            .expect("into_map_value should succeed");
+        assert_eq!(
+            map.get(property_names::FEATURE_VERSION),
+            Some(&Value::U16(0))
+        );
+    }
+
+    // ================================================================
+    //  to_value and into_value
+    // ================================================================
+
+    #[test]
+    fn to_value_produces_a_map_value() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let val = ext_doc.to_value().expect("to_value should succeed");
+        assert!(val.is_map(), "to_value should produce a map Value");
+    }
+
+    #[test]
+    fn into_value_produces_a_map_value() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let val = ext_doc.into_value().expect("into_value should succeed");
+        assert!(val.is_map(), "into_value should produce a map Value");
+    }
+
+    // ================================================================
+    //  properties_as_json_data
+    // ================================================================
+
+    #[test]
+    fn properties_as_json_data_returns_json_with_properties() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let json_data = ext_doc
+            .properties_as_json_data()
+            .expect("properties_as_json_data should succeed");
+        assert!(
+            json_data.is_object(),
+            "properties_as_json_data should return a JSON object"
+        );
+    }
+
+    // ================================================================
+    //  to_json_object_for_validation
+    // ================================================================
+
+    #[test]
+    fn to_json_object_for_validation_returns_json_object() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let json_obj = ext_doc
+            .to_json_object_for_validation()
+            .expect("to_json_object_for_validation should succeed");
+        assert!(
+            json_obj.is_object(),
+            "should return a JSON object for validation"
+        );
+    }
+
+    // ================================================================
+    //  to_pretty_json
+    // ================================================================
+
+    #[test]
+    fn to_pretty_json_includes_type_and_contract_id() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, contract) = make_extended_document(platform_version);
+
+        let pretty = ext_doc
+            .to_pretty_json(platform_version)
+            .expect("to_pretty_json should succeed");
+        let obj = pretty.as_object().expect("should be a JSON object");
+        assert!(
+            obj.contains_key(property_names::DOCUMENT_TYPE_NAME),
+            "pretty JSON should contain $type"
+        );
+        assert!(
+            obj.contains_key(property_names::DATA_CONTRACT_ID),
+            "pretty JSON should contain $dataContractId"
+        );
+        // Verify the contract id is base58-encoded
+        let contract_id_str = obj[property_names::DATA_CONTRACT_ID]
+            .as_str()
+            .expect("$dataContractId should be a string");
+        let expected_b58 = bs58::encode(contract.id().to_buffer()).into_string();
+        assert_eq!(contract_id_str, expected_b58);
+    }
+
+    // ================================================================
+    //  hash
+    // ================================================================
+
+    #[test]
+    fn hash_produces_consistent_output() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let hash1 = ext_doc.hash(platform_version).expect("hash should succeed");
+        let hash2 = ext_doc.hash(platform_version).expect("hash should succeed");
+        assert_eq!(hash1, hash2, "hash should be deterministic");
+        assert!(!hash1.is_empty(), "hash should not be empty");
+    }
+
+    // ================================================================
+    //  from_json_string
+    // ================================================================
+
+    #[test]
+    fn from_json_string_parses_valid_json() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+        let contract_id = contract.id();
+
+        // Build a minimal valid JSON string for a "profile" document
+        let json_str = format!(
+            r#"{{
+                "$type": "profile",
+                "$dataContractId": "{}",
+                "$id": "{}",
+                "$ownerId": "{}",
+                "$revision": 1,
+                "displayName": "TestUser",
+                "publicMessage": "Hello",
+                "avatarUrl": "https://example.com/avatar.png"
+            }}"#,
+            bs58::encode(contract_id.to_buffer()).into_string(),
+            bs58::encode([1u8; 32]).into_string(),
+            bs58::encode([2u8; 32]).into_string(),
+        );
+
+        let ext_doc = ExtendedDocumentV0::from_json_string(&json_str, contract, platform_version)
+            .expect("from_json_string should succeed");
+
+        assert_eq!(ext_doc.document_type_name, "profile");
+        assert!(ext_doc.get_optional_value("displayName").is_some());
+    }
+
+    #[test]
+    fn from_json_string_rejects_invalid_json() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+
+        let result =
+            ExtendedDocumentV0::from_json_string("not valid json {{{", contract, platform_version);
+        assert!(
+            result.is_err(),
+            "from_json_string should fail on invalid JSON"
+        );
+    }
+
+    // ================================================================
+    //  Serialization round-trip
+    // ================================================================
+
+    #[test]
+    fn extended_document_serialize_deserialize_round_trip() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let serialized = ext_doc
+            .serialize_to_bytes(platform_version)
+            .expect("serialize_to_bytes should succeed");
+
+        let recovered = ExtendedDocumentV0::from_bytes(&serialized, platform_version)
+            .expect("from_bytes should succeed");
+
+        assert_eq!(ext_doc.document_type_name, recovered.document_type_name);
+        assert_eq!(ext_doc.data_contract_id, recovered.data_contract_id);
+        assert_eq!(ext_doc.document.id(), recovered.document.id());
+        assert_eq!(ext_doc.document.owner_id(), recovered.document.owner_id());
+    }
+
+    // ================================================================
+    //  validate
+    // ================================================================
+
+    #[cfg(feature = "validation")]
+    #[test]
+    fn validate_returns_result_without_error() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        // validate() should not return a ProtocolError (it may return
+        // validation errors for random data, but should not panic)
+        let result = ext_doc.validate(platform_version);
+        assert!(result.is_ok(), "validate should not return a ProtocolError");
+    }
+
+    // ================================================================
+    //  from_trusted_platform_value
+    // ================================================================
+
+    #[test]
+    fn from_trusted_platform_value_round_trip() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, contract) = make_extended_document(platform_version);
+
+        let map_val = ext_doc.to_map_value().expect("to_map_value should succeed");
+        let platform_val: Value = map_val.into();
+
+        let recovered = ExtendedDocumentV0::from_trusted_platform_value(
+            platform_val,
+            contract,
+            platform_version,
+        )
+        .expect("from_trusted_platform_value should succeed");
+
+        assert_eq!(recovered.document_type_name, "profile");
+        assert_eq!(recovered.document.id(), ext_doc.document.id());
+    }
+
+    // ================================================================
+    //  from_raw_json_document
+    // ================================================================
+
+    #[test]
+    fn from_raw_json_document_parses_json_value() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+        let contract_id = contract.id();
+
+        let json_val: JsonValue = serde_json::json!({
+            "$type": "profile",
+            "$dataContractId": bs58::encode(contract_id.to_buffer()).into_string(),
+            "$id": bs58::encode([1u8; 32]).into_string(),
+            "$ownerId": bs58::encode([2u8; 32]).into_string(),
+            "$revision": 1,
+            "displayName": "Bob",
+            "publicMessage": "Hi",
+            "avatarUrl": "https://example.com/bob.png"
+        });
+
+        let ext_doc =
+            ExtendedDocumentV0::from_raw_json_document(json_val, contract, platform_version)
+                .expect("from_raw_json_document should succeed");
+
+        assert_eq!(ext_doc.document_type_name, "profile");
+    }
+}
