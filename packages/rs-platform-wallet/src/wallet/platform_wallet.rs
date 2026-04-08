@@ -131,6 +131,8 @@ impl PlatformWallet {
         &self.sdk
     }
 
+    // TODO: State methods - separate implementation block
+
     /// Read access to the shared wallet state.
     pub async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
         self.state.read().await
@@ -412,6 +414,7 @@ impl PlatformWallet {
 }
 
 impl PlatformWallet {
+    // TODO: What these methods for? can we remove?
     /// Queue a changeset for later persistence.
     pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
         self.persister.store(changeset);

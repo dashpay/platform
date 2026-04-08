@@ -77,6 +77,8 @@ impl CoreWallet {
         &self.balance
     }
 
+    // TODO: We should use state() form PlatformWallet, not from here. we need to understand in detalils how drop is using, how we update atomics
+
     /// Read access to the shared `PlatformWalletInfo`.
     ///
     /// Use this when you need multiple reads in a single lock acquisition
@@ -337,7 +339,11 @@ impl CoreWallet {
         // 1. Get spendable UTXOs.
         let spendable: Vec<Utxo> = {
             let info = self.state.read().await;
-            info.wallet_info.get_spendable_utxos().into_iter().cloned().collect()
+            info.wallet_info
+                .get_spendable_utxos()
+                .into_iter()
+                .cloned()
+                .collect()
         };
 
         if spendable.is_empty() {

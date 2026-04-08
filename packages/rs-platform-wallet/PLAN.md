@@ -3,9 +3,70 @@ title: "feat: Platform Wallet — Complete Implementation & Evo Tool Integration
 type: feat
 status: active
 date: 2026-03-13
+updated: 2026-04-08
 ---
 
 # feat: Platform Wallet — Complete Implementation & Evo Tool Integration
+
+## Current Status (2026-04-08)
+
+### What's done
+
+**All core implementation is complete.** 22 PRs merged, covering the full platform wallet library and evo-tool integration:
+- PRs 1–19 ✅: Full library + evo-tool migration (sub-wallets, signing, asset locks, DashPay, tokens, identity, SPV lifecycle)
+- PR-22 ✅: ChangeSet-based persistence
+
+**Recent locking refactoring (committed, all tests passing):**
+- Collapsed 7+ independent `Arc<RwLock<...>>` into a single `Arc<RwLock<PlatformWalletInfo>>`
+- Sub-wallets (CoreWallet, IdentityWallet, etc.) now hold `Arc<RwLock<PlatformWalletInfo>>` instead of separate locks
+- State getters moved from CoreWallet to PlatformWallet (e.g., `wallet.state().balance()` instead of `wallet.core().state().balance()`)
+- CoreWallet cleanup: removed broadcaster field, removed dead methods
+- Evo-tool fully migrated to new single-lock API
+
+**Test results:**
+- 76 platform-wallet lib tests: **PASS**
+- 347 evo-tool lib tests: **PASS**
+- Backend E2E tests (testnet): **NEED FIXING** (see below)
+
+### What's broken: E2E tests
+
+Backend E2E tests (`tests/backend-e2e/`) run against live Dash testnet via SPV. They are currently failing after the locking refactoring + SPV migration. Balance sync did work once (warm SPV cache, 4 seconds), but subsequent runs failed after corrupted SPV state from killed test processes.
+
+**Known fixes already applied:**
+- birth_height=0 → set to 1,400,000 for testnet
+- blocking_write panic in async context → use async methods
+- std::sync::RwLock held across .await → extract PlatformWallet before await
+- Masternode sync errors → non-fatal (testnet QRInfo failures)
+- SPV Running timeout → accept Syncing state
+- filter_committed_height reset for fresh rescan
+
+**E2E test environment requirements (CRITICAL):**
+1. **E2E_WALLET_MNEMONIC must be correct** — set in `dash-evo-tool/.env`
+2. **DAPI addresses must start with `68.67.122.*`** (testnet) — the `.env.example` has correct addresses, and `ensure_env_file()` copies it to the workdir at `/tmp/dash-evo-e2e-testnet/.env`
+3. **Tests should complete in 2-3 minutes max**, even from fresh SPV state (headers/filters already cached)
+4. **SPV cache dir**: `/tmp/dash-evo-e2e-testnet/` — do NOT delete headers/filters (90 min to re-download)
+
+### Next steps (immediate)
+
+1. **FIX E2E TESTS** — verify base branch (v1.0-dev) passes first, then compare with feat/platform-wallet
+2. If base passes but feat/platform-wallet fails, diff the SPV/wallet code path between branches
+3. Key test: `cargo test --test backend-e2e --features testing cleanup_only -- --ignored --nocapture`
+
+### Remaining PRs (future)
+
+| PR | Description | Status |
+|----|-------------|--------|
+| PR-20 | Complete identity/asset lock lifecycle — one-call API, SPV finality | Planned |
+| PR-21 | Remove remaining duplication — TransactionBuilder, dead asset lock code | Planned |
+| PR-23 | Merge Wallet + ManagedWalletInfo in key-wallet (dashcore) | Planned |
+| PR-24 | Comprehensive test suite + FFI update + final cleanup | Planned |
+| PR-25 | Switch asset lock broadcast from DAPI to SPV | Planned |
+| PR-26 | ~~Fix lock ordering deadlock~~ **RESOLVED** by single-lock refactoring | Done |
+| PR-27 | Merge SpvRuntime + SpvWalletAdapter — shared SpvSyncState | Planned |
+| PR-28 | Full SPV replacement — migrate evo-tool SpvManager to PlatformWalletManager | Planned |
+| PR-29 | Asset lock test coverage | Planned |
+
+---
 
 ## Overview
 
@@ -15,40 +76,127 @@ date: 2026-03-13
 
 **Branch setup**:
 - `platform` repo: `feat/platform-wallet` (feature branch, merges to `v3.1-dev` via PRs)
-- `dash-evo-tool` repo: `feat/platform-wallet` (feature branch, merges to main via PRs)
+- `dash-evo-tool` repo: `feat/platform-wallet` (feature branch, merges to `v1.0-dev` via PRs)
 - `Cargo.toml` in evo-tool: `platform-wallet = { path = "../../platform/packages/rs-platform-wallet" }`
 
-**PR sequence** (each PR = library feature + evo-tool integration + old code deleted):
+---
+
+## Architecture (current — single-lock design, post-refactoring)
+
+```
+key-wallet (rust-dashcore) — reused types
+├── Wallet                       ← mutable key store (mnemonic, xprv, accounts added during sync)
+├── ManagedWalletInfo            ← mutable UTXO state, accounts, balance, address pools
+├── ManagedAccountCollection     ← BIP44 + DashPay + PlatformPayment + Identity accounts
+├── TransactionRouter            ← transaction classification + checking
+├── WalletTransactionChecker     ← trait for tx matching (impl on ManagedWalletInfo)
+├── TransactionContext           ← Mempool | InstantSend | InBlock(BlockInfo) | InChainLockedBlock(BlockInfo)
+└── BlockInfo                    ← { height, block_hash, timestamp } (all required)
+
+rs-platform-wallet
+├── PlatformWalletInfo           ← SINGLE struct behind Arc<RwLock<PlatformWalletInfo>>
+│   ├── wallet: Wallet
+│   ├── wallet_info: ManagedWalletInfo
+│   ├── identity_manager: IdentityManager
+│   ├── tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>
+│   ├── platform_address_balances: BTreeMap<PlatformAddress, Credits>
+│   ├── token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>
+│   └── token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>
+│
+├── PlatformWallet               ← cheaply cloneable handle to shared state
+│   ├── wallet_id: WalletId
+│   ├── sdk: Arc<Sdk>
+│   ├── core: CoreWallet                       ← balance, UTXOs, addresses, tx building
+│   ├── identity: IdentityWallet               ← register, discover, top-up, withdraw, transfer, DPNS
+│   ├── dashpay: DashPayWallet                 ← send/accept contact requests, sync contacts
+│   ├── platform: PlatformAddressWallet        ← DIP-17 sync, transfer, withdraw
+│   ├── tokens: TokenWallet                    ← per-identity registry, sync, transfer, mint, burn
+│   ├── asset_locks: Arc<AssetLockManager>     ← build, broadcast, track, proof lifecycle
+│   ├── event_tx: broadcast::Sender<PlatformWalletEvent>
+│   ├── persister: WalletPersister
+│   └── state: Arc<RwLock<PlatformWalletInfo>> ← THE SINGLE LOCK (all sub-wallets share this)
+│   
+│   State access:
+│   ├── wallet.state() → RwLockReadGuard<PlatformWalletInfo>  (async read)
+│   ├── wallet.state_mut() → PlatformWalletInfoWriteGuard     (async write, auto-updates balance)
+│   └── Sub-wallets also hold state: Arc<RwLock<PlatformWalletInfo>>
+│
+├── Sub-wallets (all hold Arc<RwLock<PlatformWalletInfo>> + Arc<Sdk>)
+│   ├── CoreWallet               ← state: Arc<RwLock<PlatformWalletInfo>>
+│   ├── IdentityWallet           ← state: Arc<RwLock<PlatformWalletInfo>>
+│   ├── DashPayWallet            ← state: Arc<RwLock<PlatformWalletInfo>>
+│   ├── PlatformAddressWallet    ← state: Arc<RwLock<PlatformWalletInfo>> + Signer<PlatformAddress>
+│   └── TokenWallet              ← state: Arc<RwLock<PlatformWalletInfo>>
+│
+├── PlatformWalletManager        ← multi-wallet + SPV coordinator (feature-gated: manager)
+│   ├── sdk: Sdk
+│   ├── wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>
+│   ├── event_tx: broadcast::Sender<PlatformWalletEvent>
+│   └── spv: SpvRuntime
+│
+├── SpvRuntime (src/spv/runtime.rs)  ← SPV lifecycle
+│   ├── wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>
+│   ├── event_tx: broadcast::Sender<PlatformWalletEvent>
+│   ├── synced_height: AtomicU32
+│   ├── monitor_revision: Arc<AtomicU64>
+│   ├── finality_waiters: Mutex<BTreeMap<Txid, Option<AssetLockProof>>>
+│   └── client: RwLock<Option<SpvClient>>
+│
+├── SpvWalletAdapter (src/spv/wallet_adapter.rs)   ← multi-wallet WalletInterface
+│   └── Iterates ALL wallets for process_block/process_mempool_transaction
+│
+├── SpvEventForwarder (src/spv/event_forwarder.rs) ← EventHandler impl
+│
+├── Signing
+│   ├── IdentitySigner           ← Signer<IdentityPublicKey>
+│   ├── ManagedIdentitySigner    ← key_storage + IdentitySigner fallback
+│   └── PlatformAddressWallet    ← Signer<PlatformAddress>
+│
+├── Events
+│   ├── PlatformWalletEvent      ← Wallet(WalletEvent) | Spv(SpvEvent)
+│   └── TransactionStatus        ← Unconfirmed | InstantSendLocked | Confirmed | ChainLocked
+│
+└── [ShieldedWallet]             ← PR-15: feature-gated Orchard/Halo2
+
+evo-tool integration (current state):
+├── Wallet struct embeds Arc<PlatformWallet> — no duplicate fields
+├── SPV: evo-tool's SpvManager still runs (old system), PlatformWalletManager bridges events
+├── All UI reads go through wallet.state() (lock-free WalletBalance for hot path)
+└── 347 lib tests passing
+```
+
+**Key design decisions:**
+- **Single lock**: All mutable state in one `Arc<RwLock<PlatformWalletInfo>>` — eliminates deadlocks from PR-26. Sub-wallets share the same Arc. `PlatformWalletInfoWriteGuard` auto-updates `WalletBalance` on drop.
+- **No WalletHandle**: `PlatformWallet.clone()` is cheap (few atomic increments). A clone is a shared handle to the same state.
+- **State access pattern**: `wallet.state()` for async read, `wallet.state_mut()` for async write. Sub-wallets use `self.state.read().await` / `self.state.write().await` internally.
+- **Lock ordering eliminated**: With one lock, there's no ordering problem. The old multi-lock design had confirmed deadlock risks between wallet/wallet_info/tracked locks.
+- **SPV dual-system**: Evo-tool still runs its own SpvManager alongside PlatformWalletManager. Full SPV replacement is PR-28.
+
+---
+
+## PR History (completed)
 
 1. **PR-1** ✅: Project scaffold + `PlatformWallet` + `PlatformWalletManager` + `CoreWallet` + evo-tool bridge
 2. **PR-2** ✅: CoreWallet deep integration — `Signer<PlatformAddress>`, per-address data, asset locks, transaction sending
 3. **PR-3** ✅: `IdentityWallet` — register, discover, top-up, withdraw, transfer, `IdentitySigner`
 4. **PR-4** ✅: `DashPayWallet` — contact requests (simplified API), sync, accept
 5. **PR-5** ✅: `PlatformAddressWallet` — DIP-17 sync, send, withdraw + review fixes
-6. **PR-6** ✅: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
-7. **PR-7** ✅: Identity update + address fund flows + DPNS — update_identity, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, register/resolve/search DPNS
-8. **PR-8** ✅: Token operations — `TokenWallet` sub-wallet with per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim, set_price
-9. **PR-9** ✅: Evo-tool integration Phase 1+2 — token tasks (9) + simple identity tasks (4) migrated via *_with_signer pattern
-10. **PR-10** ✅: Enrich ManagedIdentity — KeyStorage with WalletDerivationPath, IdentityStatus state machine, DPNS names, 12-key discovery
-11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
-12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
-13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
-14. **PR-14** ✅: Protocol completeness + evo-tool convergence — DashPay (auto-accept, validation, labels, send/accept migrated) + Identity (load_by_index, refresh, DPNS) + ManagedIdentity (owned/watched split, ManagedIdentitySigner) + identity routing (all identities synced to IdentityManager via DB chokepoints) + DPNS boilerplate eliminated. 27/42 evo-tool tasks migrated.
-15. **PR-15** ✅: Shielded pool (feature-gated `shielded`) — ShieldedWallet<S: ShieldedStore> with ZIP-32 keys, note/nullifier sync, 5 transitions, CachedOrchardProver, InMemoryShieldedStore. TODO: MerklePath witness for spending ops.
-16. **PR-16** ✅: AssetLockFinalityEvent — register_for_finality + wait_for_finality on PlatformWalletManager. Evo-tool keeps SpvManager. TODO: FinalityEvent should carry full proof data.
-17. **PR-17** ✅: Use dashcore asset lock builder — replaced ~190 lines of manual UTXO selection/fee/signing with `key-wallet::asset_lock_builder`. Updated dashcore to latest v0.42-dev (3f650020).
-18. **PR-18** ✅: Replace evo-tool Wallet model with CoreWallet — embedded PlatformWallet in Wallet struct, migrated all UI reads to lock-free WalletBalance + blocking_wallet_info(), removed platform_wallets bridge map, removed 6 duplicate fields. Migrated RPC send payment + all asset lock building to PlatformWallet. Removed ~1,600 lines of duplicate wallet code (transaction building, UTXO selection, balance caching, fallback paths). Remaining: utxos/known_addresses/watched_addresses/transactions fields for address derivation and QR-funded-UTXO flow.
-19. **PR-19** ✅: Migrate remaining Wallet fields — removed ALL 10 duplicate fields (balance, UTXO, address, transaction). DashPay contact accounts in ManagedWalletInfo. Arc<Sdk>, Arc<PlatformWallet>. ~2,700 lines removed.
-20. **PR-20**: Complete identity/asset lock lifecycle in platform-wallet — one-call API for register/top-up, SPV finality integrated, remove evo-tool orchestration code
-21. **PR-21**: Remove remaining duplication — send_transaction via TransactionBuilder, remove dead asset lock code, remove evo-tool `unused_asset_locks` (replaced by AssetLockManager)
-25. **PR-25**: Switch asset lock broadcast from DAPI to SPV — AssetLockManager currently broadcasts via `BroadcastTransactionRequest` gRPC (DAPI), should use `DashSpvClient::broadcast_transaction()` (P2P) for consistency with SPV-based finality tracking and idempotent re-broadcast on resume. Requires adding SPV client reference to AssetLockManager (complex: DashSpvClient has heavy generic type parameters) or using a trait-based broadcast abstraction.
-22. **PR-22** ✅: ChangeSet-based persistence — compute-then-apply, persister on wallet, FlushStrategy
-23. **PR-23**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
-24. **PR-24**: Comprehensive test suite + FFI update + final cleanup
-29. **PR-29**: Asset lock test coverage — unit tests (no mocks): `rederive_private_key` correctness, changeset round-trip (`to_changeset` → `restore_from_changeset_blocking`), `peek_next_funding_address` for all 6 funding types, `resolve_status_from_wallet_info` with known transaction contexts, `AssetLockEntry` ↔ `TrackedAssetLock` conversion. Integration tests (mocked SPV events via broadcast channel): `wait_for_proof` with injected IS-lock/ChainLock events, `resume_asset_lock` from each stage (Built/Broadcast/IS/CL), `upgrade_to_chain_lock_proof` with simulated ChainLock event, `validate_or_upgrade_proof` for stale IS-locks. All in platform-wallet crate (`rs-platform-wallet/tests/` or inline `#[cfg(test)]` modules).
-27. **PR-27**: Merge SpvRuntime + SpvWalletAdapter — extract atomics (`synced_height`, `filter_committed_height`, `monitor_revision`) out of RwLock into shared `SpvSyncState` struct. Fix: during `process_block()` (write lock held), `SpvRuntime::synced_height()` currently returns 0 because `try_read()` fails. Also remove dead `subscribe_events()` on adapter.
-28. **PR-28**: Full SPV replacement — migrate evo-tool's `SpvManager` (1,481 lines) to platform-wallet's `SpvRuntime`/`PlatformWalletManager`. Evo-tool currently runs TWO SPV systems in parallel: old `SpvManager` (active — handles UTXO sync, bloom filters, peers, quorum keys, broadcasting) and new `PlatformWalletManager` (bridge only — event forwarding). Merge into one: `PlatformWalletManager`'s `SpvRuntime` becomes the single SPV system. **What SpvManager does that SpvRuntime doesn't yet**: (1) Core wallet UTXO sync via `WalletManager<ManagedWalletInfo>`, (2) bloom filter management, (3) peer connection/DNS seeds, (4) BIP44 address derivation (`next_bip44_receive_address`), (5) quorum public key resolution (`get_quorum_public_key`), (6) transaction broadcasting to peers, (7) sync state machine (Idle→Starting→Syncing→Running), (8) disk storage persistence. **Approach**: SpvRuntime already wraps `DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>` — it has the same dash-spv infrastructure. The gap is exposing wallet management, broadcast, quorum keys, and sync status to evo-tool via `PlatformWalletManager`. Evo-tool becomes a pure consumer of `PlatformWalletManager` events + methods. Remove `dash-evo-tool/src/spv/` module entirely after migration.
-26. **PR-26**: Fix lock ordering deadlock — `wallet`, `wallet_info`, and `tracked` are all behind `Arc<RwLock<...>>`. **Confirmed deadlock risk** between `build_asset_lock_transaction` (wallet read → wallet_info write) and `SpvWalletAdapter::process_block` (wallet write → wallet_info write). Fix: adopt consistent global order (always `wallet` before `wallet_info`), fix `SpvWalletAdapter` lines 78-79 and 155-156 to match. Also: `resolve_status_from_wallet_info` acquires `wallet_info.blocking_read()` while inside `tracked.blocking_write()` — nested lock. Full audit of all lock sites in asset_lock_manager.rs, wallet.rs, wallet_adapter.rs needed.
+6. **PR-6** ✅: SPV lifecycle + TransactionStatus + EventHandler
+7. **PR-7** ✅: Identity update + address fund flows + DPNS
+8. **PR-8** ✅: Token operations — `TokenWallet`
+9. **PR-9** ✅: Evo-tool integration Phase 1+2 — token + identity tasks migrated
+10. **PR-10** ✅: ManagedIdentity — KeyStorage, IdentityStatus, DPNS names, 12-key discovery
+11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding
+12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation
+13. **PR-13** ✅: Evo-tool integration Phase 3 — 20 tasks total migrated
+14. **PR-14** ✅: Protocol completeness + evo-tool convergence — 27/42 tasks migrated
+15. **PR-15** ✅: Shielded pool (feature-gated)
+16. **PR-16** ✅: AssetLockFinalityEvent
+17. **PR-17** ✅: Use dashcore asset lock builder
+18. **PR-18** ✅: Replace evo-tool Wallet model with CoreWallet (~1,600 lines removed)
+19. **PR-19** ✅: Migrate remaining Wallet fields (~2,700 lines removed)
+22. **PR-22** ✅: ChangeSet-based persistence
+**Uncommitted (on feat/platform-wallet):** Single-lock refactoring (PR-26 scope) — 7+ locks → single RwLock<PlatformWalletInfo>, state getters on PlatformWallet, CoreWallet cleanup
 
 ---
 
@@ -229,7 +377,7 @@ See PR-3 (IdentityWallet) in the PR Sequence section below.
 
 ---
 
-## Problem Statement
+## Problem Statement (historical — kept for context)
 
 **`dash-evo-tool`** maintains its own self-written wallet and duplicates DashPay crypto inline:
 
@@ -259,7 +407,10 @@ See PR-3 (IdentityWallet) in the PR Sequence section below.
 
 ---
 
-## Architecture
+## Architecture (OUTDATED — see "Architecture (current)" section above)
+
+> **NOTE**: This section describes the OLD multi-lock design. The current design uses a single
+> `Arc<RwLock<PlatformWalletInfo>>` — see the "Architecture (current)" section at the top.
 
 ```
 key-wallet (rust-dashcore) — reused types
@@ -422,10 +573,16 @@ rs-sdk (Dash Platform SDK) — operations used by platform-wallet
 
 ---
 
-## Implementation Plan
+## Implementation Plan (OUTDATED struct definitions — see current code)
 
-`PlatformWallet` is a standalone wallet type (usable without SPV/manager). Cheaply cloneable (~35
-atomic ops — all Arc fields). No separate `WalletHandle` — use `PlatformWallet.clone()` directly.
+> **NOTE**: The struct definitions below show the OLD multi-lock design with separate
+> `Arc<RwLock<Wallet>>`, `Arc<RwLock<ManagedWalletInfo>>`, etc. The CURRENT design uses
+> a single `Arc<RwLock<PlatformWalletInfo>>` containing all mutable state. Sub-wallets
+> now hold `state: Arc<RwLock<PlatformWalletInfo>>` instead of individual lock fields.
+> See the source code for current struct definitions.
+
+`PlatformWallet` is a standalone wallet type (usable without SPV/manager). Cheaply cloneable
+(a few atomic increments). No separate `WalletHandle` — use `PlatformWallet.clone()` directly.
 `PlatformWalletManager` is the multi-wallet + SPV coordinator (no `WalletManager<T>` dependency).
 
 ### Struct Definitions
