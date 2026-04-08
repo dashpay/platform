@@ -407,7 +407,8 @@ impl IdentityWallet {
                 ]);
 
                 let ext_priv = info
-                    .wallet
+                    .managed_state
+                    .wallet()
                     .derive_extended_private_key(&full_path)
                     .map_err(|e| {
                         PlatformWalletError::InvalidIdentityData(format!(
@@ -822,9 +823,9 @@ impl IdentityWallet {
         let (network, start_index, wallet_seed_hash) = {
             let info = self.state.read().await;
             (
-                info.wallet.network,
+                info.managed_state.wallet().network,
                 info.identity_manager.last_scanned_index(),
-                info.wallet_info.wallet_id,
+                info.managed_state.wallet_info().wallet_id,
             )
         };
 
@@ -839,7 +840,7 @@ impl IdentityWallet {
             for key_index in 0..KEY_INDEX_SCAN_LIMIT {
                 let key_hash_array = {
                     let info = self.state.read().await;
-                    derive_identity_auth_key_hash(&info.wallet, network, identity_index, key_index)?
+                    derive_identity_auth_key_hash(info.managed_state.wallet(), network, identity_index, key_index)?
                 };
 
                 // Query Platform for an identity registered with this key hash.
@@ -1761,10 +1762,10 @@ impl IdentityWallet {
 
         let (network, wallet_seed_hash, key_hash_array) = {
             let info_guard = self.state.read().await;
-            let network = info_guard.wallet.network;
-            let wallet_seed_hash = info_guard.wallet_info.wallet_id;
+            let network = info_guard.managed_state.wallet().network;
+            let wallet_seed_hash = info_guard.managed_state.wallet_info().wallet_id;
             let key_hash_array =
-                derive_identity_auth_key_hash(&info_guard.wallet, network, identity_index, 0)?;
+                derive_identity_auth_key_hash(info_guard.managed_state.wallet(), network, identity_index, 0)?;
             (network, wallet_seed_hash, key_hash_array)
         };
 

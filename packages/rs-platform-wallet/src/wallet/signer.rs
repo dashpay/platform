@@ -54,7 +54,7 @@ impl IdentitySigner {
     ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
         let info_guard = self.state.blocking_read();
         IdentityWallet::derive_identity_key_bytes(
-            &info_guard.wallet,
+            info_guard.managed_state.wallet(),
             self.network,
             self.identity_index,
             identity_public_key,
@@ -207,7 +207,7 @@ impl ManagedIdentitySigner {
                     derivation_path, ..
                 } => {
                     let info_guard = self.state.blocking_read();
-                    let secret_key = info_guard.wallet.derive_private_key(derivation_path).map_err(|e| {
+                    let secret_key = info_guard.managed_state.wallet().derive_private_key(derivation_path).map_err(|e| {
                         ProtocolError::Generic(format!(
                             "Failed to derive private key for identity key {}: {}",
                             key_id, e
@@ -221,7 +221,7 @@ impl ManagedIdentitySigner {
         // Fallback: standard DIP-9 derivation from identity_index + key_id.
         let info_guard = self.state.blocking_read();
         IdentityWallet::derive_identity_key_bytes(
-            &info_guard.wallet,
+            info_guard.managed_state.wallet(),
             self.network,
             self.identity_index,
             identity_public_key,

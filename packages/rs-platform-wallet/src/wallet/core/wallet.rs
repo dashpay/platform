@@ -8,39 +8,11 @@ use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sighash::SighashCache;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut};
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Utxo;
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
-
-/// Write guard for `PlatformWalletInfo` that automatically refreshes
-/// `WalletBalance` when dropped. Ensures the lock-free balance is always
-/// consistent with the wallet info after any mutation.
-pub struct PlatformWalletInfoWriteGuard<'a> {
-    pub(crate) guard: tokio::sync::RwLockWriteGuard<'a, PlatformWalletInfo>,
-    pub(crate) balance: &'a WalletBalance,
-}
-
-impl<'a> std::ops::Deref for PlatformWalletInfoWriteGuard<'a> {
-    type Target = PlatformWalletInfo;
-    fn deref(&self) -> &Self::Target {
-        &self.guard
-    }
-}
-
-impl std::ops::DerefMut for PlatformWalletInfoWriteGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.guard
-    }
-}
-
-impl Drop for PlatformWalletInfoWriteGuard<'_> {
-    fn drop(&mut self) {
-        self.balance.update(&self.guard.wallet_info.balance());
-    }
-}
 
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
@@ -50,7 +22,7 @@ pub struct CoreWallet {
     pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
-    pub(crate) balance: WalletBalance,
+    pub(crate) balance: Arc<WalletBalance>,
     /// Injected broadcaster — delegates to SPV or DAPI depending on how
     /// the wallet was constructed by `PlatformWalletManager`.
     broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
@@ -62,11 +34,12 @@ impl CoreWallet {
         sdk: Arc<dash_sdk::Sdk>,
         state: Arc<RwLock<PlatformWalletInfo>>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+        balance: Arc<WalletBalance>,
     ) -> Self {
         Self {
             sdk,
             state,
-            balance: WalletBalance::new(),
+            balance,
             broadcaster,
         }
     }
@@ -75,65 +48,6 @@ impl CoreWallet {
     /// Updated automatically after SPV/RPC balance changes.
     pub fn balance(&self) -> &WalletBalance {
         &self.balance
-    }
-
-    // TODO: We should use state() form PlatformWallet, not from here. we need to understand in detalils how drop is using, how we update atomics
-
-    /// Read access to the shared `PlatformWalletInfo`.
-    ///
-    /// Use this when you need multiple reads in a single lock acquisition
-    /// (balance + UTXOs + addresses, etc.) to avoid redundant locking.
-    pub(crate) async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
-        self.state.read().await
-    }
-
-    /// Write access to the shared `PlatformWalletInfo`.
-    ///
-    /// Returns a guard that automatically refreshes `WalletBalance` when dropped,
-    /// so the lock-free balance is always consistent with `ManagedWalletInfo`.
-    pub(crate) async fn state_mut(&self) -> PlatformWalletInfoWriteGuard<'_> {
-        let guard = self.state.write().await;
-        PlatformWalletInfoWriteGuard {
-            guard,
-            balance: &self.balance,
-        }
-    }
-
-    /// Blocking read access to the shared `PlatformWalletInfo`.
-    ///
-    /// Blocks the current thread until the read lock is acquired.
-    /// Use from synchronous contexts (e.g. egui UI) where awaiting is
-    /// not possible.
-    ///
-    /// # Panics
-    ///
-    /// Panics if called from an async context (use `state().await`
-    /// instead).
-    pub(crate) fn state_blocking(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
-        self.state.blocking_read()
-    }
-
-    /// Non-blocking read access to the shared `PlatformWalletInfo`.
-    ///
-    /// Returns `None` if a writer currently holds the lock. Useful in
-    /// synchronous contexts (e.g. `spawn_blocking`) where awaiting is not
-    /// possible.
-    pub(crate) fn try_state(&self) -> Option<tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo>> {
-        self.state.try_read().ok()
-    }
-
-    /// Non-blocking write access to the shared `PlatformWalletInfo`.
-    ///
-    /// Returns `None` if the lock is currently held. Useful in synchronous
-    /// contexts (e.g. `spawn_blocking`) where awaiting is not possible.
-    pub(crate) fn try_state_mut(&self) -> Option<PlatformWalletInfoWriteGuard<'_>> {
-        self.state
-            .try_write()
-            .ok()
-            .map(|guard| PlatformWalletInfoWriteGuard {
-                guard,
-                balance: &self.balance,
-            })
     }
 
     /// Get the next unused receive address for the default account.
@@ -151,7 +65,8 @@ impl CoreWallet {
         let mut info = self.state.write().await;
         let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
         let account = info
-            .wallet_info
+            .managed_state
+            .wallet_info_mut()
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -174,7 +89,8 @@ impl CoreWallet {
         let mut info = self.state.blocking_write();
         let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
         let account = info
-            .wallet_info
+            .managed_state
+            .wallet_info_mut()
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -204,7 +120,8 @@ impl CoreWallet {
         let mut info = self.state.blocking_write();
         let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
         let account = info
-            .wallet_info
+            .managed_state
+            .wallet_info_mut()
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -227,7 +144,8 @@ impl CoreWallet {
         let mut info = self.state.write().await;
         let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
         let account = info
-            .wallet_info
+            .managed_state
+            .wallet_info_mut()
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -253,18 +171,19 @@ impl CoreWallet {
         info: &PlatformWalletInfo,
         account_index: u32,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError> {
+        let wallet = info.managed_state.wallet();
         let path = key_wallet::account::AccountType::Standard {
             index: account_index,
             standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
         }
-        .derivation_path(info.wallet.network)
+        .derivation_path(wallet.network)
         .map_err(|e| {
             crate::error::PlatformWalletError::WalletCreation(format!(
                 "Invalid account index: {}",
                 e
             ))
         })?;
-        info.wallet.derive_extended_public_key(&path).map_err(|e| {
+        wallet.derive_extended_public_key(&path).map_err(|e| {
             crate::error::PlatformWalletError::WalletCreation(format!(
                 "Failed to derive account xpub: {}",
                 e
@@ -339,7 +258,8 @@ impl CoreWallet {
         // 1. Get spendable UTXOs.
         let spendable: Vec<Utxo> = {
             let info = self.state.read().await;
-            info.wallet_info
+            info.managed_state
+                .wallet_info()
                 .get_spendable_utxos()
                 .into_iter()
                 .cloned()
@@ -544,7 +464,7 @@ impl CoreWallet {
             .iter()
             .map(|(_, _, address)| {
                 // Search all accounts for the address's derivation path.
-                for account in info.wallet_info.accounts.all_accounts() {
+                for account in info.managed_state.wallet_info().accounts.all_accounts() {
                     if let Some(path) = account.address_derivation_path(address) {
                         return Ok(path);
                     }
@@ -559,7 +479,7 @@ impl CoreWallet {
         // Derive private keys and sign.
         for (i, (input, sighash)) in tx.input.iter_mut().zip(sighashes).enumerate() {
             let path = &derivation_paths[i];
-            let extended_key = info.wallet.derive_extended_private_key(path).map_err(|e| {
+            let extended_key = info.managed_state.wallet().derive_extended_private_key(path).map_err(|e| {
                 PlatformWalletError::TransactionBuild(format!(
                     "Failed to derive key for input {}: {}",
                     i, e

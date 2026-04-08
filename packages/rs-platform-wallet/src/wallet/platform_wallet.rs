@@ -12,17 +12,18 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::{Mnemonic, Network, Seed};
+use key_wallet_manager::ManagedWalletState;
 use tokio::sync::{broadcast, RwLock};
 
-use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 use super::asset_lock::tracked::TrackedAssetLock;
-use super::persister::WalletPersister;
+use super::persister::{PlatformWalletPersisterBridge, WalletPersister};
+use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 
 use super::asset_lock::manager::AssetLockManager;
-use super::core::wallet::PlatformWalletInfoWriteGuard;
 use super::core::CoreWallet;
+use super::core::WalletBalance;
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
 use super::platform_addresses::PlatformAddressWallet;
@@ -31,17 +32,25 @@ use super::tokens::TokenWallet;
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
 
-// TODO: Rename to PlatformWalletState
+// TODO: Rename to PlatformWalletState and move to state module
 /// Consolidated mutable state for a platform wallet.
 ///
 /// All fields that were previously behind independent `Arc<RwLock<...>>` are now
 /// collected into a single struct behind one `Arc<RwLock<PlatformWalletInfo>>`.
 /// Sub-wallets hold a clone of that shared `Arc` and manage locking internally.
 ///
-/// `WalletBalance` stays OUTSIDE the lock (AtomicU64, lock-free reads).
+/// `WalletBalance` is stored as `Arc<WalletBalance>` for lock-free reads (C1).
+/// `ManagedWalletState<PlatformWalletPersisterBridge>` bundles `Wallet` +
+/// `ManagedWalletInfo` + automatic changeset persistence (C2).
 pub struct PlatformWalletInfo {
-    pub wallet: Wallet,
-    pub wallet_info: ManagedWalletInfo,
+    // TODO: Rename to core_state
+    /// Combined wallet key material, mutable state, and persistence.
+    /// Replaces the old separate `wallet` and `wallet_info` fields.
+    /// Access via `managed_state.wallet()`, `managed_state.wallet_info()`, etc.
+    pub managed_state: ManagedWalletState<PlatformWalletPersisterBridge>,
+    /// Lock-free balance for UI reads. Updated from `ManagedWalletInfo` after
+    /// each SPV block/mempool processing and RPC refresh.
+    pub balance: Arc<WalletBalance>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
     pub platform_address_balances: BTreeMap<PlatformAddress, Credits>,
@@ -131,20 +140,14 @@ impl PlatformWallet {
         &self.sdk
     }
 
-    // TODO: State methods - separate implementation block
-
     /// Read access to the shared wallet state.
     pub async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
         self.state.read().await
     }
 
-    /// Write access with auto-balance-refresh on drop.
-    pub async fn state_mut(&self) -> PlatformWalletInfoWriteGuard<'_> {
-        let guard = self.state.write().await;
-        PlatformWalletInfoWriteGuard {
-            guard,
-            balance: &self.core.balance,
-        }
+    /// Write access to the shared wallet state.
+    pub async fn state_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, PlatformWalletInfo> {
+        self.state.write().await
     }
 
     /// Blocking read.
@@ -157,15 +160,9 @@ impl PlatformWallet {
         self.state.try_read().ok()
     }
 
-    /// Non-blocking write with auto-balance-refresh.
-    pub fn try_state_mut(&self) -> Option<PlatformWalletInfoWriteGuard<'_>> {
-        self.state
-            .try_write()
-            .ok()
-            .map(|guard| PlatformWalletInfoWriteGuard {
-                guard,
-                balance: &self.core.balance,
-            })
+    /// Non-blocking write.
+    pub fn try_state_mut(&self) -> Option<tokio::sync::RwLockWriteGuard<'_, PlatformWalletInfo>> {
+        self.state.try_write().ok()
     }
 
     /// Construct a PlatformWallet from an existing key-wallet Wallet and ManagedWalletInfo.
@@ -183,6 +180,63 @@ impl PlatformWallet {
         let (event_tx, _) = broadcast::channel(256);
         let broadcaster = Arc::new(crate::broadcaster::DapiBroadcaster::new(Arc::clone(&sdk)));
         Self::new(sdk, wallet, wallet_info, event_tx, persister, broadcaster)
+    }
+    // TODO: How is it different from new?
+    /// Construct a PlatformWallet from a pre-built shared state `Arc<RwLock<PlatformWalletInfo>>`.
+    ///
+    /// Used by [`PlatformWalletManager::create_wallet_from_seed_bytes`] to
+    /// share the same state Arc between the `WalletManager<PlatformWalletInfo>`
+    /// and the `PlatformWallet` handle. All sub-wallets reference the same Arc.
+    pub(crate) fn from_shared_state(
+        sdk: Arc<dash_sdk::Sdk>,
+        wallet_id: WalletId,
+        state: Arc<RwLock<PlatformWalletInfo>>,
+        balance: Arc<super::core::WalletBalance>,
+        event_tx: broadcast::Sender<PlatformWalletEvent>,
+        persister: Arc<dyn PlatformWalletPersistence>,
+        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+    ) -> Self {
+        let core = CoreWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&state),
+            Arc::clone(&broadcaster),
+            Arc::clone(&balance),
+        );
+
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&state),
+            event_tx.clone(),
+            broadcaster,
+        ));
+
+        let identity = IdentityWallet {
+            sdk: Arc::clone(&sdk),
+            state: Arc::clone(&state),
+            asset_locks: Arc::clone(&asset_locks),
+        };
+
+        let dashpay = DashPayWallet {
+            sdk: Arc::clone(&sdk),
+            state: Arc::clone(&state),
+        };
+
+        let platform = PlatformAddressWallet::new(Arc::clone(&sdk), Arc::clone(&state));
+        let tokens = TokenWallet::new(Arc::clone(&sdk), Arc::clone(&state));
+
+        Self {
+            wallet_id,
+            sdk,
+            core,
+            identity,
+            dashpay,
+            platform,
+            tokens,
+            asset_locks,
+            event_tx,
+            persister: WalletPersister::new(wallet_id, persister),
+            state,
+        }
     }
 
     /// Create a PlatformWallet from a BIP-39 mnemonic.
@@ -216,7 +270,12 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
+        Ok(Self::new_with_dummy_event(
+            sdk,
+            wallet,
+            wallet_info,
+            persister,
+        ))
     }
 
     /// Create a PlatformWallet from an extended private key string.
@@ -245,7 +304,12 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
+        Ok(Self::new_with_dummy_event(
+            sdk,
+            wallet,
+            wallet_info,
+            persister,
+        ))
     }
 
     /// Create a watch-only PlatformWallet from an extended public key string.
@@ -272,7 +336,12 @@ impl PlatformWallet {
         );
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
+        Ok(Self::new_with_dummy_event(
+            sdk,
+            wallet,
+            wallet_info,
+            persister,
+        ))
     }
 
     /// Create a PlatformWallet from a BIP-39 Seed.
@@ -288,7 +357,12 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
+        Ok(Self::new_with_dummy_event(
+            sdk,
+            wallet,
+            wallet_info,
+            persister,
+        ))
     }
 
     /// Create a PlatformWallet from raw seed bytes (64 bytes).
@@ -311,7 +385,12 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info, persister))
+        Ok(Self::new_with_dummy_event(
+            sdk,
+            wallet,
+            wallet_info,
+            persister,
+        ))
     }
 
     /// Create a PlatformWallet with a random mnemonic. Returns the wallet and the mnemonic.
@@ -357,11 +436,15 @@ impl PlatformWallet {
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         let wallet_id = wallet_info.wallet_id;
+        let bridge = PlatformWalletPersisterBridge::new(wallet_id, Arc::clone(&persister));
+
+        let managed_state = ManagedWalletState::new(wallet, wallet_info, bridge);
+        let balance = Arc::new(WalletBalance::new());
 
         // Build the single shared lock containing all mutable wallet state.
         let state = Arc::new(RwLock::new(PlatformWalletInfo {
-            wallet,
-            wallet_info,
+            managed_state,
+            balance: Arc::clone(&balance),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             platform_address_balances: BTreeMap::new(),
@@ -373,6 +456,7 @@ impl PlatformWallet {
             Arc::clone(&sdk),
             Arc::clone(&state),
             Arc::clone(&broadcaster),
+            balance,
         );
 
         let asset_locks = Arc::new(AssetLockManager::new(
