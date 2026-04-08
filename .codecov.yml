@@ -109,12 +109,27 @@ ignore:
   # Core chain type wrappers — masternode entry structs, deserialization
   # boilerplate, thin type aliases
   - "packages/rs-dpp/src/core_types/**"
-  # Infrastructure and glue code — binary entrypoints, query service dispatch,
-  # runtime context providers, and replay/debugging tooling
+  # Random data generators — test-only helpers, not production logic
+  - "packages/rs-dpp/src/**/random.rs"
+  - "packages/rs-dpp/src/**/random_*.rs"
+  # Batch transition resolvers — From/TryFrom conversion boilerplate
+  - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/batched_transition/resolvers.rs"
+  # Drive-ABCI infrastructure — binary entrypoints, query service dispatch,
+  # RPC wrappers, metrics, logging, runtime context providers, replay tooling
   - "packages/rs-drive-abci/src/main.rs"
   - "packages/rs-drive-abci/src/query/service.rs"
+  - "packages/rs-drive-abci/src/rpc/**"
+  - "packages/rs-drive-abci/src/metrics.rs"
+  - "packages/rs-drive-abci/src/logging/**"
+  - "packages/rs-drive-abci/src/mimic/**"
   - "packages/rs-sdk-trusted-context-provider/**"
   - "packages/rs-drive-abci/src/replay/**"
+  # DPP signing test module — integration tests, not unit-testable
+  - "packages/rs-dpp/src/state_transition/state_transitions/address_funds/**/signing_tests.rs"
+  # Drive extra tests — integration tests in production code tree
+  - "packages/rs-dpp/src/data_contract/extra/drive_api_tests.rs"
+  # Versioned dispatch methods — pure version routing with no logic
+  - "packages/rs-dpp/src/data_contract/document_type/methods/versioned_methods.rs"
   
 coverage:
   status:
