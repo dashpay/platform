@@ -593,6 +593,84 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
+    fn test_token_set_status_construction() {
+        use dpp::tokens::status::v0::TokenStatusV0;
+        let op = TokenOperationType::TokenSetStatus {
+            token_id: test_token_id(),
+            status: TokenStatus::V0(TokenStatusV0 { paused: true }),
+        };
+        match op {
+            TokenOperationType::TokenSetStatus { token_id, .. } => {
+                assert_eq!(token_id, test_token_id());
+            }
+            _ => panic!("expected TokenSetStatus variant"),
+        }
+    }
+
+    #[test]
+    fn test_token_history_construction() {
+        use dpp::tokens::token_event::TokenEvent;
+
+        let op = TokenOperationType::TokenHistory {
+            token_id: test_token_id(),
+            owner_id: test_identity_id(),
+            nonce: 42,
+            event: TokenEvent::Mint(1000, test_identity_id(), None),
+        };
+        match op {
+            TokenOperationType::TokenHistory {
+                token_id,
+                owner_id,
+                nonce,
+                ..
+            } => {
+                assert_eq!(token_id, test_token_id());
+                assert_eq!(owner_id, test_identity_id());
+                assert_eq!(nonce, 42);
+            }
+            _ => panic!("expected TokenHistory variant"),
+        }
+    }
+
+    #[test]
+    fn test_token_mark_perpetual_release_construction() {
+        let op = TokenOperationType::TokenMarkPerpetualReleaseAsDistributed {
+            token_id: test_token_id(),
+            recipient_id: test_recipient_id(),
+            cycle_start_moment: RewardDistributionMoment::BlockBasedMoment(100),
+        };
+        match op {
+            TokenOperationType::TokenMarkPerpetualReleaseAsDistributed {
+                token_id,
+                recipient_id,
+                ..
+            } => {
+                assert_eq!(token_id, test_token_id());
+                assert_eq!(recipient_id, test_recipient_id());
+            }
+            _ => panic!("expected TokenMarkPerpetualReleaseAsDistributed variant"),
+        }
+    }
+
+    #[test]
+    fn test_token_set_price_some() {
+        use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+
+        let pricing = TokenPricingSchedule::SinglePrice(5000);
+        let op = TokenOperationType::TokenSetPriceForDirectPurchase {
+            token_id: test_token_id(),
+            price: Some(pricing),
+        };
+        match op {
+            TokenOperationType::TokenSetPriceForDirectPurchase { token_id, price } => {
+                assert_eq!(token_id, test_token_id());
+                assert!(price.is_some());
+            }
+            _ => panic!("expected TokenSetPriceForDirectPurchase variant"),
+        }
+    }
+
+    #[test]
     fn test_token_operation_debug() {
         let op = TokenOperationType::TokenBurn {
             token_id: test_token_id(),
