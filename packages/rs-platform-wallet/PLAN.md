@@ -36,8 +36,8 @@ updated: 2026-04-08
 
 | PR | Description | Status |
 |----|-------------|--------|
-| PR-20 | Complete identity/asset lock lifecycle — one-call API, SPV finality | Planned |
-| PR-21 | Remove remaining duplication — TransactionBuilder, dead asset lock code | Planned |
+| PR-20 | ~~Complete identity/asset lock lifecycle~~ Core API done (one-call methods + IS→CL fallback in IdentityWallet). Leftovers in PR-31. | Done |
+| PR-21 | ~~Remove remaining duplication~~ TransactionBuilder already unified. Asset lock changeset restore leftover in PR-31. | Done |
 | PR-23 | ~~Merge Wallet + ManagedWalletInfo in key-wallet~~ **Superseded** by PR-30 | Superseded |
 | PR-24 | Comprehensive test suite + FFI update + final cleanup | Planned |
 | PR-25 | Switch asset lock broadcast from DAPI to SPV | Planned |
@@ -46,6 +46,7 @@ updated: 2026-04-08
 | PR-28 | Full SPV replacement — migrate evo-tool SpvManager to PlatformWalletManager | Planned |
 | PR-29 | Asset lock test coverage | Planned |
 | PR-30 | Switch to dashcore WalletManager — delete SpvWalletAdapter, use BalanceUpdated events | **Next** |
+| PR-31 | Leftovers from PR-20/21: evo-tool identity + asset lock cleanup | Planned |
 
 ---
 
@@ -164,6 +165,45 @@ Phase 1 (dashcore): Add wallet()/wallet_mut() to trait → extract check_core_tr
 Phase 2 (platform-wallet): Move persister into PlatformWalletInfo → implement WalletInfoInterface → delete SpvWalletAdapter/SpvSyncState/WriteGuard → update SpvRuntime → restructure PlatformWalletManager → wire events.
 
 Phase 3 (evo-tool): Update event bridge → update E2E tests.
+
+---
+
+## PR-31: Evo-tool identity + asset lock cleanup (leftovers from PR-20/21)
+
+### Goal
+
+Clean up remaining gaps from PR-20 (identity lifecycle) and PR-21 (asset lock duplication). Two concrete issues:
+
+### 1. Evo-tool uses low-level `_with_signer` instead of one-call identity APIs
+
+**Problem**: Evo-tool's `RegisterIdentityTask` and `TopUpIdentityTask` call the low-level `register_identity_with_signer()` / `top_up_identity_with_signer()` methods and manually implement IS→CL fallback (~40 lines each). Platform-wallet's `IdentityWallet` already has one-call methods (`register_identity_with_funding`, `top_up_identity_with_funding`, `funded_register_identity`, `funded_top_up_identity`) that handle IS→CL fallback internally.
+
+**Fix**: Switch evo-tool tasks to use the one-call APIs. Delete manual IS→CL fallback code in:
+- `dash-evo-tool/src/backend_task/identity/top_up_identity.rs` (lines ~112-190)
+- `dash-evo-tool/src/backend_task/identity/register_identity.rs` (lines ~255-298, ~394-430)
+
+### 2. Asset lock changeset restore is not implemented
+
+**Problem**: `PlatformWallet::apply()` calls `self.asset_locks.restore_from_changeset_blocking(asset_lock_cs)` but this method doesn't exist. Asset lock changesets are written to the persister (evo-tool's SQLite) but never loaded back. Evo-tool works around this with `register_with_asset_lock_manager()` bridge code that scans the DB and manually re-registers locks with the manager.
+
+**Fix**:
+- Implement `AssetLockManager::restore_from_changeset_blocking()` in platform-wallet — reconstruct `tracked_asset_locks` from `AssetLockChangeSet`
+- Verify `PlatformWallet::apply()` actually calls it correctly on wallet load
+- Once changeset restore works, simplify evo-tool's `recover_asset_locks.rs` — the bridge code `register_with_asset_lock_manager()` becomes unnecessary since locks are restored from persistence automatically
+- Update UI screens (`by_using_unused_asset_lock.rs`) to read from `AssetLockManager.list_tracked_locks()` instead of querying DB directly
+
+### Files to modify
+
+**platform-wallet:**
+- `src/wallet/asset_lock/manager.rs` — implement `restore_from_changeset_blocking`
+- `src/wallet/platform_wallet.rs` — verify `apply()` works end-to-end
+
+**evo-tool:**
+- `src/backend_task/identity/top_up_identity.rs` — switch to one-call API
+- `src/backend_task/identity/register_identity.rs` — switch to one-call API
+- `src/backend_task/core/recover_asset_locks.rs` — simplify once changeset restore works
+- `src/ui/identities/add_new_identity_screen/by_using_unused_asset_lock.rs` — read from manager
+- `src/ui/identities/top_up_identity_screen/by_using_unused_asset_lock.rs` — read from manager
 
 ---
 
