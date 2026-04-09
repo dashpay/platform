@@ -271,7 +271,7 @@ class SendViewModel: ObservableObject {
 
             case .coreToCore:
                 let outputs = [
-                    Transaction.Output(address: recipientAddress, amount: amount)
+                    TxOutput(address: recipientAddress, amount: amount)
                 ]
 
                 // TODO: The model is using hardoced estimated fees

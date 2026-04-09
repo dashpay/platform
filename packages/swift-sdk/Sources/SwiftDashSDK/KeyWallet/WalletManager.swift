@@ -356,7 +356,7 @@ public class WalletManager {
     ///   - accIndex: The account index to use
     ///   - outputs: The transaction outputs
     /// - Returns: The signed transaction bytes and the fee
-    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output]) throws -> (Data, UInt64) {
+    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [TxOutput]) throws -> (Data, UInt64) {
         guard !outputs.isEmpty else {
             throw KeyWalletError.invalidInput("Transaction must have at least one output")
         }
@@ -390,9 +390,6 @@ public class WalletManager {
         defer {
             if error.message != nil {
                 error_message_free(error.message)
-            }
-            for _ in ffiOutputs {
-              // TODO: Memory leak, FFI doesnt expose a way to free the address
             }
             if let ptr = txBytesPtr {
                 transaction_bytes_free(ptr)
