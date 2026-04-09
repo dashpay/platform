@@ -316,6 +316,17 @@ impl CoreWallet {
         self.sign_transaction_inputs(&secp, &mut tx, &selected_utxos)
             .await?;
 
+        // 5b. Mark spent UTXOs immediately while we can still prevent
+        // concurrent callers from selecting the same inputs.
+        {
+            use crate::wallet::platform_wallet_traits::WalletTransactionChecker;
+            use key_wallet::transaction_checking::TransactionContext;
+            let mut state = self.state.write().await;
+            state
+                .check_core_transaction(&tx, TransactionContext::Mempool, true, true)
+                .await;
+        }
+
         // 6. Broadcast.
         self.broadcast_transaction(&tx).await?;
 
