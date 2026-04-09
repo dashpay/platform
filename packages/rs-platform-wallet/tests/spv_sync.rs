@@ -4,7 +4,7 @@
 //! starts SPV, waits for sync, and verifies the wallet has a non-zero balance.
 //!
 //! # Requirements
-//! - `SPV_TEST_MNEMONIC` env var: 12-word BIP-39 mnemonic for a funded testnet wallet
+//! - `SPV_TEST_MNEMONIC` env var: 12/24-word BIP-39 mnemonic for a funded testnet wallet
 //! - Network access to Dash testnet peers (DNS seed discovery)
 //!
 //! # Running
@@ -45,19 +45,80 @@ impl PlatformWalletPersistence for NoopPersister {
     }
 }
 
+/// No-op context provider — we only need SPV, not platform queries.
+struct NoopContextProvider;
+impl dash_sdk::platform::ContextProvider for NoopContextProvider {
+    fn get_quorum_public_key(
+        &self,
+        _quorum_type: u32,
+        _quorum_hash: [u8; 32],
+        _core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], dash_sdk::error::ContextProviderError> {
+        Err(dash_sdk::error::ContextProviderError::Config(
+            "not available in SPV-only test".into(),
+        ))
+    }
+
+    fn get_data_contract(
+        &self,
+        _id: &dpp::prelude::Identifier,
+        _platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<Option<Arc<dpp::data_contract::DataContract>>, dash_sdk::error::ContextProviderError>
+    {
+        Ok(None)
+    }
+
+    fn get_token_configuration(
+        &self,
+        _id: &dpp::prelude::Identifier,
+    ) -> Result<
+        Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>,
+        dash_sdk::error::ContextProviderError,
+    > {
+        Ok(None)
+    }
+
+    fn get_platform_activation_height(&self) -> Result<u32, dash_sdk::error::ContextProviderError> {
+        Ok(0)
+    }
+}
+
+/// Testnet DAPI addresses (from dash-evo-tool .env.example).
+const TESTNET_DAPI_ADDRESSES: &[&str] = &[
+    "https://68.67.122.1:1443",
+    "https://68.67.122.2:1443",
+    "https://68.67.122.3:1443",
+];
+
 #[ignore]
 #[tokio::test]
 async fn test_spv_sync_and_balance() {
+    // --- Logging ---
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_target(true)
+        .init();
+
     // --- Setup ---
     let mnemonic_str = std::env::var("SPV_TEST_MNEMONIC").expect(
-        "SPV_TEST_MNEMONIC env var required (12-word BIP-39 mnemonic for a funded testnet wallet)",
+        "SPV_TEST_MNEMONIC env var required (BIP-39 mnemonic for a funded testnet wallet)",
     );
 
     let network = Network::Testnet;
-    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
-    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
 
-    // Wrap in Arc so we can clone into the SPV background task.
+    // Build SDK with testnet DAPI addresses and no-op context provider.
+    let address_list: dash_sdk::dapi_client::AddressList = TESTNET_DAPI_ADDRESSES
+        .iter()
+        .map(|s| s.parse().expect("valid DAPI address"))
+        .collect();
+    let sdk = dash_sdk::SdkBuilder::new(address_list)
+        .with_network(network)
+        .with_context_provider(NoopContextProvider)
+        .build()
+        .expect("Failed to build SDK");
+    let sdk = Arc::new(sdk);
+
+    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
     let manager = Arc::new(PlatformWalletManager::new(Arc::clone(&sdk), persister));
 
     // --- Create wallet from mnemonic ---
@@ -99,7 +160,9 @@ async fn test_spv_sync_and_balance() {
     });
 
     // --- Wait for spendable balance ---
-    let timeout = Duration::from_secs(120);
+    // Cold start needs to sync full testnet chain headers (~1M+ blocks).
+    // Second run with cached state is much faster (~20s).
+    let timeout = Duration::from_secs(600);
     let start = std::time::Instant::now();
     let mut last_height = 0u32;
 
@@ -115,11 +178,11 @@ async fn test_spv_sync_and_balance() {
             panic!("Timeout waiting for wallet balance after {:?}", timeout);
         }
 
-        // Check balance via lock-free atomics (no lock needed)
+        // Check balance via lock-free atomics (no lock needed).
         let spendable = platform_wallet.balance().spendable();
         let total = platform_wallet.balance().total();
 
-        // Check synced height via state guard
+        // Check synced height via state guard.
         let synced = {
             let state = platform_wallet.state().await;
             state.core_wallet.synced_height()
@@ -134,7 +197,10 @@ async fn test_spv_sync_and_balance() {
         }
 
         if spendable > 0 {
-            println!("SUCCESS: Wallet has spendable balance: {} duffs", spendable);
+            println!(
+                "SUCCESS: Wallet has spendable balance: {} duffs",
+                spendable
+            );
             cancel.cancel();
             let _ = spv_handle.await;
             return;
