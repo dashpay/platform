@@ -876,12 +876,14 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // The encrypted_note size check happens in reconstruct_and_verify_bundle,
-            // which now runs at the processor level before state validation.
+            // The encrypted_note size check now happens in DPP structure validation
+            // (before reaching proof verification), returning a BasicError.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }

@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-enum RootTab: Hashable {
+enum RootTab: String, Hashable {
     case sync, wallets, friends, platform, settings
 }
 
@@ -10,7 +10,13 @@ struct ContentView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     @EnvironmentObject var walletService: WalletService
 
-    @State private var selectedTab: RootTab = .sync
+    @State private var selectedTab: RootTab = {
+        if let saved = UserDefaults.standard.string(forKey: "selectedTab"),
+           let tab = RootTab(rawValue: saved) {
+            return tab
+        }
+        return .sync
+    }()
 
     var body: some View {
         if !unifiedState.isInitialized {
@@ -81,6 +87,9 @@ struct ContentView: View {
                         Label("Settings", systemImage: "gearshape")
                     }
                     .tag(RootTab.settings)
+            }
+            .onChange(of: selectedTab) { _, newTab in
+                UserDefaults.standard.set(newTab.rawValue, forKey: "selectedTab")
             }
             .overlay(alignment: .top) {
                 if walletService.syncProgress.state.isSyncing() {

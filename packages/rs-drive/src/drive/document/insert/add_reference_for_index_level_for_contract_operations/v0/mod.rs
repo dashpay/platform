@@ -49,6 +49,14 @@ impl Drive {
         if all_fields_null && !index_type.should_insert_with_all_null {
             return Ok(());
         }
+
+        // if index is countable, we should use count trees, so we can get the count of elements
+        let reference_tree_type = if index_type.countable {
+            TreeType::CountTree
+        } else {
+            TreeType::NormalTree
+        };
+
         // unique indexes will be stored under key "0"
         // non-unique indices should have a tree at key "0" that has all elements based off of primary key
         if !index_type.index_type.is_unique() || any_fields_null {
@@ -63,7 +71,7 @@ impl Drive {
             } else {
                 BatchInsertTreeApplyType::StatelessBatchInsertTree {
                     in_tree_type: TreeType::NormalTree,
-                    tree_type: TreeType::NormalTree,
+                    tree_type: reference_tree_type,
                     flags_len: storage_flags
                         .map(|s| s.serialized_size())
                         .unwrap_or_default(),
@@ -76,7 +84,7 @@ impl Drive {
             // a contested resource index
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                TreeType::NormalTree,
+                reference_tree_type,
                 *storage_flags,
                 apply_type,
                 transaction,
@@ -95,7 +103,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllReference(
                             DEFAULT_HASH_SIZE_U8,
@@ -195,7 +203,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_type: TreeType::NormalTree,
+                    in_tree_type: reference_tree_type,
                     target: QueryTargetValue(
                         document_reference_size(document_and_contract_info.document_type)
                             + storage_flags

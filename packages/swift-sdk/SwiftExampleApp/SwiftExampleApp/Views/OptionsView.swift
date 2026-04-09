@@ -19,6 +19,11 @@ struct OptionsView: View {
                             if newNetwork != appState.currentNetwork {
                                 isSwitchingNetwork = true
                                 Task {
+                                    // Auto-disable Docker when leaving Local
+                                    if newNetwork != .regtest && appState.useDockerSetup {
+                                        appState.useDockerSetup = false
+                                    }
+
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
 
@@ -39,21 +44,27 @@ struct OptionsView: View {
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isSwitchingNetwork)
 
-                    Toggle("Use Local DAPI (Platform)", isOn: $appState.useLocalPlatform)
-                        .onChange(of: appState.useLocalPlatform) { _, _ in
-                            isSwitchingNetwork = true
-                            Task {
-                                await appState.switchNetwork(to: appState.currentNetwork)
-                                await MainActor.run { isSwitchingNetwork = false }
+                    if appState.currentNetwork == .regtest {
+                        Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
+                            .onChange(of: appState.useDockerSetup) { _, _ in
+                                isSwitchingNetwork = true
+                                Task {
+                                    await appState.switchNetwork(to: appState.currentNetwork)
+                                    await MainActor.run { isSwitchingNetwork = false }
+                                }
                             }
-                        }
-                        .help("When enabled, Platform requests use local DAPI at 127.0.0.1:1443 (override via 'platformDAPIAddresses').")
+                            .help("Connect to local dashmate Docker network.")
 
-                    Toggle("Use Local Core (SPV)", isOn: $appState.useLocalCore)
-                        .onChange(of: appState.useLocalCore) { _, _ in
-                            // Core override will be applied when SPV peer overrides are supported
+                        if appState.useDockerSetup {
+                            TextField("Faucet RPC Password", text: Binding(
+                                get: { UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "" },
+                                set: { UserDefaults.standard.set($0, forKey: "faucetRPCPassword") }
+                            ))
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
                         }
-                        .help("When enabled, Core (SPV) connects only to configured peers (default 127.0.0.1 with network port). Override via 'corePeerAddresses'.")
+                    }
 
                     HStack {
                         Text("Network Status")
@@ -76,6 +87,7 @@ struct OptionsView: View {
                                 .foregroundColor(.red)
                         }
                     }
+
                 }
 
                 Section("Data") {

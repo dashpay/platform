@@ -336,3 +336,241 @@ impl ResolvedContestedDocumentVotePollVotesDriveQuery<'_> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+    use crate::util::object_size_info::DataContractResolvedInfo;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+    use grovedb::QueryItem;
+
+    /// Helper to construct a resolved contestant votes query using the DPNS
+    /// "domain" contested index.
+    fn build_resolved_query(
+        contract: &dpp::data_contract::DataContract,
+        contestant_id: Identifier,
+        offset: Option<u16>,
+        limit: Option<u16>,
+        start_at: Option<([u8; 32], bool)>,
+        order_ascending: bool,
+    ) -> ResolvedContestedDocumentVotePollVotesDriveQuery<'_> {
+        let document_type_name = "domain".to_string();
+        let index_name = "parentNameAndLabel".to_string();
+
+        let parent_domain_value = dpp::platform_value::Value::Text("dash".to_string());
+        let label_value = dpp::platform_value::Value::Text("test-name".to_string());
+
+        let index_values = vec![parent_domain_value, label_value];
+
+        let vote_poll = ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract: DataContractResolvedInfo::BorrowedDataContract(contract),
+            document_type_name,
+            index_name,
+            index_values,
+        };
+
+        ResolvedContestedDocumentVotePollVotesDriveQuery {
+            vote_poll,
+            contestant_id,
+            offset,
+            limit,
+            start_at,
+            order_ascending,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // construct_path_query tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn construct_path_query_no_start_ascending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0xAA; 32]);
+        let query = build_resolved_query(
+            &contract,
+            contestant_id,
+            None,     // offset
+            Some(10), // limit
+            None,     // start_at
+            true,     // ascending
+        );
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // Path should end with the contestant identifier and voting storage key
+        assert!(!pq.path.is_empty());
+        assert_eq!(pq.query.limit, Some(10));
+        assert_eq!(pq.query.offset, None);
+        assert!(pq.query.query.left_to_right);
+
+        // No start -> RangeFull
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], QueryItem::RangeFull(..)));
+    }
+
+    #[test]
+    fn construct_path_query_no_start_descending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0xBB; 32]);
+        let query = build_resolved_query(&contract, contestant_id, None, None, None, false);
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        assert!(!pq.query.query.left_to_right);
+        assert_eq!(pq.query.limit, None);
+    }
+
+    #[test]
+    fn construct_path_query_start_at_included_ascending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0xCC; 32]);
+        let start_key = [0x42u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            contestant_id,
+            None,
+            Some(5),
+            Some((start_key, true)),
+            true,
+        );
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeFrom(r) if r.start == start_key.to_vec()),
+            "ascending + included = RangeFrom"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_start_at_excluded_ascending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0xDD; 32]);
+        let start_key = [0x42u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            contestant_id,
+            None,
+            Some(5),
+            Some((start_key, false)),
+            true,
+        );
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfter(r) if r.start == start_key.to_vec()),
+            "ascending + excluded = RangeAfter"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_start_at_included_descending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0xEE; 32]);
+        let start_key = [0x42u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            contestant_id,
+            None,
+            Some(5),
+            Some((start_key, true)),
+            false,
+        );
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeToInclusive(r) if r.end == start_key.to_vec()),
+            "descending + included = RangeToInclusive"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_start_at_excluded_descending() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0xFF; 32]);
+        let start_key = [0x42u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            contestant_id,
+            None,
+            Some(5),
+            Some((start_key, false)),
+            false,
+        );
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        let items = &pq.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeTo(r) if r.end == start_key.to_vec()),
+            "descending + excluded = RangeTo"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_with_offset_and_limit() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contestant_id = Identifier::from([0x11; 32]);
+        let query = build_resolved_query(
+            &contract,
+            contestant_id,
+            Some(3),  // offset
+            Some(20), // limit
+            None,
+            true,
+        );
+
+        let pq = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        assert_eq!(pq.query.limit, Some(20));
+        assert_eq!(pq.query.offset, Some(3));
+    }
+}

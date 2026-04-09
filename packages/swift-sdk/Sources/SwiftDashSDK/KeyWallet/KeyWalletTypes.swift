@@ -45,6 +45,9 @@ public enum AccountType: UInt32 {
     case providerOwnerKeys = 8
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
+    case dashPayReceivingFunds = 11
+    case dashPayExternalAccount = 12
+    case platformPayment = 13
 
     var ffiValue: FFIAccountType {
         FFIAccountType(rawValue: self.rawValue)
@@ -69,23 +72,6 @@ public enum AddressPoolType: UInt32 {
 
     init(ffiType: FFIAddressPoolType) {
         self = AddressPoolType(rawValue: ffiType.rawValue) ?? .external
-    }
-}
-
-// MARK: - Transaction Context
-
-/// Transaction context for checking
-public enum TransactionContext: UInt32 {
-    case mempool = 0
-    case inBlock = 1
-    case inChainLockedBlock = 2
-
-    var ffiValue: FFITransactionContext {
-        FFITransactionContext(rawValue: self.rawValue)
-    }
-
-    init(ffiContext: FFITransactionContext) {
-        self = TransactionContext(rawValue: ffiContext.rawValue) ?? .mempool
     }
 }
 
@@ -248,29 +234,6 @@ public struct TransactionCheckResult {
         self.totalReceived = ffiResult.total_received
         self.totalSent = ffiResult.total_sent
         self.affectedAccountsCount = ffiResult.affected_accounts_count
-    }
-}
-
-/// Transaction context details
-public struct TransactionContextDetails {
-    public let context: TransactionContext
-    public let height: UInt32
-    public let blockHash: Data?
-    public let timestamp: UInt32
-
-    func toFFI() -> FFITransactionContextDetails {
-        var details = FFITransactionContextDetails()
-        details.context_type = context.ffiValue
-        details.height = height
-        details.timestamp = timestamp
-
-        if let hash = blockHash {
-            hash.withUnsafeBytes { bytes in
-                details.block_hash = bytes.bindMemory(to: UInt8.self).baseAddress
-            }
-        }
-
-        return details
     }
 }
 

@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    private let handle: UnsafeMutablePointer<FFIWalletManager>
+    internal let handle: UnsafeMutablePointer<FFIWalletManager>
     internal let network: KeyWalletNetwork
     private let ownsHandle: Bool
 
@@ -351,40 +351,62 @@ public class WalletManager {
         return (confirmed: confirmed, unconfirmed: unconfirmed)
     }
 
-    // MARK: - Transaction Processing
-
-    /// Process a transaction through all wallets
+    /// Build a signed transaction
     /// - Parameters:
-    ///   - transactionData: The transaction bytes
-    ///   - contextDetails: Transaction context details
-    ///   - updateStateIfFound: Whether to update wallet state if transaction is relevant
-    /// - Returns: True if transaction was relevant to at least one wallet
-    @discardableResult
-    public func processTransaction(_ transactionData: Data,
-                                  contextDetails: TransactionContextDetails,
-                                  updateStateIfFound: Bool = true) throws -> Bool {
-        var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
+    ///   - accIndex: The account index to use
+    ///   - outputs: The transaction outputs
+    /// - Returns: The signed transaction bytes and the fee
+    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output]) throws -> (Data, UInt64) {
+        guard !outputs.isEmpty else {
+            throw KeyWalletError.invalidInput("Transaction must have at least one output")
+        }
 
-        let success = transactionData.withUnsafeBytes { txBytes in
-            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_process_transaction(
-                handle, txPtr, transactionData.count,
-                &ffiContext,
-                updateStateIfFound, &error)
+        var error = FFIError()
+        var txBytesPtr: UnsafeMutablePointer<UInt8>?
+        var txLen: size_t = 0
+
+        var fee: UInt64 = 0
+
+        guard let wallet = try self.getWallet(id: wallet.walletId) else {
+            throw KeyWalletError.walletError("Wallet not found in manager")
+        }
+
+        let ffiOutputs = outputs.map { $0.toFFI() }
+
+        let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
+            wallet_build_and_sign_transaction(
+                self.handle,
+                wallet.ffiHandle,
+                accIndex,
+                outputsPtr.baseAddress,
+                outputs.count,
+                1000,
+                &fee,
+                &txBytesPtr,
+                &txLen,
+                &error)
         }
 
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
+            for _ in ffiOutputs {
+              // TODO: Memory leak, FFI doesnt expose a way to free the address
+            }
+            if let ptr = txBytesPtr {
+                transaction_bytes_free(ptr)
+            }
         }
 
-        guard success else {
+        guard success, let ptr = txBytesPtr else {
             throw KeyWalletError(ffiError: error)
         }
 
-        return success
+        // Copy the transaction data before freeing
+        let txData = Data(bytes: ptr, count: txLen)
+
+        return (txData, fee)
     }
 
     // MARK: - Block Height Management

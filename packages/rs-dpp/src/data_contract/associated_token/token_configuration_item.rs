@@ -291,3 +291,113 @@ impl fmt::Display for TokenConfigurationChangeItem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// Helper: build one instance of every variant using default inner values.
+    fn all_variants() -> Vec<TokenConfigurationChangeItem> {
+        let aat = AuthorizedActionTakers::NoOne;
+        vec![
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            TokenConfigurationChangeItem::Conventions(
+                TokenConfigurationConvention::V0(
+                    crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0::default(),
+                ),
+            ),
+            TokenConfigurationChangeItem::ConventionsControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::ConventionsAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MaxSupply(None),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::PerpetualDistribution(None),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(None),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(false),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::ManualMinting(aat.clone()),
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::ManualBurning(aat.clone()),
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::Freeze(aat.clone()),
+            TokenConfigurationChangeItem::FreezeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::Unfreeze(aat.clone()),
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::DestroyFrozenFunds(aat.clone()),
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::EmergencyAction(aat.clone()),
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::default()),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MainControlGroup(None),
+        ]
+    }
+
+    // ---- u8_item_index returns unique values 0..=31 ----
+
+    #[test]
+    fn u8_item_index_values_are_unique() {
+        let variants = all_variants();
+        let indices: Vec<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
+        let unique: BTreeSet<u8> = indices.iter().cloned().collect();
+        assert_eq!(
+            indices.len(),
+            unique.len(),
+            "Duplicate u8_item_index values found: {:?}",
+            indices
+        );
+    }
+
+    #[test]
+    fn u8_item_index_covers_0_through_31() {
+        let variants = all_variants();
+        let indices: BTreeSet<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
+        for i in 0u8..=31 {
+            assert!(indices.contains(&i), "Missing u8_item_index value: {}", i);
+        }
+    }
+
+    #[test]
+    fn u8_item_index_all_within_range() {
+        let variants = all_variants();
+        for v in &variants {
+            let idx = v.u8_item_index();
+            assert!(idx <= 31, "Index {} exceeds expected max of 31", idx);
+        }
+    }
+
+    #[test]
+    fn u8_item_index_specific_known_values() {
+        assert_eq!(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange.u8_item_index(),
+            0
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MaxSupply(Some(100)).u8_item_index(),
+            4
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne)
+                .u8_item_index(),
+            16
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MainControlGroup(Some(5)).u8_item_index(),
+            31
+        );
+    }
+
+    #[test]
+    fn u8_item_index_variant_count() {
+        // We expect exactly 32 variants (indices 0..=31)
+        let variants = all_variants();
+        assert_eq!(variants.len(), 32);
+    }
+}

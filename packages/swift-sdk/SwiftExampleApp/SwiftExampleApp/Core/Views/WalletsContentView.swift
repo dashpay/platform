@@ -126,6 +126,7 @@ struct WalletsContentView: View {
         }
         .refreshable {
             await unifiedAppState.performPlatformBalanceSync()
+            await unifiedAppState.performZKSync()
         }
     }
 }

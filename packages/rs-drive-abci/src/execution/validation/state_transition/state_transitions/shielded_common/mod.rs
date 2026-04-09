@@ -47,7 +47,15 @@ pub fn warmup_shielded_verifying_key() {
 const EPK_SIZE: usize = 32;
 const ENC_CIPHERTEXT_SIZE: usize = 104;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
-const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 216
+
+// Import the canonical constant from DPP (single source of truth).
+use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
+
+// Compile-time check: component sizes must sum to the canonical constant.
+const _: () = assert!(
+    EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE == ENCRYPTED_NOTE_SIZE,
+    "component sizes diverged from ENCRYPTED_NOTE_SIZE"
+);
 
 /// Reconstructs an orchard `Bundle<Authorized, i64, DashMemo>` from the serialized fields
 /// of a shielded state transition and verifies the Halo 2 ZK proof along with

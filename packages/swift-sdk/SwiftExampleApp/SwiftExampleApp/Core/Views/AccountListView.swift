@@ -9,6 +9,7 @@ struct AccountListView: View {
     @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
     @State private var accounts: [AccountInfo] = []
+    @State private var showAddAccount = false
 
     var body: some View {
         ZStack {
@@ -29,7 +30,22 @@ struct AccountListView: View {
                     loadAccounts()
                 }
             }
-        }.task {
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showAddAccount = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showAddAccount) {
+            AddAccountView(wallet: wallet)
+                .environmentObject(walletService)
+                .onDisappear { loadAccounts() }
+        }
+        .task {
             loadAccounts()
         }
     }
@@ -46,7 +62,7 @@ struct AccountRowView: View {
     /// Determines if this account type should show balance in UI
     var shouldShowBalance: Bool {
         switch account.category {
-        case .bip44, .bip32, .coinjoin:
+        case .bip44, .bip32, .coinjoin, .platformPayment:
             return true
         default:
             return false
@@ -65,7 +81,10 @@ struct AccountRowView: View {
         case .providerVotingKeys: return "Voting"
         case .providerOwnerKeys: return "Owner"
         case .providerOperatorKeys: return "Operator"
-        case .providerPlatformKeys: return "Platform"
+        case .providerPlatformKeys: return "Platform Keys"
+        case .dashPayReceivingFunds: return "DashPay"
+        case .dashPayExternalAccount: return "DashPay Ext"
+        case .platformPayment: return account.index.map { "Payment #\($0)" } ?? "Payment"
         }
     }
 
@@ -81,6 +100,9 @@ struct AccountRowView: View {
         case .providerOwnerKeys: return "key.horizontal"
         case .providerOperatorKeys: return "wrench.and.screwdriver"
         case .providerPlatformKeys: return "network"
+        case .dashPayReceivingFunds: return "person.2.circle"
+        case .dashPayExternalAccount: return "person.crop.circle.badge.questionmark"
+        case .platformPayment: return "creditcard.fill"
         }
     }
 
@@ -94,6 +116,8 @@ struct AccountRowView: View {
         case .providerOwnerKeys: return .pink
         case .providerOperatorKeys: return .indigo
         case .providerPlatformKeys: return .teal
+        case .dashPayReceivingFunds, .dashPayExternalAccount: return .cyan
+        case .platformPayment: return .green
         }
     }
 
