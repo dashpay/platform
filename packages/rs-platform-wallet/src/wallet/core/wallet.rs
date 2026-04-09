@@ -11,16 +11,21 @@ use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut};
 use key_wallet::Utxo;
 use tokio::sync::RwLock;
 
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet_manager::WalletManager;
+
 use crate::error::PlatformWalletError;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
 pub struct CoreWallet {
     // TODO: Are we using SDK here?
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    /// The single shared lock for all mutable wallet state.
-    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
+    /// Shared wallet manager holding all wallets' key material and info.
+    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    /// Identifies which wallet in the manager this sub-wallet operates on.
+    pub(crate) wallet_id: WalletId,
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
     pub(crate) balance: Arc<WalletBalance>,
@@ -33,13 +38,15 @@ impl CoreWallet {
     /// Create a new CoreWallet.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        state: Arc<RwLock<PlatformWalletInfo>>,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
         balance: Arc<WalletBalance>,
     ) -> Self {
         Self {
             sdk,
-            state,
+            wallet_manager,
+            wallet_id,
             balance,
             broadcaster,
         }
@@ -63,11 +70,13 @@ impl CoreWallet {
         &self,
         account_index: u32,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        let mut info = self.state.write().await;
-        let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .expect("wallet exists");
+        let xpub = Self::derive_account_xpub(wallet, account_index)?;
         let account = info
-            .managed_state
-            .wallet_info_mut()
+            .core_wallet
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -87,11 +96,13 @@ impl CoreWallet {
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
         let account_index = 0u32;
-        let mut info = self.state.blocking_write();
-        let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
+        let mut wm = self.wallet_manager.blocking_write();
+        let (wallet, info) = wm
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .expect("wallet exists");
+        let xpub = Self::derive_account_xpub(wallet, account_index)?;
         let account = info
-            .managed_state
-            .wallet_info_mut()
+            .core_wallet
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -118,11 +129,13 @@ impl CoreWallet {
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
         let account_index = 0u32;
-        let mut info = self.state.blocking_write();
-        let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
+        let mut wm = self.wallet_manager.blocking_write();
+        let (wallet, info) = wm
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .expect("wallet exists");
+        let xpub = Self::derive_account_xpub(wallet, account_index)?;
         let account = info
-            .managed_state
-            .wallet_info_mut()
+            .core_wallet
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -142,11 +155,13 @@ impl CoreWallet {
         &self,
         account_index: u32,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        let mut info = self.state.write().await;
-        let xpub = Self::derive_account_xpub_from_info(&info, account_index)?;
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .expect("wallet exists");
+        let xpub = Self::derive_account_xpub(wallet, account_index)?;
         let account = info
-            .managed_state
-            .wallet_info_mut()
+            .core_wallet
             .accounts
             .standard_bip44_accounts
             .get_mut(&account_index)
@@ -167,12 +182,11 @@ impl CoreWallet {
     }
     // TODO: Why is it static
     /// Derive the BIP-44 account-level extended public key from the wallet
-    /// in `PlatformWalletInfo` (no separate lock needed).
-    fn derive_account_xpub_from_info(
-        info: &PlatformWalletInfo,
+    /// key material.
+    fn derive_account_xpub(
+        wallet: &key_wallet::wallet::Wallet,
         account_index: u32,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError> {
-        let wallet = info.managed_state.wallet();
         let path = key_wallet::account::AccountType::Standard {
             index: account_index,
             standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
@@ -259,10 +273,11 @@ impl CoreWallet {
         // 1. Get spendable UTXOs.
         // TODO: Not a good idea to clone all spendable utoxs. It should be better way to create transactions. should we use dashcore transation builder? this seems like a logic that belongs to dashcore
         let spendable: Vec<Utxo> = {
-            let info = self.state.read().await;
-            info.managed_state
-                .wallet_info()
-                .get_spendable_utxos()
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet exists");
+            info.get_spendable_utxos()
                 .into_iter()
                 .cloned()
                 .collect()
@@ -461,12 +476,15 @@ impl CoreWallet {
         drop(cache);
 
         // Look up derivation paths and derive private keys under a single lock.
-        let info = self.state.read().await;
+        let wm = self.wallet_manager.read().await;
+        let (wallet, info) = wm
+            .get_wallet_and_info(&self.wallet_id)
+            .expect("wallet exists");
         let derivation_paths = selected_utxos
             .iter()
             .map(|(_, _, address)| {
                 // Search all accounts for the address's derivation path.
-                for account in info.managed_state.wallet_info().accounts.all_accounts() {
+                for account in info.core_wallet.accounts.all_accounts() {
                     if let Some(path) = account.address_derivation_path(address) {
                         return Ok(path);
                     }
@@ -481,9 +499,7 @@ impl CoreWallet {
         // Derive private keys and sign.
         for (i, (input, sighash)) in tx.input.iter_mut().zip(sighashes).enumerate() {
             let path = &derivation_paths[i];
-            let extended_key = info
-                .managed_state
-                .wallet()
+            let extended_key = wallet
                 .derive_extended_private_key(path)
                 .map_err(|e| {
                     PlatformWalletError::TransactionBuild(format!(

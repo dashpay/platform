@@ -361,14 +361,12 @@ impl Merge for AssetLockChangeSet {
 /// Composed of optional sub-changesets — `None` means no change in that area.
 /// Use [`Merge::merge`] to combine multiple deltas before persisting.
 ///
-/// The `wallet` field wraps the key-wallet's [`key_wallet::changeset::WalletChangeSet`],
-/// which carries core UTXO, transaction, account, and balance deltas produced by
-/// the key-wallet layer. Platform-specific deltas (identities, contacts, etc.)
-/// live alongside it in their own sub-changesets.
+/// Delta of all wallet state changes from a single operation.
+///
+/// Composed of optional sub-changesets — `None` means no change in that area.
+/// Use [`Merge::merge`] to combine multiple deltas before persisting.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformWalletChangeSet {
-    /// Key-wallet core deltas (UTXOs, transactions, accounts, balances).
-    pub wallet: Option<key_wallet::changeset::WalletChangeSet>,
     /// Core chain state (sync height, block hash).
     pub chain: Option<ChainChangeSet>,
     /// Account derivation state (last revealed indices).
@@ -389,7 +387,6 @@ pub struct PlatformWalletChangeSet {
 
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
-        self.wallet.merge(other.wallet);
         self.chain.merge(other.chain);
         self.accounts.merge(other.accounts);
         self.transactions.merge(other.transactions);
@@ -401,8 +398,7 @@ impl Merge for PlatformWalletChangeSet {
     }
 
     fn is_empty(&self) -> bool {
-        self.wallet.is_empty()
-            && self.chain.is_empty()
+        self.chain.is_empty()
             && self.accounts.is_empty()
             && self.transactions.is_empty()
             && self.utxos.is_empty()

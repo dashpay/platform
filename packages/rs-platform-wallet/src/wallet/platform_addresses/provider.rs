@@ -7,9 +7,10 @@ use dpp::address_funds::PlatformAddress;
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
+use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
 
 /// Default gap limit for HD wallet address scanning.
@@ -84,8 +85,10 @@ pub(crate) struct PlatformPaymentAddressProvider {
     resolved: std::collections::BTreeSet<u32>,
     /// Highest index found with a non-zero balance.
     highest_found: Option<u32>,
-    /// Shared wallet state for lazy address extension during gap limit scanning.
-    state: Arc<RwLock<PlatformWalletInfo>>,
+    /// Shared wallet manager for lazy address extension during gap limit scanning.
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    /// Identifies which wallet within the manager this provider operates on.
+    wallet_id: WalletId,
     /// Account index.
     account: u32,
     /// Key class.
@@ -98,7 +101,8 @@ impl PlatformPaymentAddressProvider {
     /// Pre-derives the initial set of addresses (up to the gap limit).
     /// The wallet must support private key derivation (not watch-only).
     pub(crate) fn from_wallet(
-        state: Arc<RwLock<PlatformWalletInfo>>,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
         network: Network,
     ) -> Result<Self, String> {
         let mut provider = Self {
@@ -107,7 +111,8 @@ impl PlatformPaymentAddressProvider {
             pending: BTreeMap::new(),
             resolved: std::collections::BTreeSet::new(),
             highest_found: None,
-            state,
+            wallet_manager,
+            wallet_id,
             account: 0,
             key_class: 0,
         };
@@ -128,11 +133,13 @@ impl PlatformPaymentAddressProvider {
             return Ok(());
         }
 
-        let info_guard = self.state.blocking_read();
+        let wm = self.wallet_manager.blocking_read();
+        let wallet = wm.get_wallet(&self.wallet_id)
+            .ok_or_else(|| "Wallet not found in wallet manager".to_string())?;
         for index in start..=max_index {
             if !self.pending.contains_key(&index) && !self.resolved.contains(&index) {
                 let (key, address) = derive_platform_address_at(
-                    info_guard.managed_state.wallet(),
+                    wallet,
                     self.network,
                     self.account,
                     self.key_class,

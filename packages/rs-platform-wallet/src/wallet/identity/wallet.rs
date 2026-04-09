@@ -21,6 +21,7 @@ use key_wallet::dip9::{
 };
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
+use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
@@ -40,7 +41,7 @@ use dpp::fee::Credits;
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_addresses::PlatformAddressWallet;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
 use super::funding::{IdentityFunding, IdentityFundingMethod, TopUpFundingMethod};
@@ -110,8 +111,10 @@ fn derive_identity_auth_key_hash(
 #[derive(Clone)]
 pub struct IdentityWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    /// The single shared lock for all mutable wallet state.
-    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
+    /// Shared wallet manager holding key material and wallet info.
+    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    /// Identifier for the wallet within the wallet manager.
+    pub(crate) wallet_id: WalletId,
     /// Shared asset lock manager for building, broadcasting, and tracking
     /// asset lock transactions. Used by funding methods that build asset
     /// locks from wallet UTXOs.
@@ -125,7 +128,7 @@ impl IdentityWallet {
     /// private keys on-the-fly from the wallet using the DIP-9 identity
     /// authentication path.
     pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
-        IdentitySigner::new(self.state.clone(), self.sdk.network, identity_index)
+        IdentitySigner::new(self.wallet_manager.clone(), self.wallet_id, self.sdk.network, identity_index)
     }
 
     /// Build the DIP-9 identity authentication derivation path.
@@ -211,44 +214,48 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<ManagedIdentitySigner, PlatformWalletError> {
-        let info = self.state.read().await;
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
         let managed = info
             .identity_manager
             .managed_identity(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(managed.signer(self.state.clone(), self.sdk.network))
+        Ok(managed.signer(self.wallet_manager.clone(), self.wallet_id, self.sdk.network))
     }
 
-    /// Get a read-lock handle to the shared [`PlatformWalletInfo`].
+    /// Get a read-lock handle to the shared [`WalletManager`].
     ///
-    /// Access the identity manager via `.identity_manager` on the returned guard.
-    /// This allows callers to inspect managed identities (e.g. after a
-    /// [`sync()`](Self::sync) call) without exposing the internal `RwLock`
-    /// directly.
-    pub async fn state(&self) -> tokio::sync::RwLockReadGuard<'_, PlatformWalletInfo> {
-        self.state.read().await
+    /// Access wallet info via `wm.get_wallet_info(&wallet_id)` and key material
+    /// via `wm.get_wallet(&wallet_id)` on the returned guard. The identity
+    /// manager is on the wallet info: `info.identity_manager`.
+    pub async fn wallet_manager_read(&self) -> tokio::sync::RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+        self.wallet_manager.read().await
     }
 
-    /// Get a write-lock handle to the shared [`PlatformWalletInfo`].
+    /// Get a write-lock handle to the shared [`WalletManager`].
     ///
-    /// Access the identity manager via `.identity_manager` on the returned guard.
-    /// This allows callers to mutate managed identities (e.g. adding or
-    /// updating identities from an external persistence layer).
-    pub async fn state_mut(
+    /// Access wallet info via `wm.get_wallet_info_mut(&wallet_id)` on the
+    /// returned guard. This allows callers to mutate managed identities (e.g.
+    /// adding or updating identities from an external persistence layer).
+    pub async fn wallet_manager_write(
         &self,
-    ) -> tokio::sync::RwLockWriteGuard<'_, PlatformWalletInfo> {
-        self.state.write().await
+    ) -> tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>> {
+        self.wallet_manager.write().await
     }
 
-    /// Try to acquire a write-lock on the shared [`PlatformWalletInfo`] without blocking.
+    /// Try to acquire a write-lock on the shared [`WalletManager`] without blocking.
     ///
-    /// Access the identity manager via `.identity_manager` on the returned guard.
     /// Returns `None` if the lock is currently held by another task.
     /// Useful for synchronous callers that cannot await.
-    pub fn try_state_mut(
+    pub fn try_wallet_manager_write(
         &self,
-    ) -> Option<tokio::sync::RwLockWriteGuard<'_, PlatformWalletInfo>> {
-        self.state.try_write().ok()
+    ) -> Option<tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>>> {
+        self.wallet_manager.try_write().ok()
+    }
+
+    /// The wallet ID for this identity wallet's underlying key material.
+    pub fn wallet_id(&self) -> &WalletId {
+        &self.wallet_id
     }
 
     /// Extract the outpoint from an asset lock proof.
@@ -373,7 +380,8 @@ impl IdentityWallet {
                 IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
             };
 
-            let info = self.state.read().await;
+            let wm = self.wallet_manager.read().await;
+            let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
             let base_path: DerivationPath = match self.sdk.network {
                 key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
                 _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -406,9 +414,7 @@ impl IdentityWallet {
                     })?,
                 ]);
 
-                let ext_priv = info
-                    .managed_state
-                    .wallet()
+                let ext_priv = wallet
                     .derive_extended_private_key(&full_path)
                     .map_err(|e| {
                         PlatformWalletError::InvalidIdentityData(format!(
@@ -510,7 +516,8 @@ impl IdentityWallet {
         };
 
         // Step 4: Add the identity to the local manager (with its HD index).
-        let mut info = self.state.write().await;
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
         info.identity_manager.add_identity(identity.clone(), identity_index)?;
 
         Ok(identity)
@@ -821,11 +828,13 @@ impl IdentityWallet {
         const KEY_INDEX_SCAN_LIMIT: u32 = 12;
 
         let (network, start_index, wallet_seed_hash) = {
-            let info = self.state.read().await;
+            let wm = self.wallet_manager.read().await;
+            let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
             (
-                info.managed_state.wallet().network,
+                wallet.network,
                 info.identity_manager.last_scanned_index(),
-                info.managed_state.wallet_info().wallet_id,
+                self.wallet_id,
             )
         };
 
@@ -839,8 +848,9 @@ impl IdentityWallet {
             // Scan key indices 0..KEY_INDEX_SCAN_LIMIT for this identity index.
             for key_index in 0..KEY_INDEX_SCAN_LIMIT {
                 let key_hash_array = {
-                    let info = self.state.read().await;
-                    derive_identity_auth_key_hash(info.managed_state.wallet(), network, identity_index, key_index)?
+                    let wm = self.wallet_manager.read().await;
+                    let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
+                    derive_identity_auth_key_hash(wallet, network, identity_index, key_index)?
                 };
 
                 // Query Platform for an identity registered with this key hash.
@@ -889,7 +899,8 @@ impl IdentityWallet {
                             .map(|(kid, pk)| (*kid, pk.clone()));
 
                         // Acquire write lock to add/enrich the identity.
-                        let mut info_guard = self.state.write().await;
+                        let mut wm_guard = self.wallet_manager.write().await;
+                        let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
                             info_guard.identity_manager.add_identity(identity.clone(), identity_index)?;
@@ -910,7 +921,7 @@ impl IdentityWallet {
                                 );
                             }
                         }
-                        drop(info_guard);
+                        drop(wm_guard);
 
                         if is_new {
                             discovered.push(identity.clone());
@@ -956,7 +967,8 @@ impl IdentityWallet {
                 .await
             {
                 Ok(usernames) => {
-                    let mut info_guard = self.state.write().await;
+                    let mut wm_guard = self.wallet_manager.write().await;
+                    let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
                     if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
                         for username in usernames {
                             managed.add_dpns_name(DpnsNameInfo {
@@ -977,7 +989,8 @@ impl IdentityWallet {
         }
 
         // Update the last scanned index so the next sync resumes here.
-        let mut info_guard = self.state.write().await;
+        let mut wm_guard = self.wallet_manager.write().await;
+        let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
         info_guard.identity_manager.set_last_scanned_index(identity_index);
 
         Ok(discovered)
@@ -1036,8 +1049,9 @@ impl IdentityWallet {
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
                 .cloned()
@@ -1127,8 +1141,9 @@ impl IdentityWallet {
 
         // Update the identity's balance in the local manager.
         {
-            let mut info_guard = self.state.write().await;
-            if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            if let Some(identity) = info.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
         }
@@ -1162,8 +1177,9 @@ impl IdentityWallet {
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
                 .cloned()
@@ -1196,7 +1212,8 @@ impl IdentityWallet {
 
         // Update the identity's balance in the local manager.
         {
-            let mut info_guard = self.state.write().await;
+            let mut wm = self.wallet_manager.write().await;
+            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
             if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1264,8 +1281,9 @@ impl IdentityWallet {
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the sending identity and its HD index from the manager.
         let (identity, identity_index) = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             let identity = manager
                 .identity(from_id)
                 .cloned()
@@ -1293,8 +1311,9 @@ impl IdentityWallet {
 
         // Update the sender's balance in the local manager.
         {
-            let mut info_guard = self.state.write().await;
-            if let Some(identity) = info_guard.identity_manager.identity_mut(from_id) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            if let Some(identity) = info.identity_manager.identity_mut(from_id) {
                 identity.set_balance(sender_balance);
             }
         }
@@ -1359,8 +1378,9 @@ impl IdentityWallet {
         use dpp::state_transition::proof_result::StateTransitionProofResult;
 
         let (mut identity, identity_index) = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
                 .cloned()
@@ -1514,8 +1534,9 @@ impl IdentityWallet {
         settings: Option<PutSettings>,
     ) -> Result<Credits, PlatformWalletError> {
         let identity = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             manager
                 .identity(identity_id)
                 .cloned()
@@ -1534,8 +1555,9 @@ impl IdentityWallet {
 
         // Update the identity's balance in the local manager.
         {
-            let mut info_guard = self.state.write().await;
-            if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            if let Some(identity) = info.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
         }
@@ -1564,8 +1586,9 @@ impl IdentityWallet {
         settings: Option<PutSettings>,
     ) -> Result<Credits, PlatformWalletError> {
         let (identity, identity_index) = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
                 .cloned()
@@ -1596,7 +1619,8 @@ impl IdentityWallet {
 
         // Update the sender's balance in the local manager.
         {
-            let mut info_guard = self.state.write().await;
+            let mut wm = self.wallet_manager.write().await;
+            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
             if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1625,8 +1649,9 @@ impl IdentityWallet {
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 
         let (identity, identity_index, auth_key) = {
-            let info_guard = self.state.read().await;
-            let manager = &info_guard.identity_manager;
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
                 .cloned()
@@ -1761,11 +1786,12 @@ impl IdentityWallet {
         };
 
         let (network, wallet_seed_hash, key_hash_array) = {
-            let info_guard = self.state.read().await;
-            let network = info_guard.managed_state.wallet().network;
-            let wallet_seed_hash = info_guard.managed_state.wallet_info().wallet_id;
+            let wm = self.wallet_manager.read().await;
+            let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
+            let network = wallet.network;
+            let wallet_seed_hash = self.wallet_id;
             let key_hash_array =
-                derive_identity_auth_key_hash(info_guard.managed_state.wallet(), network, identity_index, 0)?;
+                derive_identity_auth_key_hash(wallet, network, identity_index, 0)?;
             (network, wallet_seed_hash, key_hash_array)
         };
 
@@ -1814,12 +1840,13 @@ impl IdentityWallet {
 
         // Add the identity to the manager and enrich it.
         {
-            let mut info_guard = self.state.write().await;
-            if info_guard.identity_manager.identity(&identity_id).is_none() {
-                info_guard.identity_manager.add_identity(identity.clone(), identity_index)?;
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            if info.identity_manager.identity(&identity_id).is_none() {
+                info.identity_manager.add_identity(identity.clone(), identity_index)?;
             }
 
-            if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                 managed.set_status(IdentityStatus::Active);
                 managed.wallet_seed_hash = Some(wallet_seed_hash);
 
@@ -1843,8 +1870,9 @@ impl IdentityWallet {
             .await
         {
             Ok(usernames) => {
-                let mut info_guard = self.state.write().await;
-                if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
+                let mut wm = self.wallet_manager.write().await;
+                let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+                if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                     for username in usernames {
                         managed.add_dpns_name(DpnsNameInfo {
                             label: username.label,
@@ -1889,8 +1917,9 @@ impl IdentityWallet {
 
         // Verify identity exists in the manager.
         {
-            let info_guard = self.state.read().await;
-            if info_guard.identity_manager.identity(identity_id).is_none() {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            if info.identity_manager.identity(identity_id).is_none() {
                 return Err(PlatformWalletError::IdentityNotFound(*identity_id));
             }
         }
@@ -1913,8 +1942,9 @@ impl IdentityWallet {
 
         // Update the managed identity.
         {
-            let mut info_guard = self.state.write().await;
-            if let Some(managed) = info_guard.identity_manager.managed_identity_mut(identity_id) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
                 managed.identity = identity.clone();
                 managed.set_status(IdentityStatus::Active);
             }
@@ -1956,8 +1986,9 @@ impl IdentityWallet {
 
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {
-            let info_guard = self.state.read().await;
-            info_guard.identity_manager.identities().keys().copied().collect()
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            info.identity_manager.identities().keys().copied().collect()
         };
 
         for identity_id in identity_ids {
@@ -1967,8 +1998,9 @@ impl IdentityWallet {
                 .await
             {
                 Ok(usernames) => {
-                    let mut info_guard = self.state.write().await;
-                    if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
+                    let mut wm = self.wallet_manager.write().await;
+                    let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                         managed.dpns_names = usernames
                             .into_iter()
                             .map(|u| DpnsNameInfo {
@@ -2032,8 +2064,9 @@ impl IdentityWallet {
         // Add to watched identities (read-only — we don't know the wallet
         // index and cannot sign).
         {
-            let mut info_guard = self.state.write().await;
-            info_guard.identity_manager.add_watched_identity(identity.clone())?;
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            info.identity_manager.add_watched_identity(identity.clone())?;
         }
 
         Ok(Some(identity))

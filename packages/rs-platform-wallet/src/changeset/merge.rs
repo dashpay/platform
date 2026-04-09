@@ -87,19 +87,6 @@ impl<T: Clone> Merge for Vec<T> {
     }
 }
 
-/// Bridge: implement the platform-wallet [`Merge`] trait for
-/// [`key_wallet::changeset::WalletChangeSet`] by delegating to key-wallet's
-/// own `Merge` impl.
-impl Merge for key_wallet::changeset::WalletChangeSet {
-    fn merge(&mut self, other: Self) {
-        key_wallet::changeset::Merge::merge(self, other);
-    }
-
-    fn is_empty(&self) -> bool {
-        key_wallet::changeset::Merge::is_empty(self)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

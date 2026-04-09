@@ -18,8 +18,9 @@ use dashcore::PrivateKey;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use dash_sdk::platform::address_sync::AddressSyncResult;
+use key_wallet_manager::WalletManager;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
@@ -30,19 +31,23 @@ use super::provider::PlatformPaymentAddressProvider;
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    /// The single shared lock for all mutable wallet state.
-    pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
+    /// The shared wallet manager lock for all mutable wallet state.
+    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    /// Identifies which wallet within the manager this sub-wallet operates on.
+    pub(crate) wallet_id: WalletId,
 }
 
 impl PlatformAddressWallet {
     /// Create a new PlatformAddressWallet.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        state: Arc<RwLock<PlatformWalletInfo>>,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
     ) -> Self {
         Self {
             sdk,
-            state,
+            wallet_manager,
+            wallet_id,
         }
     }
 
@@ -58,7 +63,7 @@ impl PlatformAddressWallet {
     pub async fn sync_balances(&self) -> Result<AddressSyncResult, PlatformWalletError> {
         // Build the address provider from the wallet.
         let mut provider =
-            PlatformPaymentAddressProvider::from_wallet(self.state.clone(), self.sdk.network)
+            PlatformPaymentAddressProvider::from_wallet(self.wallet_manager.clone(), self.wallet_id, self.sdk.network)
                 .map_err(|e| {
                     PlatformWalletError::AddressSync(format!(
                         "Failed to create address provider: {}",
@@ -72,12 +77,14 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the sync results.
-        let mut info_guard = self.state.write().await;
-        info_guard.platform_address_balances.clear();
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::AddressSync("Wallet not found in wallet manager".to_string()))?;
+        info.platform_address_balances.clear();
         for ((_, key), funds) in &result.found {
             match PlatformAddress::from_bytes(key) {
                 Ok(platform_addr) => {
-                    info_guard.platform_address_balances.insert(platform_addr, funds.balance);
+                    info.platform_address_balances.insert(platform_addr, funds.balance);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -114,14 +121,16 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the proof-verified response.
-        let mut info_guard = self.state.write().await;
-        for (addr, maybe_info) in address_infos.iter() {
-            match maybe_info {
-                Some(ai) => {
-                    info_guard.platform_address_balances.insert(*addr, ai.balance);
-                }
-                None => {
-                    info_guard.platform_address_balances.remove(addr);
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            for (addr, maybe_info) in address_infos.iter() {
+                match maybe_info {
+                    Some(ai) => {
+                        info.platform_address_balances.insert(*addr, ai.balance);
+                    }
+                    None => {
+                        info.platform_address_balances.remove(addr);
+                    }
                 }
             }
         }
@@ -169,14 +178,16 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the proof-verified response.
-        let mut info_guard = self.state.write().await;
-        for (addr, maybe_info) in address_infos.iter() {
-            match maybe_info {
-                Some(ai) => {
-                    info_guard.platform_address_balances.insert(*addr, ai.balance);
-                }
-                None => {
-                    info_guard.platform_address_balances.remove(addr);
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            for (addr, maybe_info) in address_infos.iter() {
+                match maybe_info {
+                    Some(ai) => {
+                        info.platform_address_balances.insert(*addr, ai.balance);
+                    }
+                    None => {
+                        info.platform_address_balances.remove(addr);
+                    }
                 }
             }
         }
@@ -189,16 +200,20 @@ impl PlatformAddressWallet {
     /// Returns the balances from the last call to [`sync_balances`](Self::sync_balances),
     /// [`transfer`](Self::transfer), or [`withdraw`](Self::withdraw).
     pub async fn addresses_with_balances(&self) -> Vec<(PlatformAddress, Credits)> {
-        let info_guard = self.state.read().await;
-        info_guard.platform_address_balances.iter().map(|(addr, &bal)| (*addr, bal)).collect()
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| info.platform_address_balances.iter().map(|(addr, &bal)| (*addr, bal)).collect())
+            .unwrap_or_default()
     }
 
     /// Get total platform credits across all addresses.
     ///
     /// Returns the sum of all cached balances.
     pub async fn total_credits(&self) -> Credits {
-        let info_guard = self.state.read().await;
-        info_guard.platform_address_balances.values().sum()
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| info.platform_address_balances.values().sum())
+            .unwrap_or(0)
     }
 
     /// Fund platform addresses from a Core L1 asset lock.
@@ -238,14 +253,16 @@ impl PlatformAddressWallet {
             .await?;
 
         // Update cached balances from the proof-verified response.
-        let mut info_guard = self.state.write().await;
-        for (addr, maybe_info) in address_infos.iter() {
-            match maybe_info {
-                Some(ai) => {
-                    info_guard.platform_address_balances.insert(*addr, ai.balance);
-                }
-                None => {
-                    info_guard.platform_address_balances.remove(addr);
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            for (addr, maybe_info) in address_infos.iter() {
+                match maybe_info {
+                    Some(ai) => {
+                        info.platform_address_balances.insert(*addr, ai.balance);
+                    }
+                    None => {
+                        info.platform_address_balances.remove(addr);
+                    }
                 }
             }
         }
@@ -271,9 +288,15 @@ impl PlatformAddressWallet {
         let target = PlatformP2PKHAddress::new(*hash);
 
         // Find the derivation path and derive the private key under a single lock.
-        let info_guard = self.state.blocking_read();
+        let wm = self.wallet_manager.blocking_read();
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            ProtocolError::Generic("Wallet not found in wallet manager".to_string())
+        })?;
+        let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+            ProtocolError::Generic("Wallet not found in wallet manager".to_string())
+        })?;
         let mut found_path = None;
-        for account in info_guard.managed_state.wallet_info().accounts.platform_payment_accounts.values() {
+        for account in info.core_wallet.accounts.platform_payment_accounts.values() {
             for addr_info in account.addresses.addresses.values() {
                 let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address)
                 else {
@@ -296,7 +319,7 @@ impl PlatformAddressWallet {
             ))
         })?;
 
-        let secret_key = info_guard.managed_state.wallet().derive_private_key(&path).map_err(|e| {
+        let secret_key = wallet.derive_private_key(&path).map_err(|e| {
             ProtocolError::Generic(format!(
                 "Failed to derive private key for platform address: {}",
                 e

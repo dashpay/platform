@@ -1,8 +1,7 @@
 //! Trait implementations for `PlatformWalletInfo`.
 //!
 //! Implements [`WalletInfoInterface`], [`WalletTransactionChecker`], and
-//! [`ManagedAccountOperations`] by delegating to the inner
-//! `ManagedWalletState<PlatformWalletPersisterBridge>`.
+//! [`ManagedAccountOperations`] by delegating to the inner `ManagedWalletInfo`.
 
 use std::collections::BTreeSet;
 
@@ -13,7 +12,6 @@ use dashcore::{Address as DashAddress, Transaction, Txid};
 
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::changeset::UtxoChangeSet;
 use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::TransactionContext;
@@ -24,19 +22,18 @@ use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 
 use super::platform_wallet::PlatformWalletInfo;
-// TODO: Move to state module
+
 // ---------------------------------------------------------------------------
-// WalletInfoInterface — delegate to `self.managed_state`
+// WalletInfoInterface — delegate to `self.core`
 // ---------------------------------------------------------------------------
 
 impl WalletInfoInterface for PlatformWalletInfo {
     fn from_wallet(wallet: &Wallet) -> Self {
-        use super::persister::PlatformWalletPersisterBridge;
-        use key_wallet_manager::ManagedWalletState;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletState::<PlatformWalletPersisterBridge>::from_wallet(wallet);
+        let inner = ManagedWalletInfo::from_wallet(wallet);
         Self {
-            managed_state: inner,
+            core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
@@ -47,14 +44,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
-        use super::persister::PlatformWalletPersisterBridge;
-        use key_wallet_manager::ManagedWalletState;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletState::<PlatformWalletPersisterBridge>::from_wallet_with_name(
-            wallet, name,
-        );
+        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name);
         Self {
-            managed_state: inner,
+            core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
@@ -64,124 +58,115 @@ impl WalletInfoInterface for PlatformWalletInfo {
         }
     }
 
-    fn wallet(&self) -> &Wallet {
-        self.managed_state.wallet()
-    }
-
-    fn wallet_mut(&mut self) -> &mut Wallet {
-        self.managed_state.wallet_mut()
-    }
-
     fn network(&self) -> Network {
-        self.managed_state.network()
+        self.core_wallet.network()
     }
 
     fn wallet_id(&self) -> [u8; 32] {
-        self.managed_state.wallet_id()
+        self.core_wallet.wallet_id()
     }
 
     fn name(&self) -> Option<&str> {
-        self.managed_state.name()
+        self.core_wallet.name()
     }
 
     fn set_name(&mut self, name: String) {
-        self.managed_state.set_name(name);
+        self.core_wallet.set_name(name);
     }
 
     fn description(&self) -> Option<&str> {
-        self.managed_state.description()
+        self.core_wallet.description()
     }
 
     fn set_description(&mut self, description: Option<String>) {
-        self.managed_state.set_description(description);
+        self.core_wallet.set_description(description);
     }
 
     fn birth_height(&self) -> CoreBlockHeight {
-        self.managed_state.birth_height()
+        self.core_wallet.birth_height()
     }
 
     fn set_birth_height(&mut self, height: CoreBlockHeight) {
-        self.managed_state.set_birth_height(height);
+        self.core_wallet.set_birth_height(height);
     }
 
     fn first_loaded_at(&self) -> u64 {
-        self.managed_state.first_loaded_at()
+        self.core_wallet.first_loaded_at()
     }
 
     fn set_first_loaded_at(&mut self, timestamp: u64) {
-        self.managed_state.set_first_loaded_at(timestamp);
+        self.core_wallet.set_first_loaded_at(timestamp);
     }
 
     fn update_last_synced(&mut self, timestamp: u64) {
-        self.managed_state.update_last_synced(timestamp);
+        self.core_wallet.update_last_synced(timestamp);
     }
 
     fn monitored_addresses(&self) -> Vec<DashAddress> {
-        self.managed_state.monitored_addresses()
+        self.core_wallet.monitored_addresses()
     }
 
     fn utxos(&self) -> BTreeSet<&Utxo> {
-        self.managed_state.utxos()
+        self.core_wallet.utxos()
     }
 
     fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
-        self.managed_state.get_spendable_utxos()
+        self.core_wallet.get_spendable_utxos()
     }
 
     fn balance(&self) -> WalletCoreBalance {
-        self.managed_state.balance()
+        self.core_wallet.balance()
     }
 
     fn update_balance(&mut self) {
-        self.managed_state.update_balance();
+        self.core_wallet.update_balance();
         // Also update the lock-free atomic balance.
-        let bal = self.managed_state.balance();
+        let bal = self.core_wallet.balance();
         self.balance.update(&bal);
     }
 
     fn transaction_history(&self) -> Vec<&TransactionRecord> {
-        self.managed_state.transaction_history()
+        self.core_wallet.transaction_history()
     }
 
     fn accounts_mut(&mut self) -> &mut ManagedAccountCollection {
-        self.managed_state.accounts_mut()
+        self.core_wallet.accounts_mut()
     }
 
     fn accounts(&self) -> &ManagedAccountCollection {
-        self.managed_state.accounts()
+        self.core_wallet.accounts()
     }
 
     fn immature_transactions(&self) -> Vec<Transaction> {
-        self.managed_state.immature_transactions()
+        self.core_wallet.immature_transactions()
     }
 
     fn synced_height(&self) -> CoreBlockHeight {
-        self.managed_state.synced_height()
+        self.core_wallet.synced_height()
     }
-    // TODO: Why we have manual balance update here? These thibgs are not eit event what we use to update balance?
+
     fn update_synced_height(&mut self, current_height: u32) {
-        self.managed_state.update_synced_height(current_height);
-        let bal = self.managed_state.balance();
+        self.core_wallet.update_synced_height(current_height);
+        let bal = self.core_wallet.balance();
         self.balance.update(&bal);
     }
 
-    fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> (bool, UtxoChangeSet) {
-        let result = self.managed_state.mark_instant_send_utxos(txid, lock);
-        if result.0 {
-            // Balance changed — refresh atomics.
-            let bal = self.managed_state.balance();
+    fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
+        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if changed {
+            let bal = self.core_wallet.balance();
             self.balance.update(&bal);
         }
-        result
+        changed
     }
 
     fn monitor_revision(&self) -> u64 {
-        self.managed_state.monitor_revision()
+        self.core_wallet.monitor_revision()
     }
 }
 
 // ---------------------------------------------------------------------------
-// WalletTransactionChecker — delegate to `self.managed_state`
+// WalletTransactionChecker — delegate to `self.core`
 // ---------------------------------------------------------------------------
 
 #[async_trait]
@@ -190,17 +175,18 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         &mut self,
         tx: &Transaction,
         context: TransactionContext,
+        wallet: &mut Wallet,
         update_state: bool,
         update_balance: bool,
     ) -> TransactionCheckResult {
         let result = self
-            .managed_state
-            .check_core_transaction(tx, context, update_state, update_balance)
+            .core_wallet
+            .check_core_transaction(tx, context, wallet, update_state, update_balance)
             .await;
 
         // If balance was updated, refresh the lock-free atomics.
         if update_balance && result.is_relevant {
-            let bal = self.managed_state.balance();
+            let bal = self.core_wallet.balance();
             self.balance.update(&bal);
         }
 
@@ -209,7 +195,7 @@ impl WalletTransactionChecker for PlatformWalletInfo {
 }
 
 // ---------------------------------------------------------------------------
-// ManagedAccountOperations — delegate to `self.managed_state`
+// ManagedAccountOperations — delegate to `self.core`
 // ---------------------------------------------------------------------------
 
 impl ManagedAccountOperations for PlatformWalletInfo {
@@ -218,7 +204,8 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.managed_state.add_managed_account(wallet, account_type)
+        self.core_wallet
+            .add_managed_account(wallet, account_type)
     }
 
     fn add_managed_account_with_passphrase(
@@ -227,7 +214,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_account_with_passphrase(wallet, account_type, passphrase)
     }
 
@@ -236,7 +223,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         account_xpub: ExtendedPubKey,
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_account_from_xpub(account_type, account_xpub)
     }
 
@@ -246,7 +233,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_bls_account(wallet, account_type)
     }
 
@@ -257,7 +244,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_bls_account_with_passphrase(wallet, account_type, passphrase)
     }
 
@@ -267,7 +254,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         bls_public_key: [u8; 48],
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_bls_account_from_public_key(account_type, bls_public_key)
     }
 
@@ -277,7 +264,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_eddsa_account(wallet, account_type)
     }
 
@@ -288,7 +275,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_eddsa_account_with_passphrase(wallet, account_type, passphrase)
     }
 
@@ -298,7 +285,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         ed25519_public_key: [u8; 32],
     ) -> key_wallet::Result<()> {
-        self.managed_state
+        self.core_wallet
             .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key)
     }
 }
@@ -310,7 +297,10 @@ impl ManagedAccountOperations for PlatformWalletInfo {
 impl std::fmt::Debug for PlatformWalletInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformWalletInfo")
-            .field("wallet_id", &hex::encode(self.managed_state.wallet_id()))
+            .field(
+                "wallet_id",
+                &hex::encode(self.core_wallet.wallet_id()),
+            )
             .field("identity_count", &self.identity_manager.identities.len())
             .finish()
     }

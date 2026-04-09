@@ -19,9 +19,10 @@ use tokio::sync::{broadcast, RwLock};
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
+use key_wallet_manager::WalletManager;
 
 /// Default fee rate in duffs per kilobyte for asset lock transactions.
 const DEFAULT_FEE_PER_KB: u64 = 1000;
@@ -33,8 +34,10 @@ const DEFAULT_FEE_PER_KB: u64 = 1000;
 /// without going through `CoreWallet`.
 pub struct AssetLockManager {
     sdk: Arc<dash_sdk::Sdk>,
-    /// The single shared lock for all mutable wallet state.
-    state: Arc<RwLock<PlatformWalletInfo>>,
+    /// The shared wallet manager lock for all mutable wallet state.
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    /// Identifies which wallet within the manager this manager operates on.
+    wallet_id: WalletId,
     /// Broadcast channel for platform wallet events (SPV sync, locks, etc.).
     ///
     /// Used by `wait_for_proof()` to subscribe to InstantLock / ChainLock
@@ -57,13 +60,15 @@ impl AssetLockManager {
     /// Create a new `AssetLockManager`.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        state: Arc<RwLock<PlatformWalletInfo>>,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         Self {
             sdk,
-            state,
+            wallet_manager,
+            wallet_id,
             event_tx,
             broadcaster,
         }
@@ -79,8 +84,11 @@ impl AssetLockManager {
     pub(crate) async fn to_changeset(&self) -> AssetLockChangeSet {
         use crate::changeset::changeset::AssetLockEntry;
 
-        let info_guard = self.state.read().await;
-        let entries = info_guard
+        let wm = self.wallet_manager.read().await;
+        let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+            return AssetLockChangeSet { asset_locks: Default::default() };
+        };
+        let entries = info
             .tracked_asset_locks
             .iter()
             .map(|(out_point, lock)| {
@@ -108,9 +116,12 @@ impl AssetLockManager {
     ///
     /// Uses `blocking_write` — must NOT be called from within a tokio async context.
     pub(crate) fn restore_from_changeset_blocking(&self, changeset: &AssetLockChangeSet) {
-        let mut info_guard = self.state.blocking_write();
+        let mut wm = self.wallet_manager.blocking_write();
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
         for (out_point, entry) in &changeset.asset_locks {
-            info_guard.tracked_asset_locks.insert(
+            info.tracked_asset_locks.insert(
                 *out_point,
                 TrackedAssetLock {
                     out_point: *out_point,
@@ -137,14 +148,18 @@ impl AssetLockManager {
     /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from
     /// within a tokio async context.
     pub fn list_tracked_locks_blocking(&self) -> Vec<TrackedAssetLock> {
-        let info_guard = self.state.blocking_read();
-        info_guard.tracked_asset_locks.values().cloned().collect()
+        let wm = self.wallet_manager.blocking_read();
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| info.tracked_asset_locks.values().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// List all tracked asset locks (async version).
     pub async fn list_tracked_locks(&self) -> Vec<TrackedAssetLock> {
-        let info_guard = self.state.read().await;
-        info_guard.tracked_asset_locks.values().cloned().collect()
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| info.tracked_asset_locks.values().cloned().collect())
+            .unwrap_or_default()
     }
 }
 
@@ -155,8 +170,10 @@ impl AssetLockManager {
 impl AssetLockManager {
     /// Remove an asset lock after successful consumption (registration or top-up).
     pub(crate) async fn remove_asset_lock(&self, out_point: &OutPoint) {
-        let mut info_guard = self.state.write().await;
-        info_guard.tracked_asset_locks.remove(out_point);
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            info.tracked_asset_locks.remove(out_point);
+        }
     }
 
     /// Advance the status of a tracked asset lock and optionally attach the proof.
@@ -166,8 +183,10 @@ impl AssetLockManager {
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<(), PlatformWalletError> {
-        let mut info_guard = self.state.write().await;
-        let entry = info_guard
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let entry = info
             .tracked_asset_locks
             .get_mut(out_point)
             .ok_or_else(|| {
@@ -208,8 +227,11 @@ impl AssetLockManager {
         out_point: OutPoint,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) {
-        let mut info_guard = self.state.blocking_write();
-        if info_guard.tracked_asset_locks.contains_key(&out_point) {
+        let mut wm = self.wallet_manager.blocking_write();
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        if info.tracked_asset_locks.contains_key(&out_point) {
             return;
         }
 
@@ -221,7 +243,11 @@ impl AssetLockManager {
                 };
                 (status, proof)
             }
-            None => self.resolve_status_from_wallet_info(account_index, &out_point),
+            None => {
+                // Need to resolve from wallet info - drop the write guard and use a read.
+                // Actually we already have mutable access to info, so we can read from it.
+                Self::resolve_status_from_info(&info.core_wallet, account_index, &out_point)
+            }
         };
 
         let lock = TrackedAssetLock {
@@ -234,7 +260,7 @@ impl AssetLockManager {
             status,
             proof,
         };
-        info_guard.tracked_asset_locks.insert(out_point, lock);
+        info.tracked_asset_locks.insert(out_point, lock);
     }
 
     /// Determine asset lock status by looking up the transaction in
@@ -244,17 +270,14 @@ impl AssetLockManager {
     /// constructed `ChainAssetLockProof`. If the TX has an InstantSend
     /// context, returns `InstantSendLocked` (without a proof, since we lack
     /// the IS-lock data). Otherwise defaults to `Broadcast`.
-    fn resolve_status_from_wallet_info(
-        &self,
+    fn resolve_status_from_info(
+        wallet_info: &ManagedWalletInfo,
         account_index: u32,
         out_point: &OutPoint,
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
         use key_wallet::transaction_checking::TransactionContext;
 
-        let info_ref = self.state.blocking_read();
-        let record = info_ref
-            .managed_state
-            .wallet_info()
+        let record = wallet_info
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
@@ -316,13 +339,14 @@ impl AssetLockManager {
             ));
         }
 
-        let mut info_guard = self.state.write().await;
-        let (wallet, wallet_info) = info_guard.managed_state.wallet_and_info_mut();
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
 
         // 1. Peek at the next unused address from the funding account to
         //    build the credit output P2PKH script.
         let funding_address =
-            Self::peek_next_funding_address(wallet_info, wallet, funding_type, identity_index)?;
+            Self::peek_next_funding_address(&mut info.core_wallet, wallet, funding_type, identity_index)?;
 
         // 2. Build the credit output for the asset lock payload.
         let credit_output = TxOut {
@@ -337,7 +361,7 @@ impl AssetLockManager {
         };
 
         // 3. Delegate to the key-wallet builder.
-        let result = wallet_info
+        let result = info.core_wallet
             .build_asset_lock(wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
@@ -542,20 +566,22 @@ impl AssetLockManager {
 
         // 2. Track as Built.
         {
-            let mut info_guard = self.state.write().await;
-            info_guard.tracked_asset_locks.insert(
-                out_point,
-                TrackedAssetLock {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                info.tracked_asset_locks.insert(
                     out_point,
-                    transaction: tx.clone(),
-                    account_index,
-                    funding_type,
-                    identity_index,
-                    amount: amount_duffs,
-                    status: AssetLockStatus::Built,
-                    proof: None,
-                },
-            );
+                    TrackedAssetLock {
+                        out_point,
+                        transaction: tx.clone(),
+                        account_index,
+                        funding_type,
+                        identity_index,
+                        amount: amount_duffs,
+                        status: AssetLockStatus::Built,
+                        proof: None,
+                    },
+                );
+            }
         }
 
         // NOTE: The tracked lock is now in memory but NOT persisted to storage.
@@ -623,16 +649,16 @@ impl AssetLockManager {
             return Ok(proof);
         }
 
-        let info_guard = self.state.read().await;
-        let synced_height = info_guard
-            .managed_state
-            .wallet_info()
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let synced_height = info
+            .core_wallet
             .metadata
             .synced_height;
 
-        let record = info_guard
-            .managed_state
-            .wallet_info()
+        let record = info
+            .core_wallet
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
@@ -649,7 +675,7 @@ impl AssetLockManager {
         let confirmations = record.confirmations(synced_height);
 
         // Drop the read lock before making the DAPI call.
-        drop(info_guard);
+        drop(wm);
 
         // TODO: This is weird - why would we wait for 8 confirmations if we already know it's chain-locked?
         if is_chain_locked && height > 0 && confirmations > 8 {
@@ -707,8 +733,10 @@ impl AssetLockManager {
         let txid = out_point.txid;
 
         let account_index = {
-            let info_guard = self.state.read().await;
-            info_guard
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            info
                 .tracked_asset_locks
                 .get(out_point)
                 .map(|lock| lock.account_index)
@@ -722,10 +750,11 @@ impl AssetLockManager {
 
         // Check if already chain-locked.
         let height = {
-            let info_guard = self.state.read().await;
-            let record = info_guard
-                .managed_state
-                .wallet_info()
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let record = info
+                .core_wallet
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
@@ -807,18 +836,19 @@ impl AssetLockManager {
         loop {
             // Re-check — might have been updated by SPV sync while we waited.
             {
-                let info_guard = self.state.read().await;
-                if let Some(record) = info_guard
-                    .managed_state
-                    .wallet_info()
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions.get(&out_point.txid))
-                {
-                    if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
-                        if let Some(h) = record.height() {
-                            return Ok(h);
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                    if let Some(record) = info
+                        .core_wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get(&account_index)
+                        .and_then(|a| a.transactions.get(&out_point.txid))
+                    {
+                        if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
+                            if let Some(h) = record.height() {
+                                return Ok(h);
+                            }
                         }
                     }
                 }
@@ -877,8 +907,10 @@ impl AssetLockManager {
         // Read account_index and transaction from the tracked lock.
         // These don't change during the wait.
         let (account_index, tracked_tx) = {
-            let info_guard = self.state.read().await;
-            let lock = info_guard
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let lock = info
                 .tracked_asset_locks
                 .get(out_point)
                 .ok_or_else(|| {
@@ -892,21 +924,22 @@ impl AssetLockManager {
 
         // Check if SPV already synced the proof before we started waiting.
         {
-            let info_guard = self.state.read().await;
-            if let Some(record) = info_guard
-                .managed_state
-                .wallet_info()
-                .accounts
-                .standard_bip44_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions.get(&out_point.txid))
-            {
-                if let TransactionContext::InChainLockedBlock(_) = &record.context {
-                    if let Some(height) = record.height() {
-                        return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
-                            core_chain_locked_height: height,
-                            out_point: *out_point,
-                        }));
+            let wm = self.wallet_manager.read().await;
+            if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                if let Some(record) = info
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&account_index)
+                    .and_then(|a| a.transactions.get(&out_point.txid))
+                {
+                    if let TransactionContext::InChainLockedBlock(_) = &record.context {
+                        if let Some(height) = record.height() {
+                            return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                                core_chain_locked_height: height,
+                                out_point: *out_point,
+                            }));
+                        }
                     }
                 }
             }
@@ -940,14 +973,15 @@ impl AssetLockManager {
                         ))) => {
                             // Verify that our asset lock transaction is actually
                             // confirmed at a height <= the chain-locked height.
-                            let info_guard = self.state.read().await;
-                            let record = info_guard
-                                .managed_state
-                                .wallet_info()
-                                .accounts
-                                .standard_bip44_accounts
-                                .get(&account_index)
-                                .and_then(|a| a.transactions.get(&out_point.txid));
+                            let wm = self.wallet_manager.read().await;
+                            let record = wm.get_wallet_info(&self.wallet_id)
+                                .and_then(|info| {
+                                    info.core_wallet
+                                        .accounts
+                                        .standard_bip44_accounts
+                                        .get(&account_index)
+                                        .and_then(|a| a.transactions.get(&out_point.txid))
+                                });
 
                             if let Some(record) = record {
                                 if let Some(tx_height) = record.height() {
@@ -1008,8 +1042,10 @@ impl AssetLockManager {
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
         // 1. Look up the tracked lock — snapshot the fields we need.
         let (tx, status, existing_proof, account_index) = {
-            let info_guard = self.state.read().await;
-            let lock = info_guard
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let lock = info
                 .tracked_asset_locks
                 .get(out_point)
                 .ok_or_else(|| {
@@ -1066,8 +1102,10 @@ impl AssetLockManager {
 
         // 4. Re-derive the one-time private key.
         let private_key = {
-            let info_guard = self.state.read().await;
-            let lock = info_guard
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let lock = info
                 .tracked_asset_locks
                 .get(out_point)
                 .ok_or_else(|| {
@@ -1129,8 +1167,10 @@ impl AssetLockManager {
             })?;
 
         // 3. Find the derivation path in the funding account and derive key under a single lock.
-        let info_guard = self.state.read().await;
-        let wi = info_guard.managed_state.wallet_info();
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let wi = &info.core_wallet;
         let funding_account = match lock.funding_type {
             AssetLockFundingType::IdentityRegistration => {
                 wi.accounts.identity_registration.as_ref()
@@ -1167,9 +1207,9 @@ impl AssetLockManager {
             })?;
 
         // 4. Derive the private key from the wallet's root key.
-        let secret_key = info_guard
-            .managed_state
-            .wallet()
+        let wallet = wm.get_wallet(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let secret_key = wallet
             .derive_private_key(&derivation_path)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(

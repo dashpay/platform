@@ -14,8 +14,9 @@ pub mod tokens;
 pub use self::core::CoreWallet;
 pub use dashpay::DashPayWallet;
 pub use identity::IdentityWallet;
-pub use persister::PlatformWalletPersisterBridge;
 pub use platform_addresses::PlatformAddressWallet;
-pub use platform_wallet::{PlatformWallet, PlatformWalletInfo, WalletId};
+pub use platform_wallet::{
+    PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
+};
 pub use signer::{IdentitySigner, ManagedIdentitySigner};
 pub use tokens::TokenWallet;

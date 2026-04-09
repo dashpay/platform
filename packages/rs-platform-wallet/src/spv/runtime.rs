@@ -64,27 +64,6 @@ impl SpvRuntime {
         }
     }
 
-    /// Current synced height. Reads a plain field on WalletManager (sync, no
-    /// per-wallet lock).
-    pub fn synced_height(&self) -> u32 {
-        self.wallet_manager
-            .try_read()
-            .map(|wm| wm.synced_height())
-            .unwrap_or(0)
-    }
-
-    // TODO: We shoudln't do it
-    /// Reset filter_committed_height to 0, forcing a filter rescan from
-    /// birth_height on the next SPV start. Call BEFORE `run()`.
-    ///
-    /// Useful when wallet state isn't persisted: cached committed height
-    /// from a previous run would skip historical blocks, leaving the
-    /// wallet with zero balance.
-    pub async fn reset_filter_committed_height(&self) {
-        let mut wm = self.wallet_manager.write().await;
-        wm.update_filter_committed_height(0).await;
-    }
-
     /// Start SPV sync.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         {
@@ -244,7 +223,7 @@ impl SpvRuntime {
 impl std::fmt::Debug for SpvRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SpvRuntime")
-            .field("synced_height", &self.synced_height())
+            .field("is_started", &self.is_started())
             .finish()
     }
 }
