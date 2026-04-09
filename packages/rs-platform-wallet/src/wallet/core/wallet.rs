@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use super::balance::WalletBalance;
 
+use dashcore::Address as DashAddress;
 use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sighash::SighashCache;
-use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut};
 use key_wallet::Utxo;
 use tokio::sync::RwLock;
@@ -316,6 +316,38 @@ impl CoreWallet {
         self.sign_transaction_inputs(&secp, &mut tx, &selected_utxos)
             .await?;
 
+        // 5b. Validate-and-mark under write lock: verify that the UTXOs we
+        // selected (under a read lock earlier) haven't been claimed by a
+        // concurrent caller. If they have, fail fast with a clear error
+        // instead of broadcasting a transaction the network will reject.
+        {
+            use crate::wallet::platform_wallet_traits::WalletTransactionChecker;
+            use key_wallet::transaction_checking::TransactionContext;
+            let mut state = self.state.write().await;
+
+            // Re-check that our selected outpoints are still spendable.
+            let current_spendable: std::collections::BTreeSet<OutPoint> = state
+                .managed_state
+                .wallet_info()
+                .get_spendable_utxos()
+                .iter()
+                .map(|u| u.outpoint)
+                .collect();
+
+            for (outpoint, _, _) in &selected_utxos {
+                if !current_spendable.contains(outpoint) {
+                    return Err(PlatformWalletError::TransactionBuild(
+                        "Selected UTXOs are no longer available (concurrent transaction). Please retry.".to_string(),
+                    ));
+                }
+            }
+
+            // All UTXOs still available — mark them as spent atomically.
+            state
+                .check_core_transaction(&tx, TransactionContext::Mempool, true, true)
+                .await;
+        }
+
         // 6. Broadcast.
         self.broadcast_transaction(&tx).await?;
 
@@ -479,12 +511,16 @@ impl CoreWallet {
         // Derive private keys and sign.
         for (i, (input, sighash)) in tx.input.iter_mut().zip(sighashes).enumerate() {
             let path = &derivation_paths[i];
-            let extended_key = info.managed_state.wallet().derive_extended_private_key(path).map_err(|e| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "Failed to derive key for input {}: {}",
-                    i, e
-                ))
-            })?;
+            let extended_key = info
+                .managed_state
+                .wallet()
+                .derive_extended_private_key(path)
+                .map_err(|e| {
+                    PlatformWalletError::TransactionBuild(format!(
+                        "Failed to derive key for input {}: {}",
+                        i, e
+                    ))
+                })?;
             let input_private_key = extended_key.to_priv();
 
             let message = Message::from_digest(sighash.into());
