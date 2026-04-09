@@ -14,10 +14,10 @@ public final class HDWallet {
 
     // FFI Wallet ID (32 bytes) - links to the rust-dashcore wallet
     @Attribute(.unique) public var walletId: Data
-    
+
     // Serialized wallet bytes from FFI - used to restore wallet on app restart
     @Attribute(.unique) public var serializedWalletBytes: Data
-    
+
     public init(walletId: Data, serializedWalletBytes: Data, label: String, network: AppNetwork, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()
         self.label = label

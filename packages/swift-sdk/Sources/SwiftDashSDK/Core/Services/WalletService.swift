@@ -113,21 +113,11 @@ public class WalletService: ObservableObject {
 
         LoggingPreferences.configure()
 
-        let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(network.rawValue).path
-
-        // Ensure the data directory exists before initializing the SPV client
-        if let dataDir = dataDir {
-            try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
-        }
-
         // Create SPV client first with dummy handlers to obtain the wallet manager,
         // then destroy and recreate with real handlers that reference self.
-        let dummyClient = try! SPVClient(
-            network: network.sdkNetwork,
-            dataDir: dataDir,
-            startHeight: 0,
-        )
-
+        let dummyConfig = SPVConfig(network.sdkNetwork)
+        dummyConfig.setDataDir(NSTemporaryDirectory())
+        let dummyClient = try! SPVClient(config: dummyConfig)
         self.spvClient = dummyClient
 
         // Create the SDK wallet manager by reusing the SPV client's shared manager
@@ -146,9 +136,7 @@ public class WalletService: ObservableObject {
         )
 
         self.spvClient = try! SPVClient(
-            network: network.sdkNetwork,
-            dataDir: dataDir,
-            startHeight: 0,
+            config: createSpvConfig(),
             eventHandlers: handlers,
         )
 
@@ -163,13 +151,6 @@ public class WalletService: ObservableObject {
 
     private func initializeNewSPVClient() {
       SDKLogger.log("Initializing SPV Client for \(self.self.network.rawValue)...", minimumLevel: .medium)
-
-      let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(self.network.rawValue).path
-
-      // Ensure the data directory exists before initializing the SPV client
-      if let dataDir = dataDir {
-          try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
-      }
 
       // This ensures no memory leaks when creating a new client
       // and unlocks the storage in case we are about to use the same (we probably are)
@@ -187,13 +168,9 @@ public class WalletService: ObservableObject {
       // IO errors when working with the internal storage system, I don't
       // see how we can recover from that right now easily
       self.spvClient = try! SPVClient(
-          network: self.self.network.sdkNetwork,
-          dataDir: dataDir,
-          startHeight: 0,
+          config: createSpvConfig(),
           eventHandlers: handlers,
       )
-
-      try! self.spvClient.setMasternodeSyncEnabled(self.masternodesEnabled)
 
       SDKLogger.log("SPV Client initialized successfully for \(self.network.rawValue) (deferred start)", minimumLevel: .medium)
 
@@ -204,12 +181,23 @@ public class WalletService: ObservableObject {
       SDKLogger.log("WalletManager wrapper initialized successfully", minimumLevel: .medium)
     }
 
+    private func createSpvConfig() -> SPVConfig {
+        let clientConfig = SPVConfig(network.sdkNetwork)
+
+        let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(network.rawValue).path
+
+        clientConfig.setDataDir(dataDir!)
+        clientConfig.setMempoolStrategy(FFIMempoolStrategy(rawValue: 0)) // FetchAll
+        clientConfig.setStartHeight(0) // Placeholder
+        clientConfig.setMasternodeSyncEnabled(masternodesEnabled)
+        return clientConfig
+    }
+
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
         masternodesEnabled = enabled
 
-        // Try to apply immediately if the client exists
-        do { try spvClient.setMasternodeSyncEnabled(enabled) } catch { /* ignore */ }
+        self.spvClient.updateConfig(createSpvConfig())
     }
     public func disableMasternodeSync() {
         setMasternodesEnabled(false)
