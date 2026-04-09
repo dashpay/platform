@@ -804,7 +804,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         match self.network {
             Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
-            Network::Devnet => Ok(1),        // Devnet activation height
+            Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
             _ => Err(ContextProviderError::Generic(
                 "Unsupported network".to_string(),
             )),
