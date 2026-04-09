@@ -498,7 +498,7 @@ impl PlatformWallet {
 }
 
 impl PlatformWallet {
-    // TODO: What these methods for? can we remove?
+    // TODO: What these methods for? can we remove? Don't deelete this todo
     /// Queue a changeset for later persistence.
     pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
         self.persister.store(changeset);

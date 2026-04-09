@@ -17,6 +17,7 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
 pub struct CoreWallet {
+    // TODO: Are we using SDK here?
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     /// The single shared lock for all mutable wallet state.
     pub(crate) state: Arc<RwLock<PlatformWalletInfo>>,
@@ -49,7 +50,7 @@ impl CoreWallet {
     pub fn balance(&self) -> &WalletBalance {
         &self.balance
     }
-
+    // TODO: We need to accept account index everywhere here. for what are we using these methods?
     /// Get the next unused receive address for the default account.
     pub async fn next_receive_address(
         &self,
@@ -159,12 +160,12 @@ impl CoreWallet {
             .next_change_address(Some(&xpub), true)
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
-
+    // TODO: Why we need this?
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
     }
-
+    // TODO: Why is it static
     /// Derive the BIP-44 account-level extended public key from the wallet
     /// in `PlatformWalletInfo` (no separate lock needed).
     fn derive_account_xpub_from_info(
@@ -256,6 +257,7 @@ impl CoreWallet {
         let secp = Secp256k1::new();
 
         // 1. Get spendable UTXOs.
+        // TODO: Not a good idea to clone all spendable utoxs. It should be better way to create transactions. should we use dashcore transation builder? this seems like a logic that belongs to dashcore
         let spendable: Vec<Utxo> = {
             let info = self.state.read().await;
             info.managed_state
@@ -421,7 +423,7 @@ impl CoreWallet {
             total_output, fee_estimate
         )))
     }
-
+    // TODO: Don't we have it dashcore?
     /// Sign all inputs of a transaction using P2PKH.
     ///
     /// For each input, looks up the UTXO address, finds the corresponding
@@ -479,12 +481,16 @@ impl CoreWallet {
         // Derive private keys and sign.
         for (i, (input, sighash)) in tx.input.iter_mut().zip(sighashes).enumerate() {
             let path = &derivation_paths[i];
-            let extended_key = info.managed_state.wallet().derive_extended_private_key(path).map_err(|e| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "Failed to derive key for input {}: {}",
-                    i, e
-                ))
-            })?;
+            let extended_key = info
+                .managed_state
+                .wallet()
+                .derive_extended_private_key(path)
+                .map_err(|e| {
+                    PlatformWalletError::TransactionBuild(format!(
+                        "Failed to derive key for input {}: {}",
+                        i, e
+                    ))
+                })?;
             let input_private_key = extended_key.to_priv();
 
             let message = Message::from_digest(sighash.into());

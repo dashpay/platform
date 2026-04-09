@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
+use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::prelude::CoreBlockHeight;
 use dashcore::{Address as DashAddress, Transaction, Txid};
 
@@ -23,7 +24,7 @@ use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 
 use super::platform_wallet::PlatformWalletInfo;
-
+// TODO: Move to state module
 // ---------------------------------------------------------------------------
 // WalletInfoInterface — delegate to `self.managed_state`
 // ---------------------------------------------------------------------------
@@ -49,8 +50,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
         use super::persister::PlatformWalletPersisterBridge;
         use key_wallet_manager::ManagedWalletState;
 
-        let inner =
-            ManagedWalletState::<PlatformWalletPersisterBridge>::from_wallet_with_name(wallet, name);
+        let inner = ManagedWalletState::<PlatformWalletPersisterBridge>::from_wallet_with_name(
+            wallet, name,
+        );
         Self {
             managed_state: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
@@ -156,13 +158,21 @@ impl WalletInfoInterface for PlatformWalletInfo {
     fn synced_height(&self) -> CoreBlockHeight {
         self.managed_state.synced_height()
     }
-
+    // TODO: Why we have manual balance update here? These thibgs are not eit event what we use to update balance?
     fn update_synced_height(&mut self, current_height: u32) {
         self.managed_state.update_synced_height(current_height);
+        let bal = self.managed_state.balance();
+        self.balance.update(&bal);
     }
 
-    fn mark_instant_send_utxos(&mut self, txid: &Txid) -> (bool, UtxoChangeSet) {
-        self.managed_state.mark_instant_send_utxos(txid)
+    fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> (bool, UtxoChangeSet) {
+        let result = self.managed_state.mark_instant_send_utxos(txid, lock);
+        if result.0 {
+            // Balance changed — refresh atomics.
+            let bal = self.managed_state.balance();
+            self.balance.update(&bal);
+        }
+        result
     }
 
     fn monitor_revision(&self) -> u64 {

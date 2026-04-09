@@ -2,46 +2,6 @@
 
 pub use key_wallet_manager::WalletEvent;
 
-/// Transaction finality status lifecycle.
-///
-/// Progresses: `Unconfirmed → InstantSendLocked → Confirmed → ChainLocked`.
-/// Each state is >= the previous, so `PartialOrd`/`Ord` reflect finality ordering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(u8)]
-pub enum TransactionStatus {
-    /// In mempool, no InstantSend lock.
-    Unconfirmed = 0,
-    /// InstantSend-locked but not yet mined.
-    InstantSendLocked = 1,
-    /// Mined in a block.
-    Confirmed = 2,
-    /// In a chain-locked block (highest finality).
-    ChainLocked = 3,
-}
-
-impl TransactionStatus {
-    /// Deserialize from stored u8 value.
-    pub fn from_u8(v: u8) -> Option<Self> {
-        match v {
-            0 => Some(Self::Unconfirmed),
-            1 => Some(Self::InstantSendLocked),
-            2 => Some(Self::Confirmed),
-            3 => Some(Self::ChainLocked),
-            _ => None,
-        }
-    }
-
-    /// User-facing label for this status.
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Unconfirmed => "Unconfirmed",
-            Self::InstantSendLocked => "InstantSend Locked",
-            Self::Confirmed => "Confirmed",
-            Self::ChainLocked => "Chain Locked",
-        }
-    }
-}
-
 /// SPV event — groups sync, network, and progress events from dash-spv.
 #[derive(Debug, Clone)]
 pub enum SpvEvent {

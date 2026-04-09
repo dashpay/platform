@@ -25,8 +25,12 @@ use crate::events::PlatformWalletEvent;
 use crate::spv::event_forwarder::SpvEventForwarder;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-type SpvClient =
-    DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
+type SpvClient = DashSpvClient<
+    WalletManager<PlatformWalletInfo>,
+    PeerNetworkManager,
+    DiskStorageManager,
+    SpvEventForwarder,
+>;
 
 /// SPV client runtime — owns the `DashSpvClient` and tracks sync height.
 ///
@@ -69,6 +73,7 @@ impl SpvRuntime {
             .unwrap_or(0)
     }
 
+    // TODO: We shoudln't do it
     /// Reset filter_committed_height to 0, forcing a filter rescan from
     /// birth_height on the next SPV start. Call BEFORE `run()`.
     ///
@@ -125,7 +130,10 @@ impl SpvRuntime {
     /// The transaction will be relayed back to us through SPV's bloom filter
     /// matching, at which point the wallet adapter processes it and updates
     /// balances automatically.
-    pub(crate) async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), PlatformWalletError> {
+    pub(crate) async fn broadcast_transaction(
+        &self,
+        tx: &Transaction,
+    ) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
             .as_ref()
@@ -180,7 +188,10 @@ impl SpvRuntime {
         tracing::info!("SpvRuntime::run() client started, entering sync loop");
 
         let is_cancelled = cancel_token.is_cancelled();
-        tracing::info!("SpvRuntime::run() cancel_token already cancelled? {}", is_cancelled);
+        tracing::info!(
+            "SpvRuntime::run() cancel_token already cancelled? {}",
+            is_cancelled
+        );
 
         let result = {
             let client_guard = self.client.read().await;
@@ -205,7 +216,10 @@ impl SpvRuntime {
             }
         };
 
-        tracing::info!("SpvRuntime::run() exiting sync loop, result ok={}", result.is_ok());
+        tracing::info!(
+            "SpvRuntime::run() exiting sync loop, result ok={}",
+            result.is_ok()
+        );
         // Always attempt cleanup, but don't let a stop() failure mask the
         // actual SPV run result.
         if let Err(e) = self.stop().await {

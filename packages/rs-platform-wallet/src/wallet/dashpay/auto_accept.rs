@@ -36,6 +36,8 @@ use crate::error::PlatformWalletError;
 /// DashPay auto-accept feature index per DIP-15.
 const DASHPAY_AUTO_ACCEPT_FEATURE: u32 = 16;
 
+// TODO: Where and how we use these helpers?
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

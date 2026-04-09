@@ -58,7 +58,7 @@ pub struct PlatformWalletManager {
 impl PlatformWalletManager {
     /// Create a new PlatformWalletManager.
     pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<dyn PlatformWalletPersistence>) -> Self {
-        let (event_tx, _) = broadcast::channel(256);
+        let (event_tx, _) = broadcast::channel(dash_spv::sync::DEFAULT_SYNC_EVENT_CAPACITY);
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
@@ -84,7 +84,7 @@ impl PlatformWalletManager {
         &self.spv
     }
 
-    // TODO: We can delete it
+    // TODO: We can delete it and use core().broadcast() ? don't delete this todo
     /// Broadcast a transaction via SPV P2P peers.
     pub async fn broadcast_transaction(
         &self,

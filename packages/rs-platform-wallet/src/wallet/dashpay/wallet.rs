@@ -356,7 +356,12 @@ impl DashPayWallet {
     pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
         let identity_ids: Vec<Identifier> = {
             let info_guard = self.state.read().await;
-            info_guard.identity_manager.identities().keys().copied().collect()
+            info_guard
+                .identity_manager
+                .identities()
+                .keys()
+                .copied()
+                .collect()
         };
 
         let mut all_requests = Vec::new();
@@ -373,7 +378,10 @@ impl DashPayWallet {
                 })?;
 
             let mut info_guard = self.state.write().await;
-            let managed = match info_guard.identity_manager.managed_identity_mut(&identity_id) {
+            let managed = match info_guard
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+            {
                 Some(m) => m,
                 None => continue,
             };
@@ -537,6 +545,7 @@ impl DashPayWallet {
 // ---------------------------------------------------------------------------
 
 impl DashPayWallet {
+    // TODO: We don't want to clone all contacts on get - it's terrible.
     /// Get all established contacts across every identity managed by this wallet.
     ///
     /// Returns a flat list; each element includes the contact's identity ID.
@@ -584,6 +593,7 @@ impl DashPayWallet {
         )
     }
 
+    // TODO: Isn't this something what should be done internally?
     /// Derive payment addresses for a contact (for receiving payments from them).
     ///
     /// Returns `count` addresses starting from `start_index`, derived via
@@ -617,11 +627,15 @@ impl DashPayWallet {
                     "Failed to derive DashPay contact account path: {err}"
                 ))
             })?;
-        let account_xpub = info_guard.managed_state.wallet().derive_extended_public_key(&path).map_err(|err| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to derive DashPay contact xpub: {err}"
-            ))
-        })?;
+        let account_xpub = info_guard
+            .managed_state
+            .wallet()
+            .derive_extended_public_key(&path)
+            .map_err(|err| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to derive DashPay contact xpub: {err}"
+                ))
+            })?;
 
         let account = key_wallet::Account {
             parent_wallet_id: Some(info_guard.managed_state.wallet().wallet_id),
@@ -631,16 +645,26 @@ impl DashPayWallet {
             is_watch_only: false,
         };
 
+        // TODO: Why we ignore result?
         // Add to Wallet's AccountCollection (key store)
-        let _ = info_guard.managed_state.wallet_mut().accounts.insert(account.clone());
+        let _ = info_guard
+            .managed_state
+            .wallet_mut()
+            .accounts
+            .insert(account.clone());
 
         // Add managed wrapper to ManagedWalletInfo (address pools, state tracking)
         let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
-        info_guard.managed_state.wallet_info_mut().accounts.insert(managed).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register contact account: {e}"
-            ))
-        })?;
+        info_guard
+            .managed_state
+            .wallet_info_mut()
+            .accounts
+            .insert(managed)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register contact account: {e}"
+                ))
+            })?;
 
         Ok(())
     }

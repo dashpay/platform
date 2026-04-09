@@ -5,7 +5,7 @@
 //!
 //! Private keys are NOT stored here — they are re-derived from
 //! `funding_type` + `identity_index` via the key-wallet's `Wallet`.
-
+/// TODO: Shall we move to state module
 use dashcore::{OutPoint, Transaction};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
