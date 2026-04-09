@@ -18,6 +18,18 @@ use tokio::sync::broadcast;
 
 use crate::events::{PlatformWalletEvent, SpvEvent};
 
+// TODO: Clonning events bad idea, better call event handlers
+/*
+impl EventHandler for SpvEventForwarder {
+    fn on_sync_event(&self, event: &SyncEvent) {
+        // Call each registered listener by reference — no clone
+        for listener in &self.sync_listeners {
+            listener.on_sync_event(event);
+        }
+    }
+}
+ */
+
 /// Implements `dash_spv::EventHandler` to forward SPV events into the
 /// platform wallet's unified `PlatformWalletEvent` broadcast channel.
 pub(crate) struct SpvEventForwarder {
