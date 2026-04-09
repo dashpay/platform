@@ -113,7 +113,7 @@ pub struct DataContractV1 {
     /// The tokens on the contract.
     pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,
 
-    /// Contract-level keywords for searching (distinct from per-document-type keywords in document-meta schema)
+    /// The contract's keywords for searching
     pub keywords: Vec<String>,
 
     /// The contract's description
