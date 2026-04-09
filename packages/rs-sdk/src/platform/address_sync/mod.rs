@@ -341,7 +341,13 @@ pub async fn sync_address_balances<P: AddressProvider>(
             start_height
         );
         for (index, key, funds) in provider.current_balances() {
-            result.found.insert((index, key), funds);
+            result.found.insert((index, key.clone()), funds);
+            // Notify the provider so it can update its internal state
+            // (e.g., populate found_balances, extend gap limit). Without this,
+            // addresses discovered during a previous full scan are invisible to
+            // the consumer in incremental-only mode because on_address_found
+            // is the only path that populates the provider's found set.
+            provider.on_address_found(index, &key, funds);
         }
         start_height
     } else {
