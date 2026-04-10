@@ -8,13 +8,10 @@ import Foundation
 /// The FFI is still a work in progress, that means that some functionalities are not yet
 /// implemented or may change in the future, this wrap was made with that in mind.
 ///
-/// Important limitations:
-///  - Once stopped, the SPVClient cannot be restarted without creating a new instance, FFI limitation
-///  - The pointers are freed automatically but, to be able to create a new instance (with the same dataDir)
+/// Note: The pointers are freed automatically but, to be able to create a new instance (with the same dataDir)
 ///    without causing the initialization to fail, you must call SPVClient::destroy manually, this is because,
 ///    FFIDashSpvClient locks the dir to avoid concurrency corruption and its only possible to
-///    ensure is unlocked by freeing the pointer, FFI limitation
-///  - Clearing the storage stops the SPVClient, a new one has to be created, FFI limitation
+///    ensure it is unlocked by freeing the pointer
 public class SPVClient: @unchecked Sendable {
     private var spvEventHandlers: SPVEventHandlers?
 
@@ -175,7 +172,7 @@ public class SPVClient: @unchecked Sendable {
     }
 
     /// Clear all persisted SPV storage (headers, filters, metadata, sync state).
-    public func clearStorage() throws {
+    public consuming func clearStorage() throws {
         let rc = dash_spv_ffi_client_clear_storage(client)
         if rc != 0 {
             throw SPVError.storageOperationFailed(SPVClient.getLastDashFFIError())
@@ -187,7 +184,7 @@ public class SPVClient: @unchecked Sendable {
         spvEventHandlers?.progress.onProgressUpdate(getSyncProgress())
     }
 
-    public func destroy() {
+    public consuming func destroy() {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
 
@@ -226,7 +223,7 @@ public class SPVClient: @unchecked Sendable {
         }
     }
 
-    public func stopSync() {
+    public consuming func stopSync() {
         let cancelResult = dash_spv_ffi_client_stop(client)
         if cancelResult != 0 {
             let message = SPVClient.getLastDashFFIError()
