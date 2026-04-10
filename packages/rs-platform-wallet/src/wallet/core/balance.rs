@@ -65,11 +65,11 @@ impl WalletBalance {
         self.spendable() + self.unconfirmed() + self.immature() + self.locked()
     }
 
-    /// Update from a `WalletCoreBalance` (from `ManagedWalletInfo::balance()`).
-    pub(crate) fn update(&self, bal: &key_wallet::WalletCoreBalance) {
-        self.spendable.store(bal.spendable(), Ordering::Relaxed);
-        self.unconfirmed.store(bal.unconfirmed(), Ordering::Relaxed);
-        self.immature.store(bal.immature(), Ordering::Relaxed);
-        self.locked.store(bal.locked(), Ordering::Relaxed);
+    /// Set from raw values (used by `BalanceUpdateHandler` from event data).
+    pub(crate) fn set(&self, spendable: u64, unconfirmed: u64, immature: u64, locked: u64) {
+        self.spendable.store(spendable, Ordering::Relaxed);
+        self.unconfirmed.store(unconfirmed, Ordering::Relaxed);
+        self.immature.store(immature, Ordering::Relaxed);
+        self.locked.store(locked, Ordering::Relaxed);
     }
 }

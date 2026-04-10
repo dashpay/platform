@@ -13,8 +13,9 @@ use key_wallet_manager::WalletManager;
 use crate::changeset::{Merge, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
-use crate::spv::{LockNotifyHandler, SpvRuntime};
-use crate::wallet::core::WalletBalance;
+use crate::spv::SpvRuntime;
+use crate::wallet::asset_lock::LockNotifyHandler;
+use crate::wallet::core::{BalanceUpdateHandler, WalletBalance};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -46,11 +47,13 @@ impl PlatformWalletManager {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
         let lock_notify = Arc::new(Notify::new());
 
-        // Build handler list: app handler + internal lock notifier.
+        // Build handler list: app handler + internal handlers.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
+        let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallet_manager)));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
+            balance_handler,
         ]));
 
         let spv = Arc::new(SpvRuntime::new(

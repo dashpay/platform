@@ -120,9 +120,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_balance(&mut self) {
         self.core_wallet.update_balance();
-        // Also update the lock-free atomic balance.
-        let bal = self.core_wallet.balance();
-        self.balance.update(&bal);
     }
 
     fn transaction_history(&self) -> Vec<&TransactionRecord> {
@@ -147,17 +144,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_synced_height(&mut self, current_height: u32) {
         self.core_wallet.update_synced_height(current_height);
-        let bal = self.core_wallet.balance();
-        self.balance.update(&bal);
     }
 
     fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
-        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
-        if changed {
-            let bal = self.core_wallet.balance();
-            self.balance.update(&bal);
-        }
-        changed
+        self.core_wallet.mark_instant_send_utxos(txid, lock)
     }
 
     fn monitor_revision(&self) -> u64 {
@@ -179,18 +169,9 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_state: bool,
         update_balance: bool,
     ) -> TransactionCheckResult {
-        let result = self
-            .core_wallet
+        self.core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
-            .await;
-
-        // If balance was updated, refresh the lock-free atomics.
-        if update_balance && result.is_relevant {
-            let bal = self.core_wallet.balance();
-            self.balance.update(&bal);
-        }
-
-        result
+            .await
     }
 }
 

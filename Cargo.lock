@@ -4858,6 +4858,7 @@ dependencies = [
 name = "platform-wallet"
 version = "3.1.0-dev.1"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "dash-sdk",
  "dash-spv",

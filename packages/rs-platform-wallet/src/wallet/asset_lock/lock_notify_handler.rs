@@ -1,5 +1,4 @@
-//! Lock-event notifier — a [`PlatformEventHandler`] that wakes
-//! `AssetLockManager` async waiters on InstantLock / ChainLock events.
+//! Event handler that wakes `AssetLockManager` async waiters on lock events.
 
 use std::sync::Arc;
 

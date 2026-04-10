@@ -23,6 +23,7 @@ dashcore = { workspace = true }
 # Standard dependencies
 thiserror = "1.0"
 async-trait = "0.1"
+arc-swap = "1"
 
 # Collections
 indexmap = "2.0"
