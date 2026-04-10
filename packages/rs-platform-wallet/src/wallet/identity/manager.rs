@@ -172,9 +172,10 @@ impl IdentityManager {
             return Err(PlatformWalletError::IdentityNotFound(identity_id));
         }
         self.primary_identity_id = Some(identity_id);
-        let mut cs = IdentityChangeSet::default();
-        cs.primary_identity = Some(identity_id);
-        Ok(cs)
+        Ok(IdentityChangeSet {
+            primary_identity: Some(identity_id),
+            ..Default::default()
+        })
     }
 
     /// Get a managed identity by ID
@@ -234,9 +235,10 @@ impl IdentityManager {
     /// Returns an [`IdentityChangeSet`] carrying the new watermark.
     pub fn set_last_scanned_index(&mut self, index: u32) -> IdentityChangeSet {
         self.last_scanned_index = index;
-        let mut cs = IdentityChangeSet::default();
-        cs.last_scanned_index = Some(index);
-        cs
+        IdentityChangeSet {
+            last_scanned_index: Some(index),
+            ..Default::default()
+        }
     }
 }
 

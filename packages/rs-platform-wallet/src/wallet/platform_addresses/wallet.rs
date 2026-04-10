@@ -88,18 +88,21 @@ impl PlatformAddressWallet {
         let info = wm.get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::AddressSync("Wallet not found in wallet manager".to_string()))?;
 
-        // A sync replaces the whole cached set — every previous entry that
-        // doesn't reappear in `found` is a tombstone. Record those before
-        // clearing so the changeset can express the delta.
-        let mut cs = PlatformAddressChangeSet::default();
-        let prior: std::collections::BTreeSet<PlatformAddress> =
-            info.platform_address_balances.keys().copied().collect();
+        // A sync replaces the whole cached set. Pre-seed the tombstone
+        // set with every previously-cached address; the inserts below
+        // remove any address that reappears in the fresh results, so
+        // what's left in `removed` is exactly the drained set.
+        let mut cs = PlatformAddressChangeSet {
+            removed: info.platform_address_balances.keys().copied().collect(),
+            ..Default::default()
+        };
         info.platform_address_balances.clear();
         for ((_, key), funds) in &result.found {
             match PlatformAddress::from_bytes(key) {
                 Ok(platform_addr) => {
                     info.platform_address_balances.insert(platform_addr, funds.balance);
                     cs.addresses.insert(platform_addr, funds.balance);
+                    cs.removed.remove(&platform_addr);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -108,9 +111,6 @@ impl PlatformAddressWallet {
                     );
                 }
             }
-        }
-        for addr in prior.difference(&cs.addresses.keys().copied().collect()) {
-            cs.removed.insert(*addr);
         }
 
         Ok((result, cs))

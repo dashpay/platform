@@ -77,39 +77,6 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
-    /// Snapshot the current tracked asset locks into a changeset for persistence.
-    pub(crate) async fn to_changeset(&self) -> AssetLockChangeSet {
-        use crate::changeset::changeset::AssetLockEntry;
-
-        let wm = self.wallet_manager.read().await;
-        let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
-            return AssetLockChangeSet::default();
-        };
-        let entries = info
-            .tracked_asset_locks
-            .iter()
-            .map(|(out_point, lock)| {
-                (
-                    *out_point,
-                    AssetLockEntry {
-                        out_point: lock.out_point,
-                        transaction: lock.transaction.clone(),
-                        account_index: lock.account_index,
-                        funding_type: lock.funding_type,
-                        identity_index: lock.identity_index,
-                        amount_duffs: lock.amount,
-                        status: lock.status.clone(),
-                        proof: lock.proof.clone(),
-                    },
-                )
-            })
-            .collect();
-        AssetLockChangeSet {
-            asset_locks: entries,
-            removed: Default::default(),
-        }
-    }
-
     /// Restore tracked asset locks from a persisted changeset.
     ///
     /// Uses `blocking_write` — must NOT be called from within a tokio async context.
@@ -170,49 +137,16 @@ impl AssetLockManager {
     /// the inserted entry.
     ///
     /// If an entry already exists at `out_point`, it is overwritten.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn track_asset_lock(
         &self,
-        out_point: OutPoint,
-        transaction: Transaction,
-        account_index: u32,
-        funding_type: AssetLockFundingType,
-        identity_index: u32,
-        amount_duffs: u64,
-        status: AssetLockStatus,
-        proof: Option<dpp::prelude::AssetLockProof>,
+        lock: TrackedAssetLock,
     ) -> AssetLockChangeSet {
-        use crate::changeset::AssetLockEntry;
-
         let mut wm = self.wallet_manager.write().await;
         let mut cs = AssetLockChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            info.tracked_asset_locks.insert(
-                out_point,
-                TrackedAssetLock {
-                    out_point,
-                    transaction: transaction.clone(),
-                    account_index,
-                    funding_type,
-                    identity_index,
-                    amount: amount_duffs,
-                    status: status.clone(),
-                    proof: proof.clone(),
-                },
-            );
-            cs.asset_locks.insert(
-                out_point,
-                AssetLockEntry {
-                    out_point,
-                    transaction,
-                    account_index,
-                    funding_type,
-                    identity_index,
-                    amount_duffs,
-                    status,
-                    proof,
-                },
-            );
+            let out_point = lock.out_point;
+            cs.asset_locks.insert(out_point, (&lock).into());
+            info.tracked_asset_locks.insert(out_point, lock);
         }
         cs
     }
@@ -242,8 +176,6 @@ impl AssetLockManager {
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
-        use crate::changeset::AssetLockEntry;
-
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
@@ -262,19 +194,7 @@ impl AssetLockManager {
         }
 
         let mut cs = AssetLockChangeSet::default();
-        cs.asset_locks.insert(
-            *out_point,
-            AssetLockEntry {
-                out_point: entry.out_point,
-                transaction: entry.transaction.clone(),
-                account_index: entry.account_index,
-                funding_type: entry.funding_type,
-                identity_index: entry.identity_index,
-                amount_duffs: entry.amount,
-                status: entry.status.clone(),
-                proof: entry.proof.clone(),
-            },
-        );
+        cs.asset_locks.insert(*out_point, (&*entry).into());
         Ok(cs)
     }
 }
@@ -643,16 +563,16 @@ impl AssetLockManager {
         // 2. Track as Built.
         // TODO(Phase 9a-6): forward the returned changeset to the persister.
         let _cs_built = self
-            .track_asset_lock(
+            .track_asset_lock(TrackedAssetLock {
                 out_point,
-                tx.clone(),
+                transaction: tx.clone(),
                 account_index,
                 funding_type,
                 identity_index,
-                amount_duffs,
-                AssetLockStatus::Built,
-                None,
-            )
+                amount: amount_duffs,
+                status: AssetLockStatus::Built,
+                proof: None,
+            })
             .await;
 
         // NOTE: The tracked lock is now in memory but NOT persisted to storage.

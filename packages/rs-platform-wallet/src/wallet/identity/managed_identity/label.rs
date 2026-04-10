@@ -1,7 +1,7 @@
 //! Label management for ManagedIdentity
 
 use super::ManagedIdentity;
-use crate::changeset::{IdentityChangeSet, IdentityEntry};
+use crate::changeset::IdentityChangeSet;
 
 impl ManagedIdentity {
     /// Set the label for this identity.
@@ -20,14 +20,5 @@ impl ManagedIdentity {
     pub fn clear_label(&mut self) -> IdentityChangeSet {
         self.label = None;
         self.snapshot_changeset()
-    }
-
-    /// Helper: produce an [`IdentityChangeSet`] containing a full
-    /// [`IdentityEntry`] snapshot of `self`.
-    pub(crate) fn snapshot_changeset(&self) -> IdentityChangeSet {
-        let mut cs = IdentityChangeSet::default();
-        cs.identities
-            .insert(self.id(), IdentityEntry::from_managed(self));
-        cs
     }
 }

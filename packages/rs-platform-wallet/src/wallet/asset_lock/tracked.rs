@@ -10,6 +10,8 @@ use dashcore::{OutPoint, Transaction};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
+use crate::changeset::AssetLockEntry;
+
 /// Asset lock status on Core chain. Tracked until consumed, then removed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssetLockStatus {
@@ -34,4 +36,19 @@ pub struct TrackedAssetLock {
     pub status: AssetLockStatus,
     /// The proof, available once IS-locked or ChainLocked.
     pub proof: Option<AssetLockProof>,
+}
+
+impl From<&TrackedAssetLock> for AssetLockEntry {
+    fn from(lock: &TrackedAssetLock) -> Self {
+        Self {
+            out_point: lock.out_point,
+            transaction: lock.transaction.clone(),
+            account_index: lock.account_index,
+            funding_type: lock.funding_type,
+            identity_index: lock.identity_index,
+            amount_duffs: lock.amount,
+            status: lock.status.clone(),
+            proof: lock.proof.clone(),
+        }
+    }
 }

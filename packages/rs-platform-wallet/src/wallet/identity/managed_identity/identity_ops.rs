@@ -2,7 +2,7 @@
 
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
-use crate::changeset::IdentityChangeSet;
+use crate::changeset::{IdentityChangeSet, IdentityEntry};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -15,6 +15,19 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 impl ManagedIdentity {
+    /// Helper: produce an [`IdentityChangeSet`] containing a full
+    /// [`IdentityEntry`] snapshot of `self`.
+    ///
+    /// Every mutation method on `ManagedIdentity` calls this after
+    /// mutating state so that the returned changeset faithfully
+    /// describes the resulting identity.
+    pub(crate) fn snapshot_changeset(&self) -> IdentityChangeSet {
+        let mut cs = IdentityChangeSet::default();
+        cs.identities
+            .insert(self.id(), IdentityEntry::from_managed(self));
+        cs
+    }
+
     /// Create a new managed identity with its BIP-9 HD identity index.
     pub fn new(identity: Identity, identity_index: u32) -> Self {
         Self {

@@ -159,7 +159,11 @@ impl Merge for IdentityChangeSet {
                         entry.last_updated_balance_block_time;
                     existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                     existing.status = entry.status;
-                    existing.wallet_seed_hash = existing.wallet_seed_hash.or(entry.wallet_seed_hash);
+                    // `wallet_seed_hash` is immutable per identity (derived
+                    // from the owning wallet's seed), so LWW and FWW are
+                    // equivalent. We use LWW for consistency with the
+                    // other scalars in this block.
+                    existing.wallet_seed_hash = entry.wallet_seed_hash;
                     // Append new DPNS names (by label).
                     for name in &entry.dpns_names {
                         if !existing.dpns_names.iter().any(|n| n.label == name.label) {
@@ -179,12 +183,11 @@ impl Merge for IdentityChangeSet {
         if other.primary_identity.is_some() {
             self.primary_identity = other.primary_identity;
         }
-        // Scan watermark only grows.
-        if let Some(other_idx) = other.last_scanned_index {
-            self.last_scanned_index = Some(match self.last_scanned_index {
-                Some(cur) => cur.max(other_idx),
-                None => other_idx,
-            });
+        // Last-write-wins. `last_scanned_index` has a single writer
+        // (`IdentityManager::set_last_scanned_index`) so there's no
+        // concurrent-race scenario that would warrant a monotonic guard.
+        if other.last_scanned_index.is_some() {
+            self.last_scanned_index = other.last_scanned_index;
         }
     }
 
@@ -217,6 +220,18 @@ pub struct ContactRequestEntry {
 /// `incoming_contact_requests` / `established_contacts` layout and the
 /// evo-tool DB shape, so `apply_changeset` can route each entry to the
 /// correct `ManagedIdentity` without disambiguation logic.
+///
+/// # Auto-establishment contract
+///
+/// When a contact is added to `established`, the `apply` path MUST drop
+/// any matching entries in `sent_contact_requests` and
+/// `incoming_contact_requests` for the same `(owner, contact)` pair —
+/// establishment implies the pending requests on both sides are
+/// consumed. Mutation methods rely on this contract and do NOT also
+/// emit `removed_sent` / `removed_incoming` tombstones for the
+/// auto-establishment case; those sets are reserved for explicit
+/// removals (e.g. `remove_sent_contact_request`, `accept_incoming_request`
+/// when the caller explicitly asks to reject the pair).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ContactChangeSet {
     /// Sent contact requests keyed by (owner, recipient).

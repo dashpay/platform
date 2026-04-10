@@ -23,12 +23,13 @@ impl ManagedIdentity {
 
         // Check if there's already an incoming request from this recipient
         if let Some(incoming_request) = self.incoming_contact_requests.remove(&recipient_id) {
-            // Automatically establish the contact
+            // Automatically establish the contact — per the ContactChangeSet
+            // auto-establishment contract, `established` implies the matching
+            // pending entries are dropped, so we don't also emit a
+            // `removed_incoming` tombstone here.
             let contact = EstablishedContact::new(recipient_id, request, incoming_request);
             self.established_contacts.insert(recipient_id, contact);
             cs.established.insert((owner_id, recipient_id));
-            // The matching incoming request is consumed by establishment.
-            cs.removed_incoming.insert((owner_id, recipient_id));
         } else {
             // No matching incoming request, just add as sent
             cs.sent_requests.insert(
@@ -69,12 +70,13 @@ impl ManagedIdentity {
 
         // Check if there's already a sent request to this sender
         if let Some(outgoing_request) = self.sent_contact_requests.remove(&sender_id) {
-            // Automatically establish the contact
+            // Automatically establish the contact — per the ContactChangeSet
+            // auto-establishment contract, `established` implies the matching
+            // pending entries are dropped, so we don't also emit a
+            // `removed_sent` tombstone here.
             let contact = EstablishedContact::new(sender_id, outgoing_request, request);
             self.established_contacts.insert(sender_id, contact);
             cs.established.insert((owner_id, sender_id));
-            // The matching sent request is consumed by establishment.
-            cs.removed_sent.insert((owner_id, sender_id));
         } else {
             // No matching sent request, just add as incoming
             cs.incoming_requests.insert(
@@ -113,18 +115,21 @@ impl ManagedIdentity {
         &mut self,
         sender_id: &Identifier,
     ) -> (Option<EstablishedContact>, ContactChangeSet) {
-        // Check both exist before removing either (prevents data loss)
+        // Check both exist before removing either (prevents data loss).
         if !self.incoming_contact_requests.contains_key(sender_id)
             || !self.sent_contact_requests.contains_key(sender_id)
         {
             return (None, ContactChangeSet::default());
         }
-        let Some(incoming_request) = self.incoming_contact_requests.remove(sender_id) else {
-            return (None, ContactChangeSet::default());
-        };
-        let Some(outgoing_request) = self.sent_contact_requests.remove(sender_id) else {
-            return (None, ContactChangeSet::default());
-        };
+        // Both `remove` calls are guaranteed `Some` by the pre-check above.
+        let incoming_request = self
+            .incoming_contact_requests
+            .remove(sender_id)
+            .expect("incoming request presence checked above");
+        let outgoing_request = self
+            .sent_contact_requests
+            .remove(sender_id)
+            .expect("sent request presence checked above");
 
         // Create the established contact
         let contact = EstablishedContact::new(*sender_id, outgoing_request, incoming_request);
@@ -133,11 +138,12 @@ impl ManagedIdentity {
         self.established_contacts
             .insert(*sender_id, contact.clone());
 
+        // Per the ContactChangeSet auto-establishment contract, `established`
+        // implies the matching pending requests are dropped — no separate
+        // `removed_sent` / `removed_incoming` emission needed here.
         let owner_id = self.id();
         let mut cs = ContactChangeSet::default();
         cs.established.insert((owner_id, *sender_id));
-        cs.removed_sent.insert((owner_id, *sender_id));
-        cs.removed_incoming.insert((owner_id, *sender_id));
 
         (Some(contact), cs)
     }
@@ -340,8 +346,10 @@ mod tests {
         let contact = result.unwrap();
         assert_eq!(contact.contact_identity_id, contact_id);
         assert!(cs.established.contains(&(our_id, contact_id)));
-        assert!(cs.removed_sent.contains(&(our_id, contact_id)));
-        assert!(cs.removed_incoming.contains(&(our_id, contact_id)));
+        // Per the auto-establishment contract, `established` implies the
+        // matching pending requests are dropped — no separate tombstones.
+        assert!(cs.removed_sent.is_empty());
+        assert!(cs.removed_incoming.is_empty());
 
         // Verify requests were removed and contact established
         assert_eq!(managed.sent_contact_requests.len(), 0);
