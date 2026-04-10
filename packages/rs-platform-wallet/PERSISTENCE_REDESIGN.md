@@ -196,6 +196,81 @@ be replaced by the proper emit/apply flow in Phase 9c/9d.
 (it was unused outside a single `WalletManager<T>` wrapper). No stale
 references remain in platform-wallet.
 
+## Write-path architecture — one write, one path
+
+The goal is **one write path per wallet state type**:
+
+```
+mutation API on PlatformWalletInfo  (or core_wallet)
+    │  returns PlatformWalletChangeSet
+    ▼
+orchestrator merges changesets into a buffer
+    │
+    ▼
+SqliteWalletPersister flushes buffer → Database::* writer methods → SQLite
+```
+
+No wallet-state writes bypass the persister. Direct `Database::*`
+writes are allowed **only** for tables that have no corresponding
+in-memory field on `PlatformWalletInfo` — lifecycle, settings,
+caches, and UI metadata.
+
+### Catalogue of wallet-state tables and their PlatformWalletInfo mapping
+
+**Covered today (Category A):**
+
+| Table | PlatformWalletInfo field | Current write status |
+|-------|--------------------------|----------------------|
+| `utxos` | `core_wallet.per_account[..].{utxos_added,utxos_spent,utxos_instant_locked}` | **Persister-only**: `insert_utxo` has 0 non-test callers; `drop_utxo` has 1 non-persister caller in `model/wallet/utxos.rs::remove_selected_utxos` (tx building) |
+| `wallet_transactions` | `core_wallet.per_account[..].transactions` | **Persister-only**: `replace_wallet_transactions` has 0 callers anywhere — dead code |
+| `wallet_addresses` | `core_wallet.per_account[..].addresses_used` + `highest_used` | Persister writes subset; some direct writes via address balance updates |
+| `wallet.(balance, last_terminal_block)` | `core_wallet.balance`, `core_wallet.metadata.synced_height` | `update_wallet_balances` called directly from backend tasks — duplicate |
+| `identity` | `identity_manager.identities[id].identity` | **Duplicate**: `insert_local_qualified_identity` / `update_local_qualified_identity` have ~25 direct call sites across `backend_task/identity/*` AND `sync_identity_to_platform_wallet` mirrors to `IdentityManager` afterwards. Wrong direction — should be mutation-first, persister-second. |
+| `top_up` | `identity_manager.identities[id].top_ups` | Same as identity — direct write, then sync |
+| `wallet_identity_dpns_names` | `identity_manager.identities[id].dpns_names` (type mismatch: `Vec<String>` vs runtime `Vec<DpnsNameInfo>`) | Persister-only; table created inline by persister (not in v1.0-dev) |
+| `asset_lock_transaction` | `tracked_asset_locks` | Direct writes from `backend_task/identity/register_identity.rs`, `top_up_identity.rs` + persister path — **duplicate** |
+| `platform_address_balances` | `platform_address_balances` | `set_platform_address_info` / `delete_platform_address_info` called directly — need to go through changeset |
+| `identity_token_balances` | `token_balances` | `insert_token_identity_balance` called directly + persister path — **duplicate** |
+| `token` | `token_watched` (partial — metadata NOT in wallet) | Direct writes for token metadata (ticker, name, decimals). Only `token_watched: BTreeSet<Identifier>` is in the wallet; full metadata stays direct. |
+| `dashpay_contacts` | `identity_manager.identities[id].established_contacts` | Direct writes from `backend_task/dashpay/*` — should emit contact changeset |
+| `dashpay_contact_requests` | `identity_manager.identities[id].{sent,incoming}_contact_requests` | Direct writes from `backend_task/dashpay/*` — should emit contact changeset |
+
+**Out of scope (Category C — legitimately direct):**
+
+No in-memory field exists, no reason to add one. These stay as
+direct writes:
+
+- `settings` — theme, password, network, UI state (not wallet state)
+- `wallet` lifecycle columns — encrypted seed, salt, nonce, alias, is_main, password_hint, uses_password, core_wallet_name (create/rename/delete wallet)
+- `dashpay_profiles` — avatar bytes, display name, public message (**gap candidate**: could add `profile: Option<DashPayProfile>` to `ManagedIdentity` — defer, documented below)
+- `dashpay_payments` — payment history (**gap candidate**: per-contact payment log — defer)
+- `dashpay_contact_address_indices` — derivation indices for DashPay contact payments
+- `dashpay_address_mappings` — address → contact runtime cache
+- `contact_private_info` — encrypted local contact metadata (UI layer)
+- `contested_name`, `contestant` — DPNS voting state
+- `contract` — data contract metadata cache
+- `proof_log` — audit trail
+- `scheduled_votes` — voting scheduler
+- `shielded_notes` — Zcash shielded integration (separate subsystem)
+- `single_key_wallet` — legacy migration path
+- `identity_order`, `token_order` — UI sort order
+
+**Gap candidates (Category D — should be in PlatformWalletInfo but aren't):**
+
+These have existing DB tables but nothing in `PlatformWalletInfo`
+tracks them. They'd be legitimate category A once added. Deferred
+out of scope for Phase 9a:
+
+1. **DashPay profiles** → add `profile: Option<DashPayProfile>` on
+   `ManagedIdentity`. Fields: display_name, public_message,
+   avatar_hash, avatar_bytes (optional), created_at.
+2. **DashPay payments** → add `payments: BTreeMap<(Identifier, Txid), PaymentEntry>`
+   on `ManagedIdentity` or top-level. Tracks per-contact payment
+   history with amounts, direction, timestamps.
+3. **DashPay contact address derivation indices** → track per-contact
+   receive index for BIP44 contact payment paths. Currently in
+   `dashpay_contact_address_indices`.
+
 ## Evo-tool coupling — the DB layer is stable, the persister is not
 
 Phase 9a-2 (unify `PlatformWalletChangeSet`) immediately breaks
@@ -408,81 +483,59 @@ Unified `PlatformWalletChangeSet`:
 - platform-wallet builds and its 72 unit tests pass.
 
 **Status:** landed. Evo-tool's current `feat/platform-wallet2` does
-NOT build until 9a-2 lands.
+NOT build until 9a-4 lands.
 
-### 9a-2 rewrite evo-tool SqliteWalletPersister as a thin adapter ⬅ NEXT
+### 9a-2 platform-wallet mutation methods return changesets
 
-**Where:** `dash-evo-tool` on `feat/platform-wallet2`,
-`src/changeset/sqlite.rs`.
+**Where:** platform-wallet, across:
+- `src/wallet/identity/manager.rs` — `IdentityManager::add_identity`,
+  `remove_identity`, `set_label`, `set_last_scanned_index`,
+  `set_primary_identity`. And the per-identity mutations on
+  `ManagedIdentity`: `add_dpns_name`, `add_top_up`,
+  `update_balance_block_time`, `update_keys_sync_block_time`.
+- `src/wallet/identity/managed_identity/contact_requests.rs` —
+  `add_sent_contact_request`, `add_incoming_contact_request`,
+  `remove_sent_contact_request`, `remove_incoming_contact_request`.
+- `src/wallet/asset_lock/manager.rs` — `record_asset_lock`,
+  `update_status` (created → IS-locked → chain-locked).
+- `src/wallet/platform_addresses/wallet.rs` — direct mutations of
+  `platform_address_balances` map.
+- `src/wallet/tokens/*.rs` — `add_watched_token`,
+  `update_token_balance`.
 
-**Goal:** delete ~1000 LOC of raw SQL in the persister and replace
-with a thin translation layer (~200 LOC) that calls existing
-`database::*` writer methods.
+**Goal:** each mutation method returns `PlatformWalletChangeSet`
+(or a narrower sub-changeset) instead of `()`. Callers
+`result.changeset.merge(cs)` into an accumulator, same pattern as
+key-wallet's `ManagedCoreAccount::mark_address_used` etc.
 
-**Scope:**
-- Update imports to the new `PlatformWalletChangeSet` shape.
-- Rewrite `flush_one`:
-  - `cs.core.chain.synced_height` → `Database::set_wallet_terminal_block`
-    (or equivalent — verify the exact method name during implementation)
-  - `cs.core.per_account[*].utxos_added` → iterate, call
-    `Database::insert_utxo(txid, vout, &utxo.address, utxo.txout.value,
-    utxo.txout.script_pubkey.as_bytes(), network)` — **this is the big
-    win, real address + script get persisted instead of placeholders**
-  - `cs.core.per_account[*].utxos_spent` → `Database::drop_utxo`
-  - `cs.core.per_account[*].transactions` → collect into
-    `Vec<WalletTransaction>` (evo-tool's shape) and call
-    `Database::replace_wallet_transactions` once per wallet. Map
-    `TransactionRecord` fields 1:1.
-  - `cs.core.per_account[*].highest_used` → write to
-    `wallet_account_state` (migrate schema to
-    `(account_type_discriminant, account_index, pool_type, last_revealed)`
-    as part of this commit).
-  - `cs.identities` → `Database::store_identities` +
-    `Database::store_top_ups`.
-  - `cs.contacts` → `Database::store_contact_request` / `store_contact`.
-  - `cs.platform_addresses` → `Database::update_wallet_balances` or
-    dedicated platform-address writer.
-  - `cs.asset_locks` → `Database::store_asset_lock_transaction`.
-  - `cs.token_balances` → (no existing writer; decide: add one or
-    punt).
-- Rewrite `load`:
-  - Read from the same tables via existing `Database::*` readers
-    where they exist, raw SQL where they don't.
-  - Return `PlatformWalletChangeSet` with `core` populated. The
-    loaded changeset is immediately handed to
-    `WalletManager::apply_changeset`, so the adapter returns
-    native types directly.
-- Fix the fix-up call sites in
-  `src/backend_task/identity/register_identity.rs`,
-  `top_up_identity.rs`, `dashpay/contact_requests.rs` — these
-  currently construct the deleted changeset types by hand.
-- Delete the `wallet_identity_dpns_names` table (or migrate it to
-  richer `DpnsNameInfo` storage — decision needed).
+**Not in scope:** wiring the accumulated changesets to the
+persister. That's 9a-5.
 
-**Commit strategy:** ONE commit on evo-tool feat/platform-wallet2
-that makes the build green against the new platform-wallet shape.
-Probably ~30-min review pass with rust-quality + simplicity
-reviewers since it's a large rewrite of persistence-critical code.
+Commit on platform-wallet `feat/platform-wallet2`. Platform-wallet
+builds and its unit tests pass. Evo-tool still broken until 9a-4.
 
-### 9a-3 platform-wallet `PlatformWalletInfo::apply_changeset`
+### 9a-3 `PlatformWalletInfo::apply_changeset` (restore path)
 
-**Where:** `platform-wallet`, probably new
-`src/wallet/apply.rs` module mirroring key-wallet's structure.
+**Where:** platform-wallet, new `src/wallet/apply.rs` mirroring
+key-wallet's structure.
 
-**Goal:** `fn apply_changeset(&mut self, wallet: &mut Wallet, cs: &PlatformWalletChangeSet) -> Result<(), ApplyError>`
-that restores in-memory state from a persisted changeset.
+**Goal:** `fn apply_changeset(&mut self, wallet: &mut Wallet, cs: &PlatformWalletChangeSet) -> Result<(), ApplyError>`.
 
 - Delegate `cs.core` → `self.core_wallet.apply_changeset(wallet, core)`.
-- Apply `cs.identities` into `self.identity_manager` — needs a new
-  `IdentityManager::apply_identity_entry` method that sets all the
-  `ManagedIdentity` fields (label, block_time timestamps if we
-  decided to keep them, dpns_names as `Vec<DpnsNameInfo>`).
-- Apply `cs.contacts` by routing entries per `owner_identity_id` to
-  each `ManagedIdentity`'s contact maps.
-- Apply `cs.platform_addresses` into `self.platform_address_balances`.
-- Apply `cs.asset_locks` into `self.tracked_asset_locks` — inline
-  translation or a new `AssetLockManager::apply_changeset_entries`
-  method.
+- Apply `cs.identities` via a new `IdentityManager::apply_identity_entry`
+  helper that sets label, dpns_names (resolving the
+  `Vec<String>` vs `Vec<DpnsNameInfo>` mismatch — fix `IdentityEntry`
+  to carry `Vec<DpnsNameInfo>` during this commit), top_ups, block time
+  timestamps.
+- Apply `cs.contacts` by routing each entry to the owning
+  `ManagedIdentity` via `identity_manager.managed_identity_mut(&id)`.
+  Needs per-direction helpers on `ManagedIdentity`.
+- Apply `cs.platform_addresses` into `self.platform_address_balances`
+  (direct BTreeMap::insert).
+- Apply `cs.asset_locks` into `self.tracked_asset_locks` via an
+  `AssetLockManager::apply_changeset` helper (mirroring the existing
+  `restore_from_changeset_blocking` but without the lock dance —
+  `&mut self` instead of `wallet_manager.blocking_write()`).
 - Apply `cs.token_balances` into `self.token_balances` / `token_watched`.
 - Recompute cached balance via `self.update_balance()`.
 - Errors only on cascade failures; silent skip with
@@ -490,29 +543,175 @@ that restores in-memory state from a persisted changeset.
 
 Idempotent by construction — all writes are map inserts / overwrites.
 
-### 9a-4 round-trip tests
+Commit on platform-wallet `feat/platform-wallet2`.
+
+### 9a-4 round-trip tests on platform-wallet
 
 Build a `PlatformWalletInfo`, mutate each platform-specific field
-by hand (emission code doesn't exist yet — that's 9b). Apply
-changeset to a sibling. Assert state converges. Idempotent
-double-apply. Cover:
-- `core` path (already covered by key-wallet's apply tests; smoke
-  test here to verify delegation works)
-- `identities` — add/update
-- `contacts` — sent, incoming, established
-- `asset_locks` — create, upgrade to IS-locked
+via the new mutation API (from 9a-2), capture the changeset, apply
+to a sibling wallet. Assert state converges. Idempotent double-apply.
+Cover:
+- `core` path (smoke test — delegated to key-wallet's apply tests)
+- `identities` — add / update / remove (label, dpns, top_ups, timestamps)
+- `contacts` — sent / incoming / established (with correct per-identity routing)
+- `asset_locks` — create + status transitions
 - `platform_addresses` — balance updates
 - `token_balances` — new and updated
 
-### 9a-5 verify + commit
+Commit on platform-wallet `feat/platform-wallet2`. This unblocks
+the persister rewrite — platform-wallet side is complete.
+
+### 9a-5 rewrite evo-tool `SqliteWalletPersister` as thin adapter
+
+**Where:** dash-evo-tool `feat/platform-wallet2`,
+`src/changeset/sqlite.rs`.
+
+**Goal:** replace ~1000 LOC of raw SQL with a ~200 LOC translation
+layer that delegates to existing `Database::*` writer methods.
+
+**Scope:**
+- Update imports to the new `PlatformWalletChangeSet` shape.
+- Rewrite `flush_one` (thin adapter style):
+  - `cs.core.chain.synced_height` → update `wallet.last_terminal_block`
+    via existing or new `Database::set_wallet_terminal_block`.
+  - `cs.core.balance` — **punt.** Balance is recomputed from UTXOs on
+    load via `update_balance()`. Persister doesn't need to touch
+    balance columns.
+  - `cs.core.per_account[..].utxos_added` → `Database::insert_utxo`
+    with the native `Utxo` fields (real address + script, not
+    placeholders).
+  - `cs.core.per_account[..].utxos_spent` → `Database::drop_utxo`.
+  - `cs.core.per_account[..].transactions` → collect and call
+    `Database::replace_wallet_transactions` once per wallet. Map
+    the native `TransactionRecord` to evo-tool's `WalletTransaction`
+    shape (timestamp, height, block_hash, net_amount, fee, label,
+    is_ours, raw_transaction, status).
+  - `cs.core.per_account[..].highest_used` → write to
+    `wallet_account_state` table. **Migrate schema** to key on
+    `(seed_hash, account_type_discriminant, account_index, pool_type)`
+    → `last_revealed`.
+  - `cs.core.per_account[..].addresses_used` → update
+    `wallet_addresses` (mark addresses used, extend derivation
+    state).
+  - `cs.identities` → `Database::insert_local_qualified_identity` /
+    `update_local_qualified_identity`. This works because evo-tool's
+    `QualifiedIdentity` type wraps the dpp `Identity` that
+    `IdentityEntry` carries.
+  - `cs.contacts` → `Database::save_contact_request` /
+    `save_dashpay_contact` per-entry.
+  - `cs.platform_addresses` → `Database::set_platform_address_info`
+    per-address.
+  - `cs.asset_locks` → `Database::store_asset_lock_transaction` per-entry.
+  - `cs.token_balances` → `Database::insert_token_identity_balance`
+    per-entry.
+- Rewrite `load`:
+  - Read from the same tables. Return `PlatformWalletChangeSet`
+    with `core` populated using native key-wallet types.
+- Delete the persister-created `wallet_identity_dpns_names` table and
+  its writer helpers. DPNS names now live inside the persisted
+  identity blob via `IdentityEntry.dpns_names: Vec<DpnsNameInfo>`.
+- Migrate `wallet_account_state` schema as above (add columns or
+  drop-and-recreate via evo-tool's migration system).
+
+**Commit on evo-tool `feat/platform-wallet2`.**
+
+### 9a-6 rip out duplicate direct writes from evo-tool
+
+**Where:** dash-evo-tool, across `src/backend_task/`, `src/context/`,
+`src/model/wallet/`.
+
+**Goal:** every write path that currently goes direct to
+`Database::*` for a Category A table (from the catalogue above)
+instead mutates `PlatformWalletInfo` and relies on the persister
+to catch the emitted changeset.
+
+**Specific call sites to rewire:**
+
+1. **Identity write-through** (~25 call sites):
+   - `context/identity_db.rs::insert_local_qualified_identity` —
+     flip the order: mutate `platform_wallet.identity_manager.add_identity`
+     first (which emits a changeset), then feed the changeset to
+     the persister. The direct `self.db.insert_local_qualified_identity`
+     call goes away.
+   - Same for `update_local_qualified_identity`.
+   - Delete `sync_identity_to_platform_wallet` — the mutation IS
+     the sync.
+   - All ~25 backend-task call sites now call the mutation API
+     (which already returns a changeset) and queue it.
+
+2. **Asset lock writes** (`backend_task/identity/register_identity.rs`,
+   `top_up_identity.rs`):
+   - Currently call `store_asset_lock_transaction` directly.
+   - Flip to `platform_wallet.asset_locks.record_asset_lock` which
+     returns an `AssetLockChangeSet`. Queue for the persister.
+
+3. **Platform address balance updates**
+   (`backend_task/wallet/fund_platform_address_from_wallet_utxos.rs` etc.):
+   - Currently call `set_platform_address_info` directly.
+   - Flip to the platform wallet's platform-address mutation API.
+
+4. **Token balance updates** (`backend_task/tokens/mint_tokens.rs`,
+   `burn_tokens.rs`, etc.):
+   - Currently call `insert_token_identity_balance` directly.
+   - Flip to `platform_wallet.tokens.update_balance` which emits a
+     `TokenBalanceChangeSet`.
+
+5. **Transaction building UTXO reservation**
+   (`model/wallet/utxos.rs::remove_selected_utxos`):
+   - Currently drops the UTXO from the DB directly when a tx is
+     being built, to prevent double-spend.
+   - Flip to a platform-wallet mutation that marks the UTXO as
+     "reserved" or drops it from the in-memory set, emitting a
+     changeset.
+
+6. **SPV integration** — verify: does the SPV event handler
+   currently feed `TransactionCheckResult.changeset` to the
+   persister? If not, wire it. If it does, also stop any parallel
+   direct writes it might be doing.
+
+**Lifecycle writes stay direct** (Category C):
+- `Database::store_wallet` / `remove_wallet` / `set_wallet_alias` /
+  `set_wallet_core_wallet_name` — wallet existence and metadata,
+  not state.
+- All settings writes.
+- All DashPay profile / payment / address mapping writes
+  (category D, deferred).
+- All contract / contested_name / proof_log / scheduled_votes /
+  shielded_notes / single_key_wallet writes.
+
+**Commit on evo-tool `feat/platform-wallet2`.**
+
+### 9a-7 wire persister queue/flush lifecycle
+
+**Where:** evo-tool, in the platform wallet load/unload path and
+SPV event loop.
+
+**Goal:** every emitted `PlatformWalletChangeSet` from a mutation
+call site ends up in `SqliteWalletPersister` via `store(wallet_id, cs)`.
+Flush strategy:
+
+- Immediate flush on `SyncComplete` SPV events.
+- Debounced flush 30s after the last `store()`.
+- Explicit flush on wallet unload / app shutdown.
+- **Never** flush during cold SPV sync — the batching keeps the
+  buffer merged and writes happen at checkpoints.
+
+Replace the current `FlushStrategy::Immediate` default with a
+scheduled flush driven from SPV events.
+
+**Commit on evo-tool `feat/platform-wallet2`.**
+
+### 9a-8 verify + review pass + commit
 
 cargo check + test across key-wallet, key-wallet-manager,
 key-wallet-ffi, platform-wallet, dash-evo-tool. Everything green.
-Review pass on evo-tool's persister rewrite.
+Review pass on the persister rewrite and the write-path rewiring:
+rust-quality, simplicity, pattern reviewers in parallel.
 
-**9a scope does NOT include:** wiring mutation methods to emit
-changesets, or wiring the persister's queue/flush lifecycle. Those
-are 9b+.
+**9a scope does NOT include:** the Category D gaps (DashPay
+profiles, payments, contact address indices). Those stay as
+direct writes for now and get picked up in a follow-up phase
+when the platform wallet grows the corresponding in-memory fields.
 
 ### 9b — Mutation methods emit platform-specific changesets
 
