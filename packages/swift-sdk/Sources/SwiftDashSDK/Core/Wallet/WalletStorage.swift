@@ -8,6 +8,7 @@ import CryptoKit
 public class WalletStorage {
     private let keychainService = "org.dash.wallet"
     private let seedKeychainAccount = "wallet.seed"
+    private let mnemonicKeychainAccount = "wallet.mnemonic"
     private let pinKeychainAccount = "wallet.pin"
     private let biometricKeychainAccount = "wallet.biometric"
 
@@ -91,6 +92,61 @@ public class WalletStorage {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: seedKeychainAccount
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    // MARK: - Mnemonic Storage
+
+    public func storeMnemonic(_ mnemonic: String) throws {
+        let data = Data(mnemonic.utf8)
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: mnemonicKeychainAccount,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+
+        SecItemDelete(query as CFDictionary)
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    public func retrieveMnemonic() throws -> String {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: mnemonicKeychainAccount,
+            kSecReturnData as String: true
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let mnemonic = String(data: data, encoding: .utf8),
+              !mnemonic.isEmpty else {
+            throw WalletStorageError.mnemonicNotFound
+        }
+
+        return mnemonic
+    }
+
+    public func deleteMnemonic() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: mnemonicKeychainAccount
         ]
 
         let status = SecItemDelete(query as CFDictionary)
@@ -260,6 +316,7 @@ public enum WalletStorageError: LocalizedError {
     case keyDerivationFailed
     case encryptionFailed
     case decryptionFailed
+    case mnemonicNotFound
 
     public var errorDescription: String? {
         switch self {
@@ -279,6 +336,8 @@ public enum WalletStorageError: LocalizedError {
             return "Failed to encrypt data"
         case .decryptionFailed:
             return "Failed to decrypt data"
+        case .mnemonicNotFound:
+            return "Mnemonic not found"
         }
     }
 }
