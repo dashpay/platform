@@ -1122,6 +1122,103 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_set_dashpay_profile() {
+        use crate::wallet::dashpay::DashPayProfile;
+
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+        }
+        let id = Identifier::from([1u8; 32]);
+
+        let profile = DashPayProfile {
+            display_name: Some("alice".into()),
+            bio: Some("test bio".into()),
+            avatar_url: Some("https://example.com/avatar.png".into()),
+            avatar_bytes: None,
+            public_message: Some("hello world".into()),
+        };
+
+        let id_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&id)
+            .expect("a managed")
+            .set_dashpay_profile(Some(profile.clone()));
+
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply");
+
+        let a = info_a.identity_manager.managed_identity(&id).expect("a");
+        let b = info_b.identity_manager.managed_identity(&id).expect("b");
+        assert_eq!(a.dashpay_profile, b.dashpay_profile);
+        assert_eq!(b.dashpay_profile, Some(profile));
+    }
+
+    #[test]
+    fn round_trip_clear_dashpay_profile() {
+        use crate::wallet::dashpay::DashPayProfile;
+
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+            // Pre-seed with a profile so the clear has something to do.
+            let _ = info
+                .identity_manager
+                .managed_identity_mut(&Identifier::from([1u8; 32]))
+                .expect("managed")
+                .set_dashpay_profile(Some(DashPayProfile {
+                    display_name: Some("seed".into()),
+                    ..Default::default()
+                }));
+        }
+        let id = Identifier::from([1u8; 32]);
+
+        // Clear on A — emit the clear changeset.
+        let id_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&id)
+            .expect("a managed")
+            .set_dashpay_profile(None);
+
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply");
+
+        // Both wallets should have profile == None.
+        assert_eq!(
+            info_a
+                .identity_manager
+                .managed_identity(&id)
+                .expect("a")
+                .dashpay_profile,
+            None
+        );
+        assert_eq!(
+            info_b
+                .identity_manager
+                .managed_identity(&id)
+                .expect("b")
+                .dashpay_profile,
+            None
+        );
+    }
+
+    #[test]
     fn round_trip_double_apply_is_idempotent() {
         let mut wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);

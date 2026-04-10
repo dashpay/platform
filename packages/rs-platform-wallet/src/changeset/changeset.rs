@@ -37,7 +37,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::dashpay::{ContactRequest, EstablishedContact};
+use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact};
 use crate::wallet::identity::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
 };
@@ -97,6 +97,9 @@ pub struct IdentityEntry {
     pub key_storage: KeyStorage,
     /// Hash of the wallet seed that owns this identity, if known.
     pub wallet_seed_hash: Option<[u8; 32]>,
+    /// DashPay profile snapshot (display name, bio, avatar, public
+    /// message). `None` until the profile has been fetched or set.
+    pub dashpay_profile: Option<DashPayProfile>,
 }
 
 impl IdentityEntry {
@@ -117,6 +120,7 @@ impl IdentityEntry {
             status: managed.status,
             key_storage: managed.key_storage.clone(),
             wallet_seed_hash: managed.wallet_seed_hash,
+            dashpay_profile: managed.dashpay_profile.clone(),
         }
     }
 }
@@ -174,6 +178,12 @@ impl Merge for IdentityChangeSet {
                     // equivalent. We use LWW for consistency with the
                     // other scalars in this block.
                     existing.wallet_seed_hash = entry.wallet_seed_hash;
+                    // DashPay profile: last-write-wins. Same policy as
+                    // every other Option<T> scalar in this block —
+                    // every mutation snapshot copies the current
+                    // profile via `from_managed`, so LWW converges
+                    // correctly within a single wallet.
+                    existing.dashpay_profile = entry.dashpay_profile.clone();
                     // Append new DPNS names (by label).
                     for name in &entry.dpns_names {
                         if !existing.dpns_names.iter().any(|n| n.label == name.label) {

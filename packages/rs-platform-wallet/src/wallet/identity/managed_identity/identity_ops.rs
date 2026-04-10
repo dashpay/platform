@@ -44,7 +44,21 @@ impl ManagedIdentity {
             dpns_names: Vec::new(),
             wallet_seed_hash: None,
             top_ups: BTreeMap::new(),
+            dashpay_profile: None,
         }
+    }
+
+    /// Set the DashPay profile for this identity.
+    ///
+    /// Returns a full-snapshot [`IdentityChangeSet`](crate::changeset::IdentityChangeSet)
+    /// carrying the updated identity. Pass `None` to clear the
+    /// profile.
+    pub fn set_dashpay_profile(
+        &mut self,
+        profile: Option<crate::wallet::dashpay::DashPayProfile>,
+    ) -> IdentityChangeSet {
+        self.dashpay_profile = profile;
+        self.snapshot_changeset()
     }
 
     /// Get the identity ID

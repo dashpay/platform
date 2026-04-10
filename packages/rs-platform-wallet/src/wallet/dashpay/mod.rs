@@ -3,6 +3,7 @@ pub mod contact_request;
 pub mod crypto;
 pub mod dip14;
 pub mod established_contact;
+pub mod profile;
 pub mod validation;
 pub mod wallet;
 
@@ -13,4 +14,5 @@ pub use dip14::{
     derive_contact_xpub, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use established_contact::EstablishedContact;
+pub use profile::DashPayProfile;
 pub use wallet::DashPayWallet;

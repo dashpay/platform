@@ -286,6 +286,7 @@ impl IdentityManager {
                 existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                 existing.status = entry.status;
                 existing.wallet_seed_hash = entry.wallet_seed_hash;
+                existing.dashpay_profile = entry.dashpay_profile;
                 // Append new DPNS names by label, preserving any
                 // pre-existing entries the changeset didn't carry.
                 for name in entry.dpns_names {
@@ -310,6 +311,7 @@ impl IdentityManager {
                 managed.dpns_names = entry.dpns_names;
                 managed.top_ups = entry.top_ups;
                 managed.key_storage = entry.key_storage;
+                managed.dashpay_profile = entry.dashpay_profile;
                 self.identities.insert(id, managed);
                 if self.primary_identity_id.is_none() {
                     self.primary_identity_id = Some(id);
