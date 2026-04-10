@@ -372,9 +372,7 @@ public class WalletService: ObservableObject {
         func onTransactionReceived(
             _ walletId: String,
             _ accountIndex: UInt32,
-            _ txid: Data,
-            _ amount: Int64,
-            _ addresses: [String]
+            _ record: NotOwnedTransactionRecord
         ) {}
 
         func onBalanceUpdated(

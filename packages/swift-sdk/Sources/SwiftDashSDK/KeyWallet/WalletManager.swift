@@ -351,48 +351,12 @@ public class WalletManager {
         return (confirmed: confirmed, unconfirmed: unconfirmed)
     }
 
-    // MARK: - Transaction Processing
-
-    /// Process a transaction through all wallets
-    /// - Parameters:
-    ///   - transactionData: The transaction bytes
-    ///   - contextDetails: Transaction context details
-    ///   - updateStateIfFound: Whether to update wallet state if transaction is relevant
-    /// - Returns: True if transaction was relevant to at least one wallet
-    @discardableResult
-    public func processTransaction(_ transactionData: Data,
-                                  contextDetails: TransactionContextDetails,
-                                  updateStateIfFound: Bool = true) throws -> Bool {
-        var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
-
-        let success = transactionData.withUnsafeBytes { txBytes in
-            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_process_transaction(
-                handle, txPtr, transactionData.count,
-                &ffiContext,
-                updateStateIfFound, &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        return success
-    }
-
     /// Build a signed transaction
     /// - Parameters:
     ///   - accIndex: The account index to use
     ///   - outputs: The transaction outputs
     /// - Returns: The signed transaction bytes and the fee
-    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output]) throws -> (Data, UInt64) {
+    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [TxOutput]) throws -> (Data, UInt64) {
         guard !outputs.isEmpty else {
             throw KeyWalletError.invalidInput("Transaction must have at least one output")
         }
@@ -426,9 +390,6 @@ public class WalletManager {
         defer {
             if error.message != nil {
                 error_message_free(error.message)
-            }
-            for _ in ffiOutputs {
-              // TODO: Memory leak, FFI doesnt expose a way to free the address
             }
             if let ptr = txBytesPtr {
                 transaction_bytes_free(ptr)

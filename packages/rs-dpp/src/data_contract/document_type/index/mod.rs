@@ -1254,4 +1254,213 @@ mod tests {
     fn test_order_by_partial_ord() {
         assert!(OrderBy::Asc < OrderBy::Desc);
     }
+
+    // -----------------------------------------------------------------------
+    // Additional objects_are_conflicting tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_objects_are_conflicting_both_null_values_not_conflicting() {
+        // If either property is null (missing) for either object, they should not conflict
+        let index = make_index("idx", vec![("name", true), ("age", true)], true);
+        // obj1 has name but not age, obj2 has name but not age
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        // Even though "name" matches, "age" is missing in both, so no conflict
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_three_properties_all_match() {
+        let index = make_index("idx", vec![("a", true), ("b", true), ("c", true)], true);
+        let obj1: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(2)),
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        let obj2: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(2)),
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_three_properties_one_different() {
+        let index = make_index("idx", vec![("a", true), ("b", true), ("c", true)], true);
+        let obj1: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(2)),
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        let obj2: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(999)), // different
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_non_unique_same_values_still_false() {
+        // Even with identical values, non-unique index should never conflict
+        let index = make_index("idx", vec![("x", true), ("y", true)], false);
+        let obj1: ValueMap = vec![
+            (Value::Text("x".to_string()), Value::U64(1)),
+            (Value::Text("y".to_string()), Value::U64(2)),
+        ];
+        let obj2: ValueMap = vec![
+            (Value::Text("x".to_string()), Value::U64(1)),
+            (Value::Text("y".to_string()), Value::U64(2)),
+        ];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_first_obj_missing_property() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional ContestedIndexFieldMatch::matches() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_regex_full_match() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("^[0-9]{3}$".to_string()));
+        assert!(m.matches(&Value::Text("123".to_string())));
+        assert!(!m.matches(&Value::Text("1234".to_string())));
+        assert!(!m.matches(&Value::Text("ab3".to_string())));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_empty_string() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("^$".to_string()));
+        assert!(m.matches(&Value::Text("".to_string())));
+        assert!(!m.matches(&Value::Text("x".to_string())));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_null_value() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new(".*".to_string()));
+        assert!(!m.matches(&Value::Null));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_bool_value() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("true".to_string()));
+        assert!(!m.matches(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_zero() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(0);
+        assert!(m.matches(&Value::U64(0)));
+        assert!(!m.matches(&Value::U64(1)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_null_value() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert!(!m.matches(&Value::Null));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_bool_value() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(1);
+        assert!(!m.matches(&Value::Bool(true)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional ContestedIndexFieldMatch Ord tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_ord_regex_same_length() {
+        let a = ContestedIndexFieldMatch::Regex(LazyRegex::new("ab".to_string()));
+        let b = ContestedIndexFieldMatch::Regex(LazyRegex::new("cd".to_string()));
+        // Same length means Equal
+        assert_eq!(a.cmp(&b), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_ord_integer_equal() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(100);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(100);
+        assert_eq!(a.cmp(&b), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_partial_ord_regex_vs_integer() {
+        let regex = ContestedIndexFieldMatch::Regex(LazyRegex::new("abc".to_string()));
+        let integer = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        assert_eq!(regex.partial_cmp(&integer), Some(Ordering::Less));
+        assert_eq!(integer.partial_cmp(&regex), Some(Ordering::Greater));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_partial_ord_integers() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(5);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&a), Some(Ordering::Greater));
+        let c = ContestedIndexFieldMatch::PositiveIntegerMatch(5);
+        assert_eq!(a.partial_cmp(&c), Some(Ordering::Equal));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_partial_ord_regex_by_length() {
+        let short = ContestedIndexFieldMatch::Regex(LazyRegex::new("x".to_string()));
+        let long = ContestedIndexFieldMatch::Regex(LazyRegex::new("xxxxxxxxxxxx".to_string()));
+        assert_eq!(short.partial_cmp(&long), Some(Ordering::Less));
+        assert_eq!(long.partial_cmp(&short), Some(Ordering::Greater));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional IndexProperty::TryFrom<BTreeMap> tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_property_try_from_unknown_direction() {
+        let mut map = BTreeMap::new();
+        map.insert("field".to_string(), "up".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("up"));
+    }
+
+    #[test]
+    fn test_index_property_try_from_empty_map() {
+        let map: BTreeMap<String, String> = BTreeMap::new();
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("empty"));
+    }
+
+    #[test]
+    fn test_index_property_try_from_three_entries_error() {
+        let mut map = BTreeMap::new();
+        map.insert("a".to_string(), "asc".to_string());
+        map.insert("b".to_string(), "desc".to_string());
+        map.insert("c".to_string(), "asc".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("more than one"));
+    }
 }

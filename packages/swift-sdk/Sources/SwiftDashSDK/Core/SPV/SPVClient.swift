@@ -100,7 +100,6 @@ public class SPVClient: @unchecked Sendable {
         dash_spv_ffi_config_set_mempool_tracking(configPtr, true)
         dash_spv_ffi_config_set_mempool_strategy(configPtr, FFIMempoolStrategy(rawValue: 0)) // FetchAll
         _ = dash_spv_ffi_config_set_fetch_mempool_transactions(configPtr, true)
-        _ = dash_spv_ffi_config_set_persist_mempool(configPtr, true)
 
         // Set user agent to include SwiftDashSDK version from the framework bundle
         do {

@@ -487,7 +487,7 @@ struct AccountDetailView: View {
     private var hasInternalExternalAddresses: Bool {
         guard let info = detailInfo else { return false }
         switch info.accountType {
-        case STANDARD_BIP44, STANDARD_BIP32:
+        case FFI_ACCOUNT_TYPE_STANDARD_BIP44, FFI_ACCOUNT_TYPE_STANDARD_BIP32:
             return true
         default:
             return false
@@ -497,11 +497,17 @@ struct AccountDetailView: View {
     private var shouldShowPrivateKeyButton: Bool {
         guard let info = detailInfo else { return false }
         switch info.accountType {
-        case STANDARD_BIP44, STANDARD_BIP32, COIN_JOIN:
+        case FFI_ACCOUNT_TYPE_STANDARD_BIP44, FFI_ACCOUNT_TYPE_STANDARD_BIP32, FFI_ACCOUNT_TYPE_COIN_JOIN:
             // These account types use HD derivation, don't show individual private keys
             return false
-        case IDENTITY_REGISTRATION, IDENTITY_TOP_UP, IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY, IDENTITY_INVITATION,
-             PROVIDER_VOTING_KEYS, PROVIDER_OWNER_KEYS, PROVIDER_OPERATOR_KEYS, PROVIDER_PLATFORM_KEYS:
+        case FFI_ACCOUNT_TYPE_IDENTITY_REGISTRATION,
+             FFI_ACCOUNT_TYPE_IDENTITY_TOP_UP,
+             FFI_ACCOUNT_TYPE_IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY,
+             FFI_ACCOUNT_TYPE_IDENTITY_INVITATION,
+             FFI_ACCOUNT_TYPE_PROVIDER_VOTING_KEYS,
+             FFI_ACCOUNT_TYPE_PROVIDER_OWNER_KEYS,
+             FFI_ACCOUNT_TYPE_PROVIDER_OPERATOR_KEYS,
+             FFI_ACCOUNT_TYPE_PROVIDER_PLATFORM_KEYS:
             // These special accounts have single keys that can be shown
             return true
         default:
@@ -512,27 +518,27 @@ struct AccountDetailView: View {
     private var accountTypeName: String {
         guard let info = detailInfo else { return "Unknown Account" }
         switch info.accountType {
-        case STANDARD_BIP44:
+        case FFI_ACCOUNT_TYPE_STANDARD_BIP44:
             return account.index == 0 ? "Main Account" : "BIP44 Account"
-        case STANDARD_BIP32:
+        case FFI_ACCOUNT_TYPE_STANDARD_BIP32:
             return "BIP32 Account"
-        case COIN_JOIN:
+        case FFI_ACCOUNT_TYPE_COIN_JOIN:
             return "CoinJoin Account"
-        case IDENTITY_REGISTRATION:
+        case FFI_ACCOUNT_TYPE_IDENTITY_REGISTRATION:
             return "Identity Registration"
-        case IDENTITY_TOP_UP:
+        case FFI_ACCOUNT_TYPE_IDENTITY_TOP_UP:
             return "Identity Top-up"
-        case IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY:
+        case FFI_ACCOUNT_TYPE_IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY:
             return "Identity Top-up (Not Bound)"
-        case IDENTITY_INVITATION:
+        case FFI_ACCOUNT_TYPE_IDENTITY_INVITATION:
             return "Identity Invitation"
-        case PROVIDER_VOTING_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_VOTING_KEYS:
             return "Provider Voting Keys"
-        case PROVIDER_OWNER_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_OWNER_KEYS:
             return "Provider Owner Keys"
-        case PROVIDER_OPERATOR_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_OPERATOR_KEYS:
             return "Provider Operator Keys (BLS)"
-        case PROVIDER_PLATFORM_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_PLATFORM_KEYS:
             return "Provider Platform Keys (EdDSA)"
         default:
             return "Special Account"
@@ -542,21 +548,24 @@ struct AccountDetailView: View {
     private var accountTypeColor: Color {
         guard let info = detailInfo else { return .gray }
         switch info.accountType {
-        case STANDARD_BIP44:
+        case FFI_ACCOUNT_TYPE_STANDARD_BIP44:
             return account.index == 0 ? .green : .blue
-        case STANDARD_BIP32:
+        case FFI_ACCOUNT_TYPE_STANDARD_BIP32:
             return .teal
-        case COIN_JOIN:
+        case FFI_ACCOUNT_TYPE_COIN_JOIN:
             return .orange
-        case IDENTITY_REGISTRATION, IDENTITY_TOP_UP, IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY, IDENTITY_INVITATION:
+        case FFI_ACCOUNT_TYPE_IDENTITY_REGISTRATION,
+             FFI_ACCOUNT_TYPE_IDENTITY_TOP_UP,
+             FFI_ACCOUNT_TYPE_IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY,
+             FFI_ACCOUNT_TYPE_IDENTITY_INVITATION:
             return .purple
-        case PROVIDER_VOTING_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_VOTING_KEYS:
             return .red
-        case PROVIDER_OWNER_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_OWNER_KEYS:
             return .pink
-        case PROVIDER_OPERATOR_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_OPERATOR_KEYS:
             return .indigo
-        case PROVIDER_PLATFORM_KEYS:
+        case FFI_ACCOUNT_TYPE_PROVIDER_PLATFORM_KEYS:
             return .cyan
         default:
             return .gray

@@ -11,7 +11,12 @@ struct TransactionListView: View {
     @State private var selectedTransaction: WalletTransaction?
 
     private var sortedTransactions: [WalletTransaction] {
-        transactions.sorted { $0.timestamp > $1.timestamp }
+        transactions.sorted {
+            if $0.isConfirmed != $1.isConfirmed {
+                return !$0.isConfirmed
+            }
+            return $0.timestamp > $1.timestamp
+        }
     }
 
     var body: some View {
@@ -146,9 +151,11 @@ struct TransactionRowView: View {
 
                         Spacer()
 
-                    Text(transaction.date, style: .relative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    if transaction.isConfirmed {
+                        Text(transaction.date, style: .relative)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 // confirmation and amount

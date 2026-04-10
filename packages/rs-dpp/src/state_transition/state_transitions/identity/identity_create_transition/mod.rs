@@ -94,3 +94,121 @@ impl StateTransitionFieldTypes for IdentityCreateTransition {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use crate::state_transition::{
+        StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
+        StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned,
+        StateTransitionType,
+    };
+    use crate::version::LATEST_PLATFORM_VERSION;
+    use platform_value::{BinaryData, Identifier};
+
+    fn make_create() -> IdentityCreateTransition {
+        IdentityCreateTransition::V0(IdentityCreateTransitionV0 {
+            public_keys: vec![],
+            asset_lock_proof: AssetLockProof::default(),
+            user_fee_increase: 0,
+            signature: [0u8; 65].to_vec().into(),
+            identity_id: Identifier::random(),
+        })
+    }
+
+    #[test]
+    fn test_default_versioned() {
+        let t = IdentityCreateTransition::default_versioned(LATEST_PLATFORM_VERSION)
+            .expect("should create default");
+        match t {
+            IdentityCreateTransition::V0(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_serialization_roundtrip() {
+        let t = make_create();
+        let bytes = t.serialize_to_bytes().expect("should serialize");
+        let restored =
+            IdentityCreateTransition::deserialize_from_bytes(&bytes).expect("should deserialize");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_state_transition_like() {
+        let t = make_create();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreate
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        let ids = t.modified_data_ids();
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn test_owner_id() {
+        let t = make_create();
+        match &t {
+            IdentityCreateTransition::V0(v0) => {
+                assert_eq!(t.owner_id(), v0.identity_id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_create();
+        assert_eq!(t.user_fee_increase(), 0);
+        t.set_user_fee_increase(5);
+        assert_eq!(t.user_fee_increase(), 5);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_create();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn test_accessors() {
+        let t = make_create();
+        assert!(t.public_keys().is_empty());
+        assert_ne!(t.identity_id(), Identifier::default());
+    }
+
+    #[test]
+    fn test_field_types() {
+        let sig = IdentityCreateTransition::signature_property_paths();
+        assert_eq!(sig.len(), 2);
+        let ids = IdentityCreateTransition::identifiers_property_paths();
+        assert_eq!(ids.len(), 1);
+        let bin = IdentityCreateTransition::binary_property_paths();
+        assert!(bin.is_empty());
+    }
+
+    #[test]
+    fn test_estimated_fee() {
+        let t = make_create();
+        let fee = t
+            .calculate_min_required_fee(LATEST_PLATFORM_VERSION)
+            .expect("fee calc should work");
+        assert!(fee > 0);
+    }
+
+    #[test]
+    fn test_into_from_v0() {
+        let v0 = IdentityCreateTransitionV0::default();
+        let t: IdentityCreateTransition = v0.clone().into();
+        match t {
+            IdentityCreateTransition::V0(inner) => assert_eq!(inner, v0),
+        }
+    }
+}

@@ -149,16 +149,16 @@ public class CoreWalletManager: ObservableObject {
     /// - Parameters:
     ///   - wallet: The wallet to fund from.
     ///   - accountIndex: BIP44 account index (typically 0).
-    ///   - fundingType: The type of asset lock funding account for key derivation.
-    ///   - identityIndex: Identity index for key derivation (0 for new).
+    ///   - fundingTypes: Array of funding account types for key derivation, one per credit output.
+    ///   - identityIndices: Array of identity indices for key derivation, one per credit output.
     ///   - creditOutputs: Array of (scriptPubKey, amount) pairs for platform credit outputs.
     ///   - feePerKb: Fee rate in duffs per kilobyte (0 for default).
     /// - Returns: `AssetLockTransactionResult` with tx bytes, output index, private key, and fee.
     public func buildAssetLockTransaction(
         for wallet: HDWallet,
         accountIndex: UInt32 = 0,
-        fundingType: AssetLockFundingType = .assetLockAddressTopUp,
-        identityIndex: UInt32 = 0,
+        fundingTypes: [AssetLockFundingType] = [.assetLockAddressTopUp],
+        identityIndices: [UInt32] = [0],
         creditOutputs: [(scriptPubKey: Data, amount: UInt64)],
         feePerKb: UInt64 = 1000
     ) throws -> AssetLockTransactionResult {
@@ -170,11 +170,16 @@ public class CoreWalletManager: ObservableObject {
         guard count > 0 else {
             throw WalletError.walletError("At least one credit output required")
         }
+        guard fundingTypes.count == count, identityIndices.count == count else {
+            throw WalletError.walletError("fundingTypes and identityIndices must have the same length as creditOutputs")
+        }
 
         // Concatenate all scripts into a single contiguous buffer
         // and build an array of pointers into it
         var scriptLens: [Int] = creditOutputs.map { $0.scriptPubKey.count }
         var amounts: [UInt64] = creditOutputs.map { $0.amount }
+        var fundingTypesRaw: [FFIAssetLockFundingType] = fundingTypes.map { FFIAssetLockFundingType(rawValue: $0.rawValue) }
+        var identityIndicesRaw: [UInt32] = identityIndices
         var concatenatedScripts = Data()
         for output in creditOutputs {
             concatenatedScripts.append(output.scriptPubKey)
@@ -183,7 +188,7 @@ public class CoreWalletManager: ObservableObject {
         var feeOut: UInt64 = 0
         var txBytesOut: UnsafeMutablePointer<UInt8>? = nil
         var txLenOut: Int = 0
-        var outputIndexOut: UInt32 = 0
+        let outputIndexOut: UInt32 = 0
         var privateKeyOut: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -207,27 +212,30 @@ public class CoreWalletManager: ObservableObject {
             return scriptPtrs.withUnsafeMutableBufferPointer { scriptPtrsBuffer in
                 scriptLens.withUnsafeMutableBufferPointer { scriptLensBuffer in
                     amounts.withUnsafeMutableBufferPointer { amountsBuffer in
-                        wallet_build_and_sign_asset_lock_transaction(
-                            sdkWalletManager.handle,
-                            sdkWallet.handle,
-                            accountIndex,
-                            fundingType.rawValue,
-                            identityIndex,
-                            scriptPtrsBuffer.baseAddress,
-                            scriptLensBuffer.baseAddress,
-                            amountsBuffer.baseAddress,
-                            count,
-                            feePerKb,
-                            &feeOut,
-                            &txBytesOut,
-                            &txLenOut,
-                        &outputIndexOut,
-                        &privateKeyOut,
-                        &ffiError
-                    )
+                        fundingTypesRaw.withUnsafeMutableBufferPointer { fundingTypesBuffer in
+                            identityIndicesRaw.withUnsafeMutableBufferPointer { identityIndicesBuffer in
+                                wallet_build_and_sign_asset_lock_transaction(
+                                    sdkWalletManager.handle,
+                                    sdkWallet.handle,
+                                    accountIndex,
+                                    fundingTypesBuffer.baseAddress,
+                                    identityIndicesBuffer.baseAddress,
+                                    scriptPtrsBuffer.baseAddress,
+                                    scriptLensBuffer.baseAddress,
+                                    amountsBuffer.baseAddress,
+                                    count,
+                                    feePerKb,
+                                    &feeOut,
+                                    &txBytesOut,
+                                    &txLenOut,
+                                    &privateKeyOut,
+                                    &ffiError
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        }
         }
 
         guard success else {
@@ -309,7 +317,7 @@ public class CoreWalletManager: ObservableObject {
     ///   - accountIndex: The account index to use
     ///   - outputs: The transaction outputs
     /// - Returns: The signed transaction bytes
-    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output]) throws -> (Data, UInt64) {
+    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [TxOutput]) throws -> (Data, UInt64) {
         try sdkWalletManager.buildSignedTransaction(for: wallet, accIndex: accIndex, outputs: outputs)
     }
 
