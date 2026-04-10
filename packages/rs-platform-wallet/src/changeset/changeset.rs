@@ -87,10 +87,20 @@ pub struct IdentityEntry {
 }
 
 /// Changes to the identity store.
+///
+/// Carries inserted/updated identities, tombstones for removals, and
+/// wallet-level metadata mutated via [`IdentityManager`](crate::wallet::identity::IdentityManager)
+/// (primary identity selection, gap-limit scan watermark).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct IdentityChangeSet {
     /// Inserted or updated identities keyed by identifier.
     pub identities: BTreeMap<Identifier, IdentityEntry>,
+    /// Identities removed from the wallet.
+    pub removed: BTreeSet<Identifier>,
+    /// New primary identity selection. `None` means no change.
+    pub primary_identity: Option<Identifier>,
+    /// New gap-limit scan watermark. `None` means no change.
+    pub last_scanned_index: Option<u32>,
 }
 
 impl Merge for IdentityChangeSet {
@@ -124,10 +134,24 @@ impl Merge for IdentityChangeSet {
                 })
                 .or_insert(entry);
         }
+        self.removed.extend(other.removed);
+        if other.primary_identity.is_some() {
+            self.primary_identity = other.primary_identity;
+        }
+        // Scan watermark only grows.
+        if let Some(other_idx) = other.last_scanned_index {
+            self.last_scanned_index = Some(match self.last_scanned_index {
+                Some(cur) => cur.max(other_idx),
+                None => other_idx,
+            });
+        }
     }
 
     fn is_empty(&self) -> bool {
         self.identities.is_empty()
+            && self.removed.is_empty()
+            && self.primary_identity.is_none()
+            && self.last_scanned_index.is_none()
     }
 }
 
@@ -145,27 +169,44 @@ pub struct ContactRequestEntry {
 }
 
 /// Changes to the DashPay contact store.
+///
+/// All maps and sets key by `(owner_identity_id, contact_identity_id)` —
+/// the first element is always the identity owned by this wallet. This
+/// matches `ManagedIdentity`'s per-identity `sent_contact_requests` /
+/// `incoming_contact_requests` / `established_contacts` layout and the
+/// evo-tool DB shape, so `apply_changeset` can route each entry to the
+/// correct `ManagedIdentity` without disambiguation logic.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ContactChangeSet {
-    /// Sent contact requests keyed by (our identity, recipient identity).
+    /// Sent contact requests keyed by (owner, recipient).
     pub sent_requests: BTreeMap<(Identifier, Identifier), ContactRequestEntry>,
-    /// Incoming contact requests keyed by (sender identity, our identity).
+    /// Sent requests removed (typically because they were promoted to
+    /// an established contact).
+    pub removed_sent: BTreeSet<(Identifier, Identifier)>,
+    /// Incoming contact requests keyed by (owner, sender).
     pub incoming_requests: BTreeMap<(Identifier, Identifier), ContactRequestEntry>,
+    /// Incoming requests removed (typically because they were promoted
+    /// to an established contact).
+    pub removed_incoming: BTreeSet<(Identifier, Identifier)>,
     /// Newly established contacts (bidirectional): set of
-    /// (our identity, contact identity) pairs.
+    /// `(owner, contact)` pairs.
     pub established: BTreeSet<(Identifier, Identifier)>,
 }
 
 impl Merge for ContactChangeSet {
     fn merge(&mut self, other: Self) {
         self.sent_requests.extend(other.sent_requests);
+        self.removed_sent.extend(other.removed_sent);
         self.incoming_requests.extend(other.incoming_requests);
+        self.removed_incoming.extend(other.removed_incoming);
         self.established.extend(other.established);
     }
 
     fn is_empty(&self) -> bool {
         self.sent_requests.is_empty()
+            && self.removed_sent.is_empty()
             && self.incoming_requests.is_empty()
+            && self.removed_incoming.is_empty()
             && self.established.is_empty()
     }
 }
@@ -178,21 +219,26 @@ impl Merge for ContactChangeSet {
 ///
 /// Mirrors [`PlatformWalletInfo.platform_address_balances`] exactly:
 /// a map from [`PlatformAddress`] (P2PKH or P2SH) to [`Credits`]
-/// (the balance in duffs). Last-write-wins on merge.
+/// (the balance in duffs). Plus a tombstone set for addresses whose
+/// balance dropped to zero / address was spent out during a transfer
+/// or withdrawal. Last-write-wins on merge.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
     /// Updated platform addresses keyed by `PlatformAddress`.
     pub addresses: BTreeMap<PlatformAddress, Credits>,
+    /// Addresses removed from the cache (e.g. drained by a transfer/withdraw).
+    pub removed: BTreeSet<PlatformAddress>,
 }
 
 impl Merge for PlatformAddressChangeSet {
     fn merge(&mut self, other: Self) {
         // Last write wins — the latest balance is the most current.
         self.addresses.extend(other.addresses);
+        self.removed.extend(other.removed);
     }
 
     fn is_empty(&self) -> bool {
-        self.addresses.is_empty()
+        self.addresses.is_empty() && self.removed.is_empty()
     }
 }
 
@@ -209,6 +255,8 @@ pub struct AssetLockChangeSet {
     /// independently because a single transaction can have up to 255
     /// credit outputs (DIP-0027), each consumable separately.
     pub asset_locks: BTreeMap<OutPoint, AssetLockEntry>,
+    /// Asset locks removed (consumed by identity registration / top-up).
+    pub removed: BTreeSet<OutPoint>,
 }
 
 /// A single asset lock entry in the changeset.
@@ -239,10 +287,11 @@ impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
         // Last write wins — later status is higher finality.
         self.asset_locks.extend(other.asset_locks);
+        self.removed.extend(other.removed);
     }
 
     fn is_empty(&self) -> bool {
-        self.asset_locks.is_empty()
+        self.asset_locks.is_empty() && self.removed.is_empty()
     }
 }
 
@@ -255,28 +304,43 @@ impl Merge for AssetLockChangeSet {
 /// Mirrors `PlatformWalletInfo.token_balances`
 /// (`BTreeMap<(Identifier, Identifier), TokenAmount>`) and
 /// `PlatformWalletInfo.token_watched`
-/// (`BTreeMap<Identifier, BTreeSet<Identifier>>`).
+/// (`BTreeMap<Identifier, BTreeSet<Identifier>>`), plus tombstones for
+/// entries removed by `unwatch` / `unwatch_identity`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TokenBalanceChangeSet {
     /// Updated token balances keyed by `(identity_id, token_id)`.
     /// Last write wins on merge.
     pub balances: BTreeMap<(Identifier, Identifier), u64>,
 
+    /// Balances removed (`unwatch` / `unwatch_identity` / sync returned `None`).
+    pub removed_balances: BTreeSet<(Identifier, Identifier)>,
+
     /// Tokens newly watched per identity.
     /// Merged via set union on the inner `BTreeSet`.
     pub watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
+
+    /// Tokens unwatched per identity.
+    /// Merged via set union on the inner `BTreeSet`.
+    pub unwatched: BTreeMap<Identifier, BTreeSet<Identifier>>,
 }
 
 impl Merge for TokenBalanceChangeSet {
     fn merge(&mut self, other: Self) {
         self.balances.extend(other.balances);
+        self.removed_balances.extend(other.removed_balances);
         for (identity_id, tokens) in other.watched {
             self.watched.entry(identity_id).or_default().extend(tokens);
+        }
+        for (identity_id, tokens) in other.unwatched {
+            self.unwatched.entry(identity_id).or_default().extend(tokens);
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.balances.is_empty() && self.watched.is_empty()
+        self.balances.is_empty()
+            && self.removed_balances.is_empty()
+            && self.watched.is_empty()
+            && self.unwatched.is_empty()
     }
 }
 
@@ -432,6 +496,7 @@ mod tests {
                     );
                     m
                 },
+                removed: Default::default(),
             }),
             ..Default::default()
         };

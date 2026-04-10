@@ -83,7 +83,7 @@ impl AssetLockManager {
 
         let wm = self.wallet_manager.read().await;
         let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
-            return AssetLockChangeSet { asset_locks: Default::default() };
+            return AssetLockChangeSet::default();
         };
         let entries = info
             .tracked_asset_locks
@@ -106,6 +106,7 @@ impl AssetLockManager {
             .collect();
         AssetLockChangeSet {
             asset_locks: entries,
+            removed: Default::default(),
         }
     }
 
