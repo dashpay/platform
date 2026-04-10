@@ -150,6 +150,53 @@ impl ManagedIdentity {
 
         (Some(contact), cs)
     }
+
+    /// Bump the BIP44 `highest_receive_index` on an established contact
+    /// to at least `index` and return a full-snapshot
+    /// [`ContactChangeSet`](crate::changeset::ContactChangeSet).
+    ///
+    /// Monotonic — if `index` is not greater than the current value
+    /// the call is a no-op and returns an empty changeset. If the
+    /// contact doesn't exist the call is a no-op (caller is expected
+    /// to only call this for established contacts).
+    pub fn bump_contact_highest_receive_index(
+        &mut self,
+        contact_id: &Identifier,
+        index: u32,
+    ) -> ContactChangeSet {
+        let owner_id = self.id();
+        let Some(contact) = self.established_contacts.get_mut(contact_id) else {
+            return ContactChangeSet::default();
+        };
+        if !contact.bump_highest_receive_index(index) {
+            return ContactChangeSet::default();
+        }
+        let mut cs = ContactChangeSet::default();
+        cs.established
+            .insert((owner_id, *contact_id), contact.clone());
+        cs
+    }
+
+    /// Set the SPV bloom-filter registered count on an established
+    /// contact and return a full-snapshot
+    /// [`ContactChangeSet`](crate::changeset::ContactChangeSet).
+    ///
+    /// Last-write-wins — callers pass the fresh authoritative value.
+    pub fn set_contact_bloom_registered_count(
+        &mut self,
+        contact_id: &Identifier,
+        count: u32,
+    ) -> ContactChangeSet {
+        let owner_id = self.id();
+        let Some(contact) = self.established_contacts.get_mut(contact_id) else {
+            return ContactChangeSet::default();
+        };
+        contact.set_bloom_registered_count(count);
+        let mut cs = ContactChangeSet::default();
+        cs.established
+            .insert((owner_id, *contact_id), contact.clone());
+        cs
+    }
 }
 
 // --- Apply (restore from changeset) ---

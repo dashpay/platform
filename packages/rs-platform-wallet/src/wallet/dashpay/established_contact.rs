@@ -31,6 +31,21 @@ pub struct EstablishedContact {
 
     /// List of accepted account references beyond the default
     pub accepted_accounts: Vec<u32>,
+
+    /// Next BIP44 receive index to hand out when the owner sends a
+    /// payment to this contact. Advances monotonically.
+    pub next_send_index: u32,
+
+    /// Highest BIP44 receive index observed incoming from this
+    /// contact (i.e. the largest index their wallet has used when
+    /// paying us). Advances monotonically — never regresses on
+    /// replay.
+    pub highest_receive_index: u32,
+
+    /// Number of addresses currently registered in the SPV bloom
+    /// filter for incoming payments from this contact. Used to
+    /// avoid redundant re-registration.
+    pub bloom_registered_count: u32,
 }
 
 impl EstablishedContact {
@@ -48,7 +63,29 @@ impl EstablishedContact {
             note: None,
             is_hidden: false,
             accepted_accounts: Vec::new(),
+            next_send_index: 0,
+            highest_receive_index: 0,
+            bloom_registered_count: 0,
         }
+    }
+
+    /// Advance `highest_receive_index` to at least `index`.
+    ///
+    /// Monotonic — does nothing if `index` is less than the current
+    /// value. Returns `true` iff the index actually advanced.
+    pub fn bump_highest_receive_index(&mut self, index: u32) -> bool {
+        if index > self.highest_receive_index {
+            self.highest_receive_index = index;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the bloom-filter registered count (last-write-wins —
+    /// callers are expected to pass the fresh authoritative value).
+    pub fn set_bloom_registered_count(&mut self, count: u32) {
+        self.bloom_registered_count = count;
     }
 
     /// Set the alias for this contact

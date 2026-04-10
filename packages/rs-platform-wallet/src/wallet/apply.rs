@@ -957,6 +957,114 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_bump_contact_highest_receive_index() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        // Both wallets: seed the owner identity and auto-establish a
+        // contact by sending + receiving matching requests.
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&Identifier::from([1u8; 32]))
+                .expect("managed");
+            let _ = managed.add_incoming_contact_request(make_test_contact_request(2, 1));
+            let _ = managed.add_sent_contact_request(make_test_contact_request(1, 2));
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let other = Identifier::from([2u8; 32]);
+
+        // Bump on A (from 0 → 7) and apply to B.
+        let cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a")
+            .bump_contact_highest_receive_index(&other, 7);
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_contacts(cs))
+            .expect("apply bump");
+
+        let b_managed = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b");
+        let b_contact = b_managed
+            .established_contacts
+            .get(&other)
+            .expect("established contact");
+        assert_eq!(b_contact.highest_receive_index, 7);
+
+        // Stale bump (index 3) is a no-op — emits empty changeset,
+        // doesn't regress B.
+        let stale = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a")
+            .bump_contact_highest_receive_index(&other, 3);
+        assert!(<ContactChangeSet as crate::changeset::Merge>::is_empty(
+            &stale
+        ));
+        assert_eq!(
+            info_a
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("a")
+                .established_contacts
+                .get(&other)
+                .unwrap()
+                .highest_receive_index,
+            7
+        );
+    }
+
+    #[test]
+    fn round_trip_set_contact_bloom_registered_count() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&Identifier::from([1u8; 32]))
+                .expect("managed");
+            let _ = managed.add_incoming_contact_request(make_test_contact_request(2, 1));
+            let _ = managed.add_sent_contact_request(make_test_contact_request(1, 2));
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let other = Identifier::from([2u8; 32]);
+
+        let cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a")
+            .set_contact_bloom_registered_count(&other, 42);
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_contacts(cs))
+            .expect("apply set");
+
+        let b_contact = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b")
+            .established_contacts
+            .get(&other)
+            .expect("established contact");
+        assert_eq!(b_contact.bloom_registered_count, 42);
+    }
+
+    #[test]
     fn round_trip_remove_contact_request() {
         let mut wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
