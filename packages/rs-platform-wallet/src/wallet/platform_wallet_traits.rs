@@ -118,8 +118,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.balance()
     }
 
-    fn update_balance(&mut self) {
-        self.core_wallet.update_balance();
+    fn update_balance(&mut self) -> key_wallet::changeset::WalletChangeSet {
+        self.core_wallet.update_balance()
     }
 
     fn transaction_history(&self) -> Vec<&TransactionRecord> {
@@ -146,7 +146,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.update_synced_height(current_height);
     }
 
-    fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
+    fn mark_instant_send_utxos(
+        &mut self,
+        txid: &Txid,
+        lock: &InstantLock,
+    ) -> (bool, key_wallet::changeset::WalletChangeSet) {
         self.core_wallet.mark_instant_send_utxos(txid, lock)
     }
 
