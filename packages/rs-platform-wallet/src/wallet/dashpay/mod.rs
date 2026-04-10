@@ -15,6 +15,6 @@ pub use dip14::{
     derive_contact_xpub, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use established_contact::EstablishedContact;
-pub use payment::{PaymentDirection, PaymentEntry, PaymentStatus};
+pub use payment::{DashpayAddressMatch, PaymentDirection, PaymentEntry, PaymentStatus};
 pub use profile::DashPayProfile;
 pub use wallet::DashPayWallet;

@@ -24,6 +24,7 @@ use dash_sdk::platform::dashpay::{EcdhProvider, SendContactRequestInput};
 use crate::error::PlatformWalletError;
 use crate::wallet::dashpay::contact_request::ContactRequest;
 use crate::wallet::dashpay::established_contact::EstablishedContact;
+use crate::wallet::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::IdentitySigner;
 
@@ -684,6 +685,94 @@ impl DashPayWallet {
             })?;
 
         Ok(())
+    }
+
+    /// Match an on-chain address against this wallet's registered
+    /// DashPay contact receival accounts.
+    ///
+    /// Iterates every `DashpayReceivingFunds` account in this
+    /// wallet's [`key_wallet::managed_account::ManagedAccountCollection`]
+    /// and checks whether the address belongs to any of their
+    /// address pools. Returns the first match as a
+    /// [`DashpayAddressMatch`], or `None` if the address is not
+    /// a DashPay contact address for this wallet.
+    ///
+    /// Used by the SPV / backend task layer to classify observed
+    /// transaction outputs as DashPay incoming payments from a
+    /// specific contact — replaces the redundant
+    /// `dashpay_address_mappings` reverse-lookup table the UI
+    /// layer used to maintain. The authoritative state is already
+    /// tracked by `register_contact_account`, which inserts the
+    /// account into the wallet's `ManagedAccountCollection` so
+    /// key-wallet manages the address pool (derivation + gap limit
+    /// + used tracking).
+    ///
+    /// Only the external pool of each receival account is
+    /// searched: DashPay uses a single-pool account type so all
+    /// contact payment addresses live on that one pool.
+    pub async fn match_incoming_dashpay_address(
+        &self,
+        address: &dashcore::Address,
+    ) -> Option<DashpayAddressMatch> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id)?;
+        Self::match_in_collection(info, address)
+    }
+
+    /// Blocking variant of [`match_incoming_dashpay_address`] for
+    /// sync callers (SPV transaction-processing frame loop). Uses
+    /// `tokio::sync::RwLock::blocking_read` — must NOT be called
+    /// from within a tokio async context.
+    pub fn match_incoming_dashpay_address_blocking(
+        &self,
+        address: &dashcore::Address,
+    ) -> Option<DashpayAddressMatch> {
+        let wm = self.wallet_manager.blocking_read();
+        let info = wm.get_wallet_info(&self.wallet_id)?;
+        Self::match_in_collection(info, address)
+    }
+
+    /// Shared implementation that iterates
+    /// `info.core_wallet.accounts.dashpay_receival_accounts` and
+    /// checks each account's address pool for a match.
+    fn match_in_collection(
+        info: &PlatformWalletInfo,
+        address: &dashcore::Address,
+    ) -> Option<DashpayAddressMatch> {
+        use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+
+        for (key, account) in &info.core_wallet.accounts.dashpay_receival_accounts {
+            let ManagedAccountType::DashpayReceivingFunds {
+                index: account_index,
+                user_identity_id,
+                friend_identity_id,
+                ..
+            } = &account.account_type
+            else {
+                // Routing invariant: dashpay_receival_accounts must
+                // only contain DashpayReceivingFunds. If this ever
+                // trips, it's a key-wallet bug.
+                debug_assert!(
+                    false,
+                    "non-DashpayReceivingFunds in dashpay_receival_accounts"
+                );
+                continue;
+            };
+            let Some(info) = account.get_address_info(address) else {
+                continue;
+            };
+            // Sanity check — the collection key should match the
+            // account type's own identity ids.
+            debug_assert_eq!(&key.user_identity_id, user_identity_id);
+            debug_assert_eq!(&key.friend_identity_id, friend_identity_id);
+            return Some(DashpayAddressMatch {
+                user_identity_id: Identifier::from(*user_identity_id),
+                friend_identity_id: Identifier::from(*friend_identity_id),
+                account_index: *account_index,
+                address_index: info.index,
+            });
+        }
+        None
     }
 
     /// # Arguments
