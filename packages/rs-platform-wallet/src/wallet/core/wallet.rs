@@ -87,7 +87,7 @@ impl CoreWallet {
                 ))
             })?;
         account
-            .next_receive_address(Some(&xpub), true)
+            .next_receive_address(Some(&xpub))
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
@@ -113,7 +113,7 @@ impl CoreWallet {
                 ))
             })?;
         account
-            .next_receive_address(Some(&xpub), true)
+            .next_receive_address(Some(&xpub))
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
@@ -146,7 +146,7 @@ impl CoreWallet {
                 ))
             })?;
         account
-            .next_change_address(Some(&xpub), true)
+            .next_change_address(Some(&xpub))
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
@@ -172,7 +172,7 @@ impl CoreWallet {
                 ))
             })?;
         account
-            .next_change_address(Some(&xpub), true)
+            .next_change_address(Some(&xpub))
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
     // TODO: Why we need this?

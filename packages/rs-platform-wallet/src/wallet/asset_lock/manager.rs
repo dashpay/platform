@@ -499,13 +499,13 @@ impl AssetLockManager {
             }
         };
 
-        // Get the next unused address from the pool.  We pass
-        // `add_to_state: true` so that a newly-generated address is stored
-        // in the pool and the builder's `next_private_key` can find it.
-        // The address is NOT marked as used yet — that happens inside the
+        // Get the next unused address from the pool. `next_address`
+        // always persists the newly-generated address into the pool's
+        // state so the builder's `next_private_key` can find it. The
+        // address is NOT marked as used yet — that happens inside the
         // builder after a successful transaction build.
         managed_account
-            .next_address(account_xpub.as_ref(), true)
+            .next_address(account_xpub.as_ref())
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Failed to get next funding address: {}",
