@@ -75,21 +75,9 @@ impl PlatformWalletInfo {
     /// using `wallet` as the source of HD key material for any account
     /// types that need to be re-derived.
     ///
-    /// Consumes the changeset by value so every owned field
-    /// (`Identity` blobs, `KeyStorage`, `dpns_names`, `ContactRequest`s,
-    /// `EstablishedContact`s, the `Transaction` inside each
-    /// `AssetLockEntry`) moves directly into the in-memory maps with
-    /// no clones. The borrow form was deliberately removed — the
-    /// persister-load case (deserialize → apply once → drop) makes
-    /// any clone pure waste, and a `&` variant existing alongside
-    /// this one would just invite the wrong overload to be reached
-    /// for. Tests that need to apply the same changeset twice
-    /// `.clone()` it explicitly at the call site.
-    ///
-    /// See the module docs for invariants and ordering. Typical caller
-    /// is the persister loader on startup, holding the
-    /// `WalletManager` write lock to obtain the split borrow of
-    /// `(&mut Wallet, &mut PlatformWalletInfo)`.
+    /// Consumes the changeset by value; tests that replay must
+    /// `.clone()` at the call site. See the module docs for
+    /// invariants and ordering.
     pub fn apply_changeset(
         &mut self,
         wallet: &mut Wallet,
@@ -118,13 +106,14 @@ impl PlatformWalletInfo {
 
         // 2. Identities.
         if let Some(id_cs) = identities {
-            // Stash the structural fields before draining `identities`
-            // so the primary-identity fixup below can still see them.
-            let removed = id_cs.removed;
-            let new_primary = id_cs.primary_identity;
-            let new_scan_index = id_cs.last_scanned_index;
+            let crate::changeset::IdentityChangeSet {
+                identities,
+                removed,
+                primary_identity: new_primary,
+                last_scanned_index: new_scan_index,
+            } = id_cs;
 
-            for (_id, entry) in id_cs.identities {
+            for (_id, entry) in identities {
                 self.identity_manager.apply_identity_entry(entry);
             }
             for removed_id in &removed {
@@ -1068,8 +1057,6 @@ mod tests {
         tombstone.removed.insert(id_a);
         let cs = wrap_id(tombstone);
 
-        // Idempotent tombstone replay: explicit clone for the first
-        // apply.
         info.apply_changeset(&mut wallet, cs.clone()).expect("first remove");
         info.apply_changeset(&mut wallet, cs).expect("second remove (no-op)");
 
@@ -1202,7 +1189,6 @@ mod tests {
             ..Default::default()
         };
 
-        // Idempotent double-apply: explicit clone for the first call.
         info.apply_changeset(&mut wallet, cs.clone()).expect("first apply");
         info.apply_changeset(&mut wallet, cs).expect("second apply");
 
