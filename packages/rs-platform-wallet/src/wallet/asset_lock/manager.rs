@@ -166,21 +166,84 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
-    /// Remove an asset lock after successful consumption (registration or top-up).
-    pub(crate) async fn remove_asset_lock(&self, out_point: &OutPoint) {
+    /// Track a new asset lock in memory, returning a changeset describing
+    /// the inserted entry.
+    ///
+    /// If an entry already exists at `out_point`, it is overwritten.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn track_asset_lock(
+        &self,
+        out_point: OutPoint,
+        transaction: Transaction,
+        account_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        amount_duffs: u64,
+        status: AssetLockStatus,
+        proof: Option<dpp::prelude::AssetLockProof>,
+    ) -> AssetLockChangeSet {
+        use crate::changeset::AssetLockEntry;
+
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = AssetLockChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            info.tracked_asset_locks.remove(out_point);
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction: transaction.clone(),
+                    account_index,
+                    funding_type,
+                    identity_index,
+                    amount: amount_duffs,
+                    status: status.clone(),
+                    proof: proof.clone(),
+                },
+            );
+            cs.asset_locks.insert(
+                out_point,
+                AssetLockEntry {
+                    out_point,
+                    transaction,
+                    account_index,
+                    funding_type,
+                    identity_index,
+                    amount_duffs,
+                    status,
+                    proof,
+                },
+            );
         }
+        cs
+    }
+
+    /// Remove an asset lock after successful consumption (registration or top-up).
+    ///
+    /// Returns an [`AssetLockChangeSet`] tombstoning the removed entry
+    /// (empty if the lock was not tracked).
+    pub(crate) async fn remove_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
+        let mut wm = self.wallet_manager.write().await;
+        let mut cs = AssetLockChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            if info.tracked_asset_locks.remove(out_point).is_some() {
+                cs.removed.insert(*out_point);
+            }
+        }
+        cs
     }
 
     /// Advance the status of a tracked asset lock and optionally attach the proof.
+    ///
+    /// Returns an [`AssetLockChangeSet`] carrying a full snapshot of the
+    /// updated entry.
     async fn advance_asset_lock_status(
         &self,
         out_point: &OutPoint,
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<AssetLockChangeSet, PlatformWalletError> {
+        use crate::changeset::AssetLockEntry;
+
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
@@ -197,7 +260,22 @@ impl AssetLockManager {
         if proof.is_some() {
             entry.proof = proof;
         }
-        Ok(())
+
+        let mut cs = AssetLockChangeSet::default();
+        cs.asset_locks.insert(
+            *out_point,
+            AssetLockEntry {
+                out_point: entry.out_point,
+                transaction: entry.transaction.clone(),
+                account_index: entry.account_index,
+                funding_type: entry.funding_type,
+                identity_index: entry.identity_index,
+                amount_duffs: entry.amount,
+                status: entry.status.clone(),
+                proof: entry.proof.clone(),
+            },
+        );
+        Ok(cs)
     }
 }
 
@@ -563,24 +641,19 @@ impl AssetLockManager {
         let out_point = OutPoint::new(txid, 0);
 
         // 2. Track as Built.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                info.tracked_asset_locks.insert(
-                    out_point,
-                    TrackedAssetLock {
-                        out_point,
-                        transaction: tx.clone(),
-                        account_index,
-                        funding_type,
-                        identity_index,
-                        amount: amount_duffs,
-                        status: AssetLockStatus::Built,
-                        proof: None,
-                    },
-                );
-            }
-        }
+        // TODO(Phase 9a-6): forward the returned changeset to the persister.
+        let _cs_built = self
+            .track_asset_lock(
+                out_point,
+                tx.clone(),
+                account_index,
+                funding_type,
+                identity_index,
+                amount_duffs,
+                AssetLockStatus::Built,
+                None,
+            )
+            .await;
 
         // NOTE: The tracked lock is now in memory but NOT persisted to storage.
         // If the app crashes after the broadcast below but before this method
@@ -596,7 +669,9 @@ impl AssetLockManager {
         self.broadcaster.broadcast(&tx).await?;
 
         // 4. Transition to Broadcast.
-        self.advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
+        // TODO(Phase 9a-6): forward the returned changesets to the persister.
+        let _cs_broadcast = self
+            .advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
             .await?;
 
         // 5. Wait for proof via SPV events.
@@ -616,7 +691,8 @@ impl AssetLockManager {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
-        self.advance_asset_lock_status(&out_point, status, Some(proof.clone()))
+        let _cs_final = self
+            .advance_asset_lock_status(&out_point, status, Some(proof.clone()))
             .await?;
 
         Ok((proof, key, out_point))
@@ -1008,7 +1084,9 @@ impl AssetLockManager {
             AssetLockStatus::Built => {
                 // Re-broadcast and wait for proof.
                 self.broadcaster.broadcast(&tx).await?;
-                self.advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
+                // TODO(Phase 9a-6): forward the returned changeset to the persister.
+                let _cs = self
+                    .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
@@ -1038,7 +1116,9 @@ impl AssetLockManager {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
-        self.advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
+        // TODO(Phase 9a-6): forward the returned changeset to the persister.
+        let _cs = self
+            .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
             .await?;
 
         // 4. Re-derive the one-time private key.

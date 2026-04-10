@@ -276,7 +276,7 @@ fn test_reject_contact_request() {
     assert_eq!(managed_a.incoming_contact_requests.len(), 1);
 
     // Reject by removing the request
-    let removed = managed_a.remove_incoming_contact_request(&id_b);
+    let (removed, _cs) = managed_a.remove_incoming_contact_request(&id_b);
     assert!(removed.is_some());
     assert_eq!(managed_a.incoming_contact_requests.len(), 0);
 }
@@ -299,7 +299,7 @@ fn test_cancel_sent_contact_request() {
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
 
     // Cancel by removing the request
-    let removed = managed_a.remove_sent_contact_request(&id_b);
+    let (removed, _cs) = managed_a.remove_sent_contact_request(&id_b);
     assert!(removed.is_some());
     assert_eq!(managed_a.sent_contact_requests.len(), 0);
 }

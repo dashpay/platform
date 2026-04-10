@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
 /// How a private key is stored/resolved.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrivateKeyData {
     /// Raw key bytes in memory (zeroized on drop).
     Clear(Zeroizing<[u8; 32]>),

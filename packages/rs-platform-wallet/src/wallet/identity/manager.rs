@@ -6,6 +6,7 @@
 use super::managed_identity::key_storage::IdentityStatus;
 use super::managed_identity::ManagedIdentity;
 use super::managed_identity::WatchedIdentity;
+use crate::changeset::{IdentityChangeSet, IdentityEntry};
 use crate::error::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -51,11 +52,15 @@ impl IdentityManager {
     ///
     /// Every identity in this wallet must have its HD index so that signing
     /// and ECDH derivation can locate the correct keys.
+    ///
+    /// Returns an [`IdentityChangeSet`] carrying a full snapshot of the
+    /// new identity and, if this is the first identity, the `primary_identity`
+    /// selection.
     pub fn add_identity(
         &mut self,
         identity: Identity,
         identity_index: u32,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<IdentityChangeSet, PlatformWalletError> {
         let identity_id = identity.id();
 
         if self.identities.contains_key(&identity_id) {
@@ -63,14 +68,19 @@ impl IdentityManager {
         }
 
         let managed_identity = ManagedIdentity::new(identity, identity_index);
+        let entry = IdentityEntry::from_managed(&managed_identity);
         self.identities.insert(identity_id, managed_identity);
+
+        let mut cs = IdentityChangeSet::default();
+        cs.identities.insert(identity_id, entry);
 
         // If this is the first identity, make it primary
         if self.identities.len() == 1 {
             self.primary_identity_id = Some(identity_id);
+            cs.primary_identity = Some(identity_id);
         }
 
-        Ok(())
+        Ok(cs)
     }
 
     /// Get the BIP-9 HD identity index for a given identity ID.
@@ -80,21 +90,35 @@ impl IdentityManager {
         self.identities.get(identity_id).map(|m| m.identity_index)
     }
 
-    /// Remove an identity from the manager
+    /// Remove an identity from the manager.
+    ///
+    /// Returns the removed [`Identity`] and an [`IdentityChangeSet`] with a
+    /// tombstone and — if the removed identity was primary and another
+    /// identity took its place — the new primary selection.
+    ///
+    /// Note: if the removed identity was the only one, `primary_identity`
+    /// in the changeset remains `None`; the apply path must re-derive the
+    /// cleared state from the `removed` set alone.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,
-    ) -> Result<Identity, PlatformWalletError> {
+    ) -> Result<(Identity, IdentityChangeSet), PlatformWalletError> {
         let managed_identity = self
             .identities
             .shift_remove(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
+        let mut cs = IdentityChangeSet::default();
+        cs.removed.insert(*identity_id);
+
         if self.primary_identity_id == Some(*identity_id) {
             self.primary_identity_id = self.identities.keys().next().copied();
+            if let Some(new_primary) = self.primary_identity_id {
+                cs.primary_identity = Some(new_primary);
+            }
         }
 
-        Ok(managed_identity.identity)
+        Ok((managed_identity.identity, cs))
     }
 }
 
@@ -137,16 +161,20 @@ impl IdentityManager {
             .map(|m| &m.identity)
     }
 
-    /// Set the primary identity
+    /// Set the primary identity.
+    ///
+    /// Returns an [`IdentityChangeSet`] carrying the new selection.
     pub fn set_primary_identity(
         &mut self,
         identity_id: Identifier,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<IdentityChangeSet, PlatformWalletError> {
         if !self.identities.contains_key(&identity_id) {
             return Err(PlatformWalletError::IdentityNotFound(identity_id));
         }
         self.primary_identity_id = Some(identity_id);
-        Ok(())
+        let mut cs = IdentityChangeSet::default();
+        cs.primary_identity = Some(identity_id);
+        Ok(cs)
     }
 
     /// Get a managed identity by ID
@@ -162,18 +190,20 @@ impl IdentityManager {
         self.identities.get_mut(identity_id)
     }
 
-    /// Set a label for an identity
+    /// Set a label for an identity.
+    ///
+    /// Returns an [`IdentityChangeSet`] carrying a full snapshot of the
+    /// updated identity.
     pub fn set_label(
         &mut self,
         identity_id: &Identifier,
         label: String,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<IdentityChangeSet, PlatformWalletError> {
         let managed = self
             .identities
             .get_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        managed.set_label(label);
-        Ok(())
+        Ok(managed.set_label(label))
     }
 
     /// Get total credit balance across all identities
@@ -200,8 +230,13 @@ impl IdentityManager {
     }
 
     /// Set the last scanned identity index.
-    pub fn set_last_scanned_index(&mut self, index: u32) {
+    ///
+    /// Returns an [`IdentityChangeSet`] carrying the new watermark.
+    pub fn set_last_scanned_index(&mut self, index: u32) -> IdentityChangeSet {
         self.last_scanned_index = index;
+        let mut cs = IdentityChangeSet::default();
+        cs.last_scanned_index = Some(index);
+        cs
     }
 }
 
@@ -285,9 +320,10 @@ mod tests {
         let identity = create_test_identity(identity_id);
 
         manager.add_identity(identity, 0).unwrap();
-        let removed = manager.remove_identity(&identity_id).unwrap();
+        let (removed, cs) = manager.remove_identity(&identity_id).unwrap();
 
         assert_eq!(removed.id(), identity_id);
+        assert!(cs.removed.contains(&identity_id));
         assert_eq!(manager.identities.len(), 0);
         assert_eq!(manager.primary_identity_id, None);
     }

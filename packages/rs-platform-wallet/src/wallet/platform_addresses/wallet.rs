@@ -17,6 +17,7 @@ use zeroize::Zeroizing;
 use dashcore::PrivateKey;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 
+use crate::changeset::PlatformAddressChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use dash_sdk::platform::address_sync::AddressSyncResult;
@@ -60,7 +61,13 @@ impl PlatformAddressWallet {
     ///
     /// Uses the SDK's privacy-preserving trunk/branch address synchronization
     /// with DIP-17 address discovery via gap limit scanning.
-    pub async fn sync_balances(&self) -> Result<AddressSyncResult, PlatformWalletError> {
+    ///
+    /// Returns both the raw [`AddressSyncResult`] and a
+    /// [`PlatformAddressChangeSet`] describing every address update /
+    /// tombstone caused by the sync.
+    pub async fn sync_balances(
+        &self,
+    ) -> Result<(AddressSyncResult, PlatformAddressChangeSet), PlatformWalletError> {
         // Build the address provider from the wallet.
         let mut provider =
             PlatformPaymentAddressProvider::from_wallet(self.wallet_manager.clone(), self.wallet_id, self.sdk.network)
@@ -80,11 +87,19 @@ impl PlatformAddressWallet {
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::AddressSync("Wallet not found in wallet manager".to_string()))?;
+
+        // A sync replaces the whole cached set — every previous entry that
+        // doesn't reappear in `found` is a tombstone. Record those before
+        // clearing so the changeset can express the delta.
+        let mut cs = PlatformAddressChangeSet::default();
+        let prior: std::collections::BTreeSet<PlatformAddress> =
+            info.platform_address_balances.keys().copied().collect();
         info.platform_address_balances.clear();
         for ((_, key), funds) in &result.found {
             match PlatformAddress::from_bytes(key) {
                 Ok(platform_addr) => {
                     info.platform_address_balances.insert(platform_addr, funds.balance);
+                    cs.addresses.insert(platform_addr, funds.balance);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -94,8 +109,11 @@ impl PlatformAddressWallet {
                 }
             }
         }
+        for addr in prior.difference(&cs.addresses.keys().copied().collect()) {
+            cs.removed.insert(*addr);
+        }
 
-        Ok(result)
+        Ok((result, cs))
     }
 
     /// Transfer credits between platform addresses.
@@ -106,7 +124,7 @@ impl PlatformAddressWallet {
         &self,
         inputs: BTreeMap<PlatformAddress, Credits>,
         outputs: BTreeMap<PlatformAddress, Credits>,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
         if inputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Transfer requires at least one input address".to_string(),
@@ -122,20 +140,23 @@ impl PlatformAddressWallet {
 
         // Update cached balances from the proof-verified response.
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = PlatformAddressChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             for (addr, maybe_info) in address_infos.iter() {
                 match maybe_info {
                     Some(ai) => {
                         info.platform_address_balances.insert(*addr, ai.balance);
+                        cs.addresses.insert(*addr, ai.balance);
                     }
                     None => {
                         info.platform_address_balances.remove(addr);
+                        cs.removed.insert(*addr);
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(cs)
     }
 
     /// Withdraw platform credits to a Core L1 address.
@@ -147,7 +168,7 @@ impl PlatformAddressWallet {
         inputs: BTreeMap<PlatformAddress, Credits>,
         output_script: CoreScript,
         core_fee_per_byte: u32,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
         if inputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Withdrawal requires at least one input address".to_string(),
@@ -179,20 +200,23 @@ impl PlatformAddressWallet {
 
         // Update cached balances from the proof-verified response.
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = PlatformAddressChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             for (addr, maybe_info) in address_infos.iter() {
                 match maybe_info {
                     Some(ai) => {
                         info.platform_address_balances.insert(*addr, ai.balance);
+                        cs.addresses.insert(*addr, ai.balance);
                     }
                     None => {
                         info.platform_address_balances.remove(addr);
+                        cs.removed.insert(*addr);
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(cs)
     }
 
     /// Get all platform addresses with their cached balances.
@@ -232,7 +256,7 @@ impl PlatformAddressWallet {
         addresses: BTreeMap<PlatformAddress, Option<Credits>>,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: PrivateKey,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
         if addresses.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "fund_from_asset_lock requires at least one address".to_string(),
@@ -254,20 +278,23 @@ impl PlatformAddressWallet {
 
         // Update cached balances from the proof-verified response.
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = PlatformAddressChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             for (addr, maybe_info) in address_infos.iter() {
                 match maybe_info {
                     Some(ai) => {
                         info.platform_address_balances.insert(*addr, ai.balance);
+                        cs.addresses.insert(*addr, ai.balance);
                     }
                     None => {
                         info.platform_address_balances.remove(addr);
+                        cs.removed.insert(*addr);
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(cs)
     }
 
     /// Find the private key for a platform address by searching all platform

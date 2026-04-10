@@ -333,7 +333,8 @@ impl DashPayWallet {
                 .identity_manager
                 .managed_identity_mut(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
-            managed.add_sent_contact_request(contact_request.clone());
+            // TODO(Phase 9a-6): forward the returned changeset to the persister.
+            let _cs = managed.add_sent_contact_request(contact_request.clone());
         }
 
         // Register the contact account in ManagedWalletInfo so SPV monitors
@@ -486,7 +487,8 @@ impl DashPayWallet {
                     doc.created_at().unwrap_or(0),
                 );
 
-                managed.add_incoming_contact_request(contact_request.clone());
+                // TODO(Phase 9a-6): forward the returned changeset to the persister.
+                let _cs = managed.add_incoming_contact_request(contact_request.clone());
                 all_requests.push(contact_request);
             }
         }

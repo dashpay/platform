@@ -6,73 +6,125 @@
 //! - Automatically establishing contacts when both parties send requests
 
 use super::ManagedIdentity;
+use crate::changeset::{ContactChangeSet, ContactRequestEntry};
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
 
 impl ManagedIdentity {
-    /// Add a sent contact request
-    /// If there's already an incoming request from the recipient, automatically establish the contact
-    pub fn add_sent_contact_request(&mut self, request: ContactRequest) {
+    /// Add a sent contact request.
+    ///
+    /// If there's already an incoming request from the recipient, the
+    /// contact is auto-established and both requests are tombstoned in
+    /// the returned [`ContactChangeSet`].
+    pub fn add_sent_contact_request(&mut self, request: ContactRequest) -> ContactChangeSet {
+        let owner_id = self.id();
         let recipient_id = request.recipient_id;
+        let mut cs = ContactChangeSet::default();
 
         // Check if there's already an incoming request from this recipient
         if let Some(incoming_request) = self.incoming_contact_requests.remove(&recipient_id) {
             // Automatically establish the contact
             let contact = EstablishedContact::new(recipient_id, request, incoming_request);
             self.established_contacts.insert(recipient_id, contact);
+            cs.established.insert((owner_id, recipient_id));
+            // The matching incoming request is consumed by establishment.
+            cs.removed_incoming.insert((owner_id, recipient_id));
         } else {
             // No matching incoming request, just add as sent
+            cs.sent_requests.insert(
+                (owner_id, recipient_id),
+                ContactRequestEntry {
+                    request: request.clone(),
+                },
+            );
             self.sent_contact_requests.insert(recipient_id, request);
         }
+        cs
     }
 
-    /// Remove a sent contact request
+    /// Remove a sent contact request.
+    ///
+    /// Returns the removed request (if any) and a tombstone changeset.
     pub fn remove_sent_contact_request(
         &mut self,
         recipient_id: &Identifier,
-    ) -> Option<ContactRequest> {
-        self.sent_contact_requests.remove(recipient_id)
+    ) -> (Option<ContactRequest>, ContactChangeSet) {
+        let removed = self.sent_contact_requests.remove(recipient_id);
+        let mut cs = ContactChangeSet::default();
+        if removed.is_some() {
+            cs.removed_sent.insert((self.id(), *recipient_id));
+        }
+        (removed, cs)
     }
 
-    /// Add an incoming contact request
-    /// If there's already a sent request to the sender, automatically establish the contact
-    pub fn add_incoming_contact_request(&mut self, request: ContactRequest) {
+    /// Add an incoming contact request.
+    ///
+    /// If there's already a sent request to the sender, the contact is
+    /// auto-established and both requests are tombstoned in the returned
+    /// [`ContactChangeSet`].
+    pub fn add_incoming_contact_request(&mut self, request: ContactRequest) -> ContactChangeSet {
+        let owner_id = self.id();
         let sender_id = request.sender_id;
+        let mut cs = ContactChangeSet::default();
 
         // Check if there's already a sent request to this sender
         if let Some(outgoing_request) = self.sent_contact_requests.remove(&sender_id) {
             // Automatically establish the contact
             let contact = EstablishedContact::new(sender_id, outgoing_request, request);
             self.established_contacts.insert(sender_id, contact);
+            cs.established.insert((owner_id, sender_id));
+            // The matching sent request is consumed by establishment.
+            cs.removed_sent.insert((owner_id, sender_id));
         } else {
             // No matching sent request, just add as incoming
+            cs.incoming_requests.insert(
+                (owner_id, sender_id),
+                ContactRequestEntry {
+                    request: request.clone(),
+                },
+            );
             self.incoming_contact_requests.insert(sender_id, request);
         }
+        cs
     }
 
-    /// Remove an incoming contact request
+    /// Remove an incoming contact request.
+    ///
+    /// Returns the removed request (if any) and a tombstone changeset.
     pub fn remove_incoming_contact_request(
         &mut self,
         sender_id: &Identifier,
-    ) -> Option<ContactRequest> {
-        self.incoming_contact_requests.remove(sender_id)
+    ) -> (Option<ContactRequest>, ContactChangeSet) {
+        let removed = self.incoming_contact_requests.remove(sender_id);
+        let mut cs = ContactChangeSet::default();
+        if removed.is_some() {
+            cs.removed_incoming.insert((self.id(), *sender_id));
+        }
+        (removed, cs)
     }
 
     /// Accept an incoming contact request and establish the contact.
-    /// Returns the established contact if both incoming and outgoing requests exist.
-    /// Returns None without modifying state if either request is missing.
+    ///
+    /// Returns the established contact (if both incoming and outgoing
+    /// requests exist) and a changeset describing the transition. Returns
+    /// `(None, empty)` without modifying state if either request is
+    /// missing.
     pub fn accept_incoming_request(
         &mut self,
         sender_id: &Identifier,
-    ) -> Option<EstablishedContact> {
+    ) -> (Option<EstablishedContact>, ContactChangeSet) {
         // Check both exist before removing either (prevents data loss)
         if !self.incoming_contact_requests.contains_key(sender_id)
             || !self.sent_contact_requests.contains_key(sender_id)
         {
-            return None;
+            return (None, ContactChangeSet::default());
         }
-        let incoming_request = self.incoming_contact_requests.remove(sender_id)?;
-        let outgoing_request = self.sent_contact_requests.remove(sender_id)?;
+        let Some(incoming_request) = self.incoming_contact_requests.remove(sender_id) else {
+            return (None, ContactChangeSet::default());
+        };
+        let Some(outgoing_request) = self.sent_contact_requests.remove(sender_id) else {
+            return (None, ContactChangeSet::default());
+        };
 
         // Create the established contact
         let contact = EstablishedContact::new(*sender_id, outgoing_request, incoming_request);
@@ -81,7 +133,13 @@ impl ManagedIdentity {
         self.established_contacts
             .insert(*sender_id, contact.clone());
 
-        Some(contact)
+        let owner_id = self.id();
+        let mut cs = ContactChangeSet::default();
+        cs.established.insert((owner_id, *sender_id));
+        cs.removed_sent.insert((owner_id, *sender_id));
+        cs.removed_incoming.insert((owner_id, *sender_id));
+
+        (Some(contact), cs)
     }
 }
 
@@ -212,9 +270,12 @@ mod tests {
         assert_eq!(managed.sent_contact_requests.len(), 1);
 
         // Remove the request
-        let removed = managed.remove_sent_contact_request(&recipient_id);
+        let (removed, cs) = managed.remove_sent_contact_request(&recipient_id);
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().recipient_id, recipient_id);
+        assert!(cs
+            .removed_sent
+            .contains(&(managed.id(), recipient_id)));
         assert_eq!(managed.sent_contact_requests.len(), 0);
     }
 
@@ -223,8 +284,9 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let nonexistent_id = Identifier::from([99u8; 32]);
 
-        let removed = managed.remove_sent_contact_request(&nonexistent_id);
+        let (removed, cs) = managed.remove_sent_contact_request(&nonexistent_id);
         assert!(removed.is_none());
+        assert!(cs.removed_sent.is_empty());
     }
 
     #[test]
@@ -239,9 +301,10 @@ mod tests {
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
         // Remove the request
-        let removed = managed.remove_incoming_contact_request(&sender_id);
+        let (removed, cs) = managed.remove_incoming_contact_request(&sender_id);
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().sender_id, sender_id);
+        assert!(cs.removed_incoming.contains(&(managed.id(), sender_id)));
         assert_eq!(managed.incoming_contact_requests.len(), 0);
     }
 
@@ -250,8 +313,9 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let nonexistent_id = Identifier::from([99u8; 32]);
 
-        let removed = managed.remove_incoming_contact_request(&nonexistent_id);
+        let (removed, cs) = managed.remove_incoming_contact_request(&nonexistent_id);
         assert!(removed.is_none());
+        assert!(cs.removed_incoming.is_empty());
     }
 
     #[test]
@@ -270,11 +334,14 @@ mod tests {
             .insert(contact_id, incoming);
 
         // Accept the incoming request
-        let result = managed.accept_incoming_request(&contact_id);
+        let (result, cs) = managed.accept_incoming_request(&contact_id);
         assert!(result.is_some());
 
         let contact = result.unwrap();
         assert_eq!(contact.contact_identity_id, contact_id);
+        assert!(cs.established.contains(&(our_id, contact_id)));
+        assert!(cs.removed_sent.contains(&(our_id, contact_id)));
+        assert!(cs.removed_incoming.contains(&(our_id, contact_id)));
 
         // Verify requests were removed and contact established
         assert_eq!(managed.sent_contact_requests.len(), 0);
@@ -294,8 +361,9 @@ mod tests {
         managed.sent_contact_requests.insert(contact_id, outgoing);
 
         // Accept should fail - no incoming request
-        let result = managed.accept_incoming_request(&contact_id);
+        let (result, cs) = managed.accept_incoming_request(&contact_id);
         assert!(result.is_none());
+        assert!(<ContactChangeSet as crate::changeset::Merge>::is_empty(&cs));
     }
 
     #[test]
@@ -311,8 +379,9 @@ mod tests {
             .insert(contact_id, incoming);
 
         // Accept should fail - no outgoing request
-        let result = managed.accept_incoming_request(&contact_id);
+        let (result, cs) = managed.accept_incoming_request(&contact_id);
         assert!(result.is_none());
+        assert!(<ContactChangeSet as crate::changeset::Merge>::is_empty(&cs));
     }
 
     #[test]

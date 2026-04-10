@@ -518,7 +518,10 @@ impl IdentityWallet {
         // Step 4: Add the identity to the local manager (with its HD index).
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
-        info.identity_manager.add_identity(identity.clone(), identity_index)?;
+        // TODO(Phase 9a-6): forward the returned changeset to the persister.
+        let _cs = info
+            .identity_manager
+            .add_identity(identity.clone(), identity_index)?;
 
         Ok(identity)
     }
@@ -683,7 +686,8 @@ impl IdentityWallet {
 
         // Clean up the tracked asset lock after successful consumption.
         if let Some(out_point) = tracked_out_point {
-            self.asset_locks.remove_asset_lock(&out_point).await;
+            // TODO(Phase 9a-6): forward the returned changeset to the persister.
+            let _cs = self.asset_locks.remove_asset_lock(&out_point).await;
         }
 
         Ok(result)
@@ -782,7 +786,8 @@ impl IdentityWallet {
 
         // Clean up the tracked asset lock after successful consumption.
         if let Some(out_point) = tracked_out_point {
-            self.asset_locks.remove_asset_lock(&out_point).await;
+            // TODO(Phase 9a-6): forward the returned changeset to the persister.
+            let _cs = self.asset_locks.remove_asset_lock(&out_point).await;
         }
 
         Ok(new_balance)
@@ -903,15 +908,19 @@ impl IdentityWallet {
                         let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
-                            info_guard.identity_manager.add_identity(identity.clone(), identity_index)?;
+                            // TODO(Phase 9a-6): forward the returned changeset
+                            // to the persister.
+                            let _cs = info_guard
+                                .identity_manager
+                                .add_identity(identity.clone(), identity_index)?;
                         }
 
                         if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
-                            managed.set_status(IdentityStatus::Active);
+                            let _cs = managed.set_status(IdentityStatus::Active);
                             managed.wallet_seed_hash = Some(wallet_seed_hash);
 
                             if let Some((kid, pub_key)) = matched_key_id_and_pub {
-                                managed.add_key(
+                                let _cs = managed.add_key(
                                     kid,
                                     pub_key,
                                     PrivateKeyData::AtWalletDerivationPath {
@@ -971,7 +980,7 @@ impl IdentityWallet {
                     let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
                     if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
                         for username in usernames {
-                            managed.add_dpns_name(DpnsNameInfo {
+                            let _cs = managed.add_dpns_name(DpnsNameInfo {
                                 label: username.label,
                                 acquired_at: None,
                             });
@@ -991,7 +1000,10 @@ impl IdentityWallet {
         // Update the last scanned index so the next sync resumes here.
         let mut wm_guard = self.wallet_manager.write().await;
         let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
-        info_guard.identity_manager.set_last_scanned_index(identity_index);
+        // TODO(Phase 9a-6): forward the returned changeset to the persister.
+        let _cs = info_guard
+            .identity_manager
+            .set_last_scanned_index(identity_index);
 
         Ok(discovered)
     }
@@ -1843,15 +1855,18 @@ impl IdentityWallet {
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
             if info.identity_manager.identity(&identity_id).is_none() {
-                info.identity_manager.add_identity(identity.clone(), identity_index)?;
+                // TODO(Phase 9a-6): forward the returned changeset to the persister.
+                let _cs = info
+                    .identity_manager
+                    .add_identity(identity.clone(), identity_index)?;
             }
 
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
-                managed.set_status(IdentityStatus::Active);
+                let _cs = managed.set_status(IdentityStatus::Active);
                 managed.wallet_seed_hash = Some(wallet_seed_hash);
 
                 if let Some((kid, pub_key)) = matched_key_id_and_pub {
-                    managed.add_key(
+                    let _cs = managed.add_key(
                         kid,
                         pub_key,
                         PrivateKeyData::AtWalletDerivationPath {
@@ -1874,7 +1889,7 @@ impl IdentityWallet {
                 let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                     for username in usernames {
-                        managed.add_dpns_name(DpnsNameInfo {
+                        let _cs = managed.add_dpns_name(DpnsNameInfo {
                             label: username.label,
                             acquired_at: None,
                         });
@@ -1946,7 +1961,7 @@ impl IdentityWallet {
             let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
                 managed.identity = identity.clone();
-                managed.set_status(IdentityStatus::Active);
+                let _cs = managed.set_status(IdentityStatus::Active);
             }
         }
 

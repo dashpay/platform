@@ -17,6 +17,7 @@ use tokio::sync::RwLock;
 use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 use dash_sdk::platform::FetchMany;
 
+use crate::changeset::TokenBalanceChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::IdentitySigner;
@@ -60,16 +61,33 @@ impl TokenWallet {
 
 impl TokenWallet {
     /// Register a token for balance tracking on a specific identity.
-    pub async fn watch(&self, identity_id: Identifier, token_id: Identifier) {
+    ///
+    /// Returns a [`TokenBalanceChangeSet`] carrying the new watch entry.
+    pub async fn watch(
+        &self,
+        identity_id: Identifier,
+        token_id: Identifier,
+    ) -> TokenBalanceChangeSet {
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             info.token_watched.entry(identity_id).or_default().insert(token_id);
         }
+        cs.watched.entry(identity_id).or_default().insert(token_id);
+        cs
     }
 
     /// Unregister a token from a specific identity and clear its cached balance.
-    pub async fn unwatch(&self, identity_id: &Identifier, token_id: &Identifier) {
+    ///
+    /// Returns a [`TokenBalanceChangeSet`] carrying the unwatch + balance
+    /// tombstone.
+    pub async fn unwatch(
+        &self,
+        identity_id: &Identifier,
+        token_id: &Identifier,
+    ) -> TokenBalanceChangeSet {
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             if let Some(tokens) = info.token_watched.get_mut(identity_id) {
                 tokens.remove(token_id);
@@ -79,15 +97,37 @@ impl TokenWallet {
             }
             info.token_balances.remove(&(*identity_id, *token_id));
         }
+        cs.unwatched
+            .entry(*identity_id)
+            .or_default()
+            .insert(*token_id);
+        cs.removed_balances.insert((*identity_id, *token_id));
+        cs
     }
 
     /// Unregister all tokens for a specific identity and clear cached balances.
-    pub async fn unwatch_identity(&self, identity_id: &Identifier) {
+    ///
+    /// Returns a [`TokenBalanceChangeSet`] with the full set of unwatched
+    /// tokens and balance tombstones for the identity.
+    pub async fn unwatch_identity(&self, identity_id: &Identifier) -> TokenBalanceChangeSet {
         let mut wm = self.wallet_manager.write().await;
+        let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            info.token_watched.remove(identity_id);
-            info.token_balances.retain(|(iid, _), _| iid != identity_id);
+            if let Some(tokens) = info.token_watched.remove(identity_id) {
+                cs.unwatched.insert(*identity_id, tokens);
+            }
+            let to_remove: Vec<_> = info
+                .token_balances
+                .keys()
+                .filter(|(iid, _)| iid == identity_id)
+                .copied()
+                .collect();
+            for key in &to_remove {
+                info.token_balances.remove(key);
+                cs.removed_balances.insert(*key);
+            }
         }
+        cs
     }
 
     /// Get the watched token IDs for a specific identity.
@@ -121,8 +161,10 @@ impl TokenWallet {
     /// Sync balances for all watched identity+token pairs.
     ///
     /// Queries Platform per identity, fetching only the tokens that identity
-    /// is watching. Updates the local cache.
-    pub async fn sync(&self) -> Result<(), PlatformWalletError> {
+    /// is watching. Updates the local cache and returns a
+    /// [`TokenBalanceChangeSet`] accumulating every balance update and
+    /// tombstone from the sync.
+    pub async fn sync(&self) -> Result<TokenBalanceChangeSet, PlatformWalletError> {
         // Snapshot the watched tokens while holding the lock briefly.
         let snapshot: BTreeMap<Identifier, Vec<Identifier>> = {
             let wm = self.wallet_manager.read().await;
@@ -136,8 +178,9 @@ impl TokenWallet {
                 .unwrap_or_default()
         };
 
+        let mut cs = TokenBalanceChangeSet::default();
         if snapshot.is_empty() {
-            return Ok(());
+            return Ok(cs);
         }
 
         for (identity_id, token_ids) in &snapshot {
@@ -168,16 +211,18 @@ impl TokenWallet {
                     match maybe_balance {
                         Some(amount) => {
                             info.token_balances.insert(key, *amount);
+                            cs.balances.insert(key, *amount);
                         }
                         None => {
                             info.token_balances.remove(&key);
+                            cs.removed_balances.insert(key);
                         }
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(cs)
     }
 }
 

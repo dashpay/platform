@@ -2,6 +2,7 @@
 
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
+use crate::changeset::IdentityChangeSet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -49,24 +50,36 @@ impl ManagedIdentity {
     }
 
     /// Set the identity lifecycle status.
-    pub fn set_status(&mut self, status: IdentityStatus) {
+    ///
+    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
+    /// identity.
+    pub fn set_status(&mut self, status: IdentityStatus) -> IdentityChangeSet {
         self.status = status;
+        self.snapshot_changeset()
     }
 
     /// Add a DPNS name associated with this identity.
-    pub fn add_dpns_name(&mut self, name: DpnsNameInfo) {
+    ///
+    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
+    /// identity.
+    pub fn add_dpns_name(&mut self, name: DpnsNameInfo) -> IdentityChangeSet {
         self.dpns_names.push(name);
+        self.snapshot_changeset()
     }
 
     /// Store a private key entry in the key storage.
+    ///
+    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
+    /// identity.
     pub fn add_key(
         &mut self,
         key_id: KeyID,
         public_key: IdentityPublicKey,
         private_key_data: PrivateKeyData,
-    ) {
+    ) -> IdentityChangeSet {
         self.key_storage
             .insert(key_id, (public_key, private_key_data));
+        self.snapshot_changeset()
     }
 
     /// Look up private key data by key ID.
@@ -75,8 +88,12 @@ impl ManagedIdentity {
     }
 
     /// Record a top-up by index and amount.
-    pub fn record_top_up(&mut self, index: u32, amount: u64) {
+    ///
+    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
+    /// identity.
+    pub fn record_top_up(&mut self, index: u32, amount: u64) -> IdentityChangeSet {
         self.top_ups.insert(index, amount);
+        self.snapshot_changeset()
     }
 
     /// Create a [`ManagedIdentitySigner`] for this identity.

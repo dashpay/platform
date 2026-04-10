@@ -38,7 +38,9 @@ use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
 use crate::wallet::dashpay::ContactRequest;
-use crate::wallet::identity::managed_identity::BlockTime;
+use crate::wallet::identity::managed_identity::{
+    BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
+};
 
 // ---------------------------------------------------------------------------
 // Bridge: key_wallet::changeset::WalletChangeSet -> platform-wallet Merge
@@ -65,9 +67,14 @@ impl Merge for key_wallet::changeset::WalletChangeSet {
 // Identities
 // ---------------------------------------------------------------------------
 
-/// A snapshot/delta entry for a single managed identity.
+/// A full snapshot of a managed identity's state, keyed into
+/// [`IdentityChangeSet`] by identity ID.
 ///
-/// Modelled after [`crate::wallet::identity::managed_identity::ManagedIdentity`].
+/// Mirrors every persistable field of
+/// [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity) except
+/// contact state (which lives in [`ContactChangeSet`]) — mutation
+/// methods call [`IdentityEntry::from_managed`] to produce a fresh
+/// snapshot so the merge can resolve the latest state by last-write-wins.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentityEntry {
     /// The Platform identity.
@@ -80,10 +87,38 @@ pub struct IdentityEntry {
     pub last_updated_balance_block_time: Option<BlockTime>,
     /// Last block time when keys were synced.
     pub last_synced_keys_block_time: Option<BlockTime>,
-    /// DPNS usernames.
-    pub dpns_names: Vec<String>,
+    /// DPNS usernames with acquisition metadata.
+    pub dpns_names: Vec<DpnsNameInfo>,
     /// Top-up history: maps top-up index to amount (in duffs).
     pub top_ups: BTreeMap<u32, u64>,
+    /// Identity lifecycle status on Platform.
+    pub status: IdentityStatus,
+    /// Private key storage (public keys + private key data for each KeyID).
+    pub key_storage: KeyStorage,
+    /// Hash of the wallet seed that owns this identity, if known.
+    pub wallet_seed_hash: Option<[u8; 32]>,
+}
+
+impl IdentityEntry {
+    /// Capture a full snapshot of a [`ManagedIdentity`] as an entry.
+    ///
+    /// Every persistable field is copied into the entry so that
+    /// [`IdentityChangeSet::merge`] can resolve the latest state via
+    /// last-write-wins without needing partial-update diffing.
+    pub fn from_managed(managed: &ManagedIdentity) -> Self {
+        Self {
+            identity: managed.identity.clone(),
+            identity_index: managed.identity_index,
+            label: managed.label.clone(),
+            last_updated_balance_block_time: managed.last_updated_balance_block_time,
+            last_synced_keys_block_time: managed.last_synced_keys_block_time,
+            dpns_names: managed.dpns_names.clone(),
+            top_ups: managed.top_ups.clone(),
+            status: managed.status,
+            key_storage: managed.key_storage.clone(),
+            wallet_seed_hash: managed.wallet_seed_hash,
+        }
+    }
 }
 
 /// Changes to the identity store.
@@ -105,32 +140,38 @@ pub struct IdentityChangeSet {
 
 impl Merge for IdentityChangeSet {
     fn merge(&mut self, other: Self) {
+        // IdentityEntry is a full snapshot via `IdentityEntry::from_managed`,
+        // so "later wins" is the correct policy for scalar fields. DPNS
+        // names and top-ups are merged as unions because each mutation
+        // method produces a complete current snapshot but partial per-field
+        // races across wallets are possible.
         for (id, entry) in other.identities {
             self.identities
                 .entry(id)
                 .and_modify(|existing| {
-                    // Keep the identity with the higher revision.
+                    // Last write wins for the identity blob if the revision
+                    // is at least the current one.
                     if entry.identity.revision() >= existing.identity.revision() {
                         existing.identity = entry.identity.clone();
                     }
-                    if entry.label.is_some() {
-                        existing.label = entry.label.clone();
-                    }
-                    if entry.last_updated_balance_block_time.is_some() {
-                        existing.last_updated_balance_block_time =
-                            entry.last_updated_balance_block_time;
-                    }
-                    if entry.last_synced_keys_block_time.is_some() {
-                        existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
-                    }
-                    // Append new DPNS names.
+                    existing.label = entry.label.clone();
+                    existing.last_updated_balance_block_time =
+                        entry.last_updated_balance_block_time;
+                    existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+                    existing.status = entry.status;
+                    existing.wallet_seed_hash = existing.wallet_seed_hash.or(entry.wallet_seed_hash);
+                    // Append new DPNS names (by label).
                     for name in &entry.dpns_names {
-                        if !existing.dpns_names.contains(name) {
+                        if !existing.dpns_names.iter().any(|n| n.label == name.label) {
                             existing.dpns_names.push(name.clone());
                         }
                     }
                     // Merge top-ups (last write wins per index).
                     existing.top_ups.extend(entry.top_ups.iter());
+                    // Merge key storage entries (last write wins per KeyID).
+                    for (kid, slot) in &entry.key_storage {
+                        existing.key_storage.insert(*kid, slot.clone());
+                    }
                 })
                 .or_insert(entry);
         }
