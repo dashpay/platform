@@ -602,6 +602,30 @@
     "additionalProperties": {
       "type": "boolean",
       "const": false
+    },
+    "required": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "$comment": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "minProperties": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "maxProperties": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dependentRequired": {
+      "type": "object"
     }
   },
   "required": [
@@ -609,5 +633,6 @@
     "type",
     "properties",
     "additionalProperties"
-  ]
+  ],
+  "additionalProperties": false
 }
