@@ -574,17 +574,52 @@ Deletions:
 - `AssetLockManager::restore_from_changeset_blocking` — its only caller
   was the old `PlatformWallet::apply`, gone.
 
-**Open follow-up — `apply_changeset` should consume the changeset by
-value.** Today it takes `cs: &PlatformWalletChangeSet`, matching
-key-wallet's signature. Every `insert` then has to clone owned data
-out of borrowed data: `Identity` blobs, `KeyStorage`, `dpns_names`,
-`ContactRequest`s, `EstablishedContact`s, `Transaction`s. For the
-typical persister-load case (deserialize → apply once → drop) all of
-those clones are pure waste — the persister already produced owned
-data, we could move it directly into the wallet maps. Switch the
-signature to `cs: PlatformWalletChangeSet` and use `into_iter()` /
-`drain` everywhere. No two-method API; the borrow form should just
-go away. Hidden clones are not OK.
+**Open follow-up (cross-cutting, both repos) — `apply_changeset` should
+consume the changeset by value.** Today both
+`PlatformWalletInfo::apply_changeset` (platform-wallet) and
+`ManagedWalletInfo::apply_changeset` (rust-dashcore key-wallet) take
+`cs: &…ChangeSet`. Every `insert` then has to clone owned data out of
+borrowed data:
+
+- platform-wallet side: `Identity` blobs, `KeyStorage`, `dpns_names`,
+  `ContactRequest`s, `EstablishedContact`s, `Transaction`s inside
+  `AssetLockEntry`.
+- key-wallet side (bigger blast radius): every `Utxo` and every
+  `TransactionRecord` in
+  `ManagedCoreAccount::apply_changeset` is `.clone()`-ed before
+  insert (`managed_account/mod.rs:745, 768`). The
+  `Transaction` clone inside each `TransactionRecord` is the heaviest
+  item in any sync replay.
+
+For the typical persister-load case (deserialize → apply once → drop)
+all of those clones are pure waste — the persister already produced
+owned data, we could move it directly into the wallet maps.
+
+Fix in both crates:
+
+1. `key_wallet`: switch
+   `ManagedWalletInfo::apply_changeset(&mut self, wallet, cs:
+   WalletChangeSet)`. Inside
+   `ManagedCoreAccount::apply_changeset(account_type, bucket:
+   AccountChangeSet)` use `into_iter()` / `drain` on each map. The
+   monotonic-flag merge on UTXOs (`is_confirmed |= existing`) becomes
+   a `match` on `entry(*outpoint)`: if occupied, take the existing
+   flags then `into_mut()` or `insert(merged)`; otherwise insert by
+   value with no clone.
+2. `platform-wallet`: switch
+   `PlatformWalletInfo::apply_changeset(&mut self, wallet, cs:
+   PlatformWalletChangeSet)`. Same `into_iter()` / `drain` pattern
+   for every sub-changeset. `apply_identity_entry` and the
+   `apply_*_contact_request` helpers grow `_owned` variants that
+   take the entry / request by value.
+3. Single-variant API. No `apply_changeset` + `apply_changeset_owned`
+   overload — the borrow form should be deleted, not co-existed.
+   Hidden clones are not OK.
+
+Order: key-wallet first (it's the heavier path and platform-wallet
+calls into it via `cs.core`), then platform-wallet. Both land before
+9a-5 because the persister adapter is the one caller that benefits
+most from the move.
 
 ### 9a-4 round-trip tests on platform-wallet
 
