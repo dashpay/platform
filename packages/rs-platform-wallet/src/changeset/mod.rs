@@ -12,8 +12,7 @@ pub mod traits;
 
 pub use changeset::{
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
-    IdentityEntry, PlatformAddressChangeSet, PlatformAddressEntry, PlatformWalletChangeSet,
-    TokenBalanceChangeSet,
+    IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet, TokenBalanceChangeSet,
 };
 pub use merge::Merge;
 pub use traits::PlatformWalletPersistence;

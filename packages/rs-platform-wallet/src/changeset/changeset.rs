@@ -24,6 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
 
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 
 use dpp::identity::accessors::IdentityGettersV0;
@@ -33,7 +35,6 @@ use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
-use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::merge::Merge;
 use crate::wallet::dashpay::ContactRequest;
@@ -173,25 +174,20 @@ impl Merge for ContactChangeSet {
 // Platform Addresses
 // ---------------------------------------------------------------------------
 
-/// Per-address balance/nonce snapshot used for Platform payment addresses.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlatformAddressEntry {
-    /// Credit balance on this platform address.
-    pub credit_balance: u64,
-    /// Nonce (identity nonce) associated with this address, if known.
-    pub nonce: Option<u64>,
-}
-
 /// Changes to the Platform address store.
+///
+/// Mirrors [`PlatformWalletInfo.platform_address_balances`] exactly:
+/// a map from [`PlatformAddress`] (P2PKH or P2SH) to [`Credits`]
+/// (the balance in duffs). Last-write-wins on merge.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
-    /// Updated platform addresses keyed by `PlatformP2PKHAddress`.
-    pub addresses: BTreeMap<PlatformP2PKHAddress, PlatformAddressEntry>,
+    /// Updated platform addresses keyed by `PlatformAddress`.
+    pub addresses: BTreeMap<PlatformAddress, Credits>,
 }
 
 impl Merge for PlatformAddressChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins — the latest balance/nonce is the most current.
+        // Last write wins — the latest balance is the most current.
         self.addresses.extend(other.addresses);
     }
 
@@ -351,41 +347,19 @@ mod tests {
 
     #[test]
     fn test_platform_address_changeset_merge() {
-        let addr1 = PlatformP2PKHAddress::new([1u8; 20]);
-        let addr2 = PlatformP2PKHAddress::new([2u8; 20]);
+        let addr1 = PlatformAddress::P2pkh([1u8; 20]);
+        let addr2 = PlatformAddress::P2pkh([2u8; 20]);
 
         let mut a = PlatformAddressChangeSet::default();
-        a.addresses.insert(
-            addr1.clone(),
-            PlatformAddressEntry {
-                credit_balance: 100,
-                nonce: Some(1),
-            },
-        );
+        a.addresses.insert(addr1.clone(), 100);
 
         let mut b = PlatformAddressChangeSet::default();
-        b.addresses.insert(
-            addr1.clone(),
-            PlatformAddressEntry {
-                credit_balance: 200,
-                nonce: Some(2),
-            },
-        );
-        b.addresses.insert(
-            addr2.clone(),
-            PlatformAddressEntry {
-                credit_balance: 50,
-                nonce: None,
-            },
-        );
+        b.addresses.insert(addr1.clone(), 200); // last write wins
+        b.addresses.insert(addr2.clone(), 50);
 
         a.merge(b);
-        // addr1 should have the updated (last-write-wins) values.
-        let entry1 = a.addresses.get(&addr1).unwrap();
-        assert_eq!(entry1.credit_balance, 200);
-        assert_eq!(entry1.nonce, Some(2));
-        // addr2 should exist.
-        assert!(a.addresses.contains_key(&addr2));
+        assert_eq!(a.addresses.get(&addr1), Some(&200));
+        assert_eq!(a.addresses.get(&addr2), Some(&50));
     }
 
     #[test]
