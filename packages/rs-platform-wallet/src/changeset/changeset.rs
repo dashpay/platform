@@ -37,7 +37,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::dashpay::ContactRequest;
+use crate::wallet::dashpay::{ContactRequest, EstablishedContact};
 use crate::wallet::identity::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
 };
@@ -230,23 +230,26 @@ pub struct ContactRequestEntry {
 /// consumed. Mutation methods rely on this contract and do NOT also
 /// emit `removed_sent` / `removed_incoming` tombstones for the
 /// auto-establishment case; those sets are reserved for explicit
-/// removals (e.g. `remove_sent_contact_request`, `accept_incoming_request`
-/// when the caller explicitly asks to reject the pair).
+/// removals (e.g. `remove_sent_contact_request`).
+///
+/// `established` carries the full [`EstablishedContact`] (both
+/// underlying [`ContactRequest`]s) rather than a bare `(owner, contact)`
+/// pair, so `apply_changeset` can reconstruct the contact without
+/// access to any prior runtime state.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ContactChangeSet {
     /// Sent contact requests keyed by (owner, recipient).
     pub sent_requests: BTreeMap<(Identifier, Identifier), ContactRequestEntry>,
-    /// Sent requests removed (typically because they were promoted to
-    /// an established contact).
+    /// Sent requests explicitly removed (e.g. `remove_sent_contact_request`).
     pub removed_sent: BTreeSet<(Identifier, Identifier)>,
     /// Incoming contact requests keyed by (owner, sender).
     pub incoming_requests: BTreeMap<(Identifier, Identifier), ContactRequestEntry>,
-    /// Incoming requests removed (typically because they were promoted
-    /// to an established contact).
+    /// Incoming requests explicitly removed (e.g. `remove_incoming_contact_request`).
     pub removed_incoming: BTreeSet<(Identifier, Identifier)>,
-    /// Newly established contacts (bidirectional): set of
-    /// `(owner, contact)` pairs.
-    pub established: BTreeSet<(Identifier, Identifier)>,
+    /// Newly established contacts keyed by `(owner, contact)`. The full
+    /// [`EstablishedContact`] is carried so the apply path can rebuild
+    /// the relationship without reaching back into prior state.
+    pub established: BTreeMap<(Identifier, Identifier), EstablishedContact>,
 }
 
 impl Merge for ContactChangeSet {
