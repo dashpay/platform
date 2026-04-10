@@ -97,6 +97,26 @@ public class ManagedAccount {
                 blockHashHex = nil
             }
 
+            // Convert input details
+            var inputs: [TxIO] = []
+            if ffiTx.input_details_count > 0, let inputsPtr = ffiTx.input_details {
+                for j in 0..<ffiTx.input_details_count {
+                    let detail = inputsPtr.advanced(by: j).pointee
+                    let address = detail.address != nil ? String(cString: detail.address) : ""
+                    inputs.append(TxIO(address: address, amount: detail.value, isMine: false))
+                }
+            }
+
+            // Convert output details
+            var outputs: [TxIO] = []
+            if ffiTx.output_details_count > 0, let outputsPtr = ffiTx.output_details {
+                for j in 0..<ffiTx.output_details_count {
+                    let detail = outputsPtr.advanced(by: j).pointee
+                    let isMine = detail.role == FFI_OUTPUT_ROLE_RECEIVED || detail.role == FFI_OUTPUT_ROLE_CHANGE
+                    outputs.append(TxIO(address: "", amount: 0, isMine: isMine))
+                }
+            }
+
             let transaction = WalletTransaction(
                 txid: txidHex,
                 netAmount: ffiTx.net_amount,
@@ -104,6 +124,11 @@ public class ManagedAccount {
                 blockHash: blockHashHex,
                 timestamp: ffiTx.context.block_info.timestamp,
                 fee: ffiTx.fee > 0 ? ffiTx.fee : nil,
+                inputs: inputs,
+                outputs: outputs,
+                txType: ffiTx.transaction_type.rawValue,
+                direction: ffiTx.direction.rawValue,
+                instantSendLocked: ffiTx.context.islock_data != nil && ffiTx.context.islock_len > 0
             )
 
             transactions.append(transaction)
@@ -156,6 +181,24 @@ public class ManagedAccount {
     }
 }
 
+// MARK: - Transaction Input/Output
+
+/// Transaction input/output record with decoded address
+public struct TxIO {
+    /// Address (empty string for non-standard scripts)
+    public let address: String
+    /// Amount in satoshis
+    public let amount: UInt64
+    /// Whether this address belongs to the wallet
+    public let isMine: Bool
+
+    public init(address: String, amount: UInt64, isMine: Bool) {
+        self.address = address
+        self.amount = amount
+        self.isMine = isMine
+    }
+}
+
 // MARK: - Wallet Transaction
 
 /// Information about a transaction from a managed account
@@ -172,6 +215,16 @@ public struct WalletTransaction: Identifiable {
     public let timestamp: UInt32
     /// Fee if known
     public let fee: UInt64?
+    /// Transaction inputs with decoded addresses
+    public let inputs: [TxIO]
+    /// Transaction outputs with roles
+    public let outputs: [TxIO]
+    /// Transaction type (FFITransactionType raw value: 0=standard, 1=coinJoin, 8=coinbase, etc.)
+    public let txType: UInt32
+    /// Transaction direction (FFITransactionDirection raw value: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin)
+    public let direction: UInt32
+    /// Whether this transaction has an InstantSend lock
+    public let instantSendLocked: Bool
 
     public init(
         txid: String,
@@ -180,6 +233,11 @@ public struct WalletTransaction: Identifiable {
         blockHash: String?,
         timestamp: UInt32,
         fee: UInt64?,
+        inputs: [TxIO] = [],
+        outputs: [TxIO] = [],
+        txType: UInt32 = 0,
+        direction: UInt32 = 0,
+        instantSendLocked: Bool = false
     ) {
         self.txid = txid
         self.netAmount = netAmount
@@ -187,6 +245,11 @@ public struct WalletTransaction: Identifiable {
         self.blockHash = blockHash
         self.timestamp = timestamp
         self.fee = fee
+        self.inputs = inputs
+        self.outputs = outputs
+        self.txType = txType
+        self.direction = direction
+        self.instantSendLocked = instantSendLocked
     }
 
     /// Transaction date
