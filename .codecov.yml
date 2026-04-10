@@ -139,6 +139,30 @@ ignore:
   - "packages/rs-dpp/src/data_contract/extra/drive_api_tests.rs"
   # Versioned dispatch methods — pure version routing with no logic
   - "packages/rs-dpp/src/data_contract/document_type/methods/versioned_methods.rs"
+  # Drive state transition action boilerplate — version dispatch enums with
+  # single-variant match arms, getters/setters, struct definitions, and top-level
+  # transformer delegation (v0/transformer.rs has real logic and is NOT excluded)
+  - "packages/rs-drive/src/state_transition_action/**/token_*_transition_action/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/token_*_transition_action/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/token_*_transition_action/transformer.rs"
+  - "packages/rs-drive/src/state_transition_action/**/token_base_transition_action/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/token_base_transition_action/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/token_transition_action_type.rs"
+  - "packages/rs-drive/src/state_transition_action/**/document_*_transition_action/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/document_*_transition_action/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/document_*_transition_action/transformer.rs"
+  - "packages/rs-drive/src/state_transition_action/**/document_base_transition_action/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/document_base_transition_action/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/**/document_transition_action_type.rs"
+  - "packages/rs-drive/src/state_transition_action/identity/*/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/identity/*/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/identity/*/transformer.rs"
+  - "packages/rs-drive/src/state_transition_action/contract/*/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/contract/*/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/contract/*/transformer.rs"
+  - "packages/rs-drive/src/state_transition_action/system/*/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/system/*/v0/mod.rs"
+  - "packages/rs-drive/src/state_transition_action/system/*/transformer.rs"
   
 coverage:
   status:
