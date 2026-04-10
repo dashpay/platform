@@ -39,10 +39,9 @@ pub use wallet::TokenWallet;
 // Re-export changeset types for caller-level staging.
 pub use changeset::Merge;
 pub use changeset::{
-    AccountChangeSet, AssetLockChangeSet, AssetLockEntry, ChainChangeSet, ContactChangeSet,
-    ContactRequestEntry, IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet,
-    PlatformAddressEntry, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
-    UtxoChangeSet,
+    AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
+    IdentityEntry, PlatformAddressChangeSet, PlatformAddressEntry, PlatformWalletChangeSet,
+    TokenBalanceChangeSet,
 };
 
 pub use key_wallet_manager;

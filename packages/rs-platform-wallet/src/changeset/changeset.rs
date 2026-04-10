@@ -1,24 +1,35 @@
 //! Changeset types for delta-based wallet persistence.
 //!
-//! Every wallet mutation produces a [`PlatformWalletChangeSet`] delta that is applied
-//! to in-memory state and persisted atomically. No full-state snapshots —
-//! only deltas.
+//! Every wallet mutation produces a [`PlatformWalletChangeSet`] delta that
+//! is applied to in-memory state and persisted atomically. No full-state
+//! snapshots — only deltas.
 //!
-//! Sub-changesets are modelled after the real types used in `key-wallet` and
-//! `platform-wallet` so they can be produced cheaply from live wallet state.
+//! # Shape
+//!
+//! `PlatformWalletChangeSet` embeds [`key_wallet::changeset::WalletChangeSet`]
+//! verbatim in its `core` field — that sub-changeset carries every
+//! core-wallet delta (chain, accounts, UTXOs, transactions, balance) in the
+//! BDK-style per-account bucketing defined by key-wallet. Platform-specific
+//! state that doesn't exist in key-wallet lives in dedicated sub-changesets:
+//! identities, contacts, platform addresses, asset locks, and token balances.
+//!
+//! Earlier revisions of this file defined its own `ChainChangeSet`,
+//! `TransactionChangeSet`, `UtxoChangeSet`, and `AccountChangeSet`. Those
+//! were stand-ins from before key-wallet had its own changeset module and
+//! used lossy flattened entries (e.g. `BTreeMap<OutPoint, u64>` for UTXOs,
+//! losing address/script/is_coinbase/confirmation state). They are all
+//! deleted; the `core` field replaces them with native `key-wallet` types.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
-use dashcore::{BlockHash, Txid};
 
 use dpp::prelude::AssetLockProof;
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
-use dpp::prelude::{CoreBlockHeight, Identifier};
+use dpp::prelude::Identifier;
 
-use key_wallet::dip9::DerivationPathReference;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
@@ -29,104 +40,23 @@ use crate::wallet::dashpay::ContactRequest;
 use crate::wallet::identity::managed_identity::BlockTime;
 
 // ---------------------------------------------------------------------------
-// Chain
+// Bridge: key_wallet::changeset::WalletChangeSet -> platform-wallet Merge
 // ---------------------------------------------------------------------------
-
-/// Changes to the core chain sync state.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct ChainChangeSet {
-    /// Latest synced core block height.
-    pub height: Option<CoreBlockHeight>,
-    /// Latest synced block hash.
-    pub block_hash: Option<BlockHash>,
-}
-
-impl Merge for ChainChangeSet {
+//
+// platform-wallet has its own `Merge` trait that is semantically
+// richer than key-wallet's (recursive merge on `BTreeMap<K, V: Merge>`),
+// so we can't just import key-wallet's trait wholesale. This one-off
+// impl delegates to the key-wallet `Merge` implementation that ships
+// with `WalletChangeSet` so that
+// `Option<key_wallet::changeset::WalletChangeSet>` satisfies
+// `crate::changeset::merge::Merge` via the blanket impl.
+impl Merge for key_wallet::changeset::WalletChangeSet {
     fn merge(&mut self, other: Self) {
-        // Keep the higher height (monotonic).
-        if let Some(h) = other.height {
-            self.height = Some(self.height.map_or(h, |cur| cur.max(h)));
-        }
-        if other.block_hash.is_some() {
-            self.block_hash = other.block_hash;
-        }
+        <Self as key_wallet::changeset::Merge>::merge(self, other)
     }
 
     fn is_empty(&self) -> bool {
-        self.height.is_none() && self.block_hash.is_none()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Transactions
-// ---------------------------------------------------------------------------
-
-/// A single transaction entry in the changeset.
-///
-/// Modelled after `key_wallet::managed_account::transaction_record::TransactionRecord`:
-/// txid, full transaction, block context, net amount, fee, label.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TransactionEntry {
-    /// The full transaction.
-    pub transaction: Transaction,
-    /// Block height the transaction was mined in, if confirmed.
-    pub block_height: Option<CoreBlockHeight>,
-    /// Block hash the transaction was mined in, if confirmed.
-    pub block_hash: Option<BlockHash>,
-    /// Timestamp (seconds since epoch) when the transaction was seen.
-    pub timestamp: u64,
-    /// Net amount for the wallet (positive = incoming, negative = outgoing).
-    pub net_amount: i64,
-    /// Fee paid, if we created the transaction.
-    pub fee: Option<u64>,
-    /// User-assigned label.
-    pub label: Option<String>,
-    /// Whether the transaction has an InstantSend lock.
-    pub is_instant_locked: bool,
-    /// Whether the transaction is in a ChainLocked block.
-    pub is_chain_locked: bool,
-}
-
-/// Changes to the transaction store.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct TransactionChangeSet {
-    /// Inserted or updated transactions keyed by txid.
-    /// Last-write-wins for updates (e.g. status promotion).
-    pub transactions: BTreeMap<Txid, TransactionEntry>,
-}
-
-impl Merge for TransactionChangeSet {
-    fn merge(&mut self, other: Self) {
-        // Last write wins — later changesets carry higher finality status.
-        self.transactions.extend(other.transactions);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.transactions.is_empty()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// UTXOs
-// ---------------------------------------------------------------------------
-
-/// Changes to the UTXO set.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct UtxoChangeSet {
-    /// Newly created UTXOs (outpoint -> value in duffs).
-    pub added: BTreeMap<OutPoint, u64>,
-    /// Spent outpoints.
-    pub spent: BTreeSet<OutPoint>,
-}
-
-impl Merge for UtxoChangeSet {
-    fn merge(&mut self, other: Self) {
-        self.added.extend(other.added);
-        self.spent.extend(other.spent);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.spent.is_empty()
+        <Self as key_wallet::changeset::Merge>::is_empty(self)
     }
 }
 
@@ -240,39 +170,6 @@ impl Merge for ContactChangeSet {
 }
 
 // ---------------------------------------------------------------------------
-// Accounts
-// ---------------------------------------------------------------------------
-
-/// Changes to account address-derivation state.
-///
-/// Tracks the last revealed (used) address index per account / derivation-path
-/// pair so that on reload the wallet knows how far to pre-generate.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct AccountChangeSet {
-    /// Last revealed address index per (account_index, derivation path reference).
-    /// Updated when an address is observed on-chain.
-    pub last_revealed: BTreeMap<(u32, DerivationPathReference), u32>,
-}
-
-impl Merge for AccountChangeSet {
-    fn merge(&mut self, other: Self) {
-        for (key, index) in other.last_revealed {
-            self.last_revealed
-                .entry(key)
-                .and_modify(|existing| {
-                    // Keep the higher index (monotonic).
-                    *existing = (*existing).max(index);
-                })
-                .or_insert(index);
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.last_revealed.is_empty()
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Platform Addresses
 // ---------------------------------------------------------------------------
 
@@ -312,15 +209,16 @@ impl Merge for PlatformAddressChangeSet {
 pub struct AssetLockChangeSet {
     /// Asset lock entries keyed by outpoint (txid + output index).
     ///
-    /// Each credit output in an asset lock transaction is tracked independently
-    /// because a single transaction can have up to 255 credit outputs (DIP-0027),
-    /// each consumable separately.
+    /// Each credit output in an asset lock transaction is tracked
+    /// independently because a single transaction can have up to 255
+    /// credit outputs (DIP-0027), each consumable separately.
     pub asset_locks: BTreeMap<OutPoint, AssetLockEntry>,
 }
 
 /// A single asset lock entry in the changeset.
 ///
-/// Contains all fields needed to fully reconstruct a [`TrackedAssetLock`](crate::wallet::asset_lock::tracked::TrackedAssetLock).
+/// Contains all fields needed to fully reconstruct a
+/// [`TrackedAssetLock`](crate::wallet::asset_lock::tracked::TrackedAssetLock).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssetLockEntry {
     /// The outpoint identifying this credit output (txid + vout).
@@ -353,28 +251,59 @@ impl Merge for AssetLockChangeSet {
 }
 
 // ---------------------------------------------------------------------------
+// Token Balances
+// ---------------------------------------------------------------------------
+
+/// Changes to watched Platform token balances.
+///
+/// Mirrors `PlatformWalletInfo.token_balances`
+/// (`BTreeMap<(Identifier, Identifier), TokenAmount>`) and
+/// `PlatformWalletInfo.token_watched`
+/// (`BTreeMap<Identifier, BTreeSet<Identifier>>`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TokenBalanceChangeSet {
+    /// Updated token balances keyed by `(identity_id, token_id)`.
+    /// Last write wins on merge.
+    pub balances: BTreeMap<(Identifier, Identifier), u64>,
+
+    /// Tokens newly watched per identity.
+    /// Merged via set union on the inner `BTreeSet`.
+    pub watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
+}
+
+impl Merge for TokenBalanceChangeSet {
+    fn merge(&mut self, other: Self) {
+        self.balances.extend(other.balances);
+        for (identity_id, tokens) in other.watched {
+            self.watched.entry(identity_id).or_default().extend(tokens);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.balances.is_empty() && self.watched.is_empty()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Top-Level PlatformWalletChangeSet
 // ---------------------------------------------------------------------------
 
 /// Delta of all wallet state changes from a single operation.
 ///
-/// Composed of optional sub-changesets — `None` means no change in that area.
-/// Use [`Merge::merge`] to combine multiple deltas before persisting.
+/// `core` carries the full `key_wallet::changeset::WalletChangeSet` — chain,
+/// balance, account_keys, and per-account buckets (UTXOs, transactions,
+/// addresses used, highest-used index). Platform-specific deltas (identities,
+/// contacts, platform addresses, asset locks, token balances) live in
+/// dedicated sub-changesets.
 ///
-/// Delta of all wallet state changes from a single operation.
-///
-/// Composed of optional sub-changesets — `None` means no change in that area.
-/// Use [`Merge::merge`] to combine multiple deltas before persisting.
+/// Composed of optional sub-changesets — `None` means no change in that
+/// area. Use [`Merge::merge`] to combine multiple deltas before persisting.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformWalletChangeSet {
-    /// Core chain state (sync height, block hash).
-    pub chain: Option<ChainChangeSet>,
-    /// Account derivation state (last revealed indices).
-    pub accounts: Option<AccountChangeSet>,
-    /// Transaction changes (new transactions, status updates).
-    pub transactions: Option<TransactionChangeSet>,
-    /// UTXO changes (added, spent).
-    pub utxos: Option<UtxoChangeSet>,
+    /// Core wallet state from key-wallet: chain, balance, account keys,
+    /// and per-account buckets (UTXOs, transactions, addresses used,
+    /// highest-used index).
+    pub core: Option<key_wallet::changeset::WalletChangeSet>,
     /// Identity changes (registered, updated).
     pub identities: Option<IdentityChangeSet>,
     /// DashPay contact changes (requests sent/received, established).
@@ -383,140 +312,41 @@ pub struct PlatformWalletChangeSet {
     pub platform_addresses: Option<PlatformAddressChangeSet>,
     /// Asset lock lifecycle changes (created, locked, used).
     pub asset_locks: Option<AssetLockChangeSet>,
+    /// Platform token balance / watch changes.
+    pub token_balances: Option<TokenBalanceChangeSet>,
 }
 
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
-        self.chain.merge(other.chain);
-        self.accounts.merge(other.accounts);
-        self.transactions.merge(other.transactions);
-        self.utxos.merge(other.utxos);
+        // `key_wallet::changeset::WalletChangeSet` implements `Merge`
+        // itself; delegate via the `Option<T>: Merge` blanket impl from
+        // this crate's merge module.
+        self.core.merge(other.core);
         self.identities.merge(other.identities);
         self.contacts.merge(other.contacts);
         self.platform_addresses.merge(other.platform_addresses);
         self.asset_locks.merge(other.asset_locks);
+        self.token_balances.merge(other.token_balances);
     }
 
     fn is_empty(&self) -> bool {
-        self.chain.is_empty()
-            && self.accounts.is_empty()
-            && self.transactions.is_empty()
-            && self.utxos.is_empty()
+        self.core.is_empty()
             && self.identities.is_empty()
             && self.contacts.is_empty()
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()
+            && self.token_balances.is_empty()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::Hash;
 
     #[test]
     fn test_empty_changeset() {
         let cs = PlatformWalletChangeSet::default();
         assert!(cs.is_empty());
-    }
-
-    #[test]
-    fn test_chain_changeset_merge_keeps_higher_height() {
-        let mut a = ChainChangeSet {
-            height: Some(100),
-            block_hash: None,
-        };
-        let b = ChainChangeSet {
-            height: Some(200),
-            block_hash: Some(BlockHash::all_zeros()),
-        };
-        a.merge(b);
-        assert_eq!(a.height, Some(200));
-        assert_eq!(a.block_hash, Some(BlockHash::all_zeros()));
-    }
-
-    #[test]
-    fn test_chain_changeset_merge_does_not_regress_height() {
-        let mut a = ChainChangeSet {
-            height: Some(200),
-            block_hash: None,
-        };
-        let b = ChainChangeSet {
-            height: Some(100),
-            block_hash: None,
-        };
-        a.merge(b);
-        assert_eq!(a.height, Some(200));
-    }
-
-    #[test]
-    fn test_utxo_changeset_merge() {
-        let op1 = OutPoint::default();
-        let mut a = UtxoChangeSet::default();
-        a.added.insert(op1, 5000);
-
-        let mut b = UtxoChangeSet::default();
-        b.spent.insert(op1);
-
-        a.merge(b);
-        assert!(a.added.contains_key(&op1));
-        assert!(a.spent.contains(&op1));
-    }
-
-    #[test]
-    fn test_wallet_changeset_merge() {
-        let mut a = PlatformWalletChangeSet {
-            chain: Some(ChainChangeSet {
-                height: Some(100),
-                block_hash: None,
-            }),
-            ..Default::default()
-        };
-        let b = PlatformWalletChangeSet {
-            chain: Some(ChainChangeSet {
-                height: Some(200),
-                block_hash: Some(BlockHash::all_zeros()),
-            }),
-            utxos: Some(UtxoChangeSet {
-                added: {
-                    let mut m = BTreeMap::new();
-                    m.insert(OutPoint::default(), 1000);
-                    m
-                },
-                spent: BTreeSet::new(),
-            }),
-            ..Default::default()
-        };
-
-        assert!(!a.is_empty());
-        a.merge(b);
-        assert_eq!(a.chain.as_ref().unwrap().height, Some(200));
-        assert!(a.utxos.is_some());
-    }
-
-    #[test]
-    fn test_account_changeset_merge_keeps_higher_index() {
-        let mut a = AccountChangeSet::default();
-        a.last_revealed
-            .insert((0, DerivationPathReference::BIP44), 10);
-
-        let mut b = AccountChangeSet::default();
-        b.last_revealed
-            .insert((0, DerivationPathReference::BIP44), 5);
-        b.last_revealed
-            .insert((1, DerivationPathReference::BIP44), 3);
-
-        a.merge(b);
-        // Should keep the higher index for account 0.
-        assert_eq!(
-            a.last_revealed.get(&(0, DerivationPathReference::BIP44)),
-            Some(&10)
-        );
-        // Should have the new entry for account 1.
-        assert_eq!(
-            a.last_revealed.get(&(1, DerivationPathReference::BIP44)),
-            Some(&3)
-        );
     }
 
     #[test]
@@ -559,6 +389,34 @@ mod tests {
     }
 
     #[test]
+    fn test_token_balance_changeset_merge() {
+        let identity_a = Identifier::from([1u8; 32]);
+        let identity_b = Identifier::from([2u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let token_y = Identifier::from([11u8; 32]);
+
+        let mut a = TokenBalanceChangeSet::default();
+        a.balances.insert((identity_a, token_x), 100);
+        a.watched.entry(identity_a).or_default().insert(token_x);
+
+        let mut b = TokenBalanceChangeSet::default();
+        // Same identity/token — last-write-wins.
+        b.balances.insert((identity_a, token_x), 200);
+        // New token on same identity — merged into the watched set.
+        b.watched.entry(identity_a).or_default().insert(token_y);
+        // New identity.
+        b.balances.insert((identity_b, token_x), 50);
+
+        a.merge(b);
+
+        assert_eq!(a.balances.get(&(identity_a, token_x)), Some(&200));
+        assert_eq!(a.balances.get(&(identity_b, token_x)), Some(&50));
+        let watched_a = a.watched.get(&identity_a).unwrap();
+        assert!(watched_a.contains(&token_x));
+        assert!(watched_a.contains(&token_y));
+    }
+
+    #[test]
     fn test_take_empty_changeset() {
         let mut cs = PlatformWalletChangeSet::default();
         assert!(cs.take().is_none());
@@ -567,12 +425,43 @@ mod tests {
     #[test]
     fn test_take_non_empty_changeset() {
         let mut cs = PlatformWalletChangeSet {
-            chain: Some(ChainChangeSet {
-                height: Some(100),
-                block_hash: None,
+            identities: Some(IdentityChangeSet::default()),
+            ..Default::default()
+        };
+        // The identities changeset is an empty placeholder — so cs is
+        // still `is_empty()`. Push a real entry.
+        let identity_id = Identifier::from([1u8; 32]);
+        // We can't easily construct a full Identity here, so use asset_locks
+        // for the non-empty path.
+        let mut cs = PlatformWalletChangeSet {
+            asset_locks: Some(AssetLockChangeSet {
+                asset_locks: {
+                    let mut m = BTreeMap::new();
+                    m.insert(
+                        OutPoint::default(),
+                        AssetLockEntry {
+                            out_point: OutPoint::default(),
+                            transaction: Transaction {
+                                version: 3,
+                                lock_time: 0,
+                                input: vec![],
+                                output: vec![],
+                                special_transaction_payload: None,
+                            },
+                            account_index: 0,
+                            funding_type: AssetLockFundingType::IdentityRegistration,
+                            identity_index: 0,
+                            amount_duffs: 1000,
+                            status: AssetLockStatus::Built,
+                            proof: None,
+                        },
+                    );
+                    m
+                },
             }),
             ..Default::default()
         };
+        let _ = identity_id;
         let taken = cs.take();
         assert!(taken.is_some());
         assert!(cs.is_empty());
