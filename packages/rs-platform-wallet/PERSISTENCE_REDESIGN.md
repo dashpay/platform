@@ -713,61 +713,104 @@ profiles, payments, contact address indices). Those stay as
 direct writes for now and get picked up in a follow-up phase
 when the platform wallet grows the corresponding in-memory fields.
 
-### 9b — Mutation methods emit platform-specific changesets
+## Phase 9b — Close the Category D gaps (future)
 
-Make the platform-specific mutations on `IdentityManager`,
-`AssetLockManager`, DashPay, Platform address registration, and Token
-tracking all return `PlatformWalletChangeSet` (or a narrower type that
-merges in) instead of `()`.
+After 9a lands, a handful of DashPay/wallet-adjacent tables still
+have legitimate direct writes because `PlatformWalletInfo` has no
+in-memory representation for them. Phase 9b grows the platform
+wallet to cover these tables, then migrates their writes through
+the changeset flow exactly like Phase 9a does for the Category A
+tables.
 
-- List the mutation methods per field (survey needed).
-- For each method: mirror the pattern from
-  `ManagedCoreAccount::mark_address_used` — emit into
-  `cs.<sub>.entry(...)` directly.
-- Update orchestration code (e.g. SPV callback paths) to accumulate
-  the returned changesets into a single `PlatformWalletChangeSet` per
-  operation.
+Each sub-phase follows the same 5-step pattern:
 
-### 9c — Persister emit path
+1. Add the in-memory field to `PlatformWalletInfo` or `ManagedIdentity`.
+2. Add a sub-changeset to `PlatformWalletChangeSet`.
+3. Add mutation methods that return a changeset.
+4. Extend `PlatformWalletInfo::apply_changeset` to handle the new sub.
+5. Extend evo-tool's `SqliteWalletPersister` adapter to translate
+   the new sub-changeset to the existing DB tables.
+6. Flip evo-tool's direct writes to route through the mutation API.
 
-- Remove the stale `queue_persist` / `flush_persist` / `load_persisted`
-  on `PlatformWallet`.
-- Define the emission flow: SPV block callback → mutate → capture
-  `PlatformWalletChangeSet` → feed into an in-memory buffer inside
-  `PlatformWalletPersistence` implementation.
-- Flush strategy: **"always Incremental + smart flush"** —
-  `store(cs)` merges into the buffer (microseconds), flush triggers
-  are:
-  - Event-driven: on `SyncComplete`
-  - Debounced: 30s after the last `store()` call
-  - Explicit: on wallet unload / shutdown
-- Never flush during cold sync.
+### 9b-1 — DashPay profiles
 
-### 9d — Persister apply (restore) path
+**Table:** `dashpay_profiles` (avatar_bytes, display_name,
+public_message, created_at)
 
-On wallet load:
-1. `PlatformWalletPersistence::load(wallet_id)` reads the persisted
-   `PlatformWalletChangeSet` from storage.
-2. Construct a fresh `Wallet` + empty `PlatformWalletInfo`.
-3. Call `PlatformWalletInfo::apply_changeset(wallet, &cs)`.
-4. Insert the restored pair into `WalletManager` via `insert_wallet`.
+**In-memory:** add `profile: Option<DashPayProfile>` on
+`ManagedIdentity`.
 
-### 9e — SQLite persister implementation
+**Writers to flip:**
+- `Database::save_dashpay_profile` (dashpay.rs:223)
+- `Database::save_dashpay_profile_avatar_bytes` (dashpay.rs:262)
 
-Translate `PlatformWalletChangeSet` → SQLite rows.
-- Global `Mutex<BTreeMap<WalletId, PlatformWalletChangeSet>>` buffer
-  (1–5 wallets in practice — DashMap locks per key, not worth it).
-- `store()` merges into the buffer inside the Mutex.
-- `flush()` drains the buffer and writes to SQLite.
-- Tables: one per logical entity family (`utxos`, `transactions`,
-  `identities`, `asset_locks`, `platform_addresses`, `token_balances`,
-  `accounts_revealed`, `chain_state`). Keyed by `wallet_id`.
+### 9b-2 — DashPay payment history
 
-### 9f — evo-tool integration
+**Tables:** `dashpay_payments` (owner_identity_id, contact_identity_id,
+txid, amount)
 
-The only consumer outside platform-wallet today. Update evo-tool's
-wallet-load path to use `PlatformWalletPersistence::load` + apply
-flow instead of its current eager-serialization approach.
+**In-memory:** add `payments: BTreeMap<(Identifier, Txid), PaymentEntry>`
+on `ManagedIdentity`, where `PaymentEntry` carries amount, direction,
+timestamp, status.
+
+**Writers to flip:**
+- `Database::save_payment` (dashpay.rs:521)
+- `Database::update_payment_status` (dashpay.rs:552)
+
+### 9b-3 — DashPay contact address derivation indices
+
+**Tables:** `dashpay_contact_address_indices`
+(owner_identity_id, contact_identity_id, highest_receive_index,
+bloom_registered_count)
+
+**In-memory:** add per-contact derivation state to
+`ManagedIdentity.established_contacts`. Matches the key-wallet
+`highest_used` pattern but scoped to BIP44 DashPay contact payment
+paths.
+
+**Writers to flip:**
+- `Database::update_highest_receive_index` (dashpay.rs:741)
+- `Database::update_bloom_registered_count` (dashpay.rs:769)
+
+### 9b-4 — DashPay address mapping cache (maybe)
+
+**Table:** `dashpay_address_mappings` (address, contact_identity_id,
+network, path_type)
+
+**Decision needed:** is this a pure runtime cache (ephemeral, never
+persisted → out of scope entirely) or a persistence concern? If
+the former, drop the table and recompute at load. If the latter,
+route via a new sub-changeset.
+
+**Writers to flip (if persisted):**
+- `Database::save_dashpay_address_mapping` (dashpay.rs:827)
+- `Database::delete_dashpay_address_mappings_for_contact` (dashpay.rs:919)
+
+### 9b scope and ordering
+
+9b-1 through 9b-4 are **independent** and can land in any order
+after 9a is complete. Each sub-phase is a self-contained commit
+chain (add field → changeset → mutation → apply → evo-tool
+persister adapter → direct-write rip-out).
+
+Estimated size: each sub-phase is smaller than a Phase 9a step
+because the plumbing (changeset module, persister, evo-tool
+integration points) already exists. The work is almost entirely
+mechanical once the pattern is established by 9a.
+
+## Phase 10+ — Open questions, not planned
+
+- **Token metadata cache** (`token` table: ticker, name, decimals,
+  contract ID). Currently direct-write Category C. Could be
+  promoted to a changeset-driven field if token metadata becomes
+  wallet-scoped rather than global.
+- **Data contract cache** (`contract` table). Similar question —
+  probably stays global/app-level, not wallet-scoped.
+- **Wallet lifecycle via changesets?** Creating and deleting
+  wallets (the `wallet` table encrypted seed / alias columns) is
+  currently direct. Arguable whether that's worth changing —
+  wallet existence isn't really state, it's identity. Probably
+  leave alone.
 
 ## Open PRs
 
