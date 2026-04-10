@@ -269,49 +269,47 @@ impl IdentityManager {
     ///
     /// Idempotent: applying the same entry twice is the same as applying
     /// it once.
-    pub(crate) fn apply_identity_entry(&mut self, entry: &IdentityEntry) {
+    pub(crate) fn apply_identity_entry(&mut self, entry: IdentityEntry) {
         use dpp::identity::accessors::IdentityGettersV0;
         let id = entry.identity.id();
         match self.identities.get_mut(&id) {
             Some(existing) => {
                 if entry.identity.revision() >= existing.identity.revision() {
-                    existing.identity = entry.identity.clone();
+                    existing.identity = entry.identity;
                 }
                 // identity_index is immutable per identity (it's the
                 // BIP-9 HD derivation index used during registration),
                 // so we don't overwrite it here. This matches
                 // `IdentityChangeSet::merge`'s policy.
-                existing.label = entry.label.clone();
+                existing.label = entry.label;
                 existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
                 existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                 existing.status = entry.status;
                 existing.wallet_seed_hash = entry.wallet_seed_hash;
                 // Append new DPNS names by label, preserving any
                 // pre-existing entries the changeset didn't carry.
-                for name in &entry.dpns_names {
+                for name in entry.dpns_names {
                     if !existing
                         .dpns_names
                         .iter()
                         .any(|n| n.label == name.label)
                     {
-                        existing.dpns_names.push(name.clone());
+                        existing.dpns_names.push(name);
                     }
                 }
-                existing.top_ups.extend(entry.top_ups.iter());
-                for (kid, slot) in &entry.key_storage {
-                    existing.key_storage.insert(*kid, slot.clone());
-                }
+                existing.top_ups.extend(entry.top_ups);
+                existing.key_storage.extend(entry.key_storage);
             }
             None => {
-                let mut managed = ManagedIdentity::new(entry.identity.clone(), entry.identity_index);
-                managed.label = entry.label.clone();
+                let mut managed = ManagedIdentity::new(entry.identity, entry.identity_index);
+                managed.label = entry.label;
                 managed.last_updated_balance_block_time = entry.last_updated_balance_block_time;
                 managed.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                 managed.status = entry.status;
                 managed.wallet_seed_hash = entry.wallet_seed_hash;
-                managed.dpns_names = entry.dpns_names.clone();
-                managed.top_ups = entry.top_ups.clone();
-                managed.key_storage = entry.key_storage.clone();
+                managed.dpns_names = entry.dpns_names;
+                managed.top_ups = entry.top_ups;
+                managed.key_storage = entry.key_storage;
                 self.identities.insert(id, managed);
                 if self.primary_identity_id.is_none() {
                     self.primary_identity_id = Some(id);

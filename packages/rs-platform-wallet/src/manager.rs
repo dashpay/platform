@@ -154,7 +154,7 @@ impl PlatformWalletManager {
             ))
         })?;
         if !changeset.is_empty() {
-            platform_wallet.apply(&changeset).await.map_err(|e| {
+            platform_wallet.apply(changeset).await.map_err(|e| {
                 PlatformWalletError::WalletCreation(format!(
                     "Failed to apply persisted wallet state: {}",
                     e

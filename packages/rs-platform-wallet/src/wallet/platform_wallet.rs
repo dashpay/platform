@@ -245,9 +245,12 @@ impl PlatformWallet {
     /// Returns [`ApplyError::WalletNotFound`](crate::wallet::ApplyError::WalletNotFound)
     /// if the wallet has been removed from the manager between handle
     /// acquisition and this call.
+    ///
+    /// Consumes the changeset by value — `apply_changeset` drains
+    /// every map straight into the wallet maps with no clones.
     pub async fn apply(
         &self,
-        changeset: &PlatformWalletChangeSet,
+        changeset: PlatformWalletChangeSet,
     ) -> Result<(), crate::wallet::ApplyError> {
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
