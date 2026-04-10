@@ -44,7 +44,8 @@ use crate::changeset::PlatformWalletChangeSet;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Errors returned by [`PlatformWalletInfo::apply_changeset`].
+/// Errors returned by [`PlatformWalletInfo::apply_changeset`] and the
+/// `PlatformWallet::apply` async wrapper.
 ///
 /// Only restore failures that *cascade* (i.e. would cause downstream
 /// entries to be silently dropped) are surfaced as errors. Orphan
@@ -59,6 +60,14 @@ pub enum ApplyError {
     /// decoupled from `key_wallet`'s error enum.
     #[error("core wallet apply failed: {0}")]
     CoreApply(String),
+
+    /// The target wallet has been removed from the `WalletManager`
+    /// between the caller obtaining the `Arc<PlatformWallet>` handle
+    /// and calling `apply`. Returned by the `PlatformWallet::apply`
+    /// async wrapper, never by `PlatformWalletInfo::apply_changeset`
+    /// itself.
+    #[error("wallet not found in manager: {0:?}")]
+    WalletNotFound([u8; 32]),
 }
 
 impl PlatformWalletInfo {
@@ -91,12 +100,14 @@ impl PlatformWalletInfo {
                 self.identity_manager.apply_identity_entry(entry);
             }
             for removed_id in &id_cs.removed {
-                self.identity_manager.apply_remove(removed_id);
+                self.identity_manager.identities.shift_remove(removed_id);
             }
             // Primary-identity fixup: prefer an explicit selection from
             // the changeset; otherwise, if the current primary was just
             // removed, re-derive by picking the first remaining
             // identity (matches `IdentityManager::remove_identity`).
+            // If the map is now empty the fallback yields `None`,
+            // matching mutation-side semantics.
             if let Some(new_primary) = id_cs.primary_identity {
                 self.identity_manager.primary_identity_id = Some(new_primary);
             } else if let Some(current) = self.identity_manager.primary_identity_id {
@@ -112,13 +123,18 @@ impl PlatformWalletInfo {
 
         // 3. Contacts. Each entry routes to its owning ManagedIdentity by
         //    `(owner, contact)` key; orphans (owner not in the wallet)
-        //    are logged and skipped.
+        //    are logged and skipped. Trivial map ops (sent / incoming
+        //    insert and remove) are inlined here — no helper earns its
+        //    name for a single `insert` / `shift_remove` call. Only
+        //    `apply_established_contact` is a method because it has
+        //    real logic (drops both pending sides per the contract).
         if let Some(contact_cs) = &cs.contacts {
-            // Sent inserts.
             for ((owner, _contact), entry) in &contact_cs.sent_requests {
                 match self.identity_manager.managed_identity_mut(owner) {
                     Some(managed) => {
-                        managed.apply_sent_contact_request(entry.request.clone());
+                        managed
+                            .sent_contact_requests
+                            .insert(entry.request.recipient_id, entry.request.clone());
                     }
                     None => tracing::warn!(
                         owner = %owner,
@@ -126,11 +142,12 @@ impl PlatformWalletInfo {
                     ),
                 }
             }
-            // Incoming inserts.
             for ((owner, _contact), entry) in &contact_cs.incoming_requests {
                 match self.identity_manager.managed_identity_mut(owner) {
                     Some(managed) => {
-                        managed.apply_incoming_contact_request(entry.request.clone());
+                        managed
+                            .incoming_contact_requests
+                            .insert(entry.request.sender_id, entry.request.clone());
                     }
                     None => tracing::warn!(
                         owner = %owner,
@@ -138,15 +155,14 @@ impl PlatformWalletInfo {
                     ),
                 }
             }
-            // Tombstone removes.
             for (owner, contact) in &contact_cs.removed_sent {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(owner) {
-                    managed.apply_removed_sent(contact);
+                    managed.sent_contact_requests.remove(contact);
                 }
             }
             for (owner, contact) in &contact_cs.removed_incoming {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(owner) {
-                    managed.apply_removed_incoming(contact);
+                    managed.incoming_contact_requests.remove(contact);
                 }
             }
             // Established promotions — drop any matching pending
@@ -959,6 +975,120 @@ mod tests {
             .expect("b");
         assert!(a_owner.sent_contact_requests.is_empty());
         assert!(b_owner.sent_contact_requests.is_empty());
+    }
+
+    // ----------------------------------------------------------------------
+    // Reviewer test gaps (Phase 9a-3 followup)
+    // ----------------------------------------------------------------------
+
+    /// Reviewer #6a: removing the sole identity must clear the primary
+    /// to `None`. The fallback `identities.keys().next()` returns
+    /// `None` on an empty map, matching the mutation-side semantics.
+    #[test]
+    fn apply_remove_sole_identity_clears_primary() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+
+        let id = Identifier::from([1u8; 32]);
+        let mut id_cs = IdentityChangeSet::default();
+        let managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
+        id_cs.identities.insert(id, IdentityEntry::from_managed(&managed));
+        id_cs.primary_identity = Some(id);
+        info.apply_changeset(&mut wallet, &wrap_id(id_cs)).expect("apply insert");
+        assert_eq!(info.identity_manager.primary_identity_id, Some(id));
+
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs.removed.insert(id);
+        info.apply_changeset(&mut wallet, &wrap_id(id_cs)).expect("apply remove");
+
+        assert_eq!(info.identity_manager.identity_count(), 0);
+        assert_eq!(info.identity_manager.primary_identity_id, None);
+    }
+
+    /// Reviewer #6b: applying a tombstone twice is a no-op (the second
+    /// apply must not error or panic on the missing-key remove).
+    #[test]
+    fn apply_remove_tombstone_double_apply_is_noop() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+
+        // Insert two so the removal isn't a complete-clear case.
+        let id_a = Identifier::from([1u8; 32]);
+        let id_b = Identifier::from([2u8; 32]);
+        let mut id_cs = IdentityChangeSet::default();
+        let m_a = ManagedIdentity::new(make_test_identity(1, 0), 0);
+        let m_b = ManagedIdentity::new(make_test_identity(2, 0), 1);
+        id_cs.identities.insert(id_a, IdentityEntry::from_managed(&m_a));
+        id_cs.identities.insert(id_b, IdentityEntry::from_managed(&m_b));
+        id_cs.primary_identity = Some(id_a);
+        info.apply_changeset(&mut wallet, &wrap_id(id_cs)).expect("apply insert");
+
+        let mut tombstone = IdentityChangeSet::default();
+        tombstone.removed.insert(id_a);
+        let cs = wrap_id(tombstone);
+
+        info.apply_changeset(&mut wallet, &cs).expect("first remove");
+        info.apply_changeset(&mut wallet, &cs).expect("second remove (no-op)");
+
+        assert_eq!(info.identity_manager.identity_count(), 1);
+        assert!(info.identity_manager.managed_identity(&id_a).is_none());
+        assert_eq!(info.identity_manager.primary_identity_id, Some(id_b));
+    }
+
+    /// Reviewer #6c: a stale entry with a lower revision must NOT
+    /// clobber an in-place identity blob with a higher revision. This
+    /// locks in the merge-policy invariant on `apply_identity_entry`
+    /// (matching `IdentityChangeSet::merge`).
+    #[test]
+    fn apply_lower_revision_does_not_overwrite_higher() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+
+        // Seed with revision 5.
+        let id = Identifier::from([1u8; 32]);
+        let high = ManagedIdentity::new(make_test_identity(1, 5), 0);
+        let mut high_cs = IdentityChangeSet::default();
+        high_cs.identities.insert(id, IdentityEntry::from_managed(&high));
+        info.apply_changeset(&mut wallet, &wrap_id(high_cs)).expect("seed");
+
+        // Stale revision 2 entry.
+        use dpp::identity::accessors::IdentityGettersV0;
+        let stale = ManagedIdentity::new(make_test_identity(1, 2), 0);
+        let mut stale_cs = IdentityChangeSet::default();
+        stale_cs.identities.insert(id, IdentityEntry::from_managed(&stale));
+        info.apply_changeset(&mut wallet, &wrap_id(stale_cs)).expect("stale apply");
+
+        // The on-chain blob must still carry revision 5.
+        let restored = info.identity_manager.managed_identity(&id).expect("present");
+        assert_eq!(restored.identity.revision(), 5);
+    }
+
+    /// Reviewer #6d: contact tombstone for a present (non-orphan) owner
+    /// must drop the matching pending request — happy-path coverage
+    /// previously only existed via the orphan-skip test.
+    #[test]
+    fn apply_contact_tombstone_drops_pending_for_present_owner() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+
+        // Set up an owner with a pending sent request.
+        let owner = Identifier::from([1u8; 32]);
+        let other = Identifier::from([2u8; 32]);
+        let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
+        managed
+            .sent_contact_requests
+            .insert(other, make_test_contact_request(1, 2));
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs.identities.insert(owner, IdentityEntry::from_managed(&managed));
+        info.apply_changeset(&mut wallet, &wrap_id(id_cs)).expect("seed identity");
+
+        // Apply a tombstone for that pair.
+        let mut contact_cs = ContactChangeSet::default();
+        contact_cs.removed_sent.insert((owner, other));
+        info.apply_changeset(&mut wallet, &wrap_contacts(contact_cs)).expect("apply tombstone");
+
+        let restored = info.identity_manager.managed_identity(&owner).expect("present");
+        assert!(!restored.sent_contact_requests.contains_key(&other));
     }
 
     #[test]

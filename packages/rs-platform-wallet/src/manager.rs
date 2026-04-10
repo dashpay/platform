@@ -144,6 +144,9 @@ impl PlatformWalletManager {
         );
 
         // Load persisted state and apply it to the in-memory wallet.
+        // `apply` is async and `must_use` — `.await` it and propagate
+        // any error, otherwise the future is dropped and the wallet
+        // boots from empty state instead of restoring.
         let changeset = platform_wallet.load_persisted().map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to load persisted wallet state: {}",
@@ -151,7 +154,12 @@ impl PlatformWalletManager {
             ))
         })?;
         if !changeset.is_empty() {
-            platform_wallet.apply(&changeset);
+            platform_wallet.apply(&changeset).await.map_err(|e| {
+                PlatformWalletError::WalletCreation(format!(
+                    "Failed to apply persisted wallet state: {}",
+                    e
+                ))
+            })?;
         }
 
         let platform_wallet = Arc::new(platform_wallet);

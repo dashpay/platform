@@ -277,7 +277,10 @@ impl IdentityManager {
                 if entry.identity.revision() >= existing.identity.revision() {
                     existing.identity = entry.identity.clone();
                 }
-                existing.identity_index = entry.identity_index;
+                // identity_index is immutable per identity (it's the
+                // BIP-9 HD derivation index used during registration),
+                // so we don't overwrite it here. This matches
+                // `IdentityChangeSet::merge`'s policy.
                 existing.label = entry.label.clone();
                 existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
                 existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
@@ -317,16 +320,6 @@ impl IdentityManager {
         }
     }
 
-    /// Remove an identity from the manager during apply.
-    ///
-    /// Tombstone-only — does NOT touch the changeset. If the removed
-    /// identity was the primary, callers are responsible for re-selecting
-    /// the primary (typically by inspecting `cs.identities.primary_identity`
-    /// first, then falling back to `identities.keys().next()` if the
-    /// changeset didn't carry an explicit selection).
-    pub(crate) fn apply_remove(&mut self, identity_id: &Identifier) -> bool {
-        self.identities.shift_remove(identity_id).is_some()
-    }
 }
 
 // --- Watched identities ---

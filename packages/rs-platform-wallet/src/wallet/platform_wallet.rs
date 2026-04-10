@@ -241,6 +241,10 @@ impl PlatformWallet {
     /// &mut PlatformWalletInfo)` is safe — `&mut Wallet` is needed so
     /// the core sub-changeset can re-derive HD accounts via
     /// `Wallet::add_account`.
+    ///
+    /// Returns [`ApplyError::WalletNotFound`](crate::wallet::ApplyError::WalletNotFound)
+    /// if the wallet has been removed from the manager between handle
+    /// acquisition and this call.
     pub async fn apply(
         &self,
         changeset: &PlatformWalletChangeSet,
@@ -248,7 +252,7 @@ impl PlatformWallet {
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
-            .expect("wallet exists in manager");
+            .ok_or(crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
         info.apply_changeset(wallet, changeset)
     }
 }

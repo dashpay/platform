@@ -126,6 +126,16 @@ impl IdentityEntry {
 /// Carries inserted/updated identities, tombstones for removals, and
 /// wallet-level metadata mutated via [`IdentityManager`](crate::wallet::identity::IdentityManager)
 /// (primary identity selection, gap-limit scan watermark).
+///
+/// # Merge ordering hazard
+///
+/// `IdentityChangeSet::merge` does NOT resolve `identities` vs
+/// `removed` for the same key — both fields are extended
+/// independently. Apply runs inserts before removes, so a merged
+/// changeset that contains both an insert and a tombstone for the
+/// same identity will end up "removed". Same hazard as
+/// [`ContactChangeSet`]; same mitigation: every current emitter
+/// produces only one of {insert, tombstone} per key per mutation.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct IdentityChangeSet {
     /// Inserted or updated identities keyed by identifier.
@@ -236,6 +246,22 @@ pub struct ContactRequestEntry {
 /// underlying [`ContactRequest`]s) rather than a bare `(owner, contact)`
 /// pair, so `apply_changeset` can reconstruct the contact without
 /// access to any prior runtime state.
+///
+/// # Merge ordering hazard
+///
+/// `ContactChangeSet::merge` is a pure `extend` over every field — it
+/// does NOT cancel an insert against a same-key tombstone in the
+/// opposing field. Callers must NOT merge a `removed_sent` for key K
+/// followed by a `sent_requests` insert for key K and expect the
+/// insert to win: apply runs inserts before removes, so the final
+/// state is "removed", losing the intended re-send. The same applies
+/// to `incoming_requests` vs `removed_incoming`.
+///
+/// In practice this is latent — every current emitter produces either
+/// an insert XOR a tombstone for a given key in a single mutation,
+/// not both. If a future caller needs the merged-cancellation
+/// semantics, the merge impl should resolve `sent_requests ∩
+/// removed_sent` by last-seen rather than carrying both.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ContactChangeSet {
     /// Sent contact requests keyed by (owner, recipient).
