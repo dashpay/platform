@@ -621,21 +621,63 @@ calls into it via `cs.core`), then platform-wallet. Both land before
 9a-5 because the persister adapter is the one caller that benefits
 most from the move.
 
-### 9a-4 round-trip tests on platform-wallet
+### 9a-4 round-trip tests on platform-wallet ✅
 
-Build a `PlatformWalletInfo`, mutate each platform-specific field
-via the new mutation API (from 9a-2), capture the changeset, apply
-to a sibling wallet. Assert state converges. Idempotent double-apply.
-Cover:
-- `core` path (smoke test — delegated to key-wallet's apply tests)
-- `identities` — add / update / remove (label, dpns, top_ups, timestamps)
-- `contacts` — sent / incoming / established (with correct per-identity routing)
-- `asset_locks` — create + status transitions
-- `platform_addresses` — balance updates
-- `token_balances` — new and updated
+Landed in `apply.rs` as 10 new tests on top of the 9 synthesized-data
+tests from 9a-3. Each round-trip test mutates `info_a` via the new
+mutation API (which now returns sub-changesets), wraps the captured
+sub-changeset into a `PlatformWalletChangeSet`, applies it to a
+sibling `info_b`, and asserts convergence. This verifies the round-
+trip contract: emitted changesets are faithful enough to rebuild
+state via apply.
 
-Commit on platform-wallet `feat/platform-wallet2`. This unblocks
-the persister rewrite — platform-wallet side is complete.
+Coverage (sync mutation surface):
+- `round_trip_add_identity` — IdentityManager::add_identity
+- `round_trip_remove_identity_reselects_primary` —
+  IdentityManager::remove_identity (verifies the primary re-selection
+  fixup in apply matches the mutation-side selection)
+- `round_trip_set_label` — IdentityManager::set_label
+- `round_trip_last_scanned_index_watermark` —
+  IdentityManager::set_last_scanned_index
+- `round_trip_dpns_name_and_top_up` — ManagedIdentity::add_dpns_name
+  + record_top_up via snapshot_changeset
+- `round_trip_block_time_updates` — ManagedIdentity timestamp
+  updates
+- `round_trip_sent_contact_request_no_auto_establish` — plain
+  insert path on add_sent_contact_request
+- `round_trip_auto_establish_contact` — incoming + sent →
+  auto-establish, verifies both pending sets drained on B and the
+  established contact rebuilt from the carried `EstablishedContact`
+- `round_trip_remove_contact_request` — tombstone replay
+- `round_trip_double_apply_is_idempotent` — multi-changeset replay
+  applied twice on B with no divergence
+
+`core` path: covered by key-wallet's own apply tests; the platform-
+wallet integration with `cs.core` is delegated and doesn't need
+duplicate coverage here.
+
+**Deferred — async / SDK-dependent mutation paths:**
+The following mutation methods require an `Sdk`, broadcaster, and
+`Notify` to construct the manager, so they can't run as plain unit
+tests. Their round-trip coverage will land as integration tests in a
+9a-4 follow-up:
+- `AssetLockManager::{track_asset_lock, advance_asset_lock_status,
+  remove_asset_lock}` — apply side already covered by the
+  synthesized-data tests in `apply.rs`
+- `TokenWallet::{watch, unwatch, unwatch_identity, sync}`
+- `PlatformAddressWallet::{sync_balances, transfer, withdraw,
+  fund_from_asset_lock}`
+
+The synthesized-data tests in `apply.rs` already cover the apply
+side for all of these — the gap is verifying the *mutation side*
+emits a faithful changeset, which only matters once the persister
+adapter is wired in 9a-5 / 9a-6 and the data path is exercised
+end-to-end.
+
+Test count: 19 in apply.rs (9 synthesized + 10 round-trip) + 9
+contact workflow integration tests + 81 other lib tests, all green.
+
+Commit on platform-wallet `feat/platform-wallet2`.
 
 ### 9a-5 rewrite evo-tool `SqliteWalletPersister` as thin adapter
 

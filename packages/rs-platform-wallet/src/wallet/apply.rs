@@ -550,6 +550,457 @@ mod tests {
         assert!(!info.token_watched.contains_key(&identity));
     }
 
+    // ----------------------------------------------------------------------
+    // Round-trip tests (Phase 9a-4)
+    //
+    // The shape of every test is identical:
+    //   1. Build two empty `PlatformWalletInfo`s — A is the wallet that gets
+    //      mutated, B is the sibling that will receive the changeset.
+    //   2. Mutate A via the new mutation methods (which now return sub-
+    //      changesets).
+    //   3. Wrap the returned sub-changeset into a `PlatformWalletChangeSet`
+    //      and apply it to B.
+    //   4. Assert B's state matches A's state on the field(s) the mutation
+    //      touched.
+    //
+    // These verify the round-trip contract: changesets emitted by mutations
+    // are faithful enough that apply rebuilds the same in-memory state. This
+    // is what makes the persister adapter (Phase 9a-5) safe — it can
+    // serialize the captured changeset and deserialize it back into a
+    // sibling wallet on restart with no information loss.
+    //
+    // Out of scope: AssetLockManager / TokenWallet / PlatformAddressWallet
+    // mutations are async and require an `Sdk` + broadcaster + Notify, so
+    // they can't run as plain unit tests. Their round-trip coverage will
+    // come from integration tests (Phase 9a-4 follow-up). The
+    // synthesized-data tests above already cover the apply side; the gap
+    // is verifying the *mutation side* emits a faithful changeset.
+    // ----------------------------------------------------------------------
+
+    /// Helper: wrap an `IdentityChangeSet` into a top-level
+    /// `PlatformWalletChangeSet` for apply.
+    fn wrap_id(id_cs: IdentityChangeSet) -> PlatformWalletChangeSet {
+        PlatformWalletChangeSet {
+            identities: Some(id_cs),
+            ..Default::default()
+        }
+    }
+
+    /// Helper: wrap a `ContactChangeSet` into a top-level
+    /// `PlatformWalletChangeSet` for apply.
+    fn wrap_contacts(contact_cs: ContactChangeSet) -> PlatformWalletChangeSet {
+        PlatformWalletChangeSet {
+            contacts: Some(contact_cs),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn round_trip_add_identity() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        // Mutate A.
+        let id_cs = info_a
+            .identity_manager
+            .add_identity(make_test_identity(1, 1), 7)
+            .expect("add");
+        let id = Identifier::from([1u8; 32]);
+
+        // Apply the captured changeset to B.
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs))
+            .expect("apply");
+
+        // Both wallets should now hold the identity with matching fields.
+        let a = info_a.identity_manager.managed_identity(&id).expect("a");
+        let b = info_b.identity_manager.managed_identity(&id).expect("b");
+        assert_eq!(a.identity_index, b.identity_index);
+        assert_eq!(a.identity_index, 7);
+        assert_eq!(
+            info_a.identity_manager.primary_identity_id,
+            info_b.identity_manager.primary_identity_id,
+        );
+        assert_eq!(info_a.identity_manager.primary_identity_id, Some(id));
+    }
+
+    #[test]
+    fn round_trip_remove_identity_reselects_primary() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        // Both A and B start with two identities (id1 primary, id2 second).
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add 1");
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(2, 1), 1)
+                .expect("add 2");
+        }
+        let id1 = Identifier::from([1u8; 32]);
+        let id2 = Identifier::from([2u8; 32]);
+        assert_eq!(info_a.identity_manager.primary_identity_id, Some(id1));
+        assert_eq!(info_b.identity_manager.primary_identity_id, Some(id1));
+
+        // Remove the primary on A.
+        let (_, id_cs) = info_a
+            .identity_manager
+            .remove_identity(&id1)
+            .expect("remove");
+
+        // Replay the changeset on B.
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs))
+            .expect("apply");
+
+        // Both should converge: id1 gone, id2 is the new primary.
+        assert_eq!(info_a.identity_manager.identity_count(), 1);
+        assert_eq!(info_b.identity_manager.identity_count(), 1);
+        assert_eq!(info_a.identity_manager.primary_identity_id, Some(id2));
+        assert_eq!(info_b.identity_manager.primary_identity_id, Some(id2));
+    }
+
+    #[test]
+    fn round_trip_set_label() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        // Both start with the same identity.
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+        }
+        let id = Identifier::from([1u8; 32]);
+
+        // Set a label on A via the manager method (returns a changeset).
+        let id_cs = info_a
+            .identity_manager
+            .set_label(&id, "alice".into())
+            .expect("set label");
+
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs))
+            .expect("apply");
+
+        let a = info_a.identity_manager.managed_identity(&id).expect("a");
+        let b = info_b.identity_manager.managed_identity(&id).expect("b");
+        assert_eq!(a.label, b.label);
+        assert_eq!(b.label.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn round_trip_dpns_name_and_top_up() {
+        use crate::wallet::identity::managed_identity::DpnsNameInfo;
+
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+        }
+        let id = Identifier::from([1u8; 32]);
+
+        // Add a DPNS name on A's managed identity (returns IdentityChangeSet
+        // via snapshot_changeset).
+        let dpns_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&id)
+            .expect("a managed")
+            .add_dpns_name(DpnsNameInfo {
+                label: "alice".into(),
+                acquired_at: Some(123_456),
+            });
+
+        // Record a top-up on the same identity.
+        let top_up_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&id)
+            .expect("a managed")
+            .record_top_up(0, 5_000_000);
+
+        // Apply both changesets to B in order.
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(dpns_cs))
+            .expect("apply dpns");
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(top_up_cs))
+            .expect("apply top-up");
+
+        let a = info_a.identity_manager.managed_identity(&id).expect("a");
+        let b = info_b.identity_manager.managed_identity(&id).expect("b");
+        assert_eq!(a.dpns_names.len(), b.dpns_names.len());
+        assert_eq!(a.dpns_names.first().map(|n| n.label.as_str()), Some("alice"));
+        assert_eq!(b.dpns_names.first().map(|n| n.label.as_str()), Some("alice"));
+        assert_eq!(a.top_ups.get(&0), Some(&5_000_000));
+        assert_eq!(b.top_ups.get(&0), Some(&5_000_000));
+    }
+
+    #[test]
+    fn round_trip_block_time_updates() {
+        use crate::wallet::identity::managed_identity::BlockTime;
+
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+        }
+        let id = Identifier::from([1u8; 32]);
+        let bt = BlockTime::new(100, 200, 1_700_000_000);
+
+        // Update both timestamps on A — each call returns a changeset.
+        let cs1 = info_a
+            .identity_manager
+            .managed_identity_mut(&id)
+            .expect("a")
+            .update_balance_block_time(bt);
+        let cs2 = info_a
+            .identity_manager
+            .managed_identity_mut(&id)
+            .expect("a")
+            .update_keys_sync_block_time(bt);
+
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(cs1))
+            .expect("apply balance bt");
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(cs2))
+            .expect("apply keys bt");
+
+        let a = info_a.identity_manager.managed_identity(&id).expect("a");
+        let b = info_b.identity_manager.managed_identity(&id).expect("b");
+        assert_eq!(a.last_updated_balance_block_time, b.last_updated_balance_block_time);
+        assert_eq!(a.last_synced_keys_block_time, b.last_synced_keys_block_time);
+        assert_eq!(b.last_updated_balance_block_time, Some(bt));
+    }
+
+    #[test]
+    fn round_trip_last_scanned_index_watermark() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        let id_cs = info_a.identity_manager.set_last_scanned_index(42);
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs))
+            .expect("apply");
+
+        assert_eq!(info_a.identity_manager.last_scanned_index(), 42);
+        assert_eq!(info_b.identity_manager.last_scanned_index(), 42);
+    }
+
+    #[test]
+    fn round_trip_sent_contact_request_no_auto_establish() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        // Both wallets host the same owning identity so contact routing works.
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add owner");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let recipient = Identifier::from([2u8; 32]);
+
+        // Send a contact request on A; capture the emitted ContactChangeSet.
+        let contact_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a owner")
+            .add_sent_contact_request(make_test_contact_request(1, 2));
+        // Plain insert path — no matching incoming, so `established` is empty.
+        assert!(contact_cs.established.is_empty());
+        assert!(contact_cs.sent_requests.contains_key(&(owner, recipient)));
+
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_contacts(contact_cs))
+            .expect("apply");
+
+        let b_owner = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b owner");
+        assert!(b_owner.sent_contact_requests.contains_key(&recipient));
+        assert!(b_owner.incoming_contact_requests.is_empty());
+        assert!(b_owner.established_contacts.is_empty());
+    }
+
+    #[test]
+    fn round_trip_auto_establish_contact() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add owner");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let other = Identifier::from([2u8; 32]);
+
+        // First the incoming arrives. Then the outgoing arrives — at which
+        // point auto-establishment fires and emits an `established` entry.
+        let cs_in = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a owner")
+            .add_incoming_contact_request(make_test_contact_request(2, 1));
+        let cs_out = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a owner")
+            .add_sent_contact_request(make_test_contact_request(1, 2));
+
+        // The second changeset (the auto-establish trigger) carries the full
+        // `EstablishedContact`.
+        assert!(cs_out.established.contains_key(&(owner, other)));
+        assert!(cs_out.sent_requests.is_empty());
+
+        // Replay both onto B in mutation order.
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_contacts(cs_in))
+            .expect("apply incoming");
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_contacts(cs_out))
+            .expect("apply auto-establish");
+
+        // B converges: established present, both pending sets drained.
+        let a_owner = info_a
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("a owner");
+        let b_owner = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b owner");
+        assert!(a_owner.established_contacts.contains_key(&other));
+        assert!(b_owner.established_contacts.contains_key(&other));
+        assert!(a_owner.sent_contact_requests.is_empty());
+        assert!(b_owner.sent_contact_requests.is_empty());
+        assert!(a_owner.incoming_contact_requests.is_empty());
+        assert!(b_owner.incoming_contact_requests.is_empty());
+    }
+
+    #[test]
+    fn round_trip_remove_contact_request() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add owner");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let recipient = Identifier::from([2u8; 32]);
+
+        // Both A and B start with a sent request — apply the same insert
+        // changeset to both.
+        let insert_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a")
+            .add_sent_contact_request(make_test_contact_request(1, 2));
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_contacts(insert_cs))
+            .expect("apply insert");
+
+        // Now remove on A.
+        let (_, remove_cs) = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a")
+            .remove_sent_contact_request(&recipient);
+        assert!(remove_cs.removed_sent.contains(&(owner, recipient)));
+
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_contacts(remove_cs))
+            .expect("apply remove");
+
+        let a_owner = info_a
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("a");
+        let b_owner = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b");
+        assert!(a_owner.sent_contact_requests.is_empty());
+        assert!(b_owner.sent_contact_requests.is_empty());
+    }
+
+    #[test]
+    fn round_trip_double_apply_is_idempotent() {
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        // Compose a multi-field mutation: add identity + label + dpns + top-up.
+        let id_cs1 = info_a
+            .identity_manager
+            .add_identity(make_test_identity(1, 1), 0)
+            .expect("add");
+        let id_cs2 = info_a
+            .identity_manager
+            .set_label(&Identifier::from([1u8; 32]), "alice".into())
+            .expect("label");
+
+        // Apply both changesets twice on B and verify state matches A.
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs1.clone()))
+            .expect("first add");
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs2.clone()))
+            .expect("first label");
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs1))
+            .expect("second add");
+        info_b
+            .apply_changeset(&mut wallet_b, &wrap_id(id_cs2))
+            .expect("second label");
+
+        let id = Identifier::from([1u8; 32]);
+        let a = info_a.identity_manager.managed_identity(&id).expect("a");
+        let b = info_b.identity_manager.managed_identity(&id).expect("b");
+        assert_eq!(a.label, b.label);
+        assert_eq!(b.label.as_deref(), Some("alice"));
+        assert_eq!(info_a.identity_manager.identity_count(), 1);
+        assert_eq!(info_b.identity_manager.identity_count(), 1);
+    }
+
     #[test]
     fn apply_double_apply_full_changeset_is_idempotent() {
         let mut wallet = build_test_wallet();
