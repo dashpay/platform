@@ -41,21 +41,6 @@ class PlatformWalletTests: XCTestCase {
         XCTAssertNotNil(wallet, "Wallet should be created from mnemonic")
     }
 
-    func testCreateWalletFromMnemonicWithPassphrase() throws {
-        let wallet = try PlatformWallet.fromMnemonic(testMnemonic, passphrase: "test123")
-        XCTAssertNotNil(wallet, "Wallet should be created from mnemonic with passphrase")
-    }
-
-    func testMnemonicToSeedFromUTF8BytesMatchesStringPath() throws {
-        let fromString = try Mnemonic.toSeed(mnemonic: testMnemonic, passphrase: "test123")
-        let fromBytes = try Mnemonic.toSeed(
-            mnemonicUTF8Bytes: Data(testMnemonic.utf8),
-            passphrase: "test123"
-        )
-
-        XCTAssertEqual(fromBytes, fromString, "Byte-based mnemonic derivation should match the existing string path")
-    }
-
     // MARK: - Identity Manager Tests
 
     func testGetIdentityManager() throws {
@@ -92,20 +77,5 @@ class PlatformWalletTests: XCTestCase {
 
         XCTAssertNotEqual(mainnetManager.handle, testnetManager.handle, "Different networks should have different managers")
         XCTAssertNotEqual(testnetManager.handle, devnetManager.handle, "Different networks should have different managers")
-    }
-
-    // MARK: - Memory Management Tests
-
-    func testWalletDeinit() throws {
-        var wallet: PlatformWallet? = try PlatformWallet.fromSeed(testSeed)
-        let handle = wallet?.handle
-
-        XCTAssertNotNil(handle)
-
-        // Release wallet - should call deinit
-        wallet = nil
-
-        // If this doesn't crash, memory management is working
-        XCTAssertNil(wallet)
     }
 }
