@@ -152,6 +152,19 @@ impl PlatformWallet {
         }
     }
 
+    /// Blocking write-lock.
+    ///
+    /// Uses `tokio::sync::RwLock::blocking_write` — must NOT be
+    /// called from within a tokio async context. Exists so sync
+    /// callers (e.g. SPV-driven transaction processing) can reach
+    /// mutation methods that require the wallet-manager write lock.
+    pub fn state_mut_blocking(&self) -> WalletStateWriteGuard<'_> {
+        WalletStateWriteGuard {
+            guard: self.wallet_manager.blocking_write(),
+            wallet_id: self.wallet_id,
+        }
+    }
+
     /// Construct a PlatformWallet from a WalletManager that already contains
     /// the wallet. The wallet must have been inserted into the WalletManager
     /// before calling this.
@@ -172,6 +185,7 @@ impl PlatformWallet {
             Arc::clone(&balance),
         );
 
+        // TODO: Create only one in manager.
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
