@@ -23,6 +23,7 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
 use platform_wallet::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::PlatformWalletManager;
 use tokio_util::sync::CancellationToken;
@@ -44,6 +45,11 @@ impl PlatformWalletPersistence for NoopPersister {
         Ok(Default::default())
     }
 }
+
+/// No-op event handler for tests.
+struct NoopEventHandler;
+impl EventHandler for NoopEventHandler {}
+impl PlatformEventHandler for NoopEventHandler {}
 
 /// No-op context provider — we only need SPV, not platform queries.
 struct NoopContextProvider;
@@ -119,7 +125,8 @@ async fn test_spv_sync_and_balance() {
     let sdk = Arc::new(sdk);
 
     let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
-    let manager = Arc::new(PlatformWalletManager::new(Arc::clone(&sdk), persister));
+    let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+    let manager = Arc::new(PlatformWalletManager::new(Arc::clone(&sdk), persister, event_handler));
 
     // --- Create wallet from mnemonic ---
     let mnemonic: key_wallet::Mnemonic = mnemonic_str.parse().expect("Failed to parse mnemonic");

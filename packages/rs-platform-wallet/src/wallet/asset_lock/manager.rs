@@ -14,11 +14,10 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
 };
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{Notify, RwLock};
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
-use crate::events::PlatformWalletEvent;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -38,11 +37,9 @@ pub struct AssetLockManager {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     wallet_id: WalletId,
-    /// Broadcast channel for platform wallet events (SPV sync, locks, etc.).
-    ///
-    /// Used by `wait_for_proof()` to subscribe to InstantLock / ChainLock
-    /// events from the SPV layer.
-    event_tx: broadcast::Sender<PlatformWalletEvent>,
+    /// Notified on InstantLock / ChainLock events by SpvEventForwarder.
+    /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
+    lock_notify: Arc<Notify>,
     /// Transaction broadcaster — pluggable so the same `AssetLockManager`
     /// works with different broadcast backends:
     ///
@@ -62,14 +59,14 @@ impl AssetLockManager {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
-        event_tx: broadcast::Sender<PlatformWalletEvent>,
+        lock_notify: Arc<Notify>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         Self {
             sdk,
             wallet_manager,
             wallet_id,
-            event_tx,
+            lock_notify,
             broadcaster,
         }
     }
@@ -831,10 +828,9 @@ impl AssetLockManager {
         use key_wallet::transaction_checking::TransactionContext;
 
         let deadline = tokio::time::Instant::now() + timeout;
-        let mut rx = self.event_tx.subscribe();
 
         loop {
-            // Re-check — might have been updated by SPV sync while we waited.
+            // Check — might have been updated by SPV sync.
             {
                 let wm = self.wallet_manager.read().await;
                 if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
@@ -859,24 +855,9 @@ impl AssetLockManager {
                 return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
             }
 
+            // Wait for a lock event notification or timeout.
             tokio::select! {
-                event = rx.recv() => {
-                    match event {
-                        Ok(PlatformWalletEvent::Spv(crate::events::SpvEvent::Sync(
-                            dash_spv::sync::SyncEvent::ChainLockReceived { .. },
-                        ))) => {
-                            // ChainLock received — re-check on next loop iteration.
-                            continue;
-                        }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => {
-                            return Err(PlatformWalletError::SpvError(
-                                "Event channel closed".to_string(),
-                            ));
-                        }
-                    }
-                }
+                _ = self.lock_notify.notified() => continue,
                 _ = tokio::time::sleep(remaining) => {
                     return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
                 }
@@ -886,9 +867,10 @@ impl AssetLockManager {
 
     /// Wait for an asset lock proof by subscribing to SPV events.
     ///
-    /// Subscribes to the platform wallet event channel and listens for
-    /// `InstantLockReceived` (primary) or `ChainLockReceived` (fallback)
-    /// events matching the given transaction.
+    /// Wait for an asset lock proof by checking transaction context state.
+    ///
+    /// Wakes on `lock_notify` (fired by `SpvEventForwarder` on InstantLock /
+    /// ChainLock events) and re-checks the transaction record context.
     ///
     /// Returns a properly-constructed `AssetLockProof` on success, or
     /// `FinalityTimeout` if the timeout elapses first.
@@ -902,10 +884,8 @@ impl AssetLockManager {
         use key_wallet::transaction_checking::TransactionContext;
 
         let deadline = tokio::time::Instant::now() + timeout;
-        let mut rx = self.event_tx.subscribe();
 
         // Read account_index and transaction from the tracked lock.
-        // These don't change during the wait.
         let (account_index, tracked_tx) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id)
@@ -922,92 +902,52 @@ impl AssetLockManager {
             (lock.account_index, lock.transaction.clone())
         };
 
-        // Check if SPV already synced the proof before we started waiting.
-        {
-            let wm = self.wallet_manager.read().await;
-            if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
-                if let Some(record) = info
-                    .core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions.get(&out_point.txid))
-                {
-                    if let TransactionContext::InChainLockedBlock(_) = &record.context {
-                        if let Some(height) = record.height() {
-                            return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
-                                core_chain_locked_height: height,
-                                out_point: *out_point,
-                            }));
+        loop {
+            // Check the transaction record context for finality.
+            {
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                    if let Some(record) = info
+                        .core_wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get(&account_index)
+                        .and_then(|a| a.transactions.get(&out_point.txid))
+                    {
+                        match &record.context {
+                            TransactionContext::InstantSend(instant_lock) => {
+                                return Ok(dpp::prelude::AssetLockProof::Instant(
+                                    InstantAssetLockProof::new(
+                                        instant_lock.clone(),
+                                        tracked_tx,
+                                        out_point.vout,
+                                    ),
+                                ));
+                            }
+                            TransactionContext::InChainLockedBlock(_) => {
+                                if let Some(height) = record.height() {
+                                    return Ok(dpp::prelude::AssetLockProof::Chain(
+                                        ChainAssetLockProof {
+                                            core_chain_locked_height: height,
+                                            out_point: *out_point,
+                                        },
+                                    ));
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
             }
-        }
 
-        loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
             }
 
+            // Wait for a lock event notification or timeout.
             tokio::select! {
-                event = rx.recv() => {
-                    match event {
-                        Ok(PlatformWalletEvent::Spv(crate::events::SpvEvent::Sync(
-                            dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. },
-                        ))) => {
-                            if instant_lock.txid == out_point.txid {
-                                let proof = dpp::prelude::AssetLockProof::Instant(
-                                    InstantAssetLockProof::new(
-                                        instant_lock,
-                                        tracked_tx,
-                                        out_point.vout,
-                                    ),
-                                );
-                                return Ok(proof);
-                            }
-                        }
-                        Ok(PlatformWalletEvent::Spv(crate::events::SpvEvent::Sync(
-                            dash_spv::sync::SyncEvent::ChainLockReceived { chain_lock, .. },
-                        ))) => {
-                            // Verify that our asset lock transaction is actually
-                            // confirmed at a height <= the chain-locked height.
-                            let wm = self.wallet_manager.read().await;
-                            let record = wm.get_wallet_info(&self.wallet_id)
-                                .and_then(|info| {
-                                    info.core_wallet
-                                        .accounts
-                                        .standard_bip44_accounts
-                                        .get(&account_index)
-                                        .and_then(|a| a.transactions.get(&out_point.txid))
-                                });
-
-                            if let Some(record) = record {
-                                if let Some(tx_height) = record.height() {
-                                    if tx_height <= chain_lock.block_height {
-                                        let proof = dpp::prelude::AssetLockProof::Chain(
-                                            ChainAssetLockProof {
-                                                core_chain_locked_height: tx_height,
-                                                out_point: *out_point,
-                                            },
-                                        );
-                                        return Ok(proof);
-                                    }
-                                }
-                            }
-                            // TX not yet confirmed or not in a chain-locked
-                            // block — keep waiting for more events.
-                        }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => {
-                            return Err(PlatformWalletError::SpvError(
-                                "Event channel closed".to_string(),
-                            ));
-                        }
-                    }
-                }
+                _ = self.lock_notify.notified() => continue,
                 _ = tokio::time::sleep(remaining) => {
                     return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
                 }

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{Notify, RwLock};
 
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -12,46 +12,56 @@ use key_wallet_manager::WalletManager;
 
 use crate::changeset::{Merge, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
-use crate::events::PlatformWalletEvent;
-use crate::spv::SpvRuntime;
+use crate::events::{PlatformEventHandler, PlatformEventManager};
+use crate::spv::{LockNotifyHandler, SpvRuntime};
 use crate::wallet::core::WalletBalance;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-/// Multi-wallet coordinator with SPV sync and event broadcasting.
+/// Multi-wallet coordinator with SPV sync and event handling.
 ///
-/// Holds a `WalletManager<PlatformWalletInfo>` (dashcore's standard two-map
-/// design) behind `Arc<RwLock<...>>`. The same Arc is shared with `SpvRuntime`
-/// and `DashSpvClient`, which acquire a write lock during block/mempool
-/// processing. Sub-wallets access state through the same lock.
+/// Events are dispatched through [`PlatformEventManager`] to all registered
+/// [`PlatformEventHandler`]s by reference (no cloning).
 pub struct PlatformWalletManager {
     sdk: Arc<dash_sdk::Sdk>,
-    /// Core-layer wallet manager implementing `WalletInterface`.
-    /// Shared with `SpvRuntime` so DashSpvClient drives block/mempool
-    /// processing directly through it.
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    /// Platform-level wallet handles (sub-wallets, identity, dashpay, etc.).
     wallets: RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>,
-    event_tx: broadcast::Sender<PlatformWalletEvent>,
+    /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
+    lock_notify: Arc<Notify>,
     spv: Arc<SpvRuntime>,
     persister: Arc<dyn PlatformWalletPersistence>,
 }
 
 impl PlatformWalletManager {
     /// Create a new PlatformWalletManager.
-    pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<dyn PlatformWalletPersistence>) -> Self {
-        // Match dashcore's DEFAULT_SYNC_EVENT_CAPACITY (10_000).
-        let (event_tx, _) = broadcast::channel(10_000);
+    ///
+    /// `app_handler` receives all SPV and platform events by reference.
+    /// Internally, a `LockNotifyHandler` is also registered to wake
+    /// `AssetLockManager` async waiters on lock events.
+    pub fn new(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<dyn PlatformWalletPersistence>,
+        app_handler: Arc<dyn PlatformEventHandler>,
+    ) -> Self {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let lock_notify = Arc::new(Notify::new());
+
+        // Build handler list: app handler + internal lock notifier.
+        let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
+        let event_manager = Arc::new(PlatformEventManager::new(vec![
+            app_handler,
+            lock_handler,
+        ]));
+
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
-            event_tx.clone(),
+            event_manager,
         ));
         Self {
             sdk,
             wallet_manager,
             wallets: RwLock::new(std::collections::BTreeMap::new()),
-            event_tx,
+            lock_notify,
             spv,
             persister,
         }
@@ -74,11 +84,6 @@ impl PlatformWalletManager {
         tx: &dashcore::Transaction,
     ) -> Result<(), PlatformWalletError> {
         self.spv.broadcast_transaction(tx).await
-    }
-
-    /// Subscribe to platform wallet events.
-    pub fn subscribe_events(&self) -> broadcast::Receiver<PlatformWalletEvent> {
-        self.event_tx.subscribe()
     }
 
     /// Create a PlatformWallet from raw seed bytes, initialize persisted
@@ -130,7 +135,7 @@ impl PlatformWalletManager {
             wallet_id,
             Arc::clone(&self.wallet_manager),
             balance,
-            self.event_tx.clone(),
+            Arc::clone(&self.lock_notify),
             Arc::clone(&self.persister),
             broadcaster,
         );
@@ -162,14 +167,12 @@ impl PlatformWalletManager {
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        // Remove from PlatformWallet handles.
         let removed = {
             let mut wallets = self.wallets.write().await;
             wallets
                 .remove(wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
-        // Remove from WalletManager.
         {
             let mut wm = self.wallet_manager.write().await;
             let _ = wm.remove_wallet(wallet_id);

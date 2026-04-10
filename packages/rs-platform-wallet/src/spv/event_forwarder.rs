@@ -1,71 +1,36 @@
-//! Forwards SPV events from `DashSpvClient` to the unified `PlatformWalletEvent`
-//! broadcast channel.
-//!
-//! This forwarder exists because platform-wallet needs SPV events internally
-//! (e.g. `AssetLockManager::wait_for_proof` subscribes for InstantLock/ChainLock
-//! events). A broadcast channel allows multiple consumers to subscribe:
-//!
-//! - **AssetLockManager** — listens for finality proofs during asset lock lifecycle
-//! - **Application** (e.g. evo-tool) — subscribes via `PlatformWalletManager::subscribe_events()`
-//!   for status display, connection health, and wallet reconciliation
-//!
-//! Accepting a custom `EventHandler` from the app instead would prevent
-//! platform-wallet's own components from receiving events.
+//! Lock-event notifier — a [`PlatformEventHandler`] that wakes
+//! `AssetLockManager` async waiters on InstantLock / ChainLock events.
+
+use std::sync::Arc;
 
 use dash_spv::EventHandler;
-use key_wallet_manager::WalletEvent;
-use tokio::sync::broadcast;
+use tokio::sync::Notify;
 
-use crate::events::{PlatformWalletEvent, SpvEvent};
+use crate::events::PlatformEventHandler;
 
-// TODO: Clonning events bad idea, better call event handlers
-/*
-impl EventHandler for SpvEventForwarder {
-    fn on_sync_event(&self, event: &SyncEvent) {
-        // Call each registered listener by reference — no clone
-        for listener in &self.sync_listeners {
-            listener.on_sync_event(event);
+/// Wakes `AssetLockManager::wait_for_proof` / `wait_for_chain_lock`
+/// when a lock event arrives from SPV. Registered as one of the handlers
+/// in [`PlatformEventManager`](crate::events::PlatformEventManager).
+pub struct LockNotifyHandler {
+    notify: Arc<Notify>,
+}
+
+impl LockNotifyHandler {
+    pub fn new(notify: Arc<Notify>) -> Self {
+        Self { notify }
+    }
+}
+
+impl EventHandler for LockNotifyHandler {
+    fn on_sync_event(&self, event: &dash_spv::sync::SyncEvent) {
+        if matches!(
+            event,
+            dash_spv::sync::SyncEvent::InstantLockReceived { .. }
+                | dash_spv::sync::SyncEvent::ChainLockReceived { .. }
+        ) {
+            self.notify.notify_waiters();
         }
     }
 }
- */
 
-/// Implements `dash_spv::EventHandler` to forward SPV events into the
-/// platform wallet's unified `PlatformWalletEvent` broadcast channel.
-pub(crate) struct SpvEventForwarder {
-    event_tx: broadcast::Sender<PlatformWalletEvent>,
-}
-
-impl SpvEventForwarder {
-    pub(crate) fn new(event_tx: broadcast::Sender<PlatformWalletEvent>) -> Self {
-        Self { event_tx }
-    }
-
-    fn send(&self, event: PlatformWalletEvent) {
-        let _ = self.event_tx.send(event);
-    }
-}
-
-impl EventHandler for SpvEventForwarder {
-    fn on_sync_event(&self, event: &dash_spv::sync::SyncEvent) {
-        self.send(PlatformWalletEvent::Spv(SpvEvent::Sync(event.clone())));
-    }
-
-    fn on_network_event(&self, event: &dash_spv::network::NetworkEvent) {
-        self.send(PlatformWalletEvent::Spv(SpvEvent::Network(event.clone())));
-    }
-
-    fn on_progress(&self, progress: &dash_spv::sync::SyncProgress) {
-        self.send(PlatformWalletEvent::Spv(SpvEvent::Progress(
-            progress.clone(),
-        )));
-    }
-
-    fn on_wallet_event(&self, event: &WalletEvent) {
-        self.send(PlatformWalletEvent::Wallet(event.clone()));
-    }
-
-    fn on_error(&self, error: &str) {
-        tracing::error!("SPV error: {}", error);
-    }
-}
+impl PlatformEventHandler for LockNotifyHandler {}

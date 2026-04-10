@@ -1,14 +1,8 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
-//!
-//! Extracted from `PlatformWalletManager` so the same SPV coordination can be
-//! used both with a multi-wallet manager and with a standalone `PlatformWallet`.
-//!
-//! Asset-lock finality tracking (IS/CL proof waiting) is handled by
-//! `AssetLockManager` directly — it subscribes to the shared event channel.
 
 use std::sync::Arc;
 
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::RwLock;
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
@@ -18,47 +12,37 @@ use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::{ClientConfig, DashSpvClient, Hash};
 
-use key_wallet_manager::{WalletInterface, WalletManager};
+use key_wallet_manager::WalletManager;
 
 use crate::error::PlatformWalletError;
-use crate::events::PlatformWalletEvent;
-use crate::spv::event_forwarder::SpvEventForwarder;
+use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient = DashSpvClient<
     WalletManager<PlatformWalletInfo>,
     PeerNetworkManager,
     DiskStorageManager,
-    SpvEventForwarder,
+    PlatformEventManager,
 >;
 
-/// SPV client runtime — owns the `DashSpvClient` and tracks sync height.
+/// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
-/// Holds a reference to the shared `WalletManager<PlatformWalletInfo>` and
-/// event channel at construction time, so callers just need `start(config)` /
-/// `stop()`.
-///
-/// Asset-lock finality tracking (InstantLock / ChainLock waiting) is handled
-/// directly by `AssetLockManager` via SPV event subscriptions — the runtime
-/// only drives SPV sync and forwards events.
+/// Events are dispatched through [`PlatformEventManager`] to all registered
+/// handlers by reference (no cloning).
 pub struct SpvRuntime {
-    event_tx: broadcast::Sender<PlatformWalletEvent>,
-    /// Shared `WalletManager<PlatformWalletInfo>` — implements `WalletInterface`,
-    /// so DashSpvClient can drive block/mempool processing directly through it.
-    /// `WalletManager` bumps its own structural revision when wallets are
-    /// added/removed, so no external `notify_wallets_changed()` is needed.
+    event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
 }
 
 impl SpvRuntime {
-    /// Create a new SPV runtime bound to a wallet manager and event channel.
+    /// Create a new SPV runtime.
     pub fn new(
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-        event_tx: broadcast::Sender<PlatformWalletEvent>,
+        event_manager: Arc<PlatformEventManager>,
     ) -> Self {
         Self {
-            event_tx,
+            event_manager,
             wallet_manager,
             client: RwLock::new(None),
         }
@@ -73,8 +57,6 @@ impl SpvRuntime {
             }
         }
 
-        let forwarder = SpvEventForwarder::new(self.event_tx.clone());
-
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
@@ -87,7 +69,7 @@ impl SpvRuntime {
             network_manager,
             storage_manager,
             Arc::clone(&self.wallet_manager),
-            Arc::new(forwarder),
+            Arc::clone(&self.event_manager),
         )
         .await
         .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
@@ -98,17 +80,12 @@ impl SpvRuntime {
         Ok(())
     }
 
-    /// Check whether the SPV client has been started (i.e. `start()` was called
-    /// and the client exists).
+    /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
     /// Broadcast a transaction to all connected SPV peers.
-    ///
-    /// The transaction will be relayed back to us through SPV's bloom filter
-    /// matching, at which point the wallet adapter processes it and updates
-    /// balances automatically.
     pub(crate) async fn broadcast_transaction(
         &self,
         tx: &Transaction,
@@ -127,9 +104,6 @@ impl SpvRuntime {
     }
 
     /// Look up a quorum public key via the SPV masternode state.
-    ///
-    /// Returns the 48-byte BLS public key for the quorum identified by
-    /// `(quorum_type, quorum_hash)` at the given chain-locked `height`.
     pub async fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -152,11 +126,7 @@ impl SpvRuntime {
         Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
     }
 
-    /// Run the SPV sync loop.
-    ///
-    /// Creates the client via [`start`](Self::start), then drives
-    /// `client.run(cancel)` until the cancellation token fires.  On exit the
-    /// client is stopped via [`stop`](Self::stop).
+    /// Run the SPV sync loop until the cancellation token fires.
     pub async fn run(
         &self,
         config: ClientConfig,
@@ -165,12 +135,6 @@ impl SpvRuntime {
         tracing::info!("SpvRuntime::run() starting client...");
         self.start(config).await?;
         tracing::info!("SpvRuntime::run() client started, entering sync loop");
-
-        let is_cancelled = cancel_token.is_cancelled();
-        tracing::info!(
-            "SpvRuntime::run() cancel_token already cancelled? {}",
-            is_cancelled
-        );
 
         let result = {
             let client_guard = self.client.read().await;
@@ -195,12 +159,7 @@ impl SpvRuntime {
             }
         };
 
-        tracing::info!(
-            "SpvRuntime::run() exiting sync loop, result ok={}",
-            result.is_ok()
-        );
-        // Always attempt cleanup, but don't let a stop() failure mask the
-        // actual SPV run result.
+        tracing::info!("SpvRuntime::run() exiting sync loop, result ok={}", result.is_ok());
         if let Err(e) = self.stop().await {
             tracing::warn!("SPV stop error during cleanup: {}", e);
         }

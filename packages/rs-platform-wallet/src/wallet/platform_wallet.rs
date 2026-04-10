@@ -12,7 +12,7 @@ use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet_manager::WalletManager;
-use tokio::sync::{broadcast, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
@@ -23,7 +23,6 @@ use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
 use super::tokens::TokenWallet;
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
-use crate::events::PlatformWalletEvent;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -68,11 +67,8 @@ pub struct PlatformWallet {
     pub(crate) dashpay: DashPayWallet,
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
-    /// Shared asset lock manager — builds, broadcasts, tracks, and provides
-    /// proofs for asset lock transactions. Shared across sub-wallets.
+    /// Shared asset lock manager.
     pub(crate) asset_locks: Arc<AssetLockManager>,
-    /// Broadcast channel for platform wallet events.
-    pub(crate) event_tx: broadcast::Sender<PlatformWalletEvent>,
     /// Per-wallet persistence handle.
     persister: WalletPersister,
     /// Lock-free balance for UI reads, cloned from `PlatformWalletInfo.balance`.
@@ -164,7 +160,7 @@ impl PlatformWallet {
         wallet_id: WalletId,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         balance: Arc<WalletBalance>,
-        event_tx: broadcast::Sender<PlatformWalletEvent>,
+        lock_notify: Arc<tokio::sync::Notify>,
         persister: Arc<dyn PlatformWalletPersistence>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
@@ -180,7 +176,7 @@ impl PlatformWallet {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             wallet_id,
-            event_tx.clone(),
+            lock_notify,
             broadcaster,
         ));
 
@@ -211,7 +207,6 @@ impl PlatformWallet {
             platform,
             tokens,
             asset_locks,
-            event_tx,
             persister: WalletPersister::new(wallet_id, persister),
             balance,
         }
@@ -262,7 +257,6 @@ impl Clone for PlatformWallet {
             platform: self.platform.clone(),
             tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),
-            event_tx: self.event_tx.clone(),
             persister: self.persister.clone(),
             balance: self.balance.clone(),
         }
