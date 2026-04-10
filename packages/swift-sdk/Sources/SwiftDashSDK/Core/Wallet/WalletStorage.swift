@@ -11,6 +11,8 @@ public class WalletStorage {
     private let pinKeychainAccount = "wallet.pin"
     private let biometricKeychainAccount = "wallet.biometric"
 
+    public init() {}
+
     // MARK: - Seed Storage
 
     public func storeSeed(_ seed: Data, pin: String) throws -> Data {

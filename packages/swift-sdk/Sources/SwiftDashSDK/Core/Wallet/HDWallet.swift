@@ -18,7 +18,7 @@ public final class HDWallet {
     // Serialized wallet bytes from FFI - used to restore wallet on app restart
     @Attribute(.unique) public var serializedWalletBytes: Data
     
-    init(walletId: Data, serializedWalletBytes: Data, label: String, network: AppNetwork, isWatchOnly: Bool = false, isImported: Bool = false) {
+    public init(walletId: Data, serializedWalletBytes: Data, label: String, network: AppNetwork, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()
         self.label = label
         self.network = network
