@@ -1,3 +1,4 @@
+pub mod apply;
 pub mod asset_lock;
 pub mod core;
 pub mod dashpay;
@@ -12,6 +13,7 @@ pub mod signer;
 pub mod tokens;
 
 pub use self::core::CoreWallet;
+pub use apply::ApplyError;
 pub use dashpay::DashPayWallet;
 pub use identity::IdentityWallet;
 pub use platform_addresses::PlatformAddressWallet;

@@ -73,37 +73,6 @@ impl AssetLockManager {
 }
 
 // ---------------------------------------------------------------------------
-// Changeset support
-// ---------------------------------------------------------------------------
-
-impl AssetLockManager {
-    /// Restore tracked asset locks from a persisted changeset.
-    ///
-    /// Uses `blocking_write` — must NOT be called from within a tokio async context.
-    pub(crate) fn restore_from_changeset_blocking(&self, changeset: &AssetLockChangeSet) {
-        let mut wm = self.wallet_manager.blocking_write();
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-            return;
-        };
-        for (out_point, entry) in &changeset.asset_locks {
-            info.tracked_asset_locks.insert(
-                *out_point,
-                TrackedAssetLock {
-                    out_point: *out_point,
-                    transaction: entry.transaction.clone(),
-                    account_index: entry.account_index,
-                    funding_type: entry.funding_type,
-                    identity_index: entry.identity_index,
-                    amount: entry.amount_duffs,
-                    status: entry.status.clone(),
-                    proof: entry.proof.clone(),
-                },
-            );
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Public read accessors
 // ---------------------------------------------------------------------------
 

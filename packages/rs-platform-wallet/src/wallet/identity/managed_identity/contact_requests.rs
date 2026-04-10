@@ -152,6 +152,48 @@ impl ManagedIdentity {
     }
 }
 
+// --- Apply (restore from changeset) ---
+
+impl ManagedIdentity {
+    /// Insert a sent contact request into this identity during apply.
+    ///
+    /// Apply-side counterpart of [`add_sent_contact_request`]
+    /// without the auto-establish fast path — replay must be faithful
+    /// to the changeset, which already captured establishment as a
+    /// separate `established` entry at mutation time.
+    pub(crate) fn apply_sent_contact_request(&mut self, request: ContactRequest) {
+        let recipient_id = request.recipient_id;
+        self.sent_contact_requests.insert(recipient_id, request);
+    }
+
+    /// Insert an incoming contact request into this identity during apply.
+    pub(crate) fn apply_incoming_contact_request(&mut self, request: ContactRequest) {
+        let sender_id = request.sender_id;
+        self.incoming_contact_requests.insert(sender_id, request);
+    }
+
+    /// Drop a sent contact request during apply (tombstone replay).
+    pub(crate) fn apply_removed_sent(&mut self, recipient_id: &Identifier) {
+        self.sent_contact_requests.remove(recipient_id);
+    }
+
+    /// Drop an incoming contact request during apply (tombstone replay).
+    pub(crate) fn apply_removed_incoming(&mut self, sender_id: &Identifier) {
+        self.incoming_contact_requests.remove(sender_id);
+    }
+
+    /// Promote a contact to established during apply, also dropping any
+    /// matching pending requests per the auto-establishment contract.
+    pub(crate) fn apply_established_contact(&mut self, contact: EstablishedContact) {
+        let contact_id = contact.contact_identity_id;
+        // The auto-establishment contract: established implies the
+        // matching pending entries are dropped on both sides.
+        self.sent_contact_requests.remove(&contact_id);
+        self.incoming_contact_requests.remove(&contact_id);
+        self.established_contacts.insert(contact_id, contact);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

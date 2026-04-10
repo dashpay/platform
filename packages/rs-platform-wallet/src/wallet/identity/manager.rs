@@ -242,6 +242,93 @@ impl IdentityManager {
     }
 }
 
+// --- Apply (restore from changeset) ---
+
+impl IdentityManager {
+    /// Restore a single [`IdentityEntry`] into the manager.
+    ///
+    /// This is the apply-side counterpart to the snapshot-emitting
+    /// mutation methods on [`ManagedIdentity`]. It does NOT enforce
+    /// invariants the mutation methods do at runtime (DPNS dedup,
+    /// auto-establishment, fresh block-time stamps) — replay must be
+    /// faithful to whatever the persisted entry carried.
+    ///
+    /// Contact state (`sent_contact_requests`, `incoming_contact_requests`,
+    /// `established_contacts`) is NOT touched here — those live in
+    /// [`ContactChangeSet`](crate::changeset::ContactChangeSet) and are
+    /// applied separately by the caller.
+    ///
+    /// # Behaviour
+    ///
+    /// - If the identity is not yet present, a fresh `ManagedIdentity` is
+    ///   constructed and every persistable field is copied from the entry.
+    /// - If the identity is already present, persistable fields are
+    ///   updated in place. The on-chain `Identity` blob is only replaced
+    ///   when `entry.identity.revision() >= existing.identity.revision()`,
+    ///   matching the merge policy on `IdentityChangeSet`.
+    ///
+    /// Idempotent: applying the same entry twice is the same as applying
+    /// it once.
+    pub(crate) fn apply_identity_entry(&mut self, entry: &IdentityEntry) {
+        use dpp::identity::accessors::IdentityGettersV0;
+        let id = entry.identity.id();
+        match self.identities.get_mut(&id) {
+            Some(existing) => {
+                if entry.identity.revision() >= existing.identity.revision() {
+                    existing.identity = entry.identity.clone();
+                }
+                existing.identity_index = entry.identity_index;
+                existing.label = entry.label.clone();
+                existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
+                existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+                existing.status = entry.status;
+                existing.wallet_seed_hash = entry.wallet_seed_hash;
+                // Append new DPNS names by label, preserving any
+                // pre-existing entries the changeset didn't carry.
+                for name in &entry.dpns_names {
+                    if !existing
+                        .dpns_names
+                        .iter()
+                        .any(|n| n.label == name.label)
+                    {
+                        existing.dpns_names.push(name.clone());
+                    }
+                }
+                existing.top_ups.extend(entry.top_ups.iter());
+                for (kid, slot) in &entry.key_storage {
+                    existing.key_storage.insert(*kid, slot.clone());
+                }
+            }
+            None => {
+                let mut managed = ManagedIdentity::new(entry.identity.clone(), entry.identity_index);
+                managed.label = entry.label.clone();
+                managed.last_updated_balance_block_time = entry.last_updated_balance_block_time;
+                managed.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+                managed.status = entry.status;
+                managed.wallet_seed_hash = entry.wallet_seed_hash;
+                managed.dpns_names = entry.dpns_names.clone();
+                managed.top_ups = entry.top_ups.clone();
+                managed.key_storage = entry.key_storage.clone();
+                self.identities.insert(id, managed);
+                if self.primary_identity_id.is_none() {
+                    self.primary_identity_id = Some(id);
+                }
+            }
+        }
+    }
+
+    /// Remove an identity from the manager during apply.
+    ///
+    /// Tombstone-only — does NOT touch the changeset. If the removed
+    /// identity was the primary, callers are responsible for re-selecting
+    /// the primary (typically by inspecting `cs.identities.primary_identity`
+    /// first, then falling back to `identities.keys().next()` if the
+    /// changeset didn't carry an explicit selection).
+    pub(crate) fn apply_remove(&mut self, identity_id: &Identifier) -> bool {
+        self.identities.shift_remove(identity_id).is_some()
+    }
+}
+
 // --- Watched identities ---
 
 impl IdentityManager {

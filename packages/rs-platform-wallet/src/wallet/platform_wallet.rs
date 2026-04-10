@@ -232,16 +232,24 @@ impl PlatformWallet {
         self.persister.load()
     }
 
-    /// Apply a changeset to in-memory wallet state.
-    pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
-        // Apply asset lock changeset — restore tracked locks from persisted state.
-        if let Some(asset_lock_cs) = &changeset.asset_locks {
-            self.asset_locks
-                .restore_from_changeset_blocking(asset_lock_cs);
-        }
-        // TODO: apply contacts changeset
-        // TODO: apply identities changeset
-        // TODO: apply platform_addresses changeset
+    /// Apply a [`PlatformWalletChangeSet`] to this wallet's in-memory
+    /// state under the wallet manager write lock.
+    ///
+    /// Delegates to [`PlatformWalletInfo::apply_changeset`], which is
+    /// the canonical restore path. Holds the `WalletManager` write
+    /// lock for the duration so the split borrow of `(&mut Wallet,
+    /// &mut PlatformWalletInfo)` is safe — `&mut Wallet` is needed so
+    /// the core sub-changeset can re-derive HD accounts via
+    /// `Wallet::add_account`.
+    pub async fn apply(
+        &self,
+        changeset: &PlatformWalletChangeSet,
+    ) -> Result<(), crate::wallet::ApplyError> {
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&self.wallet_id)
+            .expect("wallet exists in manager");
+        info.apply_changeset(wallet, changeset)
     }
 }
 

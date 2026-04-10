@@ -514,36 +514,77 @@ persister. That's 9a-5.
 Commit on platform-wallet `feat/platform-wallet2`. Platform-wallet
 builds and its unit tests pass. Evo-tool still broken until 9a-4.
 
-### 9a-3 `PlatformWalletInfo::apply_changeset` (restore path)
+### 9a-3 `PlatformWalletInfo::apply_changeset` (restore path) ✅
 
-**Where:** platform-wallet, new `src/wallet/apply.rs` mirroring
-key-wallet's structure.
+Landed in two commits:
+- `a48aeb3064` — prereq: carry full `EstablishedContact` in
+  `ContactChangeSet.established` (latent 9a-2 schema bug — auto-establish
+  paths emitted only the `(owner, contact)` pair, losing the underlying
+  `ContactRequest`s and making faithful replay impossible).
+- (this commit) — `src/wallet/apply.rs` with the canonical
+  `PlatformWalletInfo::apply_changeset` plus the `apply_identity_entry`
+  helper on `IdentityManager` and the `apply_*_contact_request` /
+  `apply_established_contact` helpers on `ManagedIdentity`.
 
-**Goal:** `fn apply_changeset(&mut self, wallet: &mut Wallet, cs: &PlatformWalletChangeSet) -> Result<(), ApplyError>`.
+Final shape:
 
-- Delegate `cs.core` → `self.core_wallet.apply_changeset(wallet, core)`.
-- Apply `cs.identities` via a new `IdentityManager::apply_identity_entry`
-  helper that sets label, dpns_names (resolving the
-  `Vec<String>` vs `Vec<DpnsNameInfo>` mismatch — fix `IdentityEntry`
-  to carry `Vec<DpnsNameInfo>` during this commit), top_ups, block time
-  timestamps.
-- Apply `cs.contacts` by routing each entry to the owning
-  `ManagedIdentity` via `identity_manager.managed_identity_mut(&id)`.
-  Needs per-direction helpers on `ManagedIdentity`.
-- Apply `cs.platform_addresses` into `self.platform_address_balances`
-  (direct BTreeMap::insert).
-- Apply `cs.asset_locks` into `self.tracked_asset_locks` via an
-  `AssetLockManager::apply_changeset` helper (mirroring the existing
-  `restore_from_changeset_blocking` but without the lock dance —
-  `&mut self` instead of `wallet_manager.blocking_write()`).
-- Apply `cs.token_balances` into `self.token_balances` / `token_watched`.
-- Recompute cached balance via `self.update_balance()`.
-- Errors only on cascade failures; silent skip with
-  `tracing::warn!` on unroutable entries.
+```rust
+pub fn apply_changeset(
+    &mut self,
+    wallet: &mut Wallet,
+    cs: &PlatformWalletChangeSet,
+) -> Result<(), ApplyError>
+```
 
-Idempotent by construction — all writes are map inserts / overwrites.
+Sequencing: `cs.core` → identities (insert + remove + primary fixup +
+scan watermark) → contacts (sent / incoming inserts → tombstone removes
+→ established promotions, each routed to the owning `ManagedIdentity` by
+`(owner, contact)` key) → platform addresses (insert + tombstone) →
+asset locks (insert with `amount_duffs` → `amount` rename + tombstone) →
+token balances (balance updates + watched/unwatched/removed_balances) →
+`update_balance()` recompute and mirror into the lock-free `Arc<WalletBalance>`.
 
-Commit on platform-wallet `feat/platform-wallet2`.
+Invariants:
+- Idempotent (9 unit tests cover insert/remove/double-apply for every
+  sub-changeset).
+- No re-emission — apply returns `Result<(), ApplyError>`.
+- Best-effort routing for contacts: orphan owners are
+  `tracing::warn!`-ed and skipped.
+- Loud on core failures: `cs.core` failures (HD account derivation
+  cascade) propagate as `ApplyError::CoreApply(String)`.
+
+Apply-side helpers added:
+- `IdentityManager::apply_identity_entry(&IdentityEntry)` — in-place
+  update if the identity already exists, or fresh insert. Mirrors the
+  merge policy on `IdentityChangeSet` (revision-gated `identity` blob,
+  union for dpns/top_ups/key_storage). First-inserted identity becomes
+  primary if no primary is set.
+- `IdentityManager::apply_remove(&Identifier) -> bool`.
+- `ManagedIdentity::apply_sent_contact_request`,
+  `apply_incoming_contact_request`, `apply_removed_sent`,
+  `apply_removed_incoming`, `apply_established_contact` — raw
+  inserts/removes that skip the auto-establish fast path (it was
+  already captured at mutation time).
+
+Deletions:
+- The stale `PlatformWallet::apply` (only handled asset locks, had TODOs
+  for everything else) is now a thin async wrapper that takes the
+  WalletManager write lock via `get_wallet_mut_and_info_mut` and
+  delegates to `PlatformWalletInfo::apply_changeset`.
+- `AssetLockManager::restore_from_changeset_blocking` — its only caller
+  was the old `PlatformWallet::apply`, gone.
+
+**Open follow-up — `apply_changeset` should consume the changeset by
+value.** Today it takes `cs: &PlatformWalletChangeSet`, matching
+key-wallet's signature. Every `insert` then has to clone owned data
+out of borrowed data: `Identity` blobs, `KeyStorage`, `dpns_names`,
+`ContactRequest`s, `EstablishedContact`s, `Transaction`s. For the
+typical persister-load case (deserialize → apply once → drop) all of
+those clones are pure waste — the persister already produced owned
+data, we could move it directly into the wallet maps. Switch the
+signature to `cs: PlatformWalletChangeSet` and use `into_iter()` /
+`drain` everywhere. No two-method API; the borrow form should just
+go away. Hidden clones are not OK.
 
 ### 9a-4 round-trip tests on platform-wallet
 
