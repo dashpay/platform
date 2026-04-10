@@ -14,7 +14,9 @@ mod sync;
 pub use block_time::BlockTime;
 pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData, WatchedIdentity};
 
-use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact};
+use crate::wallet::dashpay::{
+    ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
+};
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
@@ -69,6 +71,11 @@ pub struct ManagedIdentity {
     /// published via the DashPay data contract. `None` until the
     /// profile has been fetched or set.
     pub dashpay_profile: Option<DashPayProfile>,
+
+    /// DashPay payment history keyed by transaction id (hex string).
+    /// Each entry records a single Dash payment to or from a contact
+    /// identity, with direction, amount, memo, and status.
+    pub dashpay_payments: BTreeMap<String, PaymentEntry>,
 }
 
 #[cfg(test)]

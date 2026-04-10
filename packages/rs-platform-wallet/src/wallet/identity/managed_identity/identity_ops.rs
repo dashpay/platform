@@ -45,6 +45,7 @@ impl ManagedIdentity {
             wallet_seed_hash: None,
             top_ups: BTreeMap::new(),
             dashpay_profile: None,
+            dashpay_payments: BTreeMap::new(),
         }
     }
 
@@ -58,6 +59,22 @@ impl ManagedIdentity {
         profile: Option<crate::wallet::dashpay::DashPayProfile>,
     ) -> IdentityChangeSet {
         self.dashpay_profile = profile;
+        self.snapshot_changeset()
+    }
+
+    /// Record a DashPay payment under its transaction id, returning
+    /// a full-snapshot [`IdentityChangeSet`](crate::changeset::IdentityChangeSet).
+    ///
+    /// If an entry with the same `tx_id` already exists, it is
+    /// overwritten (last-write-wins) — the expected use case is
+    /// updating the status field from `Pending` to `Confirmed` or
+    /// `Failed` after broadcast.
+    pub fn record_dashpay_payment(
+        &mut self,
+        tx_id: String,
+        entry: crate::wallet::dashpay::PaymentEntry,
+    ) -> IdentityChangeSet {
+        self.dashpay_payments.insert(tx_id, entry);
         self.snapshot_changeset()
     }
 

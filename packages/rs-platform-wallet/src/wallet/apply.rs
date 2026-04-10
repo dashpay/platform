@@ -1163,6 +1163,101 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_record_dashpay_payment() {
+        use crate::wallet::dashpay::PaymentEntry;
+
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let counterparty = Identifier::from([2u8; 32]);
+
+        // Record a sent payment on A.
+        let tx_id = "a".repeat(64);
+        let payment = PaymentEntry::new_sent(counterparty, 12_000, Some("lunch".into()));
+        let id_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .record_dashpay_payment(tx_id.clone(), payment.clone());
+
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply");
+
+        // B now carries the same payment entry on the same owner.
+        let b_managed = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b managed");
+        assert_eq!(b_managed.dashpay_payments.get(&tx_id), Some(&payment));
+    }
+
+    #[test]
+    fn round_trip_payment_status_update_overwrites() {
+        use crate::wallet::dashpay::{PaymentEntry, PaymentStatus};
+
+        let mut wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+
+        for info in [&mut info_a, &mut info_b] {
+            let _ = info
+                .identity_manager
+                .add_identity(make_test_identity(1, 1), 0)
+                .expect("add");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let counterparty = Identifier::from([2u8; 32]);
+        let tx_id = "b".repeat(64);
+
+        // Initial pending entry.
+        let pending = PaymentEntry::new_sent(counterparty, 9_000, None);
+        let id_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .record_dashpay_payment(tx_id.clone(), pending);
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply pending");
+
+        // Overwrite with a confirmed entry under the same tx_id.
+        let mut confirmed = PaymentEntry::new_sent(counterparty, 9_000, None);
+        confirmed.status = PaymentStatus::Confirmed;
+        let id_cs = info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .record_dashpay_payment(tx_id.clone(), confirmed.clone());
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply confirmed");
+
+        // B shows the confirmed status.
+        let b_managed = info_b
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("b managed");
+        assert_eq!(
+            b_managed
+                .dashpay_payments
+                .get(&tx_id)
+                .map(|p| p.status),
+            Some(PaymentStatus::Confirmed)
+        );
+    }
+
+    #[test]
     fn round_trip_clear_dashpay_profile() {
         use crate::wallet::dashpay::DashPayProfile;
 

@@ -37,7 +37,9 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact};
+use crate::wallet::dashpay::{
+    ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
+};
 use crate::wallet::identity::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
 };
@@ -100,6 +102,11 @@ pub struct IdentityEntry {
     /// DashPay profile snapshot (display name, bio, avatar, public
     /// message). `None` until the profile has been fetched or set.
     pub dashpay_profile: Option<DashPayProfile>,
+    /// DashPay payment history keyed by transaction id (hex string).
+    /// Mutations that don't touch payments still carry the current
+    /// map via `from_managed`, so merge can use plain extend semantics
+    /// without losing history.
+    pub dashpay_payments: BTreeMap<String, PaymentEntry>,
 }
 
 impl IdentityEntry {
@@ -121,6 +128,7 @@ impl IdentityEntry {
             key_storage: managed.key_storage.clone(),
             wallet_seed_hash: managed.wallet_seed_hash,
             dashpay_profile: managed.dashpay_profile.clone(),
+            dashpay_payments: managed.dashpay_payments.clone(),
         }
     }
 }
@@ -195,6 +203,15 @@ impl Merge for IdentityChangeSet {
                     // Merge key storage entries (last write wins per KeyID).
                     for (kid, slot) in &entry.key_storage {
                         existing.key_storage.insert(*kid, slot.clone());
+                    }
+                    // Merge DashPay payments (last-write-wins per tx_id).
+                    // Same reasoning as top_ups: every mutation snapshot
+                    // copies the full map via `from_managed`, so extend
+                    // converges within a single wallet.
+                    for (tx_id, payment) in &entry.dashpay_payments {
+                        existing
+                            .dashpay_payments
+                            .insert(tx_id.clone(), payment.clone());
                     }
                 })
                 .or_insert(entry);

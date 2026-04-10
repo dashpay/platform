@@ -300,6 +300,7 @@ impl IdentityManager {
                 }
                 existing.top_ups.extend(entry.top_ups);
                 existing.key_storage.extend(entry.key_storage);
+                existing.dashpay_payments.extend(entry.dashpay_payments);
             }
             None => {
                 let mut managed = ManagedIdentity::new(entry.identity, entry.identity_index);
@@ -312,6 +313,7 @@ impl IdentityManager {
                 managed.top_ups = entry.top_ups;
                 managed.key_storage = entry.key_storage;
                 managed.dashpay_profile = entry.dashpay_profile;
+                managed.dashpay_payments = entry.dashpay_payments;
                 self.identities.insert(id, managed);
                 if self.primary_identity_id.is_none() {
                     self.primary_identity_id = Some(id);
