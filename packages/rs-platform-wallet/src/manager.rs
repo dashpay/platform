@@ -26,7 +26,12 @@ use crate::wallet::PlatformWallet;
 pub struct PlatformWalletManager {
     sdk: Arc<dash_sdk::Sdk>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallets: RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>,
+    /// Map of registered wallets. Held in an `Arc` so the
+    /// `BalanceUpdateHandler` can hold a clone and look up wallets to
+    /// update their lock-free balance atomics from event-handler
+    /// context, without touching the SPV-contended `wallet_manager`
+    /// lock.
+    wallets: Arc<RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
     lock_notify: Arc<Notify>,
     spv: Arc<SpvRuntime>,
@@ -45,11 +50,17 @@ impl PlatformWalletManager {
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
 
         // Build handler list: app handler + internal handlers.
+        // BalanceUpdateHandler holds a clone of the wallets map (a
+        // separate lock from wallet_manager) so it can look up
+        // PlatformWallets and write to their lock-free balance
+        // atomics from broadcast-handler context without contending
+        // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
-        let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallet_manager)));
+        let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
@@ -63,7 +74,7 @@ impl PlatformWalletManager {
         Self {
             sdk,
             wallet_manager,
-            wallets: RwLock::new(std::collections::BTreeMap::new()),
+            wallets,
             lock_notify,
             spv,
             persister,
