@@ -23,8 +23,6 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         // 1. Get all contract IDs stored under the DataContractDocuments root tree.
-        // Use grove_get_raw_path_query because the children are subtrees, and
-        // regular path queries reject tree elements.
         let contracts_root_path =
             vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()];
 
