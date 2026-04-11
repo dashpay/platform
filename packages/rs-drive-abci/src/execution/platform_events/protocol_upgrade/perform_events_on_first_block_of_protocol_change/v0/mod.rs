@@ -5,6 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
@@ -15,6 +16,7 @@ use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
+use drive::drive::contract::paths::contract_root_path;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -44,6 +46,7 @@ use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
+use drive::util::grove_operations::DirectQueryType;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 
@@ -668,6 +671,234 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
+        // Strip unknown top-level properties from all contract document type schemas.
+        // The v1 document meta-schema enforces additionalProperties: false at the
+        // document-type level.  Contracts created under the v0 meta-schema (which did
+        // NOT forbid unknown keys) may carry stale properties that would fail
+        // validation under v1.  We clean them up here so every stored contract
+        // conforms to the v1 meta-schema going forward.
+        self.strip_unknown_document_schema_properties(transaction, platform_version)?;
+
+        Ok(())
+    }
+
+    /// Iterates every data contract in state, checks each document type schema for
+    /// top-level properties not listed in the v1 document meta-schema, removes them,
+    /// and re-serializes the contract if anything changed.
+    fn strip_unknown_document_schema_properties(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        use dpp::data_contract::document_type::schema::allowed_top_level_properties::strip_unknown_properties_from_document_schema;
+
+        // 1. Get all contract IDs stored under the DataContractDocuments root tree.
+        // Use grove_get_raw_path_query because the children are subtrees, and
+        // regular path queries reject tree elements.
+        let contracts_root_path =
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()];
+
+        let mut query = Query::new();
+        query.insert_all();
+
+        let path_query = PathQuery::new(contracts_root_path, SizedQuery::new(query, None, None));
+
+        let (result_items, _) = self.drive.grove_get_raw_path_query(
+            &path_query,
+            Some(transaction),
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        let contract_ids: Vec<Vec<u8>> = result_items.to_keys();
+
+        tracing::debug!(
+            contract_count = contract_ids.len(),
+            "Checking contracts for unknown document schema properties"
+        );
+
+        let bincode_config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+
+        // 2. For each contract, read the raw element, check, and possibly update.
+        for contract_id_bytes in &contract_ids {
+            let contract_path = contract_root_path(contract_id_bytes.as_slice());
+
+            // Try reading the element at key [0] under the contract root.
+            let maybe_element = self.drive.grove_get_raw(
+                (&contract_path).into(),
+                &[0],
+                DirectQueryType::StatefulDirectQuery,
+                Some(transaction),
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+
+            // Collect the stored bytes, element flags, the GroveDB path (as
+            // Vec<Vec<u8>>) and the key where the element lives so we can
+            // write it back if modified.
+            let (stored_bytes, element_flags, storage_path_vec, storage_key): (
+                Vec<u8>,
+                _,
+                Vec<Vec<u8>>,
+                Vec<u8>,
+            ) = match maybe_element {
+                Some(Element::Item(bytes, flags)) => {
+                    // Non-historical contract: stored directly at [root, id, [0]]
+                    let path_vec: Vec<Vec<u8>> = contract_path.iter().map(|s| s.to_vec()).collect();
+                    (bytes, flags, path_vec, vec![0u8])
+                }
+                Some(Element::Tree(..)) => {
+                    // Historical contract: the latest version is stored
+                    // behind a reference at [root, id, [0], [0]].  We must
+                    // resolve it to find the actual Item element.
+                    let history_path =
+                        drive::drive::contract::paths::contract_keeping_history_root_path(
+                            contract_id_bytes.as_slice(),
+                        );
+                    let maybe_history_element = self.drive.grove_get_raw(
+                        (&history_path).into(),
+                        &[0],
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )?;
+                    let history_path_vec: Vec<Vec<u8>> =
+                        history_path.iter().map(|s| s.to_vec()).collect();
+                    match maybe_history_element {
+                        Some(Element::Reference(ref_path, ..)) => {
+                            // The reference points to a sibling key (the
+                            // encoded timestamp).  Resolve it.
+                            let timestamp_key = match &ref_path {
+                                drive::grovedb::reference_path::ReferencePathType::SiblingReference(key) => {
+                                    key.clone()
+                                }
+                                _ => {
+                                    return Err(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                                        format!(
+                                            "Unexpected reference type in historical contract {}",
+                                            hex::encode(contract_id_bytes)
+                                        ),
+                                    )));
+                                }
+                            };
+                            let maybe_actual = self.drive.grove_get_raw(
+                                (&history_path).into(),
+                                timestamp_key.as_slice(),
+                                DirectQueryType::StatefulDirectQuery,
+                                Some(transaction),
+                                &mut vec![],
+                                &platform_version.drive,
+                            )?;
+                            match maybe_actual {
+                                Some(Element::Item(bytes, flags)) => {
+                                    (bytes, flags, history_path_vec, timestamp_key)
+                                }
+                                _ => {
+                                    return Err(Error::Execution(
+                                        ExecutionError::CorruptedDriveResponse(format!(
+                                            "Could not resolve historical contract element for {}",
+                                            hex::encode(contract_id_bytes)
+                                        )),
+                                    ));
+                                }
+                            }
+                        }
+                        Some(Element::Item(bytes, flags)) => {
+                            // Direct item (no reference indirection)
+                            (bytes, flags, history_path_vec, vec![0u8])
+                        }
+                        _ => {
+                            return Err(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                                format!(
+                                    "Unexpected element type in historical contract path for {}",
+                                    hex::encode(contract_id_bytes)
+                                ),
+                            )));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        format!(
+                            "No element or unexpected type at contract root for {}",
+                            hex::encode(contract_id_bytes)
+                        ),
+                    )));
+                }
+            };
+
+            // 3. Deserialize to DataContractInSerializationFormat
+            let mut serialization_format: DataContractInSerializationFormat =
+                match bincode::borrow_decode_from_slice(stored_bytes.as_slice(), bincode_config) {
+                    Ok((format, _len)) => format,
+                    Err(e) => {
+                        return Err(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            format!(
+                                "Failed to deserialize contract {} during v12 migration: {}",
+                                hex::encode(contract_id_bytes),
+                                e
+                            ),
+                        )));
+                    }
+                };
+
+            // 4. Check and strip unknown keys from each document schema
+            let mut contract_modified = false;
+            for (doc_type_name, schema_value) in
+                serialization_format.document_schemas_mut().iter_mut()
+            {
+                if strip_unknown_properties_from_document_schema(schema_value) {
+                    tracing::info!(
+                        contract_id = hex::encode(contract_id_bytes),
+                        document_type = %doc_type_name,
+                        "Stripped unknown top-level properties from document schema"
+                    );
+                    contract_modified = true;
+                }
+            }
+
+            if !contract_modified {
+                continue;
+            }
+
+            // 5. Re-serialize and write back
+            let new_bytes =
+                bincode::encode_to_vec(&serialization_format, bincode_config).map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedDriveResponse(format!(
+                        "Failed to re-serialize contract {}: {}",
+                        hex::encode(contract_id_bytes),
+                        e
+                    )))
+                })?;
+
+            let new_element = Element::Item(new_bytes, element_flags);
+
+            let path_slices: Vec<&[u8]> = storage_path_vec.iter().map(|v| v.as_slice()).collect();
+            self.drive.grove_insert(
+                SubtreePath::from(path_slices.as_slice()),
+                storage_key.as_slice(),
+                new_element,
+                Some(transaction),
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+
+            tracing::info!(
+                contract_id = hex::encode(contract_id_bytes),
+                "Updated contract after stripping unknown document schema properties"
+            );
+        }
+
+        // Clear the global data contract cache so that subsequent fetches
+        // reload the cleaned contracts from disk rather than serving stale
+        // cached versions with the unknown properties still present.
+        self.drive.cache.data_contracts.clear();
+
         Ok(())
     }
 }
@@ -937,5 +1168,495 @@ mod tests {
         // Second call should also succeed (idempotent due to insert_contract)
         let result = platform.transition_to_version_6(&block_info, &transaction, platform_version);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_v12_migration_strips_unknown_document_schema_properties() {
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::Identity;
+        use dpp::platform_value::Value as PlatformValue;
+        use dpp::serialization::PlatformSerializableWithPlatformVersion;
+        use dpp::tests::json_document::json_document_to_contract_with_ids;
+        use platform_version::TryFromPlatformVersioned;
+
+        let platform_version_11 = PlatformVersion::get(11).expect("expected v11");
+        let platform_version_12 = PlatformVersion::latest();
+
+        // 1. Set up platform at v11
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // 2. Create an identity to own the contract
+        let identity = Identity::random_identity(3, Some(42), platform_version_11)
+            .expect("expected a random identity");
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version_11,
+            )
+            .expect("expected to add identity");
+
+        // 3. Create a contract and manually inject unknown properties into the schema
+        let mut data_contract = json_document_to_contract_with_ids(
+            "../rs-drive/tests/supporting_files/contract/family/family-contract.json",
+            None,
+            None,
+            false, // no validation — we want to inject unknown props
+            platform_version_11,
+        )
+        .expect("expected to get contract");
+
+        data_contract.set_owner_id(identity.id());
+
+        // Get the raw serialized format and inject unknown properties
+        let mut serialization_format =
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                data_contract.clone(),
+                platform_version_11,
+            )
+            .expect("expected to convert to serialization format");
+
+        // Inject unknown property into the "person" document schema
+        for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        {
+            if let Some(map) = schema_value.as_map_mut() {
+                map.push((
+                    PlatformValue::Text("unknownSmuggled".to_string()),
+                    PlatformValue::Bool(true),
+                ));
+            }
+        }
+
+        // Serialize the modified contract and insert directly into Drive
+        let bincode_config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let contract_bytes = bincode::encode_to_vec(&serialization_format, bincode_config)
+            .expect("expected to serialize");
+
+        let contract_id = data_contract.id();
+        let contract_path =
+            drive::drive::contract::paths::contract_root_path(contract_id.as_bytes());
+
+        // Insert the contract storage tree
+        platform
+            .drive
+            .grove_insert_if_not_exists(
+                SubtreePath::from(&[&[RootTree::DataContractDocuments as u8] as &[u8]][..]),
+                contract_id.as_bytes(),
+                Element::empty_tree(),
+                Some(&transaction),
+                None,
+                &platform_version_11.drive,
+            )
+            .expect("insert contract tree");
+
+        // Insert the contract data at key [0]
+        platform
+            .drive
+            .grove_insert(
+                (&contract_path).into(),
+                &[0],
+                Element::Item(contract_bytes, None),
+                Some(&transaction),
+                None,
+                &mut vec![],
+                &platform_version_11.drive,
+            )
+            .expect("insert contract data");
+
+        // 4. Verify the unknown property is there before migration
+        let raw_before = platform
+            .drive
+            .grove_get_raw(
+                (&contract_path).into(),
+                &[0],
+                drive::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+                Some(&transaction),
+                &mut vec![],
+                &platform_version_11.drive,
+            )
+            .expect("get raw")
+            .expect("element should exist");
+
+        let bytes_before = match &raw_before {
+            Element::Item(bytes, _) => bytes.clone(),
+            _ => panic!("expected Item"),
+        };
+
+        let format_before: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
+            &bytes_before,
+            bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit(),
+        )
+        .expect("deserialize")
+        .0;
+
+        let has_unknown_before = format_before.document_schemas().values().any(|schema| {
+            schema
+                .as_map()
+                .map(|map| {
+                    map.iter()
+                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            has_unknown_before,
+            "Contract should have unknownSmuggled property before migration"
+        );
+
+        // 5. Run the v12 migration
+        // First need v11 trees
+        platform
+            .transition_to_version_11(&transaction, platform_version_12)
+            .expect("v11 transition");
+
+        platform
+            .transition_to_version_12(&transaction, platform_version_12)
+            .expect("v12 transition should succeed and strip unknown properties");
+
+        // 6. Verify the unknown property is gone from disk
+        let raw_after = platform
+            .drive
+            .grove_get_raw(
+                (&contract_path).into(),
+                &[0],
+                drive::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+                Some(&transaction),
+                &mut vec![],
+                &platform_version_12.drive,
+            )
+            .expect("get raw")
+            .expect("element should exist");
+
+        let bytes_after = match &raw_after {
+            Element::Item(bytes, _) => bytes.clone(),
+            _ => panic!("expected Item"),
+        };
+
+        let format_after: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
+            &bytes_after,
+            bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit(),
+        )
+        .expect("deserialize")
+        .0;
+
+        let has_unknown_after = format_after.document_schemas().values().any(|schema| {
+            schema
+                .as_map()
+                .map(|map| {
+                    map.iter()
+                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            !has_unknown_after,
+            "Contract should NOT have unknownSmuggled property after v12 migration"
+        );
+
+        // 7. Verify known properties are still present
+        let has_type = format_after.document_schemas().values().any(|schema| {
+            schema
+                .as_map()
+                .map(|map| map.iter().any(|(k, _)| k.as_text() == Some("type")))
+                .unwrap_or(false)
+        });
+        assert!(
+            has_type,
+            "Contract should still have 'type' property after migration"
+        );
+
+        // 8. Verify the cache was cleared by fetching the contract through the
+        //    Drive API. The cache was populated implicitly during migration (or
+        //    could have been from prior block processing). After the migration
+        //    clears the global cache, a fresh fetch should reload from disk and
+        //    return the cleaned contract.
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commit");
+
+        let (_fee, fetched): (
+            _,
+            Option<std::sync::Arc<drive::drive::contract::DataContractFetchInfo>>,
+        ) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *contract_id.as_bytes(),
+                None,
+                false,
+                None, // no transaction — reads committed state
+                platform_version_12,
+            )
+            .expect("fetch from cache/disk");
+
+        let fetch_info = fetched.expect("contract should exist");
+        let fetched_contract = &fetch_info.contract;
+
+        // Check the fetched contract's raw serialization doesn't have the unknown property
+        // (This verifies both cache invalidation and disk update)
+        let refetched_format = DataContractInSerializationFormat::try_from_platform_versioned(
+            fetched_contract.clone(),
+            platform_version_12,
+        )
+        .expect("convert to serialization format");
+
+        let has_unknown_refetched = refetched_format.document_schemas().values().any(|schema| {
+            schema
+                .as_map()
+                .map(|map| {
+                    map.iter()
+                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            !has_unknown_refetched,
+            "Contract fetched through Drive API after migration should not have unknownSmuggled"
+        );
+    }
+
+    #[test]
+    fn test_v12_migration_strips_unknown_properties_from_historical_contract() {
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::Identity;
+        use dpp::platform_value::Value as PlatformValue;
+        use dpp::tests::json_document::json_document_to_contract_with_ids;
+        use drive::grovedb::reference_path::ReferencePathType;
+        use platform_version::TryFromPlatformVersioned;
+
+        let platform_version_11 = PlatformVersion::get(11).expect("expected v11");
+        let platform_version_12 = PlatformVersion::latest();
+
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Create identity
+        let identity = Identity::random_identity(3, Some(99), platform_version_11)
+            .expect("expected a random identity");
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version_11,
+            )
+            .expect("expected to add identity");
+
+        // Create contract
+        let mut data_contract = json_document_to_contract_with_ids(
+            "../rs-drive/tests/supporting_files/contract/family/family-contract.json",
+            None,
+            None,
+            false,
+            platform_version_11,
+        )
+        .expect("expected to get contract");
+        data_contract.set_owner_id(identity.id());
+
+        // Serialize and inject unknown property
+        let mut serialization_format =
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                data_contract.clone(),
+                platform_version_11,
+            )
+            .expect("convert to serialization format");
+
+        for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+            if let Some(map) = schema_value.as_map_mut() {
+                map.push((
+                    PlatformValue::Text("historicalSmuggled".to_string()),
+                    PlatformValue::Bool(true),
+                ));
+            }
+        }
+
+        let bincode_config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let contract_bytes =
+            bincode::encode_to_vec(&serialization_format, bincode_config).expect("serialize");
+
+        let contract_id = data_contract.id();
+
+        // Build historical contract storage layout:
+        // [DataContractDocuments, contract_id] = tree (contract root)
+        // [DataContractDocuments, contract_id, 0] = tree (history root)
+        // [DataContractDocuments, contract_id, 0, encoded_time] = Item(contract_bytes)
+        // [DataContractDocuments, contract_id, 0, 0] = Reference(SiblingReference(encoded_time))
+
+        let root_tree_key = &[RootTree::DataContractDocuments as u8];
+        let encoded_time = drive::util::common::encode::encode_u64(1000000);
+
+        // Insert contract root tree
+        platform
+            .drive
+            .grove_insert_if_not_exists(
+                SubtreePath::from(&[root_tree_key as &[u8]][..]),
+                contract_id.as_bytes(),
+                Element::empty_tree(),
+                Some(&transaction),
+                None,
+                &platform_version_11.drive,
+            )
+            .expect("insert contract root");
+
+        // Insert history root tree at key [0]
+        let contract_root_path =
+            drive::drive::contract::paths::contract_root_path(contract_id.as_bytes());
+        platform
+            .drive
+            .grove_insert(
+                (&contract_root_path).into(),
+                &[0],
+                Element::empty_tree(),
+                Some(&transaction),
+                None,
+                &mut vec![],
+                &platform_version_11.drive,
+            )
+            .expect("insert history tree");
+
+        // Insert contract data at the timestamp key
+        let history_path = drive::drive::contract::paths::contract_keeping_history_root_path(
+            contract_id.as_bytes(),
+        );
+        platform
+            .drive
+            .grove_insert(
+                (&history_path).into(),
+                encoded_time.as_slice(),
+                Element::Item(contract_bytes, None),
+                Some(&transaction),
+                None,
+                &mut vec![],
+                &platform_version_11.drive,
+            )
+            .expect("insert contract at timestamp");
+
+        // Insert reference at key [0] pointing to the timestamp key
+        platform
+            .drive
+            .grove_insert(
+                (&history_path).into(),
+                &[0],
+                Element::Reference(
+                    ReferencePathType::SiblingReference(encoded_time.clone()),
+                    Some(1),
+                    None,
+                ),
+                Some(&transaction),
+                None,
+                &mut vec![],
+                &platform_version_11.drive,
+            )
+            .expect("insert reference");
+
+        // Verify unknown property exists before migration
+        let raw_element = platform
+            .drive
+            .grove_get_raw(
+                (&history_path).into(),
+                encoded_time.as_slice(),
+                drive::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+                Some(&transaction),
+                &mut vec![],
+                &platform_version_11.drive,
+            )
+            .expect("get raw")
+            .expect("element");
+
+        let bytes_before = match &raw_element {
+            Element::Item(bytes, _) => bytes.clone(),
+            _ => panic!("expected Item"),
+        };
+        let format_before: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_before, bincode_config)
+                .expect("deserialize")
+                .0;
+
+        let has_smuggled = format_before.document_schemas().values().any(|s| {
+            s.as_map()
+                .map(|m| {
+                    m.iter()
+                        .any(|(k, _)| k.as_text() == Some("historicalSmuggled"))
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            has_smuggled,
+            "historical contract should have smuggled property before migration"
+        );
+
+        // Run v12 migration
+        platform
+            .transition_to_version_11(&transaction, platform_version_12)
+            .expect("v11 transition");
+        platform
+            .transition_to_version_12(&transaction, platform_version_12)
+            .expect("v12 transition");
+
+        // Verify property is stripped from disk (at the timestamp key)
+        let raw_after = platform
+            .drive
+            .grove_get_raw(
+                (&history_path).into(),
+                encoded_time.as_slice(),
+                drive::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+                Some(&transaction),
+                &mut vec![],
+                &platform_version_12.drive,
+            )
+            .expect("get raw")
+            .expect("element");
+
+        let bytes_after = match &raw_after {
+            Element::Item(bytes, _) => bytes.clone(),
+            _ => panic!("expected Item"),
+        };
+        let format_after: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_after, bincode_config)
+                .expect("deserialize")
+                .0;
+
+        let has_smuggled_after = format_after.document_schemas().values().any(|s| {
+            s.as_map()
+                .map(|m| {
+                    m.iter()
+                        .any(|(k, _)| k.as_text() == Some("historicalSmuggled"))
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            !has_smuggled_after,
+            "historical contract should NOT have smuggled property after v12 migration"
+        );
     }
 }

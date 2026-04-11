@@ -5,40 +5,42 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 };
 use versioned_feature_core::FeatureVersionBounds;
 
-pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
+// Introduced in protocol version 12, document_type_schema is changed to v1
+// which adds additionalProperties: false at the top level of document meta-schema
+pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
         min_version: 0,
         max_version: 1,
-        default_current_version: 1, //changed
+        default_current_version: 1,
     },
-    contract_structure_version: 1, //changed
+    contract_structure_version: 1,
     created_data_contract_structure: 0,
     config: FeatureVersionBounds {
-        min_version: 0,
+        min_version: 1,
         max_version: 1,
         default_current_version: 1,
-    }, // changed to enable sized integer types
+    },
     methods: DataContractMethodVersions {
         validate_document: 0,
         validate_update: 0,
         schema: 0,
         validate_groups: 0,
         equal_ignoring_time_fields: 0,
-        registration_cost: 1, //changed to version 1
+        registration_cost: 1,
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 1,                             //changed to use document type V1
-            create_document_types_from_document_schemas: 1, //changed to allow contracts with only tokens
+            try_from_schema: 1,
+            create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
-            document_type_schema: 0,
-            should_add_creator_id: 0,
+            document_type_schema: 1, // changed: use v1 document meta-schema with additionalProperties: false
+            should_add_creator_id: 1,
             enrich_with_base_schema: 0,
             find_identifier_and_binary_paths: 0,
             validate_max_depth: 0,

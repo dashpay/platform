@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json",
+  "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -602,6 +602,37 @@
     "additionalProperties": {
       "type": "boolean",
       "const": false
+    },
+    "required": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "$comment": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "minProperties": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "maxProperties": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dependentRequired": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "uniqueItems": true
+      }
     }
   },
   "required": [
@@ -609,5 +640,6 @@
     "type",
     "properties",
     "additionalProperties"
-  ]
+  ],
+  "additionalProperties": false
 }
