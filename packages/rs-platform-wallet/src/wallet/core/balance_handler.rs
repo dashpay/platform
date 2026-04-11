@@ -1,31 +1,35 @@
 //! Event handler that updates lock-free `WalletBalance` atomics
 //! when `WalletEvent::BalanceUpdated` fires.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_spv::EventHandler;
-use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 use crate::events::{PlatformEventHandler, WalletEvent};
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::WalletId;
+use crate::wallet::PlatformWallet;
 
-/// Updates `PlatformWalletInfo.balance` atomics on `BalanceUpdated` events.
+/// Updates `PlatformWallet`'s lock-free `WalletBalance` atomics on
+/// `BalanceUpdated` events.
 ///
-/// Registered in `PlatformWalletManager` handler list. On each
-/// `BalanceUpdated` event, acquires a WalletManager read lock to find
-/// the wallet's `Arc<WalletBalance>` and update it.
-///
-/// This only fires when balance actually changes (WalletManager compares
-/// snapshots before/after), so the read lock acquisition is rare — not
-/// on every block.
+/// Registered in `PlatformWalletManager` handler list. The handler
+/// holds an `Arc` clone of the manager's `wallets` map (a *separate*
+/// lock from the heavily-contended `wallet_manager` SPV write lock).
+/// SPV holds the wallet-manager write lock for the entire duration of
+/// block processing — looking the balance up through *that* lock would
+/// silently lose every event during initial sync. The wallets map is
+/// only written by manager lifecycle methods (`create_wallet_from_*`,
+/// `remove_wallet`), so a `try_read()` here essentially never
+/// contends.
 pub struct BalanceUpdateHandler {
-    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl BalanceUpdateHandler {
-    pub fn new(wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>) -> Self {
-        Self { wallet_manager }
+    pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+        Self { wallets }
     }
 }
 
@@ -39,12 +43,18 @@ impl EventHandler for BalanceUpdateHandler {
             locked,
         } = event
         {
-            // Try non-blocking read — if the lock is held (SPV processing),
-            // the atomics will be updated on the next event.
-            if let Some(wm) = self.wallet_manager.try_read().ok() {
-                if let Some(info) = wm.get_wallet_info(wallet_id) {
-                    info.balance.set(*spendable, *unconfirmed, *immature, *locked);
-                }
+            // try_read on the wallets map (NOT the wallet_manager
+            // SPV-contended lock). The map is only written by manager
+            // lifecycle methods, so this almost never contends.
+            let Ok(wallets) = self.wallets.try_read() else {
+                tracing::debug!(
+                    wallet = %hex::encode(wallet_id),
+                    "BalanceUpdated dropped: wallets-map lock contended"
+                );
+                return;
+            };
+            if let Some(pw) = wallets.get(wallet_id) {
+                pw.balance().set(*spendable, *unconfirmed, *immature, *locked);
             }
         }
     }

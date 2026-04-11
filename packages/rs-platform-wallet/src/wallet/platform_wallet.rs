@@ -165,6 +165,35 @@ impl PlatformWallet {
         }
     }
 
+    /// Non-blocking read-lock. Returns `None` if the lock is currently
+    /// held by a writer, or cannot be acquired without parking the
+    /// thread. Safe to call from any context — never panics, never
+    /// blocks. Intended for sync callers that run on a tokio runtime
+    /// thread (e.g. egui UI render callbacks) where blocking variants
+    /// would panic and async variants cannot be awaited.
+    pub fn try_state(&self) -> Option<WalletStateReadGuard<'_>> {
+        self.wallet_manager
+            .try_read()
+            .ok()
+            .map(|guard| WalletStateReadGuard {
+                guard,
+                wallet_id: self.wallet_id,
+            })
+    }
+
+    /// Non-blocking write-lock. Returns `None` if the lock is currently
+    /// held by any reader or writer. Same safety properties as
+    /// [`try_state`]: never panics, never blocks.
+    pub fn try_state_mut(&self) -> Option<WalletStateWriteGuard<'_>> {
+        self.wallet_manager
+            .try_write()
+            .ok()
+            .map(|guard| WalletStateWriteGuard {
+                guard,
+                wallet_id: self.wallet_id,
+            })
+    }
+
     /// Construct a PlatformWallet from a WalletManager that already contains
     /// the wallet. The wallet must have been inserted into the WalletManager
     /// before calling this.
