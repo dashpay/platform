@@ -206,6 +206,11 @@ impl PlatformWallet {
         persister: Arc<dyn PlatformWalletPersistence>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
+        // Build the per-wallet persister handle once and share it with
+        // the sub-wallets that need to queue their own changesets
+        // (currently just `AssetLockManager` — see Item 8 sub-step 1a).
+        let wallet_persister = WalletPersister::new(wallet_id, persister);
+
         let core = CoreWallet::new(
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
@@ -220,6 +225,7 @@ impl PlatformWallet {
             wallet_id,
             lock_notify,
             broadcaster,
+            wallet_persister.clone(),
         ));
 
         let identity = IdentityWallet {
@@ -249,7 +255,7 @@ impl PlatformWallet {
             platform,
             tokens,
             asset_locks,
-            persister: WalletPersister::new(wallet_id, persister),
+            persister: wallet_persister,
             balance,
         }
     }

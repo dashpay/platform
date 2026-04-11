@@ -18,6 +18,7 @@ use tokio::sync::{Notify, RwLock};
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -51,6 +52,17 @@ pub struct AssetLockManager {
     /// Injected at construction by `PlatformWallet::new()`. The caller
     /// (typically `PlatformWalletManager`) decides which implementation to use.
     broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+    /// Per-wallet persistence handle. Cloned from the parent
+    /// `PlatformWallet` at construction so asset lock mutations can
+    /// queue their own `AssetLockChangeSet`s into the changeset flush
+    /// boundary without round-tripping through the parent wallet.
+    ///
+    /// Item 8 sub-step 1a: previously mutations returned
+    /// `AssetLockChangeSet` and callers (including
+    /// `create_funded_asset_lock_proof` itself) dropped them with
+    /// `let _cs = ...`. Every emitted changeset now flows straight
+    /// into `queue_persist` here.
+    persister: WalletPersister,
 }
 
 impl AssetLockManager {
@@ -61,6 +73,7 @@ impl AssetLockManager {
         wallet_id: WalletId,
         lock_notify: Arc<Notify>,
         broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+        persister: WalletPersister,
     ) -> Self {
         Self {
             sdk,
@@ -68,7 +81,21 @@ impl AssetLockManager {
             wallet_id,
             lock_notify,
             broadcaster,
+            persister,
         }
+    }
+
+    /// Queue an `AssetLockChangeSet` onto the per-wallet persister.
+    /// No-op when the changeset is empty.
+    fn queue_asset_lock_changeset(&self, cs: AssetLockChangeSet) {
+        if <AssetLockChangeSet as crate::changeset::Merge>::is_empty(&cs) {
+            return;
+        }
+        self.persister
+            .store(crate::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(cs),
+                ..Default::default()
+            });
     }
 }
 
@@ -530,9 +557,9 @@ impl AssetLockManager {
         let txid = tx.txid();
         let out_point = OutPoint::new(txid, 0);
 
-        // 2. Track as Built.
-        // TODO(Phase 9a-6): forward the returned changeset to the persister.
-        let _cs_built = self
+        // 2. Track as Built and queue the changeset onto the persister
+        //    so a crash after broadcast leaves a row we can recover from.
+        let cs_built = self
             .track_asset_lock(TrackedAssetLock {
                 out_point,
                 transaction: tx.clone(),
@@ -544,25 +571,21 @@ impl AssetLockManager {
                 proof: None,
             })
             .await;
+        self.queue_asset_lock_changeset(cs_built);
 
-        // NOTE: The tracked lock is now in memory but NOT persisted to storage.
-        // If the app crashes after the broadcast below but before this method
-        // returns, the lock must be recovered from the chain on restart.
-        // Callers that need crash-safety should persist the wallet state here.
         tracing::debug!(
             %txid,
-            "Asset lock tracked in memory as Built; broadcasting. \
-             Caller should persist wallet state after this method returns."
+            "Asset lock tracked as Built and queued for persistence; broadcasting."
         );
 
         // 3. Broadcast.
         self.broadcaster.broadcast(&tx).await?;
 
-        // 4. Transition to Broadcast.
-        // TODO(Phase 9a-6): forward the returned changesets to the persister.
-        let _cs_broadcast = self
+        // 4. Transition to Broadcast and queue the changeset.
+        let cs_broadcast = self
             .advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
             .await?;
+        self.queue_asset_lock_changeset(cs_broadcast);
 
         // 5. Wait for proof via SPV events.
         let proof = self
@@ -576,14 +599,16 @@ impl AssetLockManager {
             .validate_or_upgrade_proof(proof, account_index, &out_point)
             .await?;
 
-        // 6. Attach proof — status matches the proof type received.
+        // 6. Attach proof — status matches the proof type received —
+        //    and queue the final changeset.
         let status = match &proof {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
-        let _cs_final = self
+        let cs_final = self
             .advance_asset_lock_status(&out_point, status, Some(proof.clone()))
             .await?;
+        self.queue_asset_lock_changeset(cs_final);
 
         Ok((proof, key, out_point))
     }
@@ -969,10 +994,10 @@ impl AssetLockManager {
             AssetLockStatus::Built => {
                 // Re-broadcast and wait for proof.
                 self.broadcaster.broadcast(&tx).await?;
-                // TODO(Phase 9a-6): forward the returned changeset to the persister.
-                let _cs = self
+                let cs = self
                     .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
+                self.queue_asset_lock_changeset(cs);
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
@@ -1001,10 +1026,10 @@ impl AssetLockManager {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
-        // TODO(Phase 9a-6): forward the returned changeset to the persister.
-        let _cs = self
+        let cs = self
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
             .await?;
+        self.queue_asset_lock_changeset(cs);
 
         // 4. Re-derive the one-time private key.
         let private_key = {
