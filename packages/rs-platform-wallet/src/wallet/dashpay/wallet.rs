@@ -732,6 +732,23 @@ impl DashPayWallet {
         Self::match_in_collection(info, address)
     }
 
+    /// Non-blocking variant of [`match_incoming_dashpay_address`].
+    /// Returns `Err(())` if the wallet-manager lock is currently
+    /// contended (e.g. SPV is processing a block). Returns `Ok(None)`
+    /// if the address does not belong to any DashPay receiving
+    /// account. Safe to call from any thread, including tokio runtime
+    /// threads, where the blocking variant would panic.
+    pub fn try_match_incoming_dashpay_address(
+        &self,
+        address: &dashcore::Address,
+    ) -> Result<Option<DashpayAddressMatch>, ()> {
+        let wm = self.wallet_manager.try_read().map_err(|_| ())?;
+        let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+            return Ok(None);
+        };
+        Ok(Self::match_in_collection(info, address))
+    }
+
     /// Shared implementation that iterates
     /// `info.core_wallet.accounts.dashpay_receival_accounts` and
     /// checks each account's address pool for a match.
