@@ -52,8 +52,6 @@ pub struct DashpayAddressMatch {
     pub user_identity_id: Identifier,
     /// The sending contact's identity ID.
     pub friend_identity_id: Identifier,
-    /// Account index (BIP44 path: `m/9'/coin'/15'/account'/…`).
-    pub account_index: u32,
     /// Address index within the account's external pool.
     pub address_index: u32,
 }

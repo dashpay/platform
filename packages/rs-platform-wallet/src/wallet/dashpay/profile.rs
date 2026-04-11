@@ -30,38 +30,3 @@ pub struct DashPayProfile {
     /// Public message broadcast to contacts.
     pub public_message: Option<String>,
 }
-
-impl DashPayProfile {
-    /// Create a new profile with all fields cleared.
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
-    /// True iff every visible field is `None`.
-    pub fn is_empty(&self) -> bool {
-        self.display_name.is_none()
-            && self.bio.is_none()
-            && self.avatar_url.is_none()
-            && self.avatar_bytes.is_none()
-            && self.public_message.is_none()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_profile_is_empty() {
-        assert!(DashPayProfile::empty().is_empty());
-    }
-
-    #[test]
-    fn profile_with_display_name_is_not_empty() {
-        let profile = DashPayProfile {
-            display_name: Some("alice".into()),
-            ..Default::default()
-        };
-        assert!(!profile.is_empty());
-    }
-}

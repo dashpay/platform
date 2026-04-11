@@ -743,7 +743,6 @@ impl DashPayWallet {
 
         for (key, account) in &info.core_wallet.accounts.dashpay_receival_accounts {
             let ManagedAccountType::DashpayReceivingFunds {
-                index: account_index,
                 user_identity_id,
                 friend_identity_id,
                 ..
@@ -768,7 +767,6 @@ impl DashPayWallet {
             return Some(DashpayAddressMatch {
                 user_identity_id: Identifier::from(*user_identity_id),
                 friend_identity_id: Identifier::from(*friend_identity_id),
-                account_index: *account_index,
                 address_index: info.index,
             });
         }
