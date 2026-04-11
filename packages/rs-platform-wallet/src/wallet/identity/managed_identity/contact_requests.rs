@@ -159,6 +159,14 @@ impl ManagedIdentity {
     /// the call is a no-op and returns an empty changeset. If the
     /// contact doesn't exist the call is a no-op (caller is expected
     /// to only call this for established contacts).
+    ///
+    /// **Persister contract:** the evo-tool persister filters contact
+    /// derivation writes whose `highest_receive_index`,
+    /// `bloom_registered_count`, and `next_send_index` are all zero
+    /// (see `write_contact_derivation_subset`). `bump_*` is safe by
+    /// construction — a bump only emits when `new_index > old_index`,
+    /// so the emitted snapshot always carries `highest_receive_index
+    /// >= 1`.
     pub fn bump_contact_highest_receive_index(
         &mut self,
         contact_id: &Identifier,
@@ -182,15 +190,36 @@ impl ManagedIdentity {
     /// [`ContactChangeSet`](crate::changeset::ContactChangeSet).
     ///
     /// Last-write-wins — callers pass the fresh authoritative value.
+    /// No-op (empty changeset) when `count` equals the current value,
+    /// to avoid persister churn on the common "already at target" case.
+    ///
+    /// **Persister contract:** see `bump_contact_highest_receive_index`.
+    /// Callers MUST pass `count > 0`. The evo-tool persister's
+    /// derivation-write gate filters all-zero changesets and would
+    /// silently drop a `set_*(0)` call. Since every real use case
+    /// passes `highest_receive_index + GAP_LIMIT` (≥ `GAP_LIMIT`), zero
+    /// is a programming error; `debug_assert!` catches it in dev and
+    /// the early-return guard prevents data loss in release.
     pub fn set_contact_bloom_registered_count(
         &mut self,
         contact_id: &Identifier,
         count: u32,
     ) -> ContactChangeSet {
+        debug_assert!(
+            count > 0,
+            "set_contact_bloom_registered_count: count must be > 0 \
+             (zero would be silently dropped by the persister gate)"
+        );
+        if count == 0 {
+            return ContactChangeSet::default();
+        }
         let owner_id = self.id();
         let Some(contact) = self.established_contacts.get_mut(contact_id) else {
             return ContactChangeSet::default();
         };
+        if contact.bloom_registered_count == count {
+            return ContactChangeSet::default();
+        }
         contact.set_bloom_registered_count(count);
         let mut cs = ContactChangeSet::default();
         cs.established
