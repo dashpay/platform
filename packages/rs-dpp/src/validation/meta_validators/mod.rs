@@ -62,10 +62,6 @@ lazy_static! {
             DRAFT202012_CORE.clone(),
         )
         .with_document(
-            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
-            DRAFT202012_APPLICATOR.clone(),
-        )
-        .with_document(
             "https://json-schema.org/draft/2020-12/meta/unevaluated".to_string(),
             DRAFT202012_UNEVALUATED.clone(),
         )
@@ -110,10 +106,6 @@ lazy_static! {
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/core".to_string(),
             DRAFT202012_CORE.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
-            DRAFT202012_APPLICATOR.clone(),
         )
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/unevaluated".to_string(),
@@ -164,10 +156,6 @@ lazy_static! {
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/core".to_string(),
             DRAFT202012_CORE.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
-            DRAFT202012_APPLICATOR.clone(),
         )
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/unevaluated".to_string(),

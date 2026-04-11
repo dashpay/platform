@@ -13,6 +13,8 @@ mod estimation_costs;
 mod get_fetch;
 #[cfg(feature = "server")]
 mod insert;
+#[cfg(feature = "server")]
+mod migration;
 /// Various paths for contract operations
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;

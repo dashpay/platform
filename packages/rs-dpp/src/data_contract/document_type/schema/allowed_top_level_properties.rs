@@ -99,4 +99,41 @@ mod tests {
         let changed = strip_unknown_properties_from_document_schema(&mut schema);
         assert!(!changed);
     }
+
+    #[test]
+    fn allowlist_matches_v1_meta_schema_properties() {
+        let v1_schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../schema/meta_schemas/document/v1/document-meta.json"
+        ))
+        .expect("v1 document meta-schema JSON must be valid");
+
+        let schema_properties: std::collections::BTreeSet<&str> = v1_schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .expect("v1 meta-schema must have a 'properties' object")
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+
+        let allowlist: std::collections::BTreeSet<&str> = ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES
+            .iter()
+            .copied()
+            .collect();
+
+        let in_allowlist_not_schema: Vec<&&str> =
+            allowlist.difference(&schema_properties).collect();
+        let in_schema_not_allowlist: Vec<&&str> =
+            schema_properties.difference(&allowlist).collect();
+
+        assert!(
+            in_allowlist_not_schema.is_empty(),
+            "Properties in ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES but not in v1 meta-schema: {:?}",
+            in_allowlist_not_schema
+        );
+        assert!(
+            in_schema_not_allowlist.is_empty(),
+            "Properties in v1 meta-schema but not in ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES: {:?}",
+            in_schema_not_allowlist
+        );
+    }
 }
