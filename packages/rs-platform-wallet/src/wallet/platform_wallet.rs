@@ -185,7 +185,6 @@ impl PlatformWallet {
             Arc::clone(&balance),
         );
 
-        // TODO: Create only one in manager.
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),

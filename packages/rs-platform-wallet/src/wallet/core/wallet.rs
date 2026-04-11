@@ -26,6 +26,7 @@ pub struct CoreWallet {
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet in the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
+    // TODO: Rename to cache
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
     pub(crate) balance: Arc<WalletBalance>,
@@ -274,13 +275,8 @@ impl CoreWallet {
         // TODO: Not a good idea to clone all spendable utoxs. It should be better way to create transactions. should we use dashcore transation builder? this seems like a logic that belongs to dashcore
         let spendable: Vec<Utxo> = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet exists");
-            info.get_spendable_utxos()
-                .into_iter()
-                .cloned()
-                .collect()
+            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet exists");
+            info.get_spendable_utxos().into_iter().cloned().collect()
         };
 
         if spendable.is_empty() {
@@ -499,14 +495,12 @@ impl CoreWallet {
         // Derive private keys and sign.
         for (i, (input, sighash)) in tx.input.iter_mut().zip(sighashes).enumerate() {
             let path = &derivation_paths[i];
-            let extended_key = wallet
-                .derive_extended_private_key(path)
-                .map_err(|e| {
-                    PlatformWalletError::TransactionBuild(format!(
-                        "Failed to derive key for input {}: {}",
-                        i, e
-                    ))
-                })?;
+            let extended_key = wallet.derive_extended_private_key(path).map_err(|e| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "Failed to derive key for input {}: {}",
+                    i, e
+                ))
+            })?;
             let input_private_key = extended_key.to_priv();
 
             let message = Message::from_digest(sighash.into());

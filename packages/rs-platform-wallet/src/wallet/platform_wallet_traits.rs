@@ -173,6 +173,7 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_state: bool,
         update_balance: bool,
     ) -> TransactionCheckResult {
+        // TODO: some logic must here - restore
         self.core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
             .await
@@ -189,8 +190,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_account(wallet, account_type)
+        self.core_wallet.add_managed_account(wallet, account_type)
     }
 
     fn add_managed_account_with_passphrase(
@@ -282,10 +282,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
 impl std::fmt::Debug for PlatformWalletInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformWalletInfo")
-            .field(
-                "wallet_id",
-                &hex::encode(self.core_wallet.wallet_id()),
-            )
+            .field("wallet_id", &hex::encode(self.core_wallet.wallet_id()))
             .field("identity_count", &self.identity_manager.identities.len())
             .finish()
     }

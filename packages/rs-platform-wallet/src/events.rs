@@ -16,6 +16,7 @@ use arc_swap::ArcSwap;
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
+// TODO: We remove platform events if we don't have them
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
 /// Implementors receive all SPV events via the [`EventHandler`] supertrait,

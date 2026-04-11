@@ -34,7 +34,7 @@ pub struct SpvRuntime {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
 }
-
+// TODO: We want it better
 impl SpvRuntime {
     /// Create a new SPV runtime.
     pub fn new(
@@ -159,7 +159,10 @@ impl SpvRuntime {
             }
         };
 
-        tracing::info!("SpvRuntime::run() exiting sync loop, result ok={}", result.is_ok());
+        tracing::info!(
+            "SpvRuntime::run() exiting sync loop, result ok={}",
+            result.is_ok()
+        );
         if let Err(e) = self.stop().await {
             tracing::warn!("SPV stop error during cleanup: {}", e);
         }
