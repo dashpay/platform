@@ -220,11 +220,19 @@ impl Merge for IdentityChangeSet {
         if other.primary_identity.is_some() {
             self.primary_identity = other.primary_identity;
         }
-        // Last-write-wins. `last_scanned_index` has a single writer
-        // (`IdentityManager::set_last_scanned_index`) so there's no
-        // concurrent-race scenario that would warrant a monotonic guard.
-        if other.last_scanned_index.is_some() {
-            self.last_scanned_index = other.last_scanned_index;
+        // Monotonic merge for `last_scanned_index` — the gap-limit
+        // scan watermark only advances forward. Defending against
+        // stale replay / reordered flushes (holistic review S2):
+        // even though the current writer is single, out-of-order
+        // merging during staged-changeset accumulation or flush
+        // failure recovery could clobber a newer value with an
+        // older one. Use MAX for safety.
+        match (self.last_scanned_index, other.last_scanned_index) {
+            (None, Some(v)) => self.last_scanned_index = Some(v),
+            (Some(current), Some(v)) if v > current => {
+                self.last_scanned_index = Some(v);
+            }
+            _ => {}
         }
     }
 
