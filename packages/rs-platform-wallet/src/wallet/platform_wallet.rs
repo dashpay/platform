@@ -271,6 +271,33 @@ impl PlatformWallet {
             .ok_or(crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
         info.apply_changeset(wallet, changeset)
     }
+
+    /// Load persisted state from the persister and apply it to the
+    /// in-memory wallet. Convenience wrapper for
+    /// `apply(load_persisted()?)`.
+    ///
+    /// **Idempotent** — safe to call multiple times. The apply path
+    /// uses monotonic / OR merges on every field it touches
+    /// (`highest_used` is MAX-merged, `utxos_instant_locked` is
+    /// set-union), so re-applying the same persisted state is a no-op.
+    ///
+    /// This is the recommended entry point for startup hydration
+    /// *after* late-registered accounts (e.g. DashPay contact
+    /// accounts that `bootstrap_dashpay_contact_accounts` adds) have
+    /// landed. The initial load_and_apply called during
+    /// `PlatformWallet` construction only hydrates state for
+    /// accounts that exist at that point; a second call after
+    /// account bootstrap picks up the rest without regressing
+    /// anything.
+    pub async fn load_and_apply_persisted(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let cs = self.load_persisted()?;
+        self.apply(cs)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        Ok(())
+    }
 }
 
 impl Clone for PlatformWallet {
