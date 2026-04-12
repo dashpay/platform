@@ -69,7 +69,7 @@ use crate::tokens::token_amount_on_contract_token::{
     DocumentActionTokenCost, DocumentActionTokenEffect,
 };
 #[cfg(feature = "validation")]
-use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
+use crate::validation::meta_validators::{DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -151,8 +151,28 @@ impl DocumentTypeV1 {
                 )
             })?;
 
+            // Select the appropriate document meta-schema based on platform version
+            let meta_schema = match platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .document_type_schema
+            {
+                0 => &*DOCUMENT_META_SCHEMA_V0,
+                1 => &*DOCUMENT_META_SCHEMA_V1,
+                version => {
+                    return Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DocumentTypeV1::try_from_schema (document_type_schema)"
+                            .to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    })
+                }
+            };
+
             // Validate against JSON Schema
-            DOCUMENT_META_SCHEMA_V0
+            meta_schema
                 .validate(&root_json_schema)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
@@ -707,6 +727,139 @@ mod tests {
     use crate::data_contract::document_type::DocumentTypeV0;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
+
+    mod document_meta_schema_version {
+        use super::*;
+
+        #[test]
+        fn v0_schema_allows_unknown_properties() {
+            let platform_version = PlatformVersion::first();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test_field": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false,
+                "unknownProp": true
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(
+                result.is_ok(),
+                "v0 schema should allow unknown top-level properties, got error: {:?}",
+                result.err()
+            );
+        }
+
+        #[test]
+        fn v1_schema_rejects_unknown_properties() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test_field": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false,
+                "unknownProp": true
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(
+                result.is_err(),
+                "v1 schema should reject unknown top-level properties"
+            );
+
+            let err = result.unwrap_err();
+            let err_str = format!("{:?}", err);
+            let err_str_lower = err_str.to_lowercase();
+            assert!(
+                err_str_lower.contains("additional properties"),
+                "Error should mention additional properties, got: {}",
+                err_str
+            );
+        }
+
+        #[test]
+        fn v1_schema_accepts_known_properties() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test_field": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false,
+                "required": ["test_field"],
+                "$comment": "hello"
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+
+            assert!(
+                result.is_ok(),
+                "v1 schema should accept known properties like required and $comment, got error: {:?}",
+                result.err()
+            );
+        }
+    }
 
     mod document_type_name {
         use super::*;

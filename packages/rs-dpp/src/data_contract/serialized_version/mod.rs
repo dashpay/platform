@@ -134,6 +134,13 @@ impl DataContractInSerializationFormat {
         }
     }
 
+    pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => &mut v0.document_schemas,
+            DataContractInSerializationFormat::V1(v1) => &mut v1.document_schemas,
+        }
+    }
+
     pub fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),

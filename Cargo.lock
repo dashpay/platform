@@ -5846,10 +5846,16 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "dapi-grpc",
  "data-contracts",
  "dpp",
  "hex",
  "platform-version",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic 0.14.5",
+ "ureq",
 ]
 
 [[package]]
