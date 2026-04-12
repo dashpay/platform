@@ -111,6 +111,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
     use grovedb_epoch_based_storage_flags::StorageFlags;
@@ -222,5 +223,70 @@ mod tests {
             .expect("expected to fetch");
 
         assert!(contracts.is_empty());
+    }
+
+    #[test]
+    fn fetch_contracts_includes_historical_contract() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Insert a normal (non-historical) contract
+        let contract_path = "tests/supporting_files/contract/family/family-contract.json";
+        let mut normal_contract = json_document_to_contract(contract_path, false, platform_version)
+            .expect("expected to get contract");
+        let normal_id = [1u8; 32];
+        normal_contract.set_id(normal_id.into());
+        drive
+            .apply_contract(
+                &normal_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply normal contract");
+
+        // Insert a historical contract (keeps_history = true)
+        let history_path =
+            "tests/supporting_files/contract/references/references_with_contract_history.json";
+        let mut history_contract = json_document_to_contract(history_path, false, platform_version)
+            .expect("expected to get contract");
+        let history_id = [2u8; 32];
+        history_contract.set_id(history_id.into());
+        history_contract.config_mut().set_keeps_history(true);
+        history_contract.config_mut().set_readonly(false);
+        drive
+            .apply_contract(
+                &history_contract,
+                BlockInfo {
+                    time_ms: 1000,
+                    height: 100,
+                    core_height: 10,
+                    epoch: Default::default(),
+                },
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply historical contract");
+
+        // Fetch all contracts — should get both
+        let contracts = drive
+            .fetch_contracts(None, 100, None, platform_version)
+            .expect("expected to fetch contracts");
+
+        assert_eq!(contracts.len(), 2);
+        let fetched_ids: Vec<[u8; 32]> = contracts.iter().map(|c| c.id().to_buffer()).collect();
+        assert!(fetched_ids.contains(&normal_id));
+        assert!(fetched_ids.contains(&history_id));
+
+        // Verify the historical contract has the right document types
+        let hist = contracts
+            .iter()
+            .find(|c| c.id().to_buffer() == history_id)
+            .unwrap();
+        assert!(!hist.document_types().is_empty());
     }
 }
