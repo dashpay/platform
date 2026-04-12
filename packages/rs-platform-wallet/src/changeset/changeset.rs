@@ -256,6 +256,27 @@ pub struct ContactRequestEntry {
     pub request: ContactRequest,
 }
 
+/// Key for sent contact requests: the **owner** sent a request TO the
+/// **recipient**. Used for `sent_requests` and `removed_sent`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SentContactRequestKey {
+    /// The identity owned by this wallet (the sender).
+    pub owner_id: Identifier,
+    /// The identity we sent the request to.
+    pub recipient_id: Identifier,
+}
+
+/// Key for incoming contact requests: the **owner** received a request
+/// FROM the **sender**. Used for `incoming_requests` and
+/// `removed_incoming`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReceivedContactRequestKey {
+    /// The identity owned by this wallet (the recipient).
+    pub owner_id: Identifier,
+    /// The identity that sent the request to us.
+    pub sender_id: Identifier,
+}
+
 /// Changes to the DashPay contact store.
 ///
 /// All maps and sets key by `(owner_identity_id, contact_identity_id)` —
@@ -298,18 +319,20 @@ pub struct ContactRequestEntry {
 /// removed_sent` by last-seen rather than carrying both.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ContactChangeSet {
-    /// Sent contact requests keyed by (owner, recipient).
-    pub sent_requests: BTreeMap<(Identifier, Identifier), ContactRequestEntry>,
+    /// Sent contact requests keyed by (owner → recipient).
+    pub sent_requests: BTreeMap<SentContactRequestKey, ContactRequestEntry>,
     /// Sent requests explicitly removed (e.g. `remove_sent_contact_request`).
-    pub removed_sent: BTreeSet<(Identifier, Identifier)>,
-    /// Incoming contact requests keyed by (owner, sender).
-    pub incoming_requests: BTreeMap<(Identifier, Identifier), ContactRequestEntry>,
+    pub removed_sent: BTreeSet<SentContactRequestKey>,
+    /// Incoming contact requests keyed by (owner ← sender).
+    pub incoming_requests: BTreeMap<ReceivedContactRequestKey, ContactRequestEntry>,
     /// Incoming requests explicitly removed (e.g. `remove_incoming_contact_request`).
-    pub removed_incoming: BTreeSet<(Identifier, Identifier)>,
-    /// Newly established contacts keyed by `(owner, contact)`. The full
+    pub removed_incoming: BTreeSet<ReceivedContactRequestKey>,
+    /// Newly established contacts keyed by (owner, contact). The full
     /// [`EstablishedContact`] is carried so the apply path can rebuild
-    /// the relationship without reaching back into prior state.
-    pub established: BTreeMap<(Identifier, Identifier), EstablishedContact>,
+    /// the relationship without reaching back into prior state. Uses
+    /// [`SentContactRequestKey`] since from the owner's perspective the
+    /// contact is the "recipient" of the relationship.
+    pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
 }
 
 impl Merge for ContactChangeSet {

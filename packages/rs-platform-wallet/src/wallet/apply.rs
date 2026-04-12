@@ -156,51 +156,51 @@ impl PlatformWalletInfo {
                 established,
             } = contact_cs;
 
-            for ((owner, _contact), entry) in sent_requests {
-                match self.identity_manager.managed_identity_mut(&owner) {
+            for (key, entry) in sent_requests {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
                     Some(managed) => {
                         managed
                             .sent_contact_requests
                             .insert(entry.request.recipient_id, entry.request);
                     }
                     None => tracing::warn!(
-                        owner = %owner,
+                        owner = %key.owner_id,
                         "skipping sent contact request during apply: owner identity not in wallet"
                     ),
                 }
             }
-            for ((owner, _contact), entry) in incoming_requests {
-                match self.identity_manager.managed_identity_mut(&owner) {
+            for (key, entry) in incoming_requests {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
                     Some(managed) => {
                         managed
                             .incoming_contact_requests
                             .insert(entry.request.sender_id, entry.request);
                     }
                     None => tracing::warn!(
-                        owner = %owner,
+                        owner = %key.owner_id,
                         "skipping incoming contact request during apply: owner identity not in wallet"
                     ),
                 }
             }
-            for (owner, contact) in removed_sent {
-                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner) {
-                    managed.sent_contact_requests.remove(&contact);
+            for key in removed_sent {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    managed.sent_contact_requests.remove(&key.recipient_id);
                 }
             }
-            for (owner, contact) in removed_incoming {
-                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner) {
-                    managed.incoming_contact_requests.remove(&contact);
+            for key in removed_incoming {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    managed.incoming_contact_requests.remove(&key.sender_id);
                 }
             }
             // Established promotions — drop any matching pending
             // entries on both sides per the auto-establishment contract.
-            for ((owner, _contact), established) in established {
-                match self.identity_manager.managed_identity_mut(&owner) {
+            for (key, established) in established {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
                     Some(managed) => {
                         managed.apply_established_contact(established);
                     }
                     None => tracing::warn!(
-                        owner = %owner,
+                        owner = %key.owner_id,
                         "skipping established contact during apply: owner identity not in wallet"
                     ),
                 }
@@ -323,7 +323,7 @@ mod tests {
     use crate::changeset::{
         AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry,
         IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-        TokenBalanceChangeSet,
+        ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::core::WalletBalance;
@@ -466,7 +466,7 @@ mod tests {
         let mut cs = PlatformWalletChangeSet::default();
         let mut contact_cs = ContactChangeSet::default();
         contact_cs.sent_requests.insert(
-            (owner, other),
+            SentContactRequestKey { owner_id: owner, recipient_id: other },
             ContactRequestEntry {
                 request: make_test_contact_request(99, 1),
             },
@@ -509,9 +509,10 @@ mod tests {
             make_test_contact_request(2, 1),
         );
         let mut contact_cs = ContactChangeSet::default();
-        contact_cs
-            .established
-            .insert((owner_id, other_id), established);
+        contact_cs.established.insert(
+            SentContactRequestKey { owner_id, recipient_id: other_id },
+            established,
+        );
         let mut cs = PlatformWalletChangeSet::default();
         cs.contacts = Some(contact_cs);
         info.apply_changeset(&mut wallet, cs)
@@ -928,7 +929,7 @@ mod tests {
             .add_sent_contact_request(make_test_contact_request(1, 2));
         // Plain insert path — no matching incoming, so `established` is empty.
         assert!(contact_cs.established.is_empty());
-        assert!(contact_cs.sent_requests.contains_key(&(owner, recipient)));
+        assert!(contact_cs.sent_requests.contains_key(&SentContactRequestKey { owner_id: owner, recipient_id: recipient }));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_contacts(contact_cs))
@@ -974,7 +975,7 @@ mod tests {
 
         // The second changeset (the auto-establish trigger) carries the full
         // `EstablishedContact`.
-        assert!(cs_out.established.contains_key(&(owner, other)));
+        assert!(cs_out.established.contains_key(&SentContactRequestKey { owner_id: owner, recipient_id: other }));
         assert!(cs_out.sent_requests.is_empty());
 
         // Replay both onto B in mutation order.
@@ -1035,7 +1036,7 @@ mod tests {
             .managed_identity_mut(&owner)
             .expect("a")
             .remove_sent_contact_request(&recipient);
-        assert!(remove_cs.removed_sent.contains(&(owner, recipient)));
+        assert!(remove_cs.removed_sent.contains(&SentContactRequestKey { owner_id: owner, recipient_id: recipient }));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_contacts(remove_cs))
@@ -1177,7 +1178,7 @@ mod tests {
 
         // Apply a tombstone for that pair.
         let mut contact_cs = ContactChangeSet::default();
-        contact_cs.removed_sent.insert((owner, other));
+        contact_cs.removed_sent.insert(SentContactRequestKey { owner_id: owner, recipient_id: other });
         info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
             .expect("apply tombstone");
 
