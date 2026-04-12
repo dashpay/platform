@@ -54,7 +54,8 @@ impl EventHandler for BalanceUpdateHandler {
                 return;
             };
             if let Some(pw) = wallets.get(wallet_id) {
-                pw.balance().set(*spendable, *unconfirmed, *immature, *locked);
+                pw.balance()
+                    .set(*spendable, *unconfirmed, *immature, *locked);
             }
         }
     }

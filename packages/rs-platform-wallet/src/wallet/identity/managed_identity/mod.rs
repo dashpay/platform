@@ -14,9 +14,7 @@ mod sync;
 pub use block_time::BlockTime;
 pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData, WatchedIdentity};
 
-use crate::wallet::dashpay::{
-    ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
-};
+use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;

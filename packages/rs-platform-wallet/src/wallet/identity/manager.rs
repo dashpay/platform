@@ -290,11 +290,7 @@ impl IdentityManager {
                 // Append new DPNS names by label, preserving any
                 // pre-existing entries the changeset didn't carry.
                 for name in entry.dpns_names {
-                    if !existing
-                        .dpns_names
-                        .iter()
-                        .any(|n| n.label == name.label)
-                    {
+                    if !existing.dpns_names.iter().any(|n| n.label == name.label) {
                         existing.dpns_names.push(name);
                     }
                 }
@@ -321,7 +317,6 @@ impl IdentityManager {
             }
         }
     }
-
 }
 
 // --- Watched identities ---

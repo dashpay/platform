@@ -37,9 +37,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::dashpay::{
-    ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
-};
+use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 use crate::wallet::identity::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
 };
@@ -338,7 +336,7 @@ impl Merge for ContactChangeSet {
 
 /// Changes to the Platform address store.
 ///
-/// Mirrors [`PlatformWalletInfo.platform_address_balances`] exactly:
+/// Mirrors [`ManagedPlatformAccount.address_balances`] exactly:
 /// a map from [`PlatformAddress`] (P2PKH or P2SH) to [`Credits`]
 /// (the balance in duffs). Plus a tombstone set for addresses whose
 /// balance dropped to zero / address was spent out during a transfer
@@ -453,7 +451,10 @@ impl Merge for TokenBalanceChangeSet {
             self.watched.entry(identity_id).or_default().extend(tokens);
         }
         for (identity_id, tokens) in other.unwatched {
-            self.unwatched.entry(identity_id).or_default().extend(tokens);
+            self.unwatched
+                .entry(identity_id)
+                .or_default()
+                .extend(tokens);
         }
     }
 

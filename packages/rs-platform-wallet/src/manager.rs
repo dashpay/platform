@@ -67,10 +67,7 @@ impl PlatformWalletManager {
             balance_handler,
         ]));
 
-        let spv = Arc::new(SpvRuntime::new(
-            Arc::clone(&wallet_manager),
-            event_manager,
-        ));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
         Self {
             sdk,
             wallet_manager,
@@ -123,7 +120,6 @@ impl PlatformWalletManager {
             balance: Arc::clone(&balance),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            platform_address_balances: std::collections::BTreeMap::new(),
             token_watched: std::collections::BTreeMap::new(),
             token_balances: std::collections::BTreeMap::new(),
         };

@@ -128,7 +128,12 @@ impl IdentityWallet {
     /// private keys on-the-fly from the wallet using the DIP-9 identity
     /// authentication path.
     pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
-        IdentitySigner::new(self.wallet_manager.clone(), self.wallet_id, self.sdk.network, identity_index)
+        IdentitySigner::new(
+            self.wallet_manager.clone(),
+            self.wallet_id,
+            self.sdk.network,
+            identity_index,
+        )
     }
 
     /// Build the DIP-9 identity authentication derivation path.
@@ -215,12 +220,18 @@ impl IdentityWallet {
         identity_id: &Identifier,
     ) -> Result<ManagedIdentitySigner, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+        let info = wm
+            .get_wallet_info(&self.wallet_id)
+            .expect("wallet info exists");
         let managed = info
             .identity_manager
             .managed_identity(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(managed.signer(self.wallet_manager.clone(), self.wallet_id, self.sdk.network))
+        Ok(managed.signer(
+            self.wallet_manager.clone(),
+            self.wallet_id,
+            self.sdk.network,
+        ))
     }
 
     /// Get a read-lock handle to the shared [`WalletManager`].
@@ -228,7 +239,9 @@ impl IdentityWallet {
     /// Access wallet info via `wm.get_wallet_info(&wallet_id)` and key material
     /// via `wm.get_wallet(&wallet_id)` on the returned guard. The identity
     /// manager is on the wallet info: `info.identity_manager`.
-    pub async fn wallet_manager_read(&self) -> tokio::sync::RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+    pub async fn wallet_manager_read(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
         self.wallet_manager.read().await
     }
 
@@ -517,7 +530,9 @@ impl IdentityWallet {
 
         // Step 4: Add the identity to the local manager (with its HD index).
         let mut wm = self.wallet_manager.write().await;
-        let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .expect("wallet info exists");
         // TODO(Phase 9a-6): forward the returned changeset to the persister.
         let _cs = info
             .identity_manager
@@ -835,7 +850,9 @@ impl IdentityWallet {
         let (network, start_index, wallet_id) = {
             let wm = self.wallet_manager.read().await;
             let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             (
                 wallet.network,
                 info.identity_manager.last_scanned_index(),
@@ -905,7 +922,9 @@ impl IdentityWallet {
 
                         // Acquire write lock to add/enrich the identity.
                         let mut wm_guard = self.wallet_manager.write().await;
-                        let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+                        let info_guard = wm_guard
+                            .get_wallet_info_mut(&self.wallet_id)
+                            .expect("wallet info exists");
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
                             // TODO(Phase 9a-6): forward the returned changeset
@@ -915,7 +934,10 @@ impl IdentityWallet {
                                 .add_identity(identity.clone(), identity_index)?;
                         }
 
-                        if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
+                        if let Some(managed) = info_guard
+                            .identity_manager
+                            .managed_identity_mut(&identity_id)
+                        {
                             let _cs = managed.set_status(IdentityStatus::Active);
                             managed.wallet_id = Some(wallet_id);
 
@@ -977,8 +999,13 @@ impl IdentityWallet {
             {
                 Ok(usernames) => {
                     let mut wm_guard = self.wallet_manager.write().await;
-                    let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
-                    if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
+                    let info_guard = wm_guard
+                        .get_wallet_info_mut(&self.wallet_id)
+                        .expect("wallet info exists");
+                    if let Some(managed) = info_guard
+                        .identity_manager
+                        .managed_identity_mut(&identity_id)
+                    {
                         for username in usernames {
                             let _cs = managed.add_dpns_name(DpnsNameInfo {
                                 label: username.label,
@@ -999,7 +1026,9 @@ impl IdentityWallet {
 
         // Update the last scanned index so the next sync resumes here.
         let mut wm_guard = self.wallet_manager.write().await;
-        let info_guard = wm_guard.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+        let info_guard = wm_guard
+            .get_wallet_info_mut(&self.wallet_id)
+            .expect("wallet info exists");
         // TODO(Phase 9a-6): forward the returned changeset to the persister.
         let _cs = info_guard
             .identity_manager
@@ -1062,7 +1091,9 @@ impl IdentityWallet {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1154,7 +1185,9 @@ impl IdentityWallet {
         // Update the identity's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if let Some(identity) = info.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1190,7 +1223,9 @@ impl IdentityWallet {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1225,7 +1260,9 @@ impl IdentityWallet {
         // Update the identity's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info_guard = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1294,7 +1331,9 @@ impl IdentityWallet {
         // Retrieve the sending identity and its HD index from the manager.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(from_id)
@@ -1324,7 +1363,9 @@ impl IdentityWallet {
         // Update the sender's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if let Some(identity) = info.identity_manager.identity_mut(from_id) {
                 identity.set_balance(sender_balance);
             }
@@ -1391,7 +1432,9 @@ impl IdentityWallet {
 
         let (mut identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1547,7 +1590,9 @@ impl IdentityWallet {
     ) -> Result<Credits, PlatformWalletError> {
         let identity = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             manager
                 .identity(identity_id)
@@ -1568,7 +1613,9 @@ impl IdentityWallet {
         // Update the identity's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if let Some(identity) = info.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1599,7 +1646,9 @@ impl IdentityWallet {
     ) -> Result<Credits, PlatformWalletError> {
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1632,7 +1681,9 @@ impl IdentityWallet {
         // Update the sender's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info_guard = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1662,7 +1713,9 @@ impl IdentityWallet {
 
         let (identity, identity_index, auth_key) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1802,8 +1855,7 @@ impl IdentityWallet {
             let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
             let network = wallet.network;
             let wallet_id = self.wallet_id;
-            let key_hash_array =
-                derive_identity_auth_key_hash(wallet, network, identity_index, 0)?;
+            let key_hash_array = derive_identity_auth_key_hash(wallet, network, identity_index, 0)?;
             (network, wallet_id, key_hash_array)
         };
 
@@ -1853,7 +1905,9 @@ impl IdentityWallet {
         // Add the identity to the manager and enrich it.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if info.identity_manager.identity(&identity_id).is_none() {
                 // TODO(Phase 9a-6): forward the returned changeset to the persister.
                 let _cs = info
@@ -1886,7 +1940,9 @@ impl IdentityWallet {
         {
             Ok(usernames) => {
                 let mut wm = self.wallet_manager.write().await;
-                let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+                let info = wm
+                    .get_wallet_info_mut(&self.wallet_id)
+                    .expect("wallet info exists");
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                     for username in usernames {
                         let _cs = managed.add_dpns_name(DpnsNameInfo {
@@ -1933,7 +1989,9 @@ impl IdentityWallet {
         // Verify identity exists in the manager.
         {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             if info.identity_manager.identity(identity_id).is_none() {
                 return Err(PlatformWalletError::IdentityNotFound(*identity_id));
             }
@@ -1958,7 +2016,9 @@ impl IdentityWallet {
         // Update the managed identity.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
                 managed.identity = identity.clone();
                 let _cs = managed.set_status(IdentityStatus::Active);
@@ -2002,7 +2062,9 @@ impl IdentityWallet {
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {
             let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet info exists");
             info.identity_manager.identities().keys().copied().collect()
         };
 
@@ -2014,8 +2076,11 @@ impl IdentityWallet {
             {
                 Ok(usernames) => {
                     let mut wm = self.wallet_manager.write().await;
-                    let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
-                    if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                    let info = wm
+                        .get_wallet_info_mut(&self.wallet_id)
+                        .expect("wallet info exists");
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
+                    {
                         managed.dpns_names = usernames
                             .into_iter()
                             .map(|u| DpnsNameInfo {
@@ -2080,8 +2145,11 @@ impl IdentityWallet {
         // index and cannot sign).
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).expect("wallet info exists");
-            info.identity_manager.add_watched_identity(identity.clone())?;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet info exists");
+            info.identity_manager
+                .add_watched_identity(identity.clone())?;
         }
 
         Ok(Some(identity))

@@ -1,13 +1,10 @@
 //! Types for address synchronization.
 
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
 use rs_dapi_client::RequestSettings;
 use std::collections::{BTreeMap, BTreeSet};
-
-/// A 32-byte address key that we're searching for in the address funds tree.
-/// This is derived from an address (e.g., hash of public key).
-pub type AddressKey = Vec<u8>;
 
 /// The derivation index for an address (for HD wallets).
 pub type AddressIndex = u32;
@@ -87,12 +84,12 @@ pub struct AddressSyncResult {
     /// Addresses found with their balances and nonces.
     ///
     /// Map of `(index, key)` to address funds.
-    pub found: BTreeMap<(AddressIndex, AddressKey), AddressFunds>,
+    pub found: BTreeMap<(AddressIndex, PlatformAddress), AddressFunds>,
 
     /// Addresses proven absent from the tree.
     ///
     /// Set of `(index, key)` tuples that were proven to not exist.
-    pub absent: BTreeSet<(AddressIndex, AddressKey)>,
+    pub absent: BTreeSet<(AddressIndex, PlatformAddress)>,
 
     /// Highest found index (for HD wallets).
     ///

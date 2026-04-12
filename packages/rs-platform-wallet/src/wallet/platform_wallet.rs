@@ -5,9 +5,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use dashcore::OutPoint;
-use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::TokenAmount;
-use dpp::fee::Credits;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -42,7 +40,6 @@ pub struct PlatformWalletInfo {
     pub balance: Arc<WalletBalance>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
-    pub platform_address_balances: BTreeMap<PlatformAddress, Credits>,
     pub token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
     pub token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>,
 }

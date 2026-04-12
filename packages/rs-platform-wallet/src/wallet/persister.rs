@@ -46,10 +46,7 @@ pub(crate) struct NoPlatformPersistence;
 impl PlatformWalletPersistence for NoPlatformPersistence {
     fn store(&self, _wallet_id: WalletId, _changeset: PlatformWalletChangeSet) {}
 
-    fn flush(
-        &self,
-        _wallet_id: WalletId,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
     }
 

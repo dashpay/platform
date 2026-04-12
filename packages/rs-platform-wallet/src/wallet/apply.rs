@@ -38,7 +38,9 @@
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
 //!    the now-restored UTXO set; the returned changeset is discarded.
 
+use dpp::address_funds::PlatformAddress;
 use key_wallet::wallet::Wallet;
+use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::PlatformWalletChangeSet;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
@@ -205,14 +207,25 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 4. Platform address balances. Last-write-wins on the cached
-        //    map; tombstones drop entries unconditionally.
+        // 4. Platform address balances. Apply to the first
+        //    ManagedPlatformAccount's balance map (the canonical store).
         if let Some(addr_cs) = platform_addresses {
-            for (addr, credits) in addr_cs.addresses {
-                self.platform_address_balances.insert(addr, credits);
-            }
-            for addr in addr_cs.removed {
-                self.platform_address_balances.remove(&addr);
+            if let Some(account) = self
+                .core_wallet
+                .first_platform_payment_managed_account_mut()
+            {
+                for (addr, credits) in addr_cs.addresses {
+                    if let PlatformAddress::P2pkh(hash) = addr {
+                        let p2pkh = PlatformP2PKHAddress::new(hash);
+                        account.set_address_credit_balance(p2pkh, credits, None);
+                    }
+                }
+                for addr in addr_cs.removed {
+                    if let PlatformAddress::P2pkh(hash) = addr {
+                        let p2pkh = PlatformP2PKHAddress::new(hash);
+                        account.set_address_credit_balance(p2pkh, 0, None);
+                    }
+                }
             }
         }
 
@@ -310,9 +323,9 @@ mod tests {
     use crate::wallet::dashpay::{ContactRequest, EstablishedContact};
     use crate::wallet::identity::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
     use key_wallet::wallet::Wallet;
-    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
     fn build_test_wallet() -> Wallet {
         Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
@@ -325,7 +338,6 @@ mod tests {
             balance: std::sync::Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
-            platform_address_balances: BTreeMap::new(),
             token_watched: BTreeMap::new(),
             token_balances: BTreeMap::new(),
         }
@@ -361,7 +373,6 @@ mod tests {
         info.apply_changeset(&mut wallet, cs).expect("apply");
         assert!(info.identity_manager.is_empty());
         assert!(info.tracked_asset_locks.is_empty());
-        assert!(info.platform_address_balances.is_empty());
         assert!(info.token_balances.is_empty());
     }
 
@@ -378,8 +389,12 @@ mod tests {
         let mut id_cs = IdentityChangeSet::default();
         let managed_a = ManagedIdentity::new(make_test_identity(1, 0), 0);
         let managed_b = ManagedIdentity::new(make_test_identity(2, 0), 1);
-        id_cs.identities.insert(id_a, IdentityEntry::from_managed(&managed_a));
-        id_cs.identities.insert(id_b, IdentityEntry::from_managed(&managed_b));
+        id_cs
+            .identities
+            .insert(id_a, IdentityEntry::from_managed(&managed_a));
+        id_cs
+            .identities
+            .insert(id_b, IdentityEntry::from_managed(&managed_b));
         id_cs.primary_identity = Some(id_a);
         cs.identities = Some(id_cs);
 
@@ -410,16 +425,22 @@ mod tests {
 
         let mut cs = PlatformWalletChangeSet::default();
         let mut id_cs = IdentityChangeSet::default();
-        id_cs.identities.insert(id, IdentityEntry::from_managed(&managed));
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(&managed));
         cs.identities = Some(id_cs);
 
         // Idempotent double-apply: clone explicitly because apply
         // consumes the changeset by value to avoid hidden clones in
         // the persister-load hot path.
-        info.apply_changeset(&mut wallet, cs.clone()).expect("first apply");
+        info.apply_changeset(&mut wallet, cs.clone())
+            .expect("first apply");
         info.apply_changeset(&mut wallet, cs).expect("second apply");
 
-        let restored = info.identity_manager.managed_identity(&id).expect("present");
+        let restored = info
+            .identity_manager
+            .managed_identity(&id)
+            .expect("present");
         assert_eq!(restored.label.as_deref(), Some("alice"));
         assert_eq!(restored.identity_index, 3);
         assert_eq!(restored.top_ups.get(&0), Some(&100_000));
@@ -464,10 +485,13 @@ mod tests {
         managed
             .incoming_contact_requests
             .insert(other_id, make_test_contact_request(2, 1));
-        id_cs.identities.insert(owner_id, IdentityEntry::from_managed(&managed));
+        id_cs
+            .identities
+            .insert(owner_id, IdentityEntry::from_managed(&managed));
         let mut cs = PlatformWalletChangeSet::default();
         cs.identities = Some(id_cs);
-        info.apply_changeset(&mut wallet, cs).expect("apply identity");
+        info.apply_changeset(&mut wallet, cs)
+            .expect("apply identity");
 
         // Now apply an established contact for the same pair.
         let established = EstablishedContact::new(
@@ -476,10 +500,13 @@ mod tests {
             make_test_contact_request(2, 1),
         );
         let mut contact_cs = ContactChangeSet::default();
-        contact_cs.established.insert((owner_id, other_id), established);
+        contact_cs
+            .established
+            .insert((owner_id, other_id), established);
         let mut cs = PlatformWalletChangeSet::default();
         cs.contacts = Some(contact_cs);
-        info.apply_changeset(&mut wallet, cs).expect("apply established");
+        info.apply_changeset(&mut wallet, cs)
+            .expect("apply established");
 
         let managed = info
             .identity_manager
@@ -492,11 +519,37 @@ mod tests {
 
     #[test]
     fn apply_platform_addresses_insert_and_remove() {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+        use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+        use key_wallet::PlatformP2PKHAddress;
+
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
 
+        // Set up a platform payment account so apply has somewhere to write.
+        let base_path = DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(9).unwrap(),
+            ChildNumber::from_hardened_idx(1).unwrap(),
+            ChildNumber::from_hardened_idx(17).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+        ]);
+        let pool = AddressPool::new_without_generation(
+            base_path,
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+        );
+        let platform_account = ManagedPlatformAccount::new(0, 0, pool, false);
+        info.core_wallet
+            .accounts
+            .insert_platform_account(platform_account);
+
         let addr1 = PlatformAddress::P2pkh([10u8; 20]);
         let addr2 = PlatformAddress::P2pkh([20u8; 20]);
+        let p2pkh1 = PlatformP2PKHAddress::new([10u8; 20]);
+        let p2pkh2 = PlatformP2PKHAddress::new([20u8; 20]);
 
         // Insert two.
         let mut addr_cs = PlatformAddressChangeSet::default();
@@ -505,8 +558,12 @@ mod tests {
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply insert");
-        assert_eq!(info.platform_address_balances.get(&addr1), Some(&100));
-        assert_eq!(info.platform_address_balances.get(&addr2), Some(&200));
+        let account = info
+            .core_wallet
+            .first_platform_payment_managed_account()
+            .unwrap();
+        assert_eq!(account.address_credit_balance(&p2pkh1), 100);
+        assert_eq!(account.address_credit_balance(&p2pkh2), 200);
 
         // Remove one, update the other.
         let mut addr_cs = PlatformAddressChangeSet::default();
@@ -515,8 +572,12 @@ mod tests {
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
-        assert_eq!(info.platform_address_balances.get(&addr1), Some(&150));
-        assert!(!info.platform_address_balances.contains_key(&addr2));
+        let account = info
+            .core_wallet
+            .first_platform_payment_managed_account()
+            .unwrap();
+        assert_eq!(account.address_credit_balance(&p2pkh1), 150);
+        assert_eq!(account.address_credit_balance(&p2pkh2), 0);
     }
 
     #[test]
@@ -591,7 +652,8 @@ mod tests {
         tok_cs.removed_balances.insert((identity, token));
         let mut cs = PlatformWalletChangeSet::default();
         cs.token_balances = Some(tok_cs);
-        info.apply_changeset(&mut wallet, cs).expect("apply unwatch");
+        info.apply_changeset(&mut wallet, cs)
+            .expect("apply unwatch");
         assert!(!info.token_balances.contains_key(&(identity, token)));
         assert!(!info.token_watched.contains_key(&identity));
     }
@@ -791,8 +853,14 @@ mod tests {
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
         assert_eq!(a.dpns_names.len(), b.dpns_names.len());
-        assert_eq!(a.dpns_names.first().map(|n| n.label.as_str()), Some("alice"));
-        assert_eq!(b.dpns_names.first().map(|n| n.label.as_str()), Some("alice"));
+        assert_eq!(
+            a.dpns_names.first().map(|n| n.label.as_str()),
+            Some("alice")
+        );
+        assert_eq!(
+            b.dpns_names.first().map(|n| n.label.as_str()),
+            Some("alice")
+        );
         assert_eq!(a.top_ups.get(&0), Some(&5_000_000));
         assert_eq!(b.top_ups.get(&0), Some(&5_000_000));
     }
@@ -836,7 +904,10 @@ mod tests {
 
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
-        assert_eq!(a.last_updated_balance_block_time, b.last_updated_balance_block_time);
+        assert_eq!(
+            a.last_updated_balance_block_time,
+            b.last_updated_balance_block_time
+        );
         assert_eq!(a.last_synced_keys_block_time, b.last_synced_keys_block_time);
         assert_eq!(b.last_updated_balance_block_time, Some(bt));
     }
@@ -995,14 +1066,8 @@ mod tests {
             .apply_changeset(&mut wallet_b, wrap_contacts(remove_cs))
             .expect("apply remove");
 
-        let a_owner = info_a
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("a");
-        let b_owner = info_b
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("b");
+        let a_owner = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let b_owner = info_b.identity_manager.managed_identity(&owner).expect("b");
         assert!(a_owner.sent_contact_requests.is_empty());
         assert!(b_owner.sent_contact_requests.is_empty());
     }
@@ -1022,14 +1087,18 @@ mod tests {
         let id = Identifier::from([1u8; 32]);
         let mut id_cs = IdentityChangeSet::default();
         let managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
-        id_cs.identities.insert(id, IdentityEntry::from_managed(&managed));
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(&managed));
         id_cs.primary_identity = Some(id);
-        info.apply_changeset(&mut wallet, wrap_id(id_cs)).expect("apply insert");
+        info.apply_changeset(&mut wallet, wrap_id(id_cs))
+            .expect("apply insert");
         assert_eq!(info.identity_manager.primary_identity_id, Some(id));
 
         let mut id_cs = IdentityChangeSet::default();
         id_cs.removed.insert(id);
-        info.apply_changeset(&mut wallet, wrap_id(id_cs)).expect("apply remove");
+        info.apply_changeset(&mut wallet, wrap_id(id_cs))
+            .expect("apply remove");
 
         assert_eq!(info.identity_manager.identity_count(), 0);
         assert_eq!(info.identity_manager.primary_identity_id, None);
@@ -1048,17 +1117,24 @@ mod tests {
         let mut id_cs = IdentityChangeSet::default();
         let m_a = ManagedIdentity::new(make_test_identity(1, 0), 0);
         let m_b = ManagedIdentity::new(make_test_identity(2, 0), 1);
-        id_cs.identities.insert(id_a, IdentityEntry::from_managed(&m_a));
-        id_cs.identities.insert(id_b, IdentityEntry::from_managed(&m_b));
+        id_cs
+            .identities
+            .insert(id_a, IdentityEntry::from_managed(&m_a));
+        id_cs
+            .identities
+            .insert(id_b, IdentityEntry::from_managed(&m_b));
         id_cs.primary_identity = Some(id_a);
-        info.apply_changeset(&mut wallet, wrap_id(id_cs)).expect("apply insert");
+        info.apply_changeset(&mut wallet, wrap_id(id_cs))
+            .expect("apply insert");
 
         let mut tombstone = IdentityChangeSet::default();
         tombstone.removed.insert(id_a);
         let cs = wrap_id(tombstone);
 
-        info.apply_changeset(&mut wallet, cs.clone()).expect("first remove");
-        info.apply_changeset(&mut wallet, cs).expect("second remove (no-op)");
+        info.apply_changeset(&mut wallet, cs.clone())
+            .expect("first remove");
+        info.apply_changeset(&mut wallet, cs)
+            .expect("second remove (no-op)");
 
         assert_eq!(info.identity_manager.identity_count(), 1);
         assert!(info.identity_manager.managed_identity(&id_a).is_none());
@@ -1078,18 +1154,27 @@ mod tests {
         let id = Identifier::from([1u8; 32]);
         let high = ManagedIdentity::new(make_test_identity(1, 5), 0);
         let mut high_cs = IdentityChangeSet::default();
-        high_cs.identities.insert(id, IdentityEntry::from_managed(&high));
-        info.apply_changeset(&mut wallet, wrap_id(high_cs)).expect("seed");
+        high_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(&high));
+        info.apply_changeset(&mut wallet, wrap_id(high_cs))
+            .expect("seed");
 
         // Stale revision 2 entry.
         use dpp::identity::accessors::IdentityGettersV0;
         let stale = ManagedIdentity::new(make_test_identity(1, 2), 0);
         let mut stale_cs = IdentityChangeSet::default();
-        stale_cs.identities.insert(id, IdentityEntry::from_managed(&stale));
-        info.apply_changeset(&mut wallet, wrap_id(stale_cs)).expect("stale apply");
+        stale_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(&stale));
+        info.apply_changeset(&mut wallet, wrap_id(stale_cs))
+            .expect("stale apply");
 
         // The on-chain blob must still carry revision 5.
-        let restored = info.identity_manager.managed_identity(&id).expect("present");
+        let restored = info
+            .identity_manager
+            .managed_identity(&id)
+            .expect("present");
         assert_eq!(restored.identity.revision(), 5);
     }
 
@@ -1109,15 +1194,22 @@ mod tests {
             .sent_contact_requests
             .insert(other, make_test_contact_request(1, 2));
         let mut id_cs = IdentityChangeSet::default();
-        id_cs.identities.insert(owner, IdentityEntry::from_managed(&managed));
-        info.apply_changeset(&mut wallet, wrap_id(id_cs)).expect("seed identity");
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(&managed));
+        info.apply_changeset(&mut wallet, wrap_id(id_cs))
+            .expect("seed identity");
 
         // Apply a tombstone for that pair.
         let mut contact_cs = ContactChangeSet::default();
         contact_cs.removed_sent.insert((owner, other));
-        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs)).expect("apply tombstone");
+        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
+            .expect("apply tombstone");
 
-        let restored = info.identity_manager.managed_identity(&owner).expect("present");
+        let restored = info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("present");
         assert!(!restored.sent_contact_requests.contains_key(&other));
     }
 
@@ -1249,10 +1341,7 @@ mod tests {
             .managed_identity(&owner)
             .expect("b managed");
         assert_eq!(
-            b_managed
-                .dashpay_payments
-                .get(&tx_id)
-                .map(|p| p.status),
+            b_managed.dashpay_payments.get(&tx_id).map(|p| p.status),
             Some(PaymentStatus::Confirmed)
         );
     }
@@ -1355,15 +1444,41 @@ mod tests {
 
     #[test]
     fn apply_double_apply_full_changeset_is_idempotent() {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+        use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+        use key_wallet::PlatformP2PKHAddress;
+
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
+
+        // Set up a platform payment account.
+        let base_path = DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(9).unwrap(),
+            ChildNumber::from_hardened_idx(1).unwrap(),
+            ChildNumber::from_hardened_idx(17).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+        ]);
+        let pool = AddressPool::new_without_generation(
+            base_path,
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+        );
+        let platform_account = ManagedPlatformAccount::new(0, 0, pool, false);
+        info.core_wallet
+            .accounts
+            .insert_platform_account(platform_account);
 
         let identity = Identifier::from([3u8; 32]);
         let mut managed = ManagedIdentity::new(make_test_identity(3, 0), 0);
         managed.label = Some("bob".into());
 
         let mut id_cs = IdentityChangeSet::default();
-        id_cs.identities.insert(identity, IdentityEntry::from_managed(&managed));
+        id_cs
+            .identities
+            .insert(identity, IdentityEntry::from_managed(&managed));
         id_cs.last_scanned_index = Some(7);
 
         let addr = PlatformAddress::P2pkh([42u8; 20]);
@@ -1381,12 +1496,20 @@ mod tests {
             ..Default::default()
         };
 
-        info.apply_changeset(&mut wallet, cs.clone()).expect("first apply");
+        info.apply_changeset(&mut wallet, cs.clone())
+            .expect("first apply");
         info.apply_changeset(&mut wallet, cs).expect("second apply");
 
         assert_eq!(info.identity_manager.identity_count(), 1);
         assert_eq!(info.identity_manager.last_scanned_index(), 7);
-        assert_eq!(info.platform_address_balances.get(&addr), Some(&1_000));
+        let account = info
+            .core_wallet
+            .first_platform_payment_managed_account()
+            .unwrap();
+        assert_eq!(
+            account.address_credit_balance(&PlatformP2PKHAddress::new([42u8; 20])),
+            1_000
+        );
         assert_eq!(info.token_balances.get(&(identity, token)), Some(&42));
     }
 }
