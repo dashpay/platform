@@ -44,6 +44,8 @@ pub struct DriveContractUpdateMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractGetMethodVersions {
     pub fetch_contract: FeatureVersion,
+    pub fetch_contract_ids: FeatureVersion,
+    pub fetch_contracts: FeatureVersion,
     pub fetch_contract_with_history: FeatureVersion,
     pub get_cached_contract_with_fetch_info: FeatureVersion,
     pub get_contract_with_fetch_info: FeatureVersion,
