@@ -41,7 +41,7 @@ pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
         schema: DocumentTypeSchemaVersions {
             document_type_schema: 1, // changed: use v1 document meta-schema with additionalProperties: false
             should_add_creator_id: 1,
-            enrich_with_base_schema: 0,
+            enrich_with_base_schema: 1, // changed: inject v1 schema URI
             find_identifier_and_binary_paths: 0,
             validate_max_depth: 0,
             max_depth: 256,

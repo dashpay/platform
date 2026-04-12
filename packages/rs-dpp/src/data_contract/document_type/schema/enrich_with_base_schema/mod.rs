@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
@@ -27,9 +28,16 @@ impl DocumentType {
                     )
                 })?,
             ),
+            1 => Ok(
+                v1::enrich_with_base_schema_v1(schema, schema_defs).map_err(|e| {
+                    ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::ContractError(e)).into(),
+                    )
+                })?,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "enrich_with_base_schema".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
