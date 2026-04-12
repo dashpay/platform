@@ -1,13 +1,12 @@
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::QueryResultType;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::document_type::schema::allowed_top_level_properties::strip_unknown_properties_from_document_schema;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::{Element, PathQuery, Query, SizedQuery, Transaction};
+use grovedb::{Element, Transaction};
 use grovedb_path::SubtreePath;
 
 impl Drive {
@@ -22,24 +21,9 @@ impl Drive {
         transaction: &Transaction,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        // 1. Get all contract IDs stored under the DataContractDocuments root tree.
-        let contracts_root_path =
-            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()];
-
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(contracts_root_path, SizedQuery::new(query, None, None));
-
-        let (result_items, _) = self.grove_get_raw_path_query(
-            &path_query,
-            Some(transaction),
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut vec![],
-            drive_version,
-        )?;
-
-        let contract_ids: Vec<Vec<u8>> = result_items.to_keys();
+        // 1. Fetch all contract IDs.
+        let contract_ids =
+            self.fetch_contract_ids_v0(None, u16::MAX, Some(transaction), drive_version)?;
 
         tracing::debug!(
             contract_count = contract_ids.len(),
