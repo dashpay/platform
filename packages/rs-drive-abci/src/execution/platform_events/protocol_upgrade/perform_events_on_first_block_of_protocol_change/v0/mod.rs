@@ -1551,7 +1551,9 @@ mod tests {
             contract_id.as_bytes(),
         );
 
-        // Insert all 3 revisions at their timestamp keys
+        // Insert all 3 revisions at their timestamp keys, each with distinct flags
+        let revision_flags: Vec<Option<Vec<u8>>> =
+            vec![Some(vec![1, 10]), Some(vec![2, 20]), Some(vec![3, 30])];
         let mut encoded_times = Vec::new();
         for (i, ts) in timestamps.iter().enumerate() {
             let encoded_time = drive::util::common::encode::encode_u64(*ts);
@@ -1560,7 +1562,7 @@ mod tests {
                 .grove_insert(
                     (&history_path).into(),
                     encoded_time.as_slice(),
-                    Element::Item(revision_bytes[i].clone(), None),
+                    Element::Item(revision_bytes[i].clone(), revision_flags[i].clone()),
                     Some(&transaction),
                     None,
                     &mut vec![],
@@ -1647,8 +1649,8 @@ mod tests {
                 .expect("get raw")
                 .expect("element");
 
-            let bytes = match &raw {
-                Element::Item(bytes, _) => bytes.clone(),
+            let (bytes, flags) = match &raw {
+                Element::Item(bytes, flags) => (bytes.clone(), flags.clone()),
                 _ => panic!("expected Item"),
             };
             let format: DataContractInSerializationFormat =
@@ -1670,6 +1672,13 @@ mod tests {
             assert!(
                 !has_any_smuggled,
                 "revision {} should NOT have any smuggled properties after migration",
+                i
+            );
+
+            // Verify element flags are preserved
+            assert_eq!(
+                flags, revision_flags[i],
+                "revision {} should preserve its original element flags after migration",
                 i
             );
         }
