@@ -496,6 +496,17 @@ pub struct PlatformWalletChangeSet {
     pub asset_locks: Option<AssetLockChangeSet>,
     /// Platform token balance / watch changes.
     pub token_balances: Option<TokenBalanceChangeSet>,
+    /// DashPay profile overlays keyed by identity ID. Applied AFTER
+    /// `identities` — updates the `dashpay_profile` field on existing
+    /// `ManagedIdentity` entries without touching other fields. Used
+    /// by the persister load path where only DashPay data is available
+    /// (the identity blob lives in the external `identity` table).
+    /// Identities not in the wallet are silently skipped.
+    pub dashpay_profiles: Option<BTreeMap<Identifier, Option<DashPayProfile>>>,
+    /// DashPay payment history overlays keyed by identity ID. Same
+    /// semantics as `dashpay_profiles` — extends existing payment maps
+    /// via `BTreeMap::extend` (last-write-wins per tx_id).
+    pub dashpay_payments_overlay: Option<BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
 }
 
 impl Merge for PlatformWalletChangeSet {
@@ -509,6 +520,20 @@ impl Merge for PlatformWalletChangeSet {
         self.platform_addresses.merge(other.platform_addresses);
         self.asset_locks.merge(other.asset_locks);
         self.token_balances.merge(other.token_balances);
+        // DashPay overlays: LWW per identity_id.
+        if let Some(other_profiles) = other.dashpay_profiles {
+            self.dashpay_profiles
+                .get_or_insert_with(Default::default)
+                .extend(other_profiles);
+        }
+        if let Some(other_payments) = other.dashpay_payments_overlay {
+            let target = self
+                .dashpay_payments_overlay
+                .get_or_insert_with(Default::default);
+            for (id, payments) in other_payments {
+                target.entry(id).or_default().extend(payments);
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -518,6 +543,10 @@ impl Merge for PlatformWalletChangeSet {
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()
             && self.token_balances.is_empty()
+            && self.dashpay_profiles.as_ref().map_or(true, |m| m.is_empty())
+            && self.dashpay_payments_overlay
+                .as_ref()
+                .map_or(true, |m| m.is_empty())
     }
 }
 

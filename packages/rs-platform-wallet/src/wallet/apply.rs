@@ -90,6 +90,8 @@ impl PlatformWalletInfo {
             platform_addresses,
             asset_locks,
             token_balances,
+            dashpay_profiles,
+            dashpay_payments_overlay,
         } = cs;
 
         // 1. Core wallet state — chain, accounts, UTXOs, transactions,
@@ -201,6 +203,24 @@ impl PlatformWalletInfo {
                         owner = %owner,
                         "skipping established contact during apply: owner identity not in wallet"
                     ),
+                }
+            }
+        }
+
+        // 3b. DashPay profile/payment overlays. Applied AFTER identities
+        //     so the target ManagedIdentity exists. Only touches dashpay
+        //     fields — does not require the identity blob.
+        if let Some(profiles) = dashpay_profiles {
+            for (id, profile) in profiles {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
+                    managed.dashpay_profile = profile;
+                }
+            }
+        }
+        if let Some(payments) = dashpay_payments_overlay {
+            for (id, payments_map) in payments {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
+                    managed.dashpay_payments.extend(payments_map);
                 }
             }
         }
