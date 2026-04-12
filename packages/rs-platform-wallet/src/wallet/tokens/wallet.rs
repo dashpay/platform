@@ -71,7 +71,10 @@ impl TokenWallet {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            info.token_watched.entry(identity_id).or_default().insert(token_id);
+            info.token_watched
+                .entry(identity_id)
+                .or_default()
+                .insert(token_id);
         }
         cs.watched.entry(identity_id).or_default().insert(token_id);
         cs
@@ -280,19 +283,27 @@ impl TokenWallet {
     ) -> Result<(dpp::identity::Identity, IdentitySigner, IdentityPublicKey), PlatformWalletError>
     {
         let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id)
+        let info = wm
+            .get_wallet_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
 
-        let identity = info.identity_manager
+        let identity = info
+            .identity_manager
             .identity(identity_id)
             .cloned()
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        let identity_index = info.identity_manager
+        let identity_index = info
+            .identity_manager
             .identity_index(identity_id)
             .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
 
-        let signer = IdentitySigner::new(self.wallet_manager.clone(), self.wallet_id, self.sdk.network, identity_index);
+        let signer = IdentitySigner::new(
+            self.wallet_manager.clone(),
+            self.wallet_id,
+            self.sdk.network,
+            identity_index,
+        );
 
         let signing_key = identity
             .get_first_public_key_matching(

@@ -134,7 +134,8 @@ impl PlatformPaymentAddressProvider {
         }
 
         let wm = self.wallet_manager.blocking_read();
-        let wallet = wm.get_wallet(&self.wallet_id)
+        let wallet = wm
+            .get_wallet(&self.wallet_id)
             .ok_or_else(|| "Wallet not found in wallet manager".to_string())?;
         for index in start..=max_index {
             if !self.pending.contains_key(&index) && !self.resolved.contains(&index) {

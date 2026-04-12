@@ -150,7 +150,6 @@ impl ManagedIdentity {
 
         (Some(contact), cs)
     }
-
 }
 
 // --- Apply (restore from changeset) ---
@@ -305,9 +304,7 @@ mod tests {
         let (removed, cs) = managed.remove_sent_contact_request(&recipient_id);
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().recipient_id, recipient_id);
-        assert!(cs
-            .removed_sent
-            .contains(&(managed.id(), recipient_id)));
+        assert!(cs.removed_sent.contains(&(managed.id(), recipient_id)));
         assert_eq!(managed.sent_contact_requests.len(), 0);
     }
 

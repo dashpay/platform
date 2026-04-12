@@ -21,10 +21,10 @@ use crate::changeset::PlatformAddressChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use dash_sdk::platform::address_sync::AddressSyncResult;
-use key_wallet_manager::WalletManager;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
+use key_wallet_manager::WalletManager;
 
 use super::provider::PlatformPaymentAddressProvider;
 
@@ -69,14 +69,14 @@ impl PlatformAddressWallet {
         &self,
     ) -> Result<(AddressSyncResult, PlatformAddressChangeSet), PlatformWalletError> {
         // Build the address provider from the wallet.
-        let mut provider =
-            PlatformPaymentAddressProvider::from_wallet(self.wallet_manager.clone(), self.wallet_id, self.sdk.network)
-                .map_err(|e| {
-                    PlatformWalletError::AddressSync(format!(
-                        "Failed to create address provider: {}",
-                        e
-                    ))
-                })?;
+        let mut provider = PlatformPaymentAddressProvider::from_wallet(
+            self.wallet_manager.clone(),
+            self.wallet_id,
+            self.sdk.network,
+        )
+        .map_err(|e| {
+            PlatformWalletError::AddressSync(format!("Failed to create address provider: {}", e))
+        })?;
 
         let result = self
             .sdk
@@ -85,8 +85,9 @@ impl PlatformAddressWallet {
 
         // Update cached balances from the sync results.
         let mut wm = self.wallet_manager.write().await;
-        let info = wm.get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::AddressSync("Wallet not found in wallet manager".to_string()))?;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::AddressSync("Wallet not found in wallet manager".to_string())
+        })?;
 
         // A sync replaces the whole cached set. Pre-seed the tombstone
         // set with every previously-cached address; the inserts below
@@ -100,7 +101,8 @@ impl PlatformAddressWallet {
         for ((_, key), funds) in &result.found {
             match PlatformAddress::from_bytes(key) {
                 Ok(platform_addr) => {
-                    info.platform_address_balances.insert(platform_addr, funds.balance);
+                    info.platform_address_balances
+                        .insert(platform_addr, funds.balance);
                     cs.addresses.insert(platform_addr, funds.balance);
                     cs.removed.remove(&platform_addr);
                 }
@@ -226,7 +228,12 @@ impl PlatformAddressWallet {
     pub async fn addresses_with_balances(&self) -> Vec<(PlatformAddress, Credits)> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
-            .map(|info| info.platform_address_balances.iter().map(|(addr, &bal)| (*addr, bal)).collect())
+            .map(|info| {
+                info.platform_address_balances
+                    .iter()
+                    .map(|(addr, &bal)| (*addr, bal))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -325,8 +332,7 @@ impl PlatformAddressWallet {
         let mut found_path = None;
         for account in info.core_wallet.accounts.platform_payment_accounts.values() {
             for addr_info in account.addresses.addresses.values() {
-                let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address)
-                else {
+                let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address) else {
                     continue;
                 };
                 if pool_addr == target {

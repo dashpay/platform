@@ -67,10 +67,7 @@ impl PlatformWalletManager {
             balance_handler,
         ]));
 
-        let spv = Arc::new(SpvRuntime::new(
-            Arc::clone(&wallet_manager),
-            event_manager,
-        ));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
         Self {
             sdk,
             wallet_manager,
