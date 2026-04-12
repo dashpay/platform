@@ -832,7 +832,7 @@ impl IdentityWallet {
         /// Number of key indices to scan per identity index.
         const KEY_INDEX_SCAN_LIMIT: u32 = 12;
 
-        let (network, start_index, wallet_seed_hash) = {
+        let (network, start_index, wallet_id) = {
             let wm = self.wallet_manager.read().await;
             let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
             let info = wm.get_wallet_info(&self.wallet_id).expect("wallet info exists");
@@ -917,14 +917,14 @@ impl IdentityWallet {
 
                         if let Some(managed) = info_guard.identity_manager.managed_identity_mut(&identity_id) {
                             let _cs = managed.set_status(IdentityStatus::Active);
-                            managed.wallet_seed_hash = Some(wallet_seed_hash);
+                            managed.wallet_id = Some(wallet_id);
 
                             if let Some((kid, pub_key)) = matched_key_id_and_pub {
                                 let _cs = managed.add_key(
                                     kid,
                                     pub_key,
                                     PrivateKeyData::AtWalletDerivationPath {
-                                        wallet_seed_hash,
+                                        wallet_id,
                                         derivation_path: full_path,
                                     },
                                 );
@@ -1797,14 +1797,14 @@ impl IdentityWallet {
             IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
         };
 
-        let (network, wallet_seed_hash, key_hash_array) = {
+        let (network, wallet_id, key_hash_array) = {
             let wm = self.wallet_manager.read().await;
             let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
             let network = wallet.network;
-            let wallet_seed_hash = self.wallet_id;
+            let wallet_id = self.wallet_id;
             let key_hash_array =
                 derive_identity_auth_key_hash(wallet, network, identity_index, 0)?;
-            (network, wallet_seed_hash, key_hash_array)
+            (network, wallet_id, key_hash_array)
         };
 
         // Query Platform for an identity registered with this key hash.
@@ -1863,14 +1863,14 @@ impl IdentityWallet {
 
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                 let _cs = managed.set_status(IdentityStatus::Active);
-                managed.wallet_seed_hash = Some(wallet_seed_hash);
+                managed.wallet_id = Some(wallet_id);
 
                 if let Some((kid, pub_key)) = matched_key_id_and_pub {
                     let _cs = managed.add_key(
                         kid,
                         pub_key,
                         PrivateKeyData::AtWalletDerivationPath {
-                            wallet_seed_hash,
+                            wallet_id,
                             derivation_path: full_path,
                         },
                     );

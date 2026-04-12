@@ -97,8 +97,9 @@ pub struct IdentityEntry {
     pub status: IdentityStatus,
     /// Private key storage (public keys + private key data for each KeyID).
     pub key_storage: KeyStorage,
-    /// Hash of the wallet seed that owns this identity, if known.
-    pub wallet_seed_hash: Option<[u8; 32]>,
+    /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
+    /// the wallet that owns this identity, if known.
+    pub wallet_id: Option<[u8; 32]>,
     /// DashPay profile snapshot (display name, bio, avatar, public
     /// message). `None` until the profile has been fetched or set.
     pub dashpay_profile: Option<DashPayProfile>,
@@ -126,7 +127,7 @@ impl IdentityEntry {
             top_ups: managed.top_ups.clone(),
             status: managed.status,
             key_storage: managed.key_storage.clone(),
-            wallet_seed_hash: managed.wallet_seed_hash,
+            wallet_id: managed.wallet_id,
             dashpay_profile: managed.dashpay_profile.clone(),
             dashpay_payments: managed.dashpay_payments.clone(),
         }
@@ -181,11 +182,11 @@ impl Merge for IdentityChangeSet {
                         entry.last_updated_balance_block_time;
                     existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                     existing.status = entry.status;
-                    // `wallet_seed_hash` is immutable per identity (derived
-                    // from the owning wallet's seed), so LWW and FWW are
+                    // `wallet_id` is immutable per identity (SHA256 of
+                    // root public key + chain code), so LWW and FWW are
                     // equivalent. We use LWW for consistency with the
                     // other scalars in this block.
-                    existing.wallet_seed_hash = entry.wallet_seed_hash;
+                    existing.wallet_id = entry.wallet_id;
                     // DashPay profile: last-write-wins. Same policy as
                     // every other Option<T> scalar in this block —
                     // every mutation snapshot copies the current

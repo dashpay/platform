@@ -61,8 +61,10 @@ pub struct ManagedIdentity {
     /// DPNS usernames associated with this identity.
     pub dpns_names: Vec<DpnsNameInfo>,
 
-    /// Hash of the wallet seed that owns this identity, if known.
-    pub wallet_seed_hash: Option<[u8; 32]>,
+    /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
+    /// the wallet that owns this identity, if known. Set during
+    /// gap-limit scan and identity recovery.
+    pub wallet_id: Option<[u8; 32]>,
 
     /// Top-up history: maps top-up index to amount (in duffs).
     pub top_ups: BTreeMap<u32, u64>,

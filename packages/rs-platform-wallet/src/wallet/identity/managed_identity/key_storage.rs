@@ -14,7 +14,7 @@ pub enum PrivateKeyData {
     Clear(Zeroizing<[u8; 32]>),
     /// Derive on-demand from wallet seed at this path.
     AtWalletDerivationPath {
-        wallet_seed_hash: [u8; 32],
+        wallet_id: [u8; 32],
         derivation_path: DerivationPath,
     },
 }

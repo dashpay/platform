@@ -42,7 +42,7 @@ impl ManagedIdentity {
             key_storage: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
-            wallet_seed_hash: None,
+            wallet_id: None,
             top_ups: BTreeMap::new(),
             dashpay_profile: None,
             dashpay_payments: BTreeMap::new(),

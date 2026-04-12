@@ -285,7 +285,7 @@ impl IdentityManager {
                 existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
                 existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                 existing.status = entry.status;
-                existing.wallet_seed_hash = entry.wallet_seed_hash;
+                existing.wallet_id = entry.wallet_id;
                 existing.dashpay_profile = entry.dashpay_profile;
                 // Append new DPNS names by label, preserving any
                 // pre-existing entries the changeset didn't carry.
@@ -308,7 +308,7 @@ impl IdentityManager {
                 managed.last_updated_balance_block_time = entry.last_updated_balance_block_time;
                 managed.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                 managed.status = entry.status;
-                managed.wallet_seed_hash = entry.wallet_seed_hash;
+                managed.wallet_id = entry.wallet_id;
                 managed.dpns_names = entry.dpns_names;
                 managed.top_ups = entry.top_ups;
                 managed.key_storage = entry.key_storage;
