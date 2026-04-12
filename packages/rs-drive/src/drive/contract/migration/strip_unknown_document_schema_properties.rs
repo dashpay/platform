@@ -2,17 +2,20 @@ use crate::drive::contract::paths::{contract_keeping_history_root_path, contract
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::QueryResultType;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::document_type::schema::allowed_top_level_properties::strip_unknown_properties_from_document_schema;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::{Element, Transaction};
+use grovedb::{Element, PathQuery, Query, SizedQuery, Transaction};
 use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Iterates every data contract in state, checks each document type schema for
     /// top-level properties not listed in the v1 document meta-schema, removes them,
     /// and re-serializes the contract if anything changed.
+    ///
+    /// For historical contracts, all stored revisions are cleaned (not just the latest).
     ///
     /// Also clears the data contract cache so that subsequent fetches reload
     /// the cleaned contracts from disk.
@@ -48,84 +51,72 @@ impl Drive {
                 drive_version,
             )?;
 
-            // Collect the stored bytes, element flags, the GroveDB path (as
-            // Vec<Vec<u8>>) and the key where the element lives so we can
-            // write it back if modified.
-            let (stored_bytes, element_flags, storage_path_vec, storage_key): (
-                Vec<u8>,
-                _,
-                Vec<Vec<u8>>,
-                Vec<u8>,
-            ) = match maybe_element {
+            match maybe_element {
                 Some(Element::Item(bytes, flags)) => {
                     // Non-historical contract: stored directly at [root, id, [0]]
                     let path_vec: Vec<Vec<u8>> = contract_path.iter().map(|s| s.to_vec()).collect();
-                    (bytes, flags, path_vec, vec![0u8])
+                    self.strip_and_rewrite_contract_element(
+                        &bytes,
+                        flags,
+                        &path_vec,
+                        &[0],
+                        contract_id_bytes,
+                        bincode_config,
+                        transaction,
+                        drive_version,
+                    )?;
                 }
                 Some(Element::Tree(..)) => {
-                    // Historical contract: the latest version is stored
-                    // behind a reference at [root, id, [0], [0]].  We must
-                    // resolve it to find the actual Item element.
+                    // Historical contract: iterate ALL revisions in the history
+                    // subtree at [root, id, 0]. Each revision is an Item keyed
+                    // by an encoded timestamp. Key [0] is a Reference to the
+                    // latest — we skip references and only process Items.
                     let history_path =
                         contract_keeping_history_root_path(contract_id_bytes.as_slice());
-                    let maybe_history_element = self.grove_get_raw(
-                        (&history_path).into(),
-                        &[0],
-                        DirectQueryType::StatefulDirectQuery,
+                    let history_path_vec: Vec<Vec<u8>> =
+                        history_path.iter().map(|s| s.to_vec()).collect();
+
+                    let mut query = Query::new();
+                    query.insert_all();
+                    let path_query = PathQuery::new(
+                        history_path_vec.clone(),
+                        SizedQuery::new(query, None, None),
+                    );
+
+                    let (result_items, _) = self.grove_get_raw_path_query(
+                        &path_query,
                         Some(transaction),
+                        QueryResultType::QueryKeyElementPairResultType,
                         &mut vec![],
                         drive_version,
                     )?;
-                    let history_path_vec: Vec<Vec<u8>> =
-                        history_path.iter().map(|s| s.to_vec()).collect();
-                    match maybe_history_element {
-                        Some(Element::Reference(ref_path, ..)) => {
-                            // The reference points to a sibling key (the
-                            // encoded timestamp).  Resolve it.
-                            let timestamp_key = match &ref_path {
-                                grovedb::reference_path::ReferencePathType::SiblingReference(
-                                    key,
-                                ) => key.clone(),
-                                _ => {
-                                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                        format!(
-                                            "Unexpected reference type in historical contract {}",
-                                            hex::encode(contract_id_bytes)
-                                        ),
-                                    )));
-                                }
-                            };
-                            let maybe_actual = self.grove_get_raw(
-                                (&history_path).into(),
-                                timestamp_key.as_slice(),
-                                DirectQueryType::StatefulDirectQuery,
-                                Some(transaction),
-                                &mut vec![],
-                                drive_version,
-                            )?;
-                            match maybe_actual {
-                                Some(Element::Item(bytes, flags)) => {
-                                    (bytes, flags, history_path_vec, timestamp_key)
-                                }
-                                _ => {
-                                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                        format!(
-                                            "Could not resolve historical contract element for {}",
-                                            hex::encode(contract_id_bytes)
-                                        ),
-                                    )));
-                                }
+
+                    for (key, element) in result_items.to_key_elements() {
+                        match element {
+                            Element::Item(bytes, flags) => {
+                                self.strip_and_rewrite_contract_element(
+                                    &bytes,
+                                    flags,
+                                    &history_path_vec,
+                                    &key,
+                                    contract_id_bytes,
+                                    bincode_config,
+                                    transaction,
+                                    drive_version,
+                                )?;
                             }
-                        }
-                        Some(Element::Item(bytes, flags)) => {
-                            // Direct item (no reference indirection)
-                            (bytes, flags, history_path_vec, vec![0u8])
-                        }
-                        _ => {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                "Unexpected element type in historical contract path for {}",
-                                hex::encode(contract_id_bytes)
-                            ))));
+                            Element::Reference(..) => {
+                                // The [0] reference to the latest revision — skip it.
+                            }
+                            _ => {
+                                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                                    format!(
+                                        "Unexpected element type in historical contract {} at key {}",
+                                        hex::encode(contract_id_bytes),
+                                        hex::encode(&key)
+                                    ),
+                                )));
+                            }
                         }
                     }
                 }
@@ -135,73 +126,86 @@ impl Drive {
                         hex::encode(contract_id_bytes)
                     ))));
                 }
-            };
-
-            // 3. Deserialize to DataContractInSerializationFormat
-            let mut serialization_format: DataContractInSerializationFormat =
-                match bincode::borrow_decode_from_slice(stored_bytes.as_slice(), bincode_config) {
-                    Ok((format, _len)) => format,
-                    Err(e) => {
-                        return Err(Error::Drive(DriveError::CorruptedSerialization(format!(
-                            "Failed to deserialize contract {} during migration: {}",
-                            hex::encode(contract_id_bytes),
-                            e
-                        ))));
-                    }
-                };
-
-            // 4. Check and strip unknown keys from each document schema
-            let mut contract_modified = false;
-            for (doc_type_name, schema_value) in
-                serialization_format.document_schemas_mut().iter_mut()
-            {
-                if strip_unknown_properties_from_document_schema(schema_value) {
-                    tracing::info!(
-                        contract_id = hex::encode(contract_id_bytes),
-                        document_type = %doc_type_name,
-                        "Stripped unknown top-level properties from document schema"
-                    );
-                    contract_modified = true;
-                }
             }
-
-            if !contract_modified {
-                continue;
-            }
-
-            // 5. Re-serialize and write back
-            let new_bytes =
-                bincode::encode_to_vec(&serialization_format, bincode_config).map_err(|e| {
-                    Error::Drive(DriveError::CorruptedSerialization(format!(
-                        "Failed to re-serialize contract {}: {}",
-                        hex::encode(contract_id_bytes),
-                        e
-                    )))
-                })?;
-
-            let new_element = Element::Item(new_bytes, element_flags);
-
-            let path_slices: Vec<&[u8]> = storage_path_vec.iter().map(|v| v.as_slice()).collect();
-            self.grove_insert(
-                SubtreePath::from(path_slices.as_slice()),
-                storage_key.as_slice(),
-                new_element,
-                Some(transaction),
-                None,
-                &mut vec![],
-                drive_version,
-            )?;
-
-            tracing::info!(
-                contract_id = hex::encode(contract_id_bytes),
-                "Updated contract after stripping unknown document schema properties"
-            );
         }
 
         // Clear the global data contract cache so that subsequent fetches
         // reload the cleaned contracts from disk rather than serving stale
         // cached versions with the unknown properties still present.
         self.cache.data_contracts.clear();
+
+        Ok(())
+    }
+
+    /// Deserializes a contract element, strips unknown top-level properties
+    /// from its document schemas, and writes back if anything changed.
+    #[allow(clippy::too_many_arguments)]
+    fn strip_and_rewrite_contract_element(
+        &self,
+        stored_bytes: &[u8],
+        element_flags: Option<grovedb::ElementFlags>,
+        storage_path_vec: &[Vec<u8>],
+        storage_key: &[u8],
+        contract_id_bytes: &[u8; 32],
+        bincode_config: impl bincode::config::Config,
+        transaction: &Transaction,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        let mut serialization_format: DataContractInSerializationFormat =
+            match bincode::borrow_decode_from_slice(stored_bytes, bincode_config) {
+                Ok((format, _len)) => format,
+                Err(e) => {
+                    return Err(Error::Drive(DriveError::CorruptedSerialization(format!(
+                        "Failed to deserialize contract {} during migration: {}",
+                        hex::encode(contract_id_bytes),
+                        e
+                    ))));
+                }
+            };
+
+        let mut contract_modified = false;
+        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        {
+            if strip_unknown_properties_from_document_schema(schema_value) {
+                tracing::info!(
+                    contract_id = hex::encode(contract_id_bytes),
+                    document_type = %doc_type_name,
+                    "Stripped unknown top-level properties from document schema"
+                );
+                contract_modified = true;
+            }
+        }
+
+        if !contract_modified {
+            return Ok(());
+        }
+
+        let new_bytes =
+            bincode::encode_to_vec(&serialization_format, bincode_config).map_err(|e| {
+                Error::Drive(DriveError::CorruptedSerialization(format!(
+                    "Failed to re-serialize contract {}: {}",
+                    hex::encode(contract_id_bytes),
+                    e
+                )))
+            })?;
+
+        let new_element = Element::Item(new_bytes, element_flags);
+
+        let path_slices: Vec<&[u8]> = storage_path_vec.iter().map(|v| v.as_slice()).collect();
+        self.grove_insert(
+            SubtreePath::from(path_slices.as_slice()),
+            storage_key,
+            new_element,
+            Some(transaction),
+            None,
+            &mut vec![],
+            drive_version,
+        )?;
+
+        tracing::info!(
+            contract_id = hex::encode(contract_id_bytes),
+            "Updated contract after stripping unknown document schema properties"
+        );
 
         Ok(())
     }
