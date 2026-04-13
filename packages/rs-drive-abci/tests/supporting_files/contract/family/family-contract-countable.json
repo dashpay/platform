@@ -1,0 +1,29 @@
+{
+  "$formatVersion": "0",
+  "id": "GoVFhJnbHr7bPMBPNv7aJxuvPMRi41r85mpFE5FnVkgT",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "version": 1,
+  "documentSchemas": {
+    "person": {
+      "type": "object",
+      "indices": [
+        {
+          "name": "byFirstName",
+          "properties": [
+            { "firstName": "asc" }
+          ],
+          "countable": true
+        }
+      ],
+      "properties": {
+        "firstName": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 0
+        }
+      },
+      "required": ["firstName"],
+      "additionalProperties": false
+    }
+  }
+}

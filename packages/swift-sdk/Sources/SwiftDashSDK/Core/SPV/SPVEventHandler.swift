@@ -1,7 +1,7 @@
 import DashSDKFFI
 import Foundation
 
-enum SPVSyncManager: UInt32, Sendable {
+public enum SPVSyncManager: UInt32, Sendable {
     case headers = 0
     case filterHeaders = 1
     case filters = 2
@@ -36,16 +36,53 @@ private typealias Byte96 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
 )
 
+// MARK: - Combined event handlers
+
+/// Bundles every SPV handler protocol into one object so that `SPVClient` can
+/// build the unified `FFIEventCallbacks` struct required by the updated
+/// `dash_spv_ffi_client_new` entry point.
+public struct SPVEventHandlers {
+    public var progress: SPVProgressUpdateEventHandler
+    public var sync: SPVSyncEventsHandler
+    public var network: SPVNetworkEventsHandler
+    public var wallet: SPVWalletEventsHandler
+    public var error: SPVClientErrorEventsHandler
+
+    public init(
+        progress: SPVProgressUpdateEventHandler,
+        sync: SPVSyncEventsHandler,
+        network: SPVNetworkEventsHandler,
+        wallet: SPVWalletEventsHandler,
+        error: SPVClientErrorEventsHandler
+    ) {
+        self.progress = progress
+        self.sync = sync
+        self.network = network
+        self.wallet = wallet
+        self.error = error
+    }
+
+    func intoFFIEventCallbacks() -> FFIEventCallbacks {
+        FFIEventCallbacks(
+            sync: sync.intoFFISyncEventCallbacks(),
+            network: network.intoFFINetworkEventCallbacks(),
+            progress: progress.intoFFIProgressCallback(),
+            wallet: wallet.intoFFIWalletEventCallbacks(),
+            error: error.intoFFIClientErrorCallback()
+        )
+    }
+}
+
 // MARK: - Progress callback
 
-protocol SPVProgressUpdateEventHandler: AnyObject {
+public protocol SPVProgressUpdateEventHandler: AnyObject {
     func onProgressUpdate(_ progress: SPVSyncProgress)
 
     func intoFFIProgressCallback() -> FFIProgressCallback
 }
 
 extension SPVProgressUpdateEventHandler {
-    func intoFFIProgressCallback() -> FFIProgressCallback {
+    public func intoFFIProgressCallback() -> FFIProgressCallback {
         return FFIProgressCallback(
             on_progress: onSpvProgressUpdateCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
@@ -86,7 +123,7 @@ private final class DummySPVProgressUpdateEventHandler: SPVProgressUpdateEventHa
 
 // MARK: - Sync event callbacks
 
-protocol SPVSyncEventsHandler: AnyObject {
+public protocol SPVSyncEventsHandler: AnyObject {
     func onStart(_ manager: SPVSyncManager)
     func onComplete(_ headerTip: UInt32, _ cycle: UInt32)
     func onBlockHeadersStored(_ tipHeight: UInt32)
@@ -106,7 +143,7 @@ protocol SPVSyncEventsHandler: AnyObject {
 }
 
 extension SPVSyncEventsHandler {
-    func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
+    public func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
         FFISyncEventCallbacks(
             on_sync_start: onSpvSyncStartCallbackC,
             on_block_headers_stored: onSpvBlockHeadersStoredCallbackC,
@@ -219,6 +256,8 @@ private func onSpvBlockProcessedCallbackC(
     height: UInt32,
     hashPtr: UnsafePointer<Byte32>?,
     newAddressCount: UInt32,
+    confirmedTxids: UnsafePointer<Byte32>?,
+    confirmedTxidCount: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
     let hash = bytePtrIntoData(hashPtr, 32)
@@ -309,7 +348,7 @@ private final class DummySPVSyncEventsHandler: SPVSyncEventsHandler {
 
 // MARK: - Network event callbacks
 
-protocol SPVNetworkEventsHandler: AnyObject {
+public protocol SPVNetworkEventsHandler: AnyObject {
     func onPeerConnected(_ address: String)
     func onPeerDisconnected(_ address: String)
     func onPeersUpdated(_ connectedCount: UInt32, _ bestHeight: UInt32)
@@ -318,7 +357,7 @@ protocol SPVNetworkEventsHandler: AnyObject {
 }
 
 extension SPVNetworkEventsHandler {
-    func intoFFINetworkEventCallbacks() -> FFINetworkEventCallbacks {
+    public func intoFFINetworkEventCallbacks() -> FFINetworkEventCallbacks {
         FFINetworkEventCallbacks(
             on_peer_connected: onSpvPeerConnectedCallbackC,
             on_peer_disconnected: onSpvPeerDisconnectedCallbackC,
@@ -393,15 +432,60 @@ private final class DummySPVNetworkEventsHandler: SPVNetworkEventsHandler {
     }
 }
 
+// MARK: - Client error event callbacks
+
+public protocol SPVClientErrorEventsHandler: AnyObject {
+    func onError(_ errorMsg: String)
+
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback
+}
+
+extension SPVClientErrorEventsHandler {
+    public func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
+        FFIClientErrorCallback(
+            on_error: onSpvClientErrorCallbackC,
+            user_data: Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
+}
+
+private func onSpvClientErrorCallbackC(
+    errorPtr: UnsafePointer<CChar>?,
+    userData: UnsafeMutableRawPointer?
+) {
+    let handler = rawPtrIntoSpvClientErrorEventsHandler(userData)
+    let errorMsg = errorPtr.map { String(cString: $0) } ?? "Unknown error"
+    handler.onError(errorMsg)
+}
+
+private func rawPtrIntoSpvClientErrorEventsHandler(
+    _ ptr: UnsafeMutableRawPointer?
+) -> any SPVClientErrorEventsHandler {
+    guard let ptr else {
+        assertionFailure("SPVClientErrorEventsHandler pointer is nil!")
+        return DummySPVClientErrorEventsHandler()
+    }
+
+    return Unmanaged<AnyObject>
+        .fromOpaque(ptr)
+        .takeUnretainedValue() as! any SPVClientErrorEventsHandler
+}
+
+private final class DummySPVClientErrorEventsHandler: SPVClientErrorEventsHandler {
+    func onError(_: String) {}
+
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
+        .init()
+    }
+}
+
 // MARK: - Wallet event callbacks
 
-protocol SPVWalletEventsHandler: AnyObject {
+public protocol SPVWalletEventsHandler: AnyObject {
     func onTransactionReceived(
         _ walletId: String,
         _ accountIndex: UInt32,
-        _ txid: Data,
-        _ amount: Int64,
-        _ addresses: [String]
+        _ record: NotOwnedTransactionRecord
     )
 
     func onBalanceUpdated(
@@ -416,9 +500,10 @@ protocol SPVWalletEventsHandler: AnyObject {
 }
 
 extension SPVWalletEventsHandler {
-    func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
+    public func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
         FFIWalletEventCallbacks(
             on_transaction_received: onSpvTransactionReceivedCallbackC,
+            on_transaction_status_changed: nil,
             on_balance_updated: onSpvBalanceUpdatedCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
         )
@@ -428,9 +513,7 @@ extension SPVWalletEventsHandler {
 private func onSpvTransactionReceivedCallbackC(
     walletIdPtr: UnsafePointer<CChar>?,
     accountIndex: UInt32,
-    txidPtr: UnsafePointer<Byte32>?,
-    amount: Int64,
-    addressesPtr: UnsafePointer<CChar>?,
+    recordPtr: UnsafePointer<FFITransactionRecord>?,
     userData: UnsafeMutableRawPointer?
 ) {
     let handler = rawPtrIntoSpvWalletEventsHandler(userData)
@@ -440,16 +523,18 @@ private func onSpvTransactionReceivedCallbackC(
         return
     }
 
+    guard let recordPtr else {
+        assertionFailure("TransactionReceived record pointer is nil")
+        return
+    }
+
     let walletId = String(cString: walletIdPtr)
-    let txid = bytePtrIntoData(txidPtr, 32)
-    let addresses = addressesPtrIntoString(addressesPtr)
+    let record = NotOwnedTransactionRecord(handle: recordPtr)
 
     handler.onTransactionReceived(
         walletId,
         accountIndex,
-        txid,
-        amount,
-        addresses
+        record
     )
 }
 
@@ -496,9 +581,7 @@ private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
     func onTransactionReceived(
         _: String,
         _: UInt32,
-        _: Data,
-        _: Int64,
-        _: [String]
+        _: NotOwnedTransactionRecord,
     ) {}
 
     func onBalanceUpdated(

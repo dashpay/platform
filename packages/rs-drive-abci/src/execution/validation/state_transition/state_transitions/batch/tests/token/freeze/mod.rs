@@ -376,6 +376,359 @@ mod token_freeze_tests {
         }
 
         #[test]
+        fn test_token_unfreeze_success() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, signer2, key2) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                    token_configuration.set_unfreeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            // Transfer some tokens to identity_2 first so they have a balance
+            let token_transfer_transition = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                5000,
+                identity_2.id(),
+                None,
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create token transfer transition");
+
+            let transfer_serialized = token_transfer_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transfer_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Freeze identity_2
+            let freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                identity_2.id(),
+                None,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create freeze transition");
+
+            let freeze_serialized = freeze_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[freeze_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Verify identity_2 is frozen
+            let token_frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    identity_2.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token info")
+                .map(|info| info.frozen());
+            assert_eq!(token_frozen, Some(true));
+
+            // Verify identity_2 cannot send tokens while frozen
+            let send_while_frozen = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity_2.id(),
+                contract.id(),
+                0,
+                100,
+                identity.id(),
+                None,
+                None,
+                None,
+                &key2,
+                2,
+                0,
+                &signer2,
+                platform_version,
+                None,
+            )
+            .expect("expect to create transfer transition");
+
+            let send_serialized = send_while_frozen
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[send_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                        _
+                    )),
+                    ..
+                }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Now unfreeze identity_2
+            let unfreeze_transition = BatchTransition::new_token_unfreeze_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                identity_2.id(),
+                None,
+                None,
+                &key,
+                4,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create unfreeze transition");
+
+            let unfreeze_serialized = unfreeze_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[unfreeze_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Verify identity_2 is no longer frozen
+            let token_frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    identity_2.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token info")
+                .map(|info| info.frozen());
+            assert_eq!(token_frozen, Some(false));
+
+            // Verify identity_2 can now transact again after unfreezing
+            let send_after_unfreeze = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity_2.id(),
+                contract.id(),
+                0,
+                100,
+                identity.id(),
+                None,
+                None,
+                None,
+                &key2,
+                3,
+                0,
+                &signer2,
+                platform_version,
+                None,
+            )
+            .expect("expect to create transfer transition");
+
+            let send_serialized = send_after_unfreeze
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[send_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Verify balances after successful transfer
+            let balance_identity = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(balance_identity, Some(100000 - 5000 + 100));
+
+            let balance_identity_2 = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity_2.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(balance_identity_2, Some(5000 - 100));
+        }
+
+        #[test]
         fn test_token_frozen_receive_balance_allowed_sending_not_allowed_till_unfrozen() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()

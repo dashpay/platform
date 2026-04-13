@@ -25,7 +25,6 @@ chrono = { version = "0.4.35", default-features = false, features = [
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 dashcore = { workspace = true, features = [
-  "std",
   "secp-recovery",
   "rand",
   "signer",

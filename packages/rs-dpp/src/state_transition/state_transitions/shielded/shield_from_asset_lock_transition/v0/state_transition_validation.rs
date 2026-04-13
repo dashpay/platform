@@ -2,7 +2,8 @@ use crate::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
 use crate::consensus::basic::BasicError;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::state_transitions::shielded::common_validation::{
-    validate_actions_count, validate_anchor_not_zero, validate_proof_not_empty,
+    validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
+    validate_proof_not_empty,
 };
 use crate::state_transition::StateTransitionStructureValidation;
 use crate::validation::SimpleConsensusValidationResult;
@@ -20,6 +21,12 @@ impl StateTransitionStructureValidation for ShieldFromAssetLockTransitionV0 {
                 .system_limits
                 .max_shielded_transition_actions,
         );
+        if !result.is_valid() {
+            return result;
+        }
+
+        // Each action's encrypted_note must be exactly ENCRYPTED_NOTE_SIZE bytes
+        let result = validate_encrypted_note_sizes(&self.actions);
         if !result.is_valid() {
             return result;
         }
@@ -111,6 +118,21 @@ mod tests {
             result.is_valid(),
             "Expected valid result, got errors: {:?}",
             result.errors
+        );
+    }
+
+    #[test]
+    fn should_reject_invalid_encrypted_note_size() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_from_asset_lock_transition();
+        transition.actions[0].encrypted_note = vec![4u8; 100]; // Wrong size
+
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(_)
+            )]
         );
     }
 

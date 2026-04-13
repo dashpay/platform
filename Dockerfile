@@ -405,9 +405,11 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -509,9 +511,11 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts
@@ -599,6 +603,7 @@ COPY --parents \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
@@ -854,10 +859,12 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/rs-platform-wallet \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts
