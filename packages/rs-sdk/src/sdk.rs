@@ -275,9 +275,7 @@ impl Sdk {
 
         let current = self.protocol_version.load(Ordering::Relaxed);
 
-        // current == 0 means uninitialized (auto-detect mode, first response).
-        // Accept any valid version in that case; after that, only increases.
-        if current > 0 && received_version <= current {
+        if received_version <= current {
             return;
         }
 
