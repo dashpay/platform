@@ -33,6 +33,7 @@ pub enum WasmSdkErrorKind {
     StateTransitionBroadcastError,
     NonceOverflow,
     IdentityNonceNotFound,
+    DriveInternalError,
 
     // Local helper kinds
     InvalidArgument,
@@ -191,6 +192,9 @@ impl From<SdkError> for WasmSdkError {
             IdentityNonceNotFound(msg) => {
                 Self::new(WasmSdkErrorKind::IdentityNonceNotFound, msg, None, true)
             }
+            DriveInternalError(msg) => {
+                Self::new(WasmSdkErrorKind::DriveInternalError, msg, None, retriable)
+            }
             NoAvailableAddressesToRetry(inner) => Self::new(
                 WasmSdkErrorKind::DapiClientError,
                 format!("no available addresses to retry, last error: {}", inner),
@@ -269,6 +273,7 @@ impl WasmSdkError {
             K::StateTransitionBroadcastError => "StateTransitionBroadcastError",
             K::NonceOverflow => "NonceOverflow",
             K::IdentityNonceNotFound => "IdentityNonceNotFound",
+            K::DriveInternalError => "DriveInternalError",
             K::InvalidArgument => "InvalidArgument",
             K::SerializationError => "SerializationError",
             K::NotFound => "NotFound",
