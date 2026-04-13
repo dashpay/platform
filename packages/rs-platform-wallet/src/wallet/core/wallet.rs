@@ -51,11 +51,6 @@ impl CoreWallet {
         &self.balance
     }
 
-    /// Get the next unused receive address for the default account.
-    pub async fn next_receive_address(&self) -> Result<DashAddress, PlatformWalletError> {
-        self.next_receive_address_for_account(0).await
-    }
-
     /// Get the next unused BIP-44 external (receive) address for a specific account.
     pub async fn next_receive_address_for_account(
         &self,
@@ -93,11 +88,6 @@ impl CoreWallet {
         account
             .next_receive_address(Some(&xpub))
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
-    }
-
-    /// Blocking version of `next_receive_address` for sync contexts.
-    pub fn next_receive_address_blocking(&self) -> Result<DashAddress, PlatformWalletError> {
-        self.next_receive_address_for_account_blocking(0)
     }
 
     /// Blocking version of `next_receive_address_for_account`.
@@ -139,11 +129,6 @@ impl CoreWallet {
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 
-    /// Get the next unused change address for the default account.
-    pub(crate) async fn next_change_address(&self) -> Result<DashAddress, PlatformWalletError> {
-        self.next_change_address_for_account(0).await
-    }
-
     /// Get the next unused BIP-44 internal (change) address for a specific account.
     pub async fn next_change_address_for_account(
         &self,
@@ -181,11 +166,6 @@ impl CoreWallet {
         account
             .next_change_address(Some(&xpub))
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
-    }
-
-    /// Blocking version of `next_change_address` for sync contexts.
-    pub fn next_change_address_blocking(&self) -> Result<DashAddress, PlatformWalletError> {
-        self.next_change_address_for_account_blocking(0)
     }
 
     /// Blocking version of `next_change_address_for_account`.
