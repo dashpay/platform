@@ -91,11 +91,18 @@ impl AssetLockManager {
         if <AssetLockChangeSet as crate::changeset::Merge>::is_empty(&cs) {
             return;
         }
-        self.persister
+        if let Err(e) = self
+            .persister
             .store(crate::changeset::PlatformWalletChangeSet {
                 asset_locks: Some(cs),
                 ..Default::default()
-            });
+            })
+        {
+            tracing::error!(
+                error = %e,
+                "AssetLockManager: failed to queue changeset for persistence"
+            );
+        }
     }
 }
 
@@ -247,7 +254,15 @@ impl AssetLockManager {
             status,
             proof,
         };
+        let mut cs = AssetLockChangeSet::default();
+        cs.asset_locks.insert(out_point, (&lock).into());
         info.tracked_asset_locks.insert(out_point, lock);
+
+        // Must drop the write guard before queuing — the persister's
+        // flush (if strategy is Immediate) may need the wallet manager
+        // lock for other sub-changesets.
+        drop(wm);
+        self.queue_asset_lock_changeset(cs);
     }
 
     /// Determine asset lock status by looking up the transaction in

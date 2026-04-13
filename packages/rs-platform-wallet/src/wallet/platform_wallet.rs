@@ -262,7 +262,13 @@ impl PlatformWallet {
     // TODO: What these methods for? can we remove? Don't deelete this todo
     /// Queue a changeset for later persistence.
     pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
-        self.persister.store(changeset);
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::error!(
+                error = %e,
+                wallet_id = %hex::encode(self.wallet_id),
+                "Failed to queue changeset for persistence"
+            );
+        }
     }
 
     /// Flush all queued changesets to the storage backend.

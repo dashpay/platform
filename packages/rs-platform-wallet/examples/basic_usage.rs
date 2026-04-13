@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use dash_sdk::Sdk;
-use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::core::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::PlatformWalletManager;

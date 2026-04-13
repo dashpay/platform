@@ -32,10 +32,7 @@ use tokio_util::sync::CancellationToken;
 struct NoopPersister;
 impl PlatformWalletPersistence for NoopPersister {
     fn store(&self, _wallet_id: WalletId, _changeset: PlatformWalletChangeSet) {}
-    fn flush(
-        &self,
-        _wallet_id: WalletId,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
     }
     fn load(
@@ -106,9 +103,8 @@ async fn test_spv_sync_and_balance() {
         .init();
 
     // --- Setup ---
-    let mnemonic_str = std::env::var("SPV_TEST_MNEMONIC").expect(
-        "SPV_TEST_MNEMONIC env var required (BIP-39 mnemonic for a funded testnet wallet)",
-    );
+    let mnemonic_str = std::env::var("SPV_TEST_MNEMONIC")
+        .expect("SPV_TEST_MNEMONIC env var required (BIP-39 mnemonic for a funded testnet wallet)");
 
     let network = Network::Testnet;
 
@@ -126,18 +122,18 @@ async fn test_spv_sync_and_balance() {
 
     let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-    let manager = Arc::new(PlatformWalletManager::new(Arc::clone(&sdk), persister, event_handler));
+    let manager = Arc::new(PlatformWalletManager::new(
+        Arc::clone(&sdk),
+        persister,
+        event_handler,
+    ));
 
     // --- Create wallet from mnemonic ---
     let mnemonic: key_wallet::Mnemonic = mnemonic_str.parse().expect("Failed to parse mnemonic");
     let seed_bytes = mnemonic.to_seed("");
 
     let platform_wallet = manager
-        .create_wallet_from_seed_bytes(
-            network,
-            seed_bytes,
-            WalletAccountCreationOptions::Default,
-        )
+        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
         .await
         .expect("Failed to create platform wallet");
 
@@ -204,10 +200,7 @@ async fn test_spv_sync_and_balance() {
         }
 
         if spendable > 0 {
-            println!(
-                "SUCCESS: Wallet has spendable balance: {} duffs",
-                spendable
-            );
+            println!("SUCCESS: Wallet has spendable balance: {} duffs", spendable);
             cancel.cancel();
             let _ = spv_handle.await;
             return;

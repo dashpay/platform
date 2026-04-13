@@ -1608,10 +1608,7 @@ dependencies = [
 name = "dash-spv"
 version = "0.42.0"
 dependencies = [
- "anyhow",
  "async-trait",
- "bincode",
- "blsful",
  "chrono",
  "clap",
  "dashcore",
@@ -1619,10 +1616,8 @@ dependencies = [
  "futures",
  "hex",
  "hickory-resolver",
- "indexmap 2.13.0",
  "key-wallet",
  "key-wallet-manager",
- "log",
  "rand 0.8.5",
  "rayon",
  "serde",
@@ -1644,17 +1639,10 @@ dependencies = [
  "clap",
  "dash-spv",
  "dashcore",
- "env_logger 0.10.2",
  "hex",
  "key-wallet",
  "key-wallet-ffi",
  "key-wallet-manager",
- "libc",
- "log",
- "once_cell",
- "rand 0.8.5",
- "serde",
- "serde_json",
  "tokio",
  "tokio-util",
  "tracing",
@@ -1677,11 +1665,11 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "hex_lit",
- "log",
  "rustversion",
  "secp256k1",
  "serde",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -1695,9 +1683,9 @@ dependencies = [
  "dashcore-rpc-json",
  "hex",
  "jsonrpc",
- "log",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -1721,7 +1709,6 @@ dependencies = [
  "bincode",
  "dashcore-private",
  "rs-x11-hash",
- "secp256k1",
  "serde",
 ]
 
@@ -1916,7 +1903,7 @@ dependencies = [
  "derive_more 1.0.0",
  "dpp",
  "dpp-json-convertible-derive",
- "env_logger 0.11.10",
+ "env_logger",
  "getrandom 0.2.17",
  "grovedb-commitment-tree",
  "hex",
@@ -2228,19 +2215,6 @@ checksum = "32e90c2accc4b07a8456ea0debdc2e7587bdd890680d71173a15d4ae604f6eef"
 dependencies = [
  "log",
  "regex",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
 ]
 
 [[package]]
@@ -5853,7 +5827,7 @@ dependencies = [
  "dash-sdk",
  "dotenvy",
  "drive-proof-verifier",
- "env_logger 0.11.10",
+ "env_logger",
  "envy",
  "getrandom 0.2.17",
  "hex",
@@ -6956,15 +6930,6 @@ dependencies = [
  "ureq",
  "walkdir",
  "zip 7.2.0",
-]
-
-[[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
 ]
 
 [[package]]

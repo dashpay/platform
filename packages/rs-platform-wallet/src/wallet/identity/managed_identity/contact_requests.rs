@@ -6,7 +6,9 @@
 //! - Automatically establishing contacts when both parties send requests
 
 use super::ManagedIdentity;
-use crate::changeset::{ContactChangeSet, ContactRequestEntry};
+use crate::changeset::{
+    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+};
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
 
@@ -28,13 +30,21 @@ impl ManagedIdentity {
             // pending entries are dropped, so we don't also emit a
             // `removed_incoming` tombstone here.
             let contact = EstablishedContact::new(recipient_id, request, incoming_request);
-            cs.established
-                .insert((owner_id, recipient_id), contact.clone());
+            cs.established.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id,
+                },
+                contact.clone(),
+            );
             self.established_contacts.insert(recipient_id, contact);
         } else {
             // No matching incoming request, just add as sent
             cs.sent_requests.insert(
-                (owner_id, recipient_id),
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id,
+                },
                 ContactRequestEntry {
                     request: request.clone(),
                 },
@@ -54,7 +64,10 @@ impl ManagedIdentity {
         let removed = self.sent_contact_requests.remove(recipient_id);
         let mut cs = ContactChangeSet::default();
         if removed.is_some() {
-            cs.removed_sent.insert((self.id(), *recipient_id));
+            cs.removed_sent.insert(SentContactRequestKey {
+                owner_id: self.id(),
+                recipient_id: *recipient_id,
+            });
         }
         (removed, cs)
     }
@@ -76,13 +89,21 @@ impl ManagedIdentity {
             // pending entries are dropped, so we don't also emit a
             // `removed_sent` tombstone here.
             let contact = EstablishedContact::new(sender_id, outgoing_request, request);
-            cs.established
-                .insert((owner_id, sender_id), contact.clone());
+            cs.established.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id: sender_id,
+                },
+                contact.clone(),
+            );
             self.established_contacts.insert(sender_id, contact);
         } else {
             // No matching sent request, just add as incoming
             cs.incoming_requests.insert(
-                (owner_id, sender_id),
+                ReceivedContactRequestKey {
+                    owner_id,
+                    sender_id,
+                },
                 ContactRequestEntry {
                     request: request.clone(),
                 },
@@ -102,7 +123,10 @@ impl ManagedIdentity {
         let removed = self.incoming_contact_requests.remove(sender_id);
         let mut cs = ContactChangeSet::default();
         if removed.is_some() {
-            cs.removed_incoming.insert((self.id(), *sender_id));
+            cs.removed_incoming.insert(ReceivedContactRequestKey {
+                owner_id: self.id(),
+                sender_id: *sender_id,
+            });
         }
         (removed, cs)
     }
@@ -145,8 +169,13 @@ impl ManagedIdentity {
         // `removed_sent` / `removed_incoming` emission needed here.
         let owner_id = self.id();
         let mut cs = ContactChangeSet::default();
-        cs.established
-            .insert((owner_id, *sender_id), contact.clone());
+        cs.established.insert(
+            SentContactRequestKey {
+                owner_id,
+                recipient_id: *sender_id,
+            },
+            contact.clone(),
+        );
 
         (Some(contact), cs)
     }
@@ -304,7 +333,10 @@ mod tests {
         let (removed, cs) = managed.remove_sent_contact_request(&recipient_id);
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().recipient_id, recipient_id);
-        assert!(cs.removed_sent.contains(&(managed.id(), recipient_id)));
+        assert!(cs.removed_sent.contains(&SentContactRequestKey {
+            owner_id: managed.id(),
+            recipient_id
+        }));
         assert_eq!(managed.sent_contact_requests.len(), 0);
     }
 
@@ -333,7 +365,10 @@ mod tests {
         let (removed, cs) = managed.remove_incoming_contact_request(&sender_id);
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().sender_id, sender_id);
-        assert!(cs.removed_incoming.contains(&(managed.id(), sender_id)));
+        assert!(cs.removed_incoming.contains(&ReceivedContactRequestKey {
+            owner_id: managed.id(),
+            sender_id
+        }));
         assert_eq!(managed.incoming_contact_requests.len(), 0);
     }
 
@@ -368,7 +403,10 @@ mod tests {
 
         let contact = result.unwrap();
         assert_eq!(contact.contact_identity_id, contact_id);
-        assert!(cs.established.contains_key(&(our_id, contact_id)));
+        assert!(cs.established.contains_key(&SentContactRequestKey {
+            owner_id: our_id,
+            recipient_id: contact_id
+        }));
         // Per the auto-establishment contract, `established` implies the
         // matching pending requests are dropped — no separate tombstones.
         assert!(cs.removed_sent.is_empty());
