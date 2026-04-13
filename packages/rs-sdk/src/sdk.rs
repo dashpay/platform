@@ -261,7 +261,7 @@ impl Sdk {
 
     /// Update the stored protocol version if `received_version` is newer and known.
     ///
-    /// Uses a CAS loop so the highest version always wins under concurrent updates.
+    /// Uses `fetch_max` so the highest version always wins under concurrent updates.
     /// In multi-SDK scenarios the `PlatformVersion::set_current` global is process-wide
     /// (last writer wins).
     fn maybe_update_protocol_version(&self, received_version: u32) {
@@ -273,7 +273,7 @@ impl Sdk {
             return;
         }
 
-        let mut current = self.protocol_version.load(Ordering::Relaxed);
+        let current = self.protocol_version.load(Ordering::Relaxed);
 
         if received_version <= current {
             return;
@@ -291,29 +291,16 @@ impl Sdk {
             }
         };
 
-        loop {
-            match self.protocol_version.compare_exchange_weak(
-                current,
-                received_version,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    tracing::info!(
-                        old_version = current,
-                        new_version = received_version,
-                        "protocol version updated from network metadata"
-                    );
-                    PlatformVersion::set_current(new_version);
-                    return;
-                }
-                Err(actual) => {
-                    if actual >= received_version {
-                        return;
-                    }
-                    current = actual;
-                }
-            }
+        let previous = self
+            .protocol_version
+            .fetch_max(received_version, Ordering::Relaxed);
+        if previous < received_version {
+            tracing::info!(
+                old_version = previous,
+                new_version = received_version,
+                "protocol version updated from network metadata"
+            );
+            PlatformVersion::set_current(new_version);
         }
     }
 
