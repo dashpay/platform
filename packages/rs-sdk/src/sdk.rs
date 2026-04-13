@@ -110,6 +110,10 @@ pub struct Sdk {
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
 
+    /// Whether to auto-detect protocol version from network response metadata.
+    /// Set to `false` when the user explicitly calls [`SdkBuilder::with_version()`].
+    auto_detect_protocol_version: bool,
+
     /// Last seen height; used to determine if the remote node is stale.
     ///
     /// This is clone-able and can be shared between threads.
@@ -144,6 +148,7 @@ impl Clone for Sdk {
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
+            auto_detect_protocol_version: self.auto_detect_protocol_version,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -260,6 +265,10 @@ impl Sdk {
     /// In multi-SDK scenarios the `PlatformVersion::set_current` global is process-wide
     /// (last writer wins).
     fn maybe_update_protocol_version(&self, received_version: u32) {
+        if !self.auto_detect_protocol_version {
+            return;
+        }
+
         if received_version == 0 {
             return;
         }
@@ -624,6 +633,10 @@ pub struct SdkBuilder {
     /// Platform version to use in this Sdk
     version: &'static PlatformVersion,
 
+    /// Whether the user explicitly called `with_version()`.
+    /// When true, auto-detection of protocol version from network metadata is disabled.
+    version_explicit: bool,
+
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
@@ -695,6 +708,7 @@ impl Default for SdkBuilder {
             cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
+            version_explicit: false,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
@@ -818,6 +832,7 @@ impl SdkBuilder {
     /// Defaults to [PlatformVersion::latest()].
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
+        self.version_explicit = true;
         self
     }
 
@@ -951,6 +966,7 @@ impl SdkBuilder {
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(self.version.protocol_version)),
+                    auto_detect_protocol_version: !self.version_explicit,
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
@@ -1018,6 +1034,7 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(self.version.protocol_version)),
+                    auto_detect_protocol_version: !self.version_explicit,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
@@ -1193,14 +1210,22 @@ mod test {
             .expect_err("metadata should be invalid");
     }
 
-    #[test]
-    fn test_version_update_from_metadata() {
-        use dpp::version::PlatformVersion;
+    /// Helper: build a mock SDK with auto-detect enabled and a specific starting version.
+    /// Does NOT call `with_version()` (which would disable auto-detect).
+    fn mock_sdk_with_auto_detect(starting_version: u32) -> super::Sdk {
+        use std::sync::atomic::Ordering;
 
         let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(1).unwrap())
             .build()
             .expect("mock Sdk should be created");
+        sdk.protocol_version
+            .store(starting_version, Ordering::Relaxed);
+        sdk
+    }
+
+    #[test]
+    fn test_version_update_from_metadata() {
+        let sdk = mock_sdk_with_auto_detect(1);
 
         assert_eq!(sdk.protocol_version_number(), 1);
 
@@ -1221,12 +1246,7 @@ mod test {
     fn test_unknown_version_ignored() {
         use dpp::version::PlatformVersion;
 
-        let latest = PlatformVersion::latest();
-        let sdk = SdkBuilder::new_mock()
-            .with_version(latest)
-            .build()
-            .expect("mock Sdk should be created");
-
+        let sdk = mock_sdk_with_auto_detect(PlatformVersion::latest().protocol_version);
         let original_version = sdk.protocol_version_number();
 
         let metadata = ResponseMetadata {
@@ -1244,12 +1264,7 @@ mod test {
 
     #[test]
     fn test_version_shared_between_clones() {
-        use dpp::version::PlatformVersion;
-
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(1).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
+        let sdk = mock_sdk_with_auto_detect(1);
 
         let clone = sdk.clone();
 
@@ -1272,12 +1287,7 @@ mod test {
 
     #[test]
     fn test_version_downgrade_ignored() {
-        use dpp::version::PlatformVersion;
-
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(2).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
+        let sdk = mock_sdk_with_auto_detect(2);
 
         assert_eq!(sdk.protocol_version_number(), 2);
 
@@ -1297,12 +1307,7 @@ mod test {
     fn test_version_zero_ignored() {
         use dpp::version::PlatformVersion;
 
-        let latest = PlatformVersion::latest();
-        let sdk = SdkBuilder::new_mock()
-            .with_version(latest)
-            .build()
-            .expect("mock Sdk should be created");
-
+        let sdk = mock_sdk_with_auto_detect(PlatformVersion::latest().protocol_version);
         let original_version = sdk.protocol_version_number();
 
         let metadata = ResponseMetadata {
@@ -1319,13 +1324,9 @@ mod test {
 
     #[test]
     fn test_concurrent_updates_converge_to_highest() {
-        use dpp::version::PlatformVersion;
         use std::thread;
 
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(1).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
+        let sdk = mock_sdk_with_auto_detect(1);
 
         assert_eq!(sdk.protocol_version_number(), 1);
 
@@ -1361,10 +1362,7 @@ mod test {
     fn test_global_dpp_version_synced_after_update() {
         use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(1).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
+        let sdk = mock_sdk_with_auto_detect(1);
 
         let metadata = ResponseMetadata {
             protocol_version: 2,
@@ -1384,6 +1382,36 @@ mod test {
             global.protocol_version >= 2,
             "global DPP version must be at least the version we set (2), got {}",
             global.protocol_version,
+        );
+    }
+
+    #[test]
+    fn test_explicit_version_disables_auto_detect() {
+        use dpp::version::PlatformVersion;
+
+        // Explicitly pin to version 1 via with_version()
+        let sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(1).unwrap())
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(sdk.protocol_version_number(), 1);
+        assert!(!sdk.auto_detect_protocol_version);
+
+        // Network reports version 2 — should be ignored because version is pinned
+        let metadata = ResponseMetadata {
+            protocol_version: 2,
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            1,
+            "pinned version must not be auto-updated"
         );
     }
 
