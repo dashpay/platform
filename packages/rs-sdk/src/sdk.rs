@@ -107,9 +107,6 @@ pub struct Sdk {
     /// Note that setting this to None can panic.
     context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
 
-    /// Protocol version number detected from the network. Shared between clones.
-    protocol_version: Arc<atomic::AtomicU32>,
-
     /// Last seen height; used to determine if the remote node is stale.
     ///
     /// This is clone-able and can be shared between threads.
@@ -143,7 +140,6 @@ impl Clone for Sdk {
             nonce_cache: Arc::clone(&self.nonce_cache),
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
-            protocol_version: Arc::clone(&self.protocol_version),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -182,6 +178,9 @@ enum SdkInstance {
     Dapi {
         /// DAPI client used to communicate with Dash Platform.
         dapi: DapiClient,
+
+        /// Platform version configured for this Sdk
+        version: &'static PlatformVersion,
     },
     /// Mock SDK
     #[cfg(feature = "mocks")]
@@ -193,6 +192,8 @@ enum SdkInstance {
         /// Mock SDK implementation processing mock expectations and responses.
         mock: Arc<Mutex<MockDashPlatformSdk>>,
         address_list: AddressList,
+        /// Platform version configured for this Sdk
+        version: &'static PlatformVersion,
     },
 }
 
@@ -249,63 +250,7 @@ impl Sdk {
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
 
-        self.maybe_update_protocol_version(metadata.protocol_version);
-
         Ok(())
-    }
-
-    /// Update the stored protocol version if `received_version` is newer and known.
-    ///
-    /// Uses a CAS loop so the highest version always wins under concurrent updates.
-    /// In multi-SDK scenarios the `PlatformVersion::set_current` global is process-wide
-    /// (last writer wins).
-    fn maybe_update_protocol_version(&self, received_version: u32) {
-        if received_version == 0 {
-            return;
-        }
-
-        let mut current = self.protocol_version.load(Ordering::Relaxed);
-
-        if received_version <= current {
-            return;
-        }
-
-        let new_version = match PlatformVersion::get(received_version) {
-            Ok(v) => v,
-            Err(_) => {
-                tracing::warn!(
-                    received_version,
-                    current_version = current,
-                    "received unknown protocol version from network; keeping current"
-                );
-                return;
-            }
-        };
-
-        loop {
-            match self.protocol_version.compare_exchange_weak(
-                current,
-                received_version,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    tracing::info!(
-                        old_version = current,
-                        new_version = received_version,
-                        "protocol version updated from network metadata"
-                    );
-                    PlatformVersion::set_current(new_version);
-                    return;
-                }
-                Err(actual) => {
-                    if actual >= received_version {
-                        return;
-                    }
-                    current = actual;
-                }
-            }
-        }
     }
 
     // TODO: Changed to public for tests
@@ -437,16 +382,16 @@ impl Sdk {
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
-    /// The version is auto-detected from network responses and may change at runtime.
-    /// Falls back to [`PlatformVersion::latest()`] if the stored version number is unknown.
+    ///
+    ///
+    /// This is the version configured in [`SdkBuilder`].
+    /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
-        let v = self.protocol_version.load(Ordering::Relaxed);
-        PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
-    }
-
-    /// Return the raw protocol version number currently used by this SDK.
-    pub fn protocol_version_number(&self) -> u32 {
-        self.protocol_version.load(Ordering::Relaxed)
+        match &self.inner {
+            SdkInstance::Dapi { version, .. } => version,
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { version, .. } => version,
+        }
     }
 
     // TODO: Move to settings
@@ -945,12 +890,11 @@ impl SdkBuilder {
                 let mut sdk= Sdk{
                     network: self.network,
                     dapi_client_settings,
-                    inner:SdkInstance::Dapi { dapi },
+                    inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
-                    protocol_version: Arc::new(atomic::AtomicU32::new(self.version.protocol_version)),
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
@@ -1013,11 +957,11 @@ impl SdkBuilder {
                         mock:mock_sdk.clone(),
                         dapi,
                         address_list: AddressList::new(),
+                        version: self.version,
                     },
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
-                    protocol_version: Arc::new(atomic::AtomicU32::new(self.version.protocol_version)),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
@@ -1191,130 +1135,6 @@ mod test {
         let request = GetIdentityRequest::default();
         sdk1.verify_response_metadata(request.method_name(), &metadata)
             .expect_err("metadata should be invalid");
-    }
-
-    #[test]
-    fn test_version_update_from_metadata() {
-        use dpp::version::PlatformVersion;
-
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(1).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
-
-        assert_eq!(sdk.protocol_version_number(), 1);
-
-        let metadata = ResponseMetadata {
-            protocol_version: 2,
-            height: 1,
-            ..Default::default()
-        };
-
-        sdk.verify_response_metadata("test", &metadata)
-            .expect("metadata should be valid");
-
-        assert_eq!(sdk.protocol_version_number(), 2);
-        assert_eq!(sdk.version().protocol_version, 2);
-    }
-
-    #[test]
-    fn test_unknown_version_ignored() {
-        use dpp::version::PlatformVersion;
-
-        let latest = PlatformVersion::latest();
-        let sdk = SdkBuilder::new_mock()
-            .with_version(latest)
-            .build()
-            .expect("mock Sdk should be created");
-
-        let original_version = sdk.protocol_version_number();
-
-        let metadata = ResponseMetadata {
-            protocol_version: 999,
-            height: 1,
-            ..Default::default()
-        };
-
-        sdk.verify_response_metadata("test", &metadata)
-            .expect("metadata should be valid");
-
-        assert_eq!(sdk.protocol_version_number(), original_version);
-        assert_eq!(sdk.version().protocol_version, original_version);
-    }
-
-    #[test]
-    fn test_version_shared_between_clones() {
-        use dpp::version::PlatformVersion;
-
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(1).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
-
-        let clone = sdk.clone();
-
-        let metadata = ResponseMetadata {
-            protocol_version: 2,
-            height: 1,
-            ..Default::default()
-        };
-
-        clone
-            .verify_response_metadata("test", &metadata)
-            .expect("metadata should be valid");
-
-        assert_eq!(
-            sdk.protocol_version_number(),
-            2,
-            "original should see update from clone"
-        );
-    }
-
-    #[test]
-    fn test_version_downgrade_ignored() {
-        use dpp::version::PlatformVersion;
-
-        let sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::get(2).unwrap())
-            .build()
-            .expect("mock Sdk should be created");
-
-        assert_eq!(sdk.protocol_version_number(), 2);
-
-        let metadata = ResponseMetadata {
-            protocol_version: 1,
-            height: 1,
-            ..Default::default()
-        };
-
-        sdk.verify_response_metadata("test", &metadata)
-            .expect("metadata should be valid");
-
-        assert_eq!(sdk.protocol_version_number(), 2);
-    }
-
-    #[test]
-    fn test_version_zero_ignored() {
-        use dpp::version::PlatformVersion;
-
-        let latest = PlatformVersion::latest();
-        let sdk = SdkBuilder::new_mock()
-            .with_version(latest)
-            .build()
-            .expect("mock Sdk should be created");
-
-        let original_version = sdk.protocol_version_number();
-
-        let metadata = ResponseMetadata {
-            protocol_version: 0,
-            height: 1,
-            ..Default::default()
-        };
-
-        sdk.verify_response_metadata("test", &metadata)
-            .expect("metadata should be valid");
-
-        assert_eq!(sdk.protocol_version_number(), original_version);
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
