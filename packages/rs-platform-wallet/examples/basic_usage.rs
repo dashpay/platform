@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Derive a receive address (blocking, acquires lock internally)
-    let address = core.next_receive_address_for_account_blocking(0)?;
+    let address = core.next_receive_address_for_account(0).await?;
     println!("Receive address: {}", address);
 
     // Read wallet info via state guard (derefs to PlatformWalletInfo)
