@@ -20,16 +20,7 @@ use crate::platform_address_types::*;
 use dpp::address_funds::PlatformAddress;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 
-/// Shared tokio runtime for blocking on async wallet operations.
-pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
-    static RT: once_cell::sync::Lazy<tokio::runtime::Runtime> = once_cell::sync::Lazy::new(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime for platform-wallet-ffi")
-    });
-    &RT
-}
+use crate::runtime::runtime;
 
 /// Parse an `InputSelectionType` + raw arrays into a Rust `InputSelection`.
 ///

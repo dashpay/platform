@@ -1,0 +1,134 @@
+//! FFI bindings for PlatformWalletManager (wallet lifecycle management).
+
+use crate::error::*;
+use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+use crate::handle::*;
+use crate::persistence::{FFIPersister, PersistenceCallbacks};
+use crate::runtime::runtime;
+
+use dash_sdk::Sdk;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::Network;
+use platform_wallet::PlatformWalletManager;
+use std::sync::Arc;
+
+/// Create a new PlatformWalletManager.
+///
+/// `sdk_ptr` must point to a valid `Sdk` instance (the FFI caller is
+/// responsible for keeping it alive). The Sdk is cloned and wrapped in Arc.
+///
+/// `persistence` and `event_handler` are callback vtables whose `context`
+/// pointers must remain valid for the lifetime of the manager.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create(
+    sdk_ptr: *const Sdk,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    out_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if sdk_ptr.is_null() || persistence.is_null() || event_handler.is_null() || out_handle.is_null()
+    {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let sdk = Arc::new((*sdk_ptr).clone());
+    let persister: Arc<dyn platform_wallet::changeset::PlatformWalletPersistence> =
+        Arc::new(FFIPersister::new(std::ptr::read(persistence)));
+    let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
+        Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
+
+    let manager = PlatformWalletManager::new(sdk, persister, handler);
+    let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+    *out_handle = handle;
+
+    PlatformWalletFFIResult::Success
+}
+
+/// Create a wallet from raw seed bytes (64 bytes).
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
+    manager_handle: Handle,
+    network: u32,
+    seed_bytes: *const u8,
+    seed_len: usize,
+    account_options: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if seed_bytes.is_null() || out_wallet_handle.is_null() || out_wallet_id.is_null() {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    if seed_len != 64 {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorInvalidParameter,
+                format!("Seed must be 64 bytes, got {}", seed_len),
+            );
+        }
+        return PlatformWalletFFIResult::ErrorInvalidParameter;
+    }
+
+    let network = match network {
+        0 => Network::Mainnet,
+        1 => Network::Testnet,
+        2 => Network::Devnet,
+        3 => Network::Regtest,
+        _ => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidNetwork,
+                    format!("Unknown network: {}", network),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidNetwork;
+        }
+    };
+
+    let mut seed = [0u8; 64];
+    std::ptr::copy_nonoverlapping(seed_bytes, seed.as_mut_ptr(), 64);
+
+    let accounts = match account_options {
+        0 => WalletAccountCreationOptions::None,
+        1 => WalletAccountCreationOptions::Default,
+        _ => WalletAccountCreationOptions::Default,
+    };
+
+    PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| {
+            match runtime().block_on(manager.create_wallet_from_seed_bytes(network, seed, accounts))
+            {
+                Ok(wallet) => {
+                    let wallet_id = wallet.wallet_id();
+                    let wallet_handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+                    *out_wallet_handle = wallet_handle;
+                    *out_wallet_id = wallet_id;
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            e.to_string(),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
+/// Destroy a PlatformWalletManager handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_destroy(
+    handle: Handle,
+    _out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+    PlatformWalletFFIResult::Success
+}

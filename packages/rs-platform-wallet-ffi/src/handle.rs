@@ -103,6 +103,16 @@ pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
     HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,
 > = Lazy::new(HandleStorage::new);
 
+/// Storage for PlatformWalletManager handles
+pub static PLATFORM_WALLET_MANAGER_STORAGE: Lazy<
+    HandleStorage<platform_wallet::PlatformWalletManager>,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformWallet handles
+pub static PLATFORM_WALLET_STORAGE: Lazy<
+    HandleStorage<std::sync::Arc<platform_wallet::PlatformWallet>>,
+> = Lazy::new(HandleStorage::new);
+
 #[cfg(test)]
 mod tests {
     use super::*;
