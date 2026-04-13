@@ -31,14 +31,14 @@ fn default_mainnet_addresses() -> Vec<Address> {
 // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
 fn default_testnet_addresses() -> Vec<Address> {
     parse_addresses(&[
-        "https://52.12.176.90:1443",
-        "https://35.82.197.197:1443",
-        "https://44.240.98.102:1443",
-        "https://52.34.144.50:1443",
-        "https://44.239.39.153:1443",
-        "https://34.214.48.68:1443",
-        "https://54.149.33.167:1443",
-        "https://52.24.124.162:1443",
+        "https://68.67.122.1:1443",
+        "https://68.67.122.4:1443",
+        "https://68.67.122.7:1443",
+        "https://68.67.122.10:1443",
+        "https://68.67.122.13:1443",
+        "https://68.67.122.17:1443",
+        "https://68.67.122.21:1443",
+        "https://68.67.122.26:1443",
     ])
 }
 fn default_local_addresses() -> Vec<Address> {
