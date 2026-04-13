@@ -441,5 +441,92 @@ mod tests {
                 ))
             );
         }
+
+        #[test]
+        fn test_drive_error_data_bin_maps_to_drive_internal_error() {
+            let cbor_map = ciborium::Value::Map(vec![
+                (
+                    ciborium::Value::Text("code".to_string()),
+                    ciborium::Value::Integer(13.into()),
+                ),
+                (
+                    ciborium::Value::Text("message".to_string()),
+                    ciborium::Value::Text(
+                        "storage: identity: a unique key with that hash already exists: \
+                         the key already exists in the non unique set [1, 2, 3]"
+                            .to_string(),
+                    ),
+                ),
+            ]);
+            let mut cbor_bytes = Vec::new();
+            ciborium::into_writer(&cbor_map, &mut cbor_bytes).expect("CBOR serialization");
+
+            let mut metadata = MetadataMap::new();
+            metadata.insert_bin(
+                "drive-error-data-bin",
+                MetadataValue::from_bytes(&cbor_bytes),
+            );
+
+            let status =
+                dapi_grpc::tonic::Status::with_metadata(Code::Internal, "internal", metadata);
+            let error = DapiClientError::Transport(TransportError::Grpc(status));
+
+            let sdk_error = Error::from(error);
+
+            assert_matches!(sdk_error, Error::DriveInternalError(msg) if msg.contains("unique key"));
+        }
+
+        #[test]
+        fn test_internal_error_without_drive_metadata_falls_through() {
+            let status = dapi_grpc::tonic::Status::new(Code::Internal, "Internal error");
+            let error = DapiClientError::Transport(TransportError::Grpc(status));
+
+            let sdk_error = Error::from(error);
+
+            assert_matches!(sdk_error, Error::DapiClientError(_));
+        }
+
+        #[test]
+        fn test_non_internal_code_with_drive_metadata_not_intercepted() {
+            let cbor_map = ciborium::Value::Map(vec![(
+                ciborium::Value::Text("message".to_string()),
+                ciborium::Value::Text("some drive error".to_string()),
+            )]);
+            let mut cbor_bytes = Vec::new();
+            ciborium::into_writer(&cbor_map, &mut cbor_bytes).expect("CBOR serialization");
+
+            let mut metadata = MetadataMap::new();
+            metadata.insert_bin(
+                "drive-error-data-bin",
+                MetadataValue::from_bytes(&cbor_bytes),
+            );
+
+            let status =
+                dapi_grpc::tonic::Status::with_metadata(Code::Unavailable, "unavailable", metadata);
+            let error = DapiClientError::Transport(TransportError::Grpc(status));
+
+            let sdk_error = Error::from(error);
+
+            assert_matches!(sdk_error, Error::DapiClientError(_));
+        }
+
+        #[test]
+        fn test_malformed_cbor_in_drive_error_data_bin_falls_through() {
+            let garbage_bytes = vec![0xFF, 0xFE, 0x00, 0x01, 0x02];
+
+            let mut metadata = MetadataMap::new();
+            metadata.insert_bin(
+                "drive-error-data-bin",
+                MetadataValue::from_bytes(&garbage_bytes),
+            );
+
+            let status =
+                dapi_grpc::tonic::Status::with_metadata(Code::Internal, "internal", metadata);
+            let error = DapiClientError::Transport(TransportError::Grpc(status));
+
+            let sdk_error = Error::from(error);
+
+            assert_matches!(sdk_error, Error::DapiClientError(_));
+        }
     }
 }
