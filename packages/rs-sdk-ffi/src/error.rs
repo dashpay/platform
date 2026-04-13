@@ -28,6 +28,8 @@ pub enum DashSDKErrorCode {
     Timeout = 8,
     /// Feature not implemented
     NotImplemented = 9,
+    /// Drive returned an internal error (e.g., storage-level constraint violation)
+    DriveInternalError = 10,
     /// Internal error
     InternalError = 99,
 }
@@ -132,6 +134,8 @@ impl From<FFIError> for DashSDKError {
                     (DashSDKErrorCode::ProtocolError, error_str)
                 } else if error_str.contains("not found") || error_str.contains("Not found") {
                     (DashSDKErrorCode::NotFound, error_str)
+                } else if error_str.contains("Drive internal error") {
+                    (DashSDKErrorCode::DriveInternalError, error_str)
                 } else {
                     // Default to network error with the original message
                     (
