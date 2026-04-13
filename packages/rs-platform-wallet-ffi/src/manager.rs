@@ -123,6 +123,86 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
 }
 
+/// Create a wallet from a BIP39 mnemonic phrase (English).
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
+    manager_handle: Handle,
+    mnemonic: *const std::os::raw::c_char,
+    network: u32,
+    account_options: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if mnemonic.is_null() || out_wallet_handle.is_null() || out_wallet_id.is_null() {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let mnemonic_str = match std::ffi::CStr::from_ptr(mnemonic).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorUtf8Conversion,
+                    "Invalid UTF-8 in mnemonic",
+                );
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+
+    let network = match network {
+        0 => Network::Mainnet,
+        1 => Network::Testnet,
+        2 => Network::Devnet,
+        3 => Network::Regtest,
+        _ => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidNetwork,
+                    format!("Unknown network: {}", network),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidNetwork;
+        }
+    };
+
+    let accounts = match account_options {
+        0 => WalletAccountCreationOptions::None,
+        _ => WalletAccountCreationOptions::Default,
+    };
+
+    PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| {
+            match runtime().block_on(manager.create_wallet_from_mnemonic(
+                mnemonic_str,
+                network,
+                accounts,
+            )) {
+                Ok(wallet) => {
+                    let wallet_id = wallet.wallet_id();
+                    let wallet_handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+                    *out_wallet_handle = wallet_handle;
+                    *out_wallet_id = wallet_id;
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            e.to_string(),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
 /// Destroy a PlatformWalletManager handle.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_destroy(

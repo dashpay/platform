@@ -59,6 +59,48 @@ public class PlatformWalletManager {
         _ = platform_wallet_manager_destroy(handle, &error)
     }
 
+    /// Create a wallet from a BIP39 mnemonic phrase (English).
+    ///
+    /// - Parameters:
+    ///   - mnemonic: BIP39 mnemonic phrase (12 or 24 words).
+    ///   - network: Target network.
+    ///   - createDefaultAccounts: Whether to create default HD accounts.
+    /// - Returns: A managed `ManagedPlatformWallet` handle.
+    public func createWallet(
+        mnemonic: String,
+        network: PlatformNetwork,
+        createDefaultAccounts: Bool = true
+    ) throws -> ManagedPlatformWallet {
+        var walletHandle: Handle = NULL_HANDLE
+        var walletId: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        var error = PlatformWalletFFIError()
+
+        let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
+
+        let result = mnemonic.withCString { mnemonicPtr in
+            platform_wallet_manager_create_wallet_from_mnemonic(
+                handle,
+                mnemonicPtr,
+                network.rawValue,
+                accountOptions,
+                &walletHandle,
+                &walletId,
+                &error
+            )
+        }
+
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        let idData = withUnsafeBytes(of: &walletId) { Data($0) }
+        return ManagedPlatformWallet(handle: walletHandle, walletId: idData)
+    }
+
     /// Create a wallet from raw seed bytes.
     ///
     /// - Parameters:

@@ -101,6 +101,20 @@ func platform_wallet_manager_create(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+@_silgen_name("platform_wallet_manager_create_wallet_from_mnemonic")
+func platform_wallet_manager_create_wallet_from_mnemonic(
+    _ manager_handle: Handle,
+    _ mnemonic: UnsafePointer<CChar>?,
+    _ network: UInt32,
+    _ account_options: UInt32,
+    _ out_wallet_handle: UnsafeMutablePointer<Handle>,
+    _ out_wallet_id: UnsafeMutablePointer<(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                                           UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                                           UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                                           UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 @_silgen_name("platform_wallet_manager_create_wallet_from_seed")
 func platform_wallet_manager_create_wallet_from_seed(
     _ manager_handle: Handle,
