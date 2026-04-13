@@ -275,7 +275,9 @@ impl Sdk {
 
         let current = self.protocol_version.load(Ordering::Relaxed);
 
-        if received_version <= current {
+        // current == 0 means uninitialized (auto-detect mode, first response).
+        // Accept any valid version in that case; after that, only increases.
+        if current > 0 && received_version <= current {
             return;
         }
 
@@ -430,8 +432,9 @@ impl Sdk {
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
-    /// The version is auto-detected from network responses and may change at runtime.
-    /// Falls back to [`PlatformVersion::latest()`] if the stored version number is unknown.
+    /// When auto-detection is enabled (default), returns [`PlatformVersion::latest()`]
+    /// until the first network response is received, then tracks the network's version.
+    /// When pinned via [`SdkBuilder::with_version()`], always returns the pinned version.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
         let v = self.protocol_version.load(Ordering::Relaxed);
         PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
@@ -947,7 +950,12 @@ impl SdkBuilder {
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
-                    protocol_version: Arc::new(atomic::AtomicU32::new(self.version.protocol_version)),
+                    // When auto-detecting, seed with 0 (uninitialized) so the first
+                    // network response sets the actual version — even if it's lower
+                    // than the binary's latest. When pinned, use the explicit version.
+                    protocol_version: Arc::new(atomic::AtomicU32::new(
+                        if self.version_explicit { self.version.protocol_version } else { 0 },
+                    )),
                     auto_detect_protocol_version: !self.version_explicit,
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
@@ -1015,7 +1023,9 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
-                    protocol_version: Arc::new(atomic::AtomicU32::new(self.version.protocol_version)),
+                    protocol_version: Arc::new(atomic::AtomicU32::new(
+                        if self.version_explicit { self.version.protocol_version } else { 0 },
+                    )),
                     auto_detect_protocol_version: !self.version_explicit,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
@@ -1371,6 +1381,41 @@ mod test {
             1,
             "pinned version must not be auto-updated"
         );
+    }
+
+    #[test]
+    fn test_default_sdk_detects_older_network_version() {
+        use dpp::version::PlatformVersion;
+
+        // Default SDK: auto-detect enabled, seeded at 0 (uninitialized)
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+
+        // Before any network response, version() falls back to latest()
+        assert_eq!(
+            sdk.version().protocol_version,
+            PlatformVersion::latest().protocol_version,
+            "before first response, should fall back to latest"
+        );
+        assert_eq!(sdk.protocol_version_number(), 0, "should be uninitialized");
+
+        // Network reports version 1 (older than latest) — should be accepted
+        let metadata = ResponseMetadata {
+            protocol_version: 1,
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            1,
+            "default SDK must detect older network version"
+        );
+        assert_eq!(sdk.version().protocol_version, 1);
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
