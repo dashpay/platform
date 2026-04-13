@@ -359,7 +359,7 @@ impl Merge for ContactChangeSet {
 
 /// Changes to the Platform address store.
 ///
-/// Mirrors [`PlatformWalletInfo.platform_address_balances`] exactly:
+/// Mirrors [`ManagedPlatformAccount.address_balances`] exactly:
 /// a map from [`PlatformAddress`] (P2PKH or P2SH) to [`Credits`]
 /// (the balance in duffs). Plus a tombstone set for addresses whose
 /// balance dropped to zero / address was spent out during a transfer
@@ -566,8 +566,12 @@ impl Merge for PlatformWalletChangeSet {
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()
             && self.token_balances.is_empty()
-            && self.dashpay_profiles.as_ref().map_or(true, |m| m.is_empty())
-            && self.dashpay_payments_overlay
+            && self
+                .dashpay_profiles
+                .as_ref()
+                .map_or(true, |m| m.is_empty())
+            && self
+                .dashpay_payments_overlay
                 .as_ref()
                 .map_or(true, |m| m.is_empty())
     }

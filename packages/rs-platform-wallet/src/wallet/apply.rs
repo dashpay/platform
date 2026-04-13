@@ -38,7 +38,9 @@
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
 //!    the now-restored UTXO set; the returned changeset is discarded.
 
+use dpp::address_funds::PlatformAddress;
 use key_wallet::wallet::Wallet;
+use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::PlatformWalletChangeSet;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
@@ -225,14 +227,25 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 4. Platform address balances. Last-write-wins on the cached
-        //    map; tombstones drop entries unconditionally.
+        // 4. Platform address balances. Apply to the first
+        //    ManagedPlatformAccount's balance map (the canonical store).
         if let Some(addr_cs) = platform_addresses {
-            for (addr, credits) in addr_cs.addresses {
-                self.platform_address_balances.insert(addr, credits);
-            }
-            for addr in addr_cs.removed {
-                self.platform_address_balances.remove(&addr);
+            if let Some(account) = self
+                .core_wallet
+                .first_platform_payment_managed_account_mut()
+            {
+                for (addr, credits) in addr_cs.addresses {
+                    if let PlatformAddress::P2pkh(hash) = addr {
+                        let p2pkh = PlatformP2PKHAddress::new(hash);
+                        account.set_address_credit_balance(p2pkh, credits, None);
+                    }
+                }
+                for addr in addr_cs.removed {
+                    if let PlatformAddress::P2pkh(hash) = addr {
+                        let p2pkh = PlatformP2PKHAddress::new(hash);
+                        account.set_address_credit_balance(p2pkh, 0, None);
+                    }
+                }
             }
         }
 
@@ -345,7 +358,6 @@ mod tests {
             balance: std::sync::Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
-            platform_address_balances: BTreeMap::new(),
             token_watched: BTreeMap::new(),
             token_balances: BTreeMap::new(),
         }
@@ -381,7 +393,6 @@ mod tests {
         info.apply_changeset(&mut wallet, cs).expect("apply");
         assert!(info.identity_manager.is_empty());
         assert!(info.tracked_asset_locks.is_empty());
-        assert!(info.platform_address_balances.is_empty());
         assert!(info.token_balances.is_empty());
     }
 
@@ -466,7 +477,10 @@ mod tests {
         let mut cs = PlatformWalletChangeSet::default();
         let mut contact_cs = ContactChangeSet::default();
         contact_cs.sent_requests.insert(
-            SentContactRequestKey { owner_id: owner, recipient_id: other },
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: other,
+            },
             ContactRequestEntry {
                 request: make_test_contact_request(99, 1),
             },
@@ -510,7 +524,10 @@ mod tests {
         );
         let mut contact_cs = ContactChangeSet::default();
         contact_cs.established.insert(
-            SentContactRequestKey { owner_id, recipient_id: other_id },
+            SentContactRequestKey {
+                owner_id,
+                recipient_id: other_id,
+            },
             established,
         );
         let mut cs = PlatformWalletChangeSet::default();
@@ -529,11 +546,37 @@ mod tests {
 
     #[test]
     fn apply_platform_addresses_insert_and_remove() {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+        use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+        use key_wallet::PlatformP2PKHAddress;
+
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
 
+        // Set up a platform payment account so apply has somewhere to write.
+        let base_path = DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(9).unwrap(),
+            ChildNumber::from_hardened_idx(1).unwrap(),
+            ChildNumber::from_hardened_idx(17).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+        ]);
+        let pool = AddressPool::new_without_generation(
+            base_path,
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+        );
+        let platform_account = ManagedPlatformAccount::new(0, 0, pool, false);
+        info.core_wallet
+            .accounts
+            .insert_platform_account(platform_account);
+
         let addr1 = PlatformAddress::P2pkh([10u8; 20]);
         let addr2 = PlatformAddress::P2pkh([20u8; 20]);
+        let p2pkh1 = PlatformP2PKHAddress::new([10u8; 20]);
+        let p2pkh2 = PlatformP2PKHAddress::new([20u8; 20]);
 
         // Insert two.
         let mut addr_cs = PlatformAddressChangeSet::default();
@@ -542,8 +585,12 @@ mod tests {
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply insert");
-        assert_eq!(info.platform_address_balances.get(&addr1), Some(&100));
-        assert_eq!(info.platform_address_balances.get(&addr2), Some(&200));
+        let account = info
+            .core_wallet
+            .first_platform_payment_managed_account()
+            .unwrap();
+        assert_eq!(account.address_credit_balance(&p2pkh1), 100);
+        assert_eq!(account.address_credit_balance(&p2pkh2), 200);
 
         // Remove one, update the other.
         let mut addr_cs = PlatformAddressChangeSet::default();
@@ -552,8 +599,12 @@ mod tests {
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
-        assert_eq!(info.platform_address_balances.get(&addr1), Some(&150));
-        assert!(!info.platform_address_balances.contains_key(&addr2));
+        let account = info
+            .core_wallet
+            .first_platform_payment_managed_account()
+            .unwrap();
+        assert_eq!(account.address_credit_balance(&p2pkh1), 150);
+        assert_eq!(account.address_credit_balance(&p2pkh2), 0);
     }
 
     #[test]
@@ -929,7 +980,12 @@ mod tests {
             .add_sent_contact_request(make_test_contact_request(1, 2));
         // Plain insert path — no matching incoming, so `established` is empty.
         assert!(contact_cs.established.is_empty());
-        assert!(contact_cs.sent_requests.contains_key(&SentContactRequestKey { owner_id: owner, recipient_id: recipient }));
+        assert!(contact_cs
+            .sent_requests
+            .contains_key(&SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: recipient
+            }));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_contacts(contact_cs))
@@ -975,7 +1031,10 @@ mod tests {
 
         // The second changeset (the auto-establish trigger) carries the full
         // `EstablishedContact`.
-        assert!(cs_out.established.contains_key(&SentContactRequestKey { owner_id: owner, recipient_id: other }));
+        assert!(cs_out.established.contains_key(&SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: other
+        }));
         assert!(cs_out.sent_requests.is_empty());
 
         // Replay both onto B in mutation order.
@@ -1036,7 +1095,10 @@ mod tests {
             .managed_identity_mut(&owner)
             .expect("a")
             .remove_sent_contact_request(&recipient);
-        assert!(remove_cs.removed_sent.contains(&SentContactRequestKey { owner_id: owner, recipient_id: recipient }));
+        assert!(remove_cs.removed_sent.contains(&SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: recipient
+        }));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_contacts(remove_cs))
@@ -1178,7 +1240,10 @@ mod tests {
 
         // Apply a tombstone for that pair.
         let mut contact_cs = ContactChangeSet::default();
-        contact_cs.removed_sent.insert(SentContactRequestKey { owner_id: owner, recipient_id: other });
+        contact_cs.removed_sent.insert(SentContactRequestKey {
+            owner_id: owner,
+            recipient_id: other,
+        });
         info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
             .expect("apply tombstone");
 
@@ -1420,8 +1485,32 @@ mod tests {
 
     #[test]
     fn apply_double_apply_full_changeset_is_idempotent() {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+        use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+        use key_wallet::PlatformP2PKHAddress;
+
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
+
+        // Set up a platform payment account.
+        let base_path = DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(9).unwrap(),
+            ChildNumber::from_hardened_idx(1).unwrap(),
+            ChildNumber::from_hardened_idx(17).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+        ]);
+        let pool = AddressPool::new_without_generation(
+            base_path,
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+        );
+        let platform_account = ManagedPlatformAccount::new(0, 0, pool, false);
+        info.core_wallet
+            .accounts
+            .insert_platform_account(platform_account);
 
         let identity = Identifier::from([3u8; 32]);
         let mut managed = ManagedIdentity::new(make_test_identity(3, 0), 0);
@@ -1454,7 +1543,14 @@ mod tests {
 
         assert_eq!(info.identity_manager.identity_count(), 1);
         assert_eq!(info.identity_manager.last_scanned_index(), 7);
-        assert_eq!(info.platform_address_balances.get(&addr), Some(&1_000));
+        let account = info
+            .core_wallet
+            .first_platform_payment_managed_account()
+            .unwrap();
+        assert_eq!(
+            account.address_credit_balance(&PlatformP2PKHAddress::new([42u8; 20])),
+            1_000
+        );
         assert_eq!(info.token_balances.get(&(identity, token)), Some(&42));
     }
 }

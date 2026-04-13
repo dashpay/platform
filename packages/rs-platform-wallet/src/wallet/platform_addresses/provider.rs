@@ -1,200 +1,303 @@
 //! DIP-17 platform payment address provider for HD wallet scanning.
+//!
+//! Delegates address derivation and gap-limit management to key-wallet's
+//! [`ManagedPlatformAccount`] / [`AddressPool`] instead of reimplementing
+//! HD logic locally.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
-use key_wallet::bip32::{ChildNumber, DerivationPath};
-use key_wallet::wallet::Wallet;
-use key_wallet::Network;
+use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+use key_wallet::managed_account::address_pool::KeySource;
+use key_wallet::PlatformP2PKHAddress;
+
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
+use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
-
-/// Default gap limit for HD wallet address scanning.
-pub(crate) const DEFAULT_GAP_LIMIT: u32 = 20;
-
-/// Build a DIP-17 platform payment derivation path.
-///
-/// Path: `m/9'/<coin_type>'/17'/<account>'/<key_class>'/<index>`
-fn platform_payment_path(
-    network: Network,
-    account: u32,
-    key_class: u32,
-    index: u32,
-) -> DerivationPath {
-    let coin_type = match network {
-        Network::Mainnet => 5,
-        _ => 1,
-    };
-    DerivationPath::from(vec![
-        ChildNumber::Hardened { index: 9 },
-        ChildNumber::Hardened { index: coin_type },
-        ChildNumber::Hardened { index: 17 },
-        ChildNumber::Hardened { index: account },
-        ChildNumber::Hardened { index: key_class },
-        ChildNumber::Normal { index },
-    ])
-}
-
-/// Derive a platform address at a given index using the wallet's key derivation.
-///
-/// Returns `(address_key_bytes, core_address)`.
-fn derive_platform_address_at(
-    wallet: &Wallet,
-    network: Network,
-    account: u32,
-    key_class: u32,
-    index: u32,
-) -> Result<(AddressKey, dashcore::Address), String> {
-    let path = platform_payment_path(network, account, key_class, index);
-
-    let extended_private_key = wallet
-        .derive_extended_private_key(&path)
-        .map_err(|e| format!("Key derivation failed: {}", e))?;
-
-    let secp = dashcore::secp256k1::Secp256k1::new();
-    let private_key = extended_private_key.to_priv();
-    let public_key = private_key.public_key(&secp);
-
-    let address = dashcore::Address::p2pkh(&public_key, network);
-
-    let platform_addr = PlatformAddress::try_from(address.clone())
-        .map_err(|e| format!("Failed to convert to PlatformAddress: {}", e))?;
-    let key = platform_addr.to_bytes();
-
-    Ok((key, address))
-}
+use dash_sdk::platform::address_sync::{
+    AddressFunds, AddressIndex, AddressProvider, AddressSyncResult,
+};
 
 /// Internal address provider implementing [`AddressProvider`] for DIP-17
 /// platform payment address discovery.
 ///
-/// This provider pre-derives platform payment addresses from the wallet and
-/// supports HD gap limit scanning. Addresses are derived upfront so the wallet
-/// lock is not held during the async sync operation.
-pub(crate) struct PlatformPaymentAddressProvider {
-    /// Network for address derivation.
-    network: Network,
-    /// Gap limit for HD wallet scanning.
-    gap_limit: u32,
-    /// Pre-derived addresses: index -> (key_bytes, core_address).
-    pending: BTreeMap<u32, (AddressKey, dashcore::Address)>,
-    /// Indices that have been resolved (found or absent).
-    resolved: std::collections::BTreeSet<u32>,
-    /// Highest index found with a non-zero balance.
-    highest_found: Option<u32>,
-    /// Shared wallet manager for lazy address extension during gap limit scanning.
+/// Reads pre-generated addresses from key-wallet's [`AddressPool`] and
+/// delegates gap-limit extension back to the pool when new addresses are
+/// found during sync.
+pub(crate) struct PlatformPaymentAddressAccountProvider {
+    /// Shared wallet manager for gap-limit extension.
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this provider operates on.
     wallet_id: WalletId,
-    /// Account index.
-    account: u32,
-    /// Key class.
-    key_class: u32,
+    /// Platform payment account index (DIP-17 account hardened level).
+    account_index: u32,
+    /// Gap limit cached from the AddressPool at construction time.
+    cached_gap_limit: u32,
+    /// Cached public key source for address generation (no private key needed).
+    key_source: KeySource,
+    /// Pending addresses from the pool: index -> platform address.
+    pending: BTreeMap<AddressIndex, PlatformP2PKHAddress>,
+    /// Addresses found with their balances.
+    found: BTreeMap<(AddressIndex, PlatformP2PKHAddress), AddressFunds>,
+    /// Addresses proven absent from the tree.
+    absent: BTreeSet<(AddressIndex, PlatformP2PKHAddress)>,
+    /// Highest index found with a non-zero balance.
+    highest_found: Option<AddressIndex>,
+    /// Previously known balances from the last sync (for incremental-only mode).
+    known_balances: Vec<(AddressIndex, PlatformAddress, AddressFunds)>,
+    /// Last sync height from the previous sync (for incremental catch-up resume).
+    sync_height: u64,
+    /// Last sync timestamp from the previous sync (for full-rescan-after threshold).
+    sync_timestamp: u64,
+    /// Last known recent block height from the previous sync (for compaction detection).
+    last_known_recent_block: u64,
 }
 
-impl PlatformPaymentAddressProvider {
+impl PlatformPaymentAddressAccountProvider {
     /// Create an address provider from a wallet.
     ///
-    /// Pre-derives the initial set of addresses (up to the gap limit).
-    /// The wallet must support private key derivation (not watch-only).
+    /// Reads the initial set of pre-generated addresses from the platform
+    /// payment account at `account_index`. No key derivation happens here
+    /// — addresses were already generated when the account was created.
     pub(crate) fn from_wallet(
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
-        network: Network,
-    ) -> Result<Self, String> {
-        let mut provider = Self {
-            network,
-            gap_limit: DEFAULT_GAP_LIMIT,
-            pending: BTreeMap::new(),
-            resolved: std::collections::BTreeSet::new(),
-            highest_found: None,
-            wallet_manager,
-            wallet_id,
-            account: 0,
-            key_class: 0,
+        account_index: u32,
+    ) -> Result<Self, PlatformWalletError> {
+        let (cached_gap_limit, key_source, pending) = {
+            let wm = wallet_manager.blocking_read();
+            let (wallet, info) = wm.get_wallet_and_info(&wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "Wallet {:?} not found in wallet manager",
+                    hex::encode(wallet_id)
+                ))
+            })?;
+
+            let account = info
+                .core_wallet
+                .platform_payment_managed_account_at_index(account_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "No platform payment account at index {}",
+                        account_index
+                    ))
+                })?;
+
+            let cached_gap_limit = account.gap_limit();
+
+            // Cache the account's public key source for address generation.
+            let account_key = PlatformPaymentAccountKey {
+                account: account_index,
+                key_class: 0,
+            };
+            let xpub = wallet
+                .accounts
+                .platform_payment_accounts
+                .get(&account_key)
+                .map(|a| a.account_xpub)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "No platform payment account key at index {}",
+                        account_index
+                    ))
+                })?;
+            let key_source = KeySource::Public(xpub);
+
+            // Read all pre-generated addresses from the pool.
+            let mut pending = BTreeMap::new();
+            for (&index, addr_info) in &account.addresses.addresses {
+                if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
+                    pending.insert(index, p2pkh);
+                }
+            }
+
+            (cached_gap_limit, key_source, pending)
         };
 
-        // Bootstrap initial addresses (0 to gap_limit - 1).
-        provider.ensure_addresses_up_to(DEFAULT_GAP_LIMIT.saturating_sub(1))?;
-
-        Ok(provider)
+        Ok(Self {
+            wallet_manager,
+            wallet_id,
+            account_index,
+            cached_gap_limit,
+            key_source,
+            pending,
+            found: BTreeMap::new(),
+            absent: BTreeSet::new(),
+            highest_found: None,
+            known_balances: Vec::new(),
+            sync_height: 0,
+            sync_timestamp: 0,
+            last_known_recent_block: 0,
+        })
     }
 
-    /// Ensure addresses are derived up to and including the given index.
-    fn ensure_addresses_up_to(&mut self, max_index: u32) -> Result<(), String> {
-        let current_max = self.pending.keys().max().copied();
-        let start = current_max.map(|m| m + 1).unwrap_or(0);
+    /// The cached public key source for address generation.
+    pub(crate) fn key_source(&self) -> &KeySource {
+        &self.key_source
+    }
 
-        // Acquire read lock only when we actually need to derive keys.
-        if start > max_index {
-            return Ok(());
+    /// The last sync timestamp, or `None` if never synced.
+    pub(crate) fn last_sync_timestamp(&self) -> Option<u64> {
+        if self.sync_timestamp == 0 {
+            None
+        } else {
+            Some(self.sync_timestamp)
         }
+    }
 
+    /// Re-populate `pending` from the address pool and update `known_balances`
+    /// from the previous sync's `found` results. Call this before each sync
+    /// to prepare the provider for a new round.
+    pub(crate) fn prepare_for_sync(&mut self) -> Result<(), PlatformWalletError> {
         let wm = self.wallet_manager.blocking_read();
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| "Wallet not found in wallet manager".to_string())?;
-        for index in start..=max_index {
-            if !self.pending.contains_key(&index) && !self.resolved.contains(&index) {
-                let (key, address) = derive_platform_address_at(
-                    wallet,
-                    self.network,
-                    self.account,
-                    self.key_class,
-                    index,
-                )?;
-                self.pending.insert(index, (key, address));
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found in wallet manager",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(self.account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    self.account_index
+                ))
+            })?;
+
+        // Refresh pending from the pool.
+        self.pending.clear();
+        for (&index, addr_info) in &account.addresses.addresses {
+            if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
+                self.pending.insert(index, p2pkh);
             }
         }
+
+        // Carry forward found balances as known_balances for incremental mode.
+        self.known_balances = self
+            .found
+            .iter()
+            .map(|(&(index, p2pkh), &funds)| {
+                (index, PlatformAddress::P2pkh(p2pkh.to_bytes()), funds)
+            })
+            .collect();
+        self.found.clear();
+        self.absent.clear();
+
         Ok(())
     }
 
-    /// Extend pending addresses based on gap limit after finding an address.
-    fn extend_for_gap_limit(&mut self, found_index: u32) -> Result<(), String> {
-        let new_end = found_index.saturating_add(self.gap_limit);
-        self.ensure_addresses_up_to(new_end)
+    /// Update incremental sync state from a completed sync result.
+    pub(crate) fn update_sync_state(&mut self, result: &AddressSyncResult) {
+        self.sync_height = result.new_sync_height;
+        self.sync_timestamp = result.new_sync_timestamp;
+        self.last_known_recent_block = result.last_known_recent_block;
+    }
+
+    /// Update the account for a found address: set its balance, mark it used
+    /// in the pool, and generate new addresses to maintain the gap limit.
+    fn on_address_found_in_pool(
+        &mut self,
+        p2pkh: &PlatformP2PKHAddress,
+        funds: AddressFunds,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.blocking_write();
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found in wallet manager",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(self.account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    self.account_index
+                ))
+            })?;
+
+        // Set balance, mark used, and maintain gap limit — all in one call.
+        account.set_address_credit_balance(*p2pkh, funds.balance, Some(&self.key_source));
+
+        // Add any newly generated addresses to pending.
+        for (&index, addr_info) in &account.addresses.addresses {
+            if !self.pending.contains_key(&index) {
+                if let Ok(new_p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
+                    self.pending.insert(index, new_p2pkh);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
-impl AddressProvider for PlatformPaymentAddressProvider {
+impl AddressProvider for PlatformPaymentAddressAccountProvider {
     fn gap_limit(&self) -> AddressIndex {
-        self.gap_limit
+        self.cached_gap_limit
     }
 
-    fn pending_addresses(&self) -> Vec<(AddressIndex, AddressKey)> {
+    fn pending_addresses(&self) -> Vec<(AddressIndex, PlatformAddress)> {
         self.pending
             .iter()
-            .filter(|(index, _)| !self.resolved.contains(index))
-            .map(|(index, (key, _))| (*index, key.clone()))
+            .map(|(index, p2pkh)| (*index, PlatformAddress::P2pkh(p2pkh.to_bytes())))
             .collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, _key: &[u8], _funds: AddressFunds) {
-        self.resolved.insert(index);
+    fn on_address_found(
+        &mut self,
+        index: AddressIndex,
+        address: &PlatformAddress,
+        funds: AddressFunds,
+    ) {
+        let PlatformAddress::P2pkh(hash) = address else {
+            return;
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
 
-        // Any found address (including zero-balance) indicates prior use
-        // and should extend the scanning window.
-        self.highest_found = Some(self.highest_found.map(|h| h.max(index)).unwrap_or(index));
+        self.pending.remove(&index);
+        self.found.insert((index, p2pkh), funds);
+        self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
 
-        if let Err(e) = self.extend_for_gap_limit(index) {
-            tracing::warn!("Failed to extend addresses for gap limit: {}", e);
+        if let Err(e) = self.on_address_found_in_pool(&p2pkh, funds) {
+            tracing::warn!("Failed to update pool for found address: {}", e);
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, _key: &[u8]) {
-        self.resolved.insert(index);
+    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+        let PlatformAddress::P2pkh(hash) = address else {
+            return;
+        };
+        self.pending.remove(&index);
+        self.absent
+            .insert((index, PlatformP2PKHAddress::new(*hash)));
     }
 
     fn has_pending(&self) -> bool {
-        self.pending
-            .keys()
-            .any(|index| !self.resolved.contains(index))
+        !self.pending.is_empty()
     }
 
     fn highest_found_index(&self) -> Option<AddressIndex> {
         self.highest_found
+    }
+
+    fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)] {
+        &self.known_balances
+    }
+
+    fn last_sync_height(&self) -> u64 {
+        self.sync_height
+    }
+
+    fn last_known_recent_block_height(&self) -> u64 {
+        self.last_known_recent_block
     }
 }

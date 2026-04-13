@@ -72,6 +72,12 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
+    #[error("Platform address not found in wallet: {0}")]
+    AddressNotFound(String),
+
+    #[error("Key derivation failed: {0}")]
+    KeyDerivation(String),
+
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
 

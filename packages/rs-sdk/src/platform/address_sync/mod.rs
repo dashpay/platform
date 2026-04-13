@@ -43,8 +43,8 @@ mod types;
 
 pub use provider::AddressProvider;
 pub use types::{
-    AddressFunds, AddressIndex, AddressKey, AddressSyncConfig, AddressSyncMetrics,
-    AddressSyncResult, LeafBoundaryKey,
+    AddressFunds, AddressIndex, AddressSyncConfig, AddressSyncMetrics, AddressSyncResult,
+    LeafBoundaryKey,
 };
 
 use crate::error::Error;
@@ -60,6 +60,7 @@ use dapi_grpc::platform::v0::{
     get_recent_compacted_address_balance_changes_request, GetAddressesBranchStateRequest,
     GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest, Proof,
 };
+use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
@@ -90,7 +91,7 @@ const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 /// single struct so it can serve as `TrunkBranchSyncOps::Context`.
 struct AddressSyncContext<'a, P: AddressProvider> {
     provider: &'a mut P,
-    key_to_index: &'a mut HashMap<AddressKey, AddressIndex>,
+    key_to_index: &'a mut HashMap<PlatformAddress, AddressIndex>,
     result: &'a mut AddressSyncResult,
 }
 
@@ -146,19 +147,20 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
     ) -> Result<(), Error> {
-        let pending: Vec<(AddressIndex, AddressKey)> = context.provider.pending_addresses();
+        let pending: Vec<(AddressIndex, PlatformAddress)> = context.provider.pending_addresses();
 
-        for (index, key) in pending {
-            if let Some(element) = trunk_result.elements.get(&key) {
+        for (index, address) in pending {
+            let key_bytes = address.to_bytes();
+            if let Some(element) = trunk_result.elements.get(&key_bytes) {
                 let funds = AddressFunds::try_from(element)?;
-                context.result.found.insert((index, key.clone()), funds);
-                context.provider.on_address_found(index, &key, funds);
-            } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
-                tracker.add_key(key, leaf_key, info);
+                context.result.found.insert((index, address), funds);
+                context.provider.on_address_found(index, &address, funds);
+            } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
+                tracker.add_key(key_bytes, leaf_key, info);
             } else {
                 // Key is proven absent
-                context.result.absent.insert((index, key.clone()));
-                context.provider.on_address_absent(index, &key);
+                context.result.absent.insert((index, address));
+                context.provider.on_address_absent(index, &address);
             }
         }
 
@@ -186,23 +188,24 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         let target_keys = tracker.keys_for_leaf(queried_leaf_key);
 
         for target_key in target_keys {
-            let index = context.key_to_index.get(&target_key).copied().unwrap_or(0);
+            // target_key is raw bytes from the tracker; convert to PlatformAddress
+            let address = PlatformAddress::from_bytes(&target_key).map_err(|e| {
+                Error::Generic(format!("Invalid address bytes from tracker: {}", e))
+            })?;
+            let index = context.key_to_index.get(&address).copied().unwrap_or(0);
 
             if let Some(element) = branch_result.elements.get(&target_key) {
                 let funds = AddressFunds::try_from(element)?;
-                context
-                    .result
-                    .found
-                    .insert((index, target_key.clone()), funds);
-                context.provider.on_address_found(index, &target_key, funds);
+                context.result.found.insert((index, address), funds);
+                context.provider.on_address_found(index, &address, funds);
                 tracker.key_found(&target_key);
             } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key)
             {
                 tracker.update_leaf(&target_key, new_leaf_key, info);
             } else {
                 // Key is proven absent
-                context.result.absent.insert((index, target_key.clone()));
-                context.provider.on_address_absent(index, &target_key);
+                context.result.absent.insert((index, address));
+                context.provider.on_address_absent(index, &address);
                 tracker.key_found(&target_key); // Remove from tracking
             }
         }
@@ -230,12 +233,13 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         tracker: &mut KeyLeafTracker,
     ) {
         // Check if provider has extended pending addresses (gap limit behavior)
-        for (index, key) in context.provider.pending_addresses() {
-            if !context.key_to_index.contains_key(&key) {
-                context.key_to_index.insert(key.clone(), index);
+        for (index, address) in context.provider.pending_addresses() {
+            if !context.key_to_index.contains_key(&address) {
+                context.key_to_index.insert(address, index);
                 // New key needs to be traced - it will be picked up in next iteration
-                if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
-                    tracker.add_key(key, leaf_key, info);
+                let key_bytes = address.to_bytes();
+                if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
+                    tracker.add_key(key_bytes, leaf_key, info);
                 }
             }
         }
@@ -294,7 +298,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
     let config = config.unwrap_or_default();
 
     // Build the index -> key map for looking up indices when we find keys
-    let mut key_to_index: HashMap<AddressKey, AddressIndex> = HashMap::new();
+    let mut key_to_index: HashMap<PlatformAddress, AddressIndex> = HashMap::new();
     for (index, key) in provider.pending_addresses() {
         key_to_index.insert(key, index);
     }
@@ -340,8 +344,8 @@ pub async fn sync_address_balances<P: AddressProvider>(
             "Address sync: incremental-only from height {}",
             start_height
         );
-        for (index, key, funds) in provider.current_balances() {
-            result.found.insert((index, key), funds);
+        for &(index, address, funds) in provider.current_balances() {
+            result.found.insert((index, address), funds);
         }
         start_height
     } else {
@@ -420,18 +424,18 @@ pub async fn sync_address_balances<P: AddressProvider>(
 /// and `result.last_known_recent_block`.
 async fn incremental_catch_up<P: AddressProvider>(
     sdk: &Sdk,
-    key_to_index: &HashMap<AddressKey, AddressIndex>,
+    key_to_index: &HashMap<PlatformAddress, AddressIndex>,
     start_height: u64,
     last_known_recent_block: u64,
     provider: &mut P,
     result: &mut AddressSyncResult,
     settings: RequestSettings,
 ) -> Result<(), Error> {
-    // Build a reverse lookup from PlatformAddress bytes to (index, key) for
+    // Build a reverse lookup from raw address bytes to (index, address) for
     // efficient matching against change entries.
-    let address_key_lookup: HashMap<Vec<u8>, (AddressIndex, AddressKey)> = key_to_index
+    let address_lookup: HashMap<Vec<u8>, (AddressIndex, PlatformAddress)> = key_to_index
         .iter()
-        .map(|(key, &index)| (key.clone(), (index, key.clone())))
+        .map(|(address, &index)| (address.to_bytes(), (index, *address)))
         .collect();
 
     let mut current_height = start_height;
@@ -589,10 +593,11 @@ async fn incremental_catch_up<P: AddressProvider>(
             for entry in &entries {
                 for (platform_addr, credit_op) in &entry.changes {
                     let addr_bytes = platform_addr.to_bytes();
-                    if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                    if let Some(&(index, address)) = address_lookup.get(&addr_bytes) {
+                        let result_key = (index, address);
                         let current_balance = result
                             .found
-                            .get(&(*index, key.clone()))
+                            .get(&result_key)
                             .map(|f| f.balance)
                             .unwrap_or(0);
 
@@ -609,17 +614,13 @@ async fn incremental_catch_up<P: AddressProvider>(
                         };
 
                         if new_balance != current_balance {
-                            let nonce = result
-                                .found
-                                .get(&(*index, key.clone()))
-                                .map(|f| f.nonce)
-                                .unwrap_or(0);
+                            let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                             let funds = AddressFunds {
                                 nonce,
                                 balance: new_balance,
                             };
-                            result.found.insert((*index, key.clone()), funds);
-                            provider.on_address_found(*index, key, funds);
+                            result.found.insert(result_key, funds);
+                            provider.on_address_found(index, &address, funds);
                         }
                     }
                 }
@@ -655,10 +656,11 @@ async fn incremental_catch_up<P: AddressProvider>(
 
             for (platform_addr, credit_op) in &entry.changes {
                 let addr_bytes = platform_addr.to_bytes();
-                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                if let Some(&(index, address)) = address_lookup.get(&addr_bytes) {
+                    let result_key = (index, address);
                     let current_balance = result
                         .found
-                        .get(&(*index, key.clone()))
+                        .get(&result_key)
                         .map(|f| f.balance)
                         .unwrap_or(0);
 
@@ -670,17 +672,13 @@ async fn incremental_catch_up<P: AddressProvider>(
                     };
 
                     if new_balance != current_balance {
-                        let nonce = result
-                            .found
-                            .get(&(*index, key.clone()))
-                            .map(|f| f.nonce)
-                            .unwrap_or(0);
+                        let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                         let funds = AddressFunds {
                             nonce,
                             balance: new_balance,
                         };
-                        result.found.insert((*index, key.clone()), funds);
-                        provider.on_address_found(*index, key, funds);
+                        result.found.insert(result_key, funds);
+                        provider.on_address_found(index, &address, funds);
                     }
                 }
             }

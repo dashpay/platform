@@ -13,8 +13,9 @@ pub use types::*;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::platform::address_sync::{
-    AddressFunds, AddressIndex, AddressKey, AddressProvider, AddressSyncConfig, AddressSyncResult,
+    AddressFunds, AddressIndex, AddressProvider, AddressSyncConfig, AddressSyncResult,
 };
 use dash_sdk::RequestSettings;
 use std::collections::{BTreeMap, BTreeSet};
@@ -199,12 +200,12 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
 /// all addresses upfront as a flat array, and results are tracked internally.
 struct BatchAddressProvider {
     gap_limit: u32,
-    pending: BTreeMap<AddressIndex, AddressKey>,
-    found: BTreeMap<(AddressIndex, AddressKey), AddressFunds>,
-    absent: BTreeSet<(AddressIndex, AddressKey)>,
+    pending: BTreeMap<AddressIndex, PlatformAddress>,
+    found: BTreeMap<(AddressIndex, PlatformAddress), AddressFunds>,
+    absent: BTreeSet<(AddressIndex, PlatformAddress)>,
     highest_found: Option<AddressIndex>,
     /// Previously known balances from the last sync (for incremental-only mode).
-    known_balances: Vec<(AddressIndex, AddressKey, AddressFunds)>,
+    known_balances: Vec<(AddressIndex, PlatformAddress, AddressFunds)>,
     /// Last sync height from the previous sync (for incremental catch-up resume).
     sync_height: u64,
     /// Last known recent block height from the previous sync (for compaction detection).
@@ -216,19 +217,24 @@ impl AddressProvider for BatchAddressProvider {
         self.gap_limit
     }
 
-    fn pending_addresses(&self) -> Vec<(AddressIndex, AddressKey)> {
-        self.pending.iter().map(|(i, k)| (*i, k.clone())).collect()
+    fn pending_addresses(&self) -> Vec<(AddressIndex, PlatformAddress)> {
+        self.pending.iter().map(|(i, a)| (*i, *a)).collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    fn on_address_found(
+        &mut self,
+        index: AddressIndex,
+        address: &PlatformAddress,
+        funds: AddressFunds,
+    ) {
         self.pending.remove(&index);
-        self.found.insert((index, key.to_vec()), funds);
+        self.found.insert((index, *address), funds);
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         self.pending.remove(&index);
-        self.absent.insert((index, key.to_vec()));
+        self.absent.insert((index, *address));
     }
 
     fn has_pending(&self) -> bool {
@@ -239,8 +245,8 @@ impl AddressProvider for BatchAddressProvider {
         self.highest_found
     }
 
-    fn current_balances(&self) -> Vec<(AddressIndex, AddressKey, AddressFunds)> {
-        self.known_balances.clone()
+    fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)] {
+        &self.known_balances
     }
 
     fn last_sync_height(&self) -> u64 {
@@ -401,8 +407,19 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         for (i, &index) in indices_slice.iter().enumerate() {
             let key_start = i * key_size as usize;
             let key_end = key_start + key_size as usize;
-            let key = keys_slice[key_start..key_end].to_vec();
-            pending.insert(index, key);
+            let key_bytes = &keys_slice[key_start..key_end];
+            match PlatformAddress::from_bytes(key_bytes) {
+                Ok(address) => {
+                    pending.insert(index, address);
+                }
+                Err(e) => {
+                    error!("dash_sdk_sync_addresses_batch_with_result: invalid address at index {}: {}", i, e);
+                    return DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("Invalid address bytes at index {}: {}", i, e),
+                    ));
+                }
+            }
         }
     }
 
@@ -436,15 +453,22 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         for (i, &index) in kb_indices.iter().enumerate() {
             let key_start = i * key_size as usize;
             let key_end = key_start + key_size as usize;
-            let key = kb_keys_slice[key_start..key_end].to_vec();
-            known_balances.push((
-                index,
-                key,
-                AddressFunds {
-                    nonce: kb_nonces[i],
-                    balance: kb_amounts[i],
-                },
-            ));
+            let key_bytes = &kb_keys_slice[key_start..key_end];
+            match PlatformAddress::from_bytes(key_bytes) {
+                Ok(address) => {
+                    known_balances.push((
+                        index,
+                        address,
+                        AddressFunds {
+                            nonce: kb_nonces[i],
+                            balance: kb_amounts[i],
+                        },
+                    ));
+                }
+                Err(e) => {
+                    error!("dash_sdk_sync_addresses_batch_with_result: invalid known balance address at index {}: {}", i, e);
+                }
+            }
         }
     }
 
@@ -551,8 +575,8 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
 fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
     // Convert found addresses
     let mut found_entries: Vec<DashSDKFoundAddress> = Vec::with_capacity(result.found.len());
-    for ((index, key), funds) in result.found.iter() {
-        let key_data = key.clone().into_boxed_slice();
+    for ((index, address), funds) in result.found.iter() {
+        let key_data = address.to_bytes().into_boxed_slice();
         let key_len = key_data.len();
         let key_ptr = Box::into_raw(key_data) as *mut u8;
 
@@ -575,8 +599,8 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
 
     // Convert absent addresses
     let mut absent_entries: Vec<DashSDKAbsentAddress> = Vec::with_capacity(result.absent.len());
-    for (index, key) in result.absent.iter() {
-        let key_data = key.clone().into_boxed_slice();
+    for (index, address) in result.absent.iter() {
+        let key_data = address.to_bytes().into_boxed_slice();
         let key_len = key_data.len();
         let key_ptr = Box::into_raw(key_data) as *mut u8;
 

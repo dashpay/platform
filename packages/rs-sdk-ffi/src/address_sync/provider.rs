@@ -1,8 +1,12 @@
 //! FFI-compatible address provider implementation using callbacks
 
 use super::types::DashSDKPendingAddressList;
-use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
+use dash_sdk::dpp::address_funds::PlatformAddress;
+use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressProvider};
 use std::os::raw::c_void;
+
+/// Empty slice constant for callback providers that don't track known balances.
+const EMPTY_BALANCES: &[(AddressIndex, PlatformAddress, AddressFunds)] = &[];
 
 /// Function pointer type for getting pending addresses
 ///
@@ -107,7 +111,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn pending_addresses(&self) -> Vec<(AddressIndex, AddressKey)> {
+    fn pending_addresses(&self) -> Vec<(AddressIndex, PlatformAddress)> {
         unsafe {
             let vtable = &*self.ffi.vtable;
             let list = (vtable.pending_addresses)(self.ffi.context);
@@ -121,8 +125,10 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
 
             for entry in addresses_slice {
                 if !entry.key.is_null() && entry.key_len > 0 {
-                    let key = std::slice::from_raw_parts(entry.key, entry.key_len).to_vec();
-                    result.push((entry.index, key));
+                    let key_bytes = std::slice::from_raw_parts(entry.key, entry.key_len);
+                    if let Ok(address) = PlatformAddress::from_bytes(key_bytes) {
+                        result.push((entry.index, address));
+                    }
                 }
             }
 
@@ -130,24 +136,36 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    fn on_address_found(
+        &mut self,
+        index: AddressIndex,
+        address: &PlatformAddress,
+        funds: AddressFunds,
+    ) {
         unsafe {
             let vtable = &*self.ffi.vtable;
+            let key_bytes = address.to_bytes();
             (vtable.on_address_found)(
                 self.ffi.context,
                 index,
-                key.as_ptr(),
-                key.len(),
+                key_bytes.as_ptr(),
+                key_bytes.len(),
                 funds.nonce,
                 funds.balance,
             );
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         unsafe {
             let vtable = &*self.ffi.vtable;
-            (vtable.on_address_absent)(self.ffi.context, index, key.as_ptr(), key.len());
+            let key_bytes = address.to_bytes();
+            (vtable.on_address_absent)(
+                self.ffi.context,
+                index,
+                key_bytes.as_ptr(),
+                key_bytes.len(),
+            );
         }
     }
 
@@ -161,6 +179,10 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
                 !self.pending_addresses().is_empty()
             }
         }
+    }
+
+    fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)] {
+        EMPTY_BALANCES
     }
 
     fn highest_found_index(&self) -> Option<AddressIndex> {

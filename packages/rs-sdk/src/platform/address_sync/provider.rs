@@ -1,6 +1,7 @@
 //! Address provider trait for address synchronization.
 
-use super::types::{AddressFunds, AddressIndex, AddressKey};
+use super::types::{AddressFunds, AddressIndex};
+use dpp::address_funds::PlatformAddress;
 
 /// Trait for providing addresses to be synchronized.
 ///
@@ -17,36 +18,6 @@ use super::types::{AddressFunds, AddressIndex, AddressKey};
 /// 2. The provider can extend [`pending_addresses`](AddressProvider::pending_addresses)
 ///    to include more addresses
 /// 3. Sync continues until all pending addresses are resolved
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use dash_sdk::platform::address_sync::{AddressProvider, AddressIndex, AddressKey};
-///
-/// struct HDWallet {
-///     gap_limit: AddressIndex,
-///     highest_used: Option<AddressIndex>,
-///     pending: Vec<(AddressIndex, AddressKey)>,
-/// }
-///
-/// impl AddressProvider for HDWallet {
-///     fn gap_limit(&self) -> AddressIndex { self.gap_limit }
-///
-///     fn pending_addresses(&self) -> Vec<(AddressIndex, AddressKey)> {
-///         self.pending.clone()
-///     }
-///
-///     fn on_address_found(&mut self, index: AddressIndex, _key: &[u8], funds: AddressFunds) {
-///         // Update highest used and extend pending if needed
-///         if funds.balance > 0 {
-///             let new_end = index + self.gap_limit + 1;
-///             // Add new indices to pending...
-///         }
-///     }
-///
-///     // ... other methods
-/// }
-/// ```
 pub trait AddressProvider: Send {
     /// Get the gap limit for this provider.
     ///
@@ -58,13 +29,13 @@ pub trait AddressProvider: Send {
 
     /// Get currently pending addresses to synchronize.
     ///
-    /// Returns tuples of `(index, address_key)` where:
+    /// Returns tuples of `(index, address)` where:
     /// - `index` is the derivation index (for HD wallets) or a unique identifier
-    /// - `address_key` is the 32-byte key used in the address funds tree
+    /// - `address` is the platform address to look up in the address funds tree
     ///
     /// This set may grow when [`on_address_found`](Self::on_address_found) triggers
     /// gap extension.
-    fn pending_addresses(&self) -> Vec<(AddressIndex, AddressKey)>;
+    fn pending_addresses(&self) -> Vec<(AddressIndex, PlatformAddress)>;
 
     /// Called when an address is found in the tree with a balance.
     ///
@@ -74,9 +45,14 @@ pub trait AddressProvider: Send {
     ///
     /// # Arguments
     /// - `index`: The address index that was found
-    /// - `key`: The address key bytes
+    /// - `address`: The platform address that was found
     /// - `funds`: The nonce and credits balance at this address
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds);
+    fn on_address_found(
+        &mut self,
+        index: AddressIndex,
+        address: &PlatformAddress,
+        funds: AddressFunds,
+    );
 
     /// Called when an address is proven absent from the tree.
     ///
@@ -86,8 +62,8 @@ pub trait AddressProvider: Send {
     ///
     /// # Arguments
     /// - `index`: The address index proven absent
-    /// - `key`: The address key bytes
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]);
+    /// - `address`: The platform address proven absent
+    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress);
 
     /// Check if there are still pending addresses to synchronize.
     ///
@@ -104,15 +80,10 @@ pub trait AddressProvider: Send {
 
     /// Get current known balances for incremental catch-up.
     ///
-    /// Returns tuples of `(index, address_key, funds)` for addresses that have
+    /// Returns tuples of `(index, address, funds)` for addresses that have
     /// known state from a previous sync. This is used during incremental-only
     /// mode to provide base balances for applying `AddToCredits` delta operations.
-    ///
-    /// Default returns an empty list, which is appropriate for full tree scan
-    /// mode where the trunk/branch queries provide absolute balance values.
-    fn current_balances(&self) -> Vec<(AddressIndex, AddressKey, AddressFunds)> {
-        Vec::new()
-    }
+    fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)];
 
     /// Get the last sync height from a previous sync.
     ///

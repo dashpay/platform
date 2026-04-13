@@ -37,7 +37,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            platform_address_balances: std::collections::BTreeMap::new(),
             token_watched: std::collections::BTreeMap::new(),
             token_balances: std::collections::BTreeMap::new(),
         }
@@ -52,7 +51,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            platform_address_balances: std::collections::BTreeMap::new(),
             token_watched: std::collections::BTreeMap::new(),
             token_balances: std::collections::BTreeMap::new(),
         }
