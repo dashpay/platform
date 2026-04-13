@@ -1317,6 +1317,73 @@ mod test {
         assert_eq!(sdk.protocol_version_number(), original_version);
     }
 
+    #[test]
+    fn test_concurrent_updates_converge_to_highest() {
+        use dpp::version::PlatformVersion;
+        use std::thread;
+
+        let sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(1).unwrap())
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(sdk.protocol_version_number(), 1);
+
+        let mut handles = Vec::new();
+        // Spawn threads that race to update to version 2 and version 3
+        for version in [2u32, 3, 2, 3, 2, 3] {
+            let sdk_clone = sdk.clone();
+            handles.push(thread::spawn(move || {
+                let metadata = ResponseMetadata {
+                    protocol_version: version,
+                    height: 1,
+                    ..Default::default()
+                };
+                sdk_clone
+                    .verify_response_metadata("test", &metadata)
+                    .expect("metadata should be valid");
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("thread should not panic");
+        }
+
+        // Highest known version (3) must win regardless of thread ordering
+        assert_eq!(
+            sdk.protocol_version_number(),
+            3,
+            "concurrent updates must converge to highest version"
+        );
+    }
+
+    #[test]
+    fn test_global_dpp_version_synced_after_update() {
+        use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+
+        let sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(1).unwrap())
+            .build()
+            .expect("mock Sdk should be created");
+
+        let metadata = ResponseMetadata {
+            protocol_version: 2,
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+
+        let global: &PlatformVersion = PlatformVersionCurrentVersion::get_current()
+            .expect("global version should be set");
+        assert_eq!(
+            global.protocol_version,
+            sdk.protocol_version_number(),
+            "global DPP version must match SDK version after update"
+        );
+    }
+
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
     #[test_matrix([0,89,111], 100, 10, true; "invalid time")]
     #[test_matrix([0,100], [0,100], 100, false; "zero time")]
