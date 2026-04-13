@@ -25,7 +25,15 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// Implementations should merge into an internal per-wallet accumulator so
     /// that a single [`flush`](Self::flush) writes the combined delta.
-    fn store(&self, wallet_id: WalletId, changeset: PlatformWalletChangeSet);
+    ///
+    /// Returns an error if the internal accumulator cannot be accessed
+    /// (e.g. mutex poisoning). Callers that use fire-and-forget
+    /// semantics should log the error rather than propagating.
+    fn store(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     /// Write all buffered changesets atomically for the given wallet, then
     /// clear that wallet's buffer.

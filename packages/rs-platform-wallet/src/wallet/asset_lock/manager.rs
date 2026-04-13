@@ -91,11 +91,15 @@ impl AssetLockManager {
         if <AssetLockChangeSet as crate::changeset::Merge>::is_empty(&cs) {
             return;
         }
-        self.persister
-            .store(crate::changeset::PlatformWalletChangeSet {
-                asset_locks: Some(cs),
-                ..Default::default()
-            });
+        if let Err(e) = self.persister.store(crate::changeset::PlatformWalletChangeSet {
+            asset_locks: Some(cs),
+            ..Default::default()
+        }) {
+            tracing::error!(
+                error = %e,
+                "AssetLockManager: failed to queue changeset for persistence"
+            );
+        }
     }
 }
 

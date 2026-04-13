@@ -25,8 +25,11 @@ impl WalletPersister {
         Self { wallet_id, inner }
     }
 
-    pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) {
-        self.inner.store(self.wallet_id, changeset);
+    pub(crate) fn store(
+        &self,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.inner.store(self.wallet_id, changeset)
     }
 
     pub(crate) fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -44,7 +47,13 @@ impl WalletPersister {
 pub(crate) struct NoPlatformPersistence;
 
 impl PlatformWalletPersistence for NoPlatformPersistence {
-    fn store(&self, _wallet_id: WalletId, _changeset: PlatformWalletChangeSet) {}
+    fn store(
+        &self,
+        _wallet_id: WalletId,
+        _changeset: PlatformWalletChangeSet,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
 
     fn flush(&self, _wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
