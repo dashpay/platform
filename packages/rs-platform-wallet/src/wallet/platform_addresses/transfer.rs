@@ -69,11 +69,12 @@ impl PlatformAddressWallet {
         };
 
         // Get the cached key source from the provider for gap limit maintenance.
-        let key_source = {
-            let providers = self.providers.lock().await;
-            providers
-                .get(&account_index)
-                .map(|p| p.key_source().clone())
+        let providers = self.providers.load();
+        let key_source = if let Some(provider_lock) = providers.get(&account_index) {
+            let provider = provider_lock.read().await;
+            Some(provider.key_source().clone())
+        } else {
+            None
         };
 
         // Update balances in the ManagedPlatformAccount.

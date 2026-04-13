@@ -2,16 +2,20 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
+use arc_swap::ArcSwap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use tokio::sync::RwLock;
 
+use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
 
 use super::provider::PlatformPaymentAddressAccountProvider;
+
+/// Provider map type alias for readability.
+type ProviderMap = BTreeMap<u32, Arc<RwLock<PlatformPaymentAddressAccountProvider>>>;
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
@@ -22,7 +26,10 @@ pub struct PlatformAddressWallet {
     /// Identifies which wallet within the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
     /// Per-account address providers, retaining incremental sync state across calls.
-    pub(crate) providers: Arc<Mutex<BTreeMap<u32, PlatformPaymentAddressAccountProvider>>>,
+    /// Each provider has its own `RwLock` so syncing different accounts is independent.
+    /// The outer `ArcSwap` allows lock-free reads; writes (adding a new account) are
+    /// rare and use clone-and-swap.
+    pub(crate) providers: Arc<ArcSwap<ProviderMap>>,
 }
 
 impl PlatformAddressWallet {
@@ -57,7 +64,7 @@ impl PlatformAddressWallet {
                 account_index,
             ) {
                 Ok(provider) => {
-                    providers.insert(account_index, provider);
+                    providers.insert(account_index, Arc::new(RwLock::new(provider)));
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -73,13 +80,38 @@ impl PlatformAddressWallet {
             sdk,
             wallet_manager,
             wallet_id,
-            providers: Arc::new(Mutex::new(providers)),
+            providers: Arc::new(ArcSwap::from_pointee(providers)),
         }
     }
 
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
+    }
+
+    /// Add a provider for a new account index.
+    ///
+    /// Returns an error if a provider already exists for this index.
+    pub fn add_provider(&self, account_index: u32) -> Result<(), PlatformWalletError> {
+        let current = self.providers.load();
+        if current.contains_key(&account_index) {
+            return Err(PlatformWalletError::AddressOperation(format!(
+                "Provider already exists for account index {}",
+                account_index
+            )));
+        }
+
+        let provider = PlatformPaymentAddressAccountProvider::from_wallet(
+            self.wallet_manager.clone(),
+            self.wallet_id,
+            account_index,
+        )?;
+
+        let mut new_map = (**current).clone();
+        new_map.insert(account_index, Arc::new(RwLock::new(provider)));
+        self.providers.store(Arc::new(new_map));
+
+        Ok(())
     }
 }
 

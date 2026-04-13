@@ -32,7 +32,7 @@ pub(crate) struct PlatformPaymentAddressAccountProvider {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this provider operates on.
     wallet_id: WalletId,
-    /// Platform payment account index (DIP-17 account' level).
+    /// Platform payment account index (DIP-17 account hardened level).
     account_index: u32,
     /// Gap limit cached from the AddressPool at construction time.
     cached_gap_limit: u32,
@@ -47,11 +47,11 @@ pub(crate) struct PlatformPaymentAddressAccountProvider {
     /// Highest index found with a non-zero balance.
     highest_found: Option<AddressIndex>,
     /// Previously known balances from the last sync (for incremental-only mode).
-    known_balances: Vec<(AddressIndex, PlatformP2PKHAddress, AddressFunds)>,
-    /// Converted known_balances for the AddressProvider trait (built in prepare_for_sync).
-    known_balances_as_platform: Vec<(AddressIndex, PlatformAddress, AddressFunds)>,
+    known_balances: Vec<(AddressIndex, PlatformAddress, AddressFunds)>,
     /// Last sync height from the previous sync (for incremental catch-up resume).
     sync_height: u64,
+    /// Last sync timestamp from the previous sync (for full-rescan-after threshold).
+    sync_timestamp: u64,
     /// Last known recent block height from the previous sync (for compaction detection).
     last_known_recent_block: u64,
 }
@@ -128,8 +128,8 @@ impl PlatformPaymentAddressAccountProvider {
             absent: BTreeSet::new(),
             highest_found: None,
             known_balances: Vec::new(),
-            known_balances_as_platform: Vec::new(),
             sync_height: 0,
+            sync_timestamp: 0,
             last_known_recent_block: 0,
         })
     }
@@ -137,6 +137,15 @@ impl PlatformPaymentAddressAccountProvider {
     /// The cached public key source for address generation.
     pub(crate) fn key_source(&self) -> &KeySource {
         &self.key_source
+    }
+
+    /// The last sync timestamp, or `None` if never synced.
+    pub(crate) fn last_sync_timestamp(&self) -> Option<u64> {
+        if self.sync_timestamp == 0 {
+            None
+        } else {
+            Some(self.sync_timestamp)
+        }
     }
 
     /// Re-populate `pending` from the address pool and update `known_balances`
@@ -173,7 +182,9 @@ impl PlatformPaymentAddressAccountProvider {
         self.known_balances = self
             .found
             .iter()
-            .map(|(&(index, p2pkh), &funds)| (index, p2pkh, funds))
+            .map(|(&(index, p2pkh), &funds)| {
+                (index, PlatformAddress::P2pkh(p2pkh.to_bytes()), funds)
+            })
             .collect();
         self.found.clear();
         self.absent.clear();
@@ -184,6 +195,7 @@ impl PlatformPaymentAddressAccountProvider {
     /// Update incremental sync state from a completed sync result.
     pub(crate) fn update_sync_state(&mut self, result: &AddressSyncResult) {
         self.sync_height = result.new_sync_height;
+        self.sync_timestamp = result.new_sync_timestamp;
         self.last_known_recent_block = result.last_known_recent_block;
     }
 
@@ -278,7 +290,7 @@ impl AddressProvider for PlatformPaymentAddressAccountProvider {
     }
 
     fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)] {
-        &self.known_balances_as_platform
+        &self.known_balances
     }
 
     fn last_sync_height(&self) -> u64 {

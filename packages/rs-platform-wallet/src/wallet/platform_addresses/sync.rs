@@ -1,7 +1,6 @@
-use crate::wallet::platform_addresses::provider::PlatformPaymentAddressAccountProvider;
 use crate::wallet::PlatformAddressWallet;
 use crate::{Merge, PlatformAddressChangeSet, PlatformWalletError};
-use dash_sdk::platform::address_sync::AddressSyncResult;
+use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
 
 impl PlatformAddressWallet {
     /// Sync platform address balances across all active platform payment accounts.
@@ -9,31 +8,22 @@ impl PlatformAddressWallet {
     /// Iterates every platform payment account in the wallet and calls
     /// [`sync_balances_on_account_index`](Self::sync_balances_on_account_index)
     /// for each one. The returned changeset is the merged result of all accounts.
+    ///
+    /// The same `config` is shared across all accounts. Pass `None` for defaults.
     pub async fn sync_balances(
         &self,
+        config: Option<AddressSyncConfig>,
     ) -> Result<(Vec<AddressSyncResult>, PlatformAddressChangeSet), PlatformWalletError> {
-        // Collect account indices under a short-lived read lock.
-        let account_indices: Vec<u32> = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "Wallet {:?} not found in wallet manager",
-                    hex::encode(self.wallet_id)
-                ))
-            })?;
-            info.core_wallet
-                .accounts
-                .platform_payment_accounts
-                .keys()
-                .map(|k| k.account)
-                .collect()
-        };
+        let providers = self.providers.load();
+        let account_indices: Vec<u32> = providers.keys().copied().collect();
 
         let mut all_results = Vec::with_capacity(account_indices.len());
         let mut merged_cs = PlatformAddressChangeSet::default();
 
         for account_index in account_indices {
-            let (result, cs) = self.sync_balances_on_account_index(account_index).await?;
+            let (result, cs) = self
+                .sync_balances_on_account_index(account_index, config.clone())
+                .await?;
             all_results.push(result);
             merged_cs.merge(cs);
         }
@@ -49,29 +39,28 @@ impl PlatformAddressWallet {
     /// Returns both the raw [`AddressSyncResult`] and a
     /// [`PlatformAddressChangeSet`] describing every address update /
     /// tombstone caused by the sync.
+    ///
+    /// Pass `None` for `config` to use defaults.
     pub async fn sync_balances_on_account_index(
         &self,
         account_index: u32,
+        config: Option<AddressSyncConfig>,
     ) -> Result<(AddressSyncResult, PlatformAddressChangeSet), PlatformWalletError> {
-        // Take the existing provider or create a new one.
-        let mut provider = {
-            let mut providers = self.providers.lock().await;
-            match providers.remove(&account_index) {
-                Some(mut existing) => {
-                    existing.prepare_for_sync()?;
-                    existing
-                }
-                None => PlatformPaymentAddressAccountProvider::from_wallet(
-                    self.wallet_manager.clone(),
-                    self.wallet_id,
-                    account_index,
-                )?,
-            }
-        };
+        let providers = self.providers.load();
+        let provider_lock = providers.get(&account_index).ok_or_else(|| {
+            PlatformWalletError::AddressSync(format!(
+                "No provider for account index {}",
+                account_index
+            ))
+        })?;
+
+        let mut provider = provider_lock.write().await;
+        let last_sync_timestamp = provider.last_sync_timestamp();
+        provider.prepare_for_sync()?;
 
         let result = self
             .sdk
-            .sync_address_balances(&mut provider, None, None)
+            .sync_address_balances(&mut *provider, config, last_sync_timestamp)
             .await?;
 
         // Build the changeset from the sync results.
@@ -84,12 +73,6 @@ impl PlatformAddressWallet {
 
         // Update the provider's incremental state from the result.
         provider.update_sync_state(&result);
-
-        // Store the provider back so incremental state is retained for next sync.
-        {
-            let mut providers = self.providers.lock().await;
-            providers.insert(account_index, provider);
-        }
 
         Ok((result, cs))
     }
