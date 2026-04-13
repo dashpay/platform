@@ -1375,12 +1375,15 @@ mod test {
         sdk.verify_response_metadata("test", &metadata)
             .expect("metadata should be valid");
 
-        let global: &PlatformVersion = PlatformVersionCurrentVersion::get_current()
-            .expect("global version should be set");
-        assert_eq!(
+        let global: &PlatformVersion =
+            PlatformVersionCurrentVersion::get_current().expect("global version should be set");
+        // The global is process-wide (last writer wins), so concurrent tests
+        // may have pushed it higher. We only assert it's at least the version
+        // we set — not an exact match.
+        assert!(
+            global.protocol_version >= 2,
+            "global DPP version must be at least the version we set (2), got {}",
             global.protocol_version,
-            sdk.protocol_version_number(),
-            "global DPP version must match SDK version after update"
         );
     }
 
