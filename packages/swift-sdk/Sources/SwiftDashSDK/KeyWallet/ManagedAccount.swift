@@ -112,8 +112,9 @@ public class ManagedAccount {
             if ffiTx.output_details_count > 0, let outputsPtr = ffiTx.output_details {
                 for j in 0..<ffiTx.output_details_count {
                     let detail = outputsPtr.advanced(by: j).pointee
+                    let address = detail.address != nil ? String(cString: detail.address) : ""
                     let isMine = detail.role == FFI_OUTPUT_ROLE_RECEIVED || detail.role == FFI_OUTPUT_ROLE_CHANGE
-                    outputs.append(TxIO(address: "", amount: 0, isMine: isMine))
+                    outputs.append(TxIO(address: address, amount: detail.value, isMine: isMine))
                 }
             }
 
