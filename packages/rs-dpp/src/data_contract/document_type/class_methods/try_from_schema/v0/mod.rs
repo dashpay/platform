@@ -51,7 +51,7 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 #[cfg(feature = "validation")]
-use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
+use crate::validation::meta_validators::{DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -132,8 +132,28 @@ impl DocumentTypeV0 {
                 )
             })?;
 
+            // Select the appropriate document meta-schema based on platform version
+            let meta_schema = match platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .document_type_schema
+            {
+                0 => &*DOCUMENT_META_SCHEMA_V0,
+                1 => &*DOCUMENT_META_SCHEMA_V1,
+                version => {
+                    return Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DocumentTypeV0::try_from_schema (document_type_schema)"
+                            .to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    })
+                }
+            };
+
             // Validate against JSON Schema
-            DOCUMENT_META_SCHEMA_V0
+            meta_schema
                 .validate(&root_json_schema)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 

@@ -317,7 +317,7 @@ public class CoreWalletManager: ObservableObject {
     ///   - accountIndex: The account index to use
     ///   - outputs: The transaction outputs
     /// - Returns: The signed transaction bytes
-    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output]) throws -> (Data, UInt64) {
+    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [TxOutput]) throws -> (Data, UInt64) {
         try sdkWalletManager.buildSignedTransaction(for: wallet, accIndex: accIndex, outputs: outputs)
     }
 

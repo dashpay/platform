@@ -37,6 +37,7 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
+            document_type_schema: 0,
             should_add_creator_id: 0,
             enrich_with_base_schema: 0,
             find_identifier_and_binary_paths: 0,
