@@ -5,7 +5,7 @@
 //! - [`DapiBroadcaster`] — broadcasts via Platform's DAPI gRPC (default for
 //!   standalone wallets without SPV).
 //! - [`SpvBroadcaster`] — broadcasts via SPV P2P peers (used when the wallet
-//!   is managed by [`PlatformWalletManager`] with SPV enabled).
+//!   is managed by [`PlatformWalletCoordinator`] with SPV enabled).
 
 use std::sync::Arc;
 
@@ -66,7 +66,7 @@ impl TransactionBroadcaster for DapiBroadcaster {
 
 /// Broadcasts transactions via SPV P2P peers.
 ///
-/// Used when the wallet is managed by [`PlatformWalletManager`] with SPV.
+/// Used when the wallet is managed by [`PlatformWalletCoordinator`] with SPV.
 pub struct SpvBroadcaster {
     spv: Arc<SpvRuntime>,
 }

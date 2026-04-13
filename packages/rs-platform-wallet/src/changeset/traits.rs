@@ -17,7 +17,7 @@ use crate::wallet::platform_wallet::WalletId;
 /// disk I/O, letting callers batch many small deltas before committing.
 ///
 /// The trait uses `&self` with a `wallet_id` parameter so a single persister
-/// instance can be shared across all wallets in a [`PlatformWalletManager`].
+/// instance can be shared across all wallets in a [`PlatformWalletCoordinator`].
 /// Implementations are responsible for internal synchronization (e.g.
 /// `Mutex` / `RwLock` around staged changeset buffers).
 pub trait PlatformWalletPersistence: Send + Sync {

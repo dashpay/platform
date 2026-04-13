@@ -346,7 +346,7 @@ impl IdentityWallet {
     /// When the Platform submission fails because an InstantSend proof has
     /// expired, callers should retry with a ChainLock proof. The fallback
     /// logic lives in the error-handling layer above this method (e.g. in the
-    /// `PlatformWalletManager`) because it requires waiting for chain-lock
+    /// `PlatformWalletCoordinator`) because it requires waiting for chain-lock
     /// confirmation via DAPI queries that are not available at this level.
     /// The [`PlatformWalletError::AssetLockExpired`] and
     /// [`PlatformWalletError::AssetLockNotChainLocked`] error variants are

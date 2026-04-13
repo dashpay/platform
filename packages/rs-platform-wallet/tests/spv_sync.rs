@@ -1,6 +1,6 @@
 //! Minimal SPV sync integration test.
 //!
-//! Creates a PlatformWalletManager, registers a wallet from a mnemonic,
+//! Creates a PlatformWalletCoordinator, registers a wallet from a mnemonic,
 //! starts SPV, waits for sync, and verifies the wallet has a non-zero balance.
 //!
 //! # Requirements
@@ -25,7 +25,7 @@ use key_wallet::Network;
 use platform_wallet::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet::PlatformWalletManager;
+use platform_wallet::PlatformWalletCoordinator;
 use tokio_util::sync::CancellationToken;
 
 /// No-op persister for tests.
@@ -122,7 +122,7 @@ async fn test_spv_sync_and_balance() {
 
     let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-    let manager = Arc::new(PlatformWalletManager::new(
+    let manager = Arc::new(PlatformWalletCoordinator::new(
         Arc::clone(&sdk),
         persister,
         event_handler,

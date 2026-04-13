@@ -31,7 +31,7 @@ pub struct CoreWallet {
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
     pub(crate) balance: Arc<WalletBalance>,
     /// Injected broadcaster — delegates to SPV or DAPI depending on how
-    /// the wallet was constructed by `PlatformWalletManager`.
+    /// the wallet was constructed by `PlatformWalletCoordinator`.
     broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
 }
 
