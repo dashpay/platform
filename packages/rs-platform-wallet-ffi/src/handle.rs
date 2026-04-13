@@ -98,6 +98,10 @@ pub static IDENTITY_MANAGER_STORAGE: Lazy<HandleStorage<platform_wallet::Identit
 pub static MANAGED_IDENTITY_STORAGE: Lazy<HandleStorage<platform_wallet::ManagedIdentity>> =
     Lazy::new(HandleStorage::new);
 
+/// Storage for CoreWallet handles
+pub static CORE_WALLET_STORAGE: Lazy<HandleStorage<platform_wallet::CoreWallet>> =
+    Lazy::new(HandleStorage::new);
+
 /// Storage for PlatformAddressWallet handles
 pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
     HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,

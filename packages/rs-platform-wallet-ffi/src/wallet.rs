@@ -78,6 +78,29 @@ pub unsafe extern "C" fn platform_wallet_get_platform(
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
 }
 
+/// Get a CoreWallet handle from a PlatformWallet.
+///
+/// The returned handle is a clone (cheap — all Arc internals).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_core(
+    handle: Handle,
+    out_core_handle: *mut Handle,
+    _out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_core_handle.is_null() {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(handle, |wallet| {
+            let core_wallet = wallet.core().clone();
+            let core_handle = CORE_WALLET_STORAGE.insert(core_wallet);
+            *out_core_handle = core_handle;
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
 /// Flush all queued changesets to the storage backend.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_flush_persist(

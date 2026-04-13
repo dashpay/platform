@@ -6,6 +6,7 @@
 
 pub mod contact;
 pub mod contact_request;
+pub mod core_wallet;
 pub mod error;
 pub mod established_contact;
 pub mod event_handler;
@@ -25,6 +26,7 @@ pub mod wallet;
 // Re-exports
 pub use contact::*;
 pub use contact_request::*;
+pub use core_wallet::*;
 pub use error::*;
 pub use established_contact::*;
 pub use event_handler::*;
