@@ -3,7 +3,7 @@ use crate::handle::*;
 use crate::types::Network;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use platform_wallet::platform_wallet_info::PlatformWalletInfo;
+use platform_wallet::PlatformWalletInfo;
 use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes

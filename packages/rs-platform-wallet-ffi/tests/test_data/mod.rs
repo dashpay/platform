@@ -83,7 +83,7 @@ pub fn create_test_identity(id_bytes: [u8; 32], balance: u64) -> Identity {
 /// Create a managed identity with a label
 pub fn create_managed_identity(id_bytes: [u8; 32], balance: u64, label: &str) -> ManagedIdentity {
     let identity = create_test_identity(id_bytes, balance);
-    let mut managed = ManagedIdentity::new(identity);
+    let mut managed = ManagedIdentity::new(identity, 0);
     managed.set_label(label.to_string());
     managed
 }
