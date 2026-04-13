@@ -213,6 +213,10 @@ impl CoreWallet {
 impl CoreWallet {
     /// Broadcast a signed transaction to the network.
     ///
+    /// Build the transaction using key-wallet's
+    /// [`TransactionBuilder`](key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder),
+    /// then pass the result here for broadcasting.
+    ///
     /// Delegates to the injected [`TransactionBroadcaster`] which may use
     /// SPV (P2P) or DAPI (gRPC) depending on how the wallet was constructed.
     ///
