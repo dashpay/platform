@@ -1,6 +1,5 @@
 pub mod balance;
 pub mod balance_handler;
-mod send_transaction;
 pub mod wallet;
 
 pub use balance::WalletBalance;
