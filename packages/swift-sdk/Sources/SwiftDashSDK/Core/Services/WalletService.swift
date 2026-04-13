@@ -375,6 +375,12 @@ public class WalletService: ObservableObject {
             _ record: NotOwnedTransactionRecord
         ) {}
 
+        func onTransactionStatusChanged(
+            _ walletId: String,
+            _ txId: Data,
+            _ status: TransactionContext
+        ) {}
+
         func onBalanceUpdated(
             _ walletId: String,
             _ spendable: UInt64,

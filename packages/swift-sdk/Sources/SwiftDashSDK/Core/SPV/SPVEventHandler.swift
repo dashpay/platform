@@ -488,6 +488,12 @@ public protocol SPVWalletEventsHandler: AnyObject {
         _ record: NotOwnedTransactionRecord
     )
 
+    func onTransactionStatusChanged(
+        _ walletId: String,
+        _ txId: Data,
+        _ status: TransactionContext
+    )
+
     func onBalanceUpdated(
         _ walletId: String,
         _ spendable: UInt64,
@@ -503,7 +509,7 @@ extension SPVWalletEventsHandler {
     public func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
         FFIWalletEventCallbacks(
             on_transaction_received: onSpvTransactionReceivedCallbackC,
-            on_transaction_status_changed: nil,
+            on_transaction_status_changed: onSpvTransactionStatusChangedCallbackC,
             on_balance_updated: onSpvBalanceUpdatedCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
         )
@@ -535,6 +541,30 @@ private func onSpvTransactionReceivedCallbackC(
         walletId,
         accountIndex,
         record
+    )
+}
+
+private func onSpvTransactionStatusChangedCallbackC(
+    walletIdPtr: UnsafePointer<CChar>?,
+    txIdPtr: UnsafePointer<Byte32>?,
+    status: FFITransactionContext,
+    userData: UnsafeMutableRawPointer?
+) {
+    let handler = rawPtrIntoSpvWalletEventsHandler(userData)
+
+    guard let walletIdPtr else {
+        assertionFailure("TransactionStatusChanged walletId pointer is nil")
+        return
+    }
+
+    let txId = bytePtrIntoData(txIdPtr, 32)
+    let walletId = String(cString: walletIdPtr)
+    let status = TransactionContext(ffi: status)
+
+    handler.onTransactionStatusChanged(
+        walletId,
+        txId,
+        status
     )
 }
 
@@ -582,6 +612,12 @@ private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
         _: String,
         _: UInt32,
         _: NotOwnedTransactionRecord,
+    ) {}
+
+    func onTransactionStatusChanged(
+        _ walletId: String,
+        _ txId: Data,
+        _ status: TransactionContext
     ) {}
 
     func onBalanceUpdated(
