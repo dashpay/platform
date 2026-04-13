@@ -24,7 +24,7 @@ pub struct CoreWallet {
     pub(crate) wallet_id: WalletId,
     /// Injected broadcaster — delegates to SPV or DAPI depending on how
     /// the wallet was constructed by `PlatformWalletManager`.
-    broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+    pub(crate) broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     /// Lock-free balance for UI reads.
     balance: Arc<WalletBalance>,
 }
@@ -57,6 +57,45 @@ impl CoreWallet {
         account_index: u32,
     ) -> Result<DashAddress, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .expect("wallet exists");
+
+        let xpub = wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&account_index)
+            .map(|a| a.account_xpub)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "BIP-44 account {} not found",
+                    account_index
+                ))
+            })?;
+
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "BIP-44 managed account {} not found",
+                    account_index
+                ))
+            })?;
+
+        account
+            .next_receive_address(Some(&xpub))
+            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+    }
+
+    /// Blocking version of `next_receive_address_for_account`.
+    pub fn next_receive_address_for_account_blocking(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, PlatformWalletError> {
+        let mut wm = self.wallet_manager.blocking_write();
         let (wallet, info) = wm
             .get_wallet_and_info_mut(&self.wallet_id)
             .expect("wallet exists");
@@ -129,32 +168,48 @@ impl CoreWallet {
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 
+    /// Blocking version of `next_change_address_for_account`.
+    pub fn next_change_address_for_account_blocking(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, PlatformWalletError> {
+        let mut wm = self.wallet_manager.blocking_write();
+        let (wallet, info) = wm
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .expect("wallet exists");
+
+        let xpub = wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&account_index)
+            .map(|a| a.account_xpub)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "BIP-44 account {} not found",
+                    account_index
+                ))
+            })?;
+
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "BIP-44 managed account {} not found",
+                    account_index
+                ))
+            })?;
+
+        account
+            .next_change_address(Some(&xpub))
+            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+    }
+
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Transaction broadcasting
-// ---------------------------------------------------------------------------
-
-impl CoreWallet {
-    /// Broadcast a signed transaction to the network.
-    ///
-    /// Build the transaction using key-wallet's
-    /// [`TransactionBuilder`](key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder),
-    /// then pass the result here for broadcasting.
-    ///
-    /// Delegates to the injected [`TransactionBroadcaster`] which may use
-    /// SPV (P2P) or DAPI (gRPC) depending on how the wallet was constructed.
-    ///
-    /// Returns the transaction ID on success.
-    pub async fn broadcast_transaction(
-        &self,
-        transaction: &Transaction,
-    ) -> Result<dashcore::Txid, PlatformWalletError> {
-        self.broadcaster.broadcast(transaction).await
     }
 }
 
