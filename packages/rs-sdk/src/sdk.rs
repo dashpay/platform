@@ -19,7 +19,7 @@ use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
 use dpp::prelude::IdentityNonce;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::version::PlatformVersion;
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::FromProof;
 pub use http::Uri;
@@ -262,8 +262,8 @@ impl Sdk {
     /// Update the stored protocol version if `received_version` is newer and known.
     ///
     /// Uses `fetch_max` so the highest version always wins under concurrent updates.
-    /// In multi-SDK scenarios the `PlatformVersion::set_current` global is process-wide
-    /// (last writer wins).
+    /// The version is stored per-SDK instance (not in the process-wide global),
+    /// so multiple SDK instances can track different networks independently.
     fn maybe_update_protocol_version(&self, received_version: u32) {
         if !self.auto_detect_protocol_version {
             return;
@@ -279,17 +279,15 @@ impl Sdk {
             return;
         }
 
-        let new_version = match PlatformVersion::get(received_version) {
-            Ok(v) => v,
-            Err(_) => {
-                tracing::warn!(
-                    received_version,
-                    current_version = current,
-                    "received unknown protocol version from network; keeping current"
-                );
-                return;
-            }
-        };
+        // Validate that we know this version before accepting it
+        if PlatformVersion::get(received_version).is_err() {
+            tracing::warn!(
+                received_version,
+                current_version = current,
+                "received unknown protocol version from network; keeping current"
+            );
+            return;
+        }
 
         let previous = self
             .protocol_version
@@ -300,7 +298,6 @@ impl Sdk {
                 new_version = received_version,
                 "protocol version updated from network metadata"
             );
-            PlatformVersion::set_current(new_version);
         }
     }
 
@@ -923,8 +920,6 @@ impl SdkBuilder {
     ///
     /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
-        PlatformVersion::set_current(self.version);
-
         let dapi_client_settings = match self.settings {
             Some(settings) => DEFAULT_REQUEST_SETTINGS.override_by(settings),
             None => DEFAULT_REQUEST_SETTINGS,
@@ -1345,32 +1340,8 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_global_dpp_version_synced_after_update() {
-        use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-
-        let sdk = mock_sdk_with_auto_detect(1);
-
-        let metadata = ResponseMetadata {
-            protocol_version: 2,
-            height: 1,
-            ..Default::default()
-        };
-
-        sdk.verify_response_metadata("test", &metadata)
-            .expect("metadata should be valid");
-
-        let global: &PlatformVersion =
-            PlatformVersionCurrentVersion::get_current().expect("global version should be set");
-        // The global is process-wide (last writer wins), so concurrent tests
-        // may have pushed it higher. We only assert it's at least the version
-        // we set — not an exact match.
-        assert!(
-            global.protocol_version >= 2,
-            "global DPP version must be at least the version we set (2), got {}",
-            global.protocol_version,
-        );
-    }
+    // TC-7 (global DPP version sync) removed — set_current() is no longer called
+    // from the SDK. Version is stored per-instance, not in the process-wide global.
 
     #[test]
     fn test_explicit_version_disables_auto_detect() {
