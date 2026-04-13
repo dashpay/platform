@@ -47,7 +47,7 @@ pub struct PlatformWalletInfo {
 /// A platform wallet that combines core UTXO functionality with identity management.
 ///
 /// This is SPV-free. It needs only key material and an `Sdk`.
-/// For SPV support, use [`PlatformWalletCoordinator`](crate::manager::PlatformWalletCoordinator).
+/// For SPV support, use [`PlatformWalletManager`](crate::manager::PlatformWalletManager).
 ///
 /// # Cloning
 ///

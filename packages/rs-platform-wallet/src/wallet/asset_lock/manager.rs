@@ -47,10 +47,10 @@ pub struct AssetLockManager {
     /// - [`DapiBroadcaster`](crate::broadcaster::DapiBroadcaster) — gRPC via
     ///   Platform DAPI (default for standalone wallets without SPV).
     /// - [`SpvBroadcaster`](crate::broadcaster::SpvBroadcaster) — P2P via SPV
-    ///   peers (used when managed by `PlatformWalletCoordinator` with SPV enabled).
+    ///   peers (used when managed by `PlatformWalletManager` with SPV enabled).
     ///
     /// Injected at construction by `PlatformWallet::new()`. The caller
-    /// (typically `PlatformWalletCoordinator`) decides which implementation to use.
+    /// (typically `PlatformWalletManager`) decides which implementation to use.
     broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     /// Per-wallet persistence handle. Cloned from the parent
     /// `PlatformWallet` at construction so asset lock mutations can

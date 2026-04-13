@@ -14,7 +14,7 @@ use crate::wallet::PlatformWallet;
 /// Updates `PlatformWallet`'s lock-free `WalletBalance` atomics on
 /// `BalanceUpdated` events.
 ///
-/// Registered in `PlatformWalletCoordinator` handler list. The handler
+/// Registered in `PlatformWalletManager` handler list. The handler
 /// holds an `Arc` clone of the manager's `wallets` map (a *separate*
 /// lock from the heavily-contended `wallet_manager` SPV write lock).
 /// SPV holds the wallet-manager write lock for the entire duration of

@@ -11,7 +11,7 @@ pub mod wallet;
 pub use error::PlatformWalletError;
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-pub use manager::PlatformWalletCoordinator;
+pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};

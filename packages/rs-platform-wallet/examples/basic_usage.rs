@@ -1,6 +1,6 @@
-//! Example demonstrating basic usage of PlatformWalletCoordinator
+//! Example demonstrating basic usage of PlatformWalletManager
 //!
-//! Creates a wallet via PlatformWalletCoordinator and shows how to access
+//! Creates a wallet via PlatformWalletManager and shows how to access
 //! balances, addresses, identities, and asset locks.
 
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::Network;
 use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::events::PlatformEventHandler;
-use platform_wallet::PlatformWalletCoordinator;
+use platform_wallet::PlatformWalletManager;
 
 /// Minimal no-op persister for the example.
 struct NoopPersister;
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
 
     // Create a manager
-    let manager = PlatformWalletCoordinator::new(sdk.clone(), persister, event_handler);
+    let manager = PlatformWalletManager::new(sdk.clone(), persister, event_handler);
 
     // Create a wallet from seed bytes
     let seed_bytes = [0u8; 64]; // dummy seed for example

@@ -23,7 +23,7 @@ use crate::wallet::PlatformWallet;
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
 /// [`PlatformEventHandler`]s by reference (no cloning).
-pub struct PlatformWalletCoordinator {
+pub struct PlatformWalletManager {
     sdk: Arc<dash_sdk::Sdk>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Map of registered wallets. Held in an `Arc` so the
@@ -38,8 +38,8 @@ pub struct PlatformWalletCoordinator {
     persister: Arc<dyn PlatformWalletPersistence>,
 }
 
-impl PlatformWalletCoordinator {
-    /// Create a new PlatformWalletCoordinator.
+impl PlatformWalletManager {
+    /// Create a new PlatformWalletManager.
     ///
     /// `app_handler` receives all SPV and platform events by reference.
     /// Internally, a `LockNotifyHandler` is also registered to wake
