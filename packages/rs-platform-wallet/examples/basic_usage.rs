@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let balance_arc = wallet.balance();
     println!(
         "Balance: spendable={}, unconfirmed={}, total={}",
-        balance_arc.spendable(),
+        balance_arc.confirmed(),
         balance_arc.unconfirmed(),
         balance_arc.total()
     );

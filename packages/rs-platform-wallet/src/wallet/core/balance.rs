@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// detection, and RPC balance refresh via [`CoreWallet::refresh_balance`].
 #[derive(Debug)]
 pub struct WalletBalance {
-    spendable: AtomicU64,
+    confirmed: AtomicU64,
     unconfirmed: AtomicU64,
     immature: AtomicU64,
     locked: AtomicU64,
@@ -21,7 +21,7 @@ pub struct WalletBalance {
 impl Clone for WalletBalance {
     fn clone(&self) -> Self {
         Self {
-            spendable: AtomicU64::new(self.spendable.load(Ordering::Relaxed)),
+            confirmed: AtomicU64::new(self.confirmed.load(Ordering::Relaxed)),
             unconfirmed: AtomicU64::new(self.unconfirmed.load(Ordering::Relaxed)),
             immature: AtomicU64::new(self.immature.load(Ordering::Relaxed)),
             locked: AtomicU64::new(self.locked.load(Ordering::Relaxed)),
@@ -38,15 +38,15 @@ impl Default for WalletBalance {
 impl WalletBalance {
     pub fn new() -> Self {
         Self {
-            spendable: AtomicU64::new(0),
+            confirmed: AtomicU64::new(0),
             unconfirmed: AtomicU64::new(0),
             immature: AtomicU64::new(0),
             locked: AtomicU64::new(0),
         }
     }
 
-    pub fn spendable(&self) -> u64 {
-        self.spendable.load(Ordering::Relaxed)
+    pub fn confirmed(&self) -> u64 {
+        self.confirmed.load(Ordering::Relaxed)
     }
 
     pub fn unconfirmed(&self) -> u64 {
@@ -62,12 +62,12 @@ impl WalletBalance {
     }
 
     pub fn total(&self) -> u64 {
-        self.spendable() + self.unconfirmed() + self.immature() + self.locked()
+        self.confirmed() + self.unconfirmed() + self.immature() + self.locked()
     }
 
     /// Set from raw values (used by `BalanceUpdateHandler` from event data).
-    pub(crate) fn set(&self, spendable: u64, unconfirmed: u64, immature: u64, locked: u64) {
-        self.spendable.store(spendable, Ordering::Relaxed);
+    pub(crate) fn set(&self, confirmed: u64, unconfirmed: u64, immature: u64, locked: u64) {
+        self.confirmed.store(confirmed, Ordering::Relaxed);
         self.unconfirmed.store(unconfirmed, Ordering::Relaxed);
         self.immature.store(immature, Ordering::Relaxed);
         self.locked.store(locked, Ordering::Relaxed);

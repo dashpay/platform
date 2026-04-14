@@ -29,7 +29,7 @@ pub unsafe extern "C" fn platform_wallet_get_id(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_get_balance(
     handle: Handle,
-    out_spendable: *mut u64,
+    out_confirmed: *mut u64,
     out_unconfirmed: *mut u64,
     out_immature: *mut u64,
     out_locked: *mut u64,
@@ -38,8 +38,8 @@ pub unsafe extern "C" fn platform_wallet_get_balance(
     PLATFORM_WALLET_STORAGE
         .with_item(handle, |wallet| {
             let balance = wallet.balance();
-            if !out_spendable.is_null() {
-                *out_spendable = balance.spendable();
+            if !out_confirmed.is_null() {
+                *out_confirmed = balance.confirmed();
             }
             if !out_unconfirmed.is_null() {
                 *out_unconfirmed = balance.unconfirmed();
