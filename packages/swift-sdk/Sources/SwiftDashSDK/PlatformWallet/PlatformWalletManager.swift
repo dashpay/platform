@@ -16,12 +16,21 @@ import Foundation
 public class PlatformWalletManager {
     let handle: Handle
 
-    /// Create a new PlatformWalletManager.
+    /// Create a new PlatformWalletManager from an existing SDK instance.
     ///
-    /// - Parameters:
-    ///   - sdkPointer: Raw pointer to a `Sdk` instance (from the existing SDK FFI).
-    ///   - persistenceContext: Optional opaque context for persistence callbacks.
-    ///     Pass `nil` for in-memory-only persistence.
+    /// Extracts the inner Sdk pointer from the SDK handle automatically.
+    public convenience init(sdk: SDK) throws {
+        guard let sdkHandle = sdk.handle else {
+            throw PlatformWalletError.invalidParameter
+        }
+        let innerSdkPtr = dash_sdk_get_inner_sdk_ptr(sdkHandle)
+        guard innerSdkPtr != nil else {
+            throw PlatformWalletError.invalidParameter
+        }
+        try self.init(sdkPointer: UnsafeRawPointer(innerSdkPtr!))
+    }
+
+    /// Create a new PlatformWalletManager from a raw Sdk pointer.
     public init(sdkPointer: UnsafeRawPointer) throws {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()

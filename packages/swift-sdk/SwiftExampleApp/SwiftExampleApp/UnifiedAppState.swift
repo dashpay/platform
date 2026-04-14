@@ -32,6 +32,10 @@ class UnifiedAppState: ObservableObject {
     // Platform address balance sync service (BLAST sync)
     let platformBalanceSyncService = PlatformBalanceSyncService()
 
+    // Platform wallet manager (Phase 1 — manages wallet lifecycle on the Rust side)
+    private var platformWalletManager: PlatformWalletManager?
+    private var managedWallet: ManagedPlatformWallet?
+
     // State from Platform
     let platformState: AppState
 
@@ -89,6 +93,9 @@ class UnifiedAppState: ObservableObject {
 
         // Initialize shielded pool client
         initializeShieldedService()
+
+        // Initialize PlatformWalletManager and create wallet for BLAST sync
+        await initializePlatformWallet()
 
         // Start periodic BLAST address sync
         startPlatformBalanceSync()
@@ -163,10 +170,66 @@ class UnifiedAppState: ObservableObject {
         await platformBalanceSyncService.performSync()
     }
 
-    /// Configure the platform balance sync service with a ManagedPlatformAddressWallet.
-    /// Call after PlatformWalletManager creates a wallet.
-    func configurePlatformBalanceSync(platformAddressWallet: ManagedPlatformAddressWallet) {
-        platformBalanceSyncService.configure(platformAddressWallet: platformAddressWallet)
+    /// Initialize PlatformWalletManager and create a wallet from the first available seed.
+    func initializePlatformWallet() async {
+        guard let sdk = platformState.sdk else {
+            NSLog("PlatformWallet: No SDK available, skipping")
+            return
+        }
+
+        do {
+            let manager = try PlatformWalletManager(sdk: sdk)
+            self.platformWalletManager = manager
+
+            guard let firstWallet = walletService.walletManager.wallets.first else {
+                NSLog("PlatformWallet: No wallets available, skipping")
+                return
+            }
+
+            // Get the seed — try biometric first, fall back to serialized wallet bytes
+            var seedData: Data
+            do {
+                seedData = try await walletService.walletManager.unlockWithBiometric()
+            } catch {
+                // Biometric not available (e.g. simulator) — use serialized wallet bytes
+                let serialized = firstWallet.serializedWalletBytes
+                if serialized.count >= 64 {
+                    seedData = serialized.prefix(64)
+                    NSLog("PlatformWallet: Using serialized wallet bytes as seed (biometric unavailable)")
+                } else {
+                    NSLog("PlatformWallet: No seed available, skipping")
+                    return
+                }
+            }
+
+            // Ensure we have exactly 64 bytes
+            if seedData.count > 64 {
+                seedData = seedData.prefix(64)
+            }
+            guard seedData.count == 64 else {
+                NSLog("PlatformWallet: Seed wrong size (\(seedData.count) bytes), need 64")
+                return
+            }
+
+            let network: PlatformNetwork = {
+                switch platformState.currentNetwork {
+                case .mainnet: return .mainnet
+                case .testnet: return .testnet
+                case .devnet: return .devnet
+                default: return .testnet
+                }
+            }()
+
+            let wallet = try manager.createWallet(seed: seedData, network: network)
+            self.managedWallet = wallet
+
+            let platformAddressWallet = try wallet.platformAddressWallet()
+            platformBalanceSyncService.configure(platformAddressWallet: platformAddressWallet)
+
+            NSLog("PlatformWallet: Initialized successfully")
+        } catch {
+            NSLog("PlatformWallet: Failed to initialize: \(error)")
+        }
     }
 
     /// Initialize the shielded service using the first wallet's seed.

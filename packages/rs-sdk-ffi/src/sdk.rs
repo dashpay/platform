@@ -546,6 +546,24 @@ pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
     }
 }
 
+/// Get a raw pointer to the inner SDK struct from an SDK handle.
+///
+/// Returns an opaque pointer valid as long as the SDK handle is alive.
+/// Used by platform-wallet-ffi to create a `PlatformWalletManager`.
+///
+/// # Safety
+/// - `handle` must be a valid, non-null SDK handle.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
+    handle: *const SDKHandle,
+) -> *const std::os::raw::c_void {
+    if handle.is_null() {
+        return std::ptr::null();
+    }
+    let wrapper = &*(handle as *const SDKWrapper);
+    &wrapper.sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void
+}
+
 /// Register global context provider callbacks
 ///
 /// This must be called before creating an SDK instance that needs Core SDK functionality.

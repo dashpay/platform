@@ -90,6 +90,13 @@ struct AddressSyncResultArrayFFI {
     var count: Int
 }
 
+// MARK: - SDK Inner Pointer
+
+@_silgen_name("dash_sdk_get_inner_sdk_ptr")
+func dash_sdk_get_inner_sdk_ptr(
+    _ handle: UnsafeMutablePointer<SDKHandle>?
+) -> UnsafeRawPointer?
+
 // MARK: - PlatformWalletManager FFI
 
 @_silgen_name("platform_wallet_manager_create")
