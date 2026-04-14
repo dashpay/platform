@@ -109,6 +109,8 @@ impl WasmSdk {
             )
             .await?;
 
+        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary for
+        // contract publish results; propagate it through the JS-facing return value in the follow-up.
         // Add the published contract to the context provider cache
         // This is needed so that subsequent document operations can verify proofs
         self.add_contract_to_context_cache(&published_contract)?;
@@ -226,6 +228,8 @@ impl WasmSdk {
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary for
+        // contract update results; propagate it through the JS-facing API in the follow-up.
         state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;

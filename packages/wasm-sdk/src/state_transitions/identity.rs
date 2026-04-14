@@ -124,6 +124,8 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to create identity: {}", e)))?;
 
+        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary for
+        // identity create results; propagate it through the JS-facing API in the follow-up.
         Ok(())
     }
 }
@@ -212,6 +214,8 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
 
+        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary for
+        // identity top-up results; propagate it alongside the JS-facing balance in the follow-up.
         Ok(BigInt::from(new_balance))
     }
 }
@@ -688,6 +692,8 @@ impl WasmSdk {
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary for
+        // identity update results; propagate it through the JS-facing API in the follow-up.
         state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await

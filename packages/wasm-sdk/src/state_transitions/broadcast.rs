@@ -96,6 +96,8 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
+        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary here;
+        // propagate it through the JS-facing result type in the follow-up.
         convert_proof_result(result.into_inner()).map_err(WasmSdkError::from)
     }
 }

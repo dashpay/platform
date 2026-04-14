@@ -8,7 +8,7 @@ use std::ops::Deref;
 ///
 /// `StateTransitionResult<T>` implements `Deref<Target = T>`, so existing code that
 /// only needs the inner result can use it transparently.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateTransitionResult<T> {
     inner: T,
     transition_hash: [u8; 32],
@@ -52,5 +52,52 @@ impl<T> Deref for StateTransitionResult<T> {
 
     fn deref(&self) -> &T {
         &self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StateTransitionResult;
+
+    fn sample_hash() -> [u8; 32] {
+        [7; 32]
+    }
+
+    #[test]
+    fn new_exposes_transition_hash() {
+        let result = StateTransitionResult::new("value", sample_hash());
+
+        assert_eq!(result.transition_hash(), sample_hash());
+    }
+
+    #[test]
+    fn into_parts_returns_inner_and_hash() {
+        let result = StateTransitionResult::new(42_u8, sample_hash());
+
+        assert_eq!(result.into_parts(), (42_u8, sample_hash()));
+    }
+
+    #[test]
+    fn into_inner_returns_inner_value() {
+        let result = StateTransitionResult::new(String::from("value"), sample_hash());
+
+        assert_eq!(result.into_inner(), "value");
+    }
+
+    #[test]
+    fn map_preserves_transition_hash() {
+        let result = StateTransitionResult::new(21_u8, sample_hash());
+
+        let mapped = result.map(|value| value * 2);
+
+        assert_eq!(mapped.into_parts(), (42_u8, sample_hash()));
+    }
+
+    #[test]
+    fn deref_exposes_inner_value() {
+        let result = StateTransitionResult::new(vec![1_u8, 2, 3], sample_hash());
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[1], 2);
     }
 }
