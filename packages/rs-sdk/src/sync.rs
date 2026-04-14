@@ -60,8 +60,9 @@ impl From<AsyncError> for crate::Error {
 ///
 /// Handles three scenarios:
 /// - No active runtime: creates a temporary current-thread runtime and drives the future directly.
-/// - Current-thread runtime: spawns a dedicated OS thread with its own runtime (block_in_place panics here).
-/// - Multi-thread runtime: uses block_in_place + spawn for efficient bridging.
+/// - Current-thread runtime: spawns a dedicated OS thread with its own independent runtime,
+///   since `block_in_place` panics when there are no other worker threads.
+/// - Any other runtime flavor (multi-thread, etc.): uses `block_in_place` + spawn for efficient bridging.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_on<F>(fut: F) -> Result<F::Output, AsyncError>
 where
@@ -102,21 +103,10 @@ where
             });
             Ok(rx.recv()?)
         }
-        RuntimeFlavor::MultiThread => {
-            tracing::trace!("block_on: multi-thread runtime, using block_in_place");
-            let (tx, rx) = std::sync::mpsc::channel();
-            let hdl = handle.spawn(worker(fut, tx));
-            let resp = tokio::task::block_in_place(|| rx.recv())?;
-            if !hdl.is_finished() {
-                tracing::debug!("async-sync worker future is not finished, aborting");
-                hdl.abort();
-            }
-            Ok(resp)
-        }
-        // RuntimeFlavor is non-exhaustive; treat any future variant the same as MultiThread.
-        #[allow(unreachable_patterns)]
+        // RuntimeFlavor is #[non_exhaustive]; all multi-threaded flavors (MultiThread,
+        // MultiThreadAlt, and any future variants) support block_in_place.
         _ => {
-            tracing::trace!("block_on: unknown runtime flavor, using block_in_place");
+            tracing::trace!("block_on: multi-thread runtime, using block_in_place");
             let (tx, rx) = std::sync::mpsc::channel();
             let hdl = handle.spawn(worker(fut, tx));
             let resp = tokio::task::block_in_place(|| rx.recv())?;
