@@ -158,35 +158,15 @@ class UnifiedAppState: ObservableObject {
         }
     }
 
-    /// Perform a single BLAST address sync using the wallet's DIP-17 platform payment addresses.
-    /// Skips silently if there are no wallets or no platform addresses to sync.
+    /// Perform a single BLAST address sync via platform-wallet.
     func performPlatformBalanceSync() async {
-        guard let sdk = platformState.sdk else { return }
+        await platformBalanceSyncService.performSync()
+    }
 
-        // No wallet → nothing to sync
-        let wallets = walletService.walletManager.wallets
-        guard let firstWallet = wallets.first else { return }
-
-        do {
-            // Ensure platform payment account exists (no-op if already there)
-            try walletService.walletManager.ensurePlatformPaymentAccount(for: firstWallet)
-
-            // Get addresses from the wallet's DIP-17 address pool
-            let addresses = try walletService.walletManager.getPlatformAddresses(for: firstWallet)
-
-            NSLog("BLAST sync: got \(addresses.count) platform addresses for wallet \(firstWallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())...")
-
-            // No addresses → skip sync entirely (don't hit the network)
-            guard !addresses.isEmpty else { return }
-
-            await platformBalanceSyncService.performSync(sdk: sdk, addresses: addresses)
-        } catch {
-            NSLog("BLAST sync: error getting platform addresses: \(error)")
-            SDKLogger.log(
-                "BLAST sync: failed to get platform addresses: \(error.localizedDescription)",
-                minimumLevel: .medium
-            )
-        }
+    /// Configure the platform balance sync service with a ManagedPlatformAddressWallet.
+    /// Call after PlatformWalletManager creates a wallet.
+    func configurePlatformBalanceSync(platformAddressWallet: ManagedPlatformAddressWallet) {
+        platformBalanceSyncService.configure(platformAddressWallet: platformAddressWallet)
     }
 
     /// Initialize the shielded service using the first wallet's seed.
