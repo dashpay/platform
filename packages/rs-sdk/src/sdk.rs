@@ -310,6 +310,22 @@ impl Sdk {
     ///
     /// - `R`: Type of the request that was used to fetch the proof.
     /// - `O`: Type of the object to be retrieved from the proof.
+    ///
+    /// ## Protocol version bootstrapping
+    ///
+    /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
+    /// first call to this method uses [`PlatformVersion::latest()`] as a fallback because no
+    /// network response has been received yet to teach the SDK the real network version.
+    ///
+    /// The actual network version is learned only *after* proof parsing succeeds, when
+    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
+    /// connected network runs an older protocol version **and** proof interpretation differs
+    /// between that version and `latest()`, the very first request may fail before the SDK can
+    /// correct itself.  Subsequent requests will use the correct version.
+    ///
+    /// This is a known bootstrap limitation.  Callers that must guarantee correct version
+    /// behaviour on the first request should pin the version explicitly via
+    /// [`SdkBuilder::with_version()`].
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
