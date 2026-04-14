@@ -244,22 +244,19 @@ impl AssetLockManager {
 
         let is_chain_locked = matches!(record.context, TransactionContext::InChainLockedBlock(_));
         let height = record.height().unwrap_or(0);
-        let confirmations = record.confirmations(synced_height);
 
         // Drop the read lock before making the DAPI call.
         drop(wm);
 
-        // TODO: This is weird - why would we wait for 8 confirmations if we already know it's chain-locked?
-        if is_chain_locked && height > 0 && confirmations > 8 {
+        if is_chain_locked && height > 0 {
             let platform_height = self.get_platform_core_chain_locked_height().await?;
 
             if height <= platform_height {
                 tracing::debug!(
                     "Upgrading IS-lock proof to ChainLock proof for tx {} \
-                     (height={}, confirmations={}, platform_cl_height={})",
+                     (height={}, platform_cl_height={})",
                     out_point.txid,
                     height,
-                    confirmations,
                     platform_height,
                 );
 
