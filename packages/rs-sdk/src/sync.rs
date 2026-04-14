@@ -75,8 +75,8 @@ where
 
     let handle = match tokio::runtime::Handle::try_current() {
         Ok(h) => h,
-        Err(_) => {
-            tracing::trace!("block_on: no active runtime, creating temporary runtime");
+        Err(e) => {
+            tracing::trace!("block_on: no active runtime ({e}), creating temporary runtime");
             return Ok(tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
