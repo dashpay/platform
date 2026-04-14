@@ -836,6 +836,117 @@ impl ContextProvider for TrustedHttpContextProvider {
 mod tests {
     use super::*;
 
+    /// Regression test for https://github.com/dashpay/platform/issues/3432.
+    ///
+    /// Before the fix, `get_quorum_public_key` called `futures::executor::block_on`
+    /// which deadlocks when invoked from inside a tokio runtime.  This test
+    /// reproduces that exact scenario: a cache miss inside a `#[tokio::test]`
+    /// context, where the fallback fetch path must not deadlock.
+    ///
+    /// The test spins up a minimal in-process HTTP server that returns a valid
+    /// `/quorums` JSON response containing a quorum with a well-known 48-byte
+    /// public key, then verifies that `get_quorum_public_key` returns that key
+    /// without hanging.
+    // `block_in_place` requires a multi-thread runtime (panics on current-thread).
+    // The FFI layer always uses a multi-thread runtime (`tokio::runtime::Runtime::new()`),
+    // so this flavor matches the real production scenario.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_get_quorum_public_key_no_deadlock_inside_tokio_runtime() {
+        use std::net::SocketAddr;
+
+        // A 48-byte BLS public key (all 0xAB for easy identification in assertions)
+        let pubkey_bytes = [0xABu8; 48];
+        let pubkey_hex = hex::encode(pubkey_bytes);
+
+        // A 32-byte quorum hash (all 0x01)
+        let quorum_hash: [u8; 32] = [0x01u8; 32];
+        let quorum_hash_hex = hex::encode(quorum_hash);
+
+        // Build the JSON responses the mock server will return.
+        let current_json = serde_json::json!({
+            "success": true,
+            "data": [{
+                "quorum_hash": quorum_hash_hex,
+                "key": pubkey_hex,
+                "height": 1000u64,
+                "valid_members_count": 50u32,
+            }]
+        })
+        .to_string();
+
+        let previous_json = serde_json::json!({
+            "success": true,
+            "data": { "height": 999u64, "quorums": [] }
+        })
+        .to_string();
+
+        // Spin up a minimal tokio HTTP server on an OS-assigned port.
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+
+        let current_json_clone = current_json.clone();
+        let previous_json_clone = previous_json.clone();
+
+        // Spawn the server in the background; it serves exactly the two
+        // endpoints the provider needs and then the test drops the handle.
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let current = current_json_clone.clone();
+                let previous = previous_json_clone.clone();
+                tokio::spawn(async move {
+                    // Minimal HTTP/1.1 request handling — read the request line,
+                    // then respond based on the path.
+                    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+                    let mut reader = BufReader::new(stream);
+                    let mut request_line = String::new();
+                    let _ = reader.read_line(&mut request_line).await;
+
+                    let body = if request_line.contains("/quorums")
+                        && !request_line.contains("/previous")
+                    {
+                        current
+                    } else {
+                        previous
+                    };
+
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = reader.into_inner().write_all(response.as_bytes()).await;
+                });
+            }
+        });
+
+        let base_url = format!("http://127.0.0.1:{}", server_addr.port());
+
+        // Build the provider pointing to our mock server.
+        // `new_with_url` calls `verify_domain_resolves` which does a TCP connect
+        // to localhost — that will succeed.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            base_url,
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .expect("provider creation should succeed");
+
+        // Invoke the synchronous ContextProvider method from inside the tokio
+        // runtime.  Before the fix this deadlocked; after the fix it must
+        // complete and return the expected public key.
+        let result =
+            tokio::task::spawn_blocking(move || provider.get_quorum_public_key(1, quorum_hash, 0))
+                .await
+                .expect("spawn_blocking should not panic");
+
+        let key = result.expect("get_quorum_public_key should succeed");
+        assert_eq!(key, pubkey_bytes);
+    }
+
     #[test]
     fn test_get_quorum_base_url() {
         assert_eq!(
