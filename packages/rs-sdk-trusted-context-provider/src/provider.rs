@@ -618,21 +618,41 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
-        // For non-WASM targets, we can use block_on to fetch
+        // For non-WASM targets, run the async fetch in a tokio-safe blocking context.
+        // `futures::executor::block_on` deadlocks when called from inside a tokio runtime,
+        // so we use `block_in_place` (safe on multi-threaded runtimes) with a fallback to
+        // a fresh `tokio::runtime::Runtime` when no tokio context is active.
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Use blocking to run async code in sync context
-            let quorum =
-                match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
-                    Ok(q) => q,
-                    Err(e) => {
-                        debug!("Error finding quorum: {}", e);
-                        return Err(ContextProviderError::Generic(format!(
-                            "Failed to find quorum: {}",
-                            e
-                        )));
-                    }
-                };
+            let find_future = self.find_quorum(quorum_type, quorum_hash);
+            let result = match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    // Inside a tokio runtime — use block_in_place to avoid deadlock.
+                    tokio::task::block_in_place(|| handle.block_on(find_future))
+                }
+                Err(_) => {
+                    // No tokio runtime active — spin up a temporary one.
+                    tokio::runtime::Runtime::new()
+                        .map_err(|e| {
+                            ContextProviderError::Generic(format!(
+                                "Failed to create tokio runtime: {}",
+                                e
+                            ))
+                        })?
+                        .block_on(find_future)
+                }
+            };
+
+            let quorum = match result {
+                Ok(q) => q,
+                Err(e) => {
+                    debug!("Error finding quorum: {}", e);
+                    return Err(ContextProviderError::Generic(format!(
+                        "Failed to find quorum: {}",
+                        e
+                    )));
+                }
+            };
 
             // Parse the public key from the 'key' field
             let pubkey_hex = quorum.key.trim_start_matches("0x");

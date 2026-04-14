@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -506,21 +506,6 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 
             let runtime_clone = runtime.handle().clone();
             runtime_clone.spawn(async move {
-                // First, try a simple HTTP test
-                debug!("dash_sdk_create_trusted: testing basic HTTP connectivity");
-                match reqwest::get("https://www.google.com").await {
-                    Ok(_) => debug!("dash_sdk_create_trusted: basic HTTP test successful (Google)"),
-                    Err(e) => warn!(error = %e, "dash_sdk_create_trusted: basic HTTP test failed"),
-                }
-
-                // Try the quorums endpoint directly
-                debug!("dash_sdk_create_trusted: testing quorums endpoint directly");
-                match reqwest::get("https://quorums.testnet.networks.dash.org/quorums").await {
-                    Ok(resp) => debug!(status = %resp.status(), "dash_sdk_create_trusted: direct quorums endpoint test successful"),
-                    Err(e) => warn!(error = %e, "dash_sdk_create_trusted: direct quorums endpoint test failed"),
-                }
-
-                // Now try through the provider
                 match provider_for_prefetch.update_quorum_caches().await {
                     Ok(_) => info!("dash_sdk_create_trusted: successfully prefetched quorums"),
                     Err(e) => warn!(error = %e, "dash_sdk_create_trusted: failed to prefetch quorums; continuing"),
