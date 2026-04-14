@@ -31,12 +31,12 @@ use rs_dapi_client::{
     transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::fmt::Debug;
-use std::str::FromStr;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
 use std::path::Path;
 #[cfg(feature = "mocks")]
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 #[cfg(feature = "mocks")]
