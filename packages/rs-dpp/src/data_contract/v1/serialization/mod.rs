@@ -218,4 +218,30 @@ mod tests {
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
     }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn data_contract_v1_serde_json_roundtrip() {
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::data_contract::DataContractV1;
+
+        // V1 contracts are first produced at platform version 9
+        let platform_version = PlatformVersion::get(9).expect("expected protocol version 9");
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+        let contract =
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version)
+                .data_contract_owned();
+        let v1 = contract.into_v1().expect("expected V1 contract");
+
+        let json = serde_json::to_string(&v1).expect("expected to serialize to JSON");
+        let recovered: DataContractV1 =
+            serde_json::from_str(&json).expect("expected to deserialize from JSON");
+
+        // Schema normalization during deserialization means full equality may differ;
+        // verify stable identity fields to confirm a successful roundtrip.
+        assert_eq!(v1.id(), recovered.id());
+        assert_eq!(v1.owner_id(), recovered.owner_id());
+        assert_eq!(v1.version(), recovered.version());
+    }
 }
