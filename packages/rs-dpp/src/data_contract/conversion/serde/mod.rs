@@ -11,8 +11,8 @@ impl Serialize for DataContract {
     where
         S: Serializer,
     {
-        let current_version =
-            PlatformVersion::get_current().map_err(|e| serde::ser::Error::custom(e.to_string()))?;
+        let current_version = PlatformVersion::get_version_or_current_or_latest(None)
+            .map_err(|e| serde::ser::Error::custom(e.to_string()))?;
         let data_contract_in_serialization_format: DataContractInSerializationFormat = self
             .try_into_platform_versioned(current_version)
             .map_err(|e: ProtocolError| serde::ser::Error::custom(format!("expected to be able to serialize data contract into its serialized version: {}", e)))?;
@@ -26,12 +26,8 @@ impl<'de> Deserialize<'de> for DataContract {
         D: Deserializer<'de>,
     {
         let serialization_format = DataContractInSerializationFormat::deserialize(deserializer)?;
-        let current_version = PlatformVersion::get_current().map_err(|e| {
-            serde::de::Error::custom(format!(
-                "expected to be able to get current platform version: {}",
-                e
-            ))
-        })?;
+        let current_version = PlatformVersion::get_version_or_current_or_latest(None)
+            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
         DataContract::try_from_platform_versioned(
             serialization_format,

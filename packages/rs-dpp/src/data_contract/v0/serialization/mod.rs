@@ -28,12 +28,8 @@ impl<'de> Deserialize<'de> for DataContractV0 {
         D: Deserializer<'de>,
     {
         let serialization_format = DataContractInSerializationFormatV0::deserialize(deserializer)?;
-        let current_version = PlatformVersion::get_current().map_err(|e| {
-            serde::de::Error::custom(format!(
-                "expected to be able to get current platform version: {}",
-                e
-            ))
-        })?;
+        let current_version = PlatformVersion::get_version_or_current_or_latest(None)
+            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
         DataContractV0::try_from_platform_versioned_v0(
             serialization_format,
@@ -191,5 +187,30 @@ mod tests {
             DataContract::versioned_deserialize(&bytes, false, platform_version)
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
+    }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn data_contract_v0_serde_json_roundtrip() {
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::data_contract::v0::DataContractV0;
+
+        let platform_version = PlatformVersion::first();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+        let contract =
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version)
+                .data_contract_owned();
+        let v0 = contract.into_v0().expect("expected V0 contract");
+
+        let json = serde_json::to_string(&v0).expect("expected to serialize to JSON");
+        let recovered: DataContractV0 =
+            serde_json::from_str(&json).expect("expected to deserialize from JSON");
+
+        // Schema normalization during deserialization means full equality may differ;
+        // verify stable identity fields to confirm a successful roundtrip.
+        assert_eq!(v0.id(), recovered.id());
+        assert_eq!(v0.owner_id(), recovered.owner_id());
+        assert_eq!(v0.version(), recovered.version());
     }
 }
