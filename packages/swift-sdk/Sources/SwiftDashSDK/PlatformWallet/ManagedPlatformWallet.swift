@@ -82,6 +82,32 @@ public class ManagedPlatformWallet {
         return ManagedPlatformAddressWallet(handle: platformHandle)
     }
 
+    /// Get the core wallet for UTXO management, addresses, and transactions.
+    public func coreWallet() throws -> ManagedCoreWallet {
+        var coreHandle: Handle = NULL_HANDLE
+        var error = PlatformWalletFFIError()
+
+        let result = platform_wallet_get_core(handle, &coreHandle, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        return ManagedCoreWallet(handle: coreHandle)
+    }
+
+    /// Get the asset lock manager for building and tracking asset locks.
+    public func assetLockManager() throws -> ManagedAssetLockManager {
+        var assetLockHandle: Handle = NULL_HANDLE
+        var error = PlatformWalletFFIError()
+
+        let result = platform_wallet_get_asset_locks(handle, &assetLockHandle, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        return ManagedAssetLockManager(handle: assetLockHandle)
+    }
+
     // MARK: - Persistence
 
     /// Flush all queued changesets to the storage backend.
