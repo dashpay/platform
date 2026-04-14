@@ -618,39 +618,52 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
-        // For non-WASM targets, run the async fetch in a tokio-safe blocking context.
-        // `futures::executor::block_on` deadlocks when called from inside a tokio runtime,
-        // so we use `block_in_place` (safe on multi-threaded runtimes) with a fallback to
-        // a fresh `tokio::runtime::Runtime` when no tokio context is active.
+        // For non-WASM targets, run the async fetch on a dedicated OS thread with its
+        // own tokio runtime.  This avoids two classes of failure:
+        //
+        // 1. `futures::executor::block_on` deadlocks when called from inside a tokio
+        //    runtime because reqwest's I/O needs the tokio reactor, which is blocked
+        //    waiting for `block_on` to return.
+        //
+        // 2. `tokio::task::block_in_place` panics on current-thread runtimes.
+        //
+        // Spawning a scoped OS thread sidesteps both: the new thread has no tokio
+        // context, its own current-thread runtime, and borrows `self` safely via
+        // `std::thread::scope` (the scope is exited only after the thread joins).
+        //
+        // The overhead is acceptable because quorum cache misses are rare events.
         #[cfg(not(target_arch = "wasm32"))]
         {
             let find_future = self.find_quorum(quorum_type, quorum_hash);
-            let result = match tokio::runtime::Handle::try_current() {
-                Ok(handle) => {
-                    // Inside a tokio runtime — use block_in_place to avoid deadlock.
-                    tokio::task::block_in_place(|| handle.block_on(find_future))
-                }
-                Err(_) => {
-                    // No tokio runtime active — spin up a temporary one.
-                    tokio::runtime::Runtime::new()
+            let thread_result = std::thread::scope(|s| {
+                s.spawn(|| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
                         .map_err(|e| {
-                            ContextProviderError::Generic(format!(
-                                "Failed to create tokio runtime: {}",
+                            TrustedContextProviderError::NetworkError(format!(
+                                "Failed to create tokio runtime for quorum fetch: {}",
                                 e
                             ))
                         })?
                         .block_on(find_future)
-                }
-            };
+                })
+                .join()
+            });
 
-            let quorum = match result {
-                Ok(q) => q,
-                Err(e) => {
+            let quorum = match thread_result {
+                Ok(Ok(q)) => q,
+                Ok(Err(e)) => {
                     debug!("Error finding quorum: {}", e);
                     return Err(ContextProviderError::Generic(format!(
                         "Failed to find quorum: {}",
                         e
                     )));
+                }
+                Err(_) => {
+                    return Err(ContextProviderError::Generic(
+                        "Quorum fetch thread panicked".to_string(),
+                    ));
                 }
             };
 
@@ -838,31 +851,37 @@ mod tests {
 
     /// Regression test for https://github.com/dashpay/platform/issues/3432.
     ///
-    /// Before the fix, `get_quorum_public_key` called `futures::executor::block_on`
-    /// which deadlocks when invoked from inside a tokio runtime.  This test
-    /// reproduces that exact scenario: a cache miss inside a `#[tokio::test]`
-    /// context, where the fallback fetch path must not deadlock.
+    /// Verifies that `get_quorum_public_key` does **not** deadlock when called
+    /// from inside a tokio runtime on a cache miss.
     ///
-    /// The test spins up a minimal in-process HTTP server that returns a valid
-    /// `/quorums` JSON response containing a quorum with a well-known 48-byte
-    /// public key, then verifies that `get_quorum_public_key` returns that key
-    /// without hanging.
-    // `block_in_place` requires a multi-thread runtime (panics on current-thread).
-    // The FFI layer always uses a multi-thread runtime (`tokio::runtime::Runtime::new()`),
-    // so this flavor matches the real production scenario.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_get_quorum_public_key_no_deadlock_inside_tokio_runtime() {
-        use std::net::SocketAddr;
+    /// ## Why current-thread runtime?
+    ///
+    /// The deadlock only manifests on a **current-thread** (single-threaded)
+    /// runtime.  On a multi-thread runtime, reqwest can complete I/O on a
+    /// different worker thread even when the calling thread is blocked inside
+    /// `futures::executor::block_on`, masking the bug.
+    ///
+    /// On a current-thread runtime the single thread is both the executor and
+    /// the I/O driver.  Calling `futures::executor::block_on` from within an
+    /// active tokio task parks that thread indefinitely, starving the I/O
+    /// driver → deadlock.
+    ///
+    /// ## Test structure
+    ///
+    /// The mock HTTP server is spun up on its own OS thread (outside the
+    /// current-thread runtime) so it is unaffected by what the runtime thread
+    /// does.  `get_quorum_public_key` is called directly from an async context
+    /// running on the current-thread runtime.  A channel with a 5-second
+    /// timeout detects whether the call completes or deadlocks.
+    #[test]
+    fn test_get_quorum_public_key_no_deadlock_inside_tokio_runtime() {
+        use std::time::Duration;
 
-        // A 48-byte BLS public key (all 0xAB for easy identification in assertions)
         let pubkey_bytes = [0xABu8; 48];
         let pubkey_hex = hex::encode(pubkey_bytes);
-
-        // A 32-byte quorum hash (all 0x01)
         let quorum_hash: [u8; 32] = [0x01u8; 32];
         let quorum_hash_hex = hex::encode(quorum_hash);
 
-        // Build the JSON responses the mock server will return.
         let current_json = serde_json::json!({
             "success": true,
             "data": [{
@@ -880,54 +899,45 @@ mod tests {
         })
         .to_string();
 
-        // Spin up a minimal tokio HTTP server on an OS-assigned port.
-        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        let server_addr = listener.local_addr().unwrap();
+        // Spin up the mock HTTP server on a dedicated OS thread (independent of
+        // the current-thread runtime below so it keeps responding while the
+        // runtime thread is blocked).
+        let server_rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
-        let current_json_clone = current_json.clone();
-        let previous_json_clone = previous_json.clone();
+        let listener = server_rt
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .unwrap();
+        let server_port = listener.local_addr().unwrap().port();
 
-        // Spawn the server in the background; it serves exactly the two
-        // endpoints the provider needs and then the test drops the handle.
-        tokio::spawn(async move {
-            loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    break;
-                };
-                let current = current_json_clone.clone();
-                let previous = previous_json_clone.clone();
-                tokio::spawn(async move {
-                    // Minimal HTTP/1.1 request handling — read the request line,
-                    // then respond based on the path.
+        std::thread::spawn(move || {
+            server_rt.block_on(async move {
+                // Handle connections sequentially — sufficient for a test mock.
+                while let Ok((mut stream, _)) = listener.accept().await {
                     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-                    let mut reader = BufReader::new(stream);
+                    let mut reader = BufReader::new(&mut stream);
                     let mut request_line = String::new();
                     let _ = reader.read_line(&mut request_line).await;
-
                     let body = if request_line.contains("/quorums")
                         && !request_line.contains("/previous")
                     {
-                        current
+                        current_json.clone()
                     } else {
-                        previous
+                        previous_json.clone()
                     };
-
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                         body.len(),
                         body
                     );
-                    let _ = reader.into_inner().write_all(response.as_bytes()).await;
-                });
-            }
+                    let _ = stream.write_all(response.as_bytes()).await;
+                }
+            });
         });
 
-        let base_url = format!("http://127.0.0.1:{}", server_addr.port());
-
-        // Build the provider pointing to our mock server.
-        // `new_with_url` calls `verify_domain_resolves` which does a TCP connect
-        // to localhost — that will succeed.
+        let base_url = format!("http://127.0.0.1:{}", server_port);
         let provider = TrustedHttpContextProvider::new_with_url(
             Network::Testnet,
             base_url,
@@ -935,15 +945,33 @@ mod tests {
         )
         .expect("provider creation should succeed");
 
-        // Invoke the synchronous ContextProvider method from inside the tokio
-        // runtime.  Before the fix this deadlocked; after the fix it must
-        // complete and return the expected public key.
-        let result =
-            tokio::task::spawn_blocking(move || provider.get_quorum_public_key(1, quorum_hash, 0))
-                .await
-                .expect("spawn_blocking should not panic");
+        // Channel used to receive the result with a timeout so a deadlock is
+        // caught as a test failure rather than a hang.
+        let (tx, rx) = std::sync::mpsc::channel::<Result<[u8; 48], ContextProviderError>>();
 
-        let key = result.expect("get_quorum_public_key should succeed");
+        // Run get_quorum_public_key inside a current-thread tokio runtime.
+        // This is the exact scenario that deadlocked before the fix.
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            // We call the synchronous function directly from async context —
+            // this is what proof-verification code does in the FFI layer.
+            let result = rt.block_on(async move {
+                // Calling get_quorum_public_key here (sync fn, inside async).
+                // Before fix: futures::executor::block_on → deadlock.
+                // After fix:  std::thread::scope + new runtime → no deadlock.
+                provider.get_quorum_public_key(1, quorum_hash, 0)
+            });
+            let _ = tx.send(result);
+        });
+
+        let result = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timed out after 5s — get_quorum_public_key likely deadlocked");
+
+        let key = result.expect("get_quorum_public_key should return Ok");
         assert_eq!(key, pubkey_bytes);
     }
 
