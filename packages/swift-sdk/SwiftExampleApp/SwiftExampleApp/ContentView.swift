@@ -160,6 +160,7 @@ struct SyncStatusView: View {
                 .environmentObject(unifiedState.walletService)
                 .environmentObject(unifiedState)
                 .environmentObject(unifiedState.platformBalanceSyncService)
+                .environmentObject(unifiedState.shieldedService)
                 .environment(\.modelContext, unifiedState.modelContainer.mainContext)
         }
     }

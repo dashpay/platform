@@ -6,6 +6,7 @@ struct CoreContentView: View {
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @EnvironmentObject var shieldedService: ShieldedService
     @State private var showProofDetail = false
     // Progress values come from WalletService (kept in sync with SPV callbacks)
 
@@ -297,6 +298,107 @@ var body: some View {
                 .padding(.vertical, 4)
             } header: {
                 Text("Platform Sync Status")
+            }
+
+            // Section 3: ZK Shielded Sync Status
+            Section {
+                VStack(spacing: 8) {
+                    // Sync state
+                    HStack {
+                        if shieldedService.isSyncing {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Syncing...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "shield.checkered")
+                                .foregroundColor(.purple)
+                                .font(.caption)
+                            Text("Ready")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+
+                    // Shielded balance
+                    HStack {
+                        Text("Shielded Balance")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if shieldedService.shieldedBalance > 0 {
+                            Text(formatCredits(shieldedService.shieldedBalance))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        } else {
+                            Text("0")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Orchard address
+                    if let address = shieldedService.orchardDisplayAddress {
+                        HStack {
+                            Text("Orchard Address")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(address.prefix(12) + "..." + address.suffix(8))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.purple)
+                        }
+                    }
+
+                    // Error display
+                    if let error = shieldedService.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .lineLimit(2)
+                    }
+
+                    // Action buttons
+                    HStack {
+                        Spacer()
+
+                        Button {
+                            Task {
+                                if let sdk = unifiedAppState.sdk {
+                                    await shieldedService.fullSync(sdk: sdk)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Sync Now")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                        .controlSize(.mini)
+                        .disabled(shieldedService.isSyncing)
+
+                        Button {
+                            shieldedService.reset()
+                        } label: {
+                            Text("Clear")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.mini)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Shielded Sync Status")
             }
 
         }
