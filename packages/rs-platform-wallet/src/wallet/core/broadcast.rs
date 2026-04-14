@@ -44,13 +44,20 @@ impl CoreWallet {
                 .get_wallet_and_info_mut(&self.wallet_id)
                 .expect("wallet exists");
 
-            let spendable: Vec<_> = info
+            let current_height = info.core_wallet.synced_height();
+            let account = info
                 .core_wallet
-                .get_spendable_utxos()
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild("BIP-44 account 0 not found".to_string())
+                })?;
+            let spendable: Vec<_> = account
+                .spendable_utxos(current_height)
                 .into_iter()
                 .cloned()
                 .collect();
-            let current_height = info.core_wallet.synced_height();
 
             let mut builder = TransactionBuilder::new();
             for (addr, amount) in &outputs {

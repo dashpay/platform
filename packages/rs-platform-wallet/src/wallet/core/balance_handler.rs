@@ -37,7 +37,7 @@ impl EventHandler for BalanceUpdateHandler {
     fn on_wallet_event(&self, event: &WalletEvent) {
         if let WalletEvent::BalanceUpdated {
             wallet_id,
-            spendable,
+            confirmed,
             unconfirmed,
             immature,
             locked,
@@ -55,7 +55,7 @@ impl EventHandler for BalanceUpdateHandler {
             };
             if let Some(pw) = wallets.get(wallet_id) {
                 pw.balance()
-                    .set(*spendable, *unconfirmed, *immature, *locked);
+                    .set(*confirmed, *unconfirmed, *immature, *locked);
             }
         }
     }
