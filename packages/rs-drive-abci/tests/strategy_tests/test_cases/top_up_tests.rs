@@ -16,8 +16,8 @@ mod tests {
     use strategy_tests::operations::{Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
-    #[test]
-    fn run_chain_top_up_identities() {
+    #[tokio::test]
+    async fn run_chain_top_up_identities() {
         let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
@@ -83,7 +83,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
         let balances = outcome
@@ -106,8 +107,8 @@ mod tests {
             .any(|(_, balance)| balance > max_initial_balance));
     }
 
-    #[test]
-    fn run_chain_top_up_identities_from_addresses() {
+    #[tokio::test]
+    async fn run_chain_top_up_identities_from_addresses() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -184,7 +185,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let executed = outcome
             .state_transition_results_per_block

@@ -9,8 +9,8 @@ mod replacement_tests {
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -68,6 +68,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -110,6 +111,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -164,7 +166,7 @@ mod replacement_tests {
         );
     }
 
-    fn perform_document_replace_on_profile_after_epoch_change(
+    async fn perform_document_replace_on_profile_after_epoch_change(
         original_name: &str,
         new_names: Vec<(&str, StorageFlags)>,
     ) {
@@ -218,6 +220,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -273,6 +276,7 @@ mod replacement_tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -498,8 +502,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_not_mutable() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -562,6 +566,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -604,6 +609,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -641,8 +647,8 @@ mod replacement_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 41880);
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -690,6 +696,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -784,6 +791,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -836,8 +844,8 @@ mod replacement_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[test]
-    fn test_document_replace_that_does_not_yet_exist() {
+    #[tokio::test]
+    async fn test_document_replace_that_does_not_yet_exist() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -890,6 +898,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -927,8 +936,8 @@ mod replacement_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
     }
 
-    #[test]
-    fn test_double_document_replace() {
+    #[tokio::test]
+    async fn test_double_document_replace() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -992,6 +1001,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1055,6 +1065,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1073,6 +1084,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1140,8 +1152,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_double_document_replace_different_height_same_epoch() {
+    #[tokio::test]
+    async fn test_double_document_replace_different_height_same_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1205,6 +1217,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1272,6 +1285,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1290,6 +1304,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1398,8 +1413,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_double_document_replace_no_change_different_height_same_epoch() {
+    #[tokio::test]
+    async fn test_double_document_replace_no_change_different_height_same_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1459,6 +1474,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1526,6 +1542,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1544,6 +1561,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1652,8 +1670,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_double_document_replace_different_height_different_epoch() {
+    #[tokio::test]
+    async fn test_double_document_replace_different_height_different_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1717,6 +1735,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1784,6 +1803,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
@@ -1802,6 +1822,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
@@ -1910,8 +1931,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_requires_a_token() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_requires_a_token() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1989,6 +2010,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2040,6 +2062,7 @@ mod replacement_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition

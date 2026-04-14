@@ -6,8 +6,8 @@ mod deletion_tests {
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
-    #[test]
-    fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -65,6 +65,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -107,6 +108,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_deletion_transition
@@ -161,8 +163,8 @@ mod deletion_tests {
         );
     }
 
-    #[test]
-    fn test_document_delete_on_document_type_that_is_mutable_and_can_not_be_deleted() {
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_mutable_and_can_not_be_deleted() {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -244,6 +246,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -286,6 +289,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -323,8 +327,8 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    #[test]
-    fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -406,6 +410,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -448,6 +453,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -502,8 +508,8 @@ mod deletion_tests {
         );
     }
 
-    #[test]
-    fn test_document_delete_on_document_type_that_is_not_mutable_and_can_not_be_deleted() {
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_not_be_deleted() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -568,6 +574,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -610,6 +617,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -647,8 +655,8 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    #[test]
-    fn test_document_delete_that_does_not_yet_exist() {
+    #[tokio::test]
+    async fn test_document_delete_that_does_not_yet_exist() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -701,6 +709,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_delete_serialized_transition = documents_batch_delete_transition
@@ -737,8 +746,8 @@ mod deletion_tests {
 
         assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
     }
-    #[test]
-    fn test_document_deletion_that_needs_a_token() {
+    #[tokio::test]
+    async fn test_document_deletion_that_needs_a_token() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -804,6 +813,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -868,6 +878,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_deletion_transition
@@ -915,8 +926,8 @@ mod deletion_tests {
         assert_eq!(token_balance, Some(4));
     }
 
-    #[test]
-    fn test_document_deletion_that_needs_a_token_not_enough_balance_to_delete() {
+    #[tokio::test]
+    async fn test_document_deletion_that_needs_a_token_not_enough_balance_to_delete() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -981,6 +992,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1045,6 +1057,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_deletion_transition
@@ -1097,8 +1110,8 @@ mod deletion_tests {
         assert_eq!(token_balance, None);
     }
 
-    #[test]
-    fn test_document_deletion_where_we_are_not_the_owner() {
+    #[tokio::test]
+    async fn test_document_deletion_where_we_are_not_the_owner() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1155,6 +1168,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1197,6 +1211,7 @@ mod deletion_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition

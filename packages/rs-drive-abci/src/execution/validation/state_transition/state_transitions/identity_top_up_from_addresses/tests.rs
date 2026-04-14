@@ -134,7 +134,7 @@ mod tests {
     }
 
     /// Create a signed IdentityTopUpFromAddressesTransition
-    fn create_signed_transition(
+    async fn create_signed_transition(
         identity: &Identity,
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
@@ -148,11 +148,12 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("should create signed transition")
     }
 
     /// Create a signed IdentityTopUpFromAddressesTransition with custom options
-    fn create_signed_transition_with_options(
+    async fn create_signed_transition_with_options(
         identity: &Identity,
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
@@ -177,11 +178,15 @@ mod tests {
             .signable_bytes()
             .expect("should get signable bytes");
 
-        transition.input_witnesses = inputs
-            .iter()
-            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
-            .collect::<Result<Vec<AddressWitness>, ProtocolError>>()
-            .expect("should create witnesses");
+        let mut witnesses = Vec::with_capacity(inputs.len());
+        for (address, _) in inputs.iter() {
+            let witness = signer
+                .sign_create_witness(address, &signable_bytes)
+                .await
+                .expect("should create witness");
+            witnesses.push(witness);
+        }
+        transition.input_witnesses = witnesses;
 
         IdentityTopUpFromAddressesTransition::V0(transition).into()
     }
@@ -205,8 +210,8 @@ mod tests {
     mod structure_validation {
         use super::*;
 
-        #[test]
-        fn test_no_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -263,8 +268,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_too_many_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -292,7 +297,8 @@ mod tests {
                 inputs.insert(addr, (1 as AddressNonce, dash_to_credits!(0.01)));
             }
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -324,8 +330,8 @@ mod tests {
         // Note: Some structure validation tests use dummy witnesses since
         // structure validation runs before witness validation for certain error types.
 
-        #[test]
-        fn test_fee_strategy_too_many_steps_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_too_many_steps_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -367,7 +373,8 @@ mod tests {
                 ],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -396,8 +403,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_duplicate_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_duplicate_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -434,7 +441,8 @@ mod tests {
                 ],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -463,8 +471,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_deduct_from_input_out_of_bounds_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_deduct_from_input_out_of_bounds_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -498,7 +506,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(5)], // Out of bounds
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -527,8 +536,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_reduce_output_without_output_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_reduce_output_without_output_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -562,7 +571,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)], // But trying to reduce output
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -591,8 +601,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_input_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -626,7 +636,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -655,8 +666,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_output_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -691,7 +702,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -720,8 +732,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_inputs_not_exceeding_outputs_plus_min_funding_returns_error() {
+        #[tokio::test]
+        async fn test_inputs_not_exceeding_outputs_plus_min_funding_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -759,7 +771,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -788,8 +801,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_inputs_equal_outputs_returns_error() {
+        #[tokio::test]
+        async fn test_inputs_equal_outputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -827,7 +840,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -857,8 +871,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_fee_strategy_returns_error() {
+        #[tokio::test]
+        async fn test_empty_fee_strategy_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -892,7 +906,8 @@ mod tests {
                 vec![], // Empty fee strategy
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -921,8 +936,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_witness_count_mismatch_more_witnesses_returns_signature_error() {
+        #[tokio::test]
+        async fn test_input_witness_count_mismatch_more_witnesses_returns_signature_error() {
             // NOTE: When there are MORE witnesses than inputs with dummy/invalid signatures,
             // signature validation fails before the structure validation mismatch check.
             // This is expected behavior - signatures are validated before structure.
@@ -989,8 +1004,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_witness_count_mismatch_zero_witnesses_returns_error() {
+        #[tokio::test]
+        async fn test_input_witness_count_mismatch_zero_witnesses_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1053,8 +1068,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_sum_overflow_caught_by_state_validation() {
+        #[tokio::test]
+        async fn test_input_sum_overflow_caught_by_state_validation() {
             // NOTE: This test verifies that attempting to claim more funds than exist
             // is caught by state validation (AddressNotEnoughFundsError) BEFORE
             // structure validation has a chance to check for overflow.
@@ -1108,7 +1123,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -1139,8 +1155,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_required_input_overflow_returns_error() {
+        #[tokio::test]
+        async fn test_required_input_overflow_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1178,7 +1194,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -1215,8 +1232,8 @@ mod tests {
     mod state_validation {
         use super::*;
 
-        #[test]
-        fn test_identity_not_found_returns_error() {
+        #[tokio::test]
+        async fn test_identity_not_found_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1249,7 +1266,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let transition =
-                create_signed_transition(&fake_identity, &signer, inputs, platform_version);
+                create_signed_transition(&fake_identity, &signer, inputs, platform_version).await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -1282,8 +1299,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_address_not_found_returns_error() {
+        #[tokio::test]
+        async fn test_address_not_found_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1308,7 +1325,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -1337,8 +1355,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1364,7 +1382,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5))); // More than available
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -1393,8 +1412,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_invalid_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1419,7 +1438,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5))); // nonce 1, but should be 6
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -1456,8 +1476,8 @@ mod tests {
     mod successful_execution {
         use super::*;
 
-        #[test]
-        fn test_simple_topup_succeeds() {
+        #[tokio::test]
+        async fn test_simple_topup_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1485,7 +1505,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, topup_amount));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -1511,8 +1532,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_topup_with_multiple_inputs_succeeds() {
+        #[tokio::test]
+        async fn test_topup_with_multiple_inputs_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1541,7 +1562,8 @@ mod tests {
             inputs.insert(input1, (1 as AddressNonce, dash_to_credits!(0.3)));
             inputs.insert(input2, (1 as AddressNonce, dash_to_credits!(0.3)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -1567,8 +1589,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_topup_with_p2sh_multisig_succeeds() {
+        #[tokio::test]
+        async fn test_topup_with_p2sh_multisig_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1602,7 +1624,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -1628,8 +1651,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_check_tx_accepts_valid_topup() {
+        #[tokio::test]
+        async fn test_check_tx_accepts_valid_topup() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1654,7 +1677,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             assert!(check_tx_is_valid(
@@ -1664,8 +1688,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_check_tx_rejects_invalid_nonce() {
+        #[tokio::test]
+        async fn test_check_tx_rejects_invalid_nonce() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1690,7 +1714,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5))); // Wrong nonce
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             assert!(!check_tx_is_valid(
@@ -1700,8 +1725,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_consecutive_topups_from_same_address() {
+        #[tokio::test]
+        async fn test_consecutive_topups_from_same_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1728,7 +1753,7 @@ mod tests {
             inputs1.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let transition1 =
-                create_signed_transition(&identity, &signer, inputs1, platform_version);
+                create_signed_transition(&identity, &signer, inputs1, platform_version).await;
             let bytes1 = transition1.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -1765,7 +1790,7 @@ mod tests {
             inputs2.insert(input_address, (2 as AddressNonce, dash_to_credits!(0.3)));
 
             let transition2 =
-                create_signed_transition(&identity, &signer, inputs2, platform_version);
+                create_signed_transition(&identity, &signer, inputs2, platform_version).await;
             let bytes2 = transition2.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -1798,8 +1823,8 @@ mod tests {
     mod signature_validation {
         use super::*;
 
-        #[test]
-        fn test_invalid_signature_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1872,8 +1897,8 @@ mod tests {
         use super::*;
 
         /// Output address cannot be the same as an input address - this is validated
-        #[test]
-        fn test_topup_with_output_to_same_address_fails() {
+        #[tokio::test]
+        async fn test_topup_with_output_to_same_address_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1912,7 +1937,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -1941,8 +1967,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_topup_with_output_to_different_address_succeeds() {
+        #[tokio::test]
+        async fn test_topup_with_output_to_different_address_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1979,7 +2005,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2005,8 +2032,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_topup_with_output_to_p2sh_address_succeeds() {
+        #[tokio::test]
+        async fn test_topup_with_output_to_p2sh_address_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2052,7 +2079,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2086,8 +2114,8 @@ mod tests {
     mod fee_strategy {
         use super::*;
 
-        #[test]
-        fn test_deduct_from_second_input_succeeds() {
+        #[tokio::test]
+        async fn test_deduct_from_second_input_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2124,7 +2152,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(1)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2150,8 +2179,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_reduce_output_fee_strategy_succeeds() {
+        #[tokio::test]
+        async fn test_reduce_output_fee_strategy_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2187,7 +2216,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2213,8 +2243,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_fee_strategy_steps_succeeds() {
+        #[tokio::test]
+        async fn test_multiple_fee_strategy_steps_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2254,7 +2284,8 @@ mod tests {
                 ],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2288,8 +2319,8 @@ mod tests {
     mod user_fee_increase {
         use super::*;
 
-        #[test]
-        fn test_topup_with_user_fee_increase_succeeds() {
+        #[tokio::test]
+        async fn test_topup_with_user_fee_increase_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2323,7 +2354,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 50, // 5% fee increase
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2349,8 +2381,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_topup_with_zero_fee_increase_succeeds() {
+        #[tokio::test]
+        async fn test_topup_with_zero_fee_increase_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2384,7 +2416,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
@@ -2418,8 +2451,8 @@ mod tests {
     mod balance_verification {
         use super::*;
 
-        #[test]
-        fn test_identity_balance_increases_after_topup() {
+        #[tokio::test]
+        async fn test_identity_balance_increases_after_topup() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2446,7 +2479,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, topup_amount));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2491,8 +2525,8 @@ mod tests {
 
         /// Test that nonce correctly progresses by doing two consecutive topups.
         /// If the first topup didn't increment the nonce, the second topup would fail.
-        #[test]
-        fn test_nonce_increments_after_topup_verified_by_consecutive_tx() {
+        #[tokio::test]
+        async fn test_nonce_increments_after_topup_verified_by_consecutive_tx() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2528,7 +2562,7 @@ mod tests {
             );
 
             let transition1 =
-                create_signed_transition(&identity, &signer, inputs1, platform_version);
+                create_signed_transition(&identity, &signer, inputs1, platform_version).await;
             let transition_bytes1 = transition1.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2568,7 +2602,7 @@ mod tests {
             );
 
             let transition2 =
-                create_signed_transition(&identity, &signer, inputs2, platform_version);
+                create_signed_transition(&identity, &signer, inputs2, platform_version).await;
             let transition_bytes2 = transition2.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2602,8 +2636,8 @@ mod tests {
     mod edge_cases {
         use super::*;
 
-        #[test]
-        fn test_exactly_16_inputs_succeeds() {
+        #[tokio::test]
+        async fn test_exactly_16_inputs_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2630,7 +2664,8 @@ mod tests {
                 inputs.insert(addr, (1 as AddressNonce, dash_to_credits!(0.1)));
             }
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2655,8 +2690,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_minimum_funding_amount_succeeds() {
+        #[tokio::test]
+        async fn test_minimum_funding_amount_succeeds() {
             // min_identity_funding_amount is 200,000 credits
             // Inputs must exceed outputs + 200,000 to provide minimum funding
             let platform_version = PlatformVersion::latest();
@@ -2686,7 +2721,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, input_amount));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2711,8 +2747,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_large_topup_amount_succeeds() {
+        #[tokio::test]
+        async fn test_large_topup_amount_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2739,7 +2775,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, large_topup));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2764,8 +2801,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_p2pkh_and_p2sh_inputs_succeeds() {
+        #[tokio::test]
+        async fn test_mixed_p2pkh_and_p2sh_inputs_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2804,7 +2841,8 @@ mod tests {
             inputs.insert(p2pkh_input, (1 as AddressNonce, dash_to_credits!(0.3)));
             inputs.insert(p2sh_input, (1 as AddressNonce, dash_to_credits!(0.3)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2832,8 +2870,8 @@ mod tests {
         /// Identity with zero balance CAN process topup because fees are paid from
         /// the address funds (via fee strategy), not from identity balance.
         /// This is the correct behavior for address-based state transitions.
-        #[test]
-        fn test_identity_with_zero_balance_topup_succeeds() {
+        #[tokio::test]
+        async fn test_identity_with_zero_balance_topup_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2859,7 +2897,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2886,8 +2925,8 @@ mod tests {
         }
 
         /// Identity with low but non-zero balance can topup if it has enough to pay fees
-        #[test]
-        fn test_identity_with_low_balance_topup_succeeds() {
+        #[tokio::test]
+        async fn test_identity_with_low_balance_topup_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2913,7 +2952,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -2946,8 +2986,8 @@ mod tests {
     mod multiple_addresses {
         use super::*;
 
-        #[test]
-        fn test_multiple_addresses_one_invalid_nonce_fails() {
+        #[tokio::test]
+        async fn test_multiple_addresses_one_invalid_nonce_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2975,7 +3015,8 @@ mod tests {
             inputs.insert(input1, (1 as AddressNonce, dash_to_credits!(0.3))); // correct: 1
             inputs.insert(input2, (1 as AddressNonce, dash_to_credits!(0.3))); // wrong: should be 6
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -3002,8 +3043,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_addresses_one_insufficient_balance_fails() {
+        #[tokio::test]
+        async fn test_multiple_addresses_one_insufficient_balance_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3031,7 +3072,8 @@ mod tests {
             inputs.insert(input1, (1 as AddressNonce, dash_to_credits!(0.3)));
             inputs.insert(input2, (1 as AddressNonce, dash_to_credits!(0.5))); // More than available
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -3058,8 +3100,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_addresses_one_not_found_fails() {
+        #[tokio::test]
+        async fn test_multiple_addresses_one_not_found_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3087,7 +3129,8 @@ mod tests {
             inputs.insert(input1, (1 as AddressNonce, dash_to_credits!(0.3)));
             inputs.insert(input2, (1 as AddressNonce, dash_to_credits!(0.3)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             let platform_state = platform.state.load();
@@ -3122,8 +3165,8 @@ mod tests {
     mod check_tx_additional {
         use super::*;
 
-        #[test]
-        fn test_check_tx_rejects_nonexistent_identity() {
+        #[tokio::test]
+        async fn test_check_tx_rejects_nonexistent_identity() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3156,7 +3199,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let transition =
-                create_signed_transition(&fake_identity, &signer, inputs, platform_version);
+                create_signed_transition(&fake_identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             assert!(!check_tx_is_valid(
@@ -3166,8 +3209,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_check_tx_rejects_nonexistent_address() {
+        #[tokio::test]
+        async fn test_check_tx_rejects_nonexistent_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3192,7 +3235,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             assert!(!check_tx_is_valid(
@@ -3202,8 +3246,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_check_tx_rejects_insufficient_balance() {
+        #[tokio::test]
+        async fn test_check_tx_rejects_insufficient_balance() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3228,7 +3272,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5))); // More than available
 
-            let transition = create_signed_transition(&identity, &signer, inputs, platform_version);
+            let transition =
+                create_signed_transition(&identity, &signer, inputs, platform_version).await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             assert!(!check_tx_is_valid(
@@ -3238,8 +3283,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_check_tx_accepts_valid_with_output() {
+        #[tokio::test]
+        async fn test_check_tx_accepts_valid_with_output() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3273,7 +3318,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 0,
                 platform_version,
-            );
+            )
+            .await;
             let transition_bytes = transition.serialize_to_bytes().unwrap();
 
             assert!(check_tx_is_valid(
@@ -3295,8 +3341,8 @@ mod tests {
         /// because all indices shifted down after the removal.
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
-        #[test]
-        fn test_fee_deduction_stable_after_entry_removal() {
+        #[tokio::test]
+        async fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3358,7 +3404,8 @@ mod tests {
                 fee_strategy,
                 0,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3421,8 +3468,8 @@ mod tests {
         /// the transformer lacks defense-in-depth.
         ///
         /// Location: rs-drive/.../identity_top_up_from_addresses/v0/transformer.rs:24,28
-        #[test]
-        fn test_transformer_subtraction_uses_checked_arithmetic() {
+        #[tokio::test]
+        async fn test_transformer_subtraction_uses_checked_arithmetic() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();

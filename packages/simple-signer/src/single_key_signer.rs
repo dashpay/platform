@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::dashcore;
 use dpp::dashcore::signer;
@@ -78,8 +79,9 @@ impl SingleKeySigner {
     }
 }
 
+#[async_trait]
 impl Signer<IdentityPublicKey> for SingleKeySigner {
-    fn sign(
+    async fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
@@ -102,13 +104,13 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
         }
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
         // First, sign the data to get the signature
-        let signature = self.sign(key, data)?;
+        let signature = self.sign(key, data).await?;
 
         // Create the appropriate AddressWitness based on the key type
         // SingleKeySigner only supports ECDSA keys

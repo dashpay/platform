@@ -940,7 +940,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external<S: Signer<IdentityPublicKey>>(
+    pub async fn sign_external<S: Signer<IdentityPublicKey>>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -954,10 +954,11 @@ impl StateTransition {
             get_data_contract_security_level_requirement,
             StateTransitionSigningOptions::default(),
         )
+        .await
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external_with_options<S: Signer<IdentityPublicKey>>(
+    pub async fn sign_external_with_options<S: Signer<IdentityPublicKey>>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -1107,7 +1108,7 @@ impl StateTransition {
             }
         }
         let data = self.signable_bytes()?;
-        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        self.set_signature(signer.sign(identity_public_key, data.as_slice()).await?);
         self.set_signature_public_key_id(identity_public_key.id());
         Ok(())
     }

@@ -58,7 +58,8 @@ impl TransferToIdentity for Identity {
             new_identity_nonce,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         let (sender, receiver): (PartialIdentity, PartialIdentity) =

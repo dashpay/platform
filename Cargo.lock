@@ -5862,6 +5862,7 @@ dependencies = [
 name = "rs-sdk-ffi"
 version = "3.1.0-dev.1"
 dependencies = [
+ "async-trait",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
@@ -6623,6 +6624,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 name = "simple-signer"
 version = "3.1.0-dev.1"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bincode",
  "dpp",
@@ -6762,6 +6764,7 @@ dependencies = [
  "platform-version",
  "rand 0.8.5",
  "simple-signer",
+ "tokio",
  "tracing",
 ]
 
@@ -8119,6 +8122,7 @@ name = "wasm-dpp2"
 version = "3.1.0-dev.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "dpp",
  "dpp-json-convertible-derive",

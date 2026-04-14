@@ -4,6 +4,7 @@
 //#![deny(missing_docs)]
 #![allow(dead_code)]
 #![allow(clippy::result_large_err)]
+#![allow(async_fn_in_trait)]
 
 extern crate core;
 
