@@ -1275,8 +1275,8 @@ mod tests {
             display_name: Some("alice".into()),
             bio: Some("test bio".into()),
             avatar_url: Some("https://example.com/avatar.png".into()),
-            avatar_hash: None,
-            avatar_fingerprint: None,
+            avatar_hash: Some([0xaa; 32]),
+            avatar_fingerprint: Some([0xbb; 8]),
             avatar_bytes: None,
             public_message: Some("hello world".into()),
         };

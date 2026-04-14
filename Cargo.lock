@@ -4859,6 +4859,7 @@ dependencies = [
 name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
+ "dash-sdk",
  "dashcore",
  "dpp",
  "key-wallet",
@@ -4866,7 +4867,9 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "platform-wallet",
+ "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -5834,7 +5837,6 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
- "platform-wallet-ffi",
  "rand 0.8.5",
  "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
@@ -5873,6 +5875,7 @@ version = "3.1.0-dev.1"
 dependencies = [
  "dash-spv-ffi",
  "key-wallet-ffi",
+ "platform-wallet-ffi",
  "rs-sdk-ffi",
 ]
 
