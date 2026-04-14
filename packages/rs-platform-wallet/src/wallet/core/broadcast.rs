@@ -1,4 +1,5 @@
 use dashcore::{Address as DashAddress, Transaction};
+use key_wallet::account::account_type::StandardAccountType;
 
 use crate::{CoreWallet, PlatformWalletError};
 
@@ -24,11 +25,14 @@ impl CoreWallet {
     ///
     /// Uses key-wallet's [`TransactionBuilder`] for UTXO selection, fee
     /// estimation, and signing. Change is sent to the next internal address
-    /// of BIP-44 account 0.
+    /// of the specified account.
     pub async fn send_to_addresses(
         &self,
+        account_type: StandardAccountType,
+        account_index: u32,
         outputs: Vec<(DashAddress, u64)>,
     ) -> Result<Transaction, PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -45,19 +49,41 @@ impl CoreWallet {
                 .expect("wallet exists");
 
             let current_height = info.core_wallet.synced_height();
-            let account = info
-                .core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&0)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild("BIP-44 account 0 not found".to_string())
-                })?;
+
+            // Look up managed account and immutable Account (for xpub) based on type.
+            let (managed_accounts, wallet_accounts) = match account_type {
+                StandardAccountType::BIP44Account => (
+                    &mut info.core_wallet.accounts.standard_bip44_accounts,
+                    &wallet.accounts.standard_bip44_accounts,
+                ),
+                StandardAccountType::BIP32Account => (
+                    &mut info.core_wallet.accounts.standard_bip32_accounts,
+                    &wallet.accounts.standard_bip32_accounts,
+                ),
+            };
+
+            let account = managed_accounts.get(&account_index).ok_or_else(|| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "{:?} account {} not found",
+                    account_type, account_index
+                ))
+            })?;
+
             let spendable: Vec<_> = account
                 .spendable_utxos(current_height)
                 .into_iter()
                 .cloned()
                 .collect();
+
+            let xpub = wallet_accounts
+                .get(&account_index)
+                .map(|a| a.account_xpub)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(format!(
+                        "{:?} account {} not found in wallet",
+                        account_type, account_index
+                    ))
+                })?;
 
             let mut builder = TransactionBuilder::new();
             for (addr, amount) in &outputs {
@@ -66,28 +92,16 @@ impl CoreWallet {
                     .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
             }
 
-            let change_xpub = wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&0)
-                .map(|a| a.account_xpub)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild("BIP-44 account 0 not found".to_string())
-                })?;
-
-            let change_account = info
-                .core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&0)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(
-                        "BIP-44 managed account 0 not found".to_string(),
-                    )
-                })?;
+            // Need mutable access for change address derivation.
+            let change_account = managed_accounts.get_mut(&account_index).ok_or_else(|| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "{:?} managed account {} not found",
+                    account_type, account_index
+                ))
+            })?;
 
             let change_addr = change_account
-                .next_change_address(Some(&change_xpub))
+                .next_change_address(Some(&xpub))
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             builder = builder.set_change_address(change_addr);
@@ -95,18 +109,19 @@ impl CoreWallet {
             builder = builder
                 .select_inputs(
                     &spendable,
-                    key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy::LargestFirst,
+                    SelectionStrategy::LargestFirst,
                     current_height,
                     |utxo| {
-                    for account in info.core_wallet.accounts.all_accounts() {
-                        if let Some(path) = account.address_derivation_path(&utxo.address) {
-                            if let Ok(key) = wallet.derive_private_key(&path) {
-                                return Some(key);
+                        for account in info.core_wallet.accounts.all_accounts() {
+                            if let Some(path) = account.address_derivation_path(&utxo.address) {
+                                if let Ok(key) = wallet.derive_private_key(&path) {
+                                    return Some(key);
+                                }
                             }
                         }
-                    }
-                    None
-                })
+                        None
+                    },
+                )
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             builder

@@ -79,6 +79,8 @@ pub unsafe extern "C" fn core_wallet_broadcast_transaction(
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn core_wallet_send_to_addresses(
     handle: Handle,
+    account_type: u32,
+    account_index: u32,
     addresses: *const *const c_char,
     amounts: *const u64,
     count: usize,
@@ -128,9 +130,28 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
         outputs.push((addr, amount_slice[i]));
     }
 
+    use key_wallet::account::account_type::StandardAccountType;
+    let std_account_type = match account_type {
+        0 => StandardAccountType::BIP44Account,
+        1 => StandardAccountType::BIP32Account,
+        _ => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidParameter,
+                    format!("Unknown account type: {}", account_type),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidParameter;
+        }
+    };
+
     CORE_WALLET_STORAGE
         .with_item(handle, |wallet| {
-            match runtime().block_on(wallet.send_to_addresses(outputs)) {
+            match runtime().block_on(wallet.send_to_addresses(
+                std_account_type,
+                account_index,
+                outputs,
+            )) {
                 Ok(tx) => {
                     let serialized = dashcore::consensus::serialize(&tx);
                     let len = serialized.len();
