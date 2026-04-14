@@ -19,7 +19,7 @@ use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
 use dpp::prelude::IdentityNonce;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::version::PlatformVersion;
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::FromProof;
 pub use http::Uri;
@@ -937,13 +937,6 @@ impl SdkBuilder {
     ///
     /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
-        // Initialize the process-wide current platform version so that DPP serialization /
-        // deserialization code (which calls `PlatformVersion::get_current()`) works correctly.
-        // In explicit-version mode this is the pinned version; in auto-detect mode it is
-        // `PlatformVersion::latest()`, the same fallback that `Sdk::version()` returns
-        // before the first network response is received.
-        PlatformVersion::set_current(self.version);
-
         let dapi_client_settings = match self.settings {
             Some(settings) => DEFAULT_REQUEST_SETTINGS.override_by(settings),
             None => DEFAULT_REQUEST_SETTINGS,

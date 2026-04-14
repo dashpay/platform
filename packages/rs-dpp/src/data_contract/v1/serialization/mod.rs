@@ -27,12 +27,8 @@ impl<'de> Deserialize<'de> for DataContractV1 {
         D: Deserializer<'de>,
     {
         let serialization_format = DataContractInSerializationFormatV1::deserialize(deserializer)?;
-        let current_version = PlatformVersion::get_current().map_err(|e| {
-            serde::de::Error::custom(format!(
-                "expected to be able to get current platform version: {}",
-                e
-            ))
-        })?;
+        let current_version = PlatformVersion::get_version_or_current_or_latest(None)
+            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
         DataContractV1::try_from_platform_versioned_v1(
             serialization_format,
