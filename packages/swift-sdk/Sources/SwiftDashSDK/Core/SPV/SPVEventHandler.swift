@@ -500,11 +500,8 @@ extension SPVWalletEventsHandler {
 
 private func onSpvTransactionReceivedCallbackC(
     walletIdPtr: UnsafePointer<CChar>?,
-    status: FFITransactionContext,
     accountIndex: UInt32,
-    txidPtr: UnsafePointer<Byte32>?,
-    amount: Int64,
-    addressesPtr: UnsafePointer<CChar>?,
+    record: UnsafePointer<FFITransactionRecord>?,
     userData: UnsafeMutableRawPointer?
 ) {
     let handler = rawPtrIntoSpvWalletEventsHandler(userData)
@@ -515,15 +512,17 @@ private func onSpvTransactionReceivedCallbackC(
     }
 
     let walletId = String(cString: walletIdPtr)
-    let txid = bytePtrIntoData(txidPtr, 32)
-    let addresses = addressesPtrIntoString(addressesPtr)
+
+    guard let record else { return }
+    let ffiTx = record.pointee
+    let txid = withUnsafeBytes(of: ffiTx.txid) { Data($0) }
 
     handler.onTransactionReceived(
         walletId,
         accountIndex,
         txid,
-        amount,
-        addresses
+        ffiTx.net_amount,
+        [] // addresses no longer in callback
     )
 }
 

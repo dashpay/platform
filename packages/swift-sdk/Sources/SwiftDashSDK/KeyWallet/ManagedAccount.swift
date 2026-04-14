@@ -87,24 +87,21 @@ public class ManagedAccount {
                 buffer.map { String(format: "%02x", $0) }.joined()
             }
 
-            // Convert block hash if present
-            let blockHashHex: String?
-            if ffiTx.height > 0 {
-                blockHashHex = withUnsafeBytes(of: ffiTx.block_hash) { buffer in
-                    buffer.map { String(format: "%02x", $0) }.joined()
-                }
-            } else {
-                blockHashHex = nil
+            // Extract context details from FFITransactionContext
+            let contextDetails = TransactionContextDetails(ffiContext: ffiTx.context)
+
+            let blockHashHex: String? = contextDetails.blockHash.map { data in
+                data.map { String(format: "%02x", $0) }.joined()
             }
 
             let transaction = WalletTransaction(
                 txid: txidHex,
                 netAmount: ffiTx.net_amount,
-                height: ffiTx.height,
+                height: contextDetails.height,
                 blockHash: blockHashHex,
-                timestamp: ffiTx.timestamp,
+                timestamp: UInt64(contextDetails.timestamp),
                 fee: ffiTx.fee > 0 ? ffiTx.fee : nil,
-                isOurs: ffiTx.is_ours
+                isOurs: true // direction-based, inferred from net_amount sign
             )
 
             transactions.append(transaction)

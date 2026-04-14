@@ -138,6 +138,13 @@ func platform_wallet_manager_destroy(
 
 // MARK: - PlatformWallet FFI
 
+@_silgen_name("platform_wallet_get_core")
+func platform_wallet_get_core(
+    _ handle: Handle,
+    _ out_core_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 @_silgen_name("platform_wallet_get_id")
 func platform_wallet_get_id(
     _ handle: Handle,

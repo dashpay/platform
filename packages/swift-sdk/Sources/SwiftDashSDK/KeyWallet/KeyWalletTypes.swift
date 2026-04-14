@@ -74,18 +74,15 @@ public enum AddressPoolType: UInt32 {
 
 // MARK: - Transaction Context
 
-/// Transaction context for checking
+/// Transaction context type
 public enum TransactionContext: UInt32 {
     case mempool = 0
-    case inBlock = 1
-    case inChainLockedBlock = 2
+    case instantSend = 1
+    case inBlock = 2
+    case inChainLockedBlock = 3
 
-    var ffiValue: FFITransactionContext {
-        FFITransactionContext(rawValue: self.rawValue)
-    }
-
-    init(ffiContext: FFITransactionContext) {
-        self = TransactionContext(rawValue: ffiContext.rawValue) ?? .mempool
+    init(ffiContextType: FFITransactionContextType) {
+        self = TransactionContext(rawValue: ffiContextType.rawValue) ?? .mempool
     }
 }
 
@@ -251,26 +248,19 @@ public struct TransactionCheckResult {
     }
 }
 
-/// Transaction context details
+/// Transaction context details (wraps FFITransactionContext + FFIBlockInfo)
 public struct TransactionContextDetails {
     public let context: TransactionContext
     public let height: UInt32
     public let blockHash: Data?
     public let timestamp: UInt32
 
-    func toFFI() -> FFITransactionContextDetails {
-        var details = FFITransactionContextDetails()
-        details.context_type = context.ffiValue
-        details.height = height
-        details.timestamp = timestamp
-
-        if let hash = blockHash {
-            hash.withUnsafeBytes { bytes in
-                details.block_hash = bytes.bindMemory(to: UInt8.self).baseAddress
-            }
-        }
-
-        return details
+    init(ffiContext: FFITransactionContext) {
+        self.context = TransactionContext(ffiContextType: ffiContext.context_type)
+        self.height = ffiContext.block_info.height
+        self.timestamp = ffiContext.block_info.timestamp
+        let hashBytes = withUnsafeBytes(of: ffiContext.block_info.block_hash) { Data($0) }
+        self.blockHash = hashBytes.allSatisfy({ $0 == 0 }) ? nil : hashBytes
     }
 }
 

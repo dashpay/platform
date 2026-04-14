@@ -364,7 +364,18 @@ public class WalletManager {
                                   contextDetails: TransactionContextDetails,
                                   updateStateIfFound: Bool = true) throws -> Bool {
         var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
+        // Build FFITransactionContext from TransactionContextDetails
+        var ffiContext = FFITransactionContext()
+        ffiContext.context_type = FFITransactionContextType(rawValue: contextDetails.context.rawValue)
+        ffiContext.block_info.height = contextDetails.height
+        ffiContext.block_info.timestamp = contextDetails.timestamp
+        if let hash = contextDetails.blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &ffiContext.block_info.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
 
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
