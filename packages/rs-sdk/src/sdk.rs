@@ -31,6 +31,7 @@ use rs_dapi_client::{
     transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::fmt::Debug;
+use std::str::FromStr;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -677,33 +678,69 @@ impl SdkBuilder {
         Self::default()
     }
 
-    /// Create a new SdkBuilder instance preconfigured for testnet. NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for testnet.
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for testnet use.
     /// Use this method if you want to connect to Dash Platform testnet during development and testing
     /// of your solution.
+    ///
+    /// Testnet addresses sourced from <https://quorums.testnet.networks.dash.org/masternodes>.
     pub fn new_testnet() -> Self {
-        unimplemented!(
-            "Testnet address list not implemented yet. Use new() and provide address list."
+        let addresses = AddressList::from_str(
+            "https://68.67.122.1:1443,\
+             https://68.67.122.4:1443,\
+             https://68.67.122.7:1443,\
+             https://68.67.122.10:1443,\
+             https://68.67.122.13:1443,\
+             https://68.67.122.17:1443,\
+             https://68.67.122.21:1443,\
+             https://68.67.122.26:1443",
         )
+        .expect("hardcoded testnet addresses must be valid");
+
+        Self {
+            addresses: Some(addresses),
+            network: Network::Testnet,
+            ..Default::default()
+        }
     }
 
-    /// Create a new SdkBuilder instance preconfigured for mainnet (production network). NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for mainnet (production network).
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
     ///
-    /// ## Panics
-    ///
-    /// This method panics if the mainnet configuration cannot be loaded.
-    ///
-    /// ## Unstable
-    ///
-    /// This method is unstable and can be changed in the future.
+    /// Mainnet addresses sourced from mnowatch.org.
     pub fn new_mainnet() -> Self {
-        unimplemented!(
-            "Mainnet address list not implemented yet. Use new() and provide address list."
+        let addresses = AddressList::from_str(
+            "https://149.28.241.190:443,\
+             https://198.7.115.48:443,\
+             https://134.255.182.186:443,\
+             https://93.115.172.39:443,\
+             https://5.189.164.253:443",
         )
+        .expect("hardcoded mainnet addresses must be valid");
+
+        Self {
+            addresses: Some(addresses),
+            network: Network::Mainnet,
+            ..Default::default()
+        }
+    }
+
+    /// Create a new SdkBuilder instance preconfigured for local network (dashmate gateway).
+    ///
+    /// This is a helper method that preconfigures [SdkBuilder] for local development use
+    /// with a dashmate-managed node.
+    pub fn new_local() -> Self {
+        let addresses = AddressList::from_str("https://127.0.0.1:2443")
+            .expect("hardcoded local address must be valid");
+
+        Self {
+            addresses: Some(addresses),
+            network: Network::Regtest,
+            ..Default::default()
+        }
     }
 
     /// Configure network type.
