@@ -102,6 +102,11 @@ pub static MANAGED_IDENTITY_STORAGE: Lazy<HandleStorage<platform_wallet::Managed
 pub static CORE_WALLET_STORAGE: Lazy<HandleStorage<platform_wallet::CoreWallet>> =
     Lazy::new(HandleStorage::new);
 
+/// Storage for AssetLockManager handles
+pub static ASSET_LOCK_MANAGER_STORAGE: Lazy<
+    HandleStorage<std::sync::Arc<platform_wallet::AssetLockManager>>,
+> = Lazy::new(HandleStorage::new);
+
 /// Storage for PlatformAddressWallet handles
 pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
     HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,

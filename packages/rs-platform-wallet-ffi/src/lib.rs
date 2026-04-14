@@ -4,6 +4,7 @@
 #![allow(non_camel_case_types)]
 #![allow(clippy::missing_safety_doc)]
 
+pub mod asset_lock;
 pub mod contact;
 pub mod contact_request;
 pub mod core_wallet;
@@ -24,6 +25,7 @@ pub mod utils;
 pub mod wallet;
 
 // Re-exports
+pub use asset_lock::*;
 pub use contact::*;
 pub use contact_request::*;
 pub use core_wallet::*;

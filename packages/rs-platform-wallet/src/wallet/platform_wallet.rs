@@ -99,7 +99,7 @@ impl PlatformWallet {
     }
 
     /// Access the shared asset lock manager.
-    pub fn asset_locks(&self) -> &AssetLockManager {
+    pub fn asset_locks(&self) -> &Arc<AssetLockManager> {
         &self.asset_locks
     }
 

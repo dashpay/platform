@@ -78,6 +78,27 @@ pub unsafe extern "C" fn platform_wallet_get_platform(
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
 }
 
+/// Get an AssetLockManager handle from a PlatformWallet.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_asset_locks(
+    handle: Handle,
+    out_asset_lock_handle: *mut Handle,
+    _out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_asset_lock_handle.is_null() {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(handle, |wallet| {
+            let asset_locks = std::sync::Arc::clone(wallet.asset_locks());
+            let asset_lock_handle = ASSET_LOCK_MANAGER_STORAGE.insert(asset_locks);
+            *out_asset_lock_handle = asset_lock_handle;
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
 /// Get a CoreWallet handle from a PlatformWallet.
 ///
 /// The returned handle is a clone (cheap — all Arc internals).
