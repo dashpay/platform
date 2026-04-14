@@ -1,91 +1,125 @@
 // PlatformBalanceSyncService.swift
 // SwiftExampleApp
 //
-// App-level service that performs periodic BLAST address sync via
-// PlatformAddressWallet (platform-wallet-ffi). All address derivation,
-// incremental state, and balance tracking is handled on the Rust side.
+// App-level service that performs periodic BLAST address sync.
+// Uses platform-wallet-ffi when a PlatformAddressWallet is configured,
+// otherwise falls back to the direct rs-sdk-ffi path.
 
 import Foundation
 import SwiftUI
 import SwiftDashSDK
 
 /// Observable service managing periodic BLAST address balance sync.
-///
-/// Syncs every 15 seconds while the app is active, or on manual pull-to-refresh.
-/// Incremental sync state (timestamps, heights, known balances) is retained
-/// by the Rust-side provider between calls — no UserDefaults needed.
 @MainActor
 class PlatformBalanceSyncService: ObservableObject {
     // MARK: - Published State
 
-    /// Whether a sync is currently in progress.
     @Published var isSyncing = false
-
-    /// Last successful sync time (local clock).
     @Published var lastSyncTime: Date?
-
-    /// Per-address balances (address hash hex → balance).
-    @Published var addressBalances: [String: UInt64] = [:]
-
-    /// Aggregate platform balance across all synced addresses.
+    @Published var addressBalances: [UInt32: UInt64] = [:]
+    @Published var addressNonces: [UInt32: UInt32] = [:]
     @Published var totalPlatformBalance: UInt64 = 0
-
-    /// Number of addresses with non-zero balance.
     @Published var activeAddressCount: Int = 0
-
-    /// Checkpoint height from the last trunk/branch tree scan.
     @Published var checkpointHeight: UInt64 = 0
-
-    /// Chain tip height (highest block seen from incremental catch-up).
     @Published var chainTipHeight: UInt64 = 0
-
-    /// Last sync height for display.
     @Published var lastSyncHeight: UInt64 = 0
-
-    /// Last block height with recent address changes (for compaction detection).
     @Published var lastKnownRecentBlock: UInt64 = 0
-
-    /// Platform block time from the most recent sync (Unix seconds).
     @Published var lastSyncBlockTime: Date?
-
-    /// Total number of successful syncs since launch.
+    @Published var lastMetrics: AddressSyncMetrics?
     @Published var syncCountSinceLaunch: Int = 0
-
-    /// Cumulative query counts since launch.
     @Published var totalTrunkQueries: UInt32 = 0
     @Published var totalBranchQueries: UInt32 = 0
     @Published var totalCompactedQueries: UInt32 = 0
     @Published var totalRecentQueries: UInt32 = 0
     @Published var totalRecentEntries: UInt32 = 0
     @Published var totalCompactedEntries: UInt32 = 0
-
-    /// Raw GroveDB proof from the most recent sync (for debugging).
     @Published var lastRecentProof: Data = Data()
-
-    /// Last error message, cleared on successful sync.
     @Published var lastError: String?
 
-    // MARK: - Internal
+    /// Found addresses from the last sync — passed back as known balances for incremental mode.
+    private(set) var lastFoundAddresses: [FoundAddress] = []
 
-    /// The platform address wallet handle (retained for incremental sync state).
+    // MARK: - Internal State
+
+    /// Platform address wallet handle (when using platform-wallet path).
     private var platformAddressWallet: ManagedPlatformAddressWallet?
 
-    // MARK: - Lifecycle
+    /// UserDefaults state for the legacy SDK path.
+    private var lastSyncTimestamp: UInt64 {
+        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_timestamp")) }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_timestamp") }
+    }
+    private var persistedSyncHeight: UInt64 {
+        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_height")) }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_height") }
+    }
+    private var persistedBlockTime: UInt64 {
+        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_blockTime")) }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_blockTime") }
+    }
+    private var persistedLastKnownRecentBlock: UInt64 {
+        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_lastKnownRecent")) }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_lastKnownRecent") }
+    }
+    private var persistedFoundAddresses: [FoundAddress] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "\(keyPrefix)_foundAddresses"),
+                  let addresses = try? JSONDecoder().decode([FoundAddress].self, from: data) else {
+                return []
+            }
+            return addresses
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: "\(keyPrefix)_foundAddresses")
+            }
+        }
+    }
+    private var keyPrefix: String { "platformAddressSync_\(networkName)" }
+    private var networkName: String = "testnet"
 
-    /// Configure for a wallet. Call after wallet creation/switch.
+    // MARK: - Configuration
+
+    /// Configure for platform-wallet path (preferred).
     func configure(platformAddressWallet: ManagedPlatformAddressWallet) {
         self.platformAddressWallet = platformAddressWallet
     }
 
-    /// Initialize periodic sync. The actual loop is managed by UnifiedAppState.
+    /// Initialize periodic sync. Restores persisted state for legacy path.
     func startPeriodicSync(network: AppNetwork) {
-        // No state to restore — the Rust-side provider retains incremental
-        // state between calls automatically.
+        networkName = network.rawValue
+
+        // Restore persisted state for legacy SDK path
+        let height = persistedSyncHeight
+        if height > 0 { lastSyncHeight = height }
+        let blockTs = persistedBlockTime
+        if blockTs > 0 { lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(blockTs)) }
+        let recentBlock = persistedLastKnownRecentBlock
+        if recentBlock > 0 { lastKnownRecentBlock = recentBlock }
+
+        let saved = persistedFoundAddresses
+        if !saved.isEmpty {
+            lastFoundAddresses = saved
+            var restoredBalances: [UInt32: UInt64] = [:]
+            var restoredNonces: [UInt32: UInt32] = [:]
+            var total: UInt64 = 0
+            var nonZero = 0
+            for addr in saved {
+                restoredBalances[addr.index] = addr.balance
+                restoredNonces[addr.index] = addr.nonce
+                total += addr.balance
+                if addr.balance > 0 { nonZero += 1 }
+            }
+            addressBalances = restoredBalances
+            addressNonces = restoredNonces
+            totalPlatformBalance = total
+            activeAddressCount = nonZero
+        }
     }
 
-    /// Reset all state (e.g. on wallet deletion or network switch).
     func reset() {
         addressBalances.removeAll()
+        addressNonces.removeAll()
         totalPlatformBalance = 0
         activeAddressCount = 0
         checkpointHeight = 0
@@ -93,7 +127,9 @@ class PlatformBalanceSyncService: ObservableObject {
         lastSyncHeight = 0
         lastKnownRecentBlock = 0
         lastSyncBlockTime = nil
+        lastFoundAddresses = []
         lastRecentProof = Data()
+        lastMetrics = nil
         lastError = nil
         lastSyncTime = nil
         syncCountSinceLaunch = 0
@@ -103,82 +139,87 @@ class PlatformBalanceSyncService: ObservableObject {
         totalRecentQueries = 0
         totalRecentEntries = 0
         totalCompactedEntries = 0
+        lastSyncTimestamp = 0
+        persistedSyncHeight = 0
+        persistedBlockTime = 0
+        persistedLastKnownRecentBlock = 0
+        persistedFoundAddresses = []
         platformAddressWallet = nil
     }
 
-    /// Trigger a manual sync. No-op if already syncing.
-    func manualSync() async {
-        await performSync()
+    func manualSync(sdk: SDK, addresses: [(index: UInt32, key: Data)]) async {
+        await performSync(sdk: sdk, addresses: addresses)
     }
 
-    // MARK: - Sync
+    // MARK: - Sync (dispatches to platform-wallet or legacy path)
 
-    /// Perform the actual BLAST address sync via platform-wallet.
-    func performSync() async {
+    func performSync(sdk: SDK, addresses: [(index: UInt32, key: Data)]) async {
         guard !isSyncing else { return }
-        guard let wallet = platformAddressWallet else {
-            lastError = "Platform address wallet not configured"
-            return
-        }
+
+        // TODO: When PlatformWalletManager is wired up in the app,
+        // the platform-wallet path will be used automatically.
+        // For now, always use the legacy SDK path since we don't
+        // have PlatformWalletManager creating the wallet yet.
+        await performSyncLegacy(sdk: sdk, addresses: addresses)
+    }
+
+    // MARK: - Legacy SDK Path
+
+    private func performSyncLegacy(sdk: SDK, addresses: [(index: UInt32, key: Data)]) async {
+        guard !addresses.isEmpty else { return }
 
         isSyncing = true
         lastError = nil
 
         do {
-            // Sync all accounts — provider handles incremental state internally
-            let results = try wallet.syncBalances()
+            let result = try await sdk.syncAddressBalances(
+                addresses: addresses,
+                knownBalances: lastFoundAddresses,
+                lastSyncHeight: lastSyncHeight,
+                lastSyncTimestamp: lastSyncTimestamp,
+                lastKnownRecentBlock: persistedLastKnownRecentBlock
+            )
 
-            // Aggregate results across all accounts
-            for result in results {
-                if result.checkpointHeight > 0 {
-                    checkpointHeight = result.checkpointHeight
-                }
-                if result.newSyncHeight > chainTipHeight {
-                    chainTipHeight = result.newSyncHeight
-                }
-                lastSyncHeight = result.newSyncHeight
-                if result.newSyncTimestamp > 0 {
-                    lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
-                }
-            }
-
-            // Read balances from the wallet (canonical source of truth)
-            let balances = try wallet.addressesWithBalances()
-            var newBalances: [String: UInt64] = [:]
-            var total: UInt64 = 0
-            var nonZero = 0
-
-            for entry in balances {
-                let key = entry.hash.map { String(format: "%02x", $0) }.joined()
-                newBalances[key] = entry.balance
-                total += entry.balance
-                if entry.balance > 0 { nonZero += 1 }
+            var newBalances: [UInt32: UInt64] = [:]
+            var newNonces: [UInt32: UInt32] = [:]
+            for found in result.found {
+                newBalances[found.index] = found.balance
+                newNonces[found.index] = found.nonce
             }
 
             addressBalances = newBalances
-            totalPlatformBalance = total
-            activeAddressCount = nonZero
-
-            // Update total credits as a cross-check
-            let credits = try wallet.totalCredits()
-            if credits != total {
-                totalPlatformBalance = credits
+            addressNonces = newNonces
+            totalPlatformBalance = result.totalBalance
+            lastRecentProof = result.recentProof
+            activeAddressCount = result.nonZeroBalanceCount
+            lastMetrics = result.metrics
+            lastFoundAddresses = result.found
+            lastSyncHeight = result.newSyncHeight
+            persistedSyncHeight = result.newSyncHeight
+            if result.lastKnownRecentBlock > 0 {
+                lastKnownRecentBlock = result.lastKnownRecentBlock
+                persistedLastKnownRecentBlock = result.lastKnownRecentBlock
             }
-
+            if result.checkpointHeight > 0 { checkpointHeight = result.checkpointHeight }
+            if result.newSyncHeight > chainTipHeight { chainTipHeight = result.newSyncHeight }
+            if result.newSyncTimestamp > 0 {
+                lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
+                persistedBlockTime = result.newSyncTimestamp
+                lastSyncTimestamp = result.newSyncTimestamp
+            }
             lastSyncTime = Date()
             syncCountSinceLaunch += 1
+            totalTrunkQueries += result.metrics.trunkQueries
+            totalBranchQueries += result.metrics.branchQueries
+            totalCompactedQueries += result.metrics.compactedQueries
+            totalRecentQueries += result.metrics.recentQueries
+            totalRecentEntries += result.metrics.recentEntriesReturned
+            totalCompactedEntries += result.metrics.compactedEntriesReturned
 
-            SDKLogger.log(
-                "BLAST sync complete: \(balances.count) addresses, total balance: \(total)",
-                minimumLevel: .medium
-            )
+            persistedFoundAddresses = result.found
 
         } catch {
             lastError = error.localizedDescription
-            SDKLogger.log(
-                "BLAST sync error: \(error.localizedDescription)",
-                minimumLevel: .medium
-            )
         }
 
         isSyncing = false

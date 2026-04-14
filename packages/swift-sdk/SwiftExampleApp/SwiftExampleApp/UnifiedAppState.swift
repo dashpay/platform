@@ -158,13 +158,26 @@ class UnifiedAppState: ObservableObject {
         }
     }
 
-    /// Perform a single BLAST address sync via platform-wallet.
+    /// Perform a single BLAST address sync.
+    /// Uses legacy SDK path until PlatformWalletManager is wired up.
     func performPlatformBalanceSync() async {
-        await platformBalanceSyncService.performSync()
+        guard let sdk = platformState.sdk else { return }
+
+        let wallets = walletService.walletManager.wallets
+        guard let firstWallet = wallets.first else { return }
+
+        do {
+            try walletService.walletManager.ensurePlatformPaymentAccount(for: firstWallet)
+            let addresses = try walletService.walletManager.getPlatformAddresses(for: firstWallet)
+            guard !addresses.isEmpty else { return }
+            await platformBalanceSyncService.performSync(sdk: sdk, addresses: addresses)
+        } catch {
+            NSLog("BLAST sync: error getting platform addresses: \(error)")
+        }
     }
 
     /// Configure the platform balance sync service with a ManagedPlatformAddressWallet.
-    /// Call after PlatformWalletManager creates a wallet.
+    /// Call after PlatformWalletManager creates a wallet to switch to the platform-wallet path.
     func configurePlatformBalanceSync(platformAddressWallet: ManagedPlatformAddressWallet) {
         platformBalanceSyncService.configure(platformAddressWallet: platformAddressWallet)
     }
