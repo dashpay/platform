@@ -545,6 +545,63 @@ impl TrustedHttpContextProvider {
     }
 }
 
+/// Blocks on the provided future and returns the result.
+///
+/// Handles three scenarios:
+/// - No active runtime: creates a temporary current-thread runtime and drives the future directly.
+/// - Current-thread runtime: spawns a dedicated OS thread with its own independent runtime,
+///   since `block_in_place` panics when there are no other worker threads.
+/// - Any other runtime flavor (multi-thread, etc.): uses `block_in_place` + spawn for efficient bridging.
+#[cfg(not(target_arch = "wasm32"))]
+fn block_on<F>(fut: F) -> Result<F::Output, ContextProviderError>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send,
+{
+    use tokio::runtime::RuntimeFlavor;
+
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => {
+            return tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| ContextProviderError::Generic(e.to_string()))
+                .map(|rt| rt.block_on(fut));
+        }
+    };
+
+    match handle.runtime_flavor() {
+        RuntimeFlavor::CurrentThread => {
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            std::thread::spawn(move || {
+                let result = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map(|rt| rt.block_on(fut));
+                if let Ok(result) = result {
+                    let _ = tx.send(result);
+                }
+            });
+            rx.recv()
+                .map_err(|e| ContextProviderError::Generic(e.to_string()))
+        }
+        // RuntimeFlavor is #[non_exhaustive]; all multi-threaded flavors support block_in_place.
+        _ => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let hdl = handle.spawn(async move {
+                let _ = tx.send(fut.await);
+            });
+            let resp = tokio::task::block_in_place(|| rx.recv())
+                .map_err(|e| ContextProviderError::Generic(e.to_string()))?;
+            if !hdl.is_finished() {
+                hdl.abort();
+            }
+            Ok(resp)
+        }
+    }
+}
+
 impl ContextProvider for TrustedHttpContextProvider {
     fn get_quorum_public_key(
         &self,
