@@ -85,7 +85,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read wallet info via state guard (derefs to PlatformWalletInfo)
     {
         let state = wallet.state().await;
-        let utxos = state.core_wallet.get_spendable_utxos();
+        let synced_height = state.core_wallet.synced_height();
+        let utxos = state
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .map(|a| a.spendable_utxos(synced_height))
+            .unwrap_or_default();
         let tx_count = state.core_wallet.transaction_history().len();
         let birth = state.core_wallet.birth_height();
         let id_count = state.identity_manager.identities().len();
