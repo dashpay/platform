@@ -1,6 +1,5 @@
 pub mod auto_accept;
 pub mod contact_request;
-pub mod crypto;
 pub mod dip14;
 pub mod established_contact;
 pub mod payment;
