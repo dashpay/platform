@@ -6,10 +6,11 @@
 use std::sync::Arc;
 
 use dash_sdk::Sdk;
-use key_wallet::wallet::core::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
 use platform_wallet::changeset::PlatformWalletPersistence;
+use platform_wallet::events::PlatformEventHandler;
 use platform_wallet::PlatformWalletManager;
 
 /// Minimal no-op persister for the example.
@@ -19,7 +20,8 @@ impl PlatformWalletPersistence for NoopPersister {
         &self,
         _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
         _changeset: platform_wallet::changeset::PlatformWalletChangeSet,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
     }
     fn flush(
         &self,
@@ -38,13 +40,19 @@ impl PlatformWalletPersistence for NoopPersister {
     }
 }
 
+/// Minimal no-op event handler for the example.
+struct NoopEventHandler;
+impl platform_wallet::events::EventHandler for NoopEventHandler {}
+impl PlatformEventHandler for NoopEventHandler {}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk = Arc::new(Sdk::new_mock());
     let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
+    let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
 
     // Create a manager
-    let manager = PlatformWalletManager::new(sdk.clone(), persister);
+    let manager = PlatformWalletManager::new(sdk.clone(), persister, event_handler);
 
     // Create a wallet from seed bytes
     let seed_bytes = [0u8; 64]; // dummy seed for example
@@ -65,13 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let balance_arc = wallet.balance();
     println!(
         "Balance: spendable={}, unconfirmed={}, total={}",
-        balance_arc.spendable(),
+        balance_arc.confirmed(),
         balance_arc.unconfirmed(),
         balance_arc.total()
     );
 
     // Derive a receive address (blocking, acquires lock internally)
-    let address = core.next_receive_address_blocking()?;
+    let address = core.next_receive_address_for_account(0).await?;
     println!("Receive address: {}", address);
 
     // Read wallet info via state guard (derefs to PlatformWalletInfo)

@@ -85,7 +85,7 @@ fn test_identity_manager_workflow() {
         // Create a mock identity for testing
         let identity = dpp::tests::fixtures::get_identity_fixture(0).unwrap();
         let identity_id = identity.id();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+        let managed = platform_wallet::ManagedIdentity::new(identity, 0);
         let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
         let result = identity_manager_add_identity(manager_handle, identity_handle, &mut error);
@@ -129,7 +129,7 @@ fn test_identity_manager_workflow() {
 fn test_managed_identity_operations() {
     unsafe {
         let identity = dpp::tests::fixtures::get_identity_fixture(0).unwrap();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+        let managed = platform_wallet::ManagedIdentity::new(identity, 0);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
         let mut error = PlatformWalletFFIError::success();
@@ -306,7 +306,7 @@ fn test_full_workflow() {
 
         // Create identity
         let identity = dpp::tests::fixtures::get_identity_fixture(0).unwrap();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+        let managed = platform_wallet::ManagedIdentity::new(identity, 0);
         let identity_id = managed.identity.id();
         let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 

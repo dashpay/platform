@@ -87,18 +87,34 @@ impl<T> Default for HandleStorage<T> {
 }
 
 /// Storage for PlatformWalletInfo handles
-pub static WALLET_INFO_STORAGE: Lazy<
-    HandleStorage<platform_wallet::platform_wallet_info::PlatformWalletInfo>,
-> = Lazy::new(HandleStorage::new);
+pub static WALLET_INFO_STORAGE: Lazy<HandleStorage<platform_wallet::PlatformWalletInfo>> =
+    Lazy::new(HandleStorage::new);
 
 /// Storage for IdentityManager handles
-pub static IDENTITY_MANAGER_STORAGE: Lazy<
-    HandleStorage<platform_wallet::identity_manager::IdentityManager>,
-> = Lazy::new(HandleStorage::new);
+pub static IDENTITY_MANAGER_STORAGE: Lazy<HandleStorage<platform_wallet::IdentityManager>> =
+    Lazy::new(HandleStorage::new);
 
 /// Storage for ManagedIdentity handles
-pub static MANAGED_IDENTITY_STORAGE: Lazy<
-    HandleStorage<platform_wallet::managed_identity::ManagedIdentity>,
+pub static MANAGED_IDENTITY_STORAGE: Lazy<HandleStorage<platform_wallet::ManagedIdentity>> =
+    Lazy::new(HandleStorage::new);
+
+/// Storage for CoreWallet handles
+pub static CORE_WALLET_STORAGE: Lazy<HandleStorage<platform_wallet::CoreWallet>> =
+    Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformAddressWallet handles
+pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
+    HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformWalletManager handles
+pub static PLATFORM_WALLET_MANAGER_STORAGE: Lazy<
+    HandleStorage<platform_wallet::PlatformWalletManager>,
+> = Lazy::new(HandleStorage::new);
+
+/// Storage for PlatformWallet handles
+pub static PLATFORM_WALLET_STORAGE: Lazy<
+    HandleStorage<std::sync::Arc<platform_wallet::PlatformWallet>>,
 > = Lazy::new(HandleStorage::new);
 
 #[cfg(test)]

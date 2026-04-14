@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock};
 
+use key_wallet::mnemonic::{Language, Mnemonic};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -97,6 +98,27 @@ impl PlatformWalletManager {
         self.spv.broadcast_transaction(tx).await
     }
 
+    /// Create a PlatformWallet from a BIP39 mnemonic phrase.
+    ///
+    /// The mnemonic is parsed as English. For other languages or passphrases,
+    /// derive the seed externally and use [`create_wallet_from_seed_bytes`].
+    pub async fn create_wallet_from_mnemonic(
+        &self,
+        mnemonic_phrase: &str,
+        network: Network,
+        accounts: WalletAccountCreationOptions,
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        let mnemonic = Mnemonic::from_phrase(mnemonic_phrase, Language::English)
+            .map_err(|e| PlatformWalletError::WalletCreation(format!("Invalid mnemonic: {}", e)))?;
+        let wallet = Wallet::from_mnemonic(mnemonic, network, accounts).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from mnemonic: {}",
+                e
+            ))
+        })?;
+        self.register_wallet(wallet).await
+    }
+
     /// Create a PlatformWallet from raw seed bytes, initialize persisted
     /// state, register it with the manager and return an `Arc` handle.
     pub async fn create_wallet_from_seed_bytes(
@@ -111,6 +133,16 @@ impl PlatformWalletManager {
                 e
             ))
         })?;
+        self.register_wallet(wallet).await
+    }
+
+    /// Register a pre-built `Wallet` with the manager: insert into the
+    /// `WalletManager`, build a `PlatformWallet` handle, load persisted
+    /// state, and return an `Arc` to the managed wallet.
+    async fn register_wallet(
+        &self,
+        wallet: Wallet,
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
 
         let balance = Arc::new(WalletBalance::new());

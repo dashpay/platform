@@ -153,6 +153,11 @@ impl IdentityManager {
             .collect()
     }
 
+    /// Get the primary identity ID.
+    pub fn primary_identity_id(&self) -> Option<&Identifier> {
+        self.primary_identity_id.as_ref()
+    }
+
     /// Get the primary identity
     pub fn primary_identity(&self) -> Option<&Identity> {
         self.primary_identity_id

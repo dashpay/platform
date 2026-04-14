@@ -380,7 +380,7 @@ impl<'a> WalletStateReadGuard<'a> {
     pub fn wallet(&self) -> &Wallet {
         self.guard
             .get_wallet(&self.wallet_id)
-            .expect("wallet exists")
+            .expect("wallet exists in guard")
     }
 }
 
@@ -389,7 +389,7 @@ impl Deref for WalletStateReadGuard<'_> {
     fn deref(&self) -> &PlatformWalletInfo {
         self.guard
             .get_wallet_info(&self.wallet_id)
-            .expect("wallet exists")
+            .expect("wallet exists in guard")
     }
 }
 
@@ -405,7 +405,7 @@ impl<'a> WalletStateWriteGuard<'a> {
     pub fn wallet(&self) -> &Wallet {
         self.guard
             .get_wallet(&self.wallet_id)
-            .expect("wallet exists")
+            .expect("wallet exists in guard")
     }
 }
 
@@ -414,7 +414,7 @@ impl Deref for WalletStateWriteGuard<'_> {
     fn deref(&self) -> &PlatformWalletInfo {
         self.guard
             .get_wallet_info(&self.wallet_id)
-            .expect("wallet exists")
+            .expect("wallet exists in guard")
     }
 }
 
@@ -422,6 +422,6 @@ impl DerefMut for WalletStateWriteGuard<'_> {
     fn deref_mut(&mut self) -> &mut PlatformWalletInfo {
         self.guard
             .get_wallet_info_mut(&self.wallet_id)
-            .expect("wallet exists")
+            .expect("wallet exists in guard")
     }
 }

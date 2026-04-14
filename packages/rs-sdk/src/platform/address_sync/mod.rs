@@ -1308,21 +1308,21 @@ mod tests {
 
         // Insert three addresses with varying balances
         result.found.insert(
-            (0, vec![1; 32]),
+            (0, PlatformAddress::P2pkh([1; 20])),
             AddressFunds {
                 nonce: 0,
                 balance: 500,
             },
         );
         result.found.insert(
-            (1, vec![2; 32]),
+            (1, PlatformAddress::P2pkh([2; 20])),
             AddressFunds {
                 nonce: 1,
                 balance: 0,
             },
         );
         result.found.insert(
-            (2, vec![3; 32]),
+            (2, PlatformAddress::P2pkh([3; 20])),
             AddressFunds {
                 nonce: 2,
                 balance: 1500,

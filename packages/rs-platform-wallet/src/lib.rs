@@ -32,6 +32,7 @@ pub use wallet::identity::{
     DpnsNameInfo, IdentityFunding, IdentityFundingMethod, IdentityStatus, KeyStorage,
     PrivateKeyData, TopUpFundingMethod,
 };
+pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::ManagedIdentitySigner;
 pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;

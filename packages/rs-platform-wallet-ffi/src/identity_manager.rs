@@ -1,7 +1,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
-use platform_wallet::identity_manager::IdentityManager;
+use platform_wallet::IdentityManager;
 
 /// Create a new empty IdentityManager
 #[no_mangle]
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn identity_manager_add_identity(
 
     IDENTITY_MANAGER_STORAGE
         .with_item_mut(manager_handle, |manager| {
-            match manager.add_identity(identity.identity) {
+            match manager.add_identity(identity.identity, 0) {
                 Ok(_) => PlatformWalletFFIResult::Success,
                 Err(_) => PlatformWalletFFIResult::ErrorWalletOperation,
             }
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn identity_manager_get_all_identity_ids(
 
     IDENTITY_MANAGER_STORAGE
         .with_item(manager_handle, |manager| {
-            let ids: Vec<dpp::prelude::Identifier> = manager.identities.keys().cloned().collect();
+            let ids: Vec<dpp::prelude::Identifier> = manager.identities().keys().cloned().collect();
             let array = IdentifierArray::new(ids);
             unsafe { *out_array = array };
             PlatformWalletFFIResult::Success
@@ -253,8 +253,8 @@ pub unsafe extern "C" fn identity_manager_get_primary_identity_id(
 
     IDENTITY_MANAGER_STORAGE
         .with_item(manager_handle, |manager| {
-            if let Some(primary_id) = manager.primary_identity_id {
-                unsafe { *out_id = primary_id.into() };
+            if let Some(primary_id) = manager.primary_identity_id() {
+                unsafe { *out_id = (*primary_id).into() };
                 PlatformWalletFFIResult::Success
             } else {
                 if !out_error.is_null() {
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn identity_manager_get_identity_count(
 
     IDENTITY_MANAGER_STORAGE
         .with_item(manager_handle, |manager| {
-            unsafe { *out_count = manager.identities.len() };
+            unsafe { *out_count = manager.identities().len() };
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -376,7 +376,7 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
-    use platform_wallet::managed_identity::ManagedIdentity;
+    use platform_wallet::ManagedIdentity;
     use std::collections::BTreeMap;
 
     fn create_test_identity() -> Identity {
@@ -456,7 +456,7 @@ mod tests {
 
             // Create and add a managed identity
             let identity = create_test_identity();
-            let managed_identity = ManagedIdentity::new(identity);
+            let managed_identity = ManagedIdentity::new(identity, 0);
             let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
 
             identity_manager_add_identity(manager_handle, identity_handle, &mut error);

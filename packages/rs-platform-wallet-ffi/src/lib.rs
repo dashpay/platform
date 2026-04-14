@@ -6,26 +6,41 @@
 
 pub mod contact;
 pub mod contact_request;
+pub mod core_wallet;
 pub mod error;
 pub mod established_contact;
+pub mod event_handler;
 pub mod handle;
 pub mod identity_manager;
 pub mod managed_identity;
+pub mod manager;
+pub mod persistence;
+pub mod platform_address_types;
+pub mod platform_addresses;
 pub mod platform_wallet_info;
+mod runtime;
 pub mod types;
 pub mod utils;
+pub mod wallet;
 
 // Re-exports
 pub use contact::*;
 pub use contact_request::*;
+pub use core_wallet::*;
 pub use error::*;
 pub use established_contact::*;
+pub use event_handler::*;
 pub use handle::*;
 pub use identity_manager::*;
 pub use managed_identity::*;
+pub use manager::*;
+pub use persistence::*;
+pub use platform_address_types::*;
+pub use platform_addresses::*;
 pub use platform_wallet_info::*;
 pub use types::*;
 pub use utils::*;
+pub use wallet::*;
 
 /// Initialize the FFI library
 /// Must be called before using any other functions

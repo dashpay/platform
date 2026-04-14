@@ -24,6 +24,12 @@ pub struct DashPayProfile {
     pub bio: Option<String>,
     /// URL of the avatar image (HTTPS, IPFS, etc.).
     pub avatar_url: Option<String>,
+    /// SHA-256 hash of the avatar image bytes (32 bytes).
+    /// Required by the DashPay contract whenever `avatar_url` is set.
+    pub avatar_hash: Option<[u8; 32]>,
+    /// Perceptual hash (dHash) of the avatar image (8 bytes).
+    /// Required by the DashPay contract whenever `avatar_url` is set.
+    pub avatar_fingerprint: Option<[u8; 8]>,
     /// Raw avatar bytes, fetched lazily from `avatar_url`.
     /// `None` until the bytes have been downloaded.
     pub avatar_bytes: Option<Vec<u8>>,

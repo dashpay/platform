@@ -310,7 +310,7 @@ impl PlatformWalletInfo {
         // UI reads.
         let core_balance = &self.core_wallet.balance;
         self.balance.set(
-            core_balance.spendable(),
+            core_balance.confirmed(),
             core_balance.unconfirmed(),
             core_balance.immature(),
             core_balance.locked(),
@@ -1275,6 +1275,8 @@ mod tests {
             display_name: Some("alice".into()),
             bio: Some("test bio".into()),
             avatar_url: Some("https://example.com/avatar.png".into()),
+            avatar_hash: None,
+            avatar_fingerprint: None,
             avatar_bytes: None,
             public_message: Some("hello world".into()),
         };

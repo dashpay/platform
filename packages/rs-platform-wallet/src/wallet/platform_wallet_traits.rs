@@ -108,10 +108,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.utxos()
     }
 
-    fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
-        self.core_wallet.get_spendable_utxos()
-    }
-
     fn balance(&self) -> WalletCoreBalance {
         self.core_wallet.balance()
     }

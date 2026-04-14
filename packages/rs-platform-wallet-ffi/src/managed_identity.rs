@@ -3,7 +3,7 @@ use crate::handle::*;
 use crate::types::*;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::serialization::PlatformDeserializable;
-use platform_wallet::managed_identity::ManagedIdentity;
+use platform_wallet::ManagedIdentity;
 use std::os::raw::c_char;
 
 /// Create a new ManagedIdentity from a DPP Identity serialized bytes
@@ -45,7 +45,7 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     };
 
     // Create ManagedIdentity from the deserialized Identity
-    let managed_identity = ManagedIdentity::new(identity);
+    let managed_identity = ManagedIdentity::new(identity, 0);
 
     // Store in handle storage
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
@@ -402,7 +402,7 @@ mod tests {
     fn test_get_and_set_label() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let label = std::ffi::CString::new("Test Identity").unwrap();
@@ -429,7 +429,7 @@ mod tests {
     fn test_get_balance() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let mut balance: u64 = 0;
@@ -447,7 +447,7 @@ mod tests {
     fn test_block_time_operations() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let block_time = BlockTime {

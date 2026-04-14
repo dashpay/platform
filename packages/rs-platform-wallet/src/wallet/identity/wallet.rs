@@ -220,9 +220,11 @@ impl IdentityWallet {
         identity_id: &Identifier,
     ) -> Result<ManagedIdentitySigner, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
-        let info = wm
-            .get_wallet_info(&self.wallet_id)
-            .expect("wallet info exists");
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
         let managed = info
             .identity_manager
             .managed_identity(identity_id)
@@ -394,7 +396,11 @@ impl IdentityWallet {
             };
 
             let wm = self.wallet_manager.read().await;
-            let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
+            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet not found in wallet manager".to_string(),
+                )
+            })?;
             let base_path: DerivationPath = match self.sdk.network {
                 key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
                 _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -530,9 +536,11 @@ impl IdentityWallet {
 
         // Step 4: Add the identity to the local manager (with its HD index).
         let mut wm = self.wallet_manager.write().await;
-        let info = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .expect("wallet info exists");
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
         // TODO(Phase 9a-6): forward the returned changeset to the persister.
         let _cs = info
             .identity_manager
@@ -849,10 +857,16 @@ impl IdentityWallet {
 
         let (network, start_index, wallet_id) = {
             let wm = self.wallet_manager.read().await;
-            let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet not found in wallet manager".to_string(),
+                )
+            })?;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             (
                 wallet.network,
                 info.identity_manager.last_scanned_index(),
@@ -871,7 +885,11 @@ impl IdentityWallet {
             for key_index in 0..KEY_INDEX_SCAN_LIMIT {
                 let key_hash_array = {
                     let wm = self.wallet_manager.read().await;
-                    let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
+                    let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                        crate::error::PlatformWalletError::WalletNotFound(
+                            "Wallet not found in wallet manager".to_string(),
+                        )
+                    })?;
                     derive_identity_auth_key_hash(wallet, network, identity_index, key_index)?
                 };
 
@@ -922,9 +940,14 @@ impl IdentityWallet {
 
                         // Acquire write lock to add/enrich the identity.
                         let mut wm_guard = self.wallet_manager.write().await;
-                        let info_guard = wm_guard
-                            .get_wallet_info_mut(&self.wallet_id)
-                            .expect("wallet info exists");
+                        let info_guard =
+                            wm_guard
+                                .get_wallet_info_mut(&self.wallet_id)
+                                .ok_or_else(|| {
+                                    crate::error::PlatformWalletError::WalletNotFound(
+                                        "Wallet info not found in wallet manager".to_string(),
+                                    )
+                                })?;
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
                             // TODO(Phase 9a-6): forward the returned changeset
@@ -999,9 +1022,14 @@ impl IdentityWallet {
             {
                 Ok(usernames) => {
                     let mut wm_guard = self.wallet_manager.write().await;
-                    let info_guard = wm_guard
-                        .get_wallet_info_mut(&self.wallet_id)
-                        .expect("wallet info exists");
+                    let info_guard =
+                        wm_guard
+                            .get_wallet_info_mut(&self.wallet_id)
+                            .ok_or_else(|| {
+                                crate::error::PlatformWalletError::WalletNotFound(
+                                    "Wallet info not found in wallet manager".to_string(),
+                                )
+                            })?;
                     if let Some(managed) = info_guard
                         .identity_manager
                         .managed_identity_mut(&identity_id)
@@ -1028,7 +1056,11 @@ impl IdentityWallet {
         let mut wm_guard = self.wallet_manager.write().await;
         let info_guard = wm_guard
             .get_wallet_info_mut(&self.wallet_id)
-            .expect("wallet info exists");
+            .ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
         // TODO(Phase 9a-6): forward the returned changeset to the persister.
         let _cs = info_guard
             .identity_manager
@@ -1091,9 +1123,11 @@ impl IdentityWallet {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1185,9 +1219,11 @@ impl IdentityWallet {
         // Update the identity's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if let Some(identity) = info.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1223,9 +1259,11 @@ impl IdentityWallet {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1260,9 +1298,11 @@ impl IdentityWallet {
         // Update the identity's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info_guard = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1331,9 +1371,11 @@ impl IdentityWallet {
         // Retrieve the sending identity and its HD index from the manager.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(from_id)
@@ -1363,9 +1405,11 @@ impl IdentityWallet {
         // Update the sender's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if let Some(identity) = info.identity_manager.identity_mut(from_id) {
                 identity.set_balance(sender_balance);
             }
@@ -1432,9 +1476,11 @@ impl IdentityWallet {
 
         let (mut identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1590,9 +1636,11 @@ impl IdentityWallet {
     ) -> Result<Credits, PlatformWalletError> {
         let identity = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             manager
                 .identity(identity_id)
@@ -1613,9 +1661,11 @@ impl IdentityWallet {
         // Update the identity's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if let Some(identity) = info.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1646,9 +1696,11 @@ impl IdentityWallet {
     ) -> Result<Credits, PlatformWalletError> {
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1681,9 +1733,11 @@ impl IdentityWallet {
         // Update the sender's balance in the local manager.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info_guard = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
                 identity.set_balance(new_balance);
             }
@@ -1713,9 +1767,11 @@ impl IdentityWallet {
 
         let (identity, identity_index, auth_key) = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
@@ -1852,7 +1908,11 @@ impl IdentityWallet {
 
         let (network, wallet_id, key_hash_array) = {
             let wm = self.wallet_manager.read().await;
-            let wallet = wm.get_wallet(&self.wallet_id).expect("wallet exists");
+            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet not found in wallet manager".to_string(),
+                )
+            })?;
             let network = wallet.network;
             let wallet_id = self.wallet_id;
             let key_hash_array = derive_identity_auth_key_hash(wallet, network, identity_index, 0)?;
@@ -1905,9 +1965,11 @@ impl IdentityWallet {
         // Add the identity to the manager and enrich it.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if info.identity_manager.identity(&identity_id).is_none() {
                 // TODO(Phase 9a-6): forward the returned changeset to the persister.
                 let _cs = info
@@ -1940,9 +2002,11 @@ impl IdentityWallet {
         {
             Ok(usernames) => {
                 let mut wm = self.wallet_manager.write().await;
-                let info = wm
-                    .get_wallet_info_mut(&self.wallet_id)
-                    .expect("wallet info exists");
+                let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                    crate::error::PlatformWalletError::WalletNotFound(
+                        "Wallet info not found in wallet manager".to_string(),
+                    )
+                })?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                     for username in usernames {
                         let _cs = managed.add_dpns_name(DpnsNameInfo {
@@ -1989,9 +2053,11 @@ impl IdentityWallet {
         // Verify identity exists in the manager.
         {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if info.identity_manager.identity(identity_id).is_none() {
                 return Err(PlatformWalletError::IdentityNotFound(*identity_id));
             }
@@ -2016,9 +2082,11 @@ impl IdentityWallet {
         // Update the managed identity.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
                 managed.identity = identity.clone();
                 let _cs = managed.set_status(IdentityStatus::Active);
@@ -2062,9 +2130,11 @@ impl IdentityWallet {
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             info.identity_manager.identities().keys().copied().collect()
         };
 
@@ -2076,9 +2146,11 @@ impl IdentityWallet {
             {
                 Ok(usernames) => {
                     let mut wm = self.wallet_manager.write().await;
-                    let info = wm
-                        .get_wallet_info_mut(&self.wallet_id)
-                        .expect("wallet info exists");
+                    let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                        crate::error::PlatformWalletError::WalletNotFound(
+                            "Wallet info not found in wallet manager".to_string(),
+                        )
+                    })?;
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
                     {
                         managed.dpns_names = usernames
@@ -2145,9 +2217,11 @@ impl IdentityWallet {
         // index and cannot sign).
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet info exists");
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
             info.identity_manager
                 .add_watched_identity(identity.clone())?;
         }
