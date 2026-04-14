@@ -44,9 +44,11 @@ impl CoreWallet {
 
         let tx = {
             let mut wm = self.wallet_manager.write().await;
-            let (wallet, info) = wm
-                .get_wallet_and_info_mut(&self.wallet_id)
-                .expect("wallet exists");
+            let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet not found in wallet manager".to_string(),
+                )
+            })?;
 
             let current_height = info.core_wallet.synced_height();
 

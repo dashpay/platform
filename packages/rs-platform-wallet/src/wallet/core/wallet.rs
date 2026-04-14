@@ -57,9 +57,11 @@ impl CoreWallet {
         account_index: u32,
     ) -> Result<DashAddress, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
-        let (wallet, info) = wm
-            .get_wallet_and_info_mut(&self.wallet_id)
-            .expect("wallet exists");
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet not found in wallet manager".to_string(),
+            )
+        })?;
 
         let xpub = wallet
             .accounts
@@ -96,9 +98,11 @@ impl CoreWallet {
         account_index: u32,
     ) -> Result<DashAddress, PlatformWalletError> {
         let mut wm = self.wallet_manager.blocking_write();
-        let (wallet, info) = wm
-            .get_wallet_and_info_mut(&self.wallet_id)
-            .expect("wallet exists");
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet not found in wallet manager".to_string(),
+            )
+        })?;
 
         let xpub = wallet
             .accounts
@@ -135,9 +139,11 @@ impl CoreWallet {
         account_index: u32,
     ) -> Result<DashAddress, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
-        let (wallet, info) = wm
-            .get_wallet_and_info_mut(&self.wallet_id)
-            .expect("wallet exists");
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet not found in wallet manager".to_string(),
+            )
+        })?;
 
         let xpub = wallet
             .accounts
@@ -174,9 +180,11 @@ impl CoreWallet {
         account_index: u32,
     ) -> Result<DashAddress, PlatformWalletError> {
         let mut wm = self.wallet_manager.blocking_write();
-        let (wallet, info) = wm
-            .get_wallet_and_info_mut(&self.wallet_id)
-            .expect("wallet exists");
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet not found in wallet manager".to_string(),
+            )
+        })?;
 
         let xpub = wallet
             .accounts
