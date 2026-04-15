@@ -38,6 +38,7 @@ use url::Url;
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
+#[derive(Clone)]
 pub struct TrustedHttpContextProvider {
     network: Network,
     client: Client,
@@ -56,7 +57,7 @@ pub struct TrustedHttpContextProvider {
     last_previous_quorums: Arc<ArcSwap<Option<PreviousQuorumsResponse>>>,
 
     /// Optional fallback provider for data contracts and token configurations
-    fallback_provider: Option<Box<dyn ContextProvider>>,
+    fallback_provider: Option<Arc<dyn ContextProvider>>,
 
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
     known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
@@ -177,7 +178,7 @@ impl TrustedHttpContextProvider {
 
     /// Set a fallback provider for data contracts and token configurations
     pub fn with_fallback_provider<P: ContextProvider + 'static>(mut self, provider: P) -> Self {
-        self.fallback_provider = Some(Box::new(provider));
+        self.fallback_provider = Some(Arc::new(provider));
         self
     }
 
@@ -618,47 +619,31 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
-        // For non-WASM targets, we can use block_on to fetch
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            // Use blocking to run async code in sync context
-            let quorum =
-                match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
-                    Ok(q) => q,
-                    Err(e) => {
-                        debug!("Error finding quorum: {}", e);
-                        return Err(ContextProviderError::Generic(format!(
-                            "Failed to find quorum: {}",
-                            e
-                        )));
-                    }
-                };
+        let this = self.clone();
+        let quorum =
+            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })
+                .map_err(|e| ContextProviderError::Generic(format!("block_on failed: {}", e)))?
+                .map_err(|e| {
+                    debug!("Error finding quorum: {}", e);
+                    ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
+                })?;
 
-            // Parse the public key from the 'key' field
-            let pubkey_hex = quorum.key.trim_start_matches("0x");
-            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-            })?;
+        // Parse the public key from the 'key' field
+        let pubkey_hex = quorum.key.trim_start_matches("0x");
+        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+        })?;
 
-            if pubkey_bytes.len() != 48 {
-                return Err(ContextProviderError::Generic(format!(
-                    "Invalid public key length: {} bytes, expected 48",
-                    pubkey_bytes.len()
-                )));
-            }
-
-            pubkey_bytes.try_into().map_err(|_| {
-                ContextProviderError::Generic("Failed to convert public key to array".to_string())
-            })
+        if pubkey_bytes.len() != 48 {
+            return Err(ContextProviderError::Generic(format!(
+                "Invalid public key length: {} bytes, expected 48",
+                pubkey_bytes.len()
+            )));
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            // For WASM, we rely on pre-fetched cache
-            Err(ContextProviderError::Generic(
-                "Quorum not found in cache. In WASM, call update_quorum_caches() first."
-                    .to_string(),
-            ))
-        }
+
+        pubkey_bytes.try_into().map_err(|_| {
+            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+        })
     }
 
     fn get_data_contract(

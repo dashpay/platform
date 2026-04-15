@@ -1527,9 +1527,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-async"
+version = "3.1.0-dev.1"
+dependencies = [
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "dash-context-provider"
 version = "3.1.0-dev.1"
 dependencies = [
+ "dash-async",
  "dpp",
  "drive",
  "hex",
@@ -1574,6 +1584,7 @@ dependencies = [
  "ciborium",
  "clap",
  "dapi-grpc",
+ "dash-async",
  "dash-context-provider",
  "dash-platform-macros",
  "derive_more 1.0.0",
@@ -5894,9 +5905,9 @@ name = "rs-sdk-trusted-context-provider"
 version = "3.1.0-dev.1"
 dependencies = [
  "arc-swap",
+ "dash-async",
  "dash-context-provider",
  "dpp",
- "futures",
  "hex",
  "lru",
  "reqwest 0.12.28",
