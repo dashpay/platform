@@ -6623,10 +6623,13 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 name = "simple-signer"
 version = "3.1.0-dev.1"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bincode",
  "dpp",
  "hex",
+ "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 
