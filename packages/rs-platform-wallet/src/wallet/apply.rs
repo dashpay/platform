@@ -330,7 +330,7 @@ mod tests {
     use crate::changeset::{
         AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry,
         IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-        ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
+        SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::core::WalletBalance;
@@ -435,7 +435,6 @@ mod tests {
         let id = Identifier::from([7u8; 32]);
         let mut managed = ManagedIdentity::new(make_test_identity(7, 1), 3);
         managed.label = Some("alice".into());
-        managed.top_ups.insert(0, 100_000);
 
         let mut cs = PlatformWalletChangeSet::default();
         let mut id_cs = IdentityChangeSet::default();
@@ -457,7 +456,6 @@ mod tests {
             .expect("present");
         assert_eq!(restored.label.as_deref(), Some("alice"));
         assert_eq!(restored.identity_index, 3);
-        assert_eq!(restored.top_ups.get(&0), Some(&100_000));
     }
 
     #[test]
@@ -586,10 +584,12 @@ mod tests {
         assert_eq!(account.address_credit_balance(&p2pkh1), 100);
         assert_eq!(account.address_credit_balance(&p2pkh2), 200);
 
-        // Remove one, update the other.
+        // Update one, drain the other to zero (per the new
+        // PlatformAddressChangeSet model: drained addresses carry
+        // balance 0 instead of being explicitly removed).
         let mut addr_cs = PlatformAddressChangeSet::default();
         addr_cs.addresses.insert(addr1, 150);
-        addr_cs.removed.insert(addr2);
+        addr_cs.addresses.insert(addr2, 0);
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
@@ -829,7 +829,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_dpns_name_and_top_up() {
+    fn round_trip_dpns_name() {
         use crate::wallet::identity::managed_identity::DpnsNameInfo;
 
         let mut wallet_a = build_test_wallet();
@@ -856,20 +856,9 @@ mod tests {
                 acquired_at: Some(123_456),
             });
 
-        // Record a top-up on the same identity.
-        let top_up_cs = info_a
-            .identity_manager
-            .managed_identity_mut(&id)
-            .expect("a managed")
-            .record_top_up(0, 5_000_000);
-
-        // Apply both changesets to B in order.
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(dpns_cs))
             .expect("apply dpns");
-        info_b
-            .apply_changeset(&mut wallet_b, wrap_id(top_up_cs))
-            .expect("apply top-up");
 
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
@@ -882,8 +871,6 @@ mod tests {
             b.dpns_names.first().map(|n| n.label.as_str()),
             Some("alice")
         );
-        assert_eq!(a.top_ups.get(&0), Some(&5_000_000));
-        assert_eq!(b.top_ups.get(&0), Some(&5_000_000));
     }
 
     #[test]

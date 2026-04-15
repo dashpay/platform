@@ -89,8 +89,6 @@ pub struct IdentityEntry {
     pub last_synced_keys_block_time: Option<BlockTime>,
     /// DPNS usernames with acquisition metadata.
     pub dpns_names: Vec<DpnsNameInfo>,
-    /// Top-up history: maps top-up index to amount (in duffs).
-    pub top_ups: BTreeMap<u32, u64>,
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
     /// Private key storage (public keys + private key data for each KeyID).
@@ -122,7 +120,6 @@ impl IdentityEntry {
             last_updated_balance_block_time: managed.last_updated_balance_block_time,
             last_synced_keys_block_time: managed.last_synced_keys_block_time,
             dpns_names: managed.dpns_names.clone(),
-            top_ups: managed.top_ups.clone(),
             status: managed.status,
             key_storage: managed.key_storage.clone(),
             wallet_id: managed.wallet_id,
@@ -163,8 +160,8 @@ impl Merge for IdentityChangeSet {
     fn merge(&mut self, other: Self) {
         // IdentityEntry is a full snapshot via `IdentityEntry::from_managed`,
         // so "later wins" is the correct policy for scalar fields. DPNS
-        // names and top-ups are merged as unions because each mutation
-        // method produces a complete current snapshot but partial per-field
+        // names are merged as a union because each mutation method
+        // produces a complete current snapshot but partial per-field
         // races across wallets are possible.
         for (id, entry) in other.identities {
             self.identities
@@ -197,16 +194,14 @@ impl Merge for IdentityChangeSet {
                             existing.dpns_names.push(name.clone());
                         }
                     }
-                    // Merge top-ups (last write wins per index).
-                    existing.top_ups.extend(entry.top_ups.iter());
                     // Merge key storage entries (last write wins per KeyID).
                     for (kid, slot) in &entry.key_storage {
                         existing.key_storage.insert(*kid, slot.clone());
                     }
                     // Merge DashPay payments (last-write-wins per tx_id).
-                    // Same reasoning as top_ups: every mutation snapshot
-                    // copies the full map via `from_managed`, so extend
-                    // converges within a single wallet.
+                    // Every mutation snapshot copies the full map via
+                    // `from_managed`, so extend converges within a
+                    // single wallet.
                     for (tx_id, payment) in &entry.dashpay_payments {
                         existing
                             .dashpay_payments

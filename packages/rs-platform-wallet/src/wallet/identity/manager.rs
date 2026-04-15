@@ -299,7 +299,6 @@ impl IdentityManager {
                         existing.dpns_names.push(name);
                     }
                 }
-                existing.top_ups.extend(entry.top_ups);
                 existing.key_storage.extend(entry.key_storage);
                 existing.dashpay_payments.extend(entry.dashpay_payments);
             }
@@ -311,7 +310,6 @@ impl IdentityManager {
                 managed.status = entry.status;
                 managed.wallet_id = entry.wallet_id;
                 managed.dpns_names = entry.dpns_names;
-                managed.top_ups = entry.top_ups;
                 managed.key_storage = entry.key_storage;
                 managed.dashpay_profile = entry.dashpay_profile;
                 managed.dashpay_payments = entry.dashpay_payments;

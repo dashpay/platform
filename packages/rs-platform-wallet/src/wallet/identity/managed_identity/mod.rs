@@ -64,9 +64,6 @@ pub struct ManagedIdentity {
     /// gap-limit scan and identity recovery.
     pub wallet_id: Option<[u8; 32]>,
 
-    /// Top-up history: maps top-up index to amount (in duffs).
-    pub top_ups: BTreeMap<u32, u64>,
-
     /// DashPay profile (display name, bio, avatar, public message)
     /// published via the DashPay data contract. `None` until the
     /// profile has been fetched or set.

@@ -43,7 +43,6 @@ impl ManagedIdentity {
             status: Default::default(),
             dpns_names: Vec::new(),
             wallet_id: None,
-            top_ups: BTreeMap::new(),
             dashpay_profile: None,
             dashpay_payments: BTreeMap::new(),
         }
@@ -129,15 +128,6 @@ impl ManagedIdentity {
     /// Look up private key data by key ID.
     pub fn private_key_data(&self, key_id: &KeyID) -> Option<&PrivateKeyData> {
         self.key_storage.get(key_id).map(|(_, pk)| pk)
-    }
-
-    /// Record a top-up by index and amount.
-    ///
-    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
-    /// identity.
-    pub fn record_top_up(&mut self, index: u32, amount: u64) -> IdentityChangeSet {
-        self.top_ups.insert(index, amount);
-        self.snapshot_changeset()
     }
 
     /// Create a [`ManagedIdentitySigner`] for this identity.
