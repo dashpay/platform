@@ -44,13 +44,13 @@ impl AddressProvider for TestAddressProvider {
             .collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         self.found.insert((index, key.to_vec()), funds);
         self.pending.remove(&index);
         self.highest_found_index = Some(self.highest_found_index.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
         self.absent.insert((index, key.to_vec()));
         self.pending.remove(&index);
     }

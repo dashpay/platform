@@ -130,7 +130,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         unsafe {
             let vtable = &*self.ffi.vtable;
             (vtable.on_address_found)(
@@ -144,7 +144,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
         unsafe {
             let vtable = &*self.ffi.vtable;
             (vtable.on_address_absent)(self.ffi.context, index, key.as_ptr(), key.len());

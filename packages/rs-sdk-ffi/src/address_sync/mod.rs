@@ -220,13 +220,13 @@ impl AddressProvider for BatchAddressProvider {
         self.pending.iter().map(|(i, k)| (*i, k.clone())).collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         self.pending.remove(&index);
         self.found.insert((index, key.to_vec()), funds);
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
         self.pending.remove(&index);
         self.absent.insert((index, key.to_vec()));
     }
