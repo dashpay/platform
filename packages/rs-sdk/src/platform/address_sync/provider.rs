@@ -1,6 +1,7 @@
 //! Address provider trait for address synchronization.
 
 use super::types::{AddressFunds, AddressIndex, AddressKey};
+use async_trait::async_trait;
 
 /// Trait for providing addresses to be synchronized.
 ///
@@ -47,6 +48,18 @@ use super::types::{AddressFunds, AddressIndex, AddressKey};
 ///     // ... other methods
 /// }
 /// ```
+///
+/// # Async mutation contract
+///
+/// [`on_address_found`](Self::on_address_found) and
+/// [`on_address_absent`](Self::on_address_absent) are `async` so implementations
+/// can `.await` on internal state writes (for example, acquiring an async lock
+/// or persisting to an async store) without having to `block_on` a runtime
+/// from a sync trait body.  The sync engine awaits each callback in-order on
+/// the caller's task; do not spawn detached tasks that outlive the returned
+/// future, as the engine relies on the mutation having been applied before
+/// the next iteration observes the updated pending set.
+#[async_trait]
 pub trait AddressProvider: Send {
     /// Get the gap limit for this provider.
     ///
@@ -76,7 +89,7 @@ pub trait AddressProvider: Send {
     /// - `index`: The address index that was found
     /// - `key`: The address key bytes
     /// - `funds`: The nonce and credits balance at this address
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds);
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds);
 
     /// Called when an address is proven absent from the tree.
     ///
@@ -87,7 +100,7 @@ pub trait AddressProvider: Send {
     /// # Arguments
     /// - `index`: The address index proven absent
     /// - `key`: The address key bytes
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]);
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]);
 
     /// Check if there are still pending addresses to synchronize.
     ///
