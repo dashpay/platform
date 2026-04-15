@@ -22,7 +22,7 @@ lru = "0.16.3"
 arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
-tokio = { version = "1.40", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["rt"] }
 
 [features]
 default = []
@@ -47,4 +47,4 @@ token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "net", "io-util"] }
