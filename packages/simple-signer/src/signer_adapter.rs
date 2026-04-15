@@ -3,6 +3,9 @@
 //! A single [SignerAdapter] enum wraps either a sync or async signer and
 //! implements **both** traits, so callers only need one object regardless of
 //! which direction the bridge goes.
+//!
+//! Uses trait objects internally so the enum has a single type parameter `K`
+//! (the key type), enabling clean `From`/`Into` conversions.
 
 use dpp::address_funds::AddressWitness;
 use dpp::identity::signer::{Signer, SignerAsync};
@@ -21,16 +24,27 @@ use crate::sync::block_on;
 /// - **`Async` variant**: delegates directly for async calls; uses [`block_on`]
 ///   for sync calls. Requires `K: Clone` so the key can be moved into the
 ///   spawned future safely.
-pub enum SignerAdapter<Sy, As> {
+///
+/// # Construction
+///
+/// ```ignore
+/// // From a sync signer (e.g. SimpleSigner):
+/// let adapter: SignerAdapter<IdentityPublicKey> = SignerAdapter::from_sync(my_signer);
+/// // or via Into:
+/// let arc: Arc<dyn Signer<K> + Send> = Arc::new(my_signer);
+/// let adapter: SignerAdapter<K> = arc.into();
+///
+/// // From an async signer:
+/// let adapter: SignerAdapter<K> = SignerAdapter::from_async(my_async_signer);
+/// ```
+pub enum SignerAdapter<K: Send + Sync + 'static> {
     /// Wraps a synchronous [Signer].
-    Sync(Arc<Sy>),
+    Sync(Arc<dyn Signer<K> + Send>),
     /// Wraps an async [SignerAsync].
-    Async(Arc<As>),
+    Async(Arc<dyn SignerAsync<K> + Sync>),
 }
 
-// -- Manual impls because #[derive] would require both Sy and As to be Clone/Debug --
-
-impl<Sy: Debug, As: Debug> Debug for SignerAdapter<Sy, As> {
+impl<K: Send + Sync + 'static> Debug for SignerAdapter<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Sync(s) => f.debug_tuple("SignerAdapter::Sync").field(s).finish(),
@@ -39,7 +53,7 @@ impl<Sy: Debug, As: Debug> Debug for SignerAdapter<Sy, As> {
     }
 }
 
-impl<Sy, As> Clone for SignerAdapter<Sy, As> {
+impl<K: Send + Sync + 'static> Clone for SignerAdapter<K> {
     fn clone(&self) -> Self {
         match self {
             Self::Sync(s) => Self::Sync(Arc::clone(s)),
@@ -50,35 +64,37 @@ impl<Sy, As> Clone for SignerAdapter<Sy, As> {
 
 // -- Constructors --
 
-impl<Sy, As> SignerAdapter<Sy, As> {
+impl<K: Send + Sync + 'static> SignerAdapter<K> {
     /// Create an adapter from a synchronous [Signer].
-    pub fn from_sync(signer: Sy) -> Self {
+    pub fn from_sync<S: Signer<K> + Send + 'static>(signer: S) -> Self {
         Self::Sync(Arc::new(signer))
     }
 
-    /// Create an adapter from a synchronous [Signer] already wrapped in [Arc].
-    pub fn from_sync_arc(signer: Arc<Sy>) -> Self {
-        Self::Sync(signer)
-    }
-
     /// Create an adapter from an async [SignerAsync].
-    pub fn from_async(signer: As) -> Self {
+    pub fn from_async<S: SignerAsync<K> + Sync + 'static>(signer: S) -> Self {
         Self::Async(Arc::new(signer))
     }
+}
 
-    /// Create an adapter from an async [SignerAsync] already wrapped in [Arc].
-    pub fn from_async_arc(signer: Arc<As>) -> Self {
+// -- From / Into --
+
+impl<K: Send + Sync + 'static> From<Arc<dyn Signer<K> + Send>> for SignerAdapter<K> {
+    fn from(signer: Arc<dyn Signer<K> + Send>) -> Self {
+        Self::Sync(signer)
+    }
+}
+
+impl<K: Send + Sync + 'static> From<Arc<dyn SignerAsync<K> + Sync>> for SignerAdapter<K> {
+    fn from(signer: Arc<dyn SignerAsync<K> + Sync>) -> Self {
         Self::Async(signer)
     }
 }
 
 // -- Signer (sync) implementation --
 
-impl<K, Sy, As> Signer<K> for SignerAdapter<Sy, As>
+impl<K> Signer<K> for SignerAdapter<K>
 where
     K: Send + Sync + Clone + Debug + 'static,
-    Sy: Signer<K> + Send + 'static,
-    As: SignerAsync<K> + Sync + 'static,
 {
     fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         match self {
@@ -118,11 +134,9 @@ where
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-impl<K, Sy, As> SignerAsync<K> for SignerAdapter<Sy, As>
+impl<K> SignerAsync<K> for SignerAdapter<K>
 where
     K: Send + Sync + Debug + 'static,
-    Sy: Signer<K> + Send + 'static,
-    As: SignerAsync<K> + Sync + 'static,
 {
     async fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         match self {
