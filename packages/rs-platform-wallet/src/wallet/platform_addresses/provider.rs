@@ -12,6 +12,7 @@ use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::managed_account::address_pool::KeySource;
 use key_wallet::PlatformP2PKHAddress;
 
+use async_trait::async_trait;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
@@ -240,6 +241,7 @@ impl PlatformPaymentAddressAccountProvider {
     }
 }
 
+#[async_trait]
 impl AddressProvider for PlatformPaymentAddressAccountProvider {
     fn gap_limit(&self) -> AddressIndex {
         self.cached_gap_limit
@@ -252,7 +254,7 @@ impl AddressProvider for PlatformPaymentAddressAccountProvider {
             .collect()
     }
 
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
@@ -267,15 +269,12 @@ impl AddressProvider for PlatformPaymentAddressAccountProvider {
         self.found.insert((index, p2pkh), funds);
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
 
-        let handle = tokio::runtime::Handle::current();
-        if let Err(e) = tokio::task::block_in_place(|| {
-            handle.block_on(self.on_address_found_in_pool(&p2pkh, funds))
-        }) {
+        if let Err(e) = self.on_address_found_in_pool(&p2pkh, funds).await {
             tracing::warn!("Failed to update pool for found address: {}", e);
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         let PlatformAddress::P2pkh(hash) = address else {
             return;
         };
