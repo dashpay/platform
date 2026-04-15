@@ -88,20 +88,23 @@ where
     match handle.runtime_flavor() {
         RuntimeFlavor::CurrentThread => {
             tracing::trace!("block_on: current-thread runtime, spawning dedicated OS thread");
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            std::thread::spawn(move || {
+            let (tx, rx) = std::sync::mpsc::sync_channel::<Result<F::Output, AsyncError>>(1);
+            let join_handle = std::thread::spawn(move || {
                 let result = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .map_err(|e| {
                         tracing::error!("block_on: failed to create worker runtime: {}", e);
+                        AsyncError::Generic(format!("failed to create worker runtime: {e}"))
                     })
                     .map(|rt| rt.block_on(fut));
-                if let Ok(result) = result {
-                    let _ = tx.send(result);
-                }
+                let _ = tx.send(result);
             });
-            Ok(rx.recv()?)
+            let recv_result = rx.recv()?;
+            join_handle
+                .join()
+                .map_err(|_| AsyncError::Generic("block_on worker thread panicked".to_string()))?;
+            recv_result
         }
         // RuntimeFlavor is #[non_exhaustive]; all multi-threaded flavors (MultiThread,
         // MultiThreadAlt, and any future variants) support block_in_place.

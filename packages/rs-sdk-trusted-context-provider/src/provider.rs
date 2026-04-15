@@ -912,27 +912,36 @@ mod tests {
             .unwrap();
         let server_port = listener.local_addr().unwrap().port();
 
-        std::thread::spawn(move || {
+        // Shutdown signal so the server thread exits after the test completes.
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let server_handle = std::thread::spawn(move || {
             server_rt.block_on(async move {
                 // Handle connections sequentially — sufficient for a test mock.
-                while let Ok((mut stream, _)) = listener.accept().await {
-                    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-                    let mut reader = BufReader::new(&mut stream);
-                    let mut request_line = String::new();
-                    let _ = reader.read_line(&mut request_line).await;
-                    let body = if request_line.contains("/quorums")
-                        && !request_line.contains("/previous")
-                    {
-                        current_json.clone()
-                    } else {
-                        previous_json.clone()
-                    };
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        body.len(),
-                        body
-                    );
-                    let _ = stream.write_all(response.as_bytes()).await;
+                loop {
+                    tokio::select! {
+                        accepted = listener.accept() => {
+                            let Ok((mut stream, _)) = accepted else { break };
+                            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+                            let mut reader = BufReader::new(&mut stream);
+                            let mut request_line = String::new();
+                            let _ = reader.read_line(&mut request_line).await;
+                            let body = if request_line.contains("/quorums")
+                                && !request_line.contains("/previous")
+                            {
+                                current_json.clone()
+                            } else {
+                                previous_json.clone()
+                            };
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = stream.write_all(response.as_bytes()).await;
+                        }
+                        _ = &mut shutdown_rx => break,
+                    }
                 }
             });
         });
@@ -951,7 +960,7 @@ mod tests {
 
         // Run get_quorum_public_key inside a current-thread tokio runtime.
         // This is the exact scenario that deadlocked before the fix.
-        std::thread::spawn(move || {
+        let client_handle = std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -973,6 +982,11 @@ mod tests {
 
         let key = result.expect("get_quorum_public_key should return Ok");
         assert_eq!(key, pubkey_bytes);
+
+        // Clean up: signal server shutdown and join both threads.
+        let _ = shutdown_tx.send(());
+        server_handle.join().expect("server thread panicked");
+        client_handle.join().expect("client thread panicked");
     }
 
     #[test]
