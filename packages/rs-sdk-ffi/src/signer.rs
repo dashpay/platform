@@ -48,7 +48,22 @@ use simple_signer::SingleKeySigner;
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
+
+/// Upper bound on how long the Rust side will wait for an iOS / FFI signer
+/// to invoke its completion callback after `sign_async` is called.
+///
+/// If the caller never invokes `completion` (a contract violation) the
+/// awaiting `async fn sign` would otherwise hang forever because the
+/// `oneshot::Sender` is inside a `Box` that was handed to the C side and
+/// never dropped. This timeout bounds the damage to a single leaked
+/// `Box<oneshot::Sender<_>>` per stuck request and surfaces a recoverable
+/// `ProtocolError` to the caller instead of wedging the runtime.
+///
+/// Five minutes is generous enough for biometric prompts + HSM round-trips
+/// while still being short enough that runaway tasks eventually fail.
+const SIGN_ASYNC_COMPLETION_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// C-compatible async vtable for signers.
 ///
@@ -284,20 +299,37 @@ impl Signer<IdentityPublicKey> for VTableSigner {
 
                 // Await the completion. The oneshot receiver is a real async
                 // point — the Tokio worker is free to run other tasks.
-                match rx.await {
-                    Ok(Ok(sig)) => Ok(BinaryData::from(sig)),
-                    Ok(Err(e)) => Err(e),
-                    Err(_recv_err) => {
-                        // Sender dropped without sending. This can only
-                        // happen if the iOS side forgot to call completion.
-                        // See the note on `SignAsyncCallback` — that is a
-                        // contract violation, but we surface it as a
-                        // recoverable protocol error rather than hang forever.
+                //
+                // A non-conforming FFI signer that never invokes `completion`
+                // would otherwise hang forever: the `Sender` lives inside a
+                // `Box` we handed to C, so it never drops and `rx` never
+                // receives `RecvError`. Bound the wait with a timeout so the
+                // caller gets a recoverable error instead of a deadlock.
+                match tokio::time::timeout(SIGN_ASYNC_COMPLETION_TIMEOUT, rx).await {
+                    Ok(Ok(Ok(sig))) => Ok(BinaryData::from(sig)),
+                    Ok(Ok(Err(e))) => Err(e),
+                    Ok(Err(_recv_err)) => {
+                        // Sender was dropped without sending. Only possible
+                        // if the FFI caller took custody of the completion
+                        // context and then freed it without invoking the
+                        // completion callback. Contract violation, but
+                        // surface as a recoverable protocol error.
                         Err(ProtocolError::Generic(
                             "Signer completion channel dropped without a result; \
                              the FFI signer did not call its completion callback"
                                 .to_string(),
                         ))
+                    }
+                    Err(_elapsed) => {
+                        // Timed out waiting for `completion`. The Sender box
+                        // is still held by the FFI caller — we leak it
+                        // rather than risk a use-after-free if the caller
+                        // eventually does invoke the completion.
+                        Err(ProtocolError::Generic(format!(
+                            "Signer completion callback not invoked within {:?}; \
+                             the FFI signer is unresponsive",
+                            SIGN_ASYNC_COMPLETION_TIMEOUT
+                        )))
                     }
                 }
             }
