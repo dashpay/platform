@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
-use dpp::prelude::AddressNonce;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
@@ -97,14 +96,26 @@ impl PlatformAddressWallet {
                                     key_source.as_ref(),
                                 );
                             }
-                            cs.addresses.insert(*addr, ai.balance);
+                            cs.addresses.insert(
+                                *addr,
+                                dash_sdk::platform::address_sync::AddressFunds {
+                                    balance: ai.balance,
+                                    nonce: ai.nonce,
+                                },
+                            );
                         }
                         None => {
                             if let PlatformAddress::P2pkh(hash) = addr {
                                 let p2pkh = PlatformP2PKHAddress::new(*hash);
                                 account.set_address_credit_balance(p2pkh, 0, key_source.as_ref());
                             }
-                            cs.addresses.insert(*addr, 0);
+                            cs.addresses.insert(
+                                *addr,
+                                dash_sdk::platform::address_sync::AddressFunds {
+                                    balance: 0,
+                                    nonce: 0,
+                                },
+                            );
                         }
                     }
                 }

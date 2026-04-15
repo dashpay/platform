@@ -91,10 +91,12 @@ impl PlatformAddressWallet {
 
         // Build the changeset from the sync results.
         // Note: balances are already written to the ManagedPlatformAccount
-        // by the provider's on_address_found callback during sync.
+        // by the provider's on_address_found callback during sync; the
+        // changeset carries the full AddressFunds snapshot (balance +
+        // nonce) so persisters can record both in one write.
         let mut cs = PlatformAddressChangeSet::default();
         for ((_, address), funds) in &result.found {
-            cs.addresses.insert(*address, funds.balance);
+            cs.addresses.insert(*address, *funds);
         }
 
         // Update the provider's incremental state from the result.

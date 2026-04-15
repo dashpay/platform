@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
 
+use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::address_funds::PlatformAddress;
-use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 
 use dpp::identity::accessors::IdentityGettersV0;
@@ -354,16 +354,17 @@ impl Merge for ContactChangeSet {
 
 /// Changes to the Platform address store.
 ///
-/// Mirrors [`ManagedPlatformAccount.address_balances`] exactly:
-/// a map from [`PlatformAddress`] (P2PKH or P2SH) to [`Credits`]
-/// (the balance in duffs). Last-write-wins on merge.
+/// A map from [`PlatformAddress`] (P2PKH or P2SH) to the full
+/// [`AddressFunds`] snapshot (balance in credits + anti-replay nonce).
+/// Last-write-wins on merge.
 ///
 /// Addresses are never removed — they are deterministically derived
-/// from the HD seed. A drained address simply has balance 0.
+/// from the HD seed. A drained address simply has balance 0 (nonce
+/// preserved so subsequent top-ups don't replay).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
     /// Updated platform addresses keyed by `PlatformAddress`.
-    pub addresses: BTreeMap<PlatformAddress, Credits>,
+    pub addresses: BTreeMap<PlatformAddress, AddressFunds>,
 }
 
 impl Merge for PlatformAddressChangeSet {
@@ -629,16 +630,18 @@ mod tests {
         let addr1 = PlatformAddress::P2pkh([1u8; 20]);
         let addr2 = PlatformAddress::P2pkh([2u8; 20]);
 
+        let funds = |balance, nonce| AddressFunds { balance, nonce };
+
         let mut a = PlatformAddressChangeSet::default();
-        a.addresses.insert(addr1.clone(), 100);
+        a.addresses.insert(addr1.clone(), funds(100, 1));
 
         let mut b = PlatformAddressChangeSet::default();
-        b.addresses.insert(addr1.clone(), 200); // last write wins
-        b.addresses.insert(addr2.clone(), 50);
+        b.addresses.insert(addr1.clone(), funds(200, 2)); // last write wins
+        b.addresses.insert(addr2.clone(), funds(50, 3));
 
         a.merge(b);
-        assert_eq!(a.addresses.get(&addr1), Some(&200));
-        assert_eq!(a.addresses.get(&addr2), Some(&50));
+        assert_eq!(a.addresses.get(&addr1), Some(&funds(200, 2)));
+        assert_eq!(a.addresses.get(&addr2), Some(&funds(50, 3)));
     }
 
     #[test]

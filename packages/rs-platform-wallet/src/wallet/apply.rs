@@ -234,10 +234,15 @@ impl PlatformWalletInfo {
                 .core_wallet
                 .first_platform_payment_managed_account_mut()
             {
-                for (addr, credits) in addr_cs.addresses {
+                for (addr, funds) in addr_cs.addresses {
                     if let PlatformAddress::P2pkh(hash) = addr {
                         let p2pkh = PlatformP2PKHAddress::new(hash);
-                        account.set_address_credit_balance(p2pkh, credits, None);
+                        account.set_address_credit_balance(p2pkh, funds.balance, None);
+                        // Nonce isn't stored on `ManagedPlatformAccount`;
+                        // callers that need it persist it via their own
+                        // store (see evo-tool's platform_address_balances
+                        // table which writes both `balance` and `nonce`
+                        // from the changeset).
                     }
                 }
             }
@@ -570,10 +575,13 @@ mod tests {
         let p2pkh1 = PlatformP2PKHAddress::new([10u8; 20]);
         let p2pkh2 = PlatformP2PKHAddress::new([20u8; 20]);
 
+        use dash_sdk::platform::address_sync::AddressFunds;
+        let funds = |balance, nonce| AddressFunds { balance, nonce };
+
         // Insert two.
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.insert(addr1, 100);
-        addr_cs.addresses.insert(addr2, 200);
+        addr_cs.addresses.insert(addr1, funds(100, 0));
+        addr_cs.addresses.insert(addr2, funds(200, 0));
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply insert");
@@ -588,8 +596,8 @@ mod tests {
         // PlatformAddressChangeSet model: drained addresses carry
         // balance 0 instead of being explicitly removed).
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.insert(addr1, 150);
-        addr_cs.addresses.insert(addr2, 0);
+        addr_cs.addresses.insert(addr1, funds(150, 0));
+        addr_cs.addresses.insert(addr2, funds(0, 0));
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
@@ -1507,7 +1515,13 @@ mod tests {
 
         let addr = PlatformAddress::P2pkh([42u8; 20]);
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.insert(addr, 1_000);
+        addr_cs.addresses.insert(
+            addr,
+            dash_sdk::platform::address_sync::AddressFunds {
+                balance: 1_000,
+                nonce: 0,
+            },
+        );
 
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
