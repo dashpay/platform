@@ -56,7 +56,7 @@ impl PlatformAddressWallet {
 
         let mut provider = provider_lock.write().await;
         let last_sync_timestamp = provider.last_sync_timestamp();
-        provider.prepare_for_sync()?;
+        provider.prepare_for_sync().await?;
 
         let result = self
             .sdk

@@ -115,12 +115,12 @@ public class ManagedPlatformAddressWallet {
         )
 
         let result = platform_address_wallet_sync_balances(
-            handle, false, config, &resultsArray, &changeset, &error
+            handle, false, nil, &resultsArray, &changeset, &error
         )
 
         defer {
-            platform_address_wallet_free_sync_result_array(resultsArray)
-            platform_address_wallet_free_changeset(changeset)
+            platform_address_wallet_free_sync_result_array(&resultsArray)
+            platform_address_wallet_free_changeset(&changeset)
         }
 
         guard result == Success else {
@@ -169,12 +169,12 @@ public class ManagedPlatformAddressWallet {
         )
 
         let result = platform_address_wallet_sync_balances_on_account(
-            handle, accountIndex, false, config, &syncResult, &changeset, &error
+            handle, accountIndex, false, nil, &syncResult, &changeset, &error
         )
 
         defer {
-            platform_address_wallet_free_sync_result(syncResult)
-            platform_address_wallet_free_changeset(changeset)
+            platform_address_wallet_free_sync_result(&syncResult)
+            platform_address_wallet_free_changeset(&changeset)
         }
 
         guard result == Success else {

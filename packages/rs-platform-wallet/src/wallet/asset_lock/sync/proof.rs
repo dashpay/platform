@@ -38,7 +38,6 @@ impl AssetLockManager {
         let info = wm
             .get_wallet_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let synced_height = info.core_wallet.metadata.synced_height;
 
         let record = info
             .core_wallet

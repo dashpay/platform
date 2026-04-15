@@ -24,7 +24,8 @@ typealias NetworkType = UInt32
 typealias PlatformWalletFFIResult = Int32
 
 struct PlatformWalletFFIError {
-    var message: UnsafePointer<CChar>?
+    var code: PlatformWalletFFIResult = 0
+    var message: UnsafeMutablePointer<CChar>? = nil
 }
 
 struct FFIBlockTime {
@@ -33,22 +34,23 @@ struct FFIBlockTime {
     var timestamp: UInt64
 }
 
-// Error result codes (must match Rust enum values)
+// Error result codes (must match Rust PlatformWalletFFIResult enum values)
 let Success: PlatformWalletFFIResult = 0
-let ErrorNullPointer: PlatformWalletFFIResult = 1
-let ErrorInvalidHandle: PlatformWalletFFIResult = 2
-let ErrorInvalidParameter: PlatformWalletFFIResult = 3
-let ErrorInvalidIdentifier: PlatformWalletFFIResult = 4
-let ErrorInvalidNetwork: PlatformWalletFFIResult = 5
+let ErrorInvalidHandle: PlatformWalletFFIResult = 1
+let ErrorInvalidParameter: PlatformWalletFFIResult = 2
+let ErrorNullPointer: PlatformWalletFFIResult = 3
+let ErrorSerialization: PlatformWalletFFIResult = 4
+let ErrorDeserialization: PlatformWalletFFIResult = 5
 let ErrorWalletOperation: PlatformWalletFFIResult = 6
 let ErrorIdentityNotFound: PlatformWalletFFIResult = 7
 let ErrorContactNotFound: PlatformWalletFFIResult = 8
-let ErrorUtf8Conversion: PlatformWalletFFIResult = 9
-let ErrorSerialization: PlatformWalletFFIResult = 10
-let ErrorDeserialization: PlatformWalletFFIResult = 11
+let ErrorInvalidNetwork: PlatformWalletFFIResult = 9
+let ErrorInvalidIdentifier: PlatformWalletFFIResult = 10
+let ErrorMemoryAllocation: PlatformWalletFFIResult = 11
+let ErrorUtf8Conversion: PlatformWalletFFIResult = 12
 
 /// Platform Wallet error types
-public enum PlatformWalletError: Error {
+public enum PlatformWalletError: LocalizedError {
     case nullPointer
     case invalidHandle
     case invalidParameter
@@ -58,36 +60,57 @@ public enum PlatformWalletError: Error {
     case identityNotFound
     case contactNotFound
     case utf8Conversion
-    case serialization
-    case deserialization
+    case serialization(String)
+    case deserialization(String)
+    case memoryAllocation
     case unknown(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .nullPointer: return "Null pointer"
+        case .invalidHandle: return "Invalid handle"
+        case .invalidParameter: return "Invalid parameter"
+        case .invalidIdentifier: return "Invalid identifier"
+        case .invalidNetwork: return "Invalid network"
+        case .walletOperation(let msg): return "Wallet operation: \(msg)"
+        case .identityNotFound: return "Identity not found"
+        case .contactNotFound: return "Contact not found"
+        case .utf8Conversion: return "UTF-8 conversion error"
+        case .serialization(let msg): return "Serialization: \(msg)"
+        case .deserialization(let msg): return "Deserialization: \(msg)"
+        case .memoryAllocation: return "Memory allocation error"
+        case .unknown(let msg): return msg
+        }
+    }
 
     init(result: PlatformWalletFFIResult, error: PlatformWalletFFIError) {
         let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
 
         switch result {
-        case ErrorNullPointer:
-            self = .nullPointer
         case ErrorInvalidHandle:
             self = .invalidHandle
         case ErrorInvalidParameter:
             self = .invalidParameter
-        case ErrorInvalidIdentifier:
-            self = .invalidIdentifier
-        case ErrorInvalidNetwork:
-            self = .invalidNetwork
+        case ErrorNullPointer:
+            self = .nullPointer
+        case ErrorSerialization:
+            self = .serialization(message)
+        case ErrorDeserialization:
+            self = .deserialization(message)
         case ErrorWalletOperation:
             self = .walletOperation(message)
         case ErrorIdentityNotFound:
             self = .identityNotFound
         case ErrorContactNotFound:
             self = .contactNotFound
+        case ErrorInvalidNetwork:
+            self = .invalidNetwork
+        case ErrorInvalidIdentifier:
+            self = .invalidIdentifier
+        case ErrorMemoryAllocation:
+            self = .memoryAllocation
         case ErrorUtf8Conversion:
             self = .utf8Conversion
-        case ErrorSerialization:
-            self = .serialization
-        case ErrorDeserialization:
-            self = .deserialization
         default:
             self = .unknown(message)
         }

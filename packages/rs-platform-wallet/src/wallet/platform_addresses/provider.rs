@@ -62,13 +62,13 @@ impl PlatformPaymentAddressAccountProvider {
     /// Reads the initial set of pre-generated addresses from the platform
     /// payment account at `account_index`. No key derivation happens here
     /// — addresses were already generated when the account was created.
-    pub(crate) fn from_wallet(
+    pub(crate) async fn from_wallet(
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         account_index: u32,
     ) -> Result<Self, PlatformWalletError> {
         let (cached_gap_limit, key_source, pending) = {
-            let wm = wallet_manager.blocking_read();
+            let wm = wallet_manager.read().await;
             let (wallet, info) = wm.get_wallet_and_info(&wallet_id).ok_or_else(|| {
                 PlatformWalletError::WalletNotFound(format!(
                     "Wallet {:?} not found in wallet manager",
@@ -151,8 +151,8 @@ impl PlatformPaymentAddressAccountProvider {
     /// Re-populate `pending` from the address pool and update `known_balances`
     /// from the previous sync's `found` results. Call this before each sync
     /// to prepare the provider for a new round.
-    pub(crate) fn prepare_for_sync(&mut self) -> Result<(), PlatformWalletError> {
-        let wm = self.wallet_manager.blocking_read();
+    pub(crate) async fn prepare_for_sync(&mut self) -> Result<(), PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
                 "Wallet {:?} not found in wallet manager",
@@ -201,12 +201,12 @@ impl PlatformPaymentAddressAccountProvider {
 
     /// Update the account for a found address: set its balance, mark it used
     /// in the pool, and generate new addresses to maintain the gap limit.
-    fn on_address_found_in_pool(
+    async fn on_address_found_in_pool(
         &mut self,
         p2pkh: &PlatformP2PKHAddress,
         funds: AddressFunds,
     ) -> Result<(), PlatformWalletError> {
-        let mut wm = self.wallet_manager.blocking_write();
+        let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
                 "Wallet {:?} not found in wallet manager",
@@ -267,7 +267,10 @@ impl AddressProvider for PlatformPaymentAddressAccountProvider {
         self.found.insert((index, p2pkh), funds);
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
 
-        if let Err(e) = self.on_address_found_in_pool(&p2pkh, funds) {
+        let handle = tokio::runtime::Handle::current();
+        if let Err(e) = tokio::task::block_in_place(|| {
+            handle.block_on(self.on_address_found_in_pool(&p2pkh, funds))
+        }) {
             tracing::warn!("Failed to update pool for found address: {}", e);
         }
     }

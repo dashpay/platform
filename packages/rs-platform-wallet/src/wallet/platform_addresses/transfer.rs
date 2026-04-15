@@ -60,8 +60,9 @@ impl PlatformAddressWallet {
                     .await?
             }
             InputSelection::Auto => {
-                let inputs =
-                    self.auto_select_inputs(account_index, &outputs, &fee_strategy, version)?;
+                let inputs = self
+                    .auto_select_inputs(account_index, &outputs, &fee_strategy, version)
+                    .await?;
                 self.sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, self, None)
                     .await?
@@ -116,7 +117,7 @@ impl PlatformAddressWallet {
     /// Automatically select input addresses from the account, consuming
     /// addresses from lowest derivation index to highest until the total
     /// output amount plus estimated fees is covered.
-    fn auto_select_inputs(
+    async fn auto_select_inputs(
         &self,
         account_index: u32,
         outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -126,7 +127,7 @@ impl PlatformAddressWallet {
         let total_output: Credits = outputs.values().sum();
         let output_count = outputs.len();
 
-        let wm = self.wallet_manager.blocking_read();
+        let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
                 "Wallet {:?} not found in wallet manager",

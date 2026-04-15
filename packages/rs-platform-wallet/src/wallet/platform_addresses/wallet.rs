@@ -33,17 +33,32 @@ pub struct PlatformAddressWallet {
 }
 
 impl PlatformAddressWallet {
-    /// Create a new PlatformAddressWallet, initializing a provider for each
-    /// existing platform payment account in the wallet.
+    /// Create a new PlatformAddressWallet without initializing providers.
+    ///
+    /// Call [`initialize`] afterwards to create providers for existing
+    /// platform payment accounts.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
     ) -> Self {
-        // Collect account indices under a short-lived read lock.
+        Self {
+            sdk,
+            wallet_manager,
+            wallet_id,
+            providers: Arc::new(ArcSwap::from_pointee(BTreeMap::new())),
+        }
+    }
+
+    /// Initialize providers for all existing platform payment accounts.
+    ///
+    /// Creates a [`PlatformPaymentAddressAccountProvider`] for each account
+    /// found in the wallet. Safe to call multiple times — existing providers
+    /// are preserved (use [`add_provider`] for new accounts).
+    pub async fn initialize(&self) {
         let account_indices: Vec<u32> = {
-            let wm = wallet_manager.blocking_read();
-            wm.get_wallet_info(&wallet_id)
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
                 .map(|info| {
                     info.core_wallet
                         .accounts
@@ -55,16 +70,22 @@ impl PlatformAddressWallet {
                 .unwrap_or_default()
         };
 
-        // Create a provider for each account (from_wallet acquires its own lock).
-        let mut providers = BTreeMap::new();
+        let current = self.providers.load();
+        let mut new_map = (**current).clone();
+
         for account_index in account_indices {
+            if new_map.contains_key(&account_index) {
+                continue; // Already initialized
+            }
             match PlatformPaymentAddressAccountProvider::from_wallet(
-                wallet_manager.clone(),
-                wallet_id,
+                self.wallet_manager.clone(),
+                self.wallet_id,
                 account_index,
-            ) {
+            )
+            .await
+            {
                 Ok(provider) => {
-                    providers.insert(account_index, Arc::new(RwLock::new(provider)));
+                    new_map.insert(account_index, Arc::new(RwLock::new(provider)));
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -76,12 +97,7 @@ impl PlatformAddressWallet {
             }
         }
 
-        Self {
-            sdk,
-            wallet_manager,
-            wallet_id,
-            providers: Arc::new(ArcSwap::from_pointee(providers)),
-        }
+        self.providers.store(Arc::new(new_map));
     }
 
     /// Get the network from the SDK.
@@ -92,7 +108,7 @@ impl PlatformAddressWallet {
     /// Add a provider for a new account index.
     ///
     /// Returns an error if a provider already exists for this index.
-    pub fn add_provider(&self, account_index: u32) -> Result<(), PlatformWalletError> {
+    pub async fn add_provider(&self, account_index: u32) -> Result<(), PlatformWalletError> {
         let current = self.providers.load();
         if current.contains_key(&account_index) {
             return Err(PlatformWalletError::AddressOperation(format!(
@@ -105,7 +121,8 @@ impl PlatformAddressWallet {
             self.wallet_manager.clone(),
             self.wallet_id,
             account_index,
-        )?;
+        )
+        .await?;
 
         let mut new_map = (**current).clone();
         new_map.insert(account_index, Arc::new(RwLock::new(provider)));

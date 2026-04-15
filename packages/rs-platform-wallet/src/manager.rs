@@ -201,6 +201,9 @@ impl PlatformWalletManager {
             })?;
         }
 
+        // Initialize platform address providers for existing accounts.
+        platform_wallet.platform().initialize().await;
+
         let platform_wallet = Arc::new(platform_wallet);
 
         // Register the PlatformWallet handle.

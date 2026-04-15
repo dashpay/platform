@@ -14,13 +14,13 @@ impl PlatformAddressWallet {
     ///
     /// Returns the raw private key bytes wrapped in [`Zeroizing`] so they are
     /// automatically wiped from memory when the value is dropped.
-    pub(crate) fn find_private_key_for_platform_address(
+    pub(crate) async fn find_private_key_for_platform_address(
         &self,
         p2pkh: &PlatformP2PKHAddress,
     ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
         let dashcore_addr = p2pkh.to_address(self.sdk.network);
 
-        let wm = self.wallet_manager.blocking_read();
+        let wm = self.wallet_manager.read().await;
         let (wallet, info) = wm.get_wallet_and_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
                 "Wallet {:?} not found in wallet manager",
@@ -63,9 +63,11 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
             ));
         };
         let p2pkh = PlatformP2PKHAddress::new(*hash);
-        let private_key_bytes = self
-            .find_private_key_for_platform_address(&p2pkh)
-            .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+        let handle = tokio::runtime::Handle::current();
+        let private_key_bytes = tokio::task::block_in_place(|| {
+            handle.block_on(self.find_private_key_for_platform_address(&p2pkh))
+        })
+        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
 
         let signature = dashcore::signer::sign(data, private_key_bytes.as_ref())
             .map_err(|e| ProtocolError::Generic(format!("Failed to sign: {}", e)))?;
@@ -84,9 +86,11 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
             ));
         };
         let p2pkh = PlatformP2PKHAddress::new(*hash);
-        let private_key_bytes = self
-            .find_private_key_for_platform_address(&p2pkh)
-            .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+        let handle = tokio::runtime::Handle::current();
+        let private_key_bytes = tokio::task::block_in_place(|| {
+            handle.block_on(self.find_private_key_for_platform_address(&p2pkh))
+        })
+        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
 
         let signature = dashcore::signer::sign(data, private_key_bytes.as_ref())
             .map_err(|e| ProtocolError::Generic(format!("Failed to sign: {}", e)))?;
@@ -101,6 +105,13 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
             return false;
         };
         let p2pkh = PlatformP2PKHAddress::new(*hash);
-        self.find_private_key_for_platform_address(&p2pkh).is_ok()
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return false;
+        };
+        tokio::task::block_in_place(|| {
+            handle
+                .block_on(self.find_private_key_for_platform_address(&p2pkh))
+                .is_ok()
+        })
     }
 }

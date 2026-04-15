@@ -28,16 +28,18 @@ pub unsafe extern "C" fn platform_address_wallet_add_provider(
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| match wallet.add_provider(account_index) {
-            Ok(()) => PlatformWalletFFIResult::Success,
-            Err(e) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorWalletOperation,
-                        e.to_string(),
-                    );
+        .with_item(handle, |wallet| {
+            match runtime().block_on(wallet.add_provider(account_index)) {
+                Ok(()) => PlatformWalletFFIResult::Success,
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            e.to_string(),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
                 }
-                PlatformWalletFFIResult::ErrorWalletOperation
             }
         })
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
@@ -115,42 +117,52 @@ pub unsafe extern "C" fn platform_address_wallet_free_address_balances(
     count: usize,
 ) {
     if !entries.is_null() && count > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
+        drop(Vec::from_raw_parts(entries, count, count));
     }
 }
 
 /// Free a changeset returned by transfer/withdraw/fund/sync operations.
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_free_changeset(
-    changeset: PlatformAddressChangeSetFFI,
+    changeset: *const PlatformAddressChangeSetFFI,
 ) {
-    if !changeset.updated.is_null() && changeset.updated_count > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            changeset.updated,
-            changeset.updated_count,
+    if changeset.is_null() {
+        return;
+    }
+    let cs = &*changeset;
+    if !cs.updated.is_null() && cs.updated_count > 0 {
+        drop(Vec::from_raw_parts(
+            cs.updated,
+            cs.updated_count,
+            cs.updated_count,
         ));
     }
-    if !changeset.removed.is_null() && changeset.removed_count > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            changeset.removed,
-            changeset.removed_count,
+    if !cs.removed.is_null() && cs.removed_count > 0 {
+        drop(Vec::from_raw_parts(
+            cs.removed,
+            cs.removed_count,
+            cs.removed_count,
         ));
     }
 }
 
 /// Free a single sync result.
 #[no_mangle]
-pub unsafe extern "C" fn platform_address_wallet_free_sync_result(result: AddressSyncResultFFI) {
-    if !result.found.is_null() && result.found_count > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            result.found,
-            result.found_count,
-        ));
+pub unsafe extern "C" fn platform_address_wallet_free_sync_result(
+    result: *const AddressSyncResultFFI,
+) {
+    if result.is_null() {
+        return;
     }
-    if !result.absent.is_null() && result.absent_count > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            result.absent,
-            result.absent_count,
+    let r = &*result;
+    if !r.found.is_null() && r.found_count > 0 {
+        drop(Vec::from_raw_parts(r.found, r.found_count, r.found_count));
+    }
+    if !r.absent.is_null() && r.absent_count > 0 {
+        drop(Vec::from_raw_parts(
+            r.absent,
+            r.absent_count,
+            r.absent_count,
         ));
     }
 }
@@ -158,27 +170,32 @@ pub unsafe extern "C" fn platform_address_wallet_free_sync_result(result: Addres
 /// Free a sync result array returned by `platform_address_wallet_sync_balances`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_free_sync_result_array(
-    array: AddressSyncResultArrayFFI,
+    array: *const AddressSyncResultArrayFFI,
 ) {
-    if !array.results.is_null() && array.count > 0 {
-        let results = std::slice::from_raw_parts(array.results, array.count);
+    if array.is_null() {
+        return;
+    }
+    let a = &*array;
+    if !a.results.is_null() && a.count > 0 {
+        // Free inner allocations first.
+        let results = std::slice::from_raw_parts(a.results, a.count);
         for result in results {
             if !result.found.is_null() && result.found_count > 0 {
-                let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                    result.found as *mut FoundAddressEntryFFI,
+                drop(Vec::from_raw_parts(
+                    result.found,
+                    result.found_count,
                     result.found_count,
                 ));
             }
             if !result.absent.is_null() && result.absent_count > 0 {
-                let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                    result.absent as *mut AbsentAddressEntryFFI,
+                drop(Vec::from_raw_parts(
+                    result.absent,
+                    result.absent_count,
                     result.absent_count,
                 ));
             }
         }
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            array.results,
-            array.count,
-        ));
+        // Free the outer results array.
+        drop(Vec::from_raw_parts(a.results, a.count, a.count));
     }
 }

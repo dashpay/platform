@@ -218,7 +218,7 @@ func platform_address_wallet_addresses_with_balances(
 func platform_address_wallet_sync_balances(
     _ handle: Handle,
     _ has_config: Bool,
-    _ config: AddressSyncConfigFFI,
+    _ config: UnsafePointer<AddressSyncConfigFFI>?,
     _ out_results: UnsafeMutablePointer<AddressSyncResultArrayFFI>,
     _ out_changeset: UnsafeMutablePointer<PlatformAddressChangeSetFFI>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
@@ -229,7 +229,7 @@ func platform_address_wallet_sync_balances_on_account(
     _ handle: Handle,
     _ account_index: UInt32,
     _ has_config: Bool,
-    _ config: AddressSyncConfigFFI,
+    _ config: UnsafePointer<AddressSyncConfigFFI>?,
     _ out_result: UnsafeMutablePointer<AddressSyncResultFFI>,
     _ out_changeset: UnsafeMutablePointer<PlatformAddressChangeSetFFI>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
@@ -250,10 +250,10 @@ func platform_address_wallet_free_address_balances(
 )
 
 @_silgen_name("platform_address_wallet_free_changeset")
-func platform_address_wallet_free_changeset(_ changeset: PlatformAddressChangeSetFFI)
+func platform_address_wallet_free_changeset(_ changeset: UnsafePointer<PlatformAddressChangeSetFFI>?)
 
 @_silgen_name("platform_address_wallet_free_sync_result")
-func platform_address_wallet_free_sync_result(_ result: AddressSyncResultFFI)
+func platform_address_wallet_free_sync_result(_ result: UnsafePointer<AddressSyncResultFFI>?)
 
 @_silgen_name("platform_address_wallet_free_sync_result_array")
-func platform_address_wallet_free_sync_result_array(_ array: AddressSyncResultArrayFFI)
+func platform_address_wallet_free_sync_result_array(_ array: UnsafePointer<AddressSyncResultArrayFFI>?)

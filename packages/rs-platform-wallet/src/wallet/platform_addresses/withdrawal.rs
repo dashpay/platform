@@ -81,8 +81,9 @@ impl PlatformAddressWallet {
                     .await?
             }
             InputSelection::Auto => {
-                let inputs =
-                    self.auto_select_inputs_for_withdrawal(account_index, &fee_strategy, version)?;
+                let inputs = self
+                    .auto_select_inputs_for_withdrawal(account_index, &fee_strategy, version)
+                    .await?;
                 self.sdk
                     .withdraw_address_funds(
                         inputs,
@@ -146,13 +147,13 @@ impl PlatformAddressWallet {
     /// Auto-select all funded addresses for withdrawal. Withdrawals consume
     /// all input balances (minus the fee), so we select every funded address
     /// and verify there's enough to cover the fee.
-    fn auto_select_inputs_for_withdrawal(
+    async fn auto_select_inputs_for_withdrawal(
         &self,
         account_index: u32,
         fee_strategy: &[AddressFundsFeeStrategyStep],
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-        let wm = self.wallet_manager.blocking_read();
+        let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
                 "Wallet {:?} not found in wallet manager",

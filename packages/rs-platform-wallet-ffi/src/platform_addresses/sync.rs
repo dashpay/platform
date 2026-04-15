@@ -14,7 +14,7 @@ use super::runtime;
 pub unsafe extern "C" fn platform_address_wallet_sync_balances(
     handle: Handle,
     has_config: bool,
-    config: AddressSyncConfigFFI,
+    config: *const AddressSyncConfigFFI,
     out_results: *mut AddressSyncResultArrayFFI,
     out_changeset: *mut PlatformAddressChangeSetFFI,
     out_error: *mut PlatformWalletFFIError,
@@ -23,9 +23,9 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let config_opt = if has_config {
+    let config_opt = if has_config && !config.is_null() {
         Some(dash_sdk::platform::address_sync::AddressSyncConfig::from(
-            config,
+            *config,
         ))
     } else {
         None
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances_on_account(
     handle: Handle,
     account_index: u32,
     has_config: bool,
-    config: AddressSyncConfigFFI,
+    config: *const AddressSyncConfigFFI,
     out_result: *mut AddressSyncResultFFI,
     out_changeset: *mut PlatformAddressChangeSetFFI,
     out_error: *mut PlatformWalletFFIError,
@@ -82,9 +82,9 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances_on_account(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let config_opt = if has_config {
+    let config_opt = if has_config && !config.is_null() {
         Some(dash_sdk::platform::address_sync::AddressSyncConfig::from(
-            config,
+            *config,
         ))
     } else {
         None
