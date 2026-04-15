@@ -14,6 +14,7 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::address_funds::PlatformAddress;
+use async_trait::async_trait;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressProvider, AddressSyncConfig, AddressSyncResult,
 };
@@ -212,6 +213,7 @@ struct BatchAddressProvider {
     last_known_recent_block: u64,
 }
 
+#[async_trait]
 impl AddressProvider for BatchAddressProvider {
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
@@ -221,7 +223,7 @@ impl AddressProvider for BatchAddressProvider {
         self.pending.iter().map(|(i, a)| (*i, *a)).collect()
     }
 
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
@@ -232,7 +234,7 @@ impl AddressProvider for BatchAddressProvider {
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         self.pending.remove(&index);
         self.absent.insert((index, *address));
     }

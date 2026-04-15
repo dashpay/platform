@@ -142,7 +142,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         })
     }
 
-    fn process_trunk_result(
+    async fn process_trunk_result(
         trunk_result: &GroveTrunkQueryResult,
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
@@ -154,13 +154,13 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             if let Some(element) = trunk_result.elements.get(&key_bytes) {
                 let funds = AddressFunds::try_from(element)?;
                 context.result.found.insert((index, address), funds);
-                context.provider.on_address_found(index, &address, funds);
+                context.provider.on_address_found(index, &address, funds).await;
             } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
                 tracker.add_key(key_bytes, leaf_key, info);
             } else {
                 // Key is proven absent
                 context.result.absent.insert((index, address));
-                context.provider.on_address_absent(index, &address);
+                context.provider.on_address_absent(index, &address).await;
             }
         }
 
@@ -179,7 +179,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         execute_address_branch_query(sdk, params, settings, platform_version).await
     }
 
-    fn process_branch_result(
+    async fn process_branch_result(
         branch_result: &GroveBranchQueryResult,
         queried_leaf_key: &[u8],
         context: &mut Self::Context<'_>,
@@ -197,7 +197,8 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             if let Some(element) = branch_result.elements.get(&target_key) {
                 let funds = AddressFunds::try_from(element)?;
                 context.result.found.insert((index, address), funds);
-                context.provider.on_address_found(index, &address, funds);
+                context.provider.on_address_found(index, &address, funds)
+                    .await;
                 tracker.key_found(&target_key);
             } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key)
             {
@@ -205,7 +206,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             } else {
                 // Key is proven absent
                 context.result.absent.insert((index, address));
-                context.provider.on_address_absent(index, &address);
+                context.provider.on_address_absent(index, &address).await;
                 tracker.key_found(&target_key); // Remove from tracking
             }
         }
@@ -227,7 +228,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         )
     }
 
-    fn after_branch_iteration(
+    async fn after_branch_iteration(
         trunk_result: &GroveTrunkQueryResult,
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
@@ -620,7 +621,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                                 balance: new_balance,
                             };
                             result.found.insert(result_key, funds);
-                            provider.on_address_found(index, &address, funds);
+                            provider.on_address_found(index, &address, funds).await;
                         }
                     }
                 }
@@ -678,7 +679,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                             balance: new_balance,
                         };
                         result.found.insert(result_key, funds);
-                        provider.on_address_found(index, &address, funds);
+                        provider.on_address_found(index, &address, funds).await;
                     }
                 }
             }

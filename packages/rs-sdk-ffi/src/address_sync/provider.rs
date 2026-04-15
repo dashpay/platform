@@ -2,6 +2,7 @@
 
 use super::types::DashSDKPendingAddressList;
 use dash_sdk::dpp::address_funds::PlatformAddress;
+use async_trait::async_trait;
 use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressProvider};
 use std::os::raw::c_void;
 
@@ -103,6 +104,7 @@ impl<'a> CallbackAddressProvider<'a> {
     }
 }
 
+#[async_trait]
 impl<'a> AddressProvider for CallbackAddressProvider<'a> {
     fn gap_limit(&self) -> AddressIndex {
         unsafe {
@@ -136,7 +138,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
@@ -156,7 +158,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         unsafe {
             let vtable = &*self.ffi.vtable;
             let key_bytes = address.to_bytes();

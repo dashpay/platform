@@ -21,6 +21,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
     "dpns-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
+async-trait = { version = "0.1.83" }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }

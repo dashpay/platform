@@ -5824,6 +5824,7 @@ dependencies = [
 name = "rs-sdk-ffi"
 version = "3.1.0-dev.1"
 dependencies = [
+ "async-trait",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
