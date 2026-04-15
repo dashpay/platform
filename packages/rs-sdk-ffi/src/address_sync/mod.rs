@@ -13,6 +13,7 @@ pub use types::*;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use async_trait::async_trait;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressKey, AddressProvider, AddressSyncConfig, AddressSyncResult,
 };
@@ -211,6 +212,7 @@ struct BatchAddressProvider {
     last_known_recent_block: u64,
 }
 
+#[async_trait]
 impl AddressProvider for BatchAddressProvider {
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit

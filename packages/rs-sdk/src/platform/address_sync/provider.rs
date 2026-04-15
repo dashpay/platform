@@ -1,6 +1,7 @@
 //! Address provider trait for address synchronization.
 
 use super::types::{AddressFunds, AddressIndex, AddressKey};
+use async_trait::async_trait;
 
 /// Trait for providing addresses to be synchronized.
 ///
@@ -58,7 +59,7 @@ use super::types::{AddressFunds, AddressIndex, AddressKey};
 /// the caller's task; do not spawn detached tasks that outlive the returned
 /// future, as the engine relies on the mutation having been applied before
 /// the next iteration observes the updated pending set.
-#[allow(async_fn_in_trait)]
+#[async_trait]
 pub trait AddressProvider: Send {
     /// Get the gap limit for this provider.
     ///
