@@ -30,31 +30,72 @@ impl<T> From<SendError<T>> for AsyncError {
 /// Blocks on the provided future and returns the result.
 ///
 /// This function is used to call async functions from sync code.
-/// Requires the current thread to be running in a tokio runtime.
 ///
-/// Due to limitations of tokio runtime, we cannot use `tokio::runtime::Runtime::block_on` if we are already inside a tokio runtime.
-/// This function is a workaround for that limitation.
+/// Due to limitations of tokio runtime, we cannot use `tokio::runtime::Runtime::block_on`
+/// if we are already inside a tokio runtime. This function is a workaround for that limitation.
+///
+/// Handles three scenarios:
+/// - No active runtime: creates a temporary current-thread runtime and drives the future directly.
+/// - Current-thread runtime: spawns a dedicated OS thread with its own independent runtime,
+///   since `block_in_place` panics when there are no other worker threads.
+/// - Any other runtime flavor (multi-thread, etc.): uses `block_in_place` + spawn for efficient bridging.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_on<F>(fut: F) -> Result<F::Output, AsyncError>
 where
     F: Future + Send + 'static,
     F::Output: Send,
 {
+    use tokio::runtime::RuntimeFlavor;
+
     tracing::trace!("block_on: running async function from sync code");
-    let rt = tokio::runtime::Handle::try_current()?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    tracing::trace!("block_on: Spawning worker");
-    let hdl = rt.spawn(worker(fut, tx));
-    tracing::trace!("block_on: Worker spawned");
-    let resp = tokio::task::block_in_place(|| rx.recv())?;
 
-    tracing::trace!("Response received");
-    if !hdl.is_finished() {
-        tracing::debug!("async-sync worker future is not finished, aborting; this should not happen, but it's fine");
-        hdl.abort();
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::trace!("block_on: no active runtime ({e}), creating temporary runtime");
+            return Ok(tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| AsyncError::Generic(e.to_string()))?
+                .block_on(fut));
+        }
+    };
+
+    match handle.runtime_flavor() {
+        RuntimeFlavor::CurrentThread => {
+            tracing::trace!("block_on: current-thread runtime, spawning dedicated OS thread");
+            let (tx, rx) = std::sync::mpsc::sync_channel::<Result<F::Output, AsyncError>>(1);
+            let join_handle = std::thread::spawn(move || {
+                let result = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| {
+                        tracing::error!("block_on: failed to create worker runtime: {}", e);
+                        AsyncError::Generic(format!("failed to create worker runtime: {e}"))
+                    })
+                    .map(|rt| rt.block_on(fut));
+                let _ = tx.send(result);
+            });
+            let recv_result = rx.recv()?;
+            join_handle
+                .join()
+                .map_err(|_| AsyncError::Generic("block_on worker thread panicked".to_string()))?;
+            recv_result
+        }
+        // RuntimeFlavor is #[non_exhaustive]; all multi-threaded flavors (MultiThread,
+        // MultiThreadAlt, and any future variants) support block_in_place.
+        _ => {
+            tracing::trace!("block_on: multi-thread runtime, using block_in_place");
+            let (tx, rx) = std::sync::mpsc::channel();
+            let hdl = handle.spawn(worker(fut, tx));
+            let resp = tokio::task::block_in_place(|| rx.recv())?;
+            if !hdl.is_finished() {
+                tracing::debug!("async-sync worker future is not finished, aborting");
+                hdl.abort();
+            }
+            Ok(resp)
+        }
     }
-
-    Ok(resp)
 }
 
 /// WASM stub for `block_on`.
@@ -163,5 +204,62 @@ mod test {
             rt.block_on(worker_join).unwrap();
             assert_eq!(result.unwrap(), "Success");
         }
+    }
+
+    /// Regression test for https://github.com/dashpay/platform/issues/3432.
+    ///
+    /// `block_on` previously called `tokio::task::block_in_place` unconditionally, which
+    /// panics on a current-thread (single-threaded) tokio runtime.  The fix detects the
+    /// runtime flavor and spawns a dedicated OS thread with its own runtime when running
+    /// on a current-thread scheduler.
+    #[test]
+    fn test_block_on_fails_on_current_thread_runtime() {
+        let rt = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create current-thread Tokio runtime");
+
+        const MSGS: usize = 3;
+        let (tx, rx) = mpsc::channel::<usize>(1);
+
+        let worker_task = async move {
+            for count in 0..MSGS {
+                tx.send(count).await.unwrap();
+            }
+        };
+        let worker_join = rt.spawn(worker_task);
+
+        async fn innermost(mut rx: Receiver<usize>) -> Result<String, String> {
+            for i in 0..MSGS {
+                let count = rx.recv().await.unwrap();
+                assert_eq!(count, i);
+            }
+            Ok("Success".to_string())
+        }
+
+        fn sync_bridge<F>(fut: F) -> Result<String, String>
+        where
+            F: Future<Output = Result<String, String>> + Send + 'static,
+            F::Output: Send,
+        {
+            block_on(fut)
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())
+        }
+
+        async fn outer(rx: Receiver<usize>) -> Result<String, String> {
+            let result = innermost(rx).await;
+            sync_bridge(async { result })
+        }
+
+        let result = rt.block_on(outer(rx));
+
+        rt.block_on(worker_join).ok();
+
+        assert_eq!(
+            result.unwrap(),
+            "Success",
+            "block_on should succeed on a current-thread runtime"
+        );
     }
 }

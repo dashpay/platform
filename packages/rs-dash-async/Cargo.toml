@@ -15,4 +15,4 @@ tracing = "0.1.41"
 tokio = { version = "1.40", features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync"] }
