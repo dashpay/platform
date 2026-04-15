@@ -114,6 +114,12 @@ pub struct Sdk {
     /// Set to `false` when the user explicitly calls [`SdkBuilder::with_version()`].
     auto_detect_protocol_version: bool,
 
+    /// One-shot latch used by [`Self::ensure_protocol_version_bootstrapped`]
+    /// to make sure the auto-detect bootstrap RPC runs at most once even
+    /// under concurrent first calls. Shared between clones so siblings all
+    /// observe the same bootstrap state.
+    protocol_version_bootstrapped: Arc<tokio::sync::OnceCell<()>>,
+
     /// Last seen height; used to determine if the remote node is stale.
     ///
     /// This is clone-able and can be shared between threads.
@@ -149,6 +155,7 @@ impl Clone for Sdk {
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
             auto_detect_protocol_version: self.auto_detect_protocol_version,
+            protocol_version_bootstrapped: Arc::clone(&self.protocol_version_bootstrapped),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -301,6 +308,77 @@ impl Sdk {
         }
     }
 
+    /// Make sure the SDK has learned the network's protocol version before
+    /// doing any proof-backed work.
+    ///
+    /// On a fresh auto-detect SDK the protocol version starts at 0 and
+    /// [`Self::version`] falls back to [`PlatformVersion::latest()`]. That
+    /// used to mean the very first proof parse happened at `latest()`, and
+    /// on an older network whose proof interpretation differs from
+    /// `latest()` the first request would fail before the SDK could learn
+    /// the correct version from response metadata.
+    ///
+    /// This helper closes that hole by eagerly running a single unproved
+    /// request (the cheap [`CurrentQuorumsInfo`] endpoint) on first use,
+    /// reading `metadata.protocol_version` off the response, and updating
+    /// the SDK's cached version *before* the first proof parse runs.
+    ///
+    /// A [`tokio::sync::OnceCell`] guarantees the bootstrap RPC runs at
+    /// most once per SDK (and its clones) even under concurrent first
+    /// calls — subsequent callers simply wait for the in-flight bootstrap
+    /// to finish. If the bootstrap RPC itself fails we log a warning and
+    /// fall back to the old `latest()` behaviour; this preserves
+    /// best-effort semantics for partially-reachable networks.
+    ///
+    /// Skipped entirely for SDKs built with an explicit version
+    /// ([`SdkBuilder::with_version()`]), for mock SDKs, and any time this
+    /// helper is entered from within the unproved request path itself
+    /// (to avoid re-entry).
+    async fn ensure_protocol_version_bootstrapped(&self) {
+        if !self.auto_detect_protocol_version {
+            return;
+        }
+        // If we've already seen a response (protocol_version != 0), the
+        // version is already cached — skip the bootstrap entirely.
+        if self.protocol_version.load(Ordering::Relaxed) != 0 {
+            return;
+        }
+        // Mock SDKs have no real network to bootstrap against.
+        if !matches!(self.inner, SdkInstance::Dapi { .. }) {
+            return;
+        }
+
+        let bootstrapped = Arc::clone(&self.protocol_version_bootstrapped);
+        bootstrapped
+            .get_or_init(|| async {
+                use crate::platform::FetchUnproved;
+                use drive_proof_verifier::types::{CurrentQuorumsInfo, NoParamQuery};
+
+                match CurrentQuorumsInfo::fetch_unproved_with_settings(
+                    self,
+                    NoParamQuery {},
+                    RequestSettings::default(),
+                )
+                .await
+                {
+                    Ok((_, metadata)) => {
+                        self.maybe_update_protocol_version(metadata.protocol_version);
+                        tracing::debug!(
+                            version = metadata.protocol_version,
+                            "SDK auto-detect bootstrap succeeded"
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            %err,
+                            "SDK auto-detect bootstrap RPC failed; falling back to PlatformVersion::latest() for the first request"
+                        );
+                    }
+                }
+            })
+            .await;
+    }
+
     // TODO: Changed to public for tests
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
@@ -313,19 +391,17 @@ impl Sdk {
     ///
     /// ## Protocol version bootstrapping
     ///
-    /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
-    /// first call to this method uses [`PlatformVersion::latest()`] as a fallback because no
-    /// network response has been received yet to teach the SDK the real network version.
+    /// On a fresh auto-detect SDK (i.e. one built without
+    /// [`SdkBuilder::with_version()`]), this method calls
+    /// [`Self::ensure_protocol_version_bootstrapped`] before parsing the
+    /// proof, which runs a one-shot unproved RPC to learn the network's
+    /// protocol version. That guarantees the first proof parse happens
+    /// at the correct version even on older networks.
     ///
-    /// The actual network version is learned only *after* proof parsing succeeds, when
-    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
-    /// connected network runs an older protocol version **and** proof interpretation differs
-    /// between that version and `latest()`, the very first request may fail before the SDK can
-    /// correct itself.  Subsequent requests will use the correct version.
-    ///
-    /// This is a known bootstrap limitation.  Callers that must guarantee correct version
-    /// behaviour on the first request should pin the version explicitly via
-    /// [`SdkBuilder::with_version()`].
+    /// If the bootstrap RPC itself fails (unreachable network, etc.) the
+    /// SDK falls back to [`PlatformVersion::latest()`]. Callers that must
+    /// absolutely guarantee a specific version without any network round
+    /// trip should still pin via [`SdkBuilder::with_version()`].
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -334,6 +410,10 @@ impl Sdk {
     where
         O::Request: Mockable + TransportRequest,
     {
+        // Learn the network protocol version before the first proof parse.
+        // No-op after the first successful call (and for pinned / mock SDKs).
+        self.ensure_protocol_version_bootstrapped().await;
+
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
@@ -971,6 +1051,7 @@ impl SdkBuilder {
                         if self.version_explicit { self.version.protocol_version } else { 0 },
                     )),
                     auto_detect_protocol_version: !self.version_explicit,
+                    protocol_version_bootstrapped: Arc::new(tokio::sync::OnceCell::new()),
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
@@ -1041,6 +1122,7 @@ impl SdkBuilder {
                         if self.version_explicit { self.version.protocol_version } else { 0 },
                     )),
                     auto_detect_protocol_version: !self.version_explicit,
+                    protocol_version_bootstrapped: Arc::new(tokio::sync::OnceCell::new()),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
