@@ -22,7 +22,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    fn try_from_inputs_with_signer<S: Into<SignerAdapter<PlatformAddress>>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
@@ -30,6 +30,7 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
+        let signer = signer.into();
         tracing::debug!("try_from_inputs_with_signer: Started");
         tracing::debug!(
             input_count = inputs.len(),
