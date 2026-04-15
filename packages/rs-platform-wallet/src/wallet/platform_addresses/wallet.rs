@@ -136,6 +136,29 @@ impl PlatformAddressWallet {
 
         Ok(())
     }
+
+    /// Restore the incremental-sync watermark on every active provider.
+    ///
+    /// Called during persisted-state replay so the next `sync_balances`
+    /// call resumes from where the previous session left off instead of
+    /// doing a full rescan. Zero-valued arguments are ignored (they mean
+    /// "no stored watermark" — the provider keeps its fresh-start state).
+    ///
+    /// All accounts are set to the same watermark — platform-wallet
+    /// persists a single per-wallet value (the max across accounts on
+    /// flush). A subsequent sync will rewind accounts that were ahead
+    /// to this floor, so no range can be silently skipped.
+    pub(crate) async fn apply_sync_state(&self, height: Option<u64>, timestamp: Option<u64>) {
+        if height.is_none() && timestamp.is_none() {
+            return;
+        }
+        let h = height.unwrap_or(0);
+        let t = timestamp.unwrap_or(0);
+        for provider_lock in self.providers.load().values() {
+            let mut provider = provider_lock.write().await;
+            provider.set_stored_sync_state(h, t);
+        }
+    }
 }
 
 impl PlatformAddressWallet {

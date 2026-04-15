@@ -98,6 +98,16 @@ impl PlatformAddressWallet {
         for ((_, address), funds) in &result.found {
             cs.addresses.insert(*address, *funds);
         }
+        // Carry the incremental-sync watermark alongside the balances
+        // so persisters can restore it on restart. Zero values mean
+        // "nothing was advanced" and are omitted (leaves prior
+        // watermark intact when merged).
+        if result.new_sync_height > 0 {
+            cs.sync_height = Some(result.new_sync_height);
+        }
+        if result.new_sync_timestamp > 0 {
+            cs.sync_timestamp = Some(result.new_sync_timestamp);
+        }
 
         // Update the provider's incremental state from the result.
         provider.update_sync_state(&result);

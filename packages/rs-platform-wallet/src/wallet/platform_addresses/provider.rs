@@ -200,6 +200,16 @@ impl PlatformPaymentAddressAccountProvider {
         self.last_known_recent_block = result.last_known_recent_block;
     }
 
+    /// Restore incremental sync watermark from persisted state. Called via
+    /// `apply_changeset` when the persister loads a `PlatformAddressChangeSet`
+    /// carrying `sync_height` / `sync_timestamp` from the previous session —
+    /// without this the provider would start fresh after every restart and
+    /// force a full rescan.
+    pub(crate) fn set_stored_sync_state(&mut self, height: u64, timestamp: u64) {
+        self.sync_height = height;
+        self.sync_timestamp = timestamp;
+    }
+
     /// Update the account for a found address: set its balance, mark it used
     /// in the pool, and generate new addresses to maintain the gap limit.
     async fn on_address_found_in_pool(

@@ -361,19 +361,41 @@ impl Merge for ContactChangeSet {
 /// Addresses are never removed — they are deterministically derived
 /// from the HD seed. A drained address simply has balance 0 (nonce
 /// preserved so subsequent top-ups don't replay).
+///
+/// Also carries the incremental-sync watermark (`sync_height` /
+/// `sync_timestamp`). Without it the provider would start fresh after
+/// every restart and force a full rescan instead of a delta catch-up.
+/// The watermark is tracked per wallet (not per account): it's the max
+/// across accounts — on the next sync every provider rewinds to this
+/// point, so no account can silently skip a range.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
     /// Updated platform addresses keyed by `PlatformAddress`.
     pub addresses: BTreeMap<PlatformAddress, AddressFunds>,
+    /// Highest block height covered by the last sync, across all
+    /// accounts. `None` means "no change".
+    pub sync_height: Option<u64>,
+    /// Latest timestamp covered by the last sync, across all accounts.
+    /// `None` means "no change".
+    pub sync_timestamp: Option<u64>,
 }
 
 impl Merge for PlatformAddressChangeSet {
     fn merge(&mut self, other: Self) {
         self.addresses.extend(other.addresses);
+        // Monotonic-max merge — a later sync can only advance the
+        // watermark, never roll it back. `None` means "no update in
+        // this changeset".
+        if let Some(h) = other.sync_height {
+            self.sync_height = Some(self.sync_height.map_or(h, |existing| existing.max(h)));
+        }
+        if let Some(t) = other.sync_timestamp {
+            self.sync_timestamp = Some(self.sync_timestamp.map_or(t, |existing| existing.max(t)));
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.addresses.is_empty()
+        self.addresses.is_empty() && self.sync_height.is_none() && self.sync_timestamp.is_none()
     }
 }
 

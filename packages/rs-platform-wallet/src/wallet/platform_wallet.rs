@@ -307,11 +307,27 @@ impl PlatformWallet {
         &self,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), crate::wallet::ApplyError> {
-        let mut wm = self.wallet_manager.write().await;
-        let (wallet, info) = wm
-            .get_wallet_mut_and_info_mut(&self.wallet_id)
-            .ok_or(crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
-        info.apply_changeset(wallet, changeset)
+        // The platform-address sync watermark lives on the provider,
+        // not on `PlatformWalletInfo`. Pull it out before handing the
+        // changeset to `apply_changeset` (which consumes by value), then
+        // feed it to the providers once apply completes.
+        let pa_sync_state = changeset
+            .platform_addresses
+            .as_ref()
+            .map(|pa| (pa.sync_height, pa.sync_timestamp));
+
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let (wallet, info) = wm
+                .get_wallet_mut_and_info_mut(&self.wallet_id)
+                .ok_or(crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
+            info.apply_changeset(wallet, changeset)?;
+        }
+
+        if let Some((height, timestamp)) = pa_sync_state {
+            self.platform.apply_sync_state(height, timestamp).await;
+        }
+        Ok(())
     }
 
     /// Load persisted state from the persister and apply it to the
