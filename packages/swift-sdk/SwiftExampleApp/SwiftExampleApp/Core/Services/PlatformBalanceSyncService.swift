@@ -70,17 +70,49 @@ class PlatformBalanceSyncService: ObservableObject {
     /// The platform address wallet handle (retained for incremental sync state).
     private var platformAddressWallet: ManagedPlatformAddressWallet?
 
+    /// Persistence handler for loading cached balances.
+    private var persistenceHandler: PlatformWalletPersistenceHandler?
+
+    /// Wallet ID for querying cached balances.
+    private var walletId: Data?
+
     // MARK: - Lifecycle
 
     /// Configure for a wallet. Call after wallet creation/switch.
-    func configure(platformAddressWallet: ManagedPlatformAddressWallet) {
+    func configure(
+        platformAddressWallet: ManagedPlatformAddressWallet,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil,
+        walletId: Data? = nil
+    ) {
         self.platformAddressWallet = platformAddressWallet
+        self.persistenceHandler = persistenceHandler
+        self.walletId = walletId
+
+        // Load cached balances from SwiftData for immediate display.
+        if let handler = persistenceHandler, let wid = walletId {
+            let cached = handler.loadCachedBalances(walletId: wid)
+            if !cached.isEmpty {
+                var newBalances: [String: UInt64] = [:]
+                var total: UInt64 = 0
+                var nonZero = 0
+
+                for (_, hash, balance) in cached {
+                    let key = hash.map { String(format: "%02x", $0) }.joined()
+                    newBalances[key] = balance
+                    total += balance
+                    if balance > 0 { nonZero += 1 }
+                }
+
+                addressBalances = newBalances
+                totalPlatformBalance = total
+                activeAddressCount = nonZero
+            }
+        }
     }
 
     /// Initialize periodic sync. The actual loop is managed by UnifiedAppState.
     func startPeriodicSync(network: AppNetwork) {
-        // No state to restore — the Rust-side provider retains incremental
-        // state between calls automatically.
+        // No state to restore — cached balances are loaded in configure().
     }
 
     /// Reset all state (e.g. on wallet deletion or network switch).

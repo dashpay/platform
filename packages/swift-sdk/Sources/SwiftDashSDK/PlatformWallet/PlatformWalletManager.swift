@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Manages the wallet lifecycle: creation, persistence, and sub-wallet access.
 ///
@@ -16,10 +17,17 @@ import Foundation
 public class PlatformWalletManager {
     let handle: Handle
 
+    /// Persistence handler — retained for the lifetime of the manager
+    /// so the callback context pointer remains valid.
+    private var persistenceHandler: PlatformWalletPersistenceHandler?
+
     /// Create a new PlatformWalletManager from an existing SDK instance.
     ///
-    /// Extracts the inner Sdk pointer from the SDK handle automatically.
-    public convenience init(sdk: SDK) throws {
+    /// - Parameters:
+    ///   - sdk: The SDK instance.
+    ///   - modelContainer: SwiftData container for incremental persistence.
+    ///     Pass `nil` for in-memory-only operation.
+    public convenience init(sdk: SDK, modelContainer: ModelContainer? = nil) throws {
         guard let sdkHandle = sdk.handle else {
             throw PlatformWalletError.invalidParameter
         }
@@ -27,21 +35,34 @@ public class PlatformWalletManager {
         guard innerSdkPtr != nil else {
             throw PlatformWalletError.invalidParameter
         }
-        try self.init(sdkPointer: UnsafeRawPointer(innerSdkPtr!))
+        try self.init(sdkPointer: UnsafeRawPointer(innerSdkPtr!), modelContainer: modelContainer)
     }
 
     /// Create a new PlatformWalletManager from a raw Sdk pointer.
-    public init(sdkPointer: UnsafeRawPointer) throws {
+    ///
+    /// - Parameters:
+    ///   - sdkPointer: Raw pointer to the inner `Sdk`.
+    ///   - modelContainer: SwiftData container for incremental persistence.
+    ///     Pass `nil` for in-memory-only operation.
+    public init(sdkPointer: UnsafeRawPointer, modelContainer: ModelContainer? = nil) throws {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
 
-        // No-op persistence and event callbacks for Phase 1.
-        // The Rust side accumulates changesets in-memory.
-        var persistence = PersistenceCallbacks(
-            context: nil,
-            on_store_fn: nil,
-            on_flush_fn: nil
-        )
+        // Set up persistence: if a SwiftData container is provided, create
+        // a handler that receives incremental updates from Rust and upserts
+        // into SwiftData. Otherwise, use no-op callbacks.
+        let handler: PlatformWalletPersistenceHandler?
+        var persistence: PersistenceCallbacks
+
+        if let container = modelContainer {
+            let h = PlatformWalletPersistenceHandler(modelContainer: container)
+            persistence = h.makeCallbacks()
+            handler = h
+        } else {
+            persistence = PersistenceCallbacks()
+            handler = nil
+        }
+
         var eventHandler = EventHandlerCallbacks(
             context: nil,
             on_wallet_event_fn: nil,
@@ -61,6 +82,12 @@ public class PlatformWalletManager {
         }
 
         self.handle = handle
+        self.persistenceHandler = handler
+    }
+
+    /// Access the persistence handler for loading cached data.
+    public var persistence: PlatformWalletPersistenceHandler? {
+        persistenceHandler
     }
 
     deinit {

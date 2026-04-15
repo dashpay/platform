@@ -13,8 +13,8 @@ pub use types::*;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
-use dash_sdk::dpp::address_funds::PlatformAddress;
 use async_trait::async_trait;
+use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressProvider, AddressSyncConfig, AddressSyncResult,
 };

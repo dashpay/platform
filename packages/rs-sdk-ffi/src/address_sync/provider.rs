@@ -1,8 +1,8 @@
 //! FFI-compatible address provider implementation using callbacks
 
 use super::types::DashSDKPendingAddressList;
-use dash_sdk::dpp::address_funds::PlatformAddress;
 use async_trait::async_trait;
+use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressProvider};
 use std::os::raw::c_void;
 

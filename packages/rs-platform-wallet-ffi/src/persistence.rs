@@ -1,10 +1,9 @@
 //! FFI callback-based implementation of PlatformWalletPersistence.
 //!
-//! Since `PlatformWalletChangeSet` does not implement `Serialize`/`Deserialize`,
-//! changesets are kept in-memory as Rust objects. The FFI callbacks notify the
-//! caller that a store/flush/load occurred, and the caller can use the
-//! notification to trigger their own persistence logic (e.g., writing a marker
-//! file). The actual changeset data stays on the Rust side.
+//! Changesets are kept in-memory as Rust objects. When specific sub-changeset
+//! data is available (e.g., address balances), it is sent across FFI in
+//! C-compatible structs so the caller can persist it incrementally (e.g., via
+//! SwiftData on iOS).
 
 use parking_lot::RwLock;
 use platform_wallet::changeset::{Merge, PlatformWalletChangeSet, PlatformWalletPersistence};
@@ -12,22 +11,34 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use std::collections::BTreeMap;
 use std::os::raw::c_void;
 
-/// C callback vtable for wallet persistence notifications.
+use crate::platform_address_types::AddressBalanceEntryFFI;
+
+/// C callback vtable for wallet persistence.
 ///
-/// These callbacks notify the FFI caller when persistence events occur.
-/// The actual changeset data is managed internally by the Rust side.
+/// General-purpose notifications (`on_store_fn`, `on_flush_fn`) plus
+/// typed callbacks that send incremental data across FFI for the caller
+/// to persist in their preferred storage backend.
 #[repr(C)]
 pub struct PersistenceCallbacks {
     /// Opaque context pointer passed to all callbacks.
     pub context: *mut c_void,
-    /// Called when a changeset is stored. The caller can use this as a
-    /// signal that data has changed and needs to be written to disk.
-    /// Returns 0 on success, non-zero on error.
+    /// Called when a changeset is stored. Returns 0 on success.
     pub on_store_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Called when flush is requested. Returns 0 on success.
     pub on_flush_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
+    /// Called with incremental address balance updates. The entries array
+    /// contains only addresses whose balance changed. The pointer is valid
+    /// only for the duration of the callback.
+    pub on_persist_address_balances_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const AddressBalanceEntryFFI,
+            count: usize,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -56,6 +67,36 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Send incremental address balance updates before merging.
+        if let Some(ref addr_cs) = changeset.platform_addresses {
+            if let Some(cb) = self.callbacks.on_persist_address_balances_fn {
+                let entries: Vec<AddressBalanceEntryFFI> = addr_cs
+                    .addresses
+                    .iter()
+                    .map(|(&address, &balance)| AddressBalanceEntryFFI {
+                        address: address.into(),
+                        balance,
+                    })
+                    .collect();
+                if !entries.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Address balance persistence callback returned error code {}",
+                            result
+                        );
+                    }
+                }
+            }
+        }
+
         // Merge into pending changesets.
         let mut pending = self.pending.write();
         pending

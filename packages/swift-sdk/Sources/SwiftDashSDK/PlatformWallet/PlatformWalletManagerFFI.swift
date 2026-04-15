@@ -6,9 +6,15 @@ import Foundation
 // MARK: - Persistence Callbacks
 
 struct PersistenceCallbacks {
-    var context: UnsafeMutableRawPointer?
-    var on_store_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?) -> Int32)?
-    var on_flush_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?) -> Int32)?
+    var context: UnsafeMutableRawPointer? = nil
+    var on_store_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?) -> Int32)? = nil
+    var on_flush_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?) -> Int32)? = nil
+    var on_persist_address_balances_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UnsafeRawPointer?,
+        Int
+    ) -> Int32)? = nil
 }
 
 // MARK: - Event Handler Callbacks

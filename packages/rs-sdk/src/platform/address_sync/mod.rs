@@ -154,7 +154,10 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             if let Some(element) = trunk_result.elements.get(&key_bytes) {
                 let funds = AddressFunds::try_from(element)?;
                 context.result.found.insert((index, address), funds);
-                context.provider.on_address_found(index, &address, funds).await;
+                context
+                    .provider
+                    .on_address_found(index, &address, funds)
+                    .await;
             } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
                 tracker.add_key(key_bytes, leaf_key, info);
             } else {
@@ -197,7 +200,9 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             if let Some(element) = branch_result.elements.get(&target_key) {
                 let funds = AddressFunds::try_from(element)?;
                 context.result.found.insert((index, address), funds);
-                context.provider.on_address_found(index, &address, funds)
+                context
+                    .provider
+                    .on_address_found(index, &address, funds)
                     .await;
                 tracker.key_found(&target_key);
             } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key)

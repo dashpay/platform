@@ -1,8 +1,8 @@
 //! Address provider trait for address synchronization.
 
 use super::types::{AddressFunds, AddressIndex};
-use dpp::address_funds::PlatformAddress;
 use async_trait::async_trait;
+use dpp::address_funds::PlatformAddress;
 
 /// Trait for providing addresses to be synchronized.
 ///
