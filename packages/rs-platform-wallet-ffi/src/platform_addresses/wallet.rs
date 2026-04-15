@@ -121,7 +121,7 @@ pub unsafe extern "C" fn platform_address_wallet_free_address_balances(
     }
 }
 
-/// Free a changeset returned by transfer/withdraw/fund/sync operations.
+/// Free a changeset returned by transfer/withdraw/fund operations.
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_free_changeset(
     changeset: *const PlatformAddressChangeSetFFI,
@@ -135,13 +135,6 @@ pub unsafe extern "C" fn platform_address_wallet_free_changeset(
             cs.updated,
             cs.updated_count,
             cs.updated_count,
-        ));
-    }
-    if !cs.removed.is_null() && cs.removed_count > 0 {
-        drop(Vec::from_raw_parts(
-            cs.removed,
-            cs.removed_count,
-            cs.removed_count,
         ));
     }
 }

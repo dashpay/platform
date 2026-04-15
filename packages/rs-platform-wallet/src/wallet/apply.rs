@@ -240,12 +240,6 @@ impl PlatformWalletInfo {
                         account.set_address_credit_balance(p2pkh, credits, None);
                     }
                 }
-                for addr in addr_cs.removed {
-                    if let PlatformAddress::P2pkh(hash) = addr {
-                        let p2pkh = PlatformP2PKHAddress::new(hash);
-                        account.set_address_credit_balance(p2pkh, 0, None);
-                    }
-                }
             }
         }
 

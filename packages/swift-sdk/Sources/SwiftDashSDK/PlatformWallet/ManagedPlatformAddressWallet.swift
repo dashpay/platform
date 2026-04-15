@@ -78,6 +78,19 @@ public class ManagedPlatformAddressWallet {
 
     // MARK: - Sync
 
+    /// Metrics from a single sync round.
+    public struct SyncMetrics {
+        public let trunkQueries: UInt32
+        public let branchQueries: UInt32
+        public let totalElementsSeen: UInt32
+        public let totalProofBytes: UInt32
+        public let iterations: UInt32
+        public let compactedQueries: UInt32
+        public let recentQueries: UInt32
+        public let recentEntriesReturned: UInt32
+        public let compactedEntriesReturned: UInt32
+    }
+
     /// Sync result for a single account.
     public struct SyncResult {
         /// Number of addresses found with balances.
@@ -92,6 +105,8 @@ public class ManagedPlatformAddressWallet {
         public let newSyncHeight: UInt64
         /// New sync timestamp for next call.
         public let newSyncTimestamp: UInt64
+        /// What the sync engine did internally.
+        public let metrics: SyncMetrics
     }
 
     /// Sync platform address balances across all accounts.
@@ -102,25 +117,14 @@ public class ManagedPlatformAddressWallet {
     /// - Returns: Array of per-account sync results.
     public func syncBalances() throws -> [SyncResult] {
         var resultsArray = AddressSyncResultArrayFFI(results: nil, count: 0)
-        var changeset = PlatformAddressChangeSetFFI(
-            updated: nil, updated_count: 0, removed: nil, removed_count: 0
-        )
         var error = PlatformWalletFFIError()
 
-        let config = AddressSyncConfigFFI(
-            min_privacy_count: 0,
-            max_concurrent_requests: 0,
-            max_iterations: 0,
-            full_rescan_after_time_s: 0
-        )
-
         let result = platform_address_wallet_sync_balances(
-            handle, false, nil, &resultsArray, &changeset, &error
+            handle, false, nil, &resultsArray, &error
         )
 
         defer {
             platform_address_wallet_free_sync_result_array(&resultsArray)
-            platform_address_wallet_free_changeset(&changeset)
         }
 
         guard result == Success else {
@@ -133,13 +137,25 @@ public class ManagedPlatformAddressWallet {
 
         return (0..<resultsArray.count).map { i in
             let r = results[i]
+            let m = r.metrics
             return SyncResult(
                 foundCount: r.found_count,
                 absentCount: r.absent_count,
                 highestFoundIndex: r.has_highest_found_index ? r.highest_found_index : nil,
                 checkpointHeight: r.checkpoint_height,
                 newSyncHeight: r.new_sync_height,
-                newSyncTimestamp: r.new_sync_timestamp
+                newSyncTimestamp: r.new_sync_timestamp,
+                metrics: SyncMetrics(
+                    trunkQueries: m.trunk_queries,
+                    branchQueries: m.branch_queries,
+                    totalElementsSeen: m.total_elements_seen,
+                    totalProofBytes: m.total_proof_bytes,
+                    iterations: m.iterations,
+                    compactedQueries: m.compacted_queries,
+                    recentQueries: m.recent_queries,
+                    recentEntriesReturned: m.recent_entries_returned,
+                    compactedEntriesReturned: m.compacted_entries_returned
+                )
             )
         }
     }
@@ -158,36 +174,39 @@ public class ManagedPlatformAddressWallet {
                 recent_queries: 0, recent_entries_returned: 0, compacted_entries_returned: 0
             )
         )
-        var changeset = PlatformAddressChangeSetFFI(
-            updated: nil, updated_count: 0, removed: nil, removed_count: 0
-        )
         var error = PlatformWalletFFIError()
 
-        let config = AddressSyncConfigFFI(
-            min_privacy_count: 0, max_concurrent_requests: 0,
-            max_iterations: 0, full_rescan_after_time_s: 0
-        )
-
         let result = platform_address_wallet_sync_balances_on_account(
-            handle, accountIndex, false, nil, &syncResult, &changeset, &error
+            handle, accountIndex, false, nil, &syncResult, &error
         )
 
         defer {
             platform_address_wallet_free_sync_result(&syncResult)
-            platform_address_wallet_free_changeset(&changeset)
         }
 
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
 
+        let m = syncResult.metrics
         return SyncResult(
             foundCount: syncResult.found_count,
             absentCount: syncResult.absent_count,
             highestFoundIndex: syncResult.has_highest_found_index ? syncResult.highest_found_index : nil,
             checkpointHeight: syncResult.checkpoint_height,
             newSyncHeight: syncResult.new_sync_height,
-            newSyncTimestamp: syncResult.new_sync_timestamp
+            newSyncTimestamp: syncResult.new_sync_timestamp,
+            metrics: SyncMetrics(
+                trunkQueries: m.trunk_queries,
+                branchQueries: m.branch_queries,
+                totalElementsSeen: m.total_elements_seen,
+                totalProofBytes: m.total_proof_bytes,
+                iterations: m.iterations,
+                compactedQueries: m.compacted_queries,
+                recentQueries: m.recent_queries,
+                recentEntriesReturned: m.recent_entries_returned,
+                compactedEntriesReturned: m.compacted_entries_returned
+            )
         )
     }
 }

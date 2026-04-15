@@ -43,8 +43,6 @@ struct AddressSyncConfigFFI {
 struct PlatformAddressChangeSetFFI {
     var updated: UnsafeMutablePointer<AddressBalanceEntryFFI>?
     var updated_count: Int
-    var removed: UnsafeMutablePointer<PlatformAddressFFI>?
-    var removed_count: Int
 }
 
 struct FoundAddressEntryFFI {
@@ -220,7 +218,6 @@ func platform_address_wallet_sync_balances(
     _ has_config: Bool,
     _ config: UnsafePointer<AddressSyncConfigFFI>?,
     _ out_results: UnsafeMutablePointer<AddressSyncResultArrayFFI>,
-    _ out_changeset: UnsafeMutablePointer<PlatformAddressChangeSetFFI>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -231,7 +228,6 @@ func platform_address_wallet_sync_balances_on_account(
     _ has_config: Bool,
     _ config: UnsafePointer<AddressSyncConfigFFI>?,
     _ out_result: UnsafeMutablePointer<AddressSyncResultFFI>,
-    _ out_changeset: UnsafeMutablePointer<PlatformAddressChangeSetFFI>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 

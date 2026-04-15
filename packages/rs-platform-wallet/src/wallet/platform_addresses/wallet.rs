@@ -12,6 +12,8 @@ use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
 
+use crate::wallet::persister::WalletPersister;
+
 use super::provider::PlatformPaymentAddressAccountProvider;
 
 /// Provider map type alias for readability.
@@ -30,6 +32,8 @@ pub struct PlatformAddressWallet {
     /// The outer `ArcSwap` allows lock-free reads; writes (adding a new account) are
     /// rare and use clone-and-swap.
     pub(crate) providers: Arc<ArcSwap<ProviderMap>>,
+    /// Per-wallet persistence handle for queuing changesets.
+    pub(crate) persister: WalletPersister,
 }
 
 impl PlatformAddressWallet {
@@ -41,12 +45,14 @@ impl PlatformAddressWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
+        persister: WalletPersister,
     ) -> Self {
         Self {
             sdk,
             wallet_manager,
             wallet_id,
             providers: Arc::new(ArcSwap::from_pointee(BTreeMap::new())),
+            persister,
         }
     }
 

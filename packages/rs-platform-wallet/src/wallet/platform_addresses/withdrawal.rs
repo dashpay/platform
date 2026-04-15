@@ -134,7 +134,7 @@ impl PlatformAddressWallet {
                                 let p2pkh = PlatformP2PKHAddress::new(*hash);
                                 account.set_address_credit_balance(p2pkh, 0, key_source.as_ref());
                             }
-                            cs.removed.insert(*addr);
+                            cs.addresses.insert(*addr, 0);
                         }
                     }
                 }

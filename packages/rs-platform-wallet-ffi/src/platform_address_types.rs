@@ -294,8 +294,6 @@ pub struct AddressSyncResultArrayFFI {
 pub struct PlatformAddressChangeSetFFI {
     pub updated: *mut AddressBalanceEntryFFI,
     pub updated_count: usize,
-    pub removed: *mut PlatformAddressFFI,
-    pub removed_count: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -377,32 +375,16 @@ impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeS
             })
             .collect();
 
-        let removed: Vec<PlatformAddressFFI> = cs
-            .removed
-            .iter()
-            .map(|&address| PlatformAddressFFI::from(address))
-            .collect();
-
         let updated_count = updated.len();
-        let removed_count = removed.len();
-
         let updated_ptr = if updated.is_empty() {
             std::ptr::null_mut()
         } else {
             Box::into_raw(updated.into_boxed_slice()) as *mut AddressBalanceEntryFFI
         };
 
-        let removed_ptr = if removed.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            Box::into_raw(removed.into_boxed_slice()) as *mut PlatformAddressFFI
-        };
-
         Self {
             updated: updated_ptr,
             updated_count,
-            removed: removed_ptr,
-            removed_count,
         }
     }
 }

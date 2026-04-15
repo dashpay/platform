@@ -8,18 +8,17 @@ use super::runtime;
 
 /// Sync platform address balances across all accounts.
 ///
-/// Free results with `platform_address_wallet_free_sync_result_array` and
-/// `platform_address_wallet_free_changeset`.
+/// Changesets are persisted internally by the wallet.
+/// Free results with `platform_address_wallet_free_sync_result_array`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_sync_balances(
     handle: Handle,
     has_config: bool,
     config: *const AddressSyncConfigFFI,
     out_results: *mut AddressSyncResultArrayFFI,
-    out_changeset: *mut PlatformAddressChangeSetFFI,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_results.is_null() || out_changeset.is_null() {
+    if out_results.is_null() {
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
@@ -34,9 +33,9 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
     PLATFORM_ADDRESS_WALLET_STORAGE
         .with_item(handle, |wallet| {
             match runtime().block_on(wallet.sync_balances(config_opt)) {
-                Ok((results, changeset)) => {
+                Ok(results) => {
                     let ffi_results: Vec<AddressSyncResultFFI> =
-                        results.iter().map(AddressSyncResultFFI::from).collect();
+                        results.values().map(AddressSyncResultFFI::from).collect();
                     let count = ffi_results.len();
                     let ptr = if ffi_results.is_empty() {
                         std::ptr::null_mut()
@@ -47,7 +46,6 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
                         results: ptr,
                         count,
                     };
-                    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
                     PlatformWalletFFIResult::Success
                 }
                 Err(e) => {
@@ -66,8 +64,8 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
 
 /// Sync platform address balances for a single account.
 ///
-/// Free results with `platform_address_wallet_free_sync_result` and
-/// `platform_address_wallet_free_changeset`.
+/// Changesets are persisted internally by the wallet.
+/// Free results with `platform_address_wallet_free_sync_result`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_sync_balances_on_account(
     handle: Handle,
@@ -75,10 +73,9 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances_on_account(
     has_config: bool,
     config: *const AddressSyncConfigFFI,
     out_result: *mut AddressSyncResultFFI,
-    out_changeset: *mut PlatformAddressChangeSetFFI,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_result.is_null() || out_changeset.is_null() {
+    if out_result.is_null() {
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
@@ -95,9 +92,8 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances_on_account(
             match runtime()
                 .block_on(wallet.sync_balances_on_account_index(account_index, config_opt))
             {
-                Ok((result, changeset)) => {
+                Ok(result) => {
                     *out_result = AddressSyncResultFFI::from(&result);
-                    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
                     PlatformWalletFFIResult::Success
                 }
                 Err(e) => {

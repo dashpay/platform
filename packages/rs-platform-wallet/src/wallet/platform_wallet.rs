@@ -238,8 +238,12 @@ impl PlatformWallet {
             wallet_id,
         };
 
-        let platform =
-            PlatformAddressWallet::new(Arc::clone(&sdk), Arc::clone(&wallet_manager), wallet_id);
+        let platform = PlatformAddressWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            wallet_persister.clone(),
+        );
         let tokens = TokenWallet::new(Arc::clone(&sdk), Arc::clone(&wallet_manager), wallet_id);
 
         Self {

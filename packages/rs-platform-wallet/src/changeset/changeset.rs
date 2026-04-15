@@ -361,26 +361,23 @@ impl Merge for ContactChangeSet {
 ///
 /// Mirrors [`ManagedPlatformAccount.address_balances`] exactly:
 /// a map from [`PlatformAddress`] (P2PKH or P2SH) to [`Credits`]
-/// (the balance in duffs). Plus a tombstone set for addresses whose
-/// balance dropped to zero / address was spent out during a transfer
-/// or withdrawal. Last-write-wins on merge.
+/// (the balance in duffs). Last-write-wins on merge.
+///
+/// Addresses are never removed — they are deterministically derived
+/// from the HD seed. A drained address simply has balance 0.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
     /// Updated platform addresses keyed by `PlatformAddress`.
     pub addresses: BTreeMap<PlatformAddress, Credits>,
-    /// Addresses removed from the cache (e.g. drained by a transfer/withdraw).
-    pub removed: BTreeSet<PlatformAddress>,
 }
 
 impl Merge for PlatformAddressChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins — the latest balance is the most current.
         self.addresses.extend(other.addresses);
-        self.removed.extend(other.removed);
     }
 
     fn is_empty(&self) -> bool {
-        self.addresses.is_empty() && self.removed.is_empty()
+        self.addresses.is_empty()
     }
 }
 
@@ -530,6 +527,51 @@ pub struct PlatformWalletChangeSet {
     /// semantics as `dashpay_profiles` — extends existing payment maps
     /// via `BTreeMap::extend` (last-write-wins per tx_id).
     pub dashpay_payments_overlay: Option<BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
+}
+
+impl From<PlatformAddressChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: PlatformAddressChangeSet) -> Self {
+        Self {
+            platform_addresses: Some(cs),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<IdentityChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: IdentityChangeSet) -> Self {
+        Self {
+            identities: Some(cs),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<ContactChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: ContactChangeSet) -> Self {
+        Self {
+            contacts: Some(cs),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<AssetLockChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: AssetLockChangeSet) -> Self {
+        Self {
+            asset_locks: Some(cs),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<TokenBalanceChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: TokenBalanceChangeSet) -> Self {
+        Self {
+            token_balances: Some(cs),
+            ..Default::default()
+        }
+    }
 }
 
 impl Merge for PlatformWalletChangeSet {

@@ -140,6 +140,14 @@ class PlatformBalanceSyncService: ObservableObject {
                 if result.newSyncTimestamp > 0 {
                     lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
                 }
+
+                // Accumulate metrics
+                totalTrunkQueries += result.metrics.trunkQueries
+                totalBranchQueries += result.metrics.branchQueries
+                totalCompactedQueries += result.metrics.compactedQueries
+                totalRecentQueries += result.metrics.recentQueries
+                totalRecentEntries += result.metrics.recentEntriesReturned
+                totalCompactedEntries += result.metrics.compactedEntriesReturned
             }
 
             // Read balances from the wallet (canonical source of truth)

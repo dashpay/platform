@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::wallet::PlatformAddressWallet;
 use crate::{Merge, PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
@@ -7,28 +9,35 @@ impl PlatformAddressWallet {
     ///
     /// Iterates every platform payment account in the wallet and calls
     /// [`sync_balances_on_account_index`](Self::sync_balances_on_account_index)
-    /// for each one. The returned changeset is the merged result of all accounts.
+    /// for each one. The changeset is persisted internally via the wallet persister.
     ///
     /// The same `config` is shared across all accounts. Pass `None` for defaults.
+    ///
+    /// Returns a map of account index to sync result.
     pub async fn sync_balances(
         &self,
         config: Option<AddressSyncConfig>,
-    ) -> Result<(Vec<AddressSyncResult>, PlatformAddressChangeSet), PlatformWalletError> {
+    ) -> Result<BTreeMap<u32, AddressSyncResult>, PlatformWalletError> {
         let providers = self.providers.load();
         let account_indices: Vec<u32> = providers.keys().copied().collect();
 
-        let mut all_results = Vec::with_capacity(account_indices.len());
+        let mut all_results = BTreeMap::new();
         let mut merged_cs = PlatformAddressChangeSet::default();
 
         for account_index in account_indices {
-            let (result, cs) = self
-                .sync_balances_on_account_index(account_index, config.clone())
-                .await?;
-            all_results.push(result);
+            let (result, cs) = self.sync_on_account(account_index, config.clone()).await?;
+            all_results.insert(account_index, result);
             merged_cs.merge(cs);
         }
 
-        Ok((all_results, merged_cs))
+        // Persist the merged changeset.
+        if !merged_cs.is_empty() {
+            if let Err(e) = self.persister.store(merged_cs.into()) {
+                tracing::error!("Failed to persist address sync changeset: {}", e);
+            }
+        }
+
+        Ok(all_results)
     }
 
     /// Sync platform address balances for a single account.
@@ -36,12 +45,29 @@ impl PlatformAddressWallet {
     /// Uses the SDK's privacy-preserving trunk/branch address synchronization
     /// with DIP-17 address discovery via gap limit scanning.
     ///
-    /// Returns both the raw [`AddressSyncResult`] and a
-    /// [`PlatformAddressChangeSet`] describing every address update /
-    /// tombstone caused by the sync.
+    /// Persists the changeset internally and returns the [`AddressSyncResult`].
     ///
     /// Pass `None` for `config` to use defaults.
     pub async fn sync_balances_on_account_index(
+        &self,
+        account_index: u32,
+        config: Option<AddressSyncConfig>,
+    ) -> Result<AddressSyncResult, PlatformWalletError> {
+        let (result, cs) = self.sync_on_account(account_index, config).await?;
+
+        // Persist the changeset.
+        if !cs.is_empty() {
+            if let Err(e) = self.persister.store(cs.into()) {
+                tracing::error!("Failed to persist address sync changeset: {}", e);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Internal sync for a single account. Returns the raw result and changeset
+    /// without persisting — callers handle persistence.
+    async fn sync_on_account(
         &self,
         account_index: u32,
         config: Option<AddressSyncConfig>,
