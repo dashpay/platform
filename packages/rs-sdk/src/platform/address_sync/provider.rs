@@ -18,6 +18,15 @@ use dpp::address_funds::PlatformAddress;
 /// 2. The provider can extend [`pending_addresses`](AddressProvider::pending_addresses)
 ///    to include more addresses
 /// 3. Sync continues until all pending addresses are resolved
+///
+/// # Async mutation callbacks
+///
+/// [`on_address_found`](AddressProvider::on_address_found) and
+/// [`on_address_absent`](AddressProvider::on_address_absent) are `async fn`
+/// so implementations can perform asynchronous I/O (acquiring async locks,
+/// writing to async stores, etc.) without blocking tokio workers. All other
+/// methods are pure getters over local state and remain synchronous.
+#[allow(async_fn_in_trait)]
 pub trait AddressProvider: Send {
     /// Get the gap limit for this provider.
     ///
@@ -47,7 +56,7 @@ pub trait AddressProvider: Send {
     /// - `index`: The address index that was found
     /// - `address`: The platform address that was found
     /// - `funds`: The nonce and credits balance at this address
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
@@ -63,7 +72,7 @@ pub trait AddressProvider: Send {
     /// # Arguments
     /// - `index`: The address index proven absent
     /// - `address`: The platform address proven absent
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress);
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress);
 
     /// Check if there are still pending addresses to synchronize.
     ///

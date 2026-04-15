@@ -221,7 +221,7 @@ impl AddressProvider for BatchAddressProvider {
         self.pending.iter().map(|(i, a)| (*i, *a)).collect()
     }
 
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
@@ -232,7 +232,7 @@ impl AddressProvider for BatchAddressProvider {
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         self.pending.remove(&index);
         self.absent.insert((index, *address));
     }

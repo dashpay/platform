@@ -136,12 +136,15 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
         funds: AddressFunds,
     ) {
+        // The C callback is synchronous — the FFI layer already runs this
+        // entire sync loop inside `runtime.block_on(...)`, so invoking the
+        // callback directly on the current thread is correct.
         unsafe {
             let vtable = &*self.ffi.vtable;
             let key_bytes = address.to_bytes();
@@ -156,7 +159,8 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+        // The C callback is synchronous — see `on_address_found` above.
         unsafe {
             let vtable = &*self.ffi.vtable;
             let key_bytes = address.to_bytes();

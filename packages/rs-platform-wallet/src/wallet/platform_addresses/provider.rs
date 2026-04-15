@@ -201,12 +201,16 @@ impl PlatformPaymentAddressAccountProvider {
 
     /// Update the account for a found address: set its balance, mark it used
     /// in the pool, and generate new addresses to maintain the gap limit.
-    fn on_address_found_in_pool(
+    ///
+    /// Asynchronous because it acquires the wallet manager's async write lock,
+    /// so it must never be called from a `blocking_*` context on a tokio
+    /// worker thread.
+    async fn on_address_found_in_pool(
         &mut self,
         p2pkh: &PlatformP2PKHAddress,
         funds: AddressFunds,
     ) -> Result<(), PlatformWalletError> {
-        let mut wm = self.wallet_manager.blocking_write();
+        let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
                 "Wallet {:?} not found in wallet manager",
@@ -252,7 +256,7 @@ impl AddressProvider for PlatformPaymentAddressAccountProvider {
             .collect()
     }
 
-    fn on_address_found(
+    async fn on_address_found(
         &mut self,
         index: AddressIndex,
         address: &PlatformAddress,
@@ -267,12 +271,12 @@ impl AddressProvider for PlatformPaymentAddressAccountProvider {
         self.found.insert((index, p2pkh), funds);
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
 
-        if let Err(e) = self.on_address_found_in_pool(&p2pkh, funds) {
+        if let Err(e) = self.on_address_found_in_pool(&p2pkh, funds).await {
             tracing::warn!("Failed to update pool for found address: {}", e);
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
+    async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
         let PlatformAddress::P2pkh(hash) = address else {
             return;
         };
