@@ -369,9 +369,9 @@ impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeS
         let updated: Vec<AddressBalanceEntryFFI> = cs
             .addresses
             .iter()
-            .map(|(&address, &balance)| AddressBalanceEntryFFI {
+            .map(|(&address, funds)| AddressBalanceEntryFFI {
                 address: address.into(),
-                balance,
+                balance: funds.balance,
             })
             .collect();
 

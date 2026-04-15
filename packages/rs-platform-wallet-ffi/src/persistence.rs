@@ -73,9 +73,9 @@ impl PlatformWalletPersistence for FFIPersister {
                 let entries: Vec<AddressBalanceEntryFFI> = addr_cs
                     .addresses
                     .iter()
-                    .map(|(&address, &balance)| AddressBalanceEntryFFI {
+                    .map(|(&address, funds)| AddressBalanceEntryFFI {
                         address: address.into(),
-                        balance,
+                        balance: funds.balance,
                     })
                     .collect();
                 if !entries.is_empty() {
