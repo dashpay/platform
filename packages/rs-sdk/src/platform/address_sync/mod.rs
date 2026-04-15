@@ -205,10 +205,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             } else {
                 // Key is proven absent
                 context.result.absent.insert((index, target_key.clone()));
-                context
-                    .provider
-                    .on_address_absent(index, &target_key)
-                    .await;
+                context.provider.on_address_absent(index, &target_key).await;
                 tracker.key_found(&target_key); // Remove from tracking
             }
         }
