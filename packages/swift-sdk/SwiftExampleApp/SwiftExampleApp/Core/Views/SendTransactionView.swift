@@ -12,15 +12,14 @@ struct SendTransactionView: View {
 
     init(wallet: HDWallet) {
         self.wallet = wallet
-        // Default to testnet; the actual network is set in onAppear
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network))
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                // Recipient Section
-                Section {
+                // Recipient
+                Section("Recipient") {
                     TextField("Recipient Address", text: $viewModel.recipientAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -28,12 +27,10 @@ struct SendTransactionView: View {
                     if !viewModel.recipientAddress.isEmpty {
                         AddressTypeBadge(type: viewModel.detectedAddressType)
                     }
-                } header: {
-                    Text("Recipient")
                 }
 
-                // Amount Section
-                Section {
+                // Amount
+                Section("Amount") {
                     HStack {
                         TextField("0.00000000", text: $viewModel.amountString)
                             .keyboardType(.decimalPad)
@@ -41,37 +38,49 @@ struct SendTransactionView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    // Available balances
                     VStack(alignment: .leading, spacing: 4) {
-                        BalanceInfoRow(
-                            label: "Shielded:",
-                            amount: shieldedService.shieldedBalance,
-                            color: .purple
-                        )
-                        BalanceInfoRow(
-                            label: "Platform:",
-                            amount: platformBalance,
-                            color: .blue
-                        )
-                        BalanceInfoRow(
-                            label: "Core:",
-                            amount: coreBalance,
-                            color: .primary
-                        )
+                        BalanceInfoRow(label: "Core:", amount: coreBalance, color: .green)
+                        BalanceInfoRow(label: "Shielded:", amount: shieldedBalance, color: .purple)
+                        BalanceInfoRow(label: "Platform:", amount: platformBalance, color: .blue)
                     }
-                } header: {
-                    Text("Amount")
                 }
 
-                // Flow Detection Section
+                // Fund Source
+                if !availableSources.isEmpty {
+                    Section("Send From") {
+                        ForEach(availableSources) { source in
+                            Button {
+                                viewModel.selectedSource = source
+                                viewModel.updateFlow()
+                            } label: {
+                                HStack {
+                                    Image(systemName: source.iconName)
+                                        .foregroundColor(source.color)
+                                        .frame(width: 24)
+                                    Text(source.rawValue)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Text(formatBalance(balance(for: source)))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    if viewModel.selectedSource == source {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Transaction Type
                 if let flow = viewModel.detectedFlow {
-                    Section {
+                    Section("Transaction Type") {
                         HStack {
                             Image(systemName: flow.iconName)
                                 .foregroundColor(flowColor(for: flow))
                             Text(flow.displayName)
                                 .fontWeight(.medium)
-                            Spacer()
                         }
 
                         if let fee = viewModel.estimatedFee {
@@ -82,45 +91,21 @@ struct SendTransactionView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                    } header: {
-                        Text("Transaction Type")
-                    }
-                }
-
-                // Source Toggle (for Orchard destination only)
-                if case .orchard = viewModel.detectedAddressType {
-                    Section {
-                        Toggle("Send from Shielded Pool", isOn: $viewModel.preferShieldedSource)
-                            .onChange(of: viewModel.preferShieldedSource) { _, _ in
-                                viewModel.detectAddressType()
-                            }
-                    } header: {
-                        Text("Source")
-                    } footer: {
-                        Text(viewModel.preferShieldedSource
-                             ? "Shielded-to-shielded transfer (fully private)"
-                             : "Shield credits from platform balance")
                     }
                 }
 
                 // Asset Lock (disabled)
-                Section {
+                Section("Other Options") {
                     HStack {
-                        Image(systemName: "lock.fill")
-                            .foregroundColor(.gray)
-                        Text("Asset Lock")
-                            .foregroundColor(.gray)
+                        Image(systemName: "lock.fill").foregroundColor(.gray)
+                        Text("Asset Lock").foregroundColor(.gray)
                         Spacer()
                         Text("Coming Soon")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .font(.caption).foregroundColor(.secondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Color(UIColor.tertiarySystemBackground))
                             .cornerRadius(6)
                     }
-                } header: {
-                    Text("Other Options")
                 }
             }
             .navigationTitle("Send Dash")
@@ -137,7 +122,8 @@ struct SendTransactionView: View {
                                 sdk: sdk,
                                 shieldedService: shieldedService,
                                 platformState: unifiedAppState.platformState,
-                                wallet: wallet
+                                wallet: wallet,
+                                coreWallet: try? unifiedAppState.managedWallet?.coreWallet()
                             )
                         }
                     }
@@ -167,10 +153,21 @@ struct SendTransactionView: View {
                     Text(msg)
                 }
             }
+            .onChange(of: viewModel.detectedAddressType) { _, _ in
+                autoSelectSource()
+            }
         }
     }
 
     // MARK: - Computed
+
+    private var coreBalance: UInt64 {
+        walletService.walletManager.getBalance(for: wallet).confirmed
+    }
+
+    private var shieldedBalance: UInt64 {
+        shieldedService.shieldedBalance
+    }
 
     private var platformBalance: UInt64 {
         unifiedAppState.platformState.identities
@@ -181,14 +178,35 @@ struct SendTransactionView: View {
             .reduce(0) { $0 + $1.balance }
     }
 
-    private var coreBalance: UInt64 {
-        walletService.walletManager.getBalance(for: wallet).confirmed
+    private var availableSources: [FundSource] {
+        viewModel.availableSources(
+            coreBalance: coreBalance,
+            shieldedBalance: shieldedBalance,
+            platformBalance: platformBalance
+        )
+    }
+
+    private func balance(for source: FundSource) -> UInt64 {
+        switch source {
+        case .core: return coreBalance
+        case .shielded: return shieldedBalance
+        case .platform: return platformBalance
+        }
+    }
+
+    /// Auto-select the first available source when address type changes.
+    private func autoSelectSource() {
+        if let first = availableSources.first {
+            viewModel.selectedSource = first
+            viewModel.updateFlow()
+        }
     }
 
     // MARK: - Helpers
 
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
+        case .coreToCore: return .green
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
@@ -218,16 +236,11 @@ private struct AddressTypeBadge: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(badgeColor)
-                .frame(width: 8, height: 8)
+            Circle().fill(badgeColor).frame(width: 8, height: 8)
             Text(badgeText)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(badgeColor)
+                .font(.caption).fontWeight(.medium).foregroundColor(badgeColor)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10).padding(.vertical, 4)
         .background(badgeColor.opacity(0.1))
         .cornerRadius(8)
     }
@@ -258,13 +271,10 @@ private struct BalanceInfoRow: View {
 
     var body: some View {
         HStack {
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text(label).font(.caption).foregroundColor(.secondary)
             Spacer()
             Text(formatBalance(amount))
-                .font(.caption)
-                .foregroundColor(amount > 0 ? color : .secondary)
+                .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
         }
     }
 

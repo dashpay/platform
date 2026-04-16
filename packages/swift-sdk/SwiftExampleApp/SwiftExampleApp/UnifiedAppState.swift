@@ -34,7 +34,7 @@ class UnifiedAppState: ObservableObject {
 
     // Platform wallet manager (Phase 1 — manages wallet lifecycle on the Rust side)
     private var platformWalletManager: PlatformWalletManager?
-    private var managedWallet: ManagedPlatformWallet?
+    private(set) var managedWallet: ManagedPlatformWallet?
 
     // State from Platform
     let platformState: AppState
