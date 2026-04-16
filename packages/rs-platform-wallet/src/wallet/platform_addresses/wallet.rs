@@ -162,6 +162,66 @@ impl PlatformAddressWallet {
 }
 
 impl PlatformAddressWallet {
+    /// Get the next unused platform payment receive address from the
+    /// HD address pool for the given account key. Generates a new
+    /// address if the pool is exhausted, maintaining the gap limit.
+    ///
+    /// DIP-17 derivation: `m/9'/coin_type'/17'/account'/key_class'/index`
+    /// - `account_key.account` selects the HD account
+    /// - `account_key.key_class` selects the key purpose (0 = clear funds)
+    ///
+    /// The address is derived from the wallet's public key material
+    /// via dashcore's `AddressPool::next_unused` — no seed access or
+    /// caller-side derivation needed.
+    pub async fn next_unused_receive_address(
+        &self,
+        account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
+    ) -> Result<PlatformAddress, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&self.wallet_id)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "Wallet {:?} not found",
+                    hex::encode(self.wallet_id)
+                ))
+            })?;
+
+        let managed_account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_key.account)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    account_key.account
+                ))
+            })?;
+
+        let key_source = {
+            let xpub = wallet
+                .accounts
+                .platform_payment_accounts
+                .get(&account_key)
+                .map(|acct| acct.account_xpub)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "No platform payment account key for {:?}",
+                        account_key
+                    ))
+                })?;
+            key_wallet::KeySource::Public(xpub)
+        };
+
+        let address = managed_account
+            .addresses
+            .next_unused(&key_source)
+            .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
+
+        PlatformAddress::try_from(address).map_err(|e| {
+            PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
+        })
+    }
+
     /// Get all platform addresses with their cached balances.
     ///
     /// Returns the balances from the last call to [`sync_balances`](Self::sync_balances),
