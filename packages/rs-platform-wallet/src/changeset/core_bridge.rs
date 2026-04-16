@@ -2,7 +2,7 @@
 //!
 //! During SPV block processing, `WalletManager::process_block` accumulates
 //! core-wallet changesets (UTXOs, transactions, synced height) and calls
-//! `WalletPersistence::store` + `flush` for each wallet. `CorePersistenceBridge`
+//! `WalletPersistence::store` for each wallet. `CorePersistenceBridge`
 //! wraps those calls by embedding the `WalletChangeSet` inside a
 //! `PlatformWalletChangeSet { core: Some(cs), .. }` and forwarding to the
 //! platform persister, so core-wallet state is persisted through the same
@@ -43,9 +43,5 @@ impl WalletPersistence for CorePersistenceBridge {
             ..PlatformWalletChangeSet::default()
         };
         self.inner.store(wallet_id, platform_cs)
-    }
-
-    fn flush(&self, wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.inner.flush(wallet_id)
     }
 }
