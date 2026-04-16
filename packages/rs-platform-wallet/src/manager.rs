@@ -11,7 +11,7 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{Merge, PlatformWalletPersistence};
+use crate::changeset::{CorePersistenceBridge, Merge, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::spv::SpvRuntime;
@@ -50,7 +50,11 @@ impl PlatformWalletManager {
         persister: Arc<dyn PlatformWalletPersistence>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let core_bridge = Arc::new(CorePersistenceBridge::new(Arc::clone(&persister)));
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new_with_persister(
+            sdk.network,
+            core_bridge,
+        )));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
 

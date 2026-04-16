@@ -7,6 +7,7 @@
 //! - [`PlatformWalletPersistence`] — storage backend trait.
 
 pub mod changeset;
+pub mod core_bridge;
 pub mod merge;
 pub mod traits;
 
@@ -15,5 +16,6 @@ pub use changeset::{
     IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet, ReceivedContactRequestKey,
     SentContactRequestKey, TokenBalanceChangeSet,
 };
+pub use core_bridge::CorePersistenceBridge;
 pub use merge::Merge;
 pub use traits::PlatformWalletPersistence;
