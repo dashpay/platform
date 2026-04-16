@@ -11,6 +11,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use std::collections::BTreeMap;
 use std::os::raw::c_void;
 
+use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
 use crate::platform_address_types::AddressBalanceEntryFFI;
 
 /// C callback vtable for wallet persistence.
@@ -37,6 +38,16 @@ pub struct PersistenceCallbacks {
             wallet_id: *const u8,
             entries: *const AddressBalanceEntryFFI,
             count: usize,
+        ) -> i32,
+    >,
+    /// Called with core wallet changeset (accounts, transactions, UTXOs,
+    /// chain state, balance deltas). The pointer is valid only for the
+    /// duration of the callback.
+    pub on_persist_wallet_changeset_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            changeset: *const WalletChangeSetFFI,
         ) -> i32,
     >,
     /// Called with updated sync state after each sync round.
@@ -105,6 +116,21 @@ impl PlatformWalletPersistence for FFIPersister {
                             result
                         );
                     }
+                }
+            }
+        }
+
+        // Send core wallet changeset (accounts, transactions, UTXOs).
+        if let Some(ref core_cs) = changeset.core {
+            if let Some(cb) = self.callbacks.on_persist_wallet_changeset_fn {
+                let ffi_cs = WalletChangeSetFFI::from_changeset(core_cs);
+                let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), &ffi_cs) };
+                unsafe { free_wallet_changeset_ffi(&ffi_cs) };
+                if result != 0 {
+                    eprintln!(
+                        "Wallet changeset persistence callback returned error code {}",
+                        result
+                    );
                 }
             }
         }
