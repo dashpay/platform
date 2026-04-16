@@ -4315,6 +4315,69 @@ mod tests {
                 valid_keywords_for_verification.retain(|&x| x != keyword);
             }
         }
+
+        #[test]
+        fn test_document_type_keywords_rejected_by_v1_meta_schema() {
+            use dpp::ProtocolError;
+
+            // `keywords` is a contract-level field only. The v1 document-type
+            // meta schema (active as of protocol v12) must reject it on any
+            // document type via its root-level `additionalProperties: false`.
+            // Pinned to v12 because this is the specific version that introduced
+            // v1 meta schema enforcement.
+            let platform_version = PlatformVersion::get(12).expect("expected v12");
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let _platform_state = platform.state.load();
+            let (_identity, _signer, _key) =
+                setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
+
+            // Inject `keywords` onto the `preorder` document type schema — the
+            // wrong place for it. This should be rejected by the v1 meta
+            // schema during `DataContract::from_value` full validation.
+            contract_value["documentSchemas"]["preorder"]["keywords"] =
+                Value::Array(vec![Value::Text("invalid".to_string())]);
+
+            let err = DataContract::from_value(contract_value, true, platform_version)
+                .expect_err("meta schema validation must reject document-type keywords");
+
+            // Assert the failure is specifically a JSON schema validation error
+            // (i.e. the meta schema rejected the unknown `keywords` property),
+            // not an unrelated error such as a serialization or structural issue.
+            match err {
+                ProtocolError::ConsensusError(consensus_err) => match *consensus_err {
+                    ConsensusError::BasicError(BasicError::JsonSchemaError(js_err)) => {
+                        // The rejection should be driven by `additionalProperties`
+                        // / `unevaluatedProperties` at the meta-schema root, and
+                        // the offending property name must be `keywords`.
+                        let summary = js_err.error_summary();
+                        assert!(
+                            summary.contains("keywords"),
+                            "expected JSON schema error to reference `keywords`, got: {summary}"
+                        );
+                    }
+                    other => panic!(
+                        "expected BasicError::JsonSchemaError, got ConsensusError: {other:?}"
+                    ),
+                },
+                other => panic!("expected ProtocolError::ConsensusError, got: {other:?}"),
+            }
+        }
     }
 
     mod descriptions {

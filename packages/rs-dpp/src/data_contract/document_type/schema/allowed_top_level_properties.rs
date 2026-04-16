@@ -79,6 +79,31 @@ mod tests {
     }
 
     #[test]
+    fn strips_keywords_from_document_schema() {
+        // `keywords` was erroneously placed on the document-type meta schema
+        // by PR #2523 — the intended location is contract-level
+        // (`DataContractV1.keywords`). This test guards the v12 migration
+        // path that removes any `keywords` key that slipped onto a
+        // document-type schema in stored state.
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false,
+            "keywords": ["one", "two"]
+        });
+
+        let changed = strip_unknown_properties_from_document_schema(&mut schema);
+        assert!(changed);
+
+        let map = schema.as_map().unwrap();
+        let keys: Vec<&str> = map.iter().filter_map(|(k, _)| k.as_text()).collect();
+        assert!(!keys.contains(&"keywords"));
+        assert!(keys.contains(&"type"));
+        assert!(keys.contains(&"properties"));
+        assert!(keys.contains(&"additionalProperties"));
+    }
+
+    #[test]
     fn no_change_when_all_properties_are_known() {
         let mut schema = platform_value!({
             "type": "object",
