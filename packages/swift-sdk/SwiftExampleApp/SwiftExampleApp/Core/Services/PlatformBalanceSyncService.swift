@@ -115,8 +115,12 @@ class PlatformBalanceSyncService: ObservableObject {
         // No state to restore — cached balances are loaded in configure().
     }
 
-    /// Reset all state (e.g. on wallet deletion or network switch).
-    func reset() {
+    /// Clear UI display state — balances, metrics, last sync timestamps.
+    ///
+    /// Does NOT nil out the wallet handle, so the user can tap "Sync Now"
+    /// immediately after clearing. Use [`fullReset`] for wallet deletion
+    /// or network switches.
+    func clearDisplay() {
         addressBalances.removeAll()
         totalPlatformBalance = 0
         activeAddressCount = 0
@@ -135,6 +139,13 @@ class PlatformBalanceSyncService: ObservableObject {
         totalRecentQueries = 0
         totalRecentEntries = 0
         totalCompactedEntries = 0
+    }
+
+    /// Full reset — clears display state AND nils out the wallet handle.
+    /// Use for wallet deletion or network switch. Caller must re-configure
+    /// before the next sync.
+    func reset() {
+        clearDisplay()
         platformAddressWallet = nil
     }
 

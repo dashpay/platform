@@ -284,7 +284,7 @@ var body: some View {
                         .disabled(platformBalanceSyncService.isSyncing)
 
                         Button {
-                            platformBalanceSyncService.reset()
+                            platformBalanceSyncService.clearDisplay()
                         } label: {
                             Text("Clear")
                                 .font(.caption)
