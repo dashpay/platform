@@ -15,6 +15,11 @@ struct PersistenceCallbacks {
         UnsafeRawPointer?,
         Int
     ) -> Int32)? = nil
+    var on_persist_wallet_changeset_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UnsafeRawPointer?
+    ) -> Int32)? = nil
     var on_persist_sync_state_fn: (@convention(c) (
         UnsafeMutableRawPointer?,
         UnsafePointer<UInt8>?,
