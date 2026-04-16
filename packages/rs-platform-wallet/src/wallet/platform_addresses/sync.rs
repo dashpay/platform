@@ -108,6 +108,9 @@ impl PlatformAddressWallet {
         if result.new_sync_timestamp > 0 {
             cs.sync_timestamp = Some(result.new_sync_timestamp);
         }
+        if result.last_known_recent_block > 0 {
+            cs.last_known_recent_block = Some(result.last_known_recent_block);
+        }
 
         // Update the provider's incremental state from the result.
         provider.update_sync_state(&result);

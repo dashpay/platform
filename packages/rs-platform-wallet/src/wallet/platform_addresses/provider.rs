@@ -205,9 +205,15 @@ impl PlatformPaymentAddressAccountProvider {
     /// carrying `sync_height` / `sync_timestamp` from the previous session —
     /// without this the provider would start fresh after every restart and
     /// force a full rescan.
-    pub(crate) fn set_stored_sync_state(&mut self, height: u64, timestamp: u64) {
+    pub(crate) fn set_stored_sync_state(
+        &mut self,
+        height: u64,
+        timestamp: u64,
+        last_known_recent_block: u64,
+    ) {
         self.sync_height = height;
         self.sync_timestamp = timestamp;
+        self.last_known_recent_block = last_known_recent_block;
     }
 
     /// Update the account for a found address: set its balance, mark it used

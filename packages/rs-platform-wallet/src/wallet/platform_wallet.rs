@@ -331,10 +331,13 @@ impl PlatformWallet {
         // not on `PlatformWalletInfo`. Pull it out before handing the
         // changeset to `apply_changeset` (which consumes by value), then
         // feed it to the providers once apply completes.
-        let pa_sync_state = changeset
-            .platform_addresses
-            .as_ref()
-            .map(|pa| (pa.sync_height, pa.sync_timestamp));
+        let pa_sync_state = changeset.platform_addresses.as_ref().map(|pa| {
+            (
+                pa.sync_height,
+                pa.sync_timestamp,
+                pa.last_known_recent_block,
+            )
+        });
 
         {
             let mut wm = self.wallet_manager.write().await;
@@ -344,8 +347,10 @@ impl PlatformWallet {
             info.apply_changeset(wallet, changeset)?;
         }
 
-        if let Some((height, timestamp)) = pa_sync_state {
-            self.platform.apply_sync_state(height, timestamp).await;
+        if let Some((height, timestamp, recent_block)) = pa_sync_state {
+            self.platform
+                .apply_sync_state(height, timestamp, recent_block)
+                .await;
         }
         Ok(())
     }

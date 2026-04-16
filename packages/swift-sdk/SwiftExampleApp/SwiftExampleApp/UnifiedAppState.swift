@@ -34,7 +34,7 @@ class UnifiedAppState: ObservableObject {
 
     // Platform wallet manager (Phase 1 — manages wallet lifecycle on the Rust side)
     private var platformWalletManager: PlatformWalletManager?
-    private var managedWallet: ManagedPlatformWallet?
+    private(set) var managedWallet: ManagedPlatformWallet?
 
     // State from Platform
     let platformState: AppState
@@ -178,7 +178,7 @@ class UnifiedAppState: ObservableObject {
         }
 
         do {
-            let manager = try PlatformWalletManager(sdk: sdk)
+            let manager = try PlatformWalletManager(sdk: sdk, modelContainer: modelContainer)
             self.platformWalletManager = manager
 
             guard let firstWallet = walletService.walletManager.wallets.first else {
@@ -224,7 +224,11 @@ class UnifiedAppState: ObservableObject {
             self.managedWallet = wallet
 
             let platformAddressWallet = try wallet.platformAddressWallet()
-            platformBalanceSyncService.configure(platformAddressWallet: platformAddressWallet)
+            platformBalanceSyncService.configure(
+                platformAddressWallet: platformAddressWallet,
+                persistenceHandler: manager.persistence,
+                walletId: wallet.walletId
+            )
 
             NSLog("PlatformWallet: Initialized successfully")
         } catch {

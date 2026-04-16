@@ -88,8 +88,10 @@ class PlatformBalanceSyncService: ObservableObject {
         self.persistenceHandler = persistenceHandler
         self.walletId = walletId
 
-        // Load cached balances from SwiftData for immediate display.
+        // Load cached state from SwiftData for immediate display and
+        // incremental sync resume.
         if let handler = persistenceHandler, let wid = walletId {
+            // Restore address balances for UI.
             let cached = handler.loadCachedBalances(walletId: wid)
             if !cached.isEmpty {
                 var newBalances: [String: UInt64] = [:]
@@ -106,6 +108,26 @@ class PlatformBalanceSyncService: ObservableObject {
                 addressBalances = newBalances
                 totalPlatformBalance = total
                 activeAddressCount = nonZero
+            }
+
+            // Restore sync state so next sync is incremental.
+            if let state = handler.loadCachedSyncState(walletId: wid) {
+                try? platformAddressWallet.restoreSyncState(
+                    syncHeight: state.syncHeight,
+                    syncTimestamp: state.syncTimestamp,
+                    lastKnownRecentBlock: state.lastKnownRecentBlock
+                )
+                chainTipHeight = state.syncHeight
+                lastSyncHeight = state.syncHeight
+                if state.syncTimestamp > 0 {
+                    lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(state.syncTimestamp))
+                }
+                lastKnownRecentBlock = state.lastKnownRecentBlock
+
+                SDKLogger.log(
+                    "Restored sync state: height=\(state.syncHeight), timestamp=\(state.syncTimestamp)",
+                    minimumLevel: .medium
+                )
             }
         }
     }

@@ -45,6 +45,31 @@ pub unsafe extern "C" fn platform_address_wallet_add_provider(
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
 }
 
+/// Restore sync state from persisted values.
+///
+/// Call after wallet creation and before the first sync to resume
+/// incremental mode. Without this, every app launch does a full
+/// trunk/branch/compact rescan.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
+    handle: Handle,
+    sync_height: u64,
+    sync_timestamp: u64,
+    last_known_recent_block: u64,
+    _out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    PLATFORM_ADDRESS_WALLET_STORAGE
+        .with_item(handle, |wallet| {
+            runtime().block_on(wallet.restore_sync_state(
+                sync_height,
+                sync_timestamp,
+                last_known_recent_block,
+            ));
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------

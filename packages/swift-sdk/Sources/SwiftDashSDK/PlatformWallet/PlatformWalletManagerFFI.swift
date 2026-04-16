@@ -15,6 +15,18 @@ struct PersistenceCallbacks {
         UnsafeRawPointer?,
         Int
     ) -> Int32)? = nil
+    var on_persist_wallet_changeset_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UnsafeRawPointer?
+    ) -> Int32)? = nil
+    var on_persist_sync_state_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UInt64,
+        UInt64,
+        UInt64
+    ) -> Int32)? = nil
 }
 
 // MARK: - Event Handler Callbacks
@@ -234,6 +246,15 @@ func platform_address_wallet_sync_balances_on_account(
     _ has_config: Bool,
     _ config: UnsafePointer<AddressSyncConfigFFI>?,
     _ out_result: UnsafeMutablePointer<AddressSyncResultFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_address_wallet_restore_sync_state")
+func platform_address_wallet_restore_sync_state(
+    _ handle: Handle,
+    _ sync_height: UInt64,
+    _ sync_timestamp: UInt64,
+    _ last_known_recent_block: UInt64,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 

@@ -148,16 +148,40 @@ impl PlatformAddressWallet {
     /// persists a single per-wallet value (the max across accounts on
     /// flush). A subsequent sync will rewind accounts that were ahead
     /// to this floor, so no range can be silently skipped.
-    pub(crate) async fn apply_sync_state(&self, height: Option<u64>, timestamp: Option<u64>) {
-        if height.is_none() && timestamp.is_none() {
+    pub(crate) async fn apply_sync_state(
+        &self,
+        height: Option<u64>,
+        timestamp: Option<u64>,
+        last_known_recent_block: Option<u64>,
+    ) {
+        if height.is_none() && timestamp.is_none() && last_known_recent_block.is_none() {
             return;
         }
         let h = height.unwrap_or(0);
         let t = timestamp.unwrap_or(0);
+        let r = last_known_recent_block.unwrap_or(0);
         for provider_lock in self.providers.load().values() {
             let mut provider = provider_lock.write().await;
-            provider.set_stored_sync_state(h, t);
+            provider.set_stored_sync_state(h, t, r);
         }
+    }
+
+    /// Restore sync state from externally persisted values (e.g., SwiftData).
+    ///
+    /// Call this after `initialize()` and before the first sync to resume
+    /// incremental mode instead of doing a full trunk/branch/compact rescan.
+    pub async fn restore_sync_state(
+        &self,
+        sync_height: u64,
+        sync_timestamp: u64,
+        last_known_recent_block: u64,
+    ) {
+        self.apply_sync_state(
+            Some(sync_height),
+            Some(sync_timestamp),
+            Some(last_known_recent_block),
+        )
+        .await;
     }
 }
 

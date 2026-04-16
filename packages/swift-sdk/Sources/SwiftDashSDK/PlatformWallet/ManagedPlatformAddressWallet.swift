@@ -76,6 +76,26 @@ public class ManagedPlatformAddressWallet {
         }
     }
 
+    // MARK: - Sync State Restore
+
+    /// Restore sync state from persisted values.
+    ///
+    /// Call after wallet creation and before the first sync to resume
+    /// incremental mode instead of doing a full trunk/branch/compact rescan.
+    public func restoreSyncState(
+        syncHeight: UInt64,
+        syncTimestamp: UInt64,
+        lastKnownRecentBlock: UInt64
+    ) throws {
+        var error = PlatformWalletFFIError()
+        let result = platform_address_wallet_restore_sync_state(
+            handle, syncHeight, syncTimestamp, lastKnownRecentBlock, &error
+        )
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
     // MARK: - Sync
 
     /// Metrics from a single sync round.

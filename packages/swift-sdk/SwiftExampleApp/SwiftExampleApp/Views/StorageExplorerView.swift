@@ -44,6 +44,24 @@ struct StorageExplorerView: View {
             modelRow("Address Balances", icon: "creditcard", type: PersistentAddressBalance.self) {
                 AddressBalanceStorageListView()
             }
+            modelRow("Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentSyncState.self) {
+                SyncStateStorageListView()
+            }
+            modelRow("Wallets", icon: "wallet.pass", type: PersistentWallet.self) {
+                WalletStorageListView()
+            }
+            modelRow("Accounts", icon: "person.2", type: PersistentAccount.self) {
+                AccountStorageListView()
+            }
+            modelRow("Transactions", icon: "arrow.left.arrow.right.circle", type: PersistentTransaction.self) {
+                TransactionStorageListView()
+            }
+            modelRow("UTXOs", icon: "bitcoinsign.circle", type: PersistentUtxo.self) {
+                UtxoStorageListView()
+            }
+            modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
+                WalletManagerMetadataStorageListView()
+            }
         }
         .navigationTitle("Storage Explorer")
         .toolbar {
@@ -90,5 +108,11 @@ struct StorageExplorerView: View {
         count(PersistentProperty.self)
         count(PersistentKeyword.self)
         count(PersistentAddressBalance.self)
+        count(PersistentSyncState.self)
+        count(PersistentWallet.self)
+        count(PersistentAccount.self)
+        count(PersistentTransaction.self)
+        count(PersistentUtxo.self)
+        count(PersistentWalletManagerMetadata.self)
     }
 }
