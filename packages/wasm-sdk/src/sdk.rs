@@ -211,8 +211,7 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
-        let sdk_builder = SdkBuilder::new_mainnet()
-            .with_context_provider(WasmContext {});
+        let sdk_builder = SdkBuilder::new_mainnet().with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,
@@ -222,8 +221,7 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
-        let sdk_builder = SdkBuilder::new_testnet()
-            .with_context_provider(WasmContext {});
+        let sdk_builder = SdkBuilder::new_testnet().with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,
@@ -234,8 +232,7 @@ impl WasmSdkBuilder {
     /// Create a new SdkBuilder preconfigured for a local network using default dashmate gateway.
     #[wasm_bindgen(js_name = "local")]
     pub fn new_local() -> Self {
-        let sdk_builder = SdkBuilder::new_local()
-            .with_context_provider(WasmContext {});
+        let sdk_builder = SdkBuilder::new_local().with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,
