@@ -16,7 +16,11 @@ public struct ModelContainerHelper {
             PersistentToken.self,
             PersistentDocumentType.self,
             PersistentTokenHistoryEvent.self,
-            PersistentKeyword.self
+            PersistentKeyword.self,
+            PersistentIndex.self,
+            PersistentProperty.self,
+            PersistentAddressBalance.self,
+            PersistentSyncState.self,
         ])
 
         let modelConfiguration = ModelConfiguration(
