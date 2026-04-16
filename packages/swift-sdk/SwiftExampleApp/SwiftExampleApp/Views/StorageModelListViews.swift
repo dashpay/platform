@@ -222,6 +222,28 @@ struct KeywordStorageListView: View {
     }
 }
 
+// MARK: - PersistentSyncState
+
+struct SyncStateStorageListView: View {
+    @Query(sort: \PersistentSyncState.lastUpdated, order: .reverse)
+    private var records: [PersistentSyncState]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: SyncStateStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Height \(record.syncHeight)")
+                        .font(.body)
+                    Text(record.lastUpdated, style: .relative)
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Sync State (\(records.count))")
+        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.triangle.2.circlepath") } }
+    }
+}
+
 // MARK: - PersistentAddressBalance
 
 struct AddressBalanceStorageListView: View {

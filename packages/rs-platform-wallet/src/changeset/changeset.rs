@@ -378,6 +378,9 @@ pub struct PlatformAddressChangeSet {
     /// Latest timestamp covered by the last sync, across all accounts.
     /// `None` means "no change".
     pub sync_timestamp: Option<u64>,
+    /// Last block height with recent address changes (compaction marker).
+    /// `None` means "no change".
+    pub last_known_recent_block: Option<u64>,
 }
 
 impl Merge for PlatformAddressChangeSet {
@@ -392,10 +395,19 @@ impl Merge for PlatformAddressChangeSet {
         if let Some(t) = other.sync_timestamp {
             self.sync_timestamp = Some(self.sync_timestamp.map_or(t, |existing| existing.max(t)));
         }
+        if let Some(r) = other.last_known_recent_block {
+            self.last_known_recent_block = Some(
+                self.last_known_recent_block
+                    .map_or(r, |existing| existing.max(r)),
+            );
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.addresses.is_empty() && self.sync_height.is_none() && self.sync_timestamp.is_none()
+        self.addresses.is_empty()
+            && self.sync_height.is_none()
+            && self.sync_timestamp.is_none()
+            && self.last_known_recent_block.is_none()
     }
 }
 

@@ -44,6 +44,9 @@ struct StorageExplorerView: View {
             modelRow("Address Balances", icon: "creditcard", type: PersistentAddressBalance.self) {
                 AddressBalanceStorageListView()
             }
+            modelRow("Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentSyncState.self) {
+                SyncStateStorageListView()
+            }
         }
         .navigationTitle("Storage Explorer")
         .toolbar {
@@ -90,5 +93,6 @@ struct StorageExplorerView: View {
         count(PersistentProperty.self)
         count(PersistentKeyword.self)
         count(PersistentAddressBalance.self)
+        count(PersistentSyncState.self)
     }
 }

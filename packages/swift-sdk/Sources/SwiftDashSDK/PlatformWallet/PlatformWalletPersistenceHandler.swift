@@ -18,10 +18,9 @@ public class PlatformWalletPersistenceHandler {
         self.backgroundContext.autosaveEnabled = true
     }
 
+    // MARK: - Address Balances
+
     /// Upsert address balances into SwiftData.
-    ///
-    /// Called from the Rust persistence callback with only the addresses
-    /// whose balance changed in this sync round.
     func persistAddressBalances(walletId: Data, entries: [(UInt8, Data, UInt64)]) {
         for (addressType, addressHash, balance) in entries {
             let descriptor = FetchDescriptor<PersistentAddressBalance>(
@@ -45,9 +44,6 @@ public class PlatformWalletPersistenceHandler {
     }
 
     /// Load all cached address balances for a wallet.
-    ///
-    /// Returns tuples of (addressType, addressHash bytes, balance) for
-    /// populating the UI before the first network sync completes.
     public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64)] {
         let descriptor = FetchDescriptor<PersistentAddressBalance>(
             predicate: PersistentAddressBalance.predicate(walletId: walletId)
@@ -62,6 +58,52 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
+    // MARK: - Sync State
+
+    /// Upsert sync state into SwiftData.
+    func persistSyncState(
+        walletId: Data,
+        syncHeight: UInt64,
+        syncTimestamp: UInt64,
+        lastKnownRecentBlock: UInt64
+    ) {
+        let descriptor = FetchDescriptor<PersistentSyncState>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+
+        if let existing = try? backgroundContext.fetch(descriptor).first {
+            existing.syncHeight = syncHeight
+            existing.syncTimestamp = syncTimestamp
+            existing.lastKnownRecentBlock = lastKnownRecentBlock
+            existing.lastUpdated = Date()
+        } else {
+            let record = PersistentSyncState(
+                walletId: walletId,
+                syncHeight: syncHeight,
+                syncTimestamp: syncTimestamp,
+                lastKnownRecentBlock: lastKnownRecentBlock
+            )
+            backgroundContext.insert(record)
+        }
+
+        try? backgroundContext.save()
+    }
+
+    /// Load cached sync state for a wallet.
+    public func loadCachedSyncState(walletId: Data) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+        let descriptor = FetchDescriptor<PersistentSyncState>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+
+        guard let record = try? backgroundContext.fetch(descriptor).first else {
+            return nil
+        }
+
+        return (record.syncHeight, record.syncTimestamp, record.lastKnownRecentBlock)
+    }
+
+    // MARK: - Callbacks
+
     /// Build `PersistenceCallbacks` that point to this handler.
     ///
     /// The returned struct must not outlive `self`.
@@ -70,15 +112,13 @@ public class PlatformWalletPersistenceHandler {
         var cb = PersistenceCallbacks()
         cb.context = contextPtr
         cb.on_persist_address_balances_fn = persistAddressBalancesCallback
+        cb.on_persist_sync_state_fn = persistSyncStateCallback
         return cb
     }
 }
 
-// MARK: - C Callback
+// MARK: - C Callbacks
 
-/// Static C callback that the Rust persister invokes with incremental
-/// address balance updates. Recovers the handler from the context pointer
-/// and upserts into SwiftData.
 private func persistAddressBalancesCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -109,5 +149,31 @@ private func persistAddressBalancesCallback(
     }
 
     handler.persistAddressBalances(walletId: walletId, entries: entries)
+    return 0
+}
+
+private func persistSyncStateCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    syncHeight: UInt64,
+    syncTimestamp: UInt64,
+    lastKnownRecentBlock: UInt64
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    handler.persistSyncState(
+        walletId: walletId,
+        syncHeight: syncHeight,
+        syncTimestamp: syncTimestamp,
+        lastKnownRecentBlock: lastKnownRecentBlock
+    )
     return 0
 }

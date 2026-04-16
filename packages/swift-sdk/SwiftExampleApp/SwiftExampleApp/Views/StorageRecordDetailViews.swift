@@ -374,6 +374,31 @@ struct KeywordStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentSyncState
+
+struct SyncStateStorageDetailView: View {
+    let record: PersistentSyncState
+
+    var body: some View {
+        Form {
+            Section("Sync Watermark") {
+                FieldRow(label: "Sync Height", value: "\(record.syncHeight)")
+                FieldRow(label: "Sync Timestamp", value: "\(record.syncTimestamp)")
+                FieldRow(label: "Last Known Recent Block", value: "\(record.lastKnownRecentBlock)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+                if record.syncTimestamp > 0 {
+                    FieldRow(label: "Block Time", value: dateString(Date(timeIntervalSince1970: TimeInterval(record.syncTimestamp))))
+                }
+            }
+        }
+        .navigationTitle("Sync State")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentAddressBalance
 
 struct AddressBalanceStorageDetailView: View {

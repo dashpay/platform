@@ -39,6 +39,18 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Called with updated sync state after each sync round.
+    /// Allows the caller to persist the watermark so incremental
+    /// sync resumes from this point on next app launch.
+    pub on_persist_sync_state_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            sync_height: u64,
+            sync_timestamp: u64,
+            last_known_recent_block: u64,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -90,6 +102,32 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Address balance persistence callback returned error code {}",
+                            result
+                        );
+                    }
+                }
+            }
+        }
+
+        // Send sync state updates.
+        if let Some(ref addr_cs) = changeset.platform_addresses {
+            if let Some(cb) = self.callbacks.on_persist_sync_state_fn {
+                let height = addr_cs.sync_height.unwrap_or(0);
+                let timestamp = addr_cs.sync_timestamp.unwrap_or(0);
+                let recent = addr_cs.last_known_recent_block.unwrap_or(0);
+                if height > 0 || timestamp > 0 || recent > 0 {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            height,
+                            timestamp,
+                            recent,
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Sync state persistence callback returned error code {}",
                             result
                         );
                     }
