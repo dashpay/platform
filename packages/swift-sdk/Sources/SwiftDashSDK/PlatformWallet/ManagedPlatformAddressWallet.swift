@@ -117,8 +117,6 @@ public class ManagedPlatformAddressWallet {
         public let foundCount: Int
         /// Number of addresses proven absent.
         public let absentCount: Int
-        /// Highest derivation index found.
-        public let highestFoundIndex: UInt32?
         /// Block height at tree snapshot.
         public let checkpointHeight: UInt64
         /// New sync height for next incremental sync.
@@ -129,63 +127,18 @@ public class ManagedPlatformAddressWallet {
         public let metrics: SyncMetrics
     }
 
-    /// Sync platform address balances across all accounts.
+    /// Sync platform address balances across every platform payment
+    /// account on the wallet in a single trunk/branch scan.
     ///
-    /// Uses privacy-preserving trunk/branch queries with automatic incremental
-    /// catch-up. The provider retains sync state between calls.
+    /// The unified Rust-side provider presents pending addresses from
+    /// all accounts at once, so one GroveDB proof covers everything.
+    /// The wallet retains incremental sync state between calls.
     ///
-    /// - Returns: Array of per-account sync results.
-    public func syncBalances() throws -> [SyncResult] {
-        var resultsArray = AddressSyncResultArrayFFI(results: nil, count: 0)
-        var error = PlatformWalletFFIError()
-
-        let result = platform_address_wallet_sync_balances(
-            handle, false, nil, &resultsArray, &error
-        )
-
-        defer {
-            platform_address_wallet_free_sync_result_array(&resultsArray)
-        }
-
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
-        guard let results = resultsArray.results, resultsArray.count > 0 else {
-            return []
-        }
-
-        return (0..<resultsArray.count).map { i in
-            let r = results[i]
-            let m = r.metrics
-            return SyncResult(
-                foundCount: r.found_count,
-                absentCount: r.absent_count,
-                highestFoundIndex: r.has_highest_found_index ? r.highest_found_index : nil,
-                checkpointHeight: r.checkpoint_height,
-                newSyncHeight: r.new_sync_height,
-                newSyncTimestamp: r.new_sync_timestamp,
-                metrics: SyncMetrics(
-                    trunkQueries: m.trunk_queries,
-                    branchQueries: m.branch_queries,
-                    totalElementsSeen: m.total_elements_seen,
-                    totalProofBytes: m.total_proof_bytes,
-                    iterations: m.iterations,
-                    compactedQueries: m.compacted_queries,
-                    recentQueries: m.recent_queries,
-                    recentEntriesReturned: m.recent_entries_returned,
-                    compactedEntriesReturned: m.compacted_entries_returned
-                )
-            )
-        }
-    }
-
-    /// Sync platform address balances for a single account.
-    public func syncBalances(accountIndex: UInt32) throws -> SyncResult {
+    /// - Returns: A single combined sync result.
+    public func syncBalances() throws -> SyncResult {
         var syncResult = AddressSyncResultFFI(
             found: nil, found_count: 0,
             absent: nil, absent_count: 0,
-            highest_found_index: 0, has_highest_found_index: false,
             checkpoint_height: 0, new_sync_height: 0, new_sync_timestamp: 0,
             last_known_recent_block: 0,
             metrics: AddressSyncMetricsFFI(
@@ -196,8 +149,8 @@ public class ManagedPlatformAddressWallet {
         )
         var error = PlatformWalletFFIError()
 
-        let result = platform_address_wallet_sync_balances_on_account(
-            handle, accountIndex, false, nil, &syncResult, &error
+        let result = platform_address_wallet_sync_balances(
+            handle, false, nil, &syncResult, &error
         )
 
         defer {
@@ -212,7 +165,6 @@ public class ManagedPlatformAddressWallet {
         return SyncResult(
             foundCount: syncResult.found_count,
             absentCount: syncResult.absent_count,
-            highestFoundIndex: syncResult.has_highest_found_index ? syncResult.highest_found_index : nil,
             checkpointHeight: syncResult.checkpoint_height,
             newSyncHeight: syncResult.new_sync_height,
             newSyncTimestamp: syncResult.new_sync_timestamp,

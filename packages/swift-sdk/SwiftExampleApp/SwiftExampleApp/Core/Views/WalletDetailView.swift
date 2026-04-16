@@ -4,19 +4,35 @@ import SwiftData
 import DashSDKFFI
 
 struct WalletDetailView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
+    @EnvironmentObject var appUIState: AppUIState
     @Environment(\.dismiss) private var dismiss
     let wallet: HDWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
 
+    // Transactions for this wallet come from SwiftData now.
+    @Query private var accounts: [PersistentAccount]
+
+    init(wallet: HDWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _accounts = Query(filter: #Predicate<PersistentAccount> { acc in
+            acc.wallet?.walletId == walletId
+        })
+    }
+
+    private var transactionCount: Int {
+        accounts.reduce(0) { $0 + $1.transactions.count }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Network indicator
             HStack {
-                Label(unifiedAppState.platformState.currentNetwork.displayName, systemImage: "network")
+                Label(platformState.currentNetwork.displayName, systemImage: "network")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 12)
@@ -66,8 +82,6 @@ struct WalletDetailView: View {
 
                 NavigationLink {
                     TransactionListView(wallet: wallet)
-                        .environmentObject(walletService)
-                        .environmentObject(unifiedAppState)
                 } label: {
                     HStack {
                         Label("View All Transactions", systemImage: "list.bullet.rectangle")
@@ -75,8 +89,6 @@ struct WalletDetailView: View {
 
                         Spacer()
 
-                        let transactions = walletService.walletManager.getTransactions(for: wallet)
-                        let transactionCount = transactions.count
                         if transactionCount > 0 {
                             Text("\(transactionCount)")
                                 .font(.caption)
@@ -114,7 +126,6 @@ struct WalletDetailView: View {
 
             // Account List
             AccountListView(wallet: wallet)
-                .environmentObject(walletService)
         }
         .navigationTitle(wallet.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -129,30 +140,22 @@ struct WalletDetailView: View {
         }
         .sheet(isPresented: $showReceiveAddress) {
             ReceiveAddressView(wallet: wallet)
-                .environmentObject(walletService)
-                .environmentObject(unifiedAppState)
-                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showSendTransaction) {
             SendTransactionView(wallet: wallet)
-                .environmentObject(walletService)
-                .environmentObject(unifiedAppState)
-                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showWalletInfo) {
             WalletInfoView(wallet: wallet) {
                 dismiss()
             }
-            .environmentObject(walletService)
         }
-        .onAppear { unifiedAppState.showWalletsSyncDetails = false }
+        .onAppear { appUIState.showWalletsSyncDetails = false }
     }
 }
 
 // MARK: - Wallet Info View
 
 struct WalletInfoView: View {
-    @EnvironmentObject var walletService: WalletService
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
     let wallet: HDWallet
@@ -172,6 +175,16 @@ struct WalletInfoView: View {
     @State private var mainnetAccountCount: Int? = nil
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
+
+    // Account counts come from SwiftData now.
+    @Query private var accounts: [PersistentAccount]
+
+    init(wallet: HDWallet, onWalletDeleted: @escaping () -> Void = {}) {
+        self.wallet = wallet
+        self.onWalletDeleted = onWalletDeleted
+        let walletId = wallet.walletId
+        _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet?.walletId == walletId })
+    }
 
     var body: some View {
         NavigationView {
@@ -351,7 +364,10 @@ struct WalletInfoView: View {
             }
             .onAppear {
                 loadNetworkStates()
-                Task { await loadAccountCounts() }
+                loadAccountCounts()
+            }
+            .onChange(of: accounts.count) { _, _ in
+                loadAccountCounts()
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") { }
@@ -372,42 +388,23 @@ struct WalletInfoView: View {
     }
 
     private func loadNetworkStates() {
-        // TODO: Probably not needed this way anymore?
         switch wallet.network {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
             testnetEnabled = true
         case .regtest:
-            // TODO: Handle this properly in the UI or somehow ignore it.
             regtestEnabled = true
         case .devnet:
             devnetEnabled = true
         }
     }
 
-    private func loadAccountCounts() async {
-        // TODO: This can probably be refactored now with with single network manager?
-        let count = walletService.walletManager.getAccounts(for: wallet).count
-
-        if mainnetEnabled {
-            mainnetAccountCount = count
-        } else { mainnetAccountCount = nil }
-
-        if testnetEnabled {
-            testnetAccountCount = count
-        } else { testnetAccountCount = nil }
-
-        if devnetEnabled {
-            devnetAccountCount = count
-        } else { devnetAccountCount = nil }
-    }
-
-    // Format a block height with thousands separators
-    private func formatHeight(_ h: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: h)) ?? "\(h)"
+    private func loadAccountCounts() {
+        let count = accounts.count
+        mainnetAccountCount = mainnetEnabled ? count : nil
+        testnetAccountCount = testnetEnabled ? count : nil
+        devnetAccountCount = devnetEnabled ? count : nil
     }
 
     private func saveWalletName() {
@@ -425,20 +422,12 @@ struct WalletInfoView: View {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
+        // TODO(platform-wallet): Proper multi-network wallet support once the
+        // Rust side exposes add-network. For now we only refresh UI state.
         do {
-
-            // TODO: This needs some love after single wallet refactoring.
-
-            // Save to Core Data
             try modelContext.save()
-
-            // Reload network states
             loadNetworkStates()
-            await loadAccountCounts()
-
-            // TODO: Call FFI to actually add the network to the wallet
-            // This would involve reinitializing the wallet with the new networks
-
+            loadAccountCounts()
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to enable network: \(error.localizedDescription)"
@@ -448,23 +437,51 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
-        // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
-        // This prevents "Never access a full future backing data" crash
+        // Dismiss views FIRST to prevent UI from accessing deleted relationships
+        // and then delete both the HDWallet and any persistent wallet records.
         await MainActor.run {
             dismiss()
             onWalletDeleted()
         }
 
-        try! await walletService.walletManager.deleteWallet(wallet)
+        // Remove PersistentWallet cascade-records matching walletId.
+        let walletId = wallet.walletId
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
+        )
+        if let persisted = try? modelContext.fetch(descriptor) {
+            for record in persisted {
+                modelContext.delete(record)
+            }
+        }
+        modelContext.delete(wallet)
+        try? modelContext.save()
+        // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
+        // so the Rust side also drops the in-memory handle.
     }
 }
 
 struct BalanceCardView: View {
     let wallet: HDWallet
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
-    @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+
+    @Query private var persistentWallets: [PersistentWallet]
+
+    init(wallet: HDWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
+    }
+
+    private var confirmedBalance: UInt64 {
+        persistentWallets.first?.balanceConfirmed ?? 0
+    }
+
+    private var unconfirmedBalance: UInt64 {
+        persistentWallets.first?.balanceUnconfirmed ?? 0
+    }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
     var platformBalance: UInt64 {
@@ -472,8 +489,7 @@ struct BalanceCardView: View {
         if blastBalance > 0 || platformBalanceSyncService.lastSyncTime != nil {
             return blastBalance
         }
-        // Fallback to identity-based sum if BLAST sync hasn't run yet
-        return unifiedAppState.platformState.identities
+        return platformState.identities
             .filter { identity in
                 identity.walletId == wallet.walletId &&
                 identity.network == wallet.network.rawValue
@@ -484,8 +500,8 @@ struct BalanceCardView: View {
     }
 
     var body: some View {
-        let balance = walletService.walletManager.getBalance(for: wallet)
-        let allZero = balance.total == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
+        let totalCore = confirmedBalance + unconfirmedBalance
+        let allZero = totalCore == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
 
         VStack(spacing: 12) {
             if allZero {
@@ -496,8 +512,8 @@ struct BalanceCardView: View {
                 // Core Balance row
                 WalletBalanceRow(
                     label: "Core Balance",
-                    amount: balance.confirmed,
-                    incoming: balance.unconfirmed,
+                    amount: confirmedBalance,
+                    incoming: unconfirmedBalance,
                     color: .primary
                 )
 

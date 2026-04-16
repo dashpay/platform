@@ -3,7 +3,7 @@ import SwiftData
 import SwiftDashSDK
 
 struct FriendsView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
     @StateObject private var dashPayService = ObservableDashPayService()
     @State private var selectedIdentityId: String = ""
     @State private var contacts: [DashPayContact] = []
@@ -15,7 +15,7 @@ struct FriendsView: View {
     @State private var errorMessage: String?
 
     var availableIdentities: [IdentityModel] {
-        appState.platformState.identities
+        appState.identities
     }
 
     var selectedIdentity: IdentityModel? {
@@ -276,7 +276,7 @@ struct ContactRowView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
-                    Text(contact.id.hexString.prefix(12) + "...")
+                    Text(contact.id.toHexString().prefix(12) + "...")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -311,7 +311,7 @@ struct ContactRequestRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Text((isIncoming ? request.senderId : request.recipientId).hexString.prefix(12) + "...")
+                    Text((isIncoming ? request.senderId : request.recipientId).toHexString().prefix(12) + "...")
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
@@ -406,5 +406,5 @@ struct AddFriendView: View {
 
 #Preview {
     FriendsView()
-        .environmentObject(UnifiedAppState())
+        .environmentObject(AppState())
 }

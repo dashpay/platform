@@ -66,11 +66,26 @@ Private keys are stored separately from identities:
 
 ### Service Architecture
 
-- `UnifiedAppState` - Coordinates Core and Platform features
-- `WalletService` - Manages SPV wallet operations
-- `PlatformService` - Handles identity and document operations
-- `DataManager` - Handles SwiftData persistence
-- `KeychainManager` - Manages secure key storage
+- `AppState` - Platform identity/document/contract state (SDK wrapper)
+- `PlatformWalletManager` - Drives wallet creation, SPV sync, and BLAST
+  balance sync via the Rust-side `platform-wallet` crate. Publishes
+  `spvProgress`, `wallet`, `lastError`. Persists data via SwiftData using
+  `PlatformWalletPersistenceHandler` — UI queries `PersistentWallet`,
+  `PersistentAccount`, `PersistentTransaction`, and `PersistentUtxo`
+  directly with `@Query`.
+- `PlatformBalanceSyncService` - Drives periodic BLAST address sync on the
+  platform side.
+- `ShieldedService` - Shielded pool (Orchard) operations.
+- `TransitionState` - Ephemeral state (pricing, purchase eligibility) for
+  state-transition flows.
+- `AppUIState` - Small UI-only flags (e.g. detailed sync banner).
+- `DataManager` - Handles SwiftData persistence for Platform data.
+- `KeychainManager` - Manages secure key storage.
+
+The previous `UnifiedAppState` / `WalletService` / `CoreWalletManager` /
+`SPVClient` / `SPVEventHandler` stack has been removed. All wallet
+operations now flow through `PlatformWalletManager`; all Core wallet data
+is surfaced to views via SwiftData @Query on the Persistent* models.
 
 ## Common Development Tasks
 

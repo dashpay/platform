@@ -4,8 +4,8 @@ import SwiftDashSDK
 struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
 
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
@@ -35,7 +35,7 @@ struct CreateWalletView: View {
     }
 
     var currentNetwork: AppNetwork {
-        unifiedAppState.platformState.currentNetwork
+        platformState.currentNetwork
     }
 
     // Only show devnet option if currently on devnet
@@ -269,8 +269,8 @@ struct CreateWalletView: View {
         Task {
             do {
                 print("=== STARTING WALLET CREATION ===")
-                
-                let mnemonic = (showImportOption ? importMnemonic : mnemonic)
+
+                let mnemonicPhrase = (showImportOption ? importMnemonic : mnemonic)
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
@@ -282,22 +282,49 @@ struct CreateWalletView: View {
                 ].compactMap { $0 }
 
                 guard let primaryNetwork = selectedNetworks.first else {
-                    throw WalletError.walletError("No network selected")
+                    struct MissingNetwork: LocalizedError {
+                        var errorDescription: String? { "No network selected" }
+                    }
+                    throw MissingNetwork()
                 }
 
-                // Create exactly one wallet in the SDK; do not append network to label
-                _ = try await walletService.walletManager.createWallet(
-                    label: walletLabel,
-                    mnemonic: mnemonic,
-                    pin: walletPin,
-                    isImport: showImportOption
-                )
+                let platformNetwork: PlatformNetwork = {
+                    switch primaryNetwork {
+                    case .mainnet: return .mainnet
+                    case .testnet: return .testnet
+                    case .devnet: return .devnet
+                    case .regtest: return .testnet
+                    }
+                }()
 
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
-
-                await MainActor.run {
+                // Create exactly one wallet via the new PlatformWalletManager
+                // and persist a local HDWallet SwiftData record so existing
+                // views that @Query HDWallet continue to work. The walletId
+                // is what Rust returns; we stash the mnemonic-derived seed
+                // bytes here so the app can still surface "serialized" bytes
+                // if needed.
+                // TODO(platform-wallet): Replace HDWallet with PersistentWallet
+                // as the canonical SwiftData model for the UI.
+                let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonicPhrase)
+                try await MainActor.run {
+                    let managed = try walletManager.createWallet(
+                        mnemonic: mnemonicPhrase,
+                        network: platformNetwork
+                    )
+                    let hdWallet = HDWallet(
+                        walletId: managed.walletId,
+                        serializedWalletBytes: seed,
+                        label: walletLabel,
+                        network: primaryNetwork,
+                        isWatchOnly: false,
+                        isImported: showImportOption
+                    )
+                    modelContext.insert(hdWallet)
+                    try modelContext.save()
                     dismiss()
                 }
+
+                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")

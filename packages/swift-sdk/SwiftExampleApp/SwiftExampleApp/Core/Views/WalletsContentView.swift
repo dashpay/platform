@@ -8,8 +8,8 @@ import SwiftDashSDK
 import SwiftData
 
 struct WalletsContentView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
@@ -19,14 +19,14 @@ struct WalletsContentView: View {
     var body: some View {
         List {
             // Section 1: Wallets
-            Section("Wallets (\(unifiedAppState.platformState.currentNetwork.displayName))") {
+            Section("Wallets (\(platformState.currentNetwork.displayName))") {
                 if wallets.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "wallet.pass")
                             .font(.system(size: 40))
                             .foregroundColor(.gray)
 
-                        Text("No \(unifiedAppState.platformState.currentNetwork.displayName) Wallets")
+                        Text("No \(platformState.currentNetwork.displayName) Wallets")
                             .font(.headline)
 
                         Text("Create a wallet to get started")
@@ -50,7 +50,6 @@ struct WalletsContentView: View {
                     ForEach(wallets) { wallet in
                         NavigationLink {
                             WalletDetailView(wallet: wallet)
-                                .environmentObject(unifiedAppState)
                         } label: {
                             WalletRowView(wallet: wallet)
                         }
@@ -60,7 +59,7 @@ struct WalletsContentView: View {
 
             // Section 2: Identities
             Section("Identities") {
-                if unifiedAppState.platformState.identities.isEmpty {
+                if platformState.identities.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "person.crop.circle.badge.plus")
                             .font(.system(size: 40))
@@ -85,9 +84,9 @@ struct WalletsContentView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
                 } else {
-                    ForEach(unifiedAppState.platformState.identities) { identity in
+                    ForEach(platformState.identities) { identity in
                         IdentityRow(identity: identity)
-                            .environmentObject(unifiedAppState.platformState)
+                            .environmentObject(platformState)
                     }
                 }
             }
@@ -115,17 +114,14 @@ struct WalletsContentView: View {
         .sheet(isPresented: $showingCreateWallet) {
             NavigationStack {
                 CreateWalletView()
-                    .environmentObject(walletService)
-                    .environmentObject(unifiedAppState)
-                    .environment(\.modelContext, modelContext)
             }
         }
         .sheet(isPresented: $showingLoadIdentity) {
             LoadIdentityView()
-                .environmentObject(unifiedAppState.platformState)
+                .environmentObject(platformState)
         }
         .refreshable {
-            await unifiedAppState.performPlatformBalanceSync()
+            await platformBalanceSyncService.performSync()
         }
     }
 }

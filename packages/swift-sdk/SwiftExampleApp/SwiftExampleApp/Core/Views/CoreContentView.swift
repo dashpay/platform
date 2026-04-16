@@ -3,41 +3,47 @@ import SwiftDashSDK
 import SwiftData
 
 struct CoreContentView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
+    @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showProofDetail = false
-    // Progress values come from WalletService (kept in sync with SPV callbacks)
+    @State private var masternodesEnabled: Bool = true
+    // Progress values come from PlatformWalletManager (polled from FFI each second)
 
     // Display helpers
     private var headerHeightsDisplay: String? {
-        let headers = walletService.syncProgress.headers
-        let cur = (headers?.currentHeight ?? 0) + (headers?.buffered ?? 0)
+        let headers = walletManager.spvProgress.headers
+        let cur = headers?.currentHeight ?? 0
         let tot = headers?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var filterHeaderHeightsDisplay: String? {
-        let cur = walletService.syncProgress.filterHeaders?.currentHeight ?? 0
-        let tot = walletService.syncProgress.filterHeaders?.targetHeight ?? 0
+        let cur = walletManager.spvProgress.filterHeaders?.currentHeight ?? 0
+        let tot = walletManager.spvProgress.filterHeaders?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var filterHeightsDisplay: String? {
-        let cur = walletService.syncProgress.filters?.currentHeight ?? 0
-        let tot = walletService.syncProgress.filters?.targetHeight ?? 0
+        let cur = walletManager.spvProgress.filters?.currentHeight ?? 0
+        let tot = walletManager.spvProgress.filters?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var masternodeHeightsDisplay: String? {
-        let cur = walletService.syncProgress.masternodes?.currentHeight ?? 0
-        let tot = walletService.syncProgress.masternodes?.targetHeight ?? 0
+        let cur = walletManager.spvProgress.masternodes?.currentHeight ?? 0
+        let tot = walletManager.spvProgress.masternodes?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
+    }
+
+    private var isSpvRunning: Bool {
+        walletManager.spvProgress.overallState.isRunning
     }
 
     private func heightDisplay(numerator: UInt32, denominator: UInt32) -> String {
@@ -59,27 +65,27 @@ var body: some View {
                     // Compact progress rows
                     CompactSyncRow(
                         title: "Headers",
-                        progress: walletService.syncProgress.headers?.percentage ?? 0.0,
+                        progress: walletManager.spvProgress.headers?.percentage ?? 0.0,
                         value: headerHeightsDisplay
                     )
 
                     CompactSyncRow(
                         title: "Filter Headers",
-                        progress: walletService.syncProgress.filterHeaders?.percentage ?? 0.0,
+                        progress: walletManager.spvProgress.filterHeaders?.percentage ?? 0.0,
                         value: filterHeaderHeightsDisplay
                     )
 
-                    if walletService.masternodesEnabled {
+                    if masternodesEnabled {
                         CompactSyncRow(
                             title: "Masternodes",
-                            progress: 0.0,
+                            progress: walletManager.spvProgress.masternodes?.percentage ?? 0.0,
                             value: masternodeHeightsDisplay
                         )
                     }
 
                     CompactSyncRow(
                         title: "Filters",
-                        progress: walletService.syncProgress.filters?.percentage ?? 0.0,
+                        progress: walletManager.spvProgress.filters?.percentage ?? 0.0,
                         value: filterHeightsDisplay
                     )
 
@@ -88,12 +94,12 @@ var body: some View {
                         Spacer()
 
                         Button(action: toggleSync) {
-                            Text(walletService.syncProgress.state.isRunning() ? "Pause" : "Start")
+                            Text(isSpvRunning ? "Pause" : "Start")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(walletService.syncProgress.state.isRunning() ? .orange : .blue)
+                        .tint(isSpvRunning ? .orange : .blue)
                         .controlSize(.mini)
 
                         Button(action: clearSyncData) {
@@ -104,8 +110,8 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
-                        .disabled(walletService.syncProgress.state.isRunning())
-                        .opacity((walletService.syncProgress.state.isRunning()) ? 0.5 : 1.0)
+                        .disabled(isSpvRunning)
+                        .opacity(isSpvRunning ? 0.5 : 1.0)
                     }
                 }
                 .padding(.vertical, 4)
@@ -268,7 +274,7 @@ var body: some View {
 
                         Button {
                             Task {
-                                await unifiedAppState.performPlatformBalanceSync()
+                                await platformBalanceSyncService.performSync()
                             }
                         } label: {
                             HStack(spacing: 4) {
@@ -367,7 +373,7 @@ var body: some View {
 
                         Button {
                             Task {
-                                if let sdk = unifiedAppState.sdk {
+                                if let sdk = platformState.sdk {
                                     await shieldedService.fullSync(sdk: sdk)
                                 }
                             }
@@ -404,10 +410,11 @@ var body: some View {
         }
         .navigationTitle("Sync Status")
         .onAppear {
-            unifiedAppState.showWalletsSyncDetails = true
+            appUIState.showWalletsSyncDetails = true
+            Task { await refreshMasternodeFlag() }
         }
         .onDisappear {
-            unifiedAppState.showWalletsSyncDetails = false
+            appUIState.showWalletsSyncDetails = false
         }
         .sheet(isPresented: $showProofDetail) {
             NavigationStack {
@@ -419,7 +426,7 @@ var body: some View {
     // MARK: - Sync Methods
 
     private func toggleSync() {
-        if walletService.syncProgress.state.isRunning() {
+        if isSpvRunning {
             pauseSync()
         } else {
             startSync()
@@ -427,51 +434,68 @@ var body: some View {
     }
 
     private func startSync() {
-        Task {
-            await walletService.startSync()
+        do {
+            let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+                .first!
+                .appendingPathComponent("SPV")
+                .appendingPathComponent(platformState.currentNetwork.rawValue)
+            try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
+
+            let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+            let peers: [String] = useLocalCore
+                ? ((UserDefaults.standard.string(forKey: "localCorePeers") ?? "127.0.0.1")
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) })
+                : []
+
+            let config = PlatformSpvStartConfig(
+                dataDir: dataDirURL.path,
+                network: platformNetwork(from: platformState.currentNetwork),
+                peers: peers,
+                restrictToConfiguredPeers: useLocalCore,
+                masternodeSyncEnabled: masternodesEnabled
+            )
+            try walletManager.startSpv(config: config)
+        } catch {
+            print("❌ Sync failed: \(error)")
         }
     }
 
     private func pauseSync() {
-        walletService.stopSync()
-    }
-
-    private func restartHeaderSync() {
-        if walletService.syncProgress.state.isRunning() {
-            // TODO: Call walletService.restartHeaderSync() when implemented
-            print("Restarting header sync...")
-        }
-    }
-
-    private func restartFilterHeaderSync() {
-        if walletService.syncProgress.state.isRunning() {
-            // TODO: Call walletService.restartFilterHeaderSync() when implemented
-            print("Restarting filter header sync...")
-        }
-    }
-
-    private func restartMasternodeSync() {
-        if walletService.syncProgress.state.isRunning() {
-            // TODO: Call walletService.restartMasternodeSync() when implemented
-            print("Restarting masternode sync...")
-        }
-    }
-
-    private func restartTransactionSync() {
-        if walletService.syncProgress.state.isRunning() {
-            // TODO: Call walletService.restartTransactionSync() when implemented
-            print("Restarting transaction sync...")
-        }
+        try? walletManager.stopSpv()
     }
 
     private func clearSyncData() {
-        // Button is disabled during sync
-        guard !walletService.syncProgress.state.isRunning() else {
+        guard !isSpvRunning else {
             print("⚠️ Clear button should be disabled during sync")
             return
         }
 
-        walletService.clearSpvStorage()
+        do {
+            try walletManager.clearSpvStorage()
+        } catch {
+            print("❌ Failed to clear SPV storage: \(error)")
+        }
+    }
+
+    @MainActor
+    private func refreshMasternodeFlag() async {
+        // Best-effort: honor trusted mode reported by the Platform SDK.
+        if let sdk = platformState.sdk {
+            let status: SDKStatus? = try? sdk.getStatus()
+            if let status = status {
+                masternodesEnabled = status.mode.lowercased() != "trusted"
+            }
+        }
+    }
+
+    private func platformNetwork(from network: AppNetwork) -> PlatformNetwork {
+        switch network {
+        case .mainnet: return .mainnet
+        case .testnet: return .testnet
+        case .devnet: return .devnet
+        case .regtest: return .testnet
+        }
     }
 }
 
@@ -599,8 +623,16 @@ struct SyncProgressRow: View {
 
 struct WalletRowView: View {
     let wallet: HDWallet
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
-    @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var platformState: AppState
+
+    // Observe the persisted wallet record matching this HDWallet's wallet id.
+    @Query private var persistentWallets: [PersistentWallet]
+
+    init(wallet: HDWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
+    }
 
     private func getNetworksList() -> String {
         // Wallets are now single-network, just return the wallet's network
@@ -611,16 +643,34 @@ struct WalletRowView: View {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
 
-        return unifiedAppState.platformState.identities
+        return platformState.identities
             .filter { identity in
-                // Check if identity belongs to this wallet and is on the same network
-                // Only count identities that have been explicitly associated with this wallet
                 identity.walletId == wallet.walletId &&
                 identity.network == wallet.network.rawValue
             }
             .reduce(0) { sum, identity in
                 sum + identity.balance
             }
+    }
+
+    private var totalCoreBalance: UInt64 {
+        guard let record = persistentWallets.first else { return 0 }
+        return record.balanceConfirmed
+            + record.balanceUnconfirmed
+            + record.balanceImmature
+            + record.balanceLocked
+    }
+
+    private func formatBalance(_ amount: UInt64) -> String {
+        let dash = Double(amount) / 100_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        return String(format: "%.8f DASH", dash)
     }
 
     var body: some View {
@@ -647,13 +697,12 @@ struct WalletRowView: View {
 
                 VStack(alignment: .trailing, spacing: 2) {
                     // Show wallet balance or "Empty"
-                    let balance = walletService.walletManager.getBalance(for: wallet)
-                    if balance.total == 0 {
+                    if totalCoreBalance == 0 {
                         Text("Empty")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else {
-                        Text(balance.formattedTotal)
+                        Text(formatBalance(totalCoreBalance))
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }

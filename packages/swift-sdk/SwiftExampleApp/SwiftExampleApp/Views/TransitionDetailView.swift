@@ -7,7 +7,9 @@ struct TransitionDetailView: View {
   let transitionKey: String
   let transitionLabel: String
 
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
+  @EnvironmentObject var transitionState: TransitionState
+  @Environment(\.modelContext) private var modelContext
   @State private var selectedIdentityId: String = ""
   @State private var isExecuting = false
   @State private var showResult = false
@@ -35,7 +37,7 @@ struct TransitionDetailView: View {
       let hasContractId = !formInputs["contractId", default: ""].isEmpty
       let hasDocumentType = !formInputs["documentType", default: ""].isEmpty
       let hasDocumentId = !formInputs["documentId", default: ""].isEmpty
-      let canPurchase = appState.transitionState.canPurchaseDocument
+      let canPurchase = transitionState.canPurchaseDocument
 
       print("DEBUG: Button enabled check - contract: \(hasContractId), type: \(hasDocumentType), id: \(hasDocumentId), canPurchase: \(canPurchase), executing: \(isExecuting)")
 
@@ -114,7 +116,7 @@ struct TransitionDetailView: View {
       Text("Select Identity")
         .font(.headline)
 
-      if appState.platformState.identities.isEmpty {
+      if appState.identities.isEmpty {
         Text("No identities available. Create one first.")
           .font(.caption)
           .foregroundColor(.secondary)
@@ -124,7 +126,7 @@ struct TransitionDetailView: View {
           .cornerRadius(8)
       } else {
         Picker("Identity", selection: $selectedIdentityId) {
-          ForEach(appState.platformState.identities, id: \.idString) { identity in
+          ForEach(appState.identities, id: \.idString) { identity in
             Text(identity.displayName)
               .tag(identity.idString)
           }
@@ -285,7 +287,7 @@ struct TransitionDetailView: View {
     checkboxInputs.removeAll()
 
     // Reset transition state
-    appState.transitionState.reset()
+    transitionState.reset()
 
     // Set default values
     if let transition = getTransitionDefinition(transitionKey) {
@@ -297,8 +299,8 @@ struct TransitionDetailView: View {
     }
 
     // Set the first identity as default if we need identity selection
-    if needsIdentitySelection && !appState.platformState.identities.isEmpty {
-      selectedIdentityId = appState.platformState.identities.first?.idString ?? ""
+    if needsIdentitySelection && !appState.identities.isEmpty {
+      selectedIdentityId = appState.identities.first?.idString ?? ""
     }
 
     showResult = false
@@ -343,8 +345,8 @@ struct TransitionDetailView: View {
       }
       // Also check if the document can be purchased
       // Force re-evaluation of the published property
-      let canPurchase = appState.transitionState.canPurchaseDocument
-      print("DEBUG: Document purchase form validation - canPurchase: \(canPurchase), price: \(String(describing: appState.transitionState.documentPrice))")
+      let canPurchase = transitionState.canPurchaseDocument
+      print("DEBUG: Document purchase form validation - canPurchase: \(canPurchase), price: \(String(describing: transitionState.documentPrice))")
       return canPurchase
     }
 
@@ -541,7 +543,7 @@ struct TransitionDetailView: View {
     )
 
     await MainActor.run {
-      appState.platformState.addIdentity(identityModel)
+      appState.addIdentity(identityModel)
     }
 
     return [
@@ -553,7 +555,7 @@ struct TransitionDetailView: View {
 
   private func executeIdentityTopUp(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          appState.platformState.identities.contains(where: { $0.idString == selectedIdentityId }) else {
+          appState.identities.contains(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -562,7 +564,7 @@ struct TransitionDetailView: View {
 
   private func executeIdentityCreditTransfer(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let fromIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let fromIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -606,7 +608,7 @@ struct TransitionDetailView: View {
 
     // Update sender's balance in our local state
     await MainActor.run {
-      appState.platformState.updateIdentityBalance(id: fromIdentity.id, newBalance: senderBalance)
+      appState.updateIdentityBalance(id: fromIdentity.id, newBalance: senderBalance)
     }
 
     return [
@@ -621,7 +623,7 @@ struct TransitionDetailView: View {
 
   private func executeIdentityCreditWithdrawal(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -664,7 +666,7 @@ struct TransitionDetailView: View {
 
     // Update identity's balance in our local state
     await MainActor.run {
-      appState.platformState.updateIdentityBalance(id: identity.id, newBalance: newBalance)
+      appState.updateIdentityBalance(id: identity.id, newBalance: newBalance)
     }
 
     return [
@@ -679,7 +681,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentCreate(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -710,7 +712,7 @@ struct TransitionDetailView: View {
     let descriptor = FetchDescriptor<PersistentDataContract>(
       predicate: #Predicate { $0.id == contractIdData }
     )
-    if let persistentContract = try? appState.modelContainer.mainContext.fetch(descriptor).first,
+    if let persistentContract = try? modelContext.fetch(descriptor).first,
        let documentTypes = persistentContract.documentTypes,
        let docType = documentTypes.first(where: { $0.name == documentType }) {
       // Security level in storage: 0=MASTER, 1=CRITICAL, 2=HIGH, 3=MEDIUM
@@ -755,7 +757,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentDelete(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -832,7 +834,7 @@ struct TransitionDetailView: View {
     }
 
     // Get the owner identity from persistent storage
-    guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+    guard let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("Selected identity not found")
     }
 
@@ -897,7 +899,7 @@ struct TransitionDetailView: View {
     }
 
     // Get the owner identity from persistent storage
-    guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+    guard let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("Selected identity not found")
     }
 
@@ -938,7 +940,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentPurchase(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let purchaserIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let purchaserIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -955,12 +957,12 @@ struct TransitionDetailView: View {
     }
 
     // Check if we can purchase (this should already be validated by the button state)
-    if let error = appState.transitionState.documentPurchaseError {
+    if let error = transitionState.documentPurchaseError {
       throw SDKError.invalidParameter(error)
     }
 
     // Get the price that was fetched by DocumentWithPriceView
-    guard let price = appState.transitionState.documentPrice else {
+    guard let price = transitionState.documentPrice else {
       throw SDKError.invalidParameter("Document price not available. Please enter a valid document ID to fetch its price.")
     }
 
@@ -1006,7 +1008,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentReplace(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1040,7 +1042,7 @@ struct TransitionDetailView: View {
     let descriptor = FetchDescriptor<PersistentDataContract>(
       predicate: #Predicate { $0.id == contractIdData }
     )
-    if let persistentContract = try? appState.modelContainer.mainContext.fetch(descriptor).first,
+    if let persistentContract = try? modelContext.fetch(descriptor).first,
        let documentTypes = persistentContract.documentTypes,
        let docType = documentTypes.first(where: { $0.name == documentType }) {
       requiredSecurityLevel = SecurityLevel(rawValue: UInt8(docType.securityLevel)) ?? .high
@@ -1091,7 +1093,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenMint(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1194,7 +1196,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenBurn(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1290,7 +1292,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenFreeze(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1341,7 +1343,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenUnfreeze(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1390,7 +1392,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenDestroyFrozenFunds(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1439,7 +1441,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenClaim(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1490,7 +1492,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenTransfer(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1563,7 +1565,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenSetPrice(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1618,7 +1620,7 @@ struct TransitionDetailView: View {
 
   private func executeDataContractCreate(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1729,7 +1731,7 @@ struct TransitionDetailView: View {
     }
 
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = appState.identities.first(where: { $0.idString == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 

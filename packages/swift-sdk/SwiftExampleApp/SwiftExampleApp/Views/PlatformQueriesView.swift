@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlatformQueriesView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     enum QueryCategory: String, CaseIterable {
         case identity = "Identity"
@@ -82,7 +82,7 @@ struct PlatformQueriesView: View {
 
 struct QueryCategoryDetailView: View {
     let category: PlatformQueriesView.QueryCategory
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     var body: some View {
         // Special handling for addresses category - use dedicated view

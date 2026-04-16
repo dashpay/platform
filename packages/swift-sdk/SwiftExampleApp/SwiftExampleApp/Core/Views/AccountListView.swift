@@ -2,13 +2,22 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-// AccountInfo and AccountCategory are imported from SwiftDashSDK
-
 // MARK: - Account List View
 struct AccountListView: View {
-    @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
-    @State private var accounts: [AccountInfo] = []
+
+    @Query private var accounts: [PersistentAccount]
+
+    init(wallet: HDWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _accounts = Query(
+            filter: #Predicate<PersistentAccount> { acc in
+                acc.wallet?.walletId == walletId
+            },
+            sort: [SortDescriptor(\PersistentAccount.accountIndex)]
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -16,7 +25,7 @@ struct AccountListView: View {
                 ContentUnavailableView(
                     "No Accounts",
                     systemImage: "folder",
-                    description: Text("Create an account to get started")
+                    description: Text("Accounts are created automatically when the wallet syncs.")
                 )
             } else {
                 List(accounts) { account in
@@ -25,115 +34,95 @@ struct AccountListView: View {
                     }
                 }
                 .listStyle(.plain)
-                .refreshable {
-                    loadAccounts()
-                }
             }
-        }.task {
-            loadAccounts()
         }
-    }
-
-    private func loadAccounts() {
-        self.accounts = walletService.walletManager.getAccounts(for: wallet)
     }
 }
 
 // MARK: - Account Row View
 struct AccountRowView: View {
-    let account: AccountInfo
+    let account: PersistentAccount
 
-    /// Determines if this account type should show balance in UI
-    var shouldShowBalance: Bool {
-        switch account.category {
-        case .bip44, .bip32, .coinjoin:
-            return true
-        default:
-            return false
+    /// Friendly label for the account. The FFI currently emits a type name
+    /// string which is displayed directly; indexed account types get a
+    /// trailing "#<index>".
+    private var label: String {
+        let name = account.accountTypeName
+        if name == "Standard BIP44" || name == "BIP32" || name == "CoinJoin" {
+            return "\(name) #\(account.accountIndex)"
+        }
+        return name
+    }
+
+    /// Whether this account type should show balance information.
+    private var shouldShowBalance: Bool {
+        ["Standard BIP44", "BIP32", "CoinJoin"].contains(account.accountTypeName)
+    }
+
+    private var iconName: String {
+        switch account.accountTypeName {
+        case "Standard BIP44": return "star.circle.fill"
+        case "BIP32": return "tray.full"
+        case "CoinJoin": return "shuffle.circle"
+        case "Identity Registration": return "person.crop.circle"
+        case "Identity Invitation": return "envelope.circle"
+        case "Identity Topup (Not Bound)", "Identity Topup": return "arrow.up.circle"
+        case "Provider Voting Keys": return "key.viewfinder"
+        case "Provider Owner Keys": return "key.horizontal"
+        case "Provider Operator Keys (BLS)": return "wrench.and.screwdriver"
+        case "Provider Platform Keys (EdDSA)": return "network"
+        default: return "folder"
         }
     }
 
-    var accountTypeBadge: String {
-        switch account.category {
-        case .bip44: return (account.index == 0) ? "Main" : (account.index.map { "#\($0)" } ?? "BIP44")
-        case .bip32: return account.index.map { "BIP32 #\($0)" } ?? "BIP32"
-        case .coinjoin: return account.index.map { "CoinJoin #\($0)" } ?? "CoinJoin"
-        case .identityRegistration: return "Identity"
-        case .identityInvitation: return "Invitation"
-        case .identityTopupNotBound: return "Top-up"
-        case .identityTopup: return account.index.map { "Top-up #\($0)" } ?? "Top-up"
-        case .providerVotingKeys: return "Voting"
-        case .providerOwnerKeys: return "Owner"
-        case .providerOperatorKeys: return "Operator"
-        case .providerPlatformKeys: return "Platform"
-        }
-    }
-
-    var accountTypeIcon: String {
-        switch account.category {
-        case .bip44: return account.index == 0 ? "star.circle.fill" : "folder"
-        case .bip32: return "tray.full"
-        case .coinjoin: return "shuffle.circle"
-        case .identityRegistration: return "person.crop.circle"
-        case .identityInvitation: return "envelope.circle"
-        case .identityTopupNotBound, .identityTopup: return "arrow.up.circle"
-        case .providerVotingKeys: return "key.viewfinder"
-        case .providerOwnerKeys: return "key.horizontal"
-        case .providerOperatorKeys: return "wrench.and.screwdriver"
-        case .providerPlatformKeys: return "network"
-        }
-    }
-
-    var accountTypeColor: Color {
-        switch account.category {
-        case .bip44: return (account.index == 0) ? .green : .blue
-        case .bip32: return .teal
-        case .coinjoin: return .orange
-        case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup: return .purple
-        case .providerVotingKeys: return .red
-        case .providerOwnerKeys: return .pink
-        case .providerOperatorKeys: return .indigo
-        case .providerPlatformKeys: return .teal
+    private var iconColor: Color {
+        switch account.accountTypeName {
+        case "Standard BIP44": return account.accountIndex == 0 ? .green : .blue
+        case "BIP32": return .teal
+        case "CoinJoin": return .orange
+        case let n where n.hasPrefix("Identity"): return .purple
+        case "Provider Voting Keys": return .red
+        case "Provider Owner Keys": return .pink
+        case "Provider Operator Keys (BLS)": return .indigo
+        case "Provider Platform Keys (EdDSA)": return .cyan
+        default: return .gray
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Account header
             HStack {
-                Label(account.label, systemImage: accountTypeIcon)
+                Label(label, systemImage: iconName)
                     .font(.headline)
-                    .foregroundColor(accountTypeColor)
+                    .foregroundColor(iconColor)
 
                 Spacer()
 
-                // Account type badge
-                Text(accountTypeBadge)
+                Text(account.accountTypeName)
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(accountTypeColor.opacity(0.2))
+                    .background(iconColor.opacity(0.2))
                     .cornerRadius(4)
             }
 
-            // Balance information - only show for appropriate account types
             if shouldShowBalance {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Confirmed")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balance.confirmed))
+                        Text(formatBalance(account.balanceConfirmed))
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
 
-                    if account.balance.unconfirmed > 0 {
+                    if account.balanceUnconfirmed > 0 {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pending")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(formatBalance(account.balance.unconfirmed))
+                            Text(formatBalance(account.balanceUnconfirmed))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundColor(.orange)
@@ -142,19 +131,17 @@ struct AccountRowView: View {
 
                     Spacer()
 
-                    // Total balance
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("Total")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balance.confirmed + account.balance.unconfirmed))
+                        Text(formatBalance(account.balanceConfirmed + account.balanceUnconfirmed))
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundColor(accountTypeColor)
+                            .foregroundColor(iconColor)
                     }
                 }
             } else {
-                // For special-purpose accounts, show their purpose instead of balance
                 HStack {
                     Text("Special Purpose Account")
                         .font(.caption)
@@ -164,21 +151,21 @@ struct AccountRowView: View {
                 }
             }
 
-            // Address count information (only for accounts with addresses)
-            if account.addressCount.external > 0 || account.addressCount.internal > 0 {
+            // Address pool summary.
+            let ext = max(Int(account.externalHighestUsed) + 1, 0)
+            let intc = max(Int(account.internalHighestUsed) + 1, 0)
+            if ext > 0 || intc > 0 {
                 HStack(spacing: 16) {
-                    if account.addressCount.external > 0 {
-                        Label("\(account.addressCount.external) receive", systemImage: "arrow.down.circle")
+                    if ext > 0 {
+                        Label("\(ext) receive", systemImage: "arrow.down.circle")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-
-                    if account.addressCount.internal > 0 {
-                        Label("\(account.addressCount.internal) change", systemImage: "arrow.up.arrow.down.circle")
+                    if intc > 0 {
+                        Label("\(intc) change", systemImage: "arrow.up.arrow.down.circle")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-
                     Spacer()
                 }
             }

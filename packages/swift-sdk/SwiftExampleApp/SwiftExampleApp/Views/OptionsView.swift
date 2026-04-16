@@ -3,7 +3,9 @@ import SwiftDashSDK
 
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var showingContracts = false
@@ -22,8 +24,12 @@ struct OptionsView: View {
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
 
-                                    // Also update wallet service
-                                    await unifiedAppState.handleNetworkSwitch(to: newNetwork)
+                                    // Reset per-network services. TODO(platform-wallet):
+                                    // Once PlatformWalletManager supports network
+                                    // switching cleanly, call into it here.
+                                    try? walletManager.stopSpv()
+                                    platformBalanceSyncService.reset()
+                                    shieldedService.reset()
 
                                     await MainActor.run {
                                         isSwitchingNetwork = false

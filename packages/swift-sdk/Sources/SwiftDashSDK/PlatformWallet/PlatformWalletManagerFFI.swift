@@ -92,18 +92,11 @@ struct AddressSyncResultFFI {
     var found_count: Int
     var absent: UnsafeMutablePointer<AbsentAddressEntryFFI>?
     var absent_count: Int
-    var highest_found_index: UInt32
-    var has_highest_found_index: Bool
     var checkpoint_height: UInt64
     var new_sync_height: UInt64
     var new_sync_timestamp: UInt64
     var last_known_recent_block: UInt64
     var metrics: AddressSyncMetricsFFI
-}
-
-struct AddressSyncResultArrayFFI {
-    var results: UnsafeMutablePointer<AddressSyncResultFFI>?
-    var count: Int
 }
 
 // MARK: - SPV Sync Progress
@@ -308,16 +301,6 @@ func platform_address_wallet_sync_balances(
     _ handle: Handle,
     _ has_config: Bool,
     _ config: UnsafePointer<AddressSyncConfigFFI>?,
-    _ out_results: UnsafeMutablePointer<AddressSyncResultArrayFFI>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_address_wallet_sync_balances_on_account")
-func platform_address_wallet_sync_balances_on_account(
-    _ handle: Handle,
-    _ account_index: UInt32,
-    _ has_config: Bool,
-    _ config: UnsafePointer<AddressSyncConfigFFI>?,
     _ out_result: UnsafeMutablePointer<AddressSyncResultFFI>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -351,5 +334,3 @@ func platform_address_wallet_free_changeset(_ changeset: UnsafePointer<PlatformA
 @_silgen_name("platform_address_wallet_free_sync_result")
 func platform_address_wallet_free_sync_result(_ result: UnsafePointer<AddressSyncResultFFI>?)
 
-@_silgen_name("platform_address_wallet_free_sync_result_array")
-func platform_address_wallet_free_sync_result_array(_ array: UnsafePointer<AddressSyncResultArrayFFI>?)

@@ -1,18 +1,23 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: HDWallet
 
     @StateObject private var viewModel: SendViewModel
 
+    @Query private var persistentWallets: [PersistentWallet]
+
     init(wallet: HDWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network))
+        let walletId = wallet.walletId
+        _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
     }
 
     var body: some View {
@@ -104,13 +109,14 @@ struct SendTransactionView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Send") {
                         Task {
-                            guard let sdk = unifiedAppState.sdk else { return }
+                            guard let sdk = platformState.sdk else { return }
+                            let coreWallet = try? walletManager.wallet?.coreWallet()
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 shieldedService: shieldedService,
-                                platformState: unifiedAppState.platformState,
+                                platformState: platformState,
                                 wallet: wallet,
-                                coreWallet: try? unifiedAppState.managedWallet?.coreWallet()
+                                coreWallet: coreWallet
                             )
                         }
                     }
@@ -149,7 +155,7 @@ struct SendTransactionView: View {
     // MARK: - Computed
 
     private var coreBalance: UInt64 {
-        walletService.walletManager.getBalance(for: wallet).confirmed
+        persistentWallets.first?.balanceConfirmed ?? 0
     }
 
     private var shieldedBalance: UInt64 {
@@ -157,7 +163,7 @@ struct SendTransactionView: View {
     }
 
     private var platformBalance: UInt64 {
-        unifiedAppState.platformState.identities
+        platformState.identities
             .filter {
                 $0.walletId == wallet.walletId &&
                 $0.network == wallet.network.rawValue

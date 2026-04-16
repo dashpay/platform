@@ -7,18 +7,22 @@ enum RootTab: Hashable {
 }
 
 struct ContentView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
-    @EnvironmentObject var walletService: WalletService
+    let isInitialized: Bool
+    let bootstrapError: Error?
+    let onRetry: () -> Void
+
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appUIState: AppUIState
 
     @State private var selectedTab: RootTab = .sync
 
     var body: some View {
-        if !unifiedState.isInitialized {
+        if !isInitialized {
             VStack(spacing: 20) {
                 ProgressView("Initializing...")
                     .scaleEffect(1.5)
 
-                if let error = unifiedState.error {
+                if let error = bootstrapError {
                     VStack(spacing: 10) {
                         Text("Initialization Error")
                             .font(.headline)
@@ -31,10 +35,7 @@ struct ContentView: View {
                             .padding(.horizontal)
 
                         Button("Retry") {
-                            Task {
-                                unifiedState.error = nil
-                                await unifiedState.initialize()
-                            }
+                            onRetry()
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -83,9 +84,9 @@ struct ContentView: View {
                     .tag(RootTab.settings)
             }
             .overlay(alignment: .top) {
-                if walletService.syncProgress.state.isSyncing() {
-                    GlobalSyncIndicator(showDetails: selectedTab == .sync && unifiedState.showWalletsSyncDetails)
-                        .environmentObject(walletService)
+                let state = walletManager.spvProgress.overallState
+                if state == .syncing || state == .waitingForConnections {
+                    GlobalSyncIndicator(showDetails: selectedTab == .sync && appUIState.showWalletsSyncDetails)
                 }
             }
         }
@@ -93,26 +94,24 @@ struct ContentView: View {
 }
 
 struct GlobalSyncIndicator: View {
-    @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var walletManager: PlatformWalletManager
     let showDetails: Bool
 
     // Helpers
     private var phaseTitle: String {
-        switch walletService.syncProgress.state {
+        switch walletManager.spvProgress.overallState {
         case .waitingForConnections: return "Waiting for Connection"
         case .waitForEvents: return "Waiting for Events"
         case .syncing: return "Syncing"
         case .synced: return "Synced"
         case .error:
-            let errMsg = walletService.lastSyncError?.localizedDescription ?? "Unknown error"
+            let errMsg = walletManager.lastError?.localizedDescription ?? "Unknown error"
             return "Error occurred during sync \(errMsg)"
-        default:
-            return "Unexpected stage (\(walletService.syncProgress.state))"
         }
     }
 
     private var fillProgress: Double {
-        return walletService.syncProgress.percentage
+        walletManager.spvProgress.overallPercentage
     }
 
     var body: some View {
@@ -125,8 +124,9 @@ struct GlobalSyncIndicator: View {
                     Text(phaseTitle)
                         .font(.caption)
                     Spacer()
-                    // No right-side numbers in the top bar per design
-                    Button(action: { walletService.stopSync() }) {
+                    Button(action: {
+                        try? walletManager.stopSpv()
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -152,41 +152,23 @@ struct GlobalSyncIndicator: View {
 
 // Wrapper views
 struct SyncStatusView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
-
     var body: some View {
         NavigationStack {
             CoreContentView()
-                .environmentObject(unifiedState.walletService)
-                .environmentObject(unifiedState)
-                .environmentObject(unifiedState.platformBalanceSyncService)
-                .environmentObject(unifiedState.shieldedService)
-                .environment(\.modelContext, unifiedState.modelContainer.mainContext)
         }
     }
 }
 
 struct WalletsTabView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
-
     var body: some View {
         NavigationStack {
             WalletsContentView()
-                .environmentObject(unifiedState.walletService)
-                .environmentObject(unifiedState)
-                .environmentObject(unifiedState.platformBalanceSyncService)
-                .environmentObject(unifiedState.shieldedService)
-                .environment(\.modelContext, unifiedState.modelContainer.mainContext)
         }
     }
 }
 
 struct SettingsView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
-
     var body: some View {
         OptionsView()
-            .environmentObject(unifiedState.platformState)
-            .environmentObject(unifiedState)
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftDashSDK
 
 struct PlatformView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
     @State private var selectedOperation: PlatformOperation = .queries
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
@@ -52,8 +52,8 @@ struct PlatformView: View {
                     HStack {
                         Text("SDK Initialized")
                         Spacer()
-                        Image(systemName: appState.platformState.sdk != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(appState.platformState.sdk != nil ? .green : .red)
+                        Image(systemName: appState.sdk != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(appState.sdk != nil ? .green : .red)
                     }
 
                     if let status = sdkStatus {
@@ -102,7 +102,7 @@ struct PlatformView: View {
     }
 
     private func loadSDKStatus() {
-        guard let sdk = appState.platformState.sdk else { return }
+        guard let sdk = appState.sdk else { return }
 
         isLoadingStatus = true
 
@@ -136,6 +136,6 @@ struct PlatformView: View {
 struct PlatformView_Previews: PreviewProvider {
     static var previews: some View {
         PlatformView()
-            .environmentObject(UnifiedAppState())
+            .environmentObject(AppState())
     }
 }

@@ -190,30 +190,27 @@ class PlatformBalanceSyncService: ObservableObject {
         lastError = nil
 
         do {
-            // Sync all accounts — provider handles incremental state internally
-            let results = try wallet.syncBalances()
+            // Unified provider performs one combined trunk/branch scan
+            // across every account and returns a single result.
+            let result = try wallet.syncBalances()
 
-            // Aggregate results across all accounts
-            for result in results {
-                if result.checkpointHeight > 0 {
-                    checkpointHeight = result.checkpointHeight
-                }
-                if result.newSyncHeight > chainTipHeight {
-                    chainTipHeight = result.newSyncHeight
-                }
-                lastSyncHeight = result.newSyncHeight
-                if result.newSyncTimestamp > 0 {
-                    lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
-                }
-
-                // Accumulate metrics
-                totalTrunkQueries += result.metrics.trunkQueries
-                totalBranchQueries += result.metrics.branchQueries
-                totalCompactedQueries += result.metrics.compactedQueries
-                totalRecentQueries += result.metrics.recentQueries
-                totalRecentEntries += result.metrics.recentEntriesReturned
-                totalCompactedEntries += result.metrics.compactedEntriesReturned
+            if result.checkpointHeight > 0 {
+                checkpointHeight = result.checkpointHeight
             }
+            if result.newSyncHeight > chainTipHeight {
+                chainTipHeight = result.newSyncHeight
+            }
+            lastSyncHeight = result.newSyncHeight
+            if result.newSyncTimestamp > 0 {
+                lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
+            }
+
+            totalTrunkQueries += result.metrics.trunkQueries
+            totalBranchQueries += result.metrics.branchQueries
+            totalCompactedQueries += result.metrics.compactedQueries
+            totalRecentQueries += result.metrics.recentQueries
+            totalRecentEntries += result.metrics.recentEntriesReturned
+            totalCompactedEntries += result.metrics.compactedEntriesReturned
 
             // Read balances from the wallet (canonical source of truth)
             let balances = try wallet.addressesWithBalances()

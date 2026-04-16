@@ -9,7 +9,7 @@ struct TransitionInputView: View {
     let onSpecialAction: (String) -> Void
 
     @Query private var dataContracts: [PersistentDataContract]
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     // State for dynamic selections
     @State private var selectedContractId: String = ""
@@ -438,7 +438,7 @@ struct TransitionInputView: View {
                        selectedDocType.creationRestrictionMode == 1 {
                         // Get the currently selected identity from parent
                         // The parent passes the selected identity through the action field pattern
-                        let selectedIdentities = appState.platformState.identities.filter { identity in
+                        let selectedIdentities = appState.identities.filter { identity in
                             // Check if this identity owns the contract
                             return identity.id == contract.ownerId
                         }
@@ -484,7 +484,7 @@ struct TransitionInputView: View {
 
     @ViewBuilder
     private func identityPicker() -> some View {
-        let identities = appState.platformState.identities
+        let identities = appState.identities
 
         if identities.isEmpty {
             Text("No identities available")
@@ -515,7 +515,7 @@ struct TransitionInputView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Get the sender identity from the parent's selectedIdentityId
             let senderIdentityId = input.placeholder ?? ""
-            let identities = appState.platformState.identities.filter { $0.idString != senderIdentityId }
+            let identities = appState.identities.filter { $0.idString != senderIdentityId }
 
             if !useManualEntry {
                 if identities.isEmpty {
