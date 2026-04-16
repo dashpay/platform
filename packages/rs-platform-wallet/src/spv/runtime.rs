@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
+use dash_spv::sync::SyncProgress;
 use dash_spv::{ClientConfig, DashSpvClient, Hash};
 
 use key_wallet_manager::WalletManager;
@@ -179,6 +180,43 @@ impl SpvRuntime {
                 .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
         }
         Ok(())
+    }
+
+    /// Get the current sync progress.
+    ///
+    /// Returns `None` if the SPV client is not running.
+    pub async fn sync_progress(&self) -> Option<SyncProgress> {
+        let client_guard = self.client.read().await;
+        let client = client_guard.as_ref()?;
+        Some(client.sync_progress().await)
+    }
+
+    /// Clear all persisted SPV storage (headers, filters, state).
+    ///
+    /// The SPV client must be running to perform this operation.
+    pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        client
+            .clear_storage()
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+    }
+
+    /// Update the running SPV client's configuration.
+    ///
+    /// The network cannot be changed on a running client.
+    pub async fn update_config(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        client
+            .update_config(config)
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
     }
 }
 
