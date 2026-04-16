@@ -1096,7 +1096,7 @@ impl DashPayWallet {
     /// identities and cache them on [`ManagedIdentity`].
     ///
     /// Returns the number of profiles that were successfully synced.
-    pub(crate) async fn sync_profiles(&self) -> Result<u32, PlatformWalletError> {
+    pub async fn sync_profiles(&self) -> Result<u32, PlatformWalletError> {
         // 1. Collect all managed identity IDs under a short read lock.
         let identity_ids: Vec<Identifier> = {
             let wm = self.wallet_manager.read().await;
