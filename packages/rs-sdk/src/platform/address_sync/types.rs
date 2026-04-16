@@ -79,22 +79,21 @@ impl Default for AddressSyncConfig {
 }
 
 /// Result of address synchronization.
+///
+/// Generic over the provider's [`Tag`](super::AddressProvider::Tag)
+/// type so the key in `found` / `absent` carries whatever metadata
+/// the provider chose when it added the entry to its pending set.
 #[derive(Debug)]
-pub struct AddressSyncResult {
+pub struct AddressSyncResult<Tag> {
     /// Addresses found with their balances and nonces.
     ///
-    /// Map of `(index, key)` to address funds.
-    pub found: BTreeMap<(AddressIndex, PlatformAddress), AddressFunds>,
+    /// Map of `(tag, key)` to address funds.
+    pub found: BTreeMap<(Tag, PlatformAddress), AddressFunds>,
 
     /// Addresses proven absent from the tree.
     ///
-    /// Set of `(index, key)` tuples that were proven to not exist.
-    pub absent: BTreeSet<(AddressIndex, PlatformAddress)>,
-
-    /// Highest found index (for HD wallets).
-    ///
-    /// This is the highest address index that was found in the tree.
-    pub highest_found_index: Option<AddressIndex>,
+    /// Set of `(tag, key)` tuples that were proven to not exist.
+    pub absent: BTreeSet<(Tag, PlatformAddress)>,
 
     /// Metrics about the sync process.
     pub metrics: AddressSyncMetrics,
@@ -140,13 +139,15 @@ pub struct AddressSyncResult {
     pub recent_proof: Vec<u8>,
 }
 
-impl AddressSyncResult {
+impl<Tag> AddressSyncResult<Tag>
+where
+    Tag: Ord,
+{
     /// Create a new empty result.
     pub fn new() -> Self {
         Self {
             found: BTreeMap::new(),
             absent: BTreeSet::new(),
-            highest_found_index: None,
             metrics: AddressSyncMetrics::default(),
             checkpoint_height: 0,
             new_sync_height: 0,
@@ -170,7 +171,10 @@ impl AddressSyncResult {
     }
 }
 
-impl Default for AddressSyncResult {
+impl<Tag> Default for AddressSyncResult<Tag>
+where
+    Tag: Ord,
+{
     fn default() -> Self {
         Self::new()
     }

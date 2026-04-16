@@ -87,12 +87,12 @@ const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 
 /// Mutable context carried through the trunk/branch tree scan for addresses.
 ///
-/// This bundles the provider, the key-to-index lookup, and the result into a
+/// This bundles the provider, the key-to-tag lookup, and the result into a
 /// single struct so it can serve as `TrunkBranchSyncOps::Context`.
 struct AddressSyncContext<'a, P: AddressProvider> {
     provider: &'a mut P,
-    key_to_index: &'a mut HashMap<PlatformAddress, AddressIndex>,
-    result: &'a mut AddressSyncResult,
+    key_to_tag: &'a mut HashMap<PlatformAddress, P::Tag>,
+    result: &'a mut AddressSyncResult<P::Tag>,
 }
 
 // SAFETY: P: AddressProvider is Send (required by trait bound), and HashMap/AddressSyncResult are Send.
@@ -147,23 +147,27 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
     ) -> Result<(), Error> {
-        let pending: Vec<(AddressIndex, PlatformAddress)> = context.provider.pending_addresses();
+        // Materialize into a Vec because the loop body calls
+        // `context.provider.on_address_found` / `on_address_absent`,
+        // which need to re-borrow `provider` mutably.
+        let pending: Vec<(P::Tag, PlatformAddress)> =
+            context.provider.pending_addresses().collect();
 
-        for (index, address) in pending {
+        for (tag, address) in pending {
             let key_bytes = address.to_bytes();
             if let Some(element) = trunk_result.elements.get(&key_bytes) {
                 let funds = AddressFunds::try_from(element)?;
-                context.result.found.insert((index, address), funds);
+                context.result.found.insert((tag, address), funds);
                 context
                     .provider
-                    .on_address_found(index, &address, funds)
+                    .on_address_found(tag, &address, funds)
                     .await;
             } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
                 tracker.add_key(key_bytes, leaf_key, info);
             } else {
                 // Key is proven absent
-                context.result.absent.insert((index, address));
-                context.provider.on_address_absent(index, &address).await;
+                context.result.absent.insert((tag, address));
+                context.provider.on_address_absent(tag, &address).await;
             }
         }
 
@@ -195,14 +199,20 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             let address = PlatformAddress::from_bytes(&target_key).map_err(|e| {
                 Error::Generic(format!("Invalid address bytes from tracker: {}", e))
             })?;
-            let index = context.key_to_index.get(&address).copied().unwrap_or(0);
+            // If we somehow observe an address we don't have a tag for,
+            // skip it rather than fabricating one — the provider's
+            // callbacks expect tags it issued itself.
+            let Some(&tag) = context.key_to_tag.get(&address) else {
+                tracker.key_found(&target_key);
+                continue;
+            };
 
             if let Some(element) = branch_result.elements.get(&target_key) {
                 let funds = AddressFunds::try_from(element)?;
-                context.result.found.insert((index, address), funds);
+                context.result.found.insert((tag, address), funds);
                 context
                     .provider
-                    .on_address_found(index, &address, funds)
+                    .on_address_found(tag, &address, funds)
                     .await;
                 tracker.key_found(&target_key);
             } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key)
@@ -210,8 +220,8 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
                 tracker.update_leaf(&target_key, new_leaf_key, info);
             } else {
                 // Key is proven absent
-                context.result.absent.insert((index, address));
-                context.provider.on_address_absent(index, &address).await;
+                context.result.absent.insert((tag, address));
+                context.provider.on_address_absent(tag, &address).await;
                 tracker.key_found(&target_key); // Remove from tracking
             }
         }
@@ -238,10 +248,14 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
     ) {
-        // Check if provider has extended pending addresses (gap limit behavior)
-        for (index, address) in context.provider.pending_addresses() {
-            if !context.key_to_index.contains_key(&address) {
-                context.key_to_index.insert(address, index);
+        // Check if provider has extended pending addresses (gap limit behavior).
+        // Materialize the iterator so the `&context.provider` borrow it
+        // holds is released before we mutate `context.key_to_tag`.
+        let pending: Vec<(P::Tag, PlatformAddress)> =
+            context.provider.pending_addresses().collect();
+        for (tag, address) in pending {
+            if !context.key_to_tag.contains_key(&address) {
+                context.key_to_tag.insert(address, tag);
                 // New key needs to be traced - it will be picked up in next iteration
                 let key_bytes = address.to_bytes();
                 if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
@@ -300,17 +314,17 @@ pub async fn sync_address_balances<P: AddressProvider>(
     provider: &mut P,
     config: Option<AddressSyncConfig>,
     last_sync_timestamp: Option<u64>,
-) -> Result<AddressSyncResult, Error> {
+) -> Result<AddressSyncResult<P::Tag>, Error> {
     let config = config.unwrap_or_default();
 
-    // Build the index -> key map for looking up indices when we find keys
-    let mut key_to_index: HashMap<PlatformAddress, AddressIndex> = HashMap::new();
-    for (index, key) in provider.pending_addresses() {
-        key_to_index.insert(key, index);
+    // Build the key -> tag map for looking up tags when we find keys
+    let mut key_to_tag: HashMap<PlatformAddress, P::Tag> = HashMap::new();
+    for (tag, key) in provider.pending_addresses() {
+        key_to_tag.insert(key, tag);
     }
 
     // Initialize result
-    let mut result = AddressSyncResult::new();
+    let mut result: AddressSyncResult<P::Tag> = AddressSyncResult::new();
 
     // If no pending addresses, return early
     if !provider.has_pending() {
@@ -350,15 +364,15 @@ pub async fn sync_address_balances<P: AddressProvider>(
             "Address sync: incremental-only from height {}",
             start_height
         );
-        for &(index, address, funds) in provider.current_balances() {
-            result.found.insert((index, address), funds);
+        for (tag, address, funds) in provider.current_balances() {
+            result.found.insert((tag, address), funds);
         }
         start_height
     } else {
         // Full tree scan via the shared algorithm
         let mut context = AddressSyncContext {
             provider,
-            key_to_index: &mut key_to_index,
+            key_to_tag: &mut key_to_tag,
             result: &mut result,
         };
         let (scan_height, block_time_ms) = trunk_branch_sync::run_full_tree_scan::<AddressOps<P>>(
@@ -382,7 +396,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
     let last_known_recent_block = provider.last_known_recent_block_height();
     incremental_catch_up(
         sdk,
-        &key_to_index,
+        &key_to_tag,
         catch_up_from,
         last_known_recent_block,
         provider,
@@ -390,9 +404,6 @@ pub async fn sync_address_balances<P: AddressProvider>(
         config.request_settings,
     )
     .await?;
-
-    // Set highest found index from provider
-    result.highest_found_index = provider.highest_found_index();
 
     Ok(result)
 }
@@ -430,18 +441,18 @@ pub async fn sync_address_balances<P: AddressProvider>(
 /// and `result.last_known_recent_block`.
 async fn incremental_catch_up<P: AddressProvider>(
     sdk: &Sdk,
-    key_to_index: &HashMap<PlatformAddress, AddressIndex>,
+    key_to_tag: &HashMap<PlatformAddress, P::Tag>,
     start_height: u64,
     last_known_recent_block: u64,
     provider: &mut P,
-    result: &mut AddressSyncResult,
+    result: &mut AddressSyncResult<P::Tag>,
     settings: RequestSettings,
 ) -> Result<(), Error> {
-    // Build a reverse lookup from raw address bytes to (index, address) for
+    // Build a reverse lookup from raw address bytes to (tag, address) for
     // efficient matching against change entries.
-    let address_lookup: HashMap<Vec<u8>, (AddressIndex, PlatformAddress)> = key_to_index
+    let address_lookup: HashMap<Vec<u8>, (P::Tag, PlatformAddress)> = key_to_tag
         .iter()
-        .map(|(address, &index)| (address.to_bytes(), (index, *address)))
+        .map(|(address, &tag)| (address.to_bytes(), (tag, *address)))
         .collect();
 
     let mut current_height = start_height;
@@ -599,8 +610,8 @@ async fn incremental_catch_up<P: AddressProvider>(
             for entry in &entries {
                 for (platform_addr, credit_op) in &entry.changes {
                     let addr_bytes = platform_addr.to_bytes();
-                    if let Some(&(index, address)) = address_lookup.get(&addr_bytes) {
-                        let result_key = (index, address);
+                    if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
+                        let result_key = (tag, address);
                         let current_balance = result
                             .found
                             .get(&result_key)
@@ -626,7 +637,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                                 balance: new_balance,
                             };
                             result.found.insert(result_key, funds);
-                            provider.on_address_found(index, &address, funds).await;
+                            provider.on_address_found(tag, &address, funds).await;
                         }
                     }
                 }
@@ -662,8 +673,8 @@ async fn incremental_catch_up<P: AddressProvider>(
 
             for (platform_addr, credit_op) in &entry.changes {
                 let addr_bytes = platform_addr.to_bytes();
-                if let Some(&(index, address)) = address_lookup.get(&addr_bytes) {
-                    let result_key = (index, address);
+                if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
+                    let result_key = (tag, address);
                     let current_balance = result
                         .found
                         .get(&result_key)
@@ -684,7 +695,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                             balance: new_balance,
                         };
                         result.found.insert(result_key, funds);
-                        provider.on_address_found(index, &address, funds).await;
+                        provider.on_address_found(tag, &address, funds).await;
                     }
                 }
             }
@@ -916,7 +927,7 @@ impl Sdk {
         provider: &mut P,
         config: Option<AddressSyncConfig>,
         last_sync_timestamp: Option<u64>,
-    ) -> Result<AddressSyncResult, Error> {
+    ) -> Result<AddressSyncResult<P::Tag>, Error> {
         sync_address_balances(self, provider, config, last_sync_timestamp).await
     }
 }
@@ -950,7 +961,7 @@ mod tests {
 
     #[test]
     fn test_default_result_has_zero_new_sync_height() {
-        let result = AddressSyncResult::new();
+        let result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         assert_eq!(result.new_sync_height, 0);
         assert_eq!(result.checkpoint_height, 0);
     }
@@ -1058,7 +1069,7 @@ mod tests {
     #[test]
     fn test_result_new_sync_height_max() {
         // new_sync_height should be max of current and observed tip
-        let mut result = AddressSyncResult::new();
+        let mut result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         result.new_sync_height = 100;
         let observed_tip = 200u64;
         result.new_sync_height = result.new_sync_height.max(observed_tip);
@@ -1067,7 +1078,7 @@ mod tests {
 
     #[test]
     fn test_result_checkpoint_separate_from_sync_height() {
-        let mut result = AddressSyncResult::new();
+        let mut result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         result.checkpoint_height = 50;
         result.new_sync_height = 100;
         assert_ne!(result.checkpoint_height, result.new_sync_height);
@@ -1080,7 +1091,7 @@ mod tests {
         // In incremental-only mode, checkpoint_height defaults to 0.
         // Any last_recent_block >= 0 should skip compacted (correct behavior:
         // known balances are seeded from current_balances, so no compacted gap).
-        let result = AddressSyncResult::new();
+        let result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         assert_eq!(result.checkpoint_height, 0);
 
         // Simulating the compaction detection logic from incremental_catch_up
@@ -1096,7 +1107,7 @@ mod tests {
     fn test_full_scan_mode_checkpoint_triggers_compacted() {
         // After a full tree scan, checkpoint_height is set to the scan height.
         // If last_recent_block < checkpoint, compacted phase should run.
-        let mut result = AddressSyncResult::new();
+        let mut result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         result.checkpoint_height = 1000;
 
         let last_recent_block: u64 = 500;
@@ -1110,7 +1121,7 @@ mod tests {
     #[test]
     fn test_full_scan_mode_recent_covers_checkpoint() {
         // After a full tree scan, if recent tree covers the checkpoint, skip compacted.
-        let mut result = AddressSyncResult::new();
+        let mut result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         result.checkpoint_height = 1000;
 
         let last_recent_block: u64 = 1050;
@@ -1181,10 +1192,9 @@ mod tests {
 
     #[test]
     fn test_sync_result_new_defaults() {
-        let result = AddressSyncResult::new();
+        let result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
         assert!(result.found.is_empty());
         assert!(result.absent.is_empty());
-        assert_eq!(result.highest_found_index, None);
         assert_eq!(result.checkpoint_height, 0);
         assert_eq!(result.new_sync_height, 0);
         assert_eq!(result.new_sync_timestamp, 0);
@@ -1196,14 +1206,10 @@ mod tests {
 
     #[test]
     fn test_sync_result_default_matches_new() {
-        let from_new = AddressSyncResult::new();
-        let from_default = AddressSyncResult::default();
+        let from_new: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
+        let from_default: AddressSyncResult<AddressIndex> = AddressSyncResult::default();
         assert_eq!(from_new.found.len(), from_default.found.len());
         assert_eq!(from_new.absent.len(), from_default.absent.len());
-        assert_eq!(
-            from_new.highest_found_index,
-            from_default.highest_found_index
-        );
         assert_eq!(from_new.checkpoint_height, from_default.checkpoint_height);
         assert_eq!(from_new.new_sync_height, from_default.new_sync_height);
         assert_eq!(from_new.new_sync_timestamp, from_default.new_sync_timestamp);
@@ -1310,7 +1316,7 @@ mod tests {
 
     #[test]
     fn test_sync_result_total_balance_and_non_zero_count() {
-        let mut result = AddressSyncResult::new();
+        let mut result: AddressSyncResult<AddressIndex> = AddressSyncResult::new();
 
         // Insert three addresses with varying balances
         result.found.insert(
