@@ -1594,3 +1594,52 @@ impl DashPayWallet {
         Ok(profile)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Incoming payment recording
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Match a Core transaction output address against DashPay contact
+    /// receiving accounts AND record the payment if matched.
+    ///
+    /// Combines address matching with payment recording in one call so
+    /// callers don't need to manually construct `PaymentEntry` or access
+    /// `ManagedIdentity`. Returns the match info for logging.
+    ///
+    /// Non-blocking: returns `Err(())` if the wallet-manager lock is
+    /// contended. Safe to call from any thread.
+    pub fn try_record_incoming_payment(
+        &self,
+        address: &dashcore::Address,
+        txid: String,
+        value: u64,
+    ) -> Result<Option<DashpayAddressMatch>, ()> {
+        let wm = self.wallet_manager.try_write().map_err(|_| ())?;
+        let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+            return Ok(None);
+        };
+        let m = Self::match_in_collection(info, address);
+        drop(wm);
+
+        if let Some(ref m) = m {
+            let this = self.clone();
+            let owner_id = m.user_identity_id;
+            let contact_id = m.friend_identity_id;
+            tokio::spawn(async move {
+                let mut wm = this.wallet_manager.write().await;
+                if let Some(info) = wm.get_wallet_info_mut(&this.wallet_id) {
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(&owner_id) {
+                        managed.record_dashpay_payment(
+                            txid,
+                            super::payment::PaymentEntry::new_received(contact_id, value, None),
+                            &this.persister,
+                        );
+                    }
+                }
+            });
+        }
+
+        Ok(m)
+    }
+}
