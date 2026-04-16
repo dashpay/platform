@@ -1,8 +1,7 @@
 //! Address provider trait for address synchronization.
 
-use super::types::{AddressFunds, AddressIndex};
+use super::types::{AddressFunds, AddressIndex, AddressToBytes};
 use async_trait::async_trait;
-use dpp::address_funds::PlatformAddress;
 use std::hash::Hash;
 
 /// Trait for providing addresses to be synchronized.
@@ -54,6 +53,17 @@ pub trait AddressProvider: Send {
     /// `Copy + Ord + Eq + Hash + Send + Sync` type works.
     type Tag: Copy + Ord + Eq + Hash + Send + Sync;
 
+    /// Concrete address type the provider uses. Must implement
+    /// [`AddressToBytes`] so the engine can compute GroveDB lookup
+    /// keys and round-trip raw key bytes back into the provider's
+    /// address type.
+    ///
+    /// Most providers will pick
+    /// [`dpp::address_funds::PlatformAddress`] — callers that only
+    /// care about a single variant (e.g. P2PKH) can pick a narrower
+    /// type and skip enum-wrap/unwrap work at the trait boundary.
+    type Address: AddressToBytes;
+
     /// Get the gap limit for this provider.
     ///
     /// For HD wallets, this is the number of consecutive unused addresses
@@ -66,14 +76,14 @@ pub trait AddressProvider: Send {
     ///
     /// Yields tuples of `(tag, address)` where:
     /// - `tag` is the provider-specific identifier (see [`Tag`](Self::Tag))
-    /// - `address` is the platform address to look up in the address funds tree
+    /// - `address` is the address to look up in the address funds tree
     ///
     /// This set may grow when [`on_address_found`](Self::on_address_found) triggers
     /// gap extension. The engine calls `pending_addresses` multiple times
     /// per sync (once per trunk/branch round), so the returned iterator
     /// should be cheap to construct — typically a view into an internal
     /// map rather than a computed list.
-    fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, PlatformAddress)> + '_;
+    fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_;
 
     /// Called when an address is found in the tree with a balance.
     ///
@@ -83,12 +93,12 @@ pub trait AddressProvider: Send {
     ///
     /// # Arguments
     /// - `tag`: The provider-supplied tag for this pending address
-    /// - `address`: The platform address that was found
+    /// - `address`: The address that was found
     /// - `funds`: The nonce and credits balance at this address
     async fn on_address_found(
         &mut self,
         tag: Self::Tag,
-        address: &PlatformAddress,
+        address: &Self::Address,
         funds: AddressFunds,
     );
 
@@ -100,8 +110,8 @@ pub trait AddressProvider: Send {
     ///
     /// # Arguments
     /// - `tag`: The provider-supplied tag for this pending address
-    /// - `address`: The platform address proven absent
-    async fn on_address_absent(&mut self, tag: Self::Tag, address: &PlatformAddress);
+    /// - `address`: The address proven absent
+    async fn on_address_absent(&mut self, tag: Self::Tag, address: &Self::Address);
 
     /// Check if there are still pending addresses to synchronize.
     ///
@@ -128,7 +138,7 @@ pub trait AddressProvider: Send {
     /// iterator is statically dispatched with no heap allocation.
     fn current_balances(
         &self,
-    ) -> impl Iterator<Item = (Self::Tag, PlatformAddress, AddressFunds)> + '_;
+    ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_;
 
     /// Get the last sync height from a previous sync.
     ///

@@ -23,7 +23,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use bimap::BiBTreeMap;
-use dpp::address_funds::PlatformAddress;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::KeySource;
 use key_wallet::PlatformP2PKHAddress;
@@ -56,23 +55,27 @@ const DEFAULT_GAP_LIMIT: u32 = 20;
 /// account index — each value holds the xpub plus the post-pass
 /// artifacts for that account.
 struct PerAccountPlatformAddressState {
-    /// Public-key material for this account — the xpub that address
-    /// derivation (gap-limit extension inside
-    /// [`PlatformPaymentAddressProvider::on_address_found_in_pool`])
-    /// needs to produce a [`KeySource::Public`] on demand.
+    /// Public-key material for this account — the xpub that
+    /// gap-limit extension (inside
+    /// [`PlatformPaymentAddressProvider::on_address_found`]) needs to
+    /// produce a [`KeySource::Public`] on demand.
     extended_public_key: ExtendedPubKey,
     /// Every address this account has derived, as a bijection between
-    /// the DIP-17 derivation index and the P2PKH hash. Lets `found` /
-    /// `absent` store bare `PlatformP2PKHAddress` values and still
-    /// recover the index when building `current_balances` tuples.
+    /// the DIP-17 derivation index and the P2PKH address. Lets
+    /// `found` / `absent` store bare [`PlatformP2PKHAddress`]
+    /// values and still recover the index when building
+    /// `current_balances` tuples.
     addresses: BiBTreeMap<AddressIndex, PlatformP2PKHAddress>,
-    /// Addresses proven present with their balance.
+    /// Addresses proven present with their balance. Persists across
+    /// syncs — `on_address_found` overwrites entries when balances
+    /// change, unchanged entries simply stay current, and the SDK
+    /// reads directly from here via `current_balances()` to seed the
+    /// next incremental pass.
     found: BTreeMap<PlatformP2PKHAddress, AddressFunds>,
-    /// Addresses proven absent from the tree.
+    /// Addresses proven absent in the most recent sync pass. Cleared
+    /// at the start of every pass — "absent" is point-in-time; an
+    /// address may be present next time.
     absent: BTreeSet<PlatformP2PKHAddress>,
-    /// Known balances from the previous sync, retained for incremental
-    /// catch-up's delta-application path.
-    known_balances: Vec<(AddressIndex, PlatformAddress, AddressFunds)>,
 }
 
 impl PerAccountPlatformAddressState {
@@ -82,7 +85,6 @@ impl PerAccountPlatformAddressState {
             addresses: BiBTreeMap::new(),
             found: BTreeMap::new(),
             absent: BTreeSet::new(),
-            known_balances: Vec::new(),
         }
     }
 }
@@ -189,22 +191,6 @@ impl PlatformPaymentAddressProvider {
         })
     }
 
-    /// Wallets currently tracked by this provider.
-    #[allow(dead_code)]
-    pub(crate) fn wallet_ids(&self) -> impl Iterator<Item = &WalletId> {
-        self.per_wallet.keys()
-    }
-
-    /// Account indexes covered for a given wallet (sorted, since the
-    /// backing `BTreeMap` iterates in key order).
-    #[allow(dead_code)]
-    pub(crate) fn account_indexes(&self, wallet_id: &WalletId) -> impl Iterator<Item = u32> + '_ {
-        self.per_wallet
-            .get(wallet_id)
-            .into_iter()
-            .flat_map(|s| s.keys().copied())
-    }
-
     /// Public-key source for a given `(wallet, account)`, built on
     /// demand from the stored extended public key. Returns `None` if
     /// the `(wallet, account)` isn't tracked.
@@ -224,10 +210,11 @@ impl PlatformPaymentAddressProvider {
         }
     }
 
-    /// Re-populate `pending` for every tracked wallet and account from
-    /// their respective `AddressPool`s, and roll the previous pass's
-    /// `found` set into `known_balances` for incremental-only delta
-    /// application.
+    /// Re-populate `pending` for every tracked wallet and account
+    /// from their respective `AddressPool`s and clear the per-pass
+    /// `absent` set. `found` is intentionally preserved across syncs
+    /// — it doubles as the `current_balances()` seed for the next
+    /// incremental round.
     ///
     /// Call before each sync round.
     pub(crate) async fn prepare_for_sync(&mut self) -> Result<(), PlatformWalletError> {
@@ -274,17 +261,6 @@ impl PlatformPaymentAddressProvider {
         self.pending = fresh_pending;
         for state in self.per_wallet.values_mut() {
             for account_state in state.values_mut() {
-                // Roll `found` into `known_balances`, recovering the
-                // address index via the bimap.
-                account_state.known_balances = account_state
-                    .found
-                    .iter()
-                    .filter_map(|(p2pkh, &funds)| {
-                        let &index = account_state.addresses.get_by_right(p2pkh)?;
-                        Some((index, PlatformAddress::P2pkh(p2pkh.to_bytes()), funds))
-                    })
-                    .collect();
-                account_state.found.clear();
                 account_state.absent.clear();
             }
         }
@@ -292,7 +268,10 @@ impl PlatformPaymentAddressProvider {
     }
 
     /// Update incremental sync state from a completed sync result.
-    pub(crate) fn update_sync_state(&mut self, result: &AddressSyncResult<PlatformAddressTag>) {
+    pub(crate) fn update_sync_state(
+        &mut self,
+        result: &AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>,
+    ) {
         self.sync_height = result.new_sync_height;
         self.sync_timestamp = result.new_sync_timestamp;
         self.last_known_recent_block = result.last_known_recent_block;
@@ -359,64 +338,111 @@ impl PlatformPaymentAddressProvider {
             })
         })
     }
+}
 
-    /// Internal: update the managed account for a newly found address —
-    /// record the balance, mark it used in the pool, and extend the
-    /// account's pending set to maintain its gap limit.
-    async fn on_address_found_in_pool(
+#[async_trait]
+impl AddressProvider for PlatformPaymentAddressProvider {
+    /// The engine carries full `(wallet, account, derivation index)`
+    /// coordinates through its callbacks, so we don't need to reverse-
+    /// lookup from address back to wallet/account ourselves.
+    type Tag = PlatformAddressTag;
+    /// Platform payment accounts only derive P2PKH, so the provider
+    /// uses the narrow address type directly — no enum wrap/unwrap at
+    /// trait boundaries.
+    type Address = PlatformP2PKHAddress;
+
+    /// Fixed at [`DEFAULT_GAP_LIMIT`] (20) until we plumb per-account
+    /// gap limits through the unified provider again.
+    fn gap_limit(&self) -> AddressIndex {
+        DEFAULT_GAP_LIMIT
+    }
+
+    fn pending_addresses(
+        &self,
+    ) -> impl Iterator<Item = (PlatformAddressTag, PlatformP2PKHAddress)> + '_ {
+        self.pending.iter().map(|(&tag, &p2pkh)| (tag, p2pkh))
+    }
+
+    fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    async fn on_address_found(
         &mut self,
-        wallet_id: WalletId,
-        account_index: u32,
-        p2pkh: &PlatformP2PKHAddress,
+        tag: PlatformAddressTag,
+        address: &PlatformP2PKHAddress,
         funds: AddressFunds,
-    ) -> Result<(), PlatformWalletError> {
-        let key_source = self
+    ) {
+        let p2pkh = *address;
+        let (wallet_id, account_index, address_index) = tag;
+
+        // Consume the pending entry. Missing is fine — the engine can
+        // call this on incremental-catch-up hits that were never
+        // pending in the first place.
+        self.pending.remove_by_left(&tag);
+
+        // Record in our per-account state first so a later error
+        // walking the key-wallet pool doesn't lose the hit.
+        let Some(key_source) = self
             .per_wallet
-            .get(&wallet_id)
-            .and_then(|s| s.get(&account_index))
-            .map(|a| KeySource::Public(a.extended_public_key))
-            .ok_or_else(|| {
-                PlatformWalletError::AddressSync(format!(
-                    "No tracked state for wallet {} account {}",
-                    hex::encode(wallet_id),
-                    account_index
-                ))
-            })?;
+            .get_mut(&wallet_id)
+            .and_then(|s| s.get_mut(&account_index))
+            .map(|account_state| {
+                account_state.addresses.insert(address_index, p2pkh);
+                account_state.found.insert(p2pkh, funds);
+                KeySource::Public(account_state.extended_public_key)
+            })
+        else {
+            tracing::warn!(
+                "on_address_found: no tracked state for wallet {} account {}",
+                hex::encode(wallet_id),
+                account_index
+            );
+            return;
+        };
 
-        let mut wm = self.wallet_manager.write().await;
-        let info = wm.get_wallet_info_mut(&wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(format!(
-                "Wallet {:?} not found in wallet manager",
-                hex::encode(wallet_id)
-            ))
-        })?;
-
-        let account = info
-            .core_wallet
-            .platform_payment_managed_account_at_index_mut(account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::AddressSync(format!(
-                    "No platform payment account at index {}",
-                    account_index
-                ))
-            })?;
-
-        account.set_address_credit_balance(*p2pkh, funds.balance, Some(&key_source));
-
-        // Pick up any newly generated addresses the pool produced when
-        // extending to maintain the gap limit.
-        let mut new_addresses: Vec<(AddressIndex, PlatformP2PKHAddress)> = Vec::new();
-        for (&index, addr_info) in &account.addresses.addresses {
-            let key = (wallet_id, account_index, index);
-            if self.pending.contains_left(&key) {
-                continue;
-            }
-            let Ok(new_p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) else {
-                continue;
+        // Update key-wallet's managed account: mark the address used,
+        // set its balance, and let the AddressPool generate any new
+        // addresses needed to maintain the gap limit. Collect the
+        // new addresses under the write lock, then release it before
+        // mutating our own maps.
+        let new_addresses: Vec<(AddressIndex, PlatformP2PKHAddress)> = {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&wallet_id) else {
+                tracing::warn!(
+                    "on_address_found: wallet {} not in wallet manager",
+                    hex::encode(wallet_id)
+                );
+                return;
             };
-            new_addresses.push((index, new_p2pkh));
-        }
-        drop(wm);
+            let Some(account) = info
+                .core_wallet
+                .platform_payment_managed_account_at_index_mut(account_index)
+            else {
+                tracing::warn!(
+                    "on_address_found: no platform payment account {} in wallet {}",
+                    account_index,
+                    hex::encode(wallet_id)
+                );
+                return;
+            };
+
+            account.set_address_credit_balance(p2pkh, funds.balance, Some(&key_source));
+
+            account
+                .addresses
+                .addresses
+                .iter()
+                .filter_map(|(&index, addr_info)| {
+                    let key = (wallet_id, account_index, index);
+                    if self.pending.contains_left(&key) {
+                        return None;
+                    }
+                    let new_p2pkh = PlatformP2PKHAddress::from_address(&addr_info.address).ok()?;
+                    Some((index, new_p2pkh))
+                })
+                .collect()
+        };
 
         for (index, new_p2pkh) in new_addresses {
             self.pending
@@ -429,80 +455,10 @@ impl PlatformPaymentAddressProvider {
                 account_state.addresses.insert(index, new_p2pkh);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl AddressProvider for PlatformPaymentAddressProvider {
-    /// The engine carries full `(wallet, account, derivation index)`
-    /// coordinates through its callbacks, so we don't need to reverse-
-    /// lookup from address back to wallet/account ourselves.
-    type Tag = PlatformAddressTag;
-
-    /// Fixed at [`DEFAULT_GAP_LIMIT`] (20) until we plumb per-account
-    /// gap limits through the unified provider again.
-    fn gap_limit(&self) -> AddressIndex {
-        DEFAULT_GAP_LIMIT
     }
 
-    fn pending_addresses(
-        &self,
-    ) -> impl Iterator<Item = (PlatformAddressTag, PlatformAddress)> + '_ {
-        self.pending
-            .iter()
-            .map(|(&tag, p2pkh)| (tag, PlatformAddress::P2pkh(p2pkh.to_bytes())))
-    }
-
-    fn has_pending(&self) -> bool {
-        !self.pending.is_empty()
-    }
-
-    async fn on_address_found(
-        &mut self,
-        tag: PlatformAddressTag,
-        address: &PlatformAddress,
-        funds: AddressFunds,
-    ) {
-        let PlatformAddress::P2pkh(hash) = address else {
-            return;
-        };
-        let p2pkh = PlatformP2PKHAddress::new(*hash);
-        let (wallet_id, account_index, address_index) = tag;
-
-        // Consume the pending entry. Missing is fine — the engine can
-        // call this on incremental-catch-up hits that were never
-        // pending in the first place.
-        self.pending.remove_by_left(&tag);
-
-        if let Some(account_state) = self
-            .per_wallet
-            .get_mut(&wallet_id)
-            .and_then(|s| s.get_mut(&account_index))
-        {
-            account_state.addresses.insert(address_index, p2pkh);
-            account_state.found.insert(p2pkh, funds);
-        }
-
-        if let Err(e) = self
-            .on_address_found_in_pool(wallet_id, account_index, &p2pkh, funds)
-            .await
-        {
-            tracing::warn!(
-                "Failed to update pool for found address in wallet {} account {}: {}",
-                hex::encode(wallet_id),
-                account_index,
-                e
-            );
-        }
-    }
-
-    async fn on_address_absent(&mut self, tag: PlatformAddressTag, address: &PlatformAddress) {
-        let PlatformAddress::P2pkh(hash) = address else {
-            return;
-        };
-        let p2pkh = PlatformP2PKHAddress::new(*hash);
+    async fn on_address_absent(&mut self, tag: PlatformAddressTag, address: &PlatformP2PKHAddress) {
+        let p2pkh = *address;
         let (wallet_id, account_index, address_index) = tag;
 
         self.pending.remove_by_left(&tag);
@@ -519,22 +475,20 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 
     fn current_balances(
         &self,
-    ) -> impl Iterator<Item = (PlatformAddressTag, PlatformAddress, AddressFunds)> + '_ {
-        self.per_wallet
-            .iter()
-            .flat_map(|(wallet_id, state)| {
-                state.iter().map(move |(&account_index, account_state)| {
-                    (*wallet_id, account_index, account_state)
+    ) -> impl Iterator<Item = (PlatformAddressTag, PlatformP2PKHAddress, AddressFunds)> + '_ {
+        self.per_wallet.iter().flat_map(|(wallet_id, state)| {
+            state
+                .iter()
+                .flat_map(move |(&account_index, account_state)| {
+                    account_state
+                        .found
+                        .iter()
+                        .filter_map(move |(p2pkh, &funds)| {
+                            let &address_index = account_state.addresses.get_by_right(p2pkh)?;
+                            Some(((*wallet_id, account_index, address_index), *p2pkh, funds))
+                        })
                 })
-            })
-            .flat_map(|(wallet_id, account_index, account_state)| {
-                account_state
-                    .known_balances
-                    .iter()
-                    .map(move |&(address_index, address, funds)| {
-                        ((wallet_id, account_index, address_index), address, funds)
-                    })
-            })
+        })
     }
 
     fn last_sync_height(&self) -> u64 {

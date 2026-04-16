@@ -3,6 +3,7 @@ use crate::wallet::{PlatformAddressTag, PlatformAddressWallet};
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
 use dpp::address_funds::PlatformAddress;
+use key_wallet::PlatformP2PKHAddress;
 
 impl PlatformAddressWallet {
     /// Sync platform address balances across every platform payment
@@ -18,7 +19,8 @@ impl PlatformAddressWallet {
     pub async fn sync_balances(
         &self,
         config: Option<AddressSyncConfig>,
-    ) -> Result<AddressSyncResult<PlatformAddressTag>, PlatformWalletError> {
+    ) -> Result<AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>, PlatformWalletError>
+    {
         let mut guard = self.provider.write().await;
         let provider = guard.as_mut().ok_or_else(|| {
             PlatformWalletError::AddressSync(

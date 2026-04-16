@@ -100,6 +100,7 @@ impl<'a> CallbackAddressProvider<'a> {
 #[async_trait]
 impl<'a> AddressProvider for CallbackAddressProvider<'a> {
     type Tag = AddressIndex;
+    type Address = PlatformAddress;
 
     fn gap_limit(&self) -> AddressIndex {
         unsafe {

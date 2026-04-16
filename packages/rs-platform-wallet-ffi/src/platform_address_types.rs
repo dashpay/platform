@@ -44,6 +44,15 @@ impl TryFrom<PlatformAddressFFI> for PlatformAddress {
     }
 }
 
+impl From<key_wallet::PlatformP2PKHAddress> for PlatformAddressFFI {
+    fn from(addr: key_wallet::PlatformP2PKHAddress) -> Self {
+        Self {
+            address_type: 0,
+            hash: addr.to_bytes(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Fee strategy
 // ---------------------------------------------------------------------------
@@ -291,12 +300,18 @@ pub struct PlatformAddressChangeSetFFI {
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-impl From<&dash_sdk::platform::address_sync::AddressSyncResult<platform_wallet::PlatformAddressTag>>
-    for AddressSyncResultFFI
+impl
+    From<
+        &dash_sdk::platform::address_sync::AddressSyncResult<
+            platform_wallet::PlatformAddressTag,
+            key_wallet::PlatformP2PKHAddress,
+        >,
+    > for AddressSyncResultFFI
 {
     fn from(
         result: &dash_sdk::platform::address_sync::AddressSyncResult<
             platform_wallet::PlatformAddressTag,
+            key_wallet::PlatformP2PKHAddress,
         >,
     ) -> Self {
         // FFI consumers only care about the derivation index from the

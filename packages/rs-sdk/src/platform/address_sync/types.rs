@@ -5,6 +5,39 @@ use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
 use rs_dapi_client::RequestSettings;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::Hash;
+
+/// Abstraction for address types that encode to GroveDB key bytes in
+/// the address-funds tree.
+///
+/// The server stores address-funds entries keyed by
+/// `PlatformAddress::to_bytes()` (1-byte variant tag + 20-byte hash).
+/// Any provider type used as
+/// [`AddressProvider::Address`](super::provider::AddressProvider::Address)
+/// must encode to those same bytes — regardless of what the provider
+/// stores internally (the full enum, a P2PKH-only newtype, a custom
+/// tag, etc.).
+pub trait AddressToBytes: Copy + Ord + Eq + Hash + Send + Sync {
+    /// Encode this address as the GroveDB address-funds key bytes.
+    fn to_bytes(&self) -> Vec<u8>;
+}
+
+impl AddressToBytes for PlatformAddress {
+    fn to_bytes(&self) -> Vec<u8> {
+        PlatformAddress::to_bytes(self)
+    }
+}
+
+impl AddressToBytes for dpp::key_wallet::PlatformP2PKHAddress {
+    /// Encodes to the same 21-byte form as
+    /// `PlatformAddress::P2pkh(self.to_bytes()).to_bytes()` — the
+    /// server's address-funds tree keys everything through the
+    /// `PlatformAddress` enum encoding, so a P2PKH-only provider has
+    /// to produce the same byte sequence.
+    fn to_bytes(&self) -> Vec<u8> {
+        PlatformAddress::P2pkh(self.to_bytes()).to_bytes()
+    }
+}
 
 /// The derivation index for an address (for HD wallets).
 pub type AddressIndex = u32;
@@ -81,19 +114,20 @@ impl Default for AddressSyncConfig {
 /// Result of address synchronization.
 ///
 /// Generic over the provider's [`Tag`](super::AddressProvider::Tag)
-/// type so the key in `found` / `absent` carries whatever metadata
-/// the provider chose when it added the entry to its pending set.
+/// and [`Address`](super::AddressProvider::Address) so the keys in
+/// `found` / `absent` carry whatever metadata and address type the
+/// provider chose. Matches the provider's associated types.
 #[derive(Debug)]
-pub struct AddressSyncResult<Tag> {
+pub struct AddressSyncResult<Tag, Address> {
     /// Addresses found with their balances and nonces.
     ///
-    /// Map of `(tag, key)` to address funds.
-    pub found: BTreeMap<(Tag, PlatformAddress), AddressFunds>,
+    /// Map of `(tag, address)` to address funds.
+    pub found: BTreeMap<(Tag, Address), AddressFunds>,
 
     /// Addresses proven absent from the tree.
     ///
-    /// Set of `(tag, key)` tuples that were proven to not exist.
-    pub absent: BTreeSet<(Tag, PlatformAddress)>,
+    /// Set of `(tag, address)` tuples that were proven to not exist.
+    pub absent: BTreeSet<(Tag, Address)>,
 
     /// Metrics about the sync process.
     pub metrics: AddressSyncMetrics,
@@ -139,9 +173,10 @@ pub struct AddressSyncResult<Tag> {
     pub recent_proof: Vec<u8>,
 }
 
-impl<Tag> AddressSyncResult<Tag>
+impl<Tag, Address> AddressSyncResult<Tag, Address>
 where
     Tag: Ord,
+    Address: Ord,
 {
     /// Create a new empty result.
     pub fn new() -> Self {
@@ -171,9 +206,10 @@ where
     }
 }
 
-impl<Tag> Default for AddressSyncResult<Tag>
+impl<Tag, Address> Default for AddressSyncResult<Tag, Address>
 where
     Tag: Ord,
+    Address: Ord,
 {
     fn default() -> Self {
         Self::new()

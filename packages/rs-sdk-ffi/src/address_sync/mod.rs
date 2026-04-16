@@ -215,6 +215,7 @@ struct BatchAddressProvider {
 #[async_trait]
 impl AddressProvider for BatchAddressProvider {
     type Tag = AddressIndex;
+    type Address = PlatformAddress;
 
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
@@ -568,7 +569,9 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
 }
 
 /// Convert Rust AddressSyncResult to FFI-compatible result
-fn convert_sync_result(result: AddressSyncResult<AddressIndex>) -> DashSDKAddressSyncResult {
+fn convert_sync_result(
+    result: AddressSyncResult<AddressIndex, PlatformAddress>,
+) -> DashSDKAddressSyncResult {
     // Convert found addresses
     let mut found_entries: Vec<DashSDKFoundAddress> = Vec::with_capacity(result.found.len());
     for ((index, address), funds) in result.found.iter() {

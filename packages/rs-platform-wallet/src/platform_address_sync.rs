@@ -17,6 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use arc_swap::ArcSwapOption;
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
+use key_wallet::PlatformP2PKHAddress;
 
 use crate::wallet::PlatformAddressTag;
 use tokio::sync::RwLock;
@@ -40,7 +41,7 @@ pub enum WalletSyncOutcome {
     /// Combined sync result across every account on the wallet. The
     /// unified provider performs one trunk/branch scan and returns a
     /// single result per wallet.
-    Ok(AddressSyncResult<PlatformAddressTag>),
+    Ok(AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>),
     /// Error message from the failed sync.
     Err(String),
 }
@@ -290,7 +291,8 @@ impl PlatformAddressSyncManager {
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
-    ) -> Result<AddressSyncResult<PlatformAddressTag>, PlatformWalletError> {
+    ) -> Result<AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>, PlatformWalletError>
+    {
         let wallet = {
             let wallets = self.wallets.read().await;
             wallets.get(wallet_id).cloned()

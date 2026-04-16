@@ -35,6 +35,7 @@ impl TestAddressProvider {
 #[async_trait]
 impl AddressProvider for TestAddressProvider {
     type Tag = AddressIndex;
+    type Address = PlatformAddress;
 
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
