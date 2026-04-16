@@ -91,6 +91,7 @@ grpc-coverage-report.txt
 
 __pycache__/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
 
 # Security audit reports (local-only, not committed)
 audits/
