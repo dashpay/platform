@@ -9,6 +9,7 @@ use super::ManagedIdentity;
 use crate::changeset::{
     ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
 };
+use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
 
@@ -16,9 +17,13 @@ impl ManagedIdentity {
     /// Add a sent contact request.
     ///
     /// If there's already an incoming request from the recipient, the
-    /// contact is auto-established and both requests are tombstoned in
-    /// the returned [`ContactChangeSet`].
-    pub fn add_sent_contact_request(&mut self, request: ContactRequest) -> ContactChangeSet {
+    /// contact is auto-established. Persists the resulting
+    /// [`ContactChangeSet`] via `persister` and returns `()`.
+    pub fn add_sent_contact_request(
+        &mut self,
+        request: ContactRequest,
+        persister: &WalletPersister,
+    ) {
         let owner_id = self.id();
         let recipient_id = request.recipient_id;
         let mut cs = ContactChangeSet::default();
@@ -51,7 +56,9 @@ impl ManagedIdentity {
             );
             self.sent_contact_requests.insert(recipient_id, request);
         }
-        cs
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Remove a sent contact request.
@@ -75,9 +82,13 @@ impl ManagedIdentity {
     /// Add an incoming contact request.
     ///
     /// If there's already a sent request to the sender, the contact is
-    /// auto-established and both requests are tombstoned in the returned
-    /// [`ContactChangeSet`].
-    pub fn add_incoming_contact_request(&mut self, request: ContactRequest) -> ContactChangeSet {
+    /// auto-established. Persists the resulting [`ContactChangeSet`] via
+    /// `persister` and returns `()`.
+    pub fn add_incoming_contact_request(
+        &mut self,
+        request: ContactRequest,
+        persister: &WalletPersister,
+    ) {
         let owner_id = self.id();
         let sender_id = request.sender_id;
         let mut cs = ContactChangeSet::default();
@@ -110,7 +121,9 @@ impl ManagedIdentity {
             );
             self.incoming_contact_requests.insert(sender_id, request);
         }
-        cs
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Remove an incoming contact request.
@@ -206,8 +219,14 @@ impl ManagedIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
 
     fn create_test_identity(id_bytes: [u8; 32]) -> ManagedIdentity {
         let identity_v0 = IdentityV0 {
@@ -241,10 +260,11 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let recipient_id = Identifier::from([2u8; 32]);
         let sender_id = Identifier::from([1u8; 32]);
+        let p = noop_persister();
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
 
-        managed.add_sent_contact_request(request.clone());
+        managed.add_sent_contact_request(request.clone(), &p);
 
         // Should be in sent requests
         assert_eq!(managed.sent_contact_requests.len(), 1);
@@ -258,10 +278,11 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let sender_id = Identifier::from([2u8; 32]);
         let recipient_id = Identifier::from([1u8; 32]);
+        let p = noop_persister();
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
 
-        managed.add_incoming_contact_request(request.clone());
+        managed.add_incoming_contact_request(request.clone(), &p);
 
         // Should be in incoming requests
         assert_eq!(managed.incoming_contact_requests.len(), 1);
@@ -275,17 +296,18 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
         let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
 
         // Add sent request first
         let outgoing = create_contact_request(our_id, contact_id, 1234567890);
-        managed.add_sent_contact_request(outgoing);
+        managed.add_sent_contact_request(outgoing, &p);
 
         assert_eq!(managed.sent_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Add incoming request - should auto-establish
         let incoming = create_contact_request(contact_id, our_id, 1234567891);
-        managed.add_incoming_contact_request(incoming);
+        managed.add_incoming_contact_request(incoming, &p);
 
         // Requests should be moved to established contacts
         assert_eq!(managed.sent_contact_requests.len(), 0);
@@ -299,17 +321,18 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
         let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
 
         // Add incoming request first
         let incoming = create_contact_request(contact_id, our_id, 1234567890);
-        managed.add_incoming_contact_request(incoming);
+        managed.add_incoming_contact_request(incoming, &p);
 
         assert_eq!(managed.incoming_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Add sent request - should auto-establish
         let outgoing = create_contact_request(our_id, contact_id, 1234567891);
-        managed.add_sent_contact_request(outgoing);
+        managed.add_sent_contact_request(outgoing, &p);
 
         // Requests should be moved to established contacts
         assert_eq!(managed.sent_contact_requests.len(), 0);
@@ -323,9 +346,10 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let recipient_id = Identifier::from([2u8; 32]);
         let sender_id = Identifier::from([1u8; 32]);
+        let p = noop_persister();
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
-        managed.add_sent_contact_request(request.clone());
+        managed.add_sent_contact_request(request.clone(), &p);
 
         assert_eq!(managed.sent_contact_requests.len(), 1);
 
@@ -355,9 +379,10 @@ mod tests {
         let mut managed = create_test_identity([1u8; 32]);
         let sender_id = Identifier::from([2u8; 32]);
         let recipient_id = Identifier::from([1u8; 32]);
+        let p = noop_persister();
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
-        managed.add_incoming_contact_request(request.clone());
+        managed.add_incoming_contact_request(request.clone(), &p);
 
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
@@ -460,28 +485,29 @@ mod tests {
         let contact1_id = Identifier::from([2u8; 32]);
         let contact2_id = Identifier::from([3u8; 32]);
         let contact3_id = Identifier::from([4u8; 32]);
+        let p = noop_persister();
 
         // Add multiple sent requests
-        managed.add_sent_contact_request(create_contact_request(our_id, contact1_id, 1234567890));
-        managed.add_sent_contact_request(create_contact_request(our_id, contact2_id, 1234567891));
+        managed
+            .add_sent_contact_request(create_contact_request(our_id, contact1_id, 1234567890), &p);
+        managed
+            .add_sent_contact_request(create_contact_request(our_id, contact2_id, 1234567891), &p);
 
         // Add incoming request that doesn't match sent
-        managed.add_incoming_contact_request(create_contact_request(
-            contact3_id,
-            our_id,
-            1234567892,
-        ));
+        managed.add_incoming_contact_request(
+            create_contact_request(contact3_id, our_id, 1234567892),
+            &p,
+        );
 
         assert_eq!(managed.sent_contact_requests.len(), 2);
         assert_eq!(managed.incoming_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Add incoming from contact1 - should establish
-        managed.add_incoming_contact_request(create_contact_request(
-            contact1_id,
-            our_id,
-            1234567893,
-        ));
+        managed.add_incoming_contact_request(
+            create_contact_request(contact1_id, our_id, 1234567893),
+            &p,
+        );
 
         assert_eq!(managed.sent_contact_requests.len(), 1); // Only contact2 left
         assert_eq!(managed.incoming_contact_requests.len(), 1); // Only contact3 left

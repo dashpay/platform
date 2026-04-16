@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::balance::WalletBalance;
 
-use dashcore::{Address as DashAddress, Transaction};
+use dashcore::Address as DashAddress;
 use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;

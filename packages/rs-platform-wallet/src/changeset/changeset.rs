@@ -703,15 +703,6 @@ mod tests {
     #[test]
     fn test_take_non_empty_changeset() {
         let mut cs = PlatformWalletChangeSet {
-            identities: Some(IdentityChangeSet::default()),
-            ..Default::default()
-        };
-        // The identities changeset is an empty placeholder — so cs is
-        // still `is_empty()`. Push a real entry.
-        let identity_id = Identifier::from([1u8; 32]);
-        // We can't easily construct a full Identity here, so use asset_locks
-        // for the non-empty path.
-        let mut cs = PlatformWalletChangeSet {
             asset_locks: Some(AssetLockChangeSet {
                 asset_locks: {
                     let mut m = BTreeMap::new();
@@ -740,7 +731,6 @@ mod tests {
             }),
             ..Default::default()
         };
-        let _ = identity_id;
         let taken = cs.take();
         assert!(taken.is_some());
         assert!(cs.is_empty());

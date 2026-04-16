@@ -78,8 +78,14 @@ pub struct ManagedIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
 
     fn create_test_identity() -> Identity {
         let identity_v0 = IdentityV0 {
@@ -108,11 +114,12 @@ mod tests {
     fn test_label_management() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
-        managed.set_label("Test Identity".to_string());
+        managed.set_label("Test Identity".to_string(), &p);
         assert_eq!(managed.label, Some("Test Identity".to_string()));
 
-        managed.clear_label();
+        managed.clear_label(&p);
         assert_eq!(managed.label, None);
     }
 
@@ -120,9 +127,10 @@ mod tests {
     fn test_balance_block_time() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         let block_time = BlockTime::new(100000, 900000, 1234567890);
-        managed.update_balance_block_time(block_time);
+        managed.update_balance_block_time(block_time, &p);
 
         assert_eq!(managed.last_updated_balance_block_time, Some(block_time));
         assert_eq!(
@@ -143,9 +151,10 @@ mod tests {
     fn test_keys_sync_block_time() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         let block_time = BlockTime::new(50000, 450000, 9876543210);
-        managed.update_keys_sync_block_time(block_time);
+        managed.update_keys_sync_block_time(block_time, &p);
 
         assert_eq!(managed.last_synced_keys_block_time, Some(block_time));
         assert_eq!(managed.last_synced_keys_block_time.unwrap().height, 50000);
@@ -163,13 +172,14 @@ mod tests {
     fn test_needs_balance_update() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         // Never updated - needs update
         assert_eq!(managed.needs_balance_update(1000, 100), true);
 
         // Just updated
         let block_time = BlockTime::new(100, 900, 1000);
-        managed.update_balance_block_time(block_time);
+        managed.update_balance_block_time(block_time, &p);
         assert_eq!(managed.needs_balance_update(1050, 100), false);
 
         // Old update - needs update
@@ -180,13 +190,14 @@ mod tests {
     fn test_needs_keys_sync() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         // Never synced - needs sync
         assert_eq!(managed.needs_keys_sync(1000, 100), true);
 
         // Just synced
         let block_time = BlockTime::new(100, 900, 1000);
-        managed.update_keys_sync_block_time(block_time);
+        managed.update_keys_sync_block_time(block_time, &p);
         assert_eq!(managed.needs_keys_sync(1050, 100), false);
 
         // Old sync - needs sync
@@ -197,6 +208,7 @@ mod tests {
     fn test_auto_establish_on_sent_request() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         let contact_id = Identifier::from([2u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
@@ -212,7 +224,7 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_incoming_contact_request(incoming_request);
+        managed.add_incoming_contact_request(incoming_request, &p);
 
         // Verify it's in incoming requests
         assert_eq!(managed.incoming_contact_requests.len(), 1);
@@ -229,7 +241,7 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_sent_contact_request(outgoing_request);
+        managed.add_sent_contact_request(outgoing_request, &p);
 
         // Verify contact was established
         assert_eq!(managed.incoming_contact_requests.len(), 0);
@@ -242,6 +254,7 @@ mod tests {
     fn test_auto_establish_on_incoming_request() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         let contact_id = Identifier::from([2u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
@@ -257,7 +270,7 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_sent_contact_request(outgoing_request);
+        managed.add_sent_contact_request(outgoing_request, &p);
 
         // Verify it's in sent requests
         assert_eq!(managed.sent_contact_requests.len(), 1);
@@ -274,7 +287,7 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_incoming_contact_request(incoming_request);
+        managed.add_incoming_contact_request(incoming_request, &p);
 
         // Verify contact was established
         assert_eq!(managed.incoming_contact_requests.len(), 0);
@@ -287,6 +300,7 @@ mod tests {
     fn test_no_auto_establish_without_reciprocal() {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
 
         let contact_id = Identifier::from([2u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
@@ -302,7 +316,7 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_sent_contact_request(outgoing_request);
+        managed.add_sent_contact_request(outgoing_request, &p);
 
         // Verify it stays in sent requests
         assert_eq!(managed.sent_contact_requests.len(), 1);
@@ -320,7 +334,7 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_incoming_contact_request(incoming_request);
+        managed.add_incoming_contact_request(incoming_request, &p);
 
         // Verify both requests stay separate
         assert_eq!(managed.sent_contact_requests.len(), 1);

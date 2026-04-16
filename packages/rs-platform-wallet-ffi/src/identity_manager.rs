@@ -1,7 +1,13 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
+use platform_wallet::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use platform_wallet::IdentityManager;
+use std::sync::Arc;
+
+pub(crate) fn ffi_noop_persister() -> WalletPersister {
+    WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+}
 
 /// Create a new empty IdentityManager
 #[no_mangle]
@@ -55,7 +61,7 @@ pub unsafe extern "C" fn identity_manager_add_identity(
 
     IDENTITY_MANAGER_STORAGE
         .with_item_mut(manager_handle, |manager| {
-            match manager.add_identity(identity.identity, 0) {
+            match manager.add_identity(identity.identity, 0, &ffi_noop_persister()) {
                 Ok(_) => PlatformWalletFFIResult::Success,
                 Err(_) => PlatformWalletFFIResult::ErrorWalletOperation,
             }
@@ -97,7 +103,7 @@ pub unsafe extern "C" fn identity_manager_remove_identity(
 
     IDENTITY_MANAGER_STORAGE
         .with_item_mut(manager_handle, |manager| {
-            if manager.remove_identity(&id).is_ok() {
+            if manager.remove_identity(&id, &ffi_noop_persister()).is_ok() {
                 PlatformWalletFFIResult::Success
             } else {
                 if !out_error.is_null() {
@@ -305,7 +311,7 @@ pub unsafe extern "C" fn identity_manager_set_primary_identity(
 
     IDENTITY_MANAGER_STORAGE
         .with_item_mut(manager_handle, |manager| {
-            let _ = manager.set_primary_identity(id);
+            let _ = manager.set_primary_identity(id, &ffi_noop_persister());
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {

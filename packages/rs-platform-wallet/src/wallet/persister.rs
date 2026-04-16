@@ -15,13 +15,13 @@ use crate::wallet::platform_wallet::WalletId;
 /// a specific wallet's ID. Created by [`PlatformWallet::new`] and used
 /// internally for `queue_persist` / `flush_persist`.
 #[derive(Clone)]
-pub(crate) struct WalletPersister {
+pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
 }
 
 impl WalletPersister {
-    pub(crate) fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
+    pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
         Self { wallet_id, inner }
     }
 
@@ -44,7 +44,7 @@ impl WalletPersister {
 }
 
 /// No-op platform persistence for standalone wallets.
-pub(crate) struct NoPlatformPersistence;
+pub struct NoPlatformPersistence;
 
 impl PlatformWalletPersistence for NoPlatformPersistence {
     fn store(

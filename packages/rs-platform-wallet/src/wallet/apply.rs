@@ -323,6 +323,7 @@ impl PlatformWalletInfo {
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     use dashcore::OutPoint;
     use dpp::address_funds::PlatformAddress;
@@ -335,16 +336,21 @@ mod tests {
     use crate::changeset::{
         AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry,
         IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-        SentContactRequestKey, TokenBalanceChangeSet,
+        ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::core::WalletBalance;
     use crate::wallet::dashpay::{ContactRequest, EstablishedContact};
     use crate::wallet::identity::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
     use key_wallet::wallet::Wallet;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
 
     fn build_test_wallet() -> Wallet {
         Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
@@ -734,19 +740,28 @@ mod tests {
 
     #[test]
     fn round_trip_add_identity() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
-        // Mutate A.
-        let id_cs = info_a
+        // Mutate A (persister is a no-op, so state changes but nothing persists).
+        info_a
             .identity_manager
-            .add_identity(make_test_identity(1, 1), 7)
+            .add_identity(make_test_identity(1, 1), 7, &p)
             .expect("add");
         let id = Identifier::from([1u8; 32]);
 
-        // Apply the captured changeset to B.
+        // Build the replay changeset from A's mutated state.
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
+        id_cs.primary_identity = Some(id);
+
+        // Apply the constructed changeset to B.
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
             .expect("apply");
@@ -765,20 +780,19 @@ mod tests {
 
     #[test]
     fn round_trip_remove_identity_reselects_primary() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         // Both A and B start with two identities (id1 primary, id2 second).
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add 1");
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(2, 1), 1)
+            info.identity_manager
+                .add_identity(make_test_identity(2, 1), 1, &p)
                 .expect("add 2");
         }
         let id1 = Identifier::from([1u8; 32]);
@@ -787,10 +801,15 @@ mod tests {
         assert_eq!(info_b.identity_manager.primary_identity_id, Some(id1));
 
         // Remove the primary on A.
-        let (_, id_cs) = info_a
+        info_a
             .identity_manager
-            .remove_identity(&id1)
+            .remove_identity(&id1, &p)
             .expect("remove");
+
+        // Build the replay changeset: tombstone id1, new primary is id2.
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs.removed.insert(id1);
+        id_cs.primary_identity = Some(id2);
 
         // Replay the changeset on B.
         info_b
@@ -806,25 +825,32 @@ mod tests {
 
     #[test]
     fn round_trip_set_label() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         // Both start with the same identity.
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
         }
         let id = Identifier::from([1u8; 32]);
 
-        // Set a label on A via the manager method (returns a changeset).
-        let id_cs = info_a
+        // Set a label on A via the manager method (persists internally).
+        info_a
             .identity_manager
-            .set_label(&id, "alice".into())
+            .set_label(&id, "alice".into(), &p)
             .expect("set label");
+
+        // Build the replay changeset from A's mutated state.
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
@@ -840,32 +866,41 @@ mod tests {
     fn round_trip_dpns_name() {
         use crate::wallet::identity::managed_identity::DpnsNameInfo;
 
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
         }
         let id = Identifier::from([1u8; 32]);
 
-        // Add a DPNS name on A's managed identity (returns IdentityChangeSet
-        // via snapshot_changeset).
-        let dpns_cs = info_a
+        // Add a DPNS name on A's managed identity (persists internally).
+        info_a
             .identity_manager
             .managed_identity_mut(&id)
             .expect("a managed")
-            .add_dpns_name(DpnsNameInfo {
-                label: "alice".into(),
-                acquired_at: Some(123_456),
-            });
+            .add_dpns_name(
+                DpnsNameInfo {
+                    label: "alice".into(),
+                    acquired_at: Some(123_456),
+                },
+                &p,
+            );
+
+        // Build the replay changeset from A's mutated state.
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
 
         info_b
-            .apply_changeset(&mut wallet_b, wrap_id(dpns_cs))
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
             .expect("apply dpns");
 
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
@@ -885,38 +920,42 @@ mod tests {
     fn round_trip_block_time_updates() {
         use crate::wallet::identity::managed_identity::BlockTime;
 
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
         }
         let id = Identifier::from([1u8; 32]);
         let bt = BlockTime::new(100, 200, 1_700_000_000);
 
-        // Update both timestamps on A — each call returns a changeset.
-        let cs1 = info_a
+        // Update both timestamps on A (persists internally via noop persister).
+        info_a
             .identity_manager
             .managed_identity_mut(&id)
             .expect("a")
-            .update_balance_block_time(bt);
-        let cs2 = info_a
+            .update_balance_block_time(bt, &p);
+        info_a
             .identity_manager
             .managed_identity_mut(&id)
             .expect("a")
-            .update_keys_sync_block_time(bt);
+            .update_keys_sync_block_time(bt, &p);
+
+        // Build a single replay changeset from A's final state (both block times set).
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
 
         info_b
-            .apply_changeset(&mut wallet_b, wrap_id(cs1))
-            .expect("apply balance bt");
-        info_b
-            .apply_changeset(&mut wallet_b, wrap_id(cs2))
-            .expect("apply keys bt");
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply block times");
 
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
@@ -930,12 +969,19 @@ mod tests {
 
     #[test]
     fn round_trip_last_scanned_index_watermark() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
-        let id_cs = info_a.identity_manager.set_last_scanned_index(42);
+        info_a.identity_manager.set_last_scanned_index(42, &p);
+
+        // Build the replay changeset from A's mutated state.
+        let id_cs = IdentityChangeSet {
+            last_scanned_index: Some(42),
+            ..Default::default()
+        };
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
             .expect("apply");
@@ -946,35 +992,42 @@ mod tests {
 
     #[test]
     fn round_trip_sent_contact_request_no_auto_establish() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         // Both wallets host the same owning identity so contact routing works.
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add owner");
         }
         let owner = Identifier::from([1u8; 32]);
         let recipient = Identifier::from([2u8; 32]);
 
-        // Send a contact request on A; capture the emitted ContactChangeSet.
-        let contact_cs = info_a
+        // Send a contact request on A (persists internally via noop persister).
+        info_a
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_sent_contact_request(make_test_contact_request(1, 2));
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+
+        // Build the replay changeset from A's state: the request ended up in
+        // `sent_contact_requests` (no auto-establishment because there was no
+        // matching incoming request).
+        let request = make_test_contact_request(1, 2);
+        let mut contact_cs = ContactChangeSet::default();
+        contact_cs.sent_requests.insert(
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: recipient,
+            },
+            ContactRequestEntry { request },
+        );
         // Plain insert path — no matching incoming, so `established` is empty.
         assert!(contact_cs.established.is_empty());
-        assert!(contact_cs
-            .sent_requests
-            .contains_key(&SentContactRequestKey {
-                owner_id: owner,
-                recipient_id: recipient
-            }));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_contacts(contact_cs))
@@ -991,39 +1044,68 @@ mod tests {
 
     #[test]
     fn round_trip_auto_establish_contact() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add owner");
         }
         let owner = Identifier::from([1u8; 32]);
         let other = Identifier::from([2u8; 32]);
 
         // First the incoming arrives. Then the outgoing arrives — at which
-        // point auto-establishment fires and emits an `established` entry.
-        let cs_in = info_a
+        // point auto-establishment fires.
+        info_a
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_incoming_contact_request(make_test_contact_request(2, 1));
-        let cs_out = info_a
-            .identity_manager
-            .managed_identity_mut(&owner)
-            .expect("a owner")
-            .add_sent_contact_request(make_test_contact_request(1, 2));
+            .add_incoming_contact_request(make_test_contact_request(2, 1), &p);
 
-        // The second changeset (the auto-establish trigger) carries the full
-        // `EstablishedContact`.
-        assert!(cs_out.established.contains_key(&SentContactRequestKey {
-            owner_id: owner,
-            recipient_id: other
-        }));
+        // Snapshot the incoming request changeset for B replay step 1.
+        let incoming_req = make_test_contact_request(2, 1);
+        let mut cs_in = ContactChangeSet::default();
+        cs_in.incoming_requests.insert(
+            ReceivedContactRequestKey {
+                owner_id: owner,
+                sender_id: other,
+            },
+            ContactRequestEntry {
+                request: incoming_req,
+            },
+        );
+
+        // Now the outgoing arrives — auto-establishment fires in A.
+        info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a owner")
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+
+        // After auto-establishment: A's established_contacts should have `other`.
+        let a_established = info_a
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("a owner")
+            .established_contacts
+            .get(&other)
+            .cloned()
+            .expect("established in A");
+
+        // Build the auto-establish changeset for B replay step 2.
+        let mut cs_out = ContactChangeSet::default();
+        cs_out.established.insert(
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: other,
+            },
+            a_established,
+        );
+        // auto-establish path: sent_requests is empty (contact goes straight to established).
         assert!(cs_out.sent_requests.is_empty());
 
         // Replay both onto B in mutation order.
@@ -1053,32 +1135,43 @@ mod tests {
 
     #[test]
     fn round_trip_remove_contact_request() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add owner");
         }
         let owner = Identifier::from([1u8; 32]);
         let recipient = Identifier::from([2u8; 32]);
 
-        // Both A and B start with a sent request — apply the same insert
-        // changeset to both.
-        let insert_cs = info_a
+        // Both A and B start with a sent request — build the insert changeset
+        // manually and apply it to both.
+        info_a
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a")
-            .add_sent_contact_request(make_test_contact_request(1, 2));
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+        let mut insert_cs = ContactChangeSet::default();
+        insert_cs.sent_requests.insert(
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: recipient,
+            },
+            ContactRequestEntry {
+                request: make_test_contact_request(1, 2),
+            },
+        );
         info_b
             .apply_changeset(&mut wallet_b, wrap_contacts(insert_cs))
             .expect("apply insert");
 
-        // Now remove on A.
+        // Now remove on A (returns changeset directly — `remove_sent_contact_request`
+        // still returns a `ContactChangeSet` because it has no `persister` param).
         let (_, remove_cs) = info_a
             .identity_manager
             .managed_identity_mut(&owner)
@@ -1247,15 +1340,15 @@ mod tests {
     fn round_trip_set_dashpay_profile() {
         use crate::wallet::dashpay::DashPayProfile;
 
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
         }
         let id = Identifier::from([1u8; 32]);
@@ -1270,11 +1363,19 @@ mod tests {
             public_message: Some("hello world".into()),
         };
 
-        let id_cs = info_a
+        // Mutate A (persists internally via noop persister).
+        info_a
             .identity_manager
             .managed_identity_mut(&id)
             .expect("a managed")
-            .set_dashpay_profile(Some(profile.clone()));
+            .set_dashpay_profile(Some(profile.clone()), &p);
+
+        // Build the replay changeset from A's mutated state.
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
@@ -1290,28 +1391,35 @@ mod tests {
     fn round_trip_record_dashpay_payment() {
         use crate::wallet::dashpay::PaymentEntry;
 
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
         }
         let owner = Identifier::from([1u8; 32]);
         let counterparty = Identifier::from([2u8; 32]);
 
-        // Record a sent payment on A.
+        // Record a sent payment on A (persists internally via noop persister).
         let tx_id = "a".repeat(64);
         let payment = PaymentEntry::new_sent(counterparty, 12_000, Some("lunch".into()));
-        let id_cs = info_a
+        info_a
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), payment.clone());
+            .record_dashpay_payment(tx_id.clone(), payment.clone(), &p);
+
+        // Build the replay changeset from A's mutated state.
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
@@ -1329,15 +1437,15 @@ mod tests {
     fn round_trip_payment_status_update_overwrites() {
         use crate::wallet::dashpay::{PaymentEntry, PaymentStatus};
 
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
         }
         let owner = Identifier::from([1u8; 32]);
@@ -1346,11 +1454,16 @@ mod tests {
 
         // Initial pending entry.
         let pending = PaymentEntry::new_sent(counterparty, 9_000, None);
-        let id_cs = info_a
+        info_a
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), pending);
+            .record_dashpay_payment(tx_id.clone(), pending, &p);
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
             .expect("apply pending");
@@ -1358,11 +1471,16 @@ mod tests {
         // Overwrite with a confirmed entry under the same tx_id.
         let mut confirmed = PaymentEntry::new_sent(counterparty, 9_000, None);
         confirmed.status = PaymentStatus::Confirmed;
-        let id_cs = info_a
+        info_a
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), confirmed.clone());
+            .record_dashpay_payment(tx_id.clone(), confirmed.clone(), &p);
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
             .expect("apply confirmed");
@@ -1382,34 +1500,43 @@ mod tests {
     fn round_trip_clear_dashpay_profile() {
         use crate::wallet::dashpay::DashPayProfile;
 
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
         for info in [&mut info_a, &mut info_b] {
-            let _ = info
-                .identity_manager
-                .add_identity(make_test_identity(1, 1), 0)
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, &p)
                 .expect("add");
             // Pre-seed with a profile so the clear has something to do.
-            let _ = info
-                .identity_manager
+            info.identity_manager
                 .managed_identity_mut(&Identifier::from([1u8; 32]))
                 .expect("managed")
-                .set_dashpay_profile(Some(DashPayProfile {
-                    display_name: Some("seed".into()),
-                    ..Default::default()
-                }));
+                .set_dashpay_profile(
+                    Some(DashPayProfile {
+                        display_name: Some("seed".into()),
+                        ..Default::default()
+                    }),
+                    &p,
+                );
         }
         let id = Identifier::from([1u8; 32]);
 
-        // Clear on A — emit the clear changeset.
-        let id_cs = info_a
+        // Clear on A (persists internally via noop persister).
+        info_a
             .identity_manager
             .managed_identity_mut(&id)
             .expect("a managed")
-            .set_dashpay_profile(None);
+            .set_dashpay_profile(None, &p);
+
+        // Build the replay changeset from A's mutated state.
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
 
         info_b
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
@@ -1436,36 +1563,39 @@ mod tests {
 
     #[test]
     fn round_trip_double_apply_is_idempotent() {
-        let mut wallet_a = build_test_wallet();
+        let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
         let mut wallet_b = build_test_wallet();
         let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
 
-        // Compose a multi-field mutation: add identity + label + dpns + top-up.
-        let id_cs1 = info_a
+        // Compose a multi-field mutation: add identity + label.
+        info_a
             .identity_manager
-            .add_identity(make_test_identity(1, 1), 0)
+            .add_identity(make_test_identity(1, 1), 0, &p)
             .expect("add");
-        let id_cs2 = info_a
+        info_a
             .identity_manager
-            .set_label(&Identifier::from([1u8; 32]), "alice".into())
+            .set_label(&Identifier::from([1u8; 32]), "alice".into(), &p)
             .expect("label");
 
-        // Apply both changesets twice on B and verify state matches A.
-        info_b
-            .apply_changeset(&mut wallet_b, wrap_id(id_cs1.clone()))
-            .expect("first add");
-        info_b
-            .apply_changeset(&mut wallet_b, wrap_id(id_cs2.clone()))
-            .expect("first label");
-        info_b
-            .apply_changeset(&mut wallet_b, wrap_id(id_cs1))
-            .expect("second add");
-        info_b
-            .apply_changeset(&mut wallet_b, wrap_id(id_cs2))
-            .expect("second label");
-
+        // Build the single combined changeset from A's final state.
         let id = Identifier::from([1u8; 32]);
+        let managed = info_a.identity_manager.managed_identity(&id).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(id, IdentityEntry::from_managed(managed));
+        id_cs.primary_identity = Some(id);
+
+        // Apply the changeset twice on B and verify state matches A.
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs.clone()))
+            .expect("first apply");
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("second apply (idempotent)");
+
         let a = info_a.identity_manager.managed_identity(&id).expect("a");
         let b = info_b.identity_manager.managed_identity(&id).expect("b");
         assert_eq!(a.label, b.label);

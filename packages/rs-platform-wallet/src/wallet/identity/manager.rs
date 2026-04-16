@@ -8,6 +8,7 @@ use super::managed_identity::ManagedIdentity;
 use super::managed_identity::WatchedIdentity;
 use crate::changeset::{IdentityChangeSet, IdentityEntry};
 use crate::error::PlatformWalletError;
+use crate::wallet::persister::WalletPersister;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
@@ -53,14 +54,13 @@ impl IdentityManager {
     /// Every identity in this wallet must have its HD index so that signing
     /// and ECDH derivation can locate the correct keys.
     ///
-    /// Returns an [`IdentityChangeSet`] carrying a full snapshot of the
-    /// new identity and, if this is the first identity, the `primary_identity`
-    /// selection.
+    /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn add_identity(
         &mut self,
         identity: Identity,
         identity_index: u32,
-    ) -> Result<IdentityChangeSet, PlatformWalletError> {
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
 
         if self.identities.contains_key(&identity_id) {
@@ -80,7 +80,11 @@ impl IdentityManager {
             cs.primary_identity = Some(identity_id);
         }
 
-        Ok(cs)
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+
+        Ok(())
     }
 
     /// Get the BIP-9 HD identity index for a given identity ID.
@@ -92,17 +96,17 @@ impl IdentityManager {
 
     /// Remove an identity from the manager.
     ///
-    /// Returns the removed [`Identity`] and an [`IdentityChangeSet`] with a
-    /// tombstone and — if the removed identity was primary and another
-    /// identity took its place — the new primary selection.
+    /// Persists the tombstone changeset via `persister` and returns the
+    /// removed [`Identity`].
     ///
-    /// Note: if the removed identity was the only one, `primary_identity`
-    /// in the changeset remains `None`; the apply path must re-derive the
-    /// cleared state from the `removed` set alone.
+    /// Note: if the removed identity was the only one, the new primary
+    /// selection in the persisted changeset remains `None`; the apply path
+    /// re-derives the cleared state from the `removed` set alone.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,
-    ) -> Result<(Identity, IdentityChangeSet), PlatformWalletError> {
+        persister: &WalletPersister,
+    ) -> Result<Identity, PlatformWalletError> {
         let managed_identity = self
             .identities
             .shift_remove(identity_id)
@@ -118,7 +122,11 @@ impl IdentityManager {
             }
         }
 
-        Ok((managed_identity.identity, cs))
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+
+        Ok(managed_identity.identity)
     }
 }
 
@@ -168,19 +176,24 @@ impl IdentityManager {
 
     /// Set the primary identity.
     ///
-    /// Returns an [`IdentityChangeSet`] carrying the new selection.
+    /// Persists the new selection via `persister` and returns `()`.
     pub fn set_primary_identity(
         &mut self,
         identity_id: Identifier,
-    ) -> Result<IdentityChangeSet, PlatformWalletError> {
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
         if !self.identities.contains_key(&identity_id) {
             return Err(PlatformWalletError::IdentityNotFound(identity_id));
         }
         self.primary_identity_id = Some(identity_id);
-        Ok(IdentityChangeSet {
+        let cs = IdentityChangeSet {
             primary_identity: Some(identity_id),
             ..Default::default()
-        })
+        };
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+        Ok(())
     }
 
     /// Get a managed identity by ID
@@ -198,18 +211,19 @@ impl IdentityManager {
 
     /// Set a label for an identity.
     ///
-    /// Returns an [`IdentityChangeSet`] carrying a full snapshot of the
-    /// updated identity.
+    /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn set_label(
         &mut self,
         identity_id: &Identifier,
         label: String,
-    ) -> Result<IdentityChangeSet, PlatformWalletError> {
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
         let managed = self
             .identities
             .get_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(managed.set_label(label))
+        managed.set_label(label, persister);
+        Ok(())
     }
 
     /// Get total credit balance across all identities
@@ -237,12 +251,15 @@ impl IdentityManager {
 
     /// Set the last scanned identity index.
     ///
-    /// Returns an [`IdentityChangeSet`] carrying the new watermark.
-    pub fn set_last_scanned_index(&mut self, index: u32) -> IdentityChangeSet {
+    /// Persists the new watermark via `persister` and returns `()`.
+    pub fn set_last_scanned_index(&mut self, index: u32, persister: &WalletPersister) {
         self.last_scanned_index = index;
-        IdentityChangeSet {
+        let cs = IdentityChangeSet {
             last_scanned_index: Some(index),
             ..Default::default()
+        };
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
         }
     }
 }
@@ -366,6 +383,12 @@ impl IdentityManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
 
     fn create_test_identity(id: Identifier) -> Identity {
         use dpp::identity::v0::IdentityV0;
@@ -386,8 +409,9 @@ mod tests {
         let mut manager = IdentityManager::new();
         let identity_id = Identifier::from([1u8; 32]);
         let identity = create_test_identity(identity_id);
+        let p = noop_persister();
 
-        manager.add_identity(identity.clone(), 0).unwrap();
+        manager.add_identity(identity.clone(), 0, &p).unwrap();
 
         assert_eq!(manager.identities.len(), 1);
         assert!(manager.identity(&identity_id).is_some());
@@ -400,12 +424,12 @@ mod tests {
         let mut manager = IdentityManager::new();
         let identity_id = Identifier::from([1u8; 32]);
         let identity = create_test_identity(identity_id);
+        let p = noop_persister();
 
-        manager.add_identity(identity, 0).unwrap();
-        let (removed, cs) = manager.remove_identity(&identity_id).unwrap();
+        manager.add_identity(identity, 0, &p).unwrap();
+        let removed = manager.remove_identity(&identity_id, &p).unwrap();
 
         assert_eq!(removed.id(), identity_id);
-        assert!(cs.removed.contains(&identity_id));
         assert_eq!(manager.identities.len(), 0);
         assert_eq!(manager.primary_identity_id, None);
     }
@@ -413,16 +437,21 @@ mod tests {
     #[test]
     fn test_primary_identity_switching() {
         let mut manager = IdentityManager::new();
+        let p = noop_persister();
 
         let id1 = Identifier::from([1u8; 32]);
         let id2 = Identifier::from([2u8; 32]);
 
-        manager.add_identity(create_test_identity(id1), 0).unwrap();
-        manager.add_identity(create_test_identity(id2), 1).unwrap();
+        manager
+            .add_identity(create_test_identity(id1), 0, &p)
+            .unwrap();
+        manager
+            .add_identity(create_test_identity(id2), 1, &p)
+            .unwrap();
 
         assert_eq!(manager.primary_identity_id, Some(id1));
 
-        manager.set_primary_identity(id2).unwrap();
+        manager.set_primary_identity(id2, &p).unwrap();
         assert_eq!(manager.primary_identity_id, Some(id2));
     }
 
@@ -430,13 +459,14 @@ mod tests {
     fn test_managed_identity() {
         let mut manager = IdentityManager::new();
         let identity_id = Identifier::from([1u8; 32]);
+        let p = noop_persister();
 
         manager
-            .add_identity(create_test_identity(identity_id), 0)
+            .add_identity(create_test_identity(identity_id), 0, &p)
             .unwrap();
 
         manager
-            .set_label(&identity_id, "My Identity".to_string())
+            .set_label(&identity_id, "My Identity".to_string(), &p)
             .unwrap();
 
         let managed = manager.managed_identity(&identity_id).unwrap();

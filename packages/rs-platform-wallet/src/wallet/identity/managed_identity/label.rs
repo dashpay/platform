@@ -1,24 +1,28 @@
 //! Label management for ManagedIdentity
 
 use super::ManagedIdentity;
-use crate::changeset::IdentityChangeSet;
+use crate::wallet::persister::WalletPersister;
 
 impl ManagedIdentity {
     /// Set the label for this identity.
     ///
-    /// Returns an [`IdentityChangeSet`] carrying a full snapshot of the
-    /// updated identity.
-    pub fn set_label(&mut self, label: String) -> IdentityChangeSet {
+    /// Persists the resulting changeset via `persister` and returns `()`.
+    pub fn set_label(&mut self, label: String, persister: &WalletPersister) {
         self.label = Some(label);
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Clear the label for this identity.
     ///
-    /// Returns an [`IdentityChangeSet`] carrying a full snapshot of the
-    /// updated identity.
-    pub fn clear_label(&mut self) -> IdentityChangeSet {
+    /// Persists the resulting changeset via `persister` and returns `()`.
+    pub fn clear_label(&mut self, persister: &WalletPersister) {
         self.label = None;
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 }

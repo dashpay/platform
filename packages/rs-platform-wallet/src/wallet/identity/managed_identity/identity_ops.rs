@@ -3,6 +3,7 @@
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
 use crate::changeset::{IdentityChangeSet, IdentityEntry};
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -50,31 +51,49 @@ impl ManagedIdentity {
 
     /// Set the DashPay profile for this identity.
     ///
-    /// Returns a full-snapshot [`IdentityChangeSet`](crate::changeset::IdentityChangeSet)
-    /// carrying the updated identity. Pass `None` to clear the
-    /// profile.
+    /// Persists the resulting changeset via `persister` and returns `()`.
+    /// Pass `None` to clear the profile.
+    ///
+    /// TODO: This is `pub` transitionally — evo-tool's backend tasks
+    /// still fetch/create DashPay profiles themselves and push results
+    /// back here. Once `DashPayWallet` has its own `sync_profiles()`
+    /// (like `PlatformAddressWallet::sync_balances()`), this should
+    /// become `pub(crate)` and evo-tool's `platform_wallet_cache.rs`
+    /// can be deleted.
     pub fn set_dashpay_profile(
         &mut self,
         profile: Option<crate::wallet::dashpay::DashPayProfile>,
-    ) -> IdentityChangeSet {
+        persister: &WalletPersister,
+    ) {
         self.dashpay_profile = profile;
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
-    /// Record a DashPay payment under its transaction id, returning
-    /// a full-snapshot [`IdentityChangeSet`](crate::changeset::IdentityChangeSet).
+    /// Record a DashPay payment under its transaction id.
     ///
     /// If an entry with the same `tx_id` already exists, it is
     /// overwritten (last-write-wins) — the expected use case is
     /// updating the status field from `Pending` to `Confirmed` or
     /// `Failed` after broadcast.
+    ///
+    /// Persists the resulting changeset via `persister` and returns `()`.
+    ///
+    /// TODO: Same transitional `pub` as `set_dashpay_profile` — see
+    /// that method's doc comment for rationale.
     pub fn record_dashpay_payment(
         &mut self,
         tx_id: String,
         entry: crate::wallet::dashpay::PaymentEntry,
-    ) -> IdentityChangeSet {
+        persister: &WalletPersister,
+    ) {
         self.dashpay_payments.insert(tx_id, entry);
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Get the identity ID
@@ -94,35 +113,42 @@ impl ManagedIdentity {
 
     /// Set the identity lifecycle status.
     ///
-    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
-    /// identity.
-    pub fn set_status(&mut self, status: IdentityStatus) -> IdentityChangeSet {
+    /// Persists the resulting changeset via `persister` and returns `()`.
+    pub fn set_status(&mut self, status: IdentityStatus, persister: &WalletPersister) {
         self.status = status;
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Add a DPNS name associated with this identity.
     ///
-    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
-    /// identity.
-    pub fn add_dpns_name(&mut self, name: DpnsNameInfo) -> IdentityChangeSet {
+    /// Persists the resulting changeset via `persister` and returns `()`.
+    pub fn add_dpns_name(&mut self, name: DpnsNameInfo, persister: &WalletPersister) {
         self.dpns_names.push(name);
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Store a private key entry in the key storage.
     ///
-    /// Returns a full-snapshot [`IdentityChangeSet`] carrying the updated
-    /// identity.
+    /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn add_key(
         &mut self,
         key_id: KeyID,
         public_key: IdentityPublicKey,
         private_key_data: PrivateKeyData,
-    ) -> IdentityChangeSet {
+        persister: &WalletPersister,
+    ) {
         self.key_storage
             .insert(key_id, (public_key, private_key_data));
-        self.snapshot_changeset()
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Look up private key data by key ID.

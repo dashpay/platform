@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 use dash_sdk::platform::FetchMany;
 
-use crate::changeset::TokenBalanceChangeSet;
+use crate::changeset::{Merge, TokenBalanceChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::IdentitySigner;
@@ -66,12 +66,8 @@ impl TokenWallet {
 impl TokenWallet {
     /// Register a token for balance tracking on a specific identity.
     ///
-    /// Returns a [`TokenBalanceChangeSet`] carrying the new watch entry.
-    pub async fn watch(
-        &self,
-        identity_id: Identifier,
-        token_id: Identifier,
-    ) -> TokenBalanceChangeSet {
+    /// Persists the resulting changeset internally and returns `()`.
+    pub async fn watch(&self, identity_id: Identifier, token_id: Identifier) {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -81,18 +77,15 @@ impl TokenWallet {
                 .insert(token_id);
         }
         cs.watched.entry(identity_id).or_default().insert(token_id);
-        cs
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Unregister a token from a specific identity and clear its cached balance.
     ///
-    /// Returns a [`TokenBalanceChangeSet`] carrying the unwatch + balance
-    /// tombstone.
-    pub async fn unwatch(
-        &self,
-        identity_id: &Identifier,
-        token_id: &Identifier,
-    ) -> TokenBalanceChangeSet {
+    /// Persists the resulting changeset internally and returns `()`.
+    pub async fn unwatch(&self, identity_id: &Identifier, token_id: &Identifier) {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -109,14 +102,15 @@ impl TokenWallet {
             .or_default()
             .insert(*token_id);
         cs.removed_balances.insert((*identity_id, *token_id));
-        cs
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Unregister all tokens for a specific identity and clear cached balances.
     ///
-    /// Returns a [`TokenBalanceChangeSet`] with the full set of unwatched
-    /// tokens and balance tombstones for the identity.
-    pub async fn unwatch_identity(&self, identity_id: &Identifier) -> TokenBalanceChangeSet {
+    /// Persists the resulting changeset internally and returns `()`.
+    pub async fn unwatch_identity(&self, identity_id: &Identifier) {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = TokenBalanceChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -134,7 +128,9 @@ impl TokenWallet {
                 cs.removed_balances.insert(*key);
             }
         }
-        cs
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Get the watched token IDs for a specific identity.
@@ -168,10 +164,9 @@ impl TokenWallet {
     /// Sync balances for all watched identity+token pairs.
     ///
     /// Queries Platform per identity, fetching only the tokens that identity
-    /// is watching. Updates the local cache and returns a
-    /// [`TokenBalanceChangeSet`] accumulating every balance update and
-    /// tombstone from the sync.
-    pub async fn sync(&self) -> Result<TokenBalanceChangeSet, PlatformWalletError> {
+    /// is watching. Updates the local cache and persists the resulting
+    /// changeset internally. Returns `()` on success.
+    pub async fn sync(&self) -> Result<(), PlatformWalletError> {
         // Snapshot the watched tokens while holding the lock briefly.
         let snapshot: BTreeMap<Identifier, Vec<Identifier>> = {
             let wm = self.wallet_manager.read().await;
@@ -187,7 +182,7 @@ impl TokenWallet {
 
         let mut cs = TokenBalanceChangeSet::default();
         if snapshot.is_empty() {
-            return Ok(cs);
+            return Ok(());
         }
 
         for (identity_id, token_ids) in &snapshot {
@@ -229,7 +224,13 @@ impl TokenWallet {
             }
         }
 
-        Ok(cs)
+        if !cs.is_empty() {
+            if let Err(e) = self.persister.store(cs.into()) {
+                tracing::error!("Failed to persist changeset: {}", e);
+            }
+        }
+
+        Ok(())
     }
 }
 
