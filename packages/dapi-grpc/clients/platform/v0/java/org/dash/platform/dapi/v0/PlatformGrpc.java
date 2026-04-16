@@ -1720,6 +1720,37 @@ public final class PlatformGrpc {
     return getGetShieldedAnchorsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse> getGetMostRecentShieldedAnchorMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getMostRecentShieldedAnchor",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse> getGetMostRecentShieldedAnchorMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse> getGetMostRecentShieldedAnchorMethod;
+    if ((getGetMostRecentShieldedAnchorMethod = PlatformGrpc.getGetMostRecentShieldedAnchorMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetMostRecentShieldedAnchorMethod = PlatformGrpc.getGetMostRecentShieldedAnchorMethod) == null) {
+          PlatformGrpc.getGetMostRecentShieldedAnchorMethod = getGetMostRecentShieldedAnchorMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getMostRecentShieldedAnchor"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getMostRecentShieldedAnchor"))
+              .build();
+        }
+      }
+    }
+    return getGetMostRecentShieldedAnchorMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse> getGetShieldedPoolStateMethod;
 
@@ -1955,6 +1986,9 @@ public final class PlatformGrpc {
   public static abstract class PlatformImplBase implements io.grpc.BindableService {
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Write-only endpoint, not a query
+     * </pre>
      */
     public void broadcastStateTransition(org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionResponse> responseObserver) {
@@ -2081,6 +2115,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
+     * </pre>
      */
     public void getConsensusParams(org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse> responseObserver) {
@@ -2352,6 +2389,13 @@ public final class PlatformGrpc {
     public void getShieldedAnchors(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedAnchorsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedAnchorsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedAnchorsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getMostRecentShieldedAnchor(org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMostRecentShieldedAnchorMethod(), responseObserver);
     }
 
     /**
@@ -2784,6 +2828,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedAnchorsResponse>(
                   this, METHODID_GET_SHIELDED_ANCHORS)))
           .addMethod(
+            getGetMostRecentShieldedAnchorMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse>(
+                  this, METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR)))
+          .addMethod(
             getGetShieldedPoolStateMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
@@ -2844,6 +2895,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Write-only endpoint, not a query
+     * </pre>
      */
     public void broadcastStateTransition(org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionResponse> responseObserver) {
@@ -2988,6 +3042,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
+     * </pre>
      */
     public void getConsensusParams(org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse> responseObserver) {
@@ -3300,6 +3357,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getMostRecentShieldedAnchor(org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetMostRecentShieldedAnchorMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getShieldedPoolState(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -3362,6 +3427,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Write-only endpoint, not a query
+     * </pre>
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionResponse broadcastStateTransition(org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -3488,6 +3556,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
+     * </pre>
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse getConsensusParams(org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -3763,6 +3834,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse getMostRecentShieldedAnchor(org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetMostRecentShieldedAnchorMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse getShieldedPoolState(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetShieldedPoolStateMethod(), getCallOptions(), request);
@@ -3819,6 +3897,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Write-only endpoint, not a query
+     * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionResponse> broadcastStateTransition(
         org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionRequest request) {
@@ -3963,6 +4044,9 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
+     * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse> getConsensusParams(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest request) {
@@ -4275,6 +4359,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse> getMostRecentShieldedAnchor(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetMostRecentShieldedAnchorMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse> getShieldedPoolState(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -4377,12 +4469,13 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 52;
   private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 53;
   private static final int METHODID_GET_SHIELDED_ANCHORS = 54;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 55;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 56;
-  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 57;
-  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 58;
-  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 59;
-  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 60;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 55;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 56;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 57;
+  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 58;
+  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 59;
+  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 60;
+  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 61;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4621,6 +4714,10 @@ public final class PlatformGrpc {
           serviceImpl.getShieldedAnchors((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedAnchorsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedAnchorsResponse>) responseObserver);
           break;
+        case METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR:
+          serviceImpl.getMostRecentShieldedAnchor((org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMostRecentShieldedAnchorResponse>) responseObserver);
+          break;
         case METHODID_GET_SHIELDED_POOL_STATE:
           serviceImpl.getShieldedPoolState((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse>) responseObserver);
@@ -4761,6 +4858,7 @@ public final class PlatformGrpc {
               .addMethod(getGetRecentCompactedAddressBalanceChangesMethod())
               .addMethod(getGetShieldedEncryptedNotesMethod())
               .addMethod(getGetShieldedAnchorsMethod())
+              .addMethod(getGetMostRecentShieldedAnchorMethod())
               .addMethod(getGetShieldedPoolStateMethod())
               .addMethod(getGetShieldedNullifiersMethod())
               .addMethod(getGetNullifiersTrunkStateMethod())
