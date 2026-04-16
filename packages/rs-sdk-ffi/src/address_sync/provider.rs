@@ -1,6 +1,7 @@
 //! FFI-compatible address provider implementation using callbacks
 
 use super::types::DashSDKPendingAddressList;
+use async_trait::async_trait;
 use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
 use std::os::raw::c_void;
 
@@ -99,6 +100,7 @@ impl<'a> CallbackAddressProvider<'a> {
     }
 }
 
+#[async_trait]
 impl<'a> AddressProvider for CallbackAddressProvider<'a> {
     fn gap_limit(&self) -> AddressIndex {
         unsafe {
@@ -130,7 +132,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         unsafe {
             let vtable = &*self.ffi.vtable;
             (vtable.on_address_found)(
@@ -144,7 +146,7 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
         unsafe {
             let vtable = &*self.ffi.vtable;
             (vtable.on_address_absent)(self.ffi.context, index, key.as_ptr(), key.len());

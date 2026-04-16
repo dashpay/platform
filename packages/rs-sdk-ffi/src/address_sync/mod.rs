@@ -13,6 +13,7 @@ pub use types::*;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use async_trait::async_trait;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressKey, AddressProvider, AddressSyncConfig, AddressSyncResult,
 };
@@ -211,6 +212,7 @@ struct BatchAddressProvider {
     last_known_recent_block: u64,
 }
 
+#[async_trait]
 impl AddressProvider for BatchAddressProvider {
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
@@ -220,13 +222,13 @@ impl AddressProvider for BatchAddressProvider {
         self.pending.iter().map(|(i, k)| (*i, k.clone())).collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         self.pending.remove(&index);
         self.found.insert((index, key.to_vec()), funds);
         self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
         self.pending.remove(&index);
         self.absent.insert((index, key.to_vec()));
     }
