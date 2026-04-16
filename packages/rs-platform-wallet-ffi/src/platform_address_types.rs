@@ -273,20 +273,11 @@ pub struct AddressSyncResultFFI {
     pub found_count: usize,
     pub absent: *mut AbsentAddressEntryFFI,
     pub absent_count: usize,
-    pub highest_found_index: u32,
-    pub has_highest_found_index: bool,
     pub checkpoint_height: u64,
     pub new_sync_height: u64,
     pub new_sync_timestamp: u64,
     pub last_known_recent_block: u64,
     pub metrics: AddressSyncMetricsFFI,
-}
-
-/// Multi-account sync result array.
-#[repr(C)]
-pub struct AddressSyncResultArrayFFI {
-    pub results: *mut AddressSyncResultFFI,
-    pub count: usize,
 }
 
 /// Changeset output.
@@ -300,12 +291,22 @@ pub struct PlatformAddressChangeSetFFI {
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-impl From<&dash_sdk::platform::address_sync::AddressSyncResult> for AddressSyncResultFFI {
-    fn from(result: &dash_sdk::platform::address_sync::AddressSyncResult) -> Self {
+impl From<&dash_sdk::platform::address_sync::AddressSyncResult<platform_wallet::PlatformAddressTag>>
+    for AddressSyncResultFFI
+{
+    fn from(
+        result: &dash_sdk::platform::address_sync::AddressSyncResult<
+            platform_wallet::PlatformAddressTag,
+        >,
+    ) -> Self {
+        // FFI consumers only care about the derivation index from the
+        // tag (the caller already knows which wallet/account is
+        // syncing). Flatten the tuple by dropping wallet_id and
+        // account_index here.
         let found: Vec<FoundAddressEntryFFI> = result
             .found
             .iter()
-            .map(|(&(index, address), funds)| FoundAddressEntryFFI {
+            .map(|(&((_, _, index), address), funds)| FoundAddressEntryFFI {
                 index,
                 address: address.into(),
                 nonce: funds.nonce,
@@ -316,7 +317,7 @@ impl From<&dash_sdk::platform::address_sync::AddressSyncResult> for AddressSyncR
         let absent: Vec<AbsentAddressEntryFFI> = result
             .absent
             .iter()
-            .map(|&(index, address)| AbsentAddressEntryFFI {
+            .map(|&((_, _, index), address)| AbsentAddressEntryFFI {
                 index,
                 address: address.into(),
             })
@@ -343,8 +344,6 @@ impl From<&dash_sdk::platform::address_sync::AddressSyncResult> for AddressSyncR
             found_count,
             absent: absent_ptr,
             absent_count,
-            highest_found_index: result.highest_found_index.unwrap_or(u32::MAX),
-            has_highest_found_index: result.highest_found_index.is_some(),
             checkpoint_height: result.checkpoint_height,
             new_sync_height: result.new_sync_height,
             new_sync_timestamp: result.new_sync_timestamp,

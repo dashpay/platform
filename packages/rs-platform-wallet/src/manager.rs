@@ -14,6 +14,7 @@ use key_wallet_manager::WalletManager;
 use crate::changeset::{CorePersistenceBridge, Merge, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
+use crate::platform_address_sync::PlatformAddressSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, WalletBalance};
@@ -36,6 +37,9 @@ pub struct PlatformWalletManager {
     /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
     lock_notify: Arc<Notify>,
     spv: Arc<SpvRuntime>,
+    /// Periodic platform-address (BLAST) balance sync coordinator.
+    /// Not auto-started — call `start` after wallets are registered.
+    platform_address_sync: Arc<PlatformAddressSyncManager>,
     persister: Arc<dyn PlatformWalletPersistence>,
 }
 
@@ -72,13 +76,21 @@ impl PlatformWalletManager {
             balance_handler,
         ]));
 
-        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let spv = Arc::new(SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&event_manager),
+        ));
+        let platform_address_sync = Arc::new(PlatformAddressSyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&event_manager),
+        ));
         Self {
             sdk,
             wallet_manager,
             wallets,
             lock_notify,
             spv,
+            platform_address_sync,
             persister,
         }
     }
@@ -97,6 +109,18 @@ impl PlatformWalletManager {
     /// [`SpvRuntime::spawn_in_background`] which takes `&Arc<Self>`.
     pub fn spv_arc(&self) -> Arc<SpvRuntime> {
         Arc::clone(&self.spv)
+    }
+
+    /// Access the platform-address sync coordinator.
+    pub fn platform_address_sync(&self) -> &PlatformAddressSyncManager {
+        &self.platform_address_sync
+    }
+
+    /// Clone the `Arc<PlatformAddressSyncManager>` so callers (e.g. FFI)
+    /// can invoke [`PlatformAddressSyncManager::start`] which takes
+    /// `&Arc<Self>`.
+    pub fn platform_address_sync_arc(&self) -> Arc<PlatformAddressSyncManager> {
+        Arc::clone(&self.platform_address_sync)
     }
 
     // TODO: We can delete it and use core().broadcast() ? don't delete this todo

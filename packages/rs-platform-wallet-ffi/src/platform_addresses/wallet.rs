@@ -184,36 +184,3 @@ pub unsafe extern "C" fn platform_address_wallet_free_sync_result(
         ));
     }
 }
-
-/// Free a sync result array returned by `platform_address_wallet_sync_balances`.
-#[no_mangle]
-pub unsafe extern "C" fn platform_address_wallet_free_sync_result_array(
-    array: *const AddressSyncResultArrayFFI,
-) {
-    if array.is_null() {
-        return;
-    }
-    let a = &*array;
-    if !a.results.is_null() && a.count > 0 {
-        // Free inner allocations first.
-        let results = std::slice::from_raw_parts(a.results, a.count);
-        for result in results {
-            if !result.found.is_null() && result.found_count > 0 {
-                drop(Vec::from_raw_parts(
-                    result.found,
-                    result.found_count,
-                    result.found_count,
-                ));
-            }
-            if !result.absent.is_null() && result.absent_count > 0 {
-                drop(Vec::from_raw_parts(
-                    result.absent,
-                    result.absent_count,
-                    result.absent_count,
-                ));
-            }
-        }
-        // Free the outer results array.
-        drop(Vec::from_raw_parts(a.results, a.count, a.count));
-    }
-}

@@ -16,7 +16,7 @@ pub use self::core::CoreWallet;
 pub use apply::ApplyError;
 pub use dashpay::DashPayWallet;
 pub use identity::IdentityWallet;
-pub use platform_addresses::PlatformAddressWallet;
+pub use platform_addresses::{PlatformAddressTag, PlatformAddressWallet};
 pub use platform_wallet::{
     PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
 };

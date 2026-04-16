@@ -14,6 +14,7 @@ mod transfer;
 mod wallet;
 mod withdrawal;
 
+pub use provider::PlatformAddressTag;
 pub use wallet::PlatformAddressWallet;
 
 /// Specifies how input addresses are selected for a transaction.

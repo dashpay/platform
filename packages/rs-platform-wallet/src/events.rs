@@ -16,13 +16,20 @@ use arc_swap::ArcSwap;
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
-// TODO: We remove platform events if we don't have them
+use crate::platform_address_sync::PlatformAddressSyncSummary;
+
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
 /// Implementors receive all SPV events via the [`EventHandler`] supertrait,
 /// plus platform-specific events via methods defined here.
 pub trait PlatformEventHandler: EventHandler {
-    // Platform-specific event methods will be added here as needed
+    /// Fired after each [`PlatformAddressSyncManager`] pass completes,
+    /// including passes that produced no updates.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    ///
+    /// [`PlatformAddressSyncManager`]: crate::platform_address_sync::PlatformAddressSyncManager
+    fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {}
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -51,6 +58,16 @@ impl PlatformEventManager {
             new.push(handler.clone());
             new
         });
+    }
+
+    /// Dispatch a platform-address sync completion to every handler.
+    ///
+    /// Not on the SPV hot path — called once per sync pass (~15s).
+    pub fn on_platform_address_sync_completed(&self, summary: &PlatformAddressSyncSummary) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_platform_address_sync_completed(summary);
+        }
     }
 }
 

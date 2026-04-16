@@ -6,9 +6,6 @@ use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressProvider};
 use std::os::raw::c_void;
 
-/// Empty slice constant for callback providers that don't track known balances.
-const EMPTY_BALANCES: &[(AddressIndex, PlatformAddress, AddressFunds)] = &[];
-
 /// Function pointer type for getting pending addresses
 ///
 /// Returns a list of pending addresses that need to be synchronized.
@@ -51,8 +48,8 @@ pub type DestroyProviderFn = unsafe extern "C" fn(context: *mut c_void);
 
 /// VTable for address provider callbacks
 ///
-/// Note: Optional function pointers (has_pending, highest_found_index, destroy)
-/// can be set to NULL in C. The implementation will check for null before calling.
+/// Note: Optional function pointers (has_pending, destroy) can be set to NULL
+/// in C. The implementation will check for null before calling.
 #[repr(C)]
 pub struct AddressProviderVTable {
     /// Get the gap limit for this provider
@@ -70,10 +67,6 @@ pub struct AddressProviderVTable {
     /// Check if there are still pending addresses (optional, can be NULL)
     /// If null, the default implementation (pending_addresses is non-empty) is used
     pub has_pending: Option<unsafe extern "C" fn(context: *mut c_void) -> bool>,
-
-    /// Get the highest found index (optional, can be NULL)
-    /// If null, returns None (u32::MAX means none found)
-    pub highest_found_index: Option<unsafe extern "C" fn(context: *mut c_void) -> u32>,
 
     /// Optional destructor for cleanup (can be NULL)
     pub destroy: Option<unsafe extern "C" fn(context: *mut c_void)>,
@@ -106,6 +99,8 @@ impl<'a> CallbackAddressProvider<'a> {
 
 #[async_trait]
 impl<'a> AddressProvider for CallbackAddressProvider<'a> {
+    type Tag = AddressIndex;
+
     fn gap_limit(&self) -> AddressIndex {
         unsafe {
             let vtable = &*self.ffi.vtable;
@@ -113,29 +108,32 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn pending_addresses(&self) -> Vec<(AddressIndex, PlatformAddress)> {
-        unsafe {
+    fn pending_addresses(&self) -> impl Iterator<Item = (AddressIndex, PlatformAddress)> + '_ {
+        // The FFI vtable returns a one-shot list; collect into a Vec
+        // here, then hand out its iterator. We'd need lifetime tricks
+        // to borrow the FFI allocation across the iterator's life, and
+        // the FFI contract doesn't guarantee that's safe.
+        let owned: Vec<(AddressIndex, PlatformAddress)> = unsafe {
             let vtable = &*self.ffi.vtable;
             let list = (vtable.pending_addresses)(self.ffi.context);
 
             if list.addresses.is_null() || list.count == 0 {
-                return Vec::new();
-            }
-
-            let addresses_slice = std::slice::from_raw_parts(list.addresses, list.count);
-            let mut result = Vec::with_capacity(list.count);
-
-            for entry in addresses_slice {
-                if !entry.key.is_null() && entry.key_len > 0 {
-                    let key_bytes = std::slice::from_raw_parts(entry.key, entry.key_len);
-                    if let Ok(address) = PlatformAddress::from_bytes(key_bytes) {
-                        result.push((entry.index, address));
+                Vec::new()
+            } else {
+                let addresses_slice = std::slice::from_raw_parts(list.addresses, list.count);
+                let mut result = Vec::with_capacity(list.count);
+                for entry in addresses_slice {
+                    if !entry.key.is_null() && entry.key_len > 0 {
+                        let key_bytes = std::slice::from_raw_parts(entry.key, entry.key_len);
+                        if let Ok(address) = PlatformAddress::from_bytes(key_bytes) {
+                            result.push((entry.index, address));
+                        }
                     }
                 }
+                result
             }
-
-            result
-        }
+        };
+        owned.into_iter()
     }
 
     async fn on_address_found(
@@ -177,30 +175,16 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
             if let Some(has_pending) = vtable.has_pending {
                 has_pending(self.ffi.context)
             } else {
-                // Default implementation
-                !self.pending_addresses().is_empty()
+                // Default implementation — materialize and peek.
+                self.pending_addresses().next().is_some()
             }
         }
     }
 
-    fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)] {
-        EMPTY_BALANCES
-    }
-
-    fn highest_found_index(&self) -> Option<AddressIndex> {
-        unsafe {
-            let vtable = &*self.ffi.vtable;
-            if let Some(highest_found_index) = vtable.highest_found_index {
-                let index = highest_found_index(self.ffi.context);
-                if index == u32::MAX {
-                    None
-                } else {
-                    Some(index)
-                }
-            } else {
-                None
-            }
-        }
+    fn current_balances(
+        &self,
+    ) -> impl Iterator<Item = (AddressIndex, PlatformAddress, AddressFunds)> + '_ {
+        std::iter::empty()
     }
 }
 
@@ -268,7 +252,6 @@ mod tests {
         on_address_found: test_on_found,
         on_address_absent: test_on_absent,
         has_pending: None,
-        highest_found_index: None,
         destroy: None,
     };
 

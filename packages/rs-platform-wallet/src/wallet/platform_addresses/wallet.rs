@@ -1,9 +1,7 @@
 //! Platform address wallet for DIP-17 platform payment addresses.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use arc_swap::ArcSwap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use tokio::sync::RwLock;
@@ -14,10 +12,7 @@ use key_wallet_manager::WalletManager;
 
 use crate::wallet::persister::WalletPersister;
 
-use super::provider::PlatformPaymentAddressAccountProvider;
-
-/// Provider map type alias for readability.
-type ProviderMap = BTreeMap<u32, Arc<RwLock<PlatformPaymentAddressAccountProvider>>>;
+use super::provider::PlatformPaymentAddressProvider;
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
@@ -27,20 +22,19 @@ pub struct PlatformAddressWallet {
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
-    /// Per-account address providers, retaining incremental sync state across calls.
-    /// Each provider has its own `RwLock` so syncing different accounts is independent.
-    /// The outer `ArcSwap` allows lock-free reads; writes (adding a new account) are
-    /// rare and use clone-and-swap.
-    pub(crate) providers: Arc<ArcSwap<ProviderMap>>,
+    /// Single provider covering every platform payment account on the
+    /// wallet. `None` until [`initialize`] runs so that no-account
+    /// wallets don't allocate empty state. Sync takes a `write` lock;
+    /// transfer/withdraw paths take `read` for key_source lookups.
+    pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: WalletPersister,
 }
 
 impl PlatformAddressWallet {
-    /// Create a new PlatformAddressWallet without initializing providers.
+    /// Create a new PlatformAddressWallet without initializing the provider.
     ///
-    /// Call [`initialize`] afterwards to create providers for existing
-    /// platform payment accounts.
+    /// Call [`initialize`] afterwards to build the unified provider.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -51,59 +45,39 @@ impl PlatformAddressWallet {
             sdk,
             wallet_manager,
             wallet_id,
-            providers: Arc::new(ArcSwap::from_pointee(BTreeMap::new())),
+            provider: Arc::new(RwLock::new(None)),
             persister,
         }
     }
 
-    /// Initialize providers for all existing platform payment accounts.
+    /// Build (or rebuild) the unified address provider covering every
+    /// platform payment account on the wallet.
     ///
-    /// Creates a [`PlatformPaymentAddressAccountProvider`] for each account
-    /// found in the wallet. Safe to call multiple times — existing providers
-    /// are preserved (use [`add_provider`] for new accounts).
+    /// Safe to call multiple times — later invocations re-scan the
+    /// current account set from the wallet manager, picking up any
+    /// accounts added since the last call. Sync state (watermark,
+    /// `found`, `known_balances`) is **not** preserved across a
+    /// rebuild; callers that need to preserve it should use
+    /// [`restore_sync_state`] on the fresh provider.
     pub async fn initialize(&self) {
-        let account_indices: Vec<u32> = {
-            let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id)
-                .map(|info| {
-                    info.core_wallet
-                        .accounts
-                        .platform_payment_accounts
-                        .keys()
-                        .map(|k| k.account)
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-
-        let current = self.providers.load();
-        let mut new_map = (**current).clone();
-
-        for account_index in account_indices {
-            if new_map.contains_key(&account_index) {
-                continue; // Already initialized
+        match PlatformPaymentAddressProvider::from_wallets(
+            Arc::clone(&self.wallet_manager),
+            [self.wallet_id],
+        )
+        .await
+        {
+            Ok(provider) => {
+                let mut guard = self.provider.write().await;
+                *guard = Some(provider);
             }
-            match PlatformPaymentAddressAccountProvider::from_wallet(
-                self.wallet_manager.clone(),
-                self.wallet_id,
-                account_index,
-            )
-            .await
-            {
-                Ok(provider) => {
-                    new_map.insert(account_index, Arc::new(RwLock::new(provider)));
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to create provider for account {}: {}",
-                        account_index,
-                        e
-                    );
-                }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to create platform address provider for wallet {}: {}",
+                    hex::encode(self.wallet_id),
+                    e
+                );
             }
         }
-
-        self.providers.store(Arc::new(new_map));
     }
 
     /// Get the network from the SDK.
@@ -111,43 +85,23 @@ impl PlatformAddressWallet {
         self.sdk.network
     }
 
-    /// Add a provider for a new account index.
+    /// Rebuild the provider so it covers a newly added account.
     ///
-    /// Returns an error if a provider already exists for this index.
-    pub async fn add_provider(&self, account_index: u32) -> Result<(), PlatformWalletError> {
-        let current = self.providers.load();
-        if current.contains_key(&account_index) {
-            return Err(PlatformWalletError::AddressOperation(format!(
-                "Provider already exists for account index {}",
-                account_index
-            )));
-        }
-
-        let provider = PlatformPaymentAddressAccountProvider::from_wallet(
-            self.wallet_manager.clone(),
-            self.wallet_id,
-            account_index,
-        )
-        .await?;
-
-        let mut new_map = (**current).clone();
-        new_map.insert(account_index, Arc::new(RwLock::new(provider)));
-        self.providers.store(Arc::new(new_map));
-
+    /// Equivalent to [`initialize`]: the unified provider is rebuilt
+    /// from the current account set in the wallet manager. The name
+    /// is kept for API continuity with call sites that used to add
+    /// per-account providers.
+    pub async fn add_provider(&self, _account_index: u32) -> Result<(), PlatformWalletError> {
+        self.initialize().await;
         Ok(())
     }
 
-    /// Restore the incremental-sync watermark on every active provider.
+    /// Restore the incremental-sync watermark on the unified provider.
     ///
     /// Called during persisted-state replay so the next `sync_balances`
     /// call resumes from where the previous session left off instead of
     /// doing a full rescan. Zero-valued arguments are ignored (they mean
     /// "no stored watermark" — the provider keeps its fresh-start state).
-    ///
-    /// All accounts are set to the same watermark — platform-wallet
-    /// persists a single per-wallet value (the max across accounts on
-    /// flush). A subsequent sync will rewind accounts that were ahead
-    /// to this floor, so no range can be silently skipped.
     pub(crate) async fn apply_sync_state(
         &self,
         height: Option<u64>,
@@ -160,8 +114,8 @@ impl PlatformAddressWallet {
         let h = height.unwrap_or(0);
         let t = timestamp.unwrap_or(0);
         let r = last_known_recent_block.unwrap_or(0);
-        for provider_lock in self.providers.load().values() {
-            let mut provider = provider_lock.write().await;
+        let mut guard = self.provider.write().await;
+        if let Some(provider) = guard.as_mut() {
             provider.set_stored_sync_state(h, t, r);
         }
     }

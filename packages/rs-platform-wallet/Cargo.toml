@@ -27,9 +27,10 @@ arc-swap = "1"
 
 # Collections
 indexmap = "2.0"
+bimap = "0.6"
 
 # Async runtime
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12" }
 
 # Logging

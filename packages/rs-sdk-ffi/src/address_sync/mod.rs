@@ -204,7 +204,6 @@ struct BatchAddressProvider {
     pending: BTreeMap<AddressIndex, PlatformAddress>,
     found: BTreeMap<(AddressIndex, PlatformAddress), AddressFunds>,
     absent: BTreeSet<(AddressIndex, PlatformAddress)>,
-    highest_found: Option<AddressIndex>,
     /// Previously known balances from the last sync (for incremental-only mode).
     known_balances: Vec<(AddressIndex, PlatformAddress, AddressFunds)>,
     /// Last sync height from the previous sync (for incremental catch-up resume).
@@ -215,12 +214,18 @@ struct BatchAddressProvider {
 
 #[async_trait]
 impl AddressProvider for BatchAddressProvider {
+    type Tag = AddressIndex;
+
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
     }
 
-    fn pending_addresses(&self) -> Vec<(AddressIndex, PlatformAddress)> {
-        self.pending.iter().map(|(i, a)| (*i, *a)).collect()
+    fn pending_addresses(&self) -> impl Iterator<Item = (AddressIndex, PlatformAddress)> + '_ {
+        self.pending.iter().map(|(i, a)| (*i, *a))
+    }
+
+    fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
     }
 
     async fn on_address_found(
@@ -231,7 +236,6 @@ impl AddressProvider for BatchAddressProvider {
     ) {
         self.pending.remove(&index);
         self.found.insert((index, *address), funds);
-        self.highest_found = Some(self.highest_found.map_or(index, |v| v.max(index)));
     }
 
     async fn on_address_absent(&mut self, index: AddressIndex, address: &PlatformAddress) {
@@ -239,16 +243,10 @@ impl AddressProvider for BatchAddressProvider {
         self.absent.insert((index, *address));
     }
 
-    fn has_pending(&self) -> bool {
-        !self.pending.is_empty()
-    }
-
-    fn highest_found_index(&self) -> Option<AddressIndex> {
-        self.highest_found
-    }
-
-    fn current_balances(&self) -> &[(AddressIndex, PlatformAddress, AddressFunds)] {
-        &self.known_balances
+    fn current_balances(
+        &self,
+    ) -> impl Iterator<Item = (AddressIndex, PlatformAddress, AddressFunds)> + '_ {
+        self.known_balances.iter().copied()
     }
 
     fn last_sync_height(&self) -> u64 {
@@ -482,15 +480,11 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         last_sync_height
     );
 
-    // Seed highest_found from known balances so we don't lose the high-water mark
-    let initial_highest_found = known_balances.iter().map(|(index, _, _)| *index).max();
-
     let mut provider = BatchAddressProvider {
         gap_limit,
         pending,
         found: BTreeMap::new(),
         absent: BTreeSet::new(),
-        highest_found: initial_highest_found,
         known_balances,
         sync_height: last_sync_height,
         last_known_recent_block,
@@ -574,7 +568,7 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
 }
 
 /// Convert Rust AddressSyncResult to FFI-compatible result
-fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
+fn convert_sync_result(result: AddressSyncResult<AddressIndex>) -> DashSDKAddressSyncResult {
     // Convert found addresses
     let mut found_entries: Vec<DashSDKFoundAddress> = Vec::with_capacity(result.found.len());
     for ((index, address), funds) in result.found.iter() {
@@ -649,8 +643,6 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         found_count,
         absent: absent_ptr,
         absent_count,
-        highest_found_index: result.highest_found_index.unwrap_or(u32::MAX),
-        has_highest_found_index: result.highest_found_index.is_some(),
         checkpoint_height: result.checkpoint_height,
         new_sync_height: result.new_sync_height,
         new_sync_timestamp: result.new_sync_timestamp,

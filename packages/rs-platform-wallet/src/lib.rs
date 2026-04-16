@@ -5,6 +5,7 @@ pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
+pub mod platform_address_sync;
 pub mod spv;
 pub mod wallet;
 
@@ -12,6 +13,10 @@ pub use error::PlatformWalletError;
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 pub use manager::PlatformWalletManager;
+pub use platform_address_sync::{
+    PlatformAddressSyncManager, PlatformAddressSyncSummary, WalletSyncOutcome,
+    DEFAULT_SYNC_INTERVAL_SECS,
+};
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -34,6 +39,7 @@ pub use wallet::identity::{
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::ManagedIdentitySigner;
+pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;
 
