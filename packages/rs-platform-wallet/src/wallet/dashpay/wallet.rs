@@ -40,6 +40,8 @@ pub struct DashPayWallet {
     pub(crate) wallet_id: WalletId,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: crate::wallet::persister::WalletPersister,
+    /// Transaction broadcaster (SPV or DAPI) for `send_payment`.
+    pub(crate) broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
 }
 
 impl std::fmt::Debug for DashPayWallet {
@@ -538,13 +540,43 @@ impl DashPayWallet {
             }
         }
 
-        // 2. Send reciprocal request (this also stores it as a sent request
+        // 2. Capture the key indices and encrypted xpub from the incoming request
+        //    before sending the reciprocal request (which moves the lock and
+        //    the request may be consumed or overwritten).
+        let contact_encrypted_xpub = request.encrypted_public_key.clone();
+        let our_decryption_key_index = request.recipient_key_index;
+        let contact_encryption_key_index = request.sender_key_index;
+
+        // 3. Send reciprocal request (this also stores it as a sent request
         //    in the managed identity which, combined with the existing
         //    incoming request, will auto-establish the contact).
         self.send_contact_request(&our_identity_id, &sender_id, None, None)
             .await?;
 
-        // 3. The auto-establish logic in ManagedIdentity should have created
+        // 4. Register the watch-only external account so we can derive
+        //    sending addresses for this contact. Failures here are logged
+        //    but do not abort the acceptance — the external account can be
+        //    re-registered later.
+        if let Err(e) = self
+            .register_external_contact_account(
+                &our_identity_id,
+                &sender_id,
+                &contact_encrypted_xpub,
+                our_decryption_key_index,
+                contact_encryption_key_index,
+            )
+            .await
+        {
+            tracing::warn!(
+                our_identity = %our_identity_id,
+                contact = %sender_id,
+                error = %e,
+                "Failed to register external contact account after accept — \
+                 re-run register_external_contact_account to retry"
+            );
+        }
+
+        // 5. The auto-establish logic in ManagedIdentity should have created
         //    the established contact. Retrieve and return it.
         let wm = self.wallet_manager.read().await;
         let info = wm
@@ -1641,5 +1673,428 @@ impl DashPayWallet {
         }
 
         Ok(m)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// External contact account registration (sending)
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Register a watch-only `DashpayExternalAccount` for sending payments
+    /// to a contact. Uses the contact's decrypted xpub from their
+    /// `contactRequest.encrypted_public_key`.
+    ///
+    /// Called during contact establishment — once both parties have exchanged
+    /// requests and we can decrypt the contact's xpub. The account is
+    /// watch-only: we hold the contact's public key and derive their payment
+    /// addresses from it. We never hold a private key for this account.
+    ///
+    /// No-op (returns `Ok(())`) if the external account already exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `our_identity_id`            - Our identity that shares the contact relationship.
+    /// * `contact_identity_id`        - The contact's identity.
+    /// * `contact_encrypted_xpub`     - 96-byte encrypted xpub from the contact's
+    ///                                  `contactRequest` document (16-byte IV + 80-byte
+    ///                                  AES-256-CBC ciphertext).
+    /// * `our_decryption_key_index`   - Key ID of our ENCRYPTION key used for ECDH.
+    /// * `contact_encryption_key_index` - Key ID of the contact's ENCRYPTION key used for ECDH.
+    pub async fn register_external_contact_account(
+        &self,
+        our_identity_id: &Identifier,
+        contact_identity_id: &Identifier,
+        contact_encrypted_xpub: &[u8],
+        our_decryption_key_index: u32,
+        contact_encryption_key_index: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let account_index: u32 = 0;
+
+        // --- 1. Early-exit if the external account already exists. ---
+        {
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            use key_wallet::account::account_collection::DashpayAccountKey;
+            let key = DashpayAccountKey {
+                index: account_index,
+                user_identity_id: our_identity_id.to_buffer(),
+                friend_identity_id: contact_identity_id.to_buffer(),
+            };
+            if info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&key)
+            {
+                return Ok(());
+            }
+        }
+
+        // --- 2. Derive our ECDH private key under a read lock. ---
+        let our_private_key = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let managed = info
+                .identity_manager
+                .managed_identity(our_identity_id)
+                .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?;
+            let identity_index = managed.identity_index;
+
+            // Find our decryption key by its key ID.
+            let our_encryption_key = managed
+                .identity
+                .public_keys()
+                .get(&our_decryption_key_index)
+                .cloned()
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Our encryption key {} not found on identity {}",
+                        our_decryption_key_index, our_identity_id
+                    ))
+                })?;
+
+            let wallet = wm
+                .get_wallet(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+            Self::derive_encryption_private_key(
+                wallet,
+                self.sdk.network,
+                identity_index,
+                &our_encryption_key,
+            )?
+        };
+
+        // --- 3. Fetch the contact's identity from Platform and extract their encryption pubkey. ---
+        let contact_public_key: dashcore::secp256k1::PublicKey = {
+            use dash_sdk::platform::Fetch;
+            let contact_identity = Identity::fetch(&self.sdk, *contact_identity_id)
+                .await
+                .map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to fetch contact identity {}: {}",
+                        contact_identity_id, e
+                    ))
+                })?
+                .ok_or_else(|| PlatformWalletError::IdentityNotFound(*contact_identity_id))?;
+
+            let contact_key = contact_identity
+                .public_keys()
+                .get(&contact_encryption_key_index)
+                .cloned()
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Contact encryption key {} not found on identity {}",
+                        contact_encryption_key_index, contact_identity_id
+                    ))
+                })?;
+
+            // Deserialize the compressed public key bytes from the identity key data.
+            dashcore::secp256k1::PublicKey::from_slice(contact_key.data().as_slice()).map_err(
+                |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Contact encryption key is not a valid secp256k1 public key: {}",
+                        e
+                    ))
+                },
+            )?
+        };
+
+        // --- 4. Derive the ECDH shared key. ---
+        let shared_key: [u8; 32] =
+            platform_encryption::derive_shared_key_ecdh(&our_private_key, &contact_public_key);
+
+        // --- 5. Decrypt the contact's xpub. ---
+        let decrypted_xpub_bytes =
+            platform_encryption::decrypt_extended_public_key(&shared_key, contact_encrypted_xpub)
+                .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to decrypt contact xpub: {}",
+                    e
+                ))
+            })?;
+
+        // --- 6. Reconstruct the ExtendedPubKey from the raw encoded bytes. ---
+        let contact_xpub = key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to decode contact xpub: {}",
+                    e
+                ))
+            })?;
+
+        // --- 7. Build the watch-only Account and register it. ---
+        //
+        // Two insertions are needed:
+        //   a) `wallet.accounts` (immutable AccountCollection) — stores the Account with
+        //      the contact's xpub so `send_payment` can retrieve it later for address
+        //      derivation without carrying the xpub in a separate structure.
+        //   b) `info.core_wallet.accounts` (ManagedAccountCollection) — stores the
+        //      ManagedCoreAccount with pre-generated address pools so SPV can watch
+        //      outbound addresses we have already derived for the contact.
+        let account_type = AccountType::DashpayExternalAccount {
+            index: account_index,
+            user_identity_id: our_identity_id.to_buffer(),
+            friend_identity_id: contact_identity_id.to_buffer(),
+        };
+
+        let account = key_wallet::Account {
+            parent_wallet_id: Some(self.wallet_id),
+            account_type,
+            network: self.sdk.network,
+            account_xpub: contact_xpub,
+            is_watch_only: true,
+        };
+
+        let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
+
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+        // (a) Insert Account into the immutable wallet account collection so the
+        //     xpub is accessible by `send_payment`.
+        wallet
+            .add_account(account_type, Some(contact_xpub))
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to add external contact account to wallet: {}",
+                    e
+                ))
+            })?;
+
+        // (b) Insert ManagedCoreAccount for address-pool tracking.
+        info.core_wallet.accounts.insert(managed).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to register external contact account: {}",
+                e
+            ))
+        })?;
+
+        tracing::info!(
+            our_identity = %our_identity_id,
+            contact = %contact_identity_id,
+            "Registered DashpayExternalAccount for sending payments to contact"
+        );
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Send payment to contact
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Send a Core payment to a DashPay contact.
+    ///
+    /// Derives the next payment address from the contact's `DashpayExternalAccount`
+    /// address pool, builds and broadcasts the transaction via the injected
+    /// broadcaster, and records the [`PaymentEntry`] on the sender's
+    /// [`ManagedIdentity`].
+    ///
+    /// # Prerequisite
+    ///
+    /// `register_external_contact_account` must have been called first so the
+    /// watch-only account (and hence its address pool) is available in the
+    /// wallet manager. Returns [`PlatformWalletError::InvalidIdentityData`] if
+    /// no external account exists for this contact pair.
+    ///
+    /// # Arguments
+    ///
+    /// * `from_identity_id` - Our identity that is sending the payment.
+    /// * `to_contact_id`    - The contact's identity.
+    /// * `amount_duffs`     - Amount to send in duffs (1 DASH = 1e8 duffs).
+    /// * `memo`             - Optional free-text memo to attach to the entry.
+    ///
+    /// # Returns
+    ///
+    /// The `Txid` of the broadcast transaction and the newly created
+    /// [`PaymentEntry`] recording the outgoing payment.
+    pub async fn send_payment(
+        &self,
+        from_identity_id: &Identifier,
+        to_contact_id: &Identifier,
+        amount_duffs: u64,
+        memo: Option<String>,
+    ) -> Result<(dashcore::Txid, super::payment::PaymentEntry), PlatformWalletError> {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
+        use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let account_index: u32 = 0;
+
+        // --- 1. Derive the next unused payment address from the external account
+        //        and collect the UTXOs / change address from BIP-44 account 0.  ---
+        let (payment_address, tx) = {
+            let mut wm = self.wallet_manager.write().await;
+
+            // Resolve the external account's xpub so we can derive addresses.
+            let contact_xpub = {
+                // Look up the external account in the *immutable* AccountCollection on
+                // `Wallet`. The ManagedAccountCollection only stores the managed state;
+                // the xpub lives on the immutable Account in `wallet.accounts`.
+                // For a watch-only external account we stored the contact's xpub directly
+                // as `account_xpub` on the Account struct — look it up via DashpayAccountKey.
+                let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                    PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
+                })?;
+                wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .get(&DashpayAccountKey {
+                        index: account_index,
+                        user_identity_id: from_identity_id.to_buffer(),
+                        friend_identity_id: to_contact_id.to_buffer(),
+                    })
+                    .map(|a| a.account_xpub)
+                    .ok_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "No DashpayExternalAccount found for contact {} — call \
+                             register_external_contact_account first",
+                            to_contact_id
+                        ))
+                    })?
+            };
+
+            let (wallet, info) = wm
+                .get_wallet_and_info_mut(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+            // Derive the next unused address from the external account's address pool.
+            let key = DashpayAccountKey {
+                index: account_index,
+                user_identity_id: from_identity_id.to_buffer(),
+                friend_identity_id: to_contact_id.to_buffer(),
+            };
+            let external_account = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&key)
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "No managed DashpayExternalAccount found for contact {}",
+                        to_contact_id
+                    ))
+                })?;
+
+            let payment_address = external_account
+                .next_address(Some(&contact_xpub))
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+            // --- 2. Build the transaction from BIP-44 account 0 UTXOs. ---
+            let current_height = info.core_wallet.synced_height();
+
+            let bip44_xpub = wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .map(|a| a.account_xpub)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 account 0 not found in wallet".to_string(),
+                    )
+                })?;
+
+            let spendable: Vec<_> = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 managed account 0 not found".to_string(),
+                    )
+                })?
+                .spendable_utxos(current_height)
+                .into_iter()
+                .cloned()
+                .collect();
+
+            // Derive change address from BIP-44 account 0.
+            let change_address = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 managed account 0 not found for change".to_string(),
+                    )
+                })?
+                .next_change_address(Some(&bip44_xpub))
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+            let mut builder = TransactionBuilder::new();
+            builder = builder
+                .add_output(&payment_address, amount_duffs)
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+            builder = builder.set_change_address(change_address);
+            builder = builder
+                .select_inputs(
+                    &spendable,
+                    SelectionStrategy::LargestFirst,
+                    current_height,
+                    |utxo| {
+                        for account in info.core_wallet.accounts.all_accounts() {
+                            if let Some(path) = account.address_derivation_path(&utxo.address) {
+                                if let Ok(key) = wallet.derive_private_key(&path) {
+                                    return Some(key);
+                                }
+                            }
+                        }
+                        None
+                    },
+                )
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+            let tx = builder
+                .build()
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+            (payment_address, tx)
+        };
+
+        // --- 3. Broadcast the transaction. ---
+        let txid = self
+            .broadcaster
+            .broadcast(&tx)
+            .await
+            .map_err(|e| PlatformWalletError::TransactionBroadcast(e.to_string()))?;
+
+        tracing::info!(
+            from_identity = %from_identity_id,
+            to_contact = %to_contact_id,
+            amount_duffs,
+            %txid,
+            payment_address = %payment_address,
+            "DashPay payment broadcast"
+        );
+
+        // --- 4. Record the outgoing payment on the sender's ManagedIdentity. ---
+        let entry = super::payment::PaymentEntry::new_sent(*to_contact_id, amount_duffs, memo);
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                if let Some(managed) = info.identity_manager.managed_identity_mut(from_identity_id)
+                {
+                    managed.record_dashpay_payment(
+                        txid.to_string(),
+                        entry.clone(),
+                        &self.persister,
+                    );
+                }
+            }
+        }
+
+        Ok((txid, entry))
     }
 }

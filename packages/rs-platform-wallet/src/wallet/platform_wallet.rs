@@ -226,6 +226,8 @@ impl PlatformWallet {
             Arc::clone(&balance),
         );
 
+        let dashpay_broadcaster = Arc::clone(&broadcaster);
+
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
@@ -248,6 +250,7 @@ impl PlatformWallet {
             wallet_manager: Arc::clone(&wallet_manager),
             wallet_id,
             persister: wallet_persister.clone(),
+            broadcaster: dashpay_broadcaster,
         };
 
         let platform = PlatformAddressWallet::new(
