@@ -5,7 +5,7 @@ pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
-pub(crate) mod spv;
+pub mod spv;
 pub mod wallet;
 
 pub use error::PlatformWalletError;

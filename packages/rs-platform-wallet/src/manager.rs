@@ -93,6 +93,12 @@ impl PlatformWalletManager {
         &self.spv
     }
 
+    /// Clone the `Arc<SpvRuntime>` so callers (e.g. FFI) can invoke
+    /// [`SpvRuntime::spawn_in_background`] which takes `&Arc<Self>`.
+    pub fn spv_arc(&self) -> Arc<SpvRuntime> {
+        Arc::clone(&self.spv)
+    }
+
     // TODO: We can delete it and use core().broadcast() ? don't delete this todo
     /// Broadcast a transaction via SPV P2P peers.
     pub async fn broadcast_transaction(

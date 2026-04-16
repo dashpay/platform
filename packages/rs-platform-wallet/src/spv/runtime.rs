@@ -1,6 +1,6 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::RwLock;
 
@@ -34,6 +34,10 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
+    /// Cancel token for the `run()` task when it was spawned via
+    /// [`spawn_in_background`]. [`stop`] fires this token and joins
+    /// on the client shutdown.
+    background_cancel: StdMutex<Option<CancellationToken>>,
 }
 // TODO: We want it better
 impl SpvRuntime {
@@ -46,6 +50,7 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
+            background_cancel: StdMutex::new(None),
         }
     }
 
@@ -172,7 +177,18 @@ impl SpvRuntime {
     }
 
     /// Stop SPV sync gracefully.
+    ///
+    /// If a `run()` task was spawned via [`spawn_in_background`], its
+    /// cancel token is fired here too so the background task exits.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
+        if let Some(token) = self
+            .background_cancel
+            .lock()
+            .expect("background_cancel poisoned")
+            .take()
+        {
+            token.cancel();
+        }
         let mut client = self.client.write().await;
         if let Some(c) = client.take() {
             c.stop()
@@ -180,6 +196,29 @@ impl SpvRuntime {
                 .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
         }
         Ok(())
+    }
+
+    /// Spawn `run()` on the current tokio runtime and return immediately.
+    ///
+    /// The returned cancel token is stashed internally; calling [`stop`]
+    /// fires it and awaits client shutdown. Replacing an already-running
+    /// background task cancels the previous one first.
+    pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
+        // Cancel any previous run.
+        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
+        if let Some(prev) = guard.take() {
+            prev.cancel();
+        }
+        let cancel = CancellationToken::new();
+        *guard = Some(cancel.clone());
+        drop(guard);
+
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            if let Err(e) = this.run(config, cancel).await {
+                tracing::warn!("SpvRuntime background run exited with error: {}", e);
+            }
+        });
     }
 
     /// Get the current sync progress.
