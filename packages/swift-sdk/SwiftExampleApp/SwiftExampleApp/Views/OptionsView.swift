@@ -79,6 +79,10 @@ struct OptionsView: View {
                 }
 
                 Section("Data") {
+                    NavigationLink(destination: StorageExplorerView()) {
+                        Label("Storage Explorer", systemImage: "cylinder.split.1x2")
+                    }
+
                     NavigationLink(destination: ContractsView()) {
                         Label("Browse Contracts", systemImage: "doc.plaintext")
                     }
