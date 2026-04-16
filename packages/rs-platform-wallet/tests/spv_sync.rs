@@ -13,7 +13,7 @@
 //!   cargo test -p platform-wallet --test spv_sync -- --ignored --nocapture
 //! ```
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dash_spv::client::config::MempoolStrategy;
@@ -28,13 +28,63 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::PlatformWalletManager;
 use tokio_util::sync::CancellationToken;
 
-/// No-op persister for tests.
-struct NoopPersister;
-impl PlatformWalletPersistence for NoopPersister {
-    fn store(&self, _wallet_id: WalletId, _changeset: PlatformWalletChangeSet) {}
+/// Recording persister that captures all store calls for test verification.
+struct RecordingPersister {
+    /// Each entry: (wallet_id, had core changeset, synced_height from core changeset)
+    records: Mutex<Vec<(WalletId, bool, Option<u32>)>>,
+}
+
+impl RecordingPersister {
+    fn new() -> Self {
+        Self {
+            records: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Number of store calls that contained a core wallet changeset.
+    fn core_store_count(&self) -> usize {
+        self.records
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, has_core, _)| *has_core)
+            .count()
+    }
+
+    /// The highest synced_height seen across all store calls.
+    fn max_synced_height(&self) -> Option<u32> {
+        self.records
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, _, h)| *h)
+            .max()
+    }
+}
+
+impl PlatformWalletPersistence for RecordingPersister {
+    fn store(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let has_core = changeset.core.is_some();
+        let synced_height = changeset
+            .core
+            .as_ref()
+            .and_then(|c| c.chain.as_ref())
+            .and_then(|ch| ch.synced_height);
+        self.records
+            .lock()
+            .unwrap()
+            .push((wallet_id, has_core, synced_height));
+        Ok(())
+    }
+
     fn flush(&self, _wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
     }
+
     fn load(
         &self,
         _wallet_id: WalletId,
@@ -120,11 +170,12 @@ async fn test_spv_sync_and_balance() {
         .expect("Failed to build SDK");
     let sdk = Arc::new(sdk);
 
-    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
+    let persister = Arc::new(RecordingPersister::new());
+    let persister_for_check = Arc::clone(&persister);
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
-        persister,
+        persister as Arc<dyn PlatformWalletPersistence>,
         event_handler,
     ));
 
@@ -162,7 +213,7 @@ async fn test_spv_sync_and_balance() {
         }
     });
 
-    // --- Wait for spendable balance ---
+    // --- Wait for confirmed balance ---
     // Cold start needs to sync full testnet chain headers (~1M+ blocks).
     // Second run with cached state is much faster (~20s).
     let timeout = Duration::from_secs(600);
@@ -182,7 +233,7 @@ async fn test_spv_sync_and_balance() {
         }
 
         // Check balance via lock-free atomics (no lock needed).
-        let spendable = platform_wallet.balance().spendable();
+        let confirmed = platform_wallet.balance().confirmed();
         let total = platform_wallet.balance().total();
 
         // Check synced height via state guard.
@@ -193,16 +244,36 @@ async fn test_spv_sync_and_balance() {
 
         if synced != last_height {
             println!(
-                "Synced height: {}, spendable: {} duffs, total: {} duffs",
-                synced, spendable, total
+                "Synced height: {}, confirmed: {} duffs, total: {} duffs",
+                synced, confirmed, total
             );
             last_height = synced;
         }
 
-        if spendable > 0 {
-            println!("SUCCESS: Wallet has spendable balance: {} duffs", spendable);
+        if confirmed > 0 {
+            println!("SUCCESS: Wallet has confirmed balance: {} duffs", confirmed);
             cancel.cancel();
             let _ = spv_handle.await;
+
+            // --- Verify persistence ---
+            let core_stores = persister_for_check.core_store_count();
+            println!("Persistence: {} core changeset store calls", core_stores);
+            assert!(
+                core_stores > 0,
+                "CorePersistenceBridge should have routed core changesets to the persister"
+            );
+
+            let persisted_height = persister_for_check.max_synced_height();
+            println!("Persistence: max synced_height = {:?}", persisted_height);
+            assert!(
+                persisted_height.is_some(),
+                "At least one store call should carry a synced_height"
+            );
+            assert!(
+                persisted_height.unwrap() > 0,
+                "Persisted synced_height should be non-zero after sync"
+            );
+
             return;
         }
 
