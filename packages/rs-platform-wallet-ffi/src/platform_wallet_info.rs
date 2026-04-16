@@ -1,15 +1,15 @@
 use crate::error::*;
 use crate::handle::*;
-use crate::types::Network;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet_ffi::FFINetwork;
 use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
-    network: Network,
+    network: FFINetwork,
     seed_bytes: *const c_uchar,
     seed_len: usize,
     out_handle: *mut Handle,
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     // Create wallet from seed
     let wallet = match key_wallet::Wallet::from_seed_bytes(
         seed_array,
-        network,
+        network.into(),
         WalletAccountCreationOptions::None, // No accounts initially
     ) {
         Ok(w) => w,
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
 /// Create a new PlatformWalletInfo from mnemonic
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
-    network: Network,
+    network: FFINetwork,
     mnemonic: *const c_char,
     passphrase: *const c_char,
     out_handle: *mut Handle,
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
         match key_wallet::Wallet::from_mnemonic_with_passphrase(
             mnemonic_obj,
             pass.to_string(),
-            network,
+            network.into(),
             WalletAccountCreationOptions::None, // No accounts initially
         ) {
             Ok(w) => w,
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     } else {
         match key_wallet::Wallet::from_mnemonic(
             mnemonic_obj,
-            network,
+            network.into(),
             WalletAccountCreationOptions::None, // No accounts initially
         ) {
             Ok(w) => w,
@@ -340,7 +340,7 @@ mod tests {
             let mut error = PlatformWalletFFIError::success();
 
             let result = platform_wallet_info_create_from_seed(
-                Network::Testnet,
+                FFINetwork::Testnet,
                 seed.as_ptr(),
                 seed.len(),
                 &mut handle,
@@ -366,7 +366,7 @@ mod tests {
             let mut error = PlatformWalletFFIError::success();
 
             let result = platform_wallet_info_create_from_mnemonic(
-                Network::Testnet,
+                FFINetwork::Testnet,
                 mnemonic.as_ptr(),
                 std::ptr::null(),
                 &mut handle,
@@ -390,7 +390,7 @@ mod tests {
             let mut error = PlatformWalletFFIError::success();
 
             platform_wallet_info_create_from_seed(
-                Network::Testnet,
+                FFINetwork::Testnet,
                 seed.as_ptr(),
                 seed.len(),
                 &mut handle,

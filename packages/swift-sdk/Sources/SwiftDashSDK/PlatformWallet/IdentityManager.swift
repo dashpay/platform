@@ -10,7 +10,7 @@ public class IdentityManager {
     }
 
     deinit {
-        identity_manager_destroy(handle)
+        _ = identity_manager_destroy(handle)
     }
 
     /// Create a new empty Identity Manager
@@ -80,9 +80,8 @@ public class IdentityManager {
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<array.count {
-            let ffiId = items[Int(i)]
-            identifiers.append(identifierFromFFI( ffiId))
+        for i in 0..<Int(array.count) {
+            identifiers.append(identifierFromFFI(items[i]))
         }
 
         return identifiers
@@ -103,7 +102,7 @@ public class IdentityManager {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI( ffiId)
+        return identifierFromFFI(ffiId)
     }
 
     /// Set the primary identity
@@ -119,7 +118,7 @@ public class IdentityManager {
 
     /// Get the count of identities
     public func getIdentityCount() throws -> Int {
-        var count: Int = 0
+        var count: UInt = 0
         var error = PlatformWalletFFIError()
 
         let result = identity_manager_get_identity_count(handle, &count, &error)
@@ -127,6 +126,6 @@ public class IdentityManager {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return count
+        return Int(count)
     }
 }
