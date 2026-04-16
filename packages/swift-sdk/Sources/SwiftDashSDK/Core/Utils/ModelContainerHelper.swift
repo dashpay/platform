@@ -21,6 +21,11 @@ public struct ModelContainerHelper {
             PersistentProperty.self,
             PersistentAddressBalance.self,
             PersistentSyncState.self,
+            PersistentWallet.self,
+            PersistentAccount.self,
+            PersistentTransaction.self,
+            PersistentUtxo.self,
+            PersistentWalletManagerMetadata.self,
         ])
 
         let modelConfiguration = ModelConfiguration(

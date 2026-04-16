@@ -434,3 +434,176 @@ struct AddressBalanceStorageDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - PersistentWallet
+
+struct WalletStorageDetailView: View {
+    let record: PersistentWallet
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Name", value: record.name ?? "None")
+                FieldRow(label: "Birth Height", value: "\(record.birthHeight)")
+                FieldRow(label: "Synced Height", value: "\(record.syncedHeight)")
+            }
+            Section("Balance") {
+                FieldRow(label: "Confirmed", value: "\(record.balanceConfirmed)")
+                FieldRow(label: "Unconfirmed", value: "\(record.balanceUnconfirmed)")
+                FieldRow(label: "Immature", value: "\(record.balanceImmature)")
+                FieldRow(label: "Locked", value: "\(record.balanceLocked)")
+            }
+            Section("Relationships") {
+                FieldRow(label: "Accounts", value: "\(record.accounts.count)")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Wallet")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentAccount
+
+struct AccountStorageDetailView: View {
+    let record: PersistentAccount
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Type", value: record.accountTypeName)
+                FieldRow(label: "Type ID", value: "\(record.accountType)")
+                FieldRow(label: "Index", value: "\(record.accountIndex)")
+                FieldRow(label: "Watch Only", value: record.isWatchOnly ? "Yes" : "No")
+            }
+            Section("Balance") {
+                FieldRow(label: "Confirmed", value: "\(record.balanceConfirmed)")
+                FieldRow(label: "Unconfirmed", value: "\(record.balanceUnconfirmed)")
+            }
+            Section("Address Pools") {
+                FieldRow(label: "External Highest Used", value: "\(record.externalHighestUsed)")
+                FieldRow(label: "Internal Highest Used", value: "\(record.internalHighestUsed)")
+            }
+            Section("Relationships") {
+                FieldRow(label: "Transactions", value: "\(record.transactions.count)")
+                FieldRow(label: "UTXOs", value: "\(record.utxos.count)")
+                FieldRow(label: "Wallet", value: record.wallet?.name ?? record.wallet.map { hexString($0.walletId) } ?? "None")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Account")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentTransaction
+
+struct TransactionStorageDetailView: View {
+    let record: PersistentTransaction
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "TXID", value: record.txid)
+                FieldRow(label: "Direction", value: record.directionName)
+                FieldRow(label: "Type", value: record.transactionType)
+                FieldRow(label: "Net Amount", value: record.formattedAmount)
+                if let fee = record.fee {
+                    FieldRow(label: "Fee", value: "\(fee) duffs")
+                }
+            }
+            Section("Block") {
+                FieldRow(label: "Context", value: record.contextName)
+                FieldRow(label: "Height", value: "\(record.blockHeight)")
+                FieldRow(label: "Timestamp", value: "\(record.blockTimestamp)")
+                if let hash = record.blockHash {
+                    FieldRow(label: "Block Hash", value: hexString(hash))
+                }
+            }
+            Section("Metadata") {
+                FieldRow(label: "Label", value: record.label.isEmpty ? "None" : record.label)
+                FieldRow(label: "First Seen", value: "\(record.firstSeen)")
+                if let size = record.transactionData?.count {
+                    FieldRow(label: "TX Size", value: "\(size) bytes")
+                }
+            }
+            Section("Relationships") {
+                FieldRow(label: "Account", value: record.account?.accountTypeName ?? "None")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Transaction")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentUtxo
+
+struct UtxoStorageDetailView: View {
+    let record: PersistentUtxo
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Outpoint", value: record.outpoint)
+                FieldRow(label: "TXID", value: record.txid)
+                FieldRow(label: "Vout", value: "\(record.vout)")
+                FieldRow(label: "Amount", value: record.formattedAmount)
+                FieldRow(label: "Address", value: record.address)
+            }
+            Section("Status") {
+                FieldRow(label: "Height", value: "\(record.height)")
+                FieldRow(label: "Confirmed", value: record.isConfirmed ? "Yes" : "No")
+                FieldRow(label: "InstantLocked", value: record.isInstantLocked ? "Yes" : "No")
+                FieldRow(label: "Coinbase", value: record.isCoinbase ? "Yes" : "No")
+                FieldRow(label: "Locked", value: record.isLocked ? "Yes" : "No")
+                FieldRow(label: "Spent", value: record.isSpent ? "Yes" : "No")
+            }
+            Section("Relationships") {
+                FieldRow(label: "Account", value: record.account?.accountTypeName ?? "None")
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("UTXO")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentWalletManagerMetadata
+
+struct WalletManagerMetadataStorageDetailView: View {
+    let record: PersistentWalletManagerMetadata
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Combined Sync Height", value: "\(record.combinedSyncHeight)")
+                FieldRow(label: "Wallet Count", value: "\(record.walletCount)")
+                if let hash = record.combinedSyncBlockHash {
+                    FieldRow(label: "Block Hash", value: hexString(hash))
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Manager Metadata")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

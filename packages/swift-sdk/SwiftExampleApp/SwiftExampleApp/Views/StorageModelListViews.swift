@@ -266,3 +266,124 @@ struct AddressBalanceStorageListView: View {
         .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "creditcard") } }
     }
 }
+
+// MARK: - PersistentWallet
+
+struct WalletStorageListView: View {
+    @Query(sort: \PersistentWallet.lastUpdated, order: .reverse)
+    private var records: [PersistentWallet]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: WalletStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.name ?? record.walletId.map { String(format: "%02x", $0) }.prefix(16).joined())
+                        .font(.body).lineLimit(1)
+                    Text("\(record.network) · height \(record.syncedHeight)")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Wallets (\(records.count))")
+        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "wallet.pass") } }
+    }
+}
+
+// MARK: - PersistentAccount
+
+struct AccountStorageListView: View {
+    @Query(sort: \PersistentAccount.createdAt, order: .reverse)
+    private var records: [PersistentAccount]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: AccountStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.accountTypeName).font(.body).lineLimit(1)
+                    Text("Index \(record.accountIndex) · \(record.transactions.count) txs · \(record.utxos.count) utxos")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Accounts (\(records.count))")
+        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "person.2") } }
+    }
+}
+
+// MARK: - PersistentTransaction
+
+struct TransactionStorageListView: View {
+    @Query(sort: \PersistentTransaction.firstSeen, order: .reverse)
+    private var records: [PersistentTransaction]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: TransactionStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.txid)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack {
+                        Text(record.directionName).font(.caption)
+                        Spacer()
+                        Text(record.formattedAmount)
+                            .font(.caption).foregroundColor(record.netAmount >= 0 ? .green : .red)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Transactions (\(records.count))")
+        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.left.arrow.right.circle") } }
+    }
+}
+
+// MARK: - PersistentUtxo
+
+struct UtxoStorageListView: View {
+    @Query(sort: \PersistentUtxo.createdAt, order: .reverse)
+    private var records: [PersistentUtxo]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: UtxoStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outpoint)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack {
+                        Text(record.formattedAmount).font(.caption)
+                        Spacer()
+                        if record.isSpent {
+                            Text("Spent").font(.caption2).foregroundColor(.red)
+                        } else {
+                            Text("Unspent").font(.caption2).foregroundColor(.green)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("UTXOs (\(records.count))")
+        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle") } }
+    }
+}
+
+// MARK: - PersistentWalletManagerMetadata
+
+struct WalletManagerMetadataStorageListView: View {
+    @Query(sort: \PersistentWalletManagerMetadata.lastUpdated, order: .reverse)
+    private var records: [PersistentWalletManagerMetadata]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: WalletManagerMetadataStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.network).font(.body)
+                    Text("Height \(record.combinedSyncHeight) · \(record.walletCount) wallets")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Manager Metadata (\(records.count))")
+        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "gearshape.2") } }
+    }
+}
