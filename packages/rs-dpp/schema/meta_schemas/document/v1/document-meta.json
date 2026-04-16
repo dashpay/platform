@@ -588,17 +588,6 @@
         "type": "string"
       }
     },
-    "keywords": {
-      "type": "array",
-      "description": "List of up to 20 descriptive keywords for the contract, used in the Keyword Search contract",
-      "items": {
-        "type": "string",
-        "minLength": 3,
-        "maxLength": 50
-      },
-      "maxItems": 20,
-      "uniqueItems": true
-    },
     "additionalProperties": {
       "type": "boolean",
       "const": false

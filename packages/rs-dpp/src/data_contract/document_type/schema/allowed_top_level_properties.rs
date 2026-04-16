@@ -23,7 +23,6 @@ pub const ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES: &[&str] = &[
     "tokenCost",
     "properties",
     "transient",
-    "keywords",
     "additionalProperties",
     "required",
     "$comment",
