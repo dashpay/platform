@@ -178,7 +178,7 @@ class UnifiedAppState: ObservableObject {
         }
 
         do {
-            let manager = try PlatformWalletManager(sdk: sdk)
+            let manager = try PlatformWalletManager(sdk: sdk, modelContainer: modelContainer)
             self.platformWalletManager = manager
 
             guard let firstWallet = walletService.walletManager.wallets.first else {
@@ -224,7 +224,11 @@ class UnifiedAppState: ObservableObject {
             self.managedWallet = wallet
 
             let platformAddressWallet = try wallet.platformAddressWallet()
-            platformBalanceSyncService.configure(platformAddressWallet: platformAddressWallet)
+            platformBalanceSyncService.configure(
+                platformAddressWallet: platformAddressWallet,
+                persistenceHandler: manager.persistence,
+                walletId: wallet.walletId
+            )
 
             NSLog("PlatformWallet: Initialized successfully")
         } catch {
