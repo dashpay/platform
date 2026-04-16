@@ -94,19 +94,6 @@ struct SendTransactionView: View {
                     }
                 }
 
-                // Asset Lock (disabled)
-                Section("Other Options") {
-                    HStack {
-                        Image(systemName: "lock.fill").foregroundColor(.gray)
-                        Text("Asset Lock").foregroundColor(.gray)
-                        Spacer()
-                        Text("Coming Soon")
-                            .font(.caption).foregroundColor(.secondary)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(Color(UIColor.tertiarySystemBackground))
-                            .cornerRadius(6)
-                    }
-                }
             }
             .navigationTitle("Send Dash")
             .navigationBarTitleDisplayMode(.inline)
