@@ -38,6 +38,8 @@ pub struct TokenWallet {
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
+    /// Per-wallet persistence handle for queuing changesets.
+    pub(crate) persister: crate::wallet::persister::WalletPersister,
 }
 
 impl TokenWallet {
@@ -46,11 +48,13 @@ impl TokenWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
+        persister: crate::wallet::persister::WalletPersister,
     ) -> Self {
         Self {
             sdk,
             wallet_manager,
             wallet_id,
+            persister,
         }
     }
 }

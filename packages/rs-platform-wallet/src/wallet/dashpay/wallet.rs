@@ -38,6 +38,8 @@ pub struct DashPayWallet {
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
+    /// Per-wallet persistence handle for queuing changesets.
+    pub(crate) persister: crate::wallet::persister::WalletPersister,
 }
 
 impl std::fmt::Debug for DashPayWallet {

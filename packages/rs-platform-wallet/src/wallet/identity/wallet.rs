@@ -119,6 +119,8 @@ pub struct IdentityWallet {
     /// asset lock transactions. Used by funding methods that build asset
     /// locks from wallet UTXOs.
     pub(crate) asset_locks: Arc<AssetLockManager>,
+    /// Per-wallet persistence handle for queuing changesets.
+    pub(crate) persister: crate::wallet::persister::WalletPersister,
 }
 
 impl IdentityWallet {

@@ -230,12 +230,14 @@ impl PlatformWallet {
             wallet_manager: Arc::clone(&wallet_manager),
             wallet_id,
             asset_locks: Arc::clone(&asset_locks),
+            persister: wallet_persister.clone(),
         };
 
         let dashpay = DashPayWallet {
             sdk: Arc::clone(&sdk),
             wallet_manager: Arc::clone(&wallet_manager),
             wallet_id,
+            persister: wallet_persister.clone(),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -244,7 +246,12 @@ impl PlatformWallet {
             wallet_id,
             wallet_persister.clone(),
         );
-        let tokens = TokenWallet::new(Arc::clone(&sdk), Arc::clone(&wallet_manager), wallet_id);
+        let tokens = TokenWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            wallet_persister.clone(),
+        );
 
         Self {
             wallet_id,
