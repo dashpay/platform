@@ -197,11 +197,24 @@ async fn test_spv_sync_and_balance() {
     let spv_data_dir = std::env::temp_dir().join("platform-wallet-spv-test");
     std::fs::create_dir_all(&spv_data_dir).expect("Failed to create SPV data dir");
 
-    let config = ClientConfig::new(network)
+    let mut config = ClientConfig::new(network)
         .with_storage_path(spv_data_dir)
         .with_validation_mode(ValidationMode::Full)
         .with_start_height(0)
         .with_mempool_tracking(MempoolStrategy::BloomFilter);
+
+    // Seed SPV with DAPI addresses as P2P peers (port 19999 for testnet).
+    // These are known-good masternodes that support compact block filters.
+    // Without this, DNS seed discovery may resolve to nodes that don't
+    // support required capabilities, causing slow/stalled sync.
+    for dapi_addr in TESTNET_DAPI_ADDRESSES {
+        if let Some(host) = dapi_addr.strip_prefix("https://") {
+            let ip_str = host.split(':').next().unwrap_or(host);
+            if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
+                config.add_peer(std::net::SocketAddr::new(ip, 19999));
+            }
+        }
+    }
 
     // --- Start SPV in background ---
     let cancel = CancellationToken::new();
