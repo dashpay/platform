@@ -1,59 +1,93 @@
 import Foundation
 import SwiftData
+import Combine
 
-/// Manages the wallet lifecycle: creation, persistence, and sub-wallet access.
+/// The one thing SwiftUI needs for all wallet operations.
 ///
-/// This is the main entry point for Phase 1 integration. It replaces the
-/// manual setup of separate key-wallet, SDK, and SPV systems with a single
-/// coordinated manager.
+/// Owns the Rust-side `PlatformWalletManager` handle which drives:
+/// - Wallet creation from mnemonic/seed
+/// - SPV sync (core chain: headers, filters, masternodes)
+/// - BLAST address balance sync
+/// - Identity, DashPay, asset lock, token-balance tracking
+/// - Persistence via SwiftData callbacks
 ///
-/// Usage:
-/// ```swift
-/// let manager = try PlatformWalletManager(sdk: sdkPointer)
-/// let wallet = try await manager.createWallet(seed: seedData, network: .testnet)
-/// let platformAddresses = try wallet.platformAddressWallet()
-/// let balances = try await platformAddresses.syncBalances()
-/// ```
-public class PlatformWalletManager {
-    let handle: Handle
+/// Use as a root `@StateObject` and pass via `.environmentObject(_:)`.
+/// Views observe `@Published` properties directly — no coordinator
+/// class in the middle.
+@MainActor
+public class PlatformWalletManager: ObservableObject {
+    // MARK: - Published observables
 
-    /// Persistence handler — retained for the lifetime of the manager
-    /// so the callback context pointer remains valid.
+    /// Whether [`configure`] has been called successfully.
+    @Published public private(set) var isConfigured: Bool = false
+
+    /// The current SPV sync progress. Updated by the polling task
+    /// started in [`configure`].
+    @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
+
+    /// The active wallet (at most one per manager for now).
+    @Published public private(set) var wallet: ManagedPlatformWallet?
+
+    /// Last error from a wallet operation, if any. Cleared on successful op.
+    @Published public private(set) var lastError: Error?
+
+    // MARK: - Internals
+
+    /// FFI handle; `NULL_HANDLE` until [`configure`] is called.
+    internal private(set) var handle: Handle = NULL_HANDLE
+
+    /// Retained for the lifetime of the FFI handle so the callback
+    /// context pointer remains valid.
     private var persistenceHandler: PlatformWalletPersistenceHandler?
 
-    /// Create a new PlatformWalletManager from an existing SDK instance.
-    ///
-    /// - Parameters:
-    ///   - sdk: The SDK instance.
-    ///   - modelContainer: SwiftData container for incremental persistence.
-    ///     Pass `nil` for in-memory-only operation.
+    /// Background task that polls SPV progress.
+    private var progressPollTask: Task<Void, Never>?
+
+    // MARK: - Init
+
+    /// Empty init for `@StateObject` usage. Call [`configure`] before
+    /// any wallet operations.
+    public init() {}
+
+    /// Convenience: create and configure in one call.
     public convenience init(sdk: SDK, modelContainer: ModelContainer? = nil) throws {
+        self.init()
+        try self.configure(sdk: sdk, modelContainer: modelContainer)
+    }
+
+    deinit {
+        progressPollTask?.cancel()
+        if handle != NULL_HANDLE {
+            var error = PlatformWalletFFIError()
+            _ = platform_wallet_manager_destroy(handle, &error)
+        }
+    }
+
+    // MARK: - Configuration
+
+    /// Configure the manager with an SDK and an optional SwiftData
+    /// container. Must be called before any wallet operations.
+    ///
+    /// Spawns a background task that polls SPV sync progress every
+    /// second and publishes it to [`spvProgress`].
+    public func configure(sdk: SDK, modelContainer: ModelContainer? = nil) throws {
+        precondition(!isConfigured, "PlatformWalletManager already configured")
         guard let sdkHandle = sdk.handle else {
             throw PlatformWalletError.invalidParameter
         }
-        let innerSdkPtr = dash_sdk_get_inner_sdk_ptr(sdkHandle)
-        guard innerSdkPtr != nil else {
+        guard let innerSdkPtr = dash_sdk_get_inner_sdk_ptr(sdkHandle) else {
             throw PlatformWalletError.invalidParameter
         }
-        try self.init(sdkPointer: UnsafeRawPointer(innerSdkPtr!), modelContainer: modelContainer)
+        try configure(sdkPointer: UnsafeRawPointer(innerSdkPtr), modelContainer: modelContainer)
     }
 
-    /// Create a new PlatformWalletManager from a raw Sdk pointer.
-    ///
-    /// - Parameters:
-    ///   - sdkPointer: Raw pointer to the inner `Sdk`.
-    ///   - modelContainer: SwiftData container for incremental persistence.
-    ///     Pass `nil` for in-memory-only operation.
-    public init(sdkPointer: UnsafeRawPointer, modelContainer: ModelContainer? = nil) throws {
+    /// Configure with a raw Sdk pointer (advanced usage).
+    public func configure(sdkPointer: UnsafeRawPointer, modelContainer: ModelContainer? = nil) throws {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
 
-        // Set up persistence: if a SwiftData container is provided, create
-        // a handler that receives incremental updates from Rust and upserts
-        // into SwiftData. Otherwise, use no-op callbacks.
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
-
         if let container = modelContainer {
             let h = PlatformWalletPersistenceHandler(modelContainer: container)
             persistence = h.makeCallbacks()
@@ -83,6 +117,9 @@ public class PlatformWalletManager {
 
         self.handle = handle
         self.persistenceHandler = handler
+        self.isConfigured = true
+
+        startProgressPolling()
     }
 
     /// Access the persistence handler for loading cached data.
@@ -90,23 +127,19 @@ public class PlatformWalletManager {
         persistenceHandler
     }
 
-    deinit {
-        var error = PlatformWalletFFIError()
-        _ = platform_wallet_manager_destroy(handle, &error)
-    }
+    // MARK: - Wallet creation
 
     /// Create a wallet from a BIP39 mnemonic phrase (English).
     ///
-    /// - Parameters:
-    ///   - mnemonic: BIP39 mnemonic phrase (12 or 24 words).
-    ///   - network: Target network.
-    ///   - createDefaultAccounts: Whether to create default HD accounts.
-    /// - Returns: A managed `ManagedPlatformWallet` handle.
+    /// Stores the returned wallet as the active [`wallet`] published
+    /// property.
+    @discardableResult
     public func createWallet(
         mnemonic: String,
         network: PlatformNetwork,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
+        try ensureConfigured()
         var walletHandle: Handle = NULL_HANDLE
         var walletId: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -134,21 +167,19 @@ public class PlatformWalletManager {
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
-        return ManagedPlatformWallet(handle: walletHandle, walletId: idData)
+        let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
+        self.wallet = w
+        return w
     }
 
-    /// Create a wallet from raw seed bytes.
-    ///
-    /// - Parameters:
-    ///   - seed: 64-byte seed (from BIP39 mnemonic derivation).
-    ///   - network: Target network.
-    ///   - createDefaultAccounts: Whether to create default HD accounts.
-    /// - Returns: A managed `ManagedPlatformWallet` handle.
+    /// Create a wallet from raw 64-byte seed bytes.
+    @discardableResult
     public func createWallet(
         seed: Data,
         network: PlatformNetwork,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
+        try ensureConfigured()
         guard seed.count == 64 else {
             throw PlatformWalletError.invalidParameter
         }
@@ -181,6 +212,30 @@ public class PlatformWalletManager {
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
-        return ManagedPlatformWallet(handle: walletHandle, walletId: idData)
+        let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
+        self.wallet = w
+        return w
+    }
+
+    // MARK: - Internals
+
+    private func ensureConfigured() throws {
+        if !isConfigured || handle == NULL_HANDLE {
+            throw PlatformWalletError.invalidHandle
+        }
+    }
+
+    /// Starts the SPV progress polling loop. Cancelled on deinit.
+    private func startProgressPolling() {
+        progressPollTask?.cancel()
+        progressPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self else { return }
+                if let progress = try? self.syncProgress() {
+                    self.spvProgress = progress
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 }
