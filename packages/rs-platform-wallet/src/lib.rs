@@ -45,3 +45,8 @@ pub use changeset::{
 };
 
 pub use key_wallet_manager;
+
+// Re-export the per-wallet persistence handle so callers outside
+// the crate can pass it to `ManagedIdentity` mutation methods
+// (`set_dashpay_profile`, `record_dashpay_payment`, `add_identity`, …).
+pub use wallet::persister::WalletPersister;

@@ -38,6 +38,10 @@ tracing = "0.1"
 # Encoding
 hex = "0.4"
 
+# Image processing (DIP-15 avatar hash + fingerprint)
+sha2 = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
 # Security
 zeroize = "1"
 

@@ -123,6 +123,16 @@ impl PlatformWallet {
         &self.balance
     }
 
+    /// Get a reference to the per-wallet persistence handle.
+    ///
+    /// Callers that hold a `&PlatformWallet` and need to invoke mutation
+    /// methods on [`ManagedIdentity`] (e.g. `set_dashpay_profile`,
+    /// `record_dashpay_payment`, `add_identity`) must pass this persister
+    /// so those methods can persist the resulting changeset immediately.
+    pub fn persister(&self) -> &WalletPersister {
+        &self.persister
+    }
+
     /// Read-lock the wallet manager and return a guard that derefs to this
     /// wallet's `PlatformWalletInfo`.
     pub async fn state(&self) -> WalletStateReadGuard<'_> {

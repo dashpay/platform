@@ -15,5 +15,7 @@ pub use dip14::{
 };
 pub use established_contact::EstablishedContact;
 pub use payment::{DashpayAddressMatch, PaymentDirection, PaymentEntry, PaymentStatus};
-pub use profile::DashPayProfile;
+pub use profile::{
+    calculate_avatar_hash, calculate_dhash_fingerprint, DashPayProfile, ProfileUpdate,
+};
 pub use wallet::DashPayWallet;
