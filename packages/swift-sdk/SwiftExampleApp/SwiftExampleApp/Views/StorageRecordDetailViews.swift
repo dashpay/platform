@@ -379,19 +379,33 @@ struct KeywordStorageDetailView: View {
 struct SyncStateStorageDetailView: View {
     let record: PersistentSyncState
 
+    private var blockDate: Date? {
+        record.syncTimestamp > 0
+            ? Date(timeIntervalSince1970: TimeInterval(record.syncTimestamp))
+            : nil
+    }
+
     var body: some View {
         Form {
             Section("Sync Watermark") {
                 FieldRow(label: "Sync Height", value: "\(record.syncHeight)")
                 FieldRow(label: "Sync Timestamp", value: "\(record.syncTimestamp)")
-                FieldRow(label: "Last Known Recent Block", value: "\(record.lastKnownRecentBlock)")
+                if let date = blockDate {
+                    FieldRow(label: "Local Time", value: date.formatted(date: .abbreviated, time: .standard))
+                    FieldRow(label: "UTC", value: {
+                        let f = DateFormatter()
+                        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                        f.timeZone = TimeZone(identifier: "UTC")
+                        return f.string(from: date) + " UTC"
+                    }())
+                }
+                FieldRow(label: "Last Known Recent Block", value: record.lastKnownRecentBlock > 0
+                    ? "\(record.lastKnownRecentBlock)"
+                    : "0 (no recent address activity)")
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
             }
             Section("Timestamps") {
-                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
-                if record.syncTimestamp > 0 {
-                    FieldRow(label: "Block Time", value: dateString(Date(timeIntervalSince1970: TimeInterval(record.syncTimestamp))))
-                }
+                FieldRow(label: "Record Updated", value: dateString(record.lastUpdated))
             }
         }
         .navigationTitle("Sync State")
