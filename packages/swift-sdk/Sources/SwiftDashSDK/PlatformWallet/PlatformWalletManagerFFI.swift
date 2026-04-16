@@ -106,6 +106,37 @@ struct AddressSyncResultArrayFFI {
     var count: Int
 }
 
+// MARK: - SPV Sync Progress
+
+struct FFISpvSyncProgress {
+    var overall_state: UInt32
+    var overall_percentage: Double
+
+    var has_headers: Bool
+    var headers_state: UInt32
+    var headers_current: UInt32
+    var headers_target: UInt32
+    var headers_percentage: Double
+
+    var has_filter_headers: Bool
+    var filter_headers_state: UInt32
+    var filter_headers_current: UInt32
+    var filter_headers_target: UInt32
+    var filter_headers_percentage: Double
+
+    var has_filters: Bool
+    var filters_state: UInt32
+    var filters_current: UInt32
+    var filters_target: UInt32
+    var filters_percentage: Double
+
+    var has_masternodes: Bool
+    var masternodes_state: UInt32
+    var masternodes_current: UInt32
+    var masternodes_target: UInt32
+    var masternodes_percentage: Double
+}
+
 // MARK: - SDK Inner Pointer
 
 @_silgen_name("dash_sdk_get_inner_sdk_ptr")
@@ -150,6 +181,48 @@ func platform_wallet_manager_create_wallet_from_seed(
                                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+// MARK: - PlatformWalletManager SPV FFI
+
+@_silgen_name("platform_wallet_manager_sync_progress")
+func platform_wallet_manager_sync_progress(
+    _ handle: Handle,
+    _ out_progress: UnsafeMutablePointer<FFISpvSyncProgress>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_spv_is_running")
+func platform_wallet_manager_spv_is_running(
+    _ handle: Handle,
+    _ out_running: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_spv_start")
+func platform_wallet_manager_spv_start(
+    _ handle: Handle,
+    _ data_dir: UnsafePointer<CChar>?,
+    _ network: UInt32,
+    _ user_agent: UnsafePointer<CChar>?,
+    _ peers: UnsafePointer<UnsafePointer<CChar>?>?,
+    _ peer_count: Int,
+    _ restrict_to_configured_peers: Bool,
+    _ start_from_height: UInt32,
+    _ masternode_sync_enabled: Bool,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_spv_stop")
+func platform_wallet_manager_spv_stop(
+    _ handle: Handle,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_spv_clear_storage")
+func platform_wallet_manager_spv_clear_storage(
+    _ handle: Handle,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
