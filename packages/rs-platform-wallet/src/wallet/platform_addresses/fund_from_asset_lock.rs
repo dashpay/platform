@@ -107,38 +107,27 @@ impl PlatformAddressWallet {
                 .platform_payment_managed_account_at_index_mut(account_index)
             {
                 for (addr, maybe_info) in address_infos.iter() {
-                    match maybe_info {
-                        Some(ai) => {
-                            if let PlatformAddress::P2pkh(hash) = addr {
-                                let p2pkh = PlatformP2PKHAddress::new(*hash);
-                                account.set_address_credit_balance(
-                                    p2pkh,
-                                    ai.balance,
-                                    key_source.as_ref(),
-                                );
-                            }
-                            cs.addresses.insert(
-                                *addr,
-                                dash_sdk::platform::address_sync::AddressFunds {
-                                    balance: ai.balance,
-                                    nonce: ai.nonce,
-                                },
-                            );
-                        }
-                        None => {
-                            if let PlatformAddress::P2pkh(hash) = addr {
-                                let p2pkh = PlatformP2PKHAddress::new(*hash);
-                                account.set_address_credit_balance(p2pkh, 0, key_source.as_ref());
-                            }
-                            cs.addresses.insert(
-                                *addr,
-                                dash_sdk::platform::address_sync::AddressFunds {
-                                    balance: 0,
-                                    nonce: 0,
-                                },
-                            );
-                        }
-                    }
+                    let PlatformAddress::P2pkh(hash) = addr else {
+                        continue;
+                    };
+                    let p2pkh = PlatformP2PKHAddress::new(*hash);
+                    let funds = match maybe_info {
+                        Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
+                            balance: ai.balance,
+                            nonce: ai.nonce,
+                        },
+                        None => dash_sdk::platform::address_sync::AddressFunds {
+                            balance: 0,
+                            nonce: 0,
+                        },
+                    };
+                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
+                    cs.addresses.push(crate::PlatformAddressBalanceEntry {
+                        wallet_id: self.wallet_id,
+                        account_index,
+                        address: p2pkh,
+                        funds,
+                    });
                 }
             }
         }

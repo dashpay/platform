@@ -289,54 +289,27 @@ impl PlatformPaymentAddressProvider {
         self.last_known_recent_block = last_known_recent_block;
     }
 
-    /// Iterate the most recent pass's found set, scoped to one wallet.
-    /// Yields `(account_index, address_index, address, funds)`.
-    /// Entries whose address isn't in the account's bimap are skipped —
-    /// that would indicate drift between `addresses` and `found`.
-    pub(crate) fn found_iter_for_wallet(
+    /// Snapshot every `(wallet, account, address) → funds` entry the
+    /// provider currently knows about. Used by `sync.rs` to compute a
+    /// change-set delta around the SDK call: snapshot before, compare
+    /// against the post-call snapshot, emit only the entries whose
+    /// funds differ (or are new).
+    pub(crate) fn balances_snapshot(
         &self,
-        wallet_id: &WalletId,
-    ) -> impl Iterator<Item = (u32, AddressIndex, &PlatformP2PKHAddress, &AddressFunds)> {
+    ) -> BTreeMap<(WalletId, u32, PlatformP2PKHAddress), AddressFunds> {
         self.per_wallet
-            .get(wallet_id)
-            .into_iter()
-            .flat_map(|state| {
-                state.iter().flat_map(|(&acct, account_state)| {
-                    account_state
-                        .found
-                        .iter()
-                        .filter_map(move |(p2pkh, funds)| {
-                            let &idx = account_state.addresses.get_by_right(p2pkh)?;
-                            Some((acct, idx, p2pkh, funds))
-                        })
-                })
-            })
-    }
-
-    /// Iterate the most recent pass's found set across every wallet.
-    #[allow(dead_code)]
-    pub(crate) fn found_iter(
-        &self,
-    ) -> impl Iterator<
-        Item = (
-            WalletId,
-            u32,
-            AddressIndex,
-            &PlatformP2PKHAddress,
-            &AddressFunds,
-        ),
-    > {
-        self.per_wallet.iter().flat_map(|(wallet_id, state)| {
-            state.iter().flat_map(move |(&acct, account_state)| {
-                account_state
-                    .found
+            .iter()
+            .flat_map(|(&wallet_id, state)| {
+                state
                     .iter()
-                    .filter_map(move |(p2pkh, funds)| {
-                        let &idx = account_state.addresses.get_by_right(p2pkh)?;
-                        Some((*wallet_id, acct, idx, p2pkh, funds))
+                    .flat_map(move |(&account_index, account_state)| {
+                        account_state
+                            .found
+                            .iter()
+                            .map(move |(&p2pkh, &funds)| ((wallet_id, account_index, p2pkh), funds))
                     })
             })
-        })
+            .collect()
     }
 }
 

@@ -47,7 +47,8 @@ pub use wallet::TokenWallet;
 pub use changeset::Merge;
 pub use changeset::{
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
-    IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet, TokenBalanceChangeSet,
+    IdentityEntry, PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
+    TokenBalanceChangeSet,
 };
 
 pub use key_wallet_manager;

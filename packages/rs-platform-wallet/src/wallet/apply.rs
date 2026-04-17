@@ -227,23 +227,25 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 4. Platform address balances. Apply to the first
-        //    ManagedPlatformAccount's balance map (the canonical store).
+        // 4. Platform address balances. Each entry carries its own
+        //    account index so we route to the right
+        //    ManagedPlatformAccount instead of lumping everything
+        //    onto the first account. Callers are expected to pass a
+        //    wallet-scoped changeset; we don't double-check
+        //    `entry.wallet_id` because `PlatformWalletInfo` doesn't
+        //    know its own id.
         if let Some(addr_cs) = platform_addresses {
-            if let Some(account) = self
-                .core_wallet
-                .first_platform_payment_managed_account_mut()
-            {
-                for (addr, funds) in addr_cs.addresses {
-                    if let PlatformAddress::P2pkh(hash) = addr {
-                        let p2pkh = PlatformP2PKHAddress::new(hash);
-                        account.set_address_credit_balance(p2pkh, funds.balance, None);
-                        // Nonce isn't stored on `ManagedPlatformAccount`;
-                        // callers that need it persist it via their own
-                        // store (see evo-tool's platform_address_balances
-                        // table which writes both `balance` and `nonce`
-                        // from the changeset).
-                    }
+            for entry in addr_cs.addresses {
+                if let Some(account) = self
+                    .core_wallet
+                    .platform_payment_managed_account_at_index_mut(entry.account_index)
+                {
+                    account.set_address_credit_balance(entry.address, entry.funds.balance, None);
+                    // Nonce isn't stored on `ManagedPlatformAccount`;
+                    // callers that need it persist it via their own
+                    // store (see evo-tool's platform_address_balances
+                    // table which writes both `balance` and `nonce`
+                    // from the changeset).
                 }
             }
         }
@@ -576,18 +578,23 @@ mod tests {
             .accounts
             .insert_platform_account(platform_account);
 
-        let addr1 = PlatformAddress::P2pkh([10u8; 20]);
-        let addr2 = PlatformAddress::P2pkh([20u8; 20]);
         let p2pkh1 = PlatformP2PKHAddress::new([10u8; 20]);
         let p2pkh2 = PlatformP2PKHAddress::new([20u8; 20]);
 
         use dash_sdk::platform::address_sync::AddressFunds;
         let funds = |balance, nonce| AddressFunds { balance, nonce };
+        let wallet_id: crate::wallet::platform_wallet::WalletId = [0u8; 32];
+        let entry = |address, funds| crate::PlatformAddressBalanceEntry {
+            wallet_id,
+            account_index: 0,
+            address,
+            funds,
+        };
 
         // Insert two.
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.insert(addr1, funds(100, 0));
-        addr_cs.addresses.insert(addr2, funds(200, 0));
+        addr_cs.addresses.push(entry(p2pkh1, funds(100, 0)));
+        addr_cs.addresses.push(entry(p2pkh2, funds(200, 0)));
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply insert");
@@ -602,8 +609,8 @@ mod tests {
         // PlatformAddressChangeSet model: drained addresses carry
         // balance 0 instead of being explicitly removed).
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.insert(addr1, funds(150, 0));
-        addr_cs.addresses.insert(addr2, funds(0, 0));
+        addr_cs.addresses.push(entry(p2pkh1, funds(150, 0)));
+        addr_cs.addresses.push(entry(p2pkh2, funds(0, 0)));
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
@@ -1642,15 +1649,17 @@ mod tests {
             .insert(identity, IdentityEntry::from_managed(&managed));
         id_cs.last_scanned_index = Some(7);
 
-        let addr = PlatformAddress::P2pkh([42u8; 20]);
+        let addr = PlatformP2PKHAddress::new([42u8; 20]);
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.insert(
-            addr,
-            dash_sdk::platform::address_sync::AddressFunds {
+        addr_cs.addresses.push(crate::PlatformAddressBalanceEntry {
+            wallet_id: [0u8; 32],
+            account_index: 0,
+            address: addr,
+            funds: dash_sdk::platform::address_sync::AddressFunds {
                 balance: 1_000,
                 nonce: 0,
             },
-        );
+        });
 
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);

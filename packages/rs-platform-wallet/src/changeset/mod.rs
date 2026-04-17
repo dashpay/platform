@@ -13,8 +13,8 @@ pub mod traits;
 
 pub use changeset::{
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
-    IdentityEntry, PlatformAddressChangeSet, PlatformWalletChangeSet, ReceivedContactRequestKey,
-    SentContactRequestKey, TokenBalanceChangeSet,
+    IdentityEntry, PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
+    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
 };
 pub use core_bridge::CorePersistenceBridge;
 pub use merge::Merge;

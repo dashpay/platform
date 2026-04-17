@@ -380,12 +380,18 @@ impl
 
 impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeSetFFI {
     fn from(cs: &platform_wallet::PlatformAddressChangeSet) -> Self {
+        // The FFI boundary is per-wallet — the Swift caller already
+        // knows which wallet this changeset belongs to, and each entry
+        // flattens `(wallet_id, account_index, address, funds)` down to
+        // the address + balance that the existing FFI struct carries.
+        // Account index and wallet id are dropped here; if future
+        // persisters need them we'll widen the FFI entry shape.
         let updated: Vec<AddressBalanceEntryFFI> = cs
             .addresses
             .iter()
-            .map(|(&address, funds)| AddressBalanceEntryFFI {
-                address: address.into(),
-                balance: funds.balance,
+            .map(|entry| AddressBalanceEntryFFI {
+                address: entry.address.into(),
+                balance: entry.funds.balance,
             })
             .collect();
 

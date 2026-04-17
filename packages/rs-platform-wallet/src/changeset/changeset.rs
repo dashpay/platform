@@ -27,6 +27,9 @@ use dashcore::blockdata::transaction::{OutPoint, Transaction};
 use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::address_funds::PlatformAddress;
 use dpp::prelude::AssetLockProof;
+use key_wallet::PlatformP2PKHAddress;
+
+use crate::wallet::platform_wallet::WalletId;
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -368,10 +371,26 @@ impl Merge for ContactChangeSet {
 /// The watermark is tracked per wallet (not per account): it's the max
 /// across accounts — on the next sync every provider rewinds to this
 /// point, so no account can silently skip a range.
+/// One updated platform payment address inside a
+/// [`PlatformAddressChangeSet`]. Carries full routing context —
+/// wallet id + DIP-17 account index + P2PKH — so persisters can apply
+/// the entry without guessing which account it belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlatformAddressBalanceEntry {
+    pub wallet_id: WalletId,
+    pub account_index: u32,
+    pub address: PlatformP2PKHAddress,
+    pub funds: AddressFunds,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
-    /// Updated platform addresses keyed by `PlatformAddress`.
-    pub addresses: BTreeMap<PlatformAddress, AddressFunds>,
+    /// Updated platform addresses produced by the last sync pass.
+    /// A `Vec` rather than a map because the diff already deduplicates
+    /// per `(wallet, account, address)` within one changeset, and
+    /// consumers either apply each entry independently or merge
+    /// append-only.
+    pub addresses: Vec<PlatformAddressBalanceEntry>,
     /// Highest block height covered by the last sync, across all
     /// accounts. `None` means "no change".
     pub sync_height: Option<u64>,
@@ -385,6 +404,10 @@ pub struct PlatformAddressChangeSet {
 
 impl Merge for PlatformAddressChangeSet {
     fn merge(&mut self, other: Self) {
+        // Append-only merge — no dedup, last entry wins at apply
+        // time. Duplicates across changesets are rare (each sync's
+        // diff covers a different point in time); paying the cost of
+        // hashing/sorting to dedup here isn't worthwhile.
         self.addresses.extend(other.addresses);
         // Monotonic-max merge — a later sync can only advance the
         // watermark, never roll it back. `None` means "no update in
@@ -661,21 +684,32 @@ mod tests {
 
     #[test]
     fn test_platform_address_changeset_merge() {
-        let addr1 = PlatformAddress::P2pkh([1u8; 20]);
-        let addr2 = PlatformAddress::P2pkh([2u8; 20]);
+        let wallet_id: WalletId = [9u8; 32];
+        let addr1 = PlatformP2PKHAddress::new([1u8; 20]);
+        let addr2 = PlatformP2PKHAddress::new([2u8; 20]);
 
         let funds = |balance, nonce| AddressFunds { balance, nonce };
+        let entry = |address, funds| PlatformAddressBalanceEntry {
+            wallet_id,
+            account_index: 0,
+            address,
+            funds,
+        };
 
         let mut a = PlatformAddressChangeSet::default();
-        a.addresses.insert(addr1.clone(), funds(100, 1));
+        a.addresses.push(entry(addr1, funds(100, 1)));
 
         let mut b = PlatformAddressChangeSet::default();
-        b.addresses.insert(addr1.clone(), funds(200, 2)); // last write wins
-        b.addresses.insert(addr2.clone(), funds(50, 3));
+        b.addresses.push(entry(addr1, funds(200, 2)));
+        b.addresses.push(entry(addr2, funds(50, 3)));
 
         a.merge(b);
-        assert_eq!(a.addresses.get(&addr1), Some(&funds(200, 2)));
-        assert_eq!(a.addresses.get(&addr2), Some(&funds(50, 3)));
+        // Append-only: three entries total; apply-time "last wins" is
+        // what gives `addr1 → funds(200, 2)` on replay.
+        assert_eq!(a.addresses.len(), 3);
+        assert_eq!(a.addresses[0], entry(addr1, funds(100, 1)));
+        assert_eq!(a.addresses[1], entry(addr1, funds(200, 2)));
+        assert_eq!(a.addresses[2], entry(addr2, funds(50, 3)));
     }
 
     #[test]
