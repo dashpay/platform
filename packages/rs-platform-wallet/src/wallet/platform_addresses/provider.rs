@@ -54,7 +54,7 @@ const DEFAULT_GAP_LIMIT: u32 = 20;
 /// `BTreeMap<u32, PerAccountPlatformAddressState>` keyed by DIP-17
 /// account index — each value holds the xpub plus the post-pass
 /// artifacts for that account.
-struct PerAccountPlatformAddressState {
+pub(crate) struct PerAccountPlatformAddressState {
     /// Public-key material for this account — the xpub that
     /// gap-limit extension (inside
     /// [`PlatformPaymentAddressProvider::on_address_found`]) needs to
@@ -87,11 +87,28 @@ impl PerAccountPlatformAddressState {
             absent: BTreeSet::new(),
         }
     }
+
+    /// Rebuild from persisted state — xpub + known derived addresses
+    /// + known balances from prior syncs. `absent` starts empty
+    /// because it's point-in-time per-pass information.
+    #[allow(dead_code)]
+    pub(crate) fn from_persisted(
+        extended_public_key: ExtendedPubKey,
+        addresses: BiBTreeMap<AddressIndex, PlatformP2PKHAddress>,
+        found: BTreeMap<PlatformP2PKHAddress, AddressFunds>,
+    ) -> Self {
+        Self {
+            extended_public_key,
+            addresses,
+            found,
+            absent: BTreeSet::new(),
+        }
+    }
 }
 
 /// Per-wallet account map — keys are DIP-17 account indexes (hardened
 /// level), values carry the account-level state.
-type PerWalletPlatformAddressState = BTreeMap<u32, PerAccountPlatformAddressState>;
+pub(crate) type PerWalletPlatformAddressState = BTreeMap<u32, PerAccountPlatformAddressState>;
 
 /// Address provider covering every platform payment account across
 /// every registered wallet.
@@ -191,6 +208,33 @@ impl PlatformPaymentAddressProvider {
         })
     }
 
+    /// Rebuild a provider from already-populated per-wallet state and
+    /// an incremental-sync watermark. Used on startup when a
+    /// persister has state to restore — skips the live
+    /// `AddressPool` scan that [`from_wallets`](Self::from_wallets)
+    /// performs, because the caller's state is the source of truth.
+    ///
+    /// `pending` starts empty; the first
+    /// [`prepare_for_sync`](Self::prepare_for_sync) call repopulates
+    /// it from each account's `AddressPool` in the wallet manager.
+    #[allow(dead_code)]
+    pub(crate) fn from_persisted(
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState>,
+        sync_height: u64,
+        sync_timestamp: u64,
+        last_known_recent_block: u64,
+    ) -> Self {
+        Self {
+            wallet_manager,
+            per_wallet,
+            pending: BiBTreeMap::new(),
+            sync_height,
+            sync_timestamp,
+            last_known_recent_block,
+        }
+    }
+
     /// Public-key source for a given `(wallet, account)`, built on
     /// demand from the stored extended public key. Returns `None` if
     /// the `(wallet, account)` isn't tracked.
@@ -287,29 +331,6 @@ impl PlatformPaymentAddressProvider {
         self.sync_height = height;
         self.sync_timestamp = timestamp;
         self.last_known_recent_block = last_known_recent_block;
-    }
-
-    /// Snapshot every `(wallet, account, address) → funds` entry the
-    /// provider currently knows about. Used by `sync.rs` to compute a
-    /// change-set delta around the SDK call: snapshot before, compare
-    /// against the post-call snapshot, emit only the entries whose
-    /// funds differ (or are new).
-    pub(crate) fn balances_snapshot(
-        &self,
-    ) -> BTreeMap<(WalletId, u32, PlatformP2PKHAddress), AddressFunds> {
-        self.per_wallet
-            .iter()
-            .flat_map(|(&wallet_id, state)| {
-                state
-                    .iter()
-                    .flat_map(move |(&account_index, account_state)| {
-                        account_state
-                            .found
-                            .iter()
-                            .map(move |(&p2pkh, &funds)| ((wallet_id, account_index, p2pkh), funds))
-                    })
-            })
-            .collect()
     }
 }
 

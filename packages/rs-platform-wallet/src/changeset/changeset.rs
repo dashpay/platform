@@ -373,12 +373,14 @@ impl Merge for ContactChangeSet {
 /// point, so no account can silently skip a range.
 /// One updated platform payment address inside a
 /// [`PlatformAddressChangeSet`]. Carries full routing context —
-/// wallet id + DIP-17 account index + P2PKH — so persisters can apply
-/// the entry without guessing which account it belongs to.
+/// wallet id + DIP-17 account index + derivation index + P2PKH — so
+/// persisters can apply the entry without guessing which account or
+/// HD slot it belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlatformAddressBalanceEntry {
     pub wallet_id: WalletId,
     pub account_index: u32,
+    pub address_index: u32,
     pub address: PlatformP2PKHAddress,
     pub funds: AddressFunds,
 }
@@ -689,27 +691,28 @@ mod tests {
         let addr2 = PlatformP2PKHAddress::new([2u8; 20]);
 
         let funds = |balance, nonce| AddressFunds { balance, nonce };
-        let entry = |address, funds| PlatformAddressBalanceEntry {
+        let entry = |address_index, address, funds| PlatformAddressBalanceEntry {
             wallet_id,
             account_index: 0,
+            address_index,
             address,
             funds,
         };
 
         let mut a = PlatformAddressChangeSet::default();
-        a.addresses.push(entry(addr1, funds(100, 1)));
+        a.addresses.push(entry(0, addr1, funds(100, 1)));
 
         let mut b = PlatformAddressChangeSet::default();
-        b.addresses.push(entry(addr1, funds(200, 2)));
-        b.addresses.push(entry(addr2, funds(50, 3)));
+        b.addresses.push(entry(0, addr1, funds(200, 2)));
+        b.addresses.push(entry(1, addr2, funds(50, 3)));
 
         a.merge(b);
         // Append-only: three entries total; apply-time "last wins" is
         // what gives `addr1 → funds(200, 2)` on replay.
         assert_eq!(a.addresses.len(), 3);
-        assert_eq!(a.addresses[0], entry(addr1, funds(100, 1)));
-        assert_eq!(a.addresses[1], entry(addr1, funds(200, 2)));
-        assert_eq!(a.addresses[2], entry(addr2, funds(50, 3)));
+        assert_eq!(a.addresses[0], entry(0, addr1, funds(100, 1)));
+        assert_eq!(a.addresses[1], entry(0, addr1, funds(200, 2)));
+        assert_eq!(a.addresses[2], entry(1, addr2, funds(50, 3)));
     }
 
     #[test]

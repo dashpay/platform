@@ -1,8 +1,11 @@
 use crate::changeset::Merge;
 use crate::wallet::{PlatformAddressTag, PlatformAddressWallet};
 use crate::{PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletError};
-use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
+use dash_sdk::platform::address_sync::{
+    AddressFunds, AddressProvider, AddressSyncConfig, AddressSyncResult,
+};
 use key_wallet::PlatformP2PKHAddress;
+use std::collections::BTreeMap;
 
 impl PlatformAddressWallet {
     /// Sync platform address balances across every platform payment
@@ -13,12 +16,11 @@ impl PlatformAddressWallet {
     /// of N per-account syncs. This is the "BLAST sync" path: fewer
     /// network round trips, one GroveDB proof covering all addresses.
     ///
-    /// The change-set is computed as a diff around the SDK call — we
-    /// snapshot the provider's `found` map before, run the sync, then
-    /// emit any `(wallet, account, address)` whose funds changed or
-    /// whose entry is new. Unchanged entries stay out of the
-    /// change-set so persisters don't re-write rows that didn't
-    /// actually change.
+    /// The change-set is computed as a diff around the SDK call —
+    /// snapshot the provider's known balances before, iterate
+    /// `result.found` after, emit entries whose funds differ (or are
+    /// new). `result.found` carries the full `(tag, p2pkh)` identity
+    /// the SDK used, so we don't need a second snapshot.
     pub async fn sync_balances(
         &self,
         config: Option<AddressSyncConfig>,
@@ -34,27 +36,32 @@ impl PlatformAddressWallet {
         let last_sync_timestamp = provider.last_sync_timestamp();
         provider.prepare_for_sync().await?;
 
-        let before = provider.balances_snapshot();
+        // Snapshot pre-sync balances keyed by the SDK's `Tag`. That
+        // same tag is what `result.found` will be keyed on, so the
+        // diff is a direct `before.get(&tag) != Some(&funds)` check.
+        let before: BTreeMap<PlatformAddressTag, AddressFunds> =
+            AddressProvider::current_balances(&*provider)
+                .map(|(tag, _p2pkh, funds)| (tag, funds))
+                .collect();
 
         let result = self
             .sdk
             .sync_address_balances(&mut *provider, config, last_sync_timestamp)
             .await?;
 
-        // Diff against the post-sync snapshot. Only entries whose
-        // funds differ from `before` (or that are new) make it into
-        // the change-set.
-        let after = provider.balances_snapshot();
         let mut cs = PlatformAddressChangeSet::default();
-        for (&(wallet_id, account_index, address), &funds) in &after {
-            if before.get(&(wallet_id, account_index, address)) != Some(&funds) {
-                cs.addresses.push(PlatformAddressBalanceEntry {
-                    wallet_id,
-                    account_index,
-                    address,
-                    funds,
-                });
+        for (&(tag, p2pkh), &funds) in &result.found {
+            if before.get(&tag) == Some(&funds) {
+                continue;
             }
+            let (wallet_id, account_index, address_index) = tag;
+            cs.addresses.push(PlatformAddressBalanceEntry {
+                wallet_id,
+                account_index,
+                address_index,
+                address: p2pkh,
+                funds,
+            });
         }
         if result.new_sync_height > 0 {
             cs.sync_height = Some(result.new_sync_height);

@@ -132,9 +132,21 @@ impl PlatformAddressWallet {
                         },
                     };
                     account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
+                    let address_index = account
+                        .addresses
+                        .addresses
+                        .iter()
+                        .find_map(|(&idx, info)| {
+                            PlatformP2PKHAddress::from_address(&info.address)
+                                .ok()
+                                .filter(|found| *found == p2pkh)
+                                .map(|_| idx)
+                        })
+                        .unwrap_or(0);
                     cs.addresses.push(crate::PlatformAddressBalanceEntry {
                         wallet_id: self.wallet_id,
                         account_index,
+                        address_index,
                         address: p2pkh,
                         funds,
                     });

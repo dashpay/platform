@@ -584,17 +584,18 @@ mod tests {
         use dash_sdk::platform::address_sync::AddressFunds;
         let funds = |balance, nonce| AddressFunds { balance, nonce };
         let wallet_id: crate::wallet::platform_wallet::WalletId = [0u8; 32];
-        let entry = |address, funds| crate::PlatformAddressBalanceEntry {
+        let entry = |address_index, address, funds| crate::PlatformAddressBalanceEntry {
             wallet_id,
             account_index: 0,
+            address_index,
             address,
             funds,
         };
 
         // Insert two.
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.push(entry(p2pkh1, funds(100, 0)));
-        addr_cs.addresses.push(entry(p2pkh2, funds(200, 0)));
+        addr_cs.addresses.push(entry(0, p2pkh1, funds(100, 0)));
+        addr_cs.addresses.push(entry(1, p2pkh2, funds(200, 0)));
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply insert");
@@ -609,8 +610,8 @@ mod tests {
         // PlatformAddressChangeSet model: drained addresses carry
         // balance 0 instead of being explicitly removed).
         let mut addr_cs = PlatformAddressChangeSet::default();
-        addr_cs.addresses.push(entry(p2pkh1, funds(150, 0)));
-        addr_cs.addresses.push(entry(p2pkh2, funds(0, 0)));
+        addr_cs.addresses.push(entry(0, p2pkh1, funds(150, 0)));
+        addr_cs.addresses.push(entry(1, p2pkh2, funds(0, 0)));
         let mut cs = PlatformWalletChangeSet::default();
         cs.platform_addresses = Some(addr_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
@@ -1654,6 +1655,7 @@ mod tests {
         addr_cs.addresses.push(crate::PlatformAddressBalanceEntry {
             wallet_id: [0u8; 32],
             account_index: 0,
+            address_index: 0,
             address: addr,
             funds: dash_sdk::platform::address_sync::AddressFunds {
                 balance: 1_000,
