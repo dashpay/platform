@@ -110,6 +110,29 @@ impl PerAccountPlatformAddressState {
 /// level), values carry the account-level state.
 pub(crate) type PerWalletPlatformAddressState = BTreeMap<u32, PerAccountPlatformAddressState>;
 
+/// Per-account scratch state accumulated during a single sync pass.
+/// Lives in [`PlatformPaymentAddressProvider::per_wallet_in_sync`]
+/// while the SDK is calling our callbacks; [`sync_finished`] flushes
+/// it into the committed [`PerAccountPlatformAddressState`] and
+/// clears it.
+///
+/// Keeping found/absent writes out of the committed state until the
+/// SDK signals success means a mid-sync abort leaves
+/// `per_wallet.{found,absent}` intact.
+#[derive(Default)]
+pub(crate) struct PerAccountInSyncPlatformAddressState {
+    /// Addresses the current sync pass has proven present, with
+    /// their fresh funds.
+    pub(crate) found: BTreeMap<PlatformP2PKHAddress, AddressFunds>,
+    /// Addresses the current sync pass has proven absent.
+    pub(crate) absent: BTreeSet<PlatformP2PKHAddress>,
+}
+
+/// Per-wallet in-sync scratch map, shape-parallel to
+/// [`PerWalletPlatformAddressState`].
+pub(crate) type PerWalletInSyncPlatformAddressState =
+    BTreeMap<u32, PerAccountInSyncPlatformAddressState>;
+
 /// Address provider covering every platform payment account across
 /// every registered wallet.
 ///
@@ -118,8 +141,18 @@ pub(crate) type PerWalletPlatformAddressState = BTreeMap<u32, PerAccountPlatform
 pub(crate) struct PlatformPaymentAddressProvider {
     /// Shared wallet manager for gap-limit extension.
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    /// Per-wallet tracked state (everything except pending).
+    /// Committed per-wallet tracked state — xpub + `addresses` bimap
+    /// + `found` + `absent` from the last successful sync. `found`
+    /// here is what [`current_balances`](Self::current_balances)
+    /// hands back to the SDK to seed the next incremental pass.
     per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState>,
+    /// Scratch `found`/`absent` for the sync pass currently in
+    /// flight. The SDK's `on_address_found` / `on_address_absent`
+    /// callbacks mutate this map instead of [`per_wallet`]; on
+    /// [`sync_finished`](AddressProvider::sync_finished) the engine
+    /// flushes the scratch into the committed state and clears it.
+    /// If a sync aborts mid-way, `per_wallet` stays clean.
+    per_wallet_in_sync: BTreeMap<WalletId, PerWalletInSyncPlatformAddressState>,
     /// Pending addresses across every wallet/account, stored as a
     /// bijection so `on_address_found` can resolve the flat
     /// `AddressIndex` callback back to the full
@@ -201,6 +234,7 @@ impl PlatformPaymentAddressProvider {
         Ok(Self {
             wallet_manager,
             per_wallet,
+            per_wallet_in_sync: BTreeMap::new(),
             pending,
             sync_height: 0,
             sync_timestamp: 0,
@@ -208,31 +242,82 @@ impl PlatformPaymentAddressProvider {
         })
     }
 
-    /// Rebuild a provider from already-populated per-wallet state and
-    /// an incremental-sync watermark. Used on startup when a
-    /// persister has state to restore — skips the live
-    /// `AddressPool` scan that [`from_wallets`](Self::from_wallets)
-    /// performs, because the caller's state is the source of truth.
+    /// Rebuild a provider from persisted per-wallet state and an
+    /// incremental-sync watermark. Used on startup when a persister
+    /// has state to restore — the caller supplies the xpubs and the
+    /// `found` balance map per account, and this constructor reads
+    /// each account's live `AddressPool` to build a fresh addresses
+    /// bimap + pending set.
     ///
-    /// `pending` starts empty; the first
-    /// [`prepare_for_sync`](Self::prepare_for_sync) call repopulates
-    /// it from each account's `AddressPool` in the wallet manager.
+    /// Returns an error if the persisted state references a wallet
+    /// or platform payment account that isn't in the live wallet
+    /// manager. Those shouldn't drift in practice; if they do, it
+    /// means the wallet store and the persisted BLAST state are out
+    /// of sync and the caller needs to reconcile rather than silently
+    /// continue with stale data.
     #[allow(dead_code)]
-    pub(crate) fn from_persisted(
+    pub async fn from_persisted(
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState>,
         sync_height: u64,
         sync_timestamp: u64,
         last_known_recent_block: u64,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, PlatformWalletError> {
+        let mut new_per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState> = BTreeMap::new();
+        let mut pending: BiBTreeMap<PlatformAddressTag, PlatformP2PKHAddress> = BiBTreeMap::new();
+
+        {
+            let wm = wallet_manager.read().await;
+            for (wallet_id, wallet_state) in per_wallet {
+                let info = wm.get_wallet_info(&wallet_id).ok_or_else(|| {
+                    PlatformWalletError::WalletNotFound(format!(
+                        "from_persisted: wallet {} not found in wallet manager",
+                        hex::encode(wallet_id)
+                    ))
+                })?;
+
+                let mut new_wallet_state = PerWalletPlatformAddressState::new();
+                for (account_index, mut account_state) in wallet_state {
+                    let managed = info
+                        .core_wallet
+                        .platform_payment_managed_account_at_index(account_index)
+                        .ok_or_else(|| {
+                            PlatformWalletError::AddressSync(format!(
+                                "from_persisted: wallet {} has no platform payment account {}",
+                                hex::encode(wallet_id),
+                                account_index
+                            ))
+                        })?;
+
+                    // Refresh `addresses` from the live pool (source
+                    // of truth); `extended_public_key`, `found`, and
+                    // `absent` carry over from the persisted state
+                    // verbatim.
+                    account_state.addresses.clear();
+                    for (&index, addr_info) in &managed.addresses.addresses {
+                        let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
+                        else {
+                            continue;
+                        };
+                        pending.insert((wallet_id, account_index, index), p2pkh);
+                        account_state.addresses.insert(index, p2pkh);
+                    }
+
+                    new_wallet_state.insert(account_index, account_state);
+                }
+                new_per_wallet.insert(wallet_id, new_wallet_state);
+            }
+        }
+
+        Ok(Self {
             wallet_manager,
-            per_wallet,
-            pending: BiBTreeMap::new(),
+            per_wallet: new_per_wallet,
+            per_wallet_in_sync: BTreeMap::new(),
+            pending,
             sync_height,
             sync_timestamp,
             last_known_recent_block,
-        }
+        })
     }
 
     /// Public-key source for a given `(wallet, account)`, built on
@@ -375,17 +460,13 @@ impl AddressProvider for PlatformPaymentAddressProvider {
         // pending in the first place.
         self.pending.remove_by_left(&tag);
 
-        // Record in our per-account state first so a later error
-        // walking the key-wallet pool doesn't lose the hit.
-        let Some(key_source) = self
+        // Validate against committed state: the SDK's tag can only
+        // name an address we previously registered as pending, so if
+        // the account bimap is missing it our state has drifted.
+        let Some(committed) = self
             .per_wallet
-            .get_mut(&wallet_id)
-            .and_then(|s| s.get_mut(&account_index))
-            .map(|account_state| {
-                account_state.addresses.insert(address_index, p2pkh);
-                account_state.found.insert(p2pkh, funds);
-                KeySource::Public(account_state.extended_public_key)
-            })
+            .get(&wallet_id)
+            .and_then(|s| s.get(&account_index))
         else {
             tracing::warn!(
                 "on_address_found: no tracked state for wallet {} account {}",
@@ -394,6 +475,26 @@ impl AddressProvider for PlatformPaymentAddressProvider {
             );
             return;
         };
+        if !committed.addresses.contains_left(&address_index) {
+            tracing::error!(
+                "on_address_found: (wallet={}, account={}, index={}) missing from account bimap — state drift",
+                hex::encode(wallet_id),
+                account_index,
+                address_index
+            );
+            return;
+        }
+        let key_source = KeySource::Public(committed.extended_public_key);
+
+        // Stage the balance update in the in-sync scratch map —
+        // `sync_finished` flushes it to the committed `per_wallet`.
+        self.per_wallet_in_sync
+            .entry(wallet_id)
+            .or_default()
+            .entry(account_index)
+            .or_default()
+            .found
+            .insert(p2pkh, funds);
 
         // Update key-wallet's managed account: mark the address used,
         // set its balance, and let the AddressPool generate any new
@@ -457,13 +558,53 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 
         self.pending.remove_by_left(&tag);
 
-        if let Some(account_state) = self
+        let Some(committed) = self
             .per_wallet
-            .get_mut(&wallet_id)
-            .and_then(|s| s.get_mut(&account_index))
-        {
-            account_state.addresses.insert(address_index, p2pkh);
-            account_state.absent.insert(p2pkh);
+            .get(&wallet_id)
+            .and_then(|s| s.get(&account_index))
+        else {
+            tracing::warn!(
+                "on_address_absent: no tracked state for wallet {} account {}",
+                hex::encode(wallet_id),
+                account_index
+            );
+            return;
+        };
+        if !committed.addresses.contains_left(&address_index) {
+            tracing::error!(
+                "on_address_absent: (wallet={}, account={}, index={}) missing from account bimap — state drift",
+                hex::encode(wallet_id),
+                account_index,
+                address_index
+            );
+            return;
+        }
+        self.per_wallet_in_sync
+            .entry(wallet_id)
+            .or_default()
+            .entry(account_index)
+            .or_default()
+            .absent
+            .insert(p2pkh);
+    }
+
+    async fn sync_finished(&mut self) {
+        // Flush scratch state accumulated during the pass into the
+        // committed per-wallet state. `found` is merged entry-by-entry
+        // (new/changed balances overwrite prior values); `absent` is
+        // replaced wholesale since it's point-in-time per-pass.
+        let drained = std::mem::take(&mut self.per_wallet_in_sync);
+        for (wallet_id, wallet_scratch) in drained {
+            let Some(wallet_state) = self.per_wallet.get_mut(&wallet_id) else {
+                continue;
+            };
+            for (account_index, account_scratch) in wallet_scratch {
+                let Some(account_state) = wallet_state.get_mut(&account_index) else {
+                    continue;
+                };
+                account_state.found.extend(account_scratch.found);
+                account_state.absent = account_scratch.absent;
+            }
         }
     }
 

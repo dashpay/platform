@@ -406,6 +406,11 @@ pub async fn sync_address_balances<P: AddressProvider>(
     )
     .await?;
 
+    // Sync completed successfully — give the provider a chance to
+    // commit any per-pass scratch state it accumulated in the
+    // `on_address_found` / `on_address_absent` callbacks.
+    provider.sync_finished().await;
+
     Ok(result)
 }
 

@@ -124,6 +124,16 @@ pub trait AddressProvider: Send {
         self.pending_addresses().next().is_some()
     }
 
+    /// Signal that a sync pass has completed successfully.
+    ///
+    /// The engine calls this once after
+    /// [`sync_address_balances`](super::sync_address_balances) has
+    /// finished its tree-scan and incremental-catch-up phases without
+    /// error. Implementors can use it as a commit point — e.g. to
+    /// flip a staged "in-sync" scratch set into the provider's
+    /// canonical state. Default impl is a no-op.
+    async fn sync_finished(&mut self) {}
+
     /// Get current known balances for incremental catch-up.
     ///
     /// Yields tuples of `(tag, address, funds)` for addresses that have
