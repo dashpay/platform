@@ -72,6 +72,44 @@ struct SwiftExampleAppApp: App {
                     await bootstrap()
                     SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
                 }
+                // Rebind wallet-scoped services whenever the active
+                // wallet appears or changes (create flow, restore on
+                // launch, network switch). Keyed on walletId so we
+                // don't re-fire on unrelated publishes of the same
+                // wallet.
+                .onChange(of: walletManager.wallet?.walletId) { _, _ in
+                    rebindWalletScopedServices()
+                }
+        }
+    }
+
+    /// Hand the active wallet's platform-address-wallet + persistence
+    /// handle to the services that depend on them. Called on any
+    /// change to `walletManager.wallet`.
+    ///
+    /// If no wallet is active (fresh install, cleared store) services
+    /// get reset so their UI doesn't carry stale state.
+    @MainActor
+    private func rebindWalletScopedServices() {
+        guard let wallet = walletManager.wallet else {
+            platformBalanceSyncService.reset()
+            return
+        }
+        do {
+            let platformAddressWallet = try wallet.platformAddressWallet()
+            platformBalanceSyncService.configure(
+                platformAddressWallet: platformAddressWallet,
+                persistenceHandler: walletManager.persistence,
+                walletId: wallet.walletId
+            )
+            SDKLogger.log(
+                "🔗 Bound platform-balance-sync to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())…",
+                minimumLevel: .medium
+            )
+        } catch {
+            SDKLogger.error(
+                "Failed to bind platform address wallet: \(error.localizedDescription)"
+            )
         }
     }
 
