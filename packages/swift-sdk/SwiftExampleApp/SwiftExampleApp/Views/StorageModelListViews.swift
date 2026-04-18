@@ -292,21 +292,88 @@ struct WalletStorageListView: View {
 // MARK: - PersistentAccount
 
 struct AccountStorageListView: View {
+    /// Query the wallet side of the `@Relationship` so the list groups
+    /// by wallet. Accounts come through `wallet.accounts`, which
+    /// updates reactively under SwiftData.
+    @Query(sort: \PersistentWallet.createdAt, order: .reverse)
+    private var wallets: [PersistentWallet]
+
+    /// Catch any accounts whose `wallet` inverse is nil (shouldn't
+    /// happen in steady state — the write path always links them —
+    /// but shown so the explorer doesn't silently hide them).
     @Query(sort: \PersistentAccount.createdAt, order: .reverse)
-    private var records: [PersistentAccount]
+    private var allAccounts: [PersistentAccount]
+
+    private var orphanAccounts: [PersistentAccount] {
+        allAccounts.filter { $0.wallet == nil }
+    }
+
+    private var totalAccountCount: Int {
+        wallets.reduce(0) { $0 + $1.accounts.count } + orphanAccounts.count
+    }
 
     var body: some View {
-        List(records) { record in
-            NavigationLink(destination: AccountStorageDetailView(record: record)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.accountTypeName).font(.body).lineLimit(1)
-                    Text("Index \(record.accountIndex) · \(record.transactions.count) txs · \(record.utxos.count) utxos")
-                        .font(.caption).foregroundColor(.secondary)
+        List {
+            ForEach(wallets) { wallet in
+                Section(header: Text(walletHeader(for: wallet))) {
+                    let sorted = sortedAccounts(wallet.accounts)
+                    if sorted.isEmpty {
+                        Text("No accounts").font(.caption).foregroundColor(.secondary)
+                    } else {
+                        ForEach(sorted) { account in
+                            NavigationLink(destination: AccountStorageDetailView(record: account)) {
+                                accountRow(account)
+                            }
+                        }
+                    }
+                }
+            }
+            if !orphanAccounts.isEmpty {
+                Section(header: Text("Unlinked")) {
+                    ForEach(orphanAccounts) { account in
+                        NavigationLink(destination: AccountStorageDetailView(record: account)) {
+                            accountRow(account)
+                        }
+                    }
                 }
             }
         }
-        .navigationTitle("Accounts (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "person.2") } }
+        .navigationTitle("Accounts (\(totalAccountCount))")
+        .overlay {
+            if totalAccountCount == 0 {
+                ContentUnavailableView("No Records", systemImage: "person.2")
+            }
+        }
+    }
+
+    /// "{name}" when the wallet has one, else "Wallet {short-id}". The
+    /// network is appended when available to distinguish the same
+    /// mnemonic on different networks.
+    private func walletHeader(for wallet: PersistentWallet) -> String {
+        let id = wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
+        let label = wallet.name ?? "Wallet \(id)…"
+        return "\(label) (\(wallet.network))"
+    }
+
+    /// Same ordering used in the load-path emit — stable across runs.
+    private func sortedAccounts(_ accounts: [PersistentAccount]) -> [PersistentAccount] {
+        accounts.sorted {
+            ($0.accountType, $0.accountIndex, $0.registrationIndex, $0.keyClass)
+                < ($1.accountType, $1.accountIndex, $1.registrationIndex, $1.keyClass)
+        }
+    }
+
+    @ViewBuilder
+    private func accountRow(_ record: PersistentAccount) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(record.accountTypeName).font(.body).lineLimit(1)
+            Text(
+                "Index \(record.accountIndex) · "
+                    + "\(record.transactions.count) txs · "
+                    + "\(record.utxos.count) utxos"
+            )
+            .font(.caption).foregroundColor(.secondary)
+        }
     }
 }
 
@@ -334,6 +401,125 @@ struct TransactionStorageListView: View {
         }
         .navigationTitle("Transactions (\(records.count))")
         .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.left.arrow.right.circle") } }
+    }
+}
+
+// MARK: - PersistentCoreAddress
+
+struct CoreAddressStorageListView: View {
+    @Query(sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)])
+    private var records: [PersistentCoreAddress]
+
+    /// Composite key identifying one (wallet, account, pool) bucket.
+    /// Sorts stably on wallet-id bytes → account type → account index
+    /// → pool tag so the section order is deterministic across
+    /// relaunches.
+    private struct GroupKey: Hashable, Comparable {
+        let walletId: Data
+        let walletLabel: String
+        let accountType: UInt32
+        let accountIndex: UInt32
+        let accountLabel: String
+        let poolTag: UInt8
+        let poolLabel: String
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            if lhs.walletId != rhs.walletId {
+                return lhs.walletId.lexicographicallyPrecedes(rhs.walletId)
+            }
+            if lhs.accountType != rhs.accountType { return lhs.accountType < rhs.accountType }
+            if lhs.accountIndex != rhs.accountIndex { return lhs.accountIndex < rhs.accountIndex }
+            return lhs.poolTag < rhs.poolTag
+        }
+    }
+
+    /// Group addresses by (wallet, account, pool) triple. Addresses
+    /// within a group are sorted by their derivation index.
+    private var groups: [(GroupKey, [PersistentCoreAddress])] {
+        let grouped = Dictionary(grouping: records) { record -> GroupKey in
+            let account = record.account
+            let wallet = account?.wallet
+            return GroupKey(
+                walletId: wallet?.walletId ?? Data(),
+                walletLabel: walletLabel(for: wallet),
+                accountType: account?.accountType ?? 0,
+                accountIndex: account?.accountIndex ?? 0,
+                accountLabel: account?.accountTypeName ?? "Unknown",
+                poolTag: record.poolTypeTag,
+                poolLabel: record.poolTypeName
+            )
+        }
+        return grouped
+            .map { ($0.key, $0.value.sorted { $0.addressIndex < $1.addressIndex }) }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    var body: some View {
+        List {
+            ForEach(Array(groups.enumerated()), id: \.offset) { _, pair in
+                let (key, addresses) = pair
+                Section(header: Text(sectionTitle(for: key))) {
+                    ForEach(addresses) { record in
+                        NavigationLink(destination: CoreAddressDetailView(record: record)) {
+                            addressRow(record)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Core Addresses (\(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "square.and.pencil"
+                )
+            }
+        }
+    }
+
+    /// Header format: `"WalletName · AccountName #N · Pool"`.
+    /// `#N` is dropped for non-indexed account types so the title
+    /// doesn't dangle a stray `#0`.
+    private func sectionTitle(for key: GroupKey) -> String {
+        let accountPart = hasMeaningfulIndex(for: key.accountType)
+            ? "\(key.accountLabel) #\(key.accountIndex)"
+            : key.accountLabel
+        return "\(key.walletLabel) · \(accountPart) · \(key.poolLabel)"
+    }
+
+    /// Account types whose `accountIndex` carries real meaning (BIP44
+    /// account 0/1/2, CoinJoin index, DashPay per-contact index,
+    /// PlatformPayment account). Singleton account types (identity
+    /// registration, provider keys, etc.) always have index 0 and
+    /// showing `#0` in the header just adds noise.
+    private func hasMeaningfulIndex(for typeTag: UInt32) -> Bool {
+        switch typeTag {
+        case 0, 1, 3, 12, 13, 14: return true
+        default: return false
+        }
+    }
+
+    private func walletLabel(for wallet: PersistentWallet?) -> String {
+        guard let wallet = wallet else { return "Unknown Wallet" }
+        if let name = wallet.name, !name.isEmpty { return name }
+        let prefix = wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
+        return "Wallet \(prefix)…"
+    }
+
+    private func addressRow(_ record: PersistentCoreAddress) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(record.address)
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(1).truncationMode(.middle)
+            HStack(spacing: 8) {
+                Text("#\(record.addressIndex)")
+                if record.isUsed { Text("• used") }
+                if record.balance > 0 { Text("• \(record.balance)") }
+            }
+            .font(.caption2)
+            .foregroundColor(.secondary)
+        }
     }
 }
 

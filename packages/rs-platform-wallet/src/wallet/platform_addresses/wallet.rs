@@ -80,6 +80,30 @@ impl PlatformAddressWallet {
         }
     }
 
+    /// Rebuild the provider from persisted state. Used on startup
+    /// when a persister returned a non-empty
+    /// [`PlatformAddressSyncStartState`](crate::PlatformAddressSyncStartState)
+    /// — delegates to
+    /// [`PlatformPaymentAddressProvider::from_persisted`] so xpubs,
+    /// `found`, and `absent` are restored verbatim while `addresses`
+    /// and `pending` are rebuilt from the live `AddressPool`.
+    pub async fn initialize_from_persisted(
+        &self,
+        persisted: crate::PlatformAddressSyncStartState,
+    ) -> Result<(), PlatformWalletError> {
+        let provider = PlatformPaymentAddressProvider::from_persisted(
+            Arc::clone(&self.wallet_manager),
+            persisted.per_wallet,
+            persisted.sync_height,
+            persisted.sync_timestamp,
+            persisted.last_known_recent_block,
+        )
+        .await?;
+        let mut guard = self.provider.write().await;
+        *guard = Some(provider);
+        Ok(())
+    }
+
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network

@@ -33,8 +33,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     }
 
     let sdk = Arc::new((*sdk_ptr).clone());
-    let persister: Arc<dyn platform_wallet::changeset::PlatformWalletPersistence> =
-        Arc::new(FFIPersister::new(std::ptr::read(persistence)));
+    let persister = Arc::new(FFIPersister::new(std::ptr::read(persistence)));
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
         Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
 
@@ -194,6 +193,78 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
                         *out_error = PlatformWalletFFIError::new(
                             PlatformWalletFFIResult::ErrorWalletOperation,
                             e.to_string(),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
+/// Hydrate the manager from its persister.
+///
+/// Triggers `on_load_wallet_list_fn` on the persistence callbacks to
+/// fetch the persisted wallet list from the client side (SwiftData),
+/// reconstructs each wallet as **watch-only** via its stored root +
+/// per-account xpubs, and registers them inside the manager. Does not
+/// produce wallet handles — the caller should follow up with
+/// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
+/// about.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
+    manager_handle: Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| {
+            match runtime().block_on(manager.load_from_persistor()) {
+                Ok(()) => PlatformWalletFFIResult::Success,
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            e.to_string(),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+}
+
+/// Get a `PlatformWallet` handle for a wallet registered in the
+/// manager. Returns `ErrorWalletNotFound` if no wallet with the given
+/// id is currently held.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
+    manager_handle: Handle,
+    wallet_id: *const [u8; 32],
+    out_wallet_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if wallet_id.is_null() || out_wallet_handle.is_null() {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    let wallet_id_value = *wallet_id;
+
+    PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| {
+            match runtime().block_on(manager.get_wallet(&wallet_id_value)) {
+                Some(wallet) => {
+                    let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+                    *out_wallet_handle = handle;
+                    PlatformWalletFFIResult::Success
+                }
+                None => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!(
+                                "Wallet {} not found in manager",
+                                hex::encode(wallet_id_value)
+                            ),
                         );
                     }
                     PlatformWalletFFIResult::ErrorWalletOperation

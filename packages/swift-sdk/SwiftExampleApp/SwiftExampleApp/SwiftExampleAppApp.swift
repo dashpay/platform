@@ -89,38 +89,30 @@ struct SwiftExampleAppApp: App {
                 // Configure the wallet manager.
                 try walletManager.configure(sdk: sdk, modelContainer: modelContainer)
 
+                // Restore wallets from the persister (SwiftData). If
+                // no wallets have been persisted yet this is a no-op.
+                // Restored wallets come back watch-only; signing is
+                // deferred until the user unlocks via biometric +
+                // Keychain-stored mnemonic (future work).
+                do {
+                    let restored = try walletManager.loadFromPersistor()
+                    if !restored.isEmpty {
+                        SDKLogger.log(
+                            "🔓 Restored \(restored.count) wallet(s) from persister",
+                            minimumLevel: .medium
+                        )
+                    }
+                } catch {
+                    SDKLogger.error(
+                        "Failed to restore wallets from persister: \(error.localizedDescription)"
+                    )
+                }
+
                 // Initialize shielded pool using first available wallet's data.
                 initializeShieldedService()
 
-                // Start SPV on the chosen network.
-                let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-                    .first!
-                    .appendingPathComponent("SPV")
-                    .appendingPathComponent(platformState.currentNetwork.rawValue)
-                try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
-
-                // Respect trusted mode reported by the platform SDK for masternode sync.
-                var masternodeEnabled = true
-                if let status: SwiftDashSDK.SDKStatus = try? sdk.getStatus() {
-                    masternodeEnabled = status.mode.lowercased() != "trusted"
-                }
-
-                let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-                let peers: [String] = useLocalCore ? readLocalCorePeers() : []
-
-                let spvConfig = PlatformSpvStartConfig(
-                    dataDir: dataDirURL.path,
-                    network: platformNetwork(from: platformState.currentNetwork),
-                    peers: peers,
-                    restrictToConfiguredPeers: useLocalCore,
-                    masternodeSyncEnabled: masternodeEnabled
-                )
-
-                do {
-                    try walletManager.startSpv(config: spvConfig)
-                } catch {
-                    SDKLogger.error("Failed to start SPV: \(error.localizedDescription)")
-                }
+                // SPV is NOT started automatically on launch — kicked
+                // off by a user action instead (e.g. wallet open).
 
                 // Start the periodic BLAST balance sync loop.
                 startPlatformBalanceSyncLoop()

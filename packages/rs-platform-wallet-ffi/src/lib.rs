@@ -7,6 +7,7 @@
 pub mod asset_lock;
 pub mod contact;
 pub mod contact_request;
+pub mod core_address_types;
 pub mod core_wallet;
 pub mod core_wallet_types;
 pub mod error;
@@ -25,11 +26,14 @@ pub mod spv;
 pub mod types;
 pub mod utils;
 pub mod wallet;
+pub mod wallet_restore_types;
+pub mod xpub_render;
 
 // Re-exports
 pub use asset_lock::*;
 pub use contact::*;
 pub use contact_request::*;
+pub use core_address_types::*;
 pub use core_wallet::*;
 pub use core_wallet_types::*;
 pub use error::*;
@@ -47,6 +51,8 @@ pub use spv::*;
 pub use types::*;
 pub use utils::*;
 pub use wallet::*;
+pub use wallet_restore_types::*;
+pub use xpub_render::*;
 
 /// Initialize the FFI library
 /// Must be called before using any other functions

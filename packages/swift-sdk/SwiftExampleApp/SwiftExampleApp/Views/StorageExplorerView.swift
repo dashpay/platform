@@ -53,6 +53,9 @@ struct StorageExplorerView: View {
             modelRow("Accounts", icon: "person.2", type: PersistentAccount.self) {
                 AccountStorageListView()
             }
+            modelRow("Core Addresses", icon: "square.and.pencil", type: PersistentCoreAddress.self) {
+                CoreAddressStorageListView()
+            }
             modelRow("Transactions", icon: "arrow.left.arrow.right.circle", type: PersistentTransaction.self) {
                 TransactionStorageListView()
             }
@@ -111,6 +114,7 @@ struct StorageExplorerView: View {
         count(PersistentSyncState.self)
         count(PersistentWallet.self)
         count(PersistentAccount.self)
+        count(PersistentCoreAddress.self)
         count(PersistentTransaction.self)
         count(PersistentUtxo.self)
         count(PersistentWalletManagerMetadata.self)

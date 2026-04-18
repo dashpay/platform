@@ -20,7 +20,7 @@ use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
 use super::tokens::TokenWallet;
-use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use crate::changeset::{ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence};
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -303,7 +303,7 @@ impl PlatformWallet {
     /// Load persisted state for this wallet.
     pub fn load_persisted(
         &self,
-    ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
         self.persister.load()
     }
 
@@ -375,10 +375,18 @@ impl PlatformWallet {
     pub async fn load_and_apply_persisted(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let cs = self.load_persisted()?;
-        self.apply(cs)
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        let ClientStartState {
+            platform_addresses,
+            wallets: _,
+        } = self.load_persisted()?;
+
+        if let Some(persisted) = platform_addresses {
+            self.platform
+                .initialize_from_persisted(persisted)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        }
+
         Ok(())
     }
 }

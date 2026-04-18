@@ -6,7 +6,7 @@
 use super::managed_identity::key_storage::IdentityStatus;
 use super::managed_identity::ManagedIdentity;
 use super::managed_identity::WatchedIdentity;
-use crate::changeset::{IdentityChangeSet, IdentityEntry};
+use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityManagerStartState};
 use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -37,6 +37,23 @@ impl Default for IdentityManager {
             watched_identities: IndexMap::new(),
             primary_identity_id: None,
             last_scanned_index: 0,
+        }
+    }
+}
+
+impl From<IdentityManagerStartState> for IdentityManager {
+    fn from(state: IdentityManagerStartState) -> Self {
+        let IdentityManagerStartState {
+            identities,
+            watched_identities,
+            primary_identity_id,
+            last_scanned_index,
+        } = state;
+        Self {
+            identities,
+            watched_identities,
+            primary_identity_id,
+            last_scanned_index,
         }
     }
 }

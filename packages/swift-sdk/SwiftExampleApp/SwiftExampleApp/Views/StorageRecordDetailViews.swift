@@ -473,6 +473,16 @@ struct WalletStorageDetailView: View {
 struct AccountStorageDetailView: View {
     let record: PersistentAccount
 
+    /// Base58check-encoded xpub/tpub for this account, derived from
+    /// the stored ExtendedPubKey bytes. `nil` when the bytes are empty
+    /// (account created before the xpub-persistence path landed) or
+    /// decode fails.
+    private var accountXpubString: String? {
+        PlatformWalletManager.accountExtendedPubKeyString(
+            bytes: record.accountExtendedPubKeyBytes
+        )
+    }
+
     var body: some View {
         Form {
             Section("Core") {
@@ -480,6 +490,10 @@ struct AccountStorageDetailView: View {
                 FieldRow(label: "Type ID", value: "\(record.accountType)")
                 FieldRow(label: "Index", value: "\(record.accountIndex)")
                 FieldRow(label: "Watch Only", value: record.isWatchOnly ? "Yes" : "No")
+                FieldRow(
+                    label: "Extended Public Key",
+                    value: accountXpubString ?? "—"
+                )
             }
             Section("Balance") {
                 FieldRow(label: "Confirmed", value: "\(record.balanceConfirmed)")
@@ -492,7 +506,33 @@ struct AccountStorageDetailView: View {
             Section("Relationships") {
                 FieldRow(label: "Transactions", value: "\(record.transactions.count)")
                 FieldRow(label: "UTXOs", value: "\(record.utxos.count)")
+                FieldRow(label: "Addresses", value: "\(record.coreAddresses.count)")
                 FieldRow(label: "Wallet", value: record.wallet?.name ?? record.wallet.map { hexString($0.walletId) } ?? "None")
+            }
+            ForEach(addressSections(), id: \.0) { poolName, addresses in
+                Section("\(poolName) Addresses (\(addresses.count))") {
+                    ForEach(addresses) { addr in
+                        NavigationLink(destination: CoreAddressDetailView(record: addr)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(addr.address)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                HStack(spacing: 8) {
+                                    Text("Index \(addr.addressIndex)")
+                                    if addr.isUsed {
+                                        Text("• used")
+                                    }
+                                    if addr.balance > 0 {
+                                        Text("• \(addr.balance)")
+                                    }
+                                }
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
             }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
@@ -500,6 +540,67 @@ struct AccountStorageDetailView: View {
             }
         }
         .navigationTitle("Account")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Group the account's addresses by pool-type tag and present in
+    /// a stable order: External, Internal, Absent, Absent (Hardened).
+    /// Empty sections are skipped.
+    private func addressSections() -> [(String, [PersistentCoreAddress])] {
+        let grouped = Dictionary(grouping: record.coreAddresses) { $0.poolTypeTag }
+        let order: [(UInt8, String)] = [
+            (0, "External"),
+            (1, "Internal"),
+            (2, "Absent"),
+            (3, "Absent (Hardened)"),
+        ]
+        return order.compactMap { tag, name in
+            guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
+            let sorted = bucket.sorted { $0.addressIndex < $1.addressIndex }
+            return (name, sorted)
+        }
+    }
+}
+
+// MARK: - PersistentCoreAddress
+
+struct CoreAddressDetailView: View {
+    let record: PersistentCoreAddress
+
+    var body: some View {
+        Form {
+            Section("Address") {
+                FieldRow(label: "Address", value: record.address)
+                FieldRow(label: "Pool", value: record.poolTypeName)
+                FieldRow(label: "Index", value: "\(record.addressIndex)")
+                FieldRow(label: "Derivation Path", value: record.derivationPath)
+                FieldRow(label: "Used", value: record.isUsed ? "Yes" : "No")
+            }
+            Section("Public Key") {
+                FieldRow(
+                    label: "Bytes (hex)",
+                    value: record.publicKey.isEmpty
+                        ? "—"
+                        : record.publicKey.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Balance / Activity") {
+                FieldRow(label: "Balance", value: "\(record.balance)")
+                FieldRow(
+                    label: "First Seen Height",
+                    value: record.firstSeenHeight == 0 ? "—" : "\(record.firstSeenHeight)"
+                )
+                FieldRow(
+                    label: "Last Seen Height",
+                    value: record.lastSeenHeight == 0 ? "—" : "\(record.lastSeenHeight)"
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Address")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

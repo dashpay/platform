@@ -132,11 +132,14 @@ public class PlatformWalletManager: ObservableObject {
     /// Create a wallet from a BIP39 mnemonic phrase (English).
     ///
     /// Stores the returned wallet as the active [`wallet`] published
-    /// property.
+    /// property. If `name` is provided, writes it onto the persisted
+    /// [`PersistentWallet`] row so the wallet detail view has a
+    /// user-facing label.
     @discardableResult
     public func createWallet(
         mnemonic: String,
         network: PlatformNetwork,
+        name: String? = nil,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
@@ -167,6 +170,9 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
+        if let name = name, !name.isEmpty {
+            persistenceHandler?.setWalletName(walletId: idData, name: name)
+        }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallet = w
         return w
@@ -177,6 +183,7 @@ public class PlatformWalletManager: ObservableObject {
     public func createWallet(
         seed: Data,
         network: PlatformNetwork,
+        name: String? = nil,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
@@ -212,9 +219,116 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
+        if let name = name, !name.isEmpty {
+            persistenceHandler?.setWalletName(walletId: idData, name: name)
+        }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallet = w
         return w
+    }
+
+    // MARK: - Watch-only restore from persister
+
+    /// Rehydrate wallets from SwiftData on app launch.
+    ///
+    /// Calls `platform_wallet_manager_load_from_persistor` which fires
+    /// the Swift-side `on_load_wallet_list_fn` callback. For each
+    /// persisted wallet, Rust reconstructs a **watch-only** `Wallet`
+    /// from its stored root xpub + per-account xpubs. After the FFI
+    /// returns, we call `platform_wallet_manager_get_wallet` for each
+    /// restored id so Swift gets a `ManagedPlatformWallet` handle.
+    ///
+    /// Signing operations will fail until a future unlock flow
+    /// upgrades a watch-only wallet to a signing wallet via the
+    /// mnemonic stored in Keychain.
+    ///
+    /// Idempotent: if there's no persisted state, does nothing and
+    /// leaves `self.wallet` untouched. Safe to call before any
+    /// `createWallet` flow.
+    @discardableResult
+    public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
+        try ensureConfigured()
+
+        var error = PlatformWalletFFIError()
+        let loadResult = platform_wallet_manager_load_from_persistor(handle, &error)
+        guard loadResult == Success else {
+            throw PlatformWalletError(result: loadResult, error: error)
+        }
+
+        // Ask SwiftData for the list of wallet ids we just told Rust
+        // to load. We reuse the same container rather than shipping a
+        // separate FFI "list ids" entry, because SwiftData already is
+        // the source of truth.
+        guard let persistenceHandler = persistenceHandler else {
+            return []
+        }
+        let walletIds = persistenceHandler.restorableWalletIds()
+        var restored: [ManagedPlatformWallet] = []
+        restored.reserveCapacity(walletIds.count)
+
+        for walletId in walletIds {
+            guard walletId.count == 32 else { continue }
+            var walletHandle: Handle = NULL_HANDLE
+            var fetchError = PlatformWalletFFIError()
+            let fetchResult = walletId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
+                guard let base = idPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    return ErrorNullPointer
+                }
+                return platform_wallet_manager_get_wallet(
+                    handle,
+                    base,
+                    &walletHandle,
+                    &fetchError
+                )
+            }
+            if fetchResult == Success {
+                restored.append(ManagedPlatformWallet(handle: walletHandle, walletId: walletId))
+            } else {
+                // Log and skip — one wallet failing doesn't fail the
+                // whole restore. Usually means wallet_id / xpub
+                // disagreement (SwiftData drift vs. Rust recompute).
+                self.lastError = PlatformWalletError(result: fetchResult, error: fetchError)
+            }
+        }
+
+        // Publish the first restored wallet for single-wallet UX
+        // compatibility; multi-wallet callers iterate the return
+        // value directly.
+        if self.wallet == nil, let first = restored.first {
+            self.wallet = first
+        }
+        return restored
+    }
+
+    // MARK: - Xpub rendering
+
+    /// Render a bincode-encoded per-account `ExtendedPubKey` (as
+    /// stored on `PersistentAccount.accountExtendedPubKeyBytes`) as a
+    /// BIP32 base58check string. The encoded key carries its own
+    /// network, so `xpub…`/`tpub…` is produced automatically.
+    ///
+    /// Returns `nil` if the bytes are empty or the decode fails.
+    public static func accountExtendedPubKeyString(bytes: Data) -> String? {
+        guard !bytes.isEmpty else { return nil }
+        var outPtr: UnsafeMutablePointer<CChar>? = nil
+        var error = PlatformWalletFFIError()
+        let result: PlatformWalletFFIResult = bytes.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return ErrorNullPointer
+            }
+            return platform_wallet_account_xpub_to_string(
+                base,
+                bytes.count,
+                &outPtr,
+                &error
+            )
+        }
+        guard result == Success, let cStr = outPtr else {
+            return nil
+        }
+        let str = String(cString: cStr)
+        platform_wallet_free_string(cStr)
+        return str
     }
 
     // MARK: - Internals

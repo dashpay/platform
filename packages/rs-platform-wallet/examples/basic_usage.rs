@@ -31,12 +31,11 @@ impl PlatformWalletPersistence for NoopPersister {
     }
     fn load(
         &self,
-        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
     ) -> Result<
-        platform_wallet::changeset::PlatformWalletChangeSet,
+        platform_wallet::changeset::ClientStartState,
         Box<dyn std::error::Error + Send + Sync>,
     > {
-        Ok(Default::default())
+        Ok(platform_wallet::changeset::ClientStartState::default())
     }
 }
 
@@ -48,7 +47,7 @@ impl PlatformEventHandler for NoopEventHandler {}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk = Arc::new(Sdk::new_mock());
-    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(NoopPersister);
+    let persister = Arc::new(NoopPersister);
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
 
     // Create a manager

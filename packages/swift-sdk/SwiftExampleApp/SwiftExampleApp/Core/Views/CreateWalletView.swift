@@ -309,7 +309,8 @@ struct CreateWalletView: View {
                 try await MainActor.run {
                     let managed = try walletManager.createWallet(
                         mnemonic: mnemonicPhrase,
-                        network: platformNetwork
+                        network: platformNetwork,
+                        name: walletLabel
                     )
                     let hdWallet = HDWallet(
                         walletId: managed.walletId,

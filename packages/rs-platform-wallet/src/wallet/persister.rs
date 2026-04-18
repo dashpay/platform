@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use crate::changeset::{ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Per-wallet persistence handle.
@@ -38,8 +38,8 @@ impl WalletPersister {
 
     pub(crate) fn load(
         &self,
-    ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>> {
-        self.inner.load(self.wallet_id)
+    ) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+        self.inner.load()
     }
 }
 
@@ -59,10 +59,7 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
         Ok(())
     }
 
-    fn load(
-        &self,
-        _wallet_id: WalletId,
-    ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(PlatformWalletChangeSet::default())
+    fn load(&self) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(ClientStartState::default())
     }
 }

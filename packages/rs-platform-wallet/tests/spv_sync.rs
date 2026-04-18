@@ -22,7 +22,9 @@ use dash_spv::ClientConfig;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
-use platform_wallet::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use platform_wallet::changeset::{
+    ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence,
+};
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::PlatformWalletManager;
@@ -85,11 +87,8 @@ impl PlatformWalletPersistence for RecordingPersister {
         Ok(())
     }
 
-    fn load(
-        &self,
-        _wallet_id: WalletId,
-    ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(Default::default())
+    fn load(&self) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(ClientStartState::default())
     }
 }
 
@@ -175,7 +174,7 @@ async fn test_spv_sync_and_balance() {
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
-        persister as Arc<dyn PlatformWalletPersistence>,
+        persister,
         event_handler,
     ));
 

@@ -27,6 +27,103 @@ struct PersistenceCallbacks {
         UInt64,
         UInt64
     ) -> Int32)? = nil
+    var on_persist_account_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UnsafeRawPointer?
+    ) -> Int32)? = nil
+    var on_load_wallet_list_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafeMutablePointer<UnsafeRawPointer?>?,
+        UnsafeMutablePointer<Int>?
+    ) -> Int32)? = nil
+    var on_load_wallet_list_free_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafeRawPointer?,
+        Int
+    ) -> Void)? = nil
+    var on_persist_wallet_metadata_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UInt8,
+        UInt32
+    ) -> Int32)? = nil
+    var on_persist_account_addresses_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        UnsafeRawPointer?,
+        UnsafeRawPointer?,
+        Int
+    ) -> Int32)? = nil
+}
+
+// MARK: - Core Address Entry
+//
+// Mirrors `rs-platform-wallet-ffi/src/core_address_types.rs`. Field
+// order and types must match bit-for-bit — Rust sends an array of
+// these via `on_persist_account_addresses_fn`. String pointers are
+// Rust-owned and valid only for the duration of the callback.
+
+struct CoreAddressEntryFFI {
+    // 33-byte compressed pubkey (zero when `has_public_key == false`).
+    var public_key: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+    var has_public_key: Bool = false
+    var pool_type_tag: UInt8 = 0
+    var address_index: UInt32 = 0
+    var is_used: Bool = false
+    var balance: UInt64 = 0
+    var address_base58: UnsafePointer<CChar>? = nil
+    var derivation_path: UnsafePointer<CChar>? = nil
+}
+
+// MARK: - Watch-only Restore Types
+//
+// Mirrors `rs-platform-wallet-ffi/src/wallet_restore_types.rs`. Field
+// order and types must match bit-for-bit — Rust reads the array
+// elements as `#[repr(C)]` structs via `slice::from_raw_parts`. All
+// pointer fields are Swift-owned during the load-callback window and
+// released by `on_load_wallet_list_free_fn`.
+
+struct AccountSpecFFI {
+    var type_tag: UInt8 = 0
+    var standard_tag: UInt8 = 0
+    var index: UInt32 = 0
+    var registration_index: UInt32 = 0
+    var key_class: UInt32 = 0
+    // Fixed 32-byte buffers. Swift imports a fixed-size C array as a
+    // tuple; `withUnsafeMutableBytes` / `withUnsafeBytes` to fill and
+    // read.
+    var user_identity_id: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+    var friend_identity_id: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+    var account_xpub_bytes: UnsafePointer<UInt8>? = nil
+    var account_xpub_bytes_len: Int = 0
+}
+
+struct WalletRestoreEntryFFI {
+    var wallet_id: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+    var network: UInt8 = 0
+    var accounts: UnsafePointer<AccountSpecFFI>? = nil
+    var accounts_count: Int = 0
 }
 
 // MARK: - Event Handler Callbacks
@@ -219,11 +316,38 @@ func platform_wallet_manager_spv_clear_storage(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+@_silgen_name("platform_wallet_manager_load_from_persistor")
+func platform_wallet_manager_load_from_persistor(
+    _ manager_handle: Handle,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_get_wallet")
+func platform_wallet_manager_get_wallet(
+    _ manager_handle: Handle,
+    _ wallet_id: UnsafePointer<UInt8>?,
+    _ out_wallet_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 @_silgen_name("platform_wallet_manager_destroy")
 func platform_wallet_manager_destroy(
     _ handle: Handle,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
+
+// MARK: - Xpub Rendering
+
+@_silgen_name("platform_wallet_account_xpub_to_string")
+func platform_wallet_account_xpub_to_string(
+    _ bytes: UnsafePointer<UInt8>?,
+    _ bytes_len: Int,
+    _ out_string: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_free_string")
+func platform_wallet_free_string(_ s: UnsafeMutablePointer<CChar>?)
 
 // MARK: - PlatformWallet FFI
 

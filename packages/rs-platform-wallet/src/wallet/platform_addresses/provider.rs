@@ -54,7 +54,8 @@ const DEFAULT_GAP_LIMIT: u32 = 20;
 /// `BTreeMap<u32, PerAccountPlatformAddressState>` keyed by DIP-17
 /// account index — each value holds the xpub plus the post-pass
 /// artifacts for that account.
-pub(crate) struct PerAccountPlatformAddressState {
+#[derive(Debug)]
+pub struct PerAccountPlatformAddressState {
     /// Public-key material for this account — the xpub that
     /// gap-limit extension (inside
     /// [`PlatformPaymentAddressProvider::on_address_found`]) needs to
@@ -91,8 +92,7 @@ impl PerAccountPlatformAddressState {
     /// Rebuild from persisted state — xpub + known derived addresses
     /// + known balances from prior syncs. `absent` starts empty
     /// because it's point-in-time per-pass information.
-    #[allow(dead_code)]
-    pub(crate) fn from_persisted(
+    pub fn from_persisted(
         extended_public_key: ExtendedPubKey,
         addresses: BiBTreeMap<AddressIndex, PlatformP2PKHAddress>,
         found: BTreeMap<PlatformP2PKHAddress, AddressFunds>,
@@ -108,7 +108,7 @@ impl PerAccountPlatformAddressState {
 
 /// Per-wallet account map — keys are DIP-17 account indexes (hardened
 /// level), values carry the account-level state.
-pub(crate) type PerWalletPlatformAddressState = BTreeMap<u32, PerAccountPlatformAddressState>;
+pub type PerWalletPlatformAddressState = BTreeMap<u32, PerAccountPlatformAddressState>;
 
 /// Per-account scratch state accumulated during a single sync pass.
 /// Lives in [`PlatformPaymentAddressProvider::per_wallet_in_sync`]
@@ -255,7 +255,6 @@ impl PlatformPaymentAddressProvider {
     /// means the wallet store and the persisted BLAST state are out
     /// of sync and the caller needs to reconcile rather than silently
     /// continue with stale data.
-    #[allow(dead_code)]
     pub async fn from_persisted(
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState>,

@@ -112,9 +112,12 @@ pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
     HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,
 > = Lazy::new(HandleStorage::new);
 
-/// Storage for PlatformWalletManager handles
+/// Storage for PlatformWalletManager handles.
+///
+/// The manager is generic over the persister type; the FFI binds it
+/// to the callback-based [`FFIPersister`](crate::persistence::FFIPersister).
 pub static PLATFORM_WALLET_MANAGER_STORAGE: Lazy<
-    HandleStorage<platform_wallet::PlatformWalletManager>,
+    HandleStorage<platform_wallet::PlatformWalletManager<crate::persistence::FFIPersister>>,
 > = Lazy::new(HandleStorage::new);
 
 /// Storage for PlatformWallet handles

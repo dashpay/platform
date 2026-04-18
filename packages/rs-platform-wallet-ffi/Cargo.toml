@@ -23,7 +23,14 @@ serde_json = "1"
 
 # Core dependencies (for Network type)
 dashcore = { workspace = true }
-key-wallet = { workspace = true }
+key-wallet = { workspace = true, features = ["bincode"] }
+
+# Bincode used to serialize RootExtendedPubKey / ExtendedPubKey across
+# FFI for watch-only restore. Same version pinned elsewhere in workspace.
+bincode = { version = "=2.0.1" }
+
+# Hex used for error diagnostics that include a wallet_id.
+hex = "0.4"
 
 [dev-dependencies]
 tempfile = "3.8"

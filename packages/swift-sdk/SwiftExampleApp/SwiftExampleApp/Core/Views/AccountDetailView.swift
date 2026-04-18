@@ -33,7 +33,17 @@ struct AccountDetailView: View {
 
                     poolSummaryCard()
 
-                    noteCard()
+                    ForEach(addressSections(), id: \.0) { name, addresses in
+                        addressListCard(
+                            name: name,
+                            systemImage: poolIcon(for: name),
+                            addresses: addresses
+                        )
+                    }
+
+                    if account.coreAddresses.isEmpty {
+                        emptyAddressesCard()
+                    }
                 }
                 .padding()
             }
@@ -157,13 +167,33 @@ struct AccountDetailView: View {
     }
 
     private func poolSummaryCard() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let externalCount = account.coreAddresses.filter { $0.poolTypeTag == 0 }.count
+        let internalCount = account.coreAddresses.filter { $0.poolTypeTag == 1 }.count
+        return VStack(alignment: .leading, spacing: 12) {
             Label("Address Pool", systemImage: "square.stack.3d.up.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
 
             Divider()
 
+            if externalCount > 0 {
+                HStack {
+                    Text("Pool Size (External):")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(externalCount)")
+                        .fontWeight(.medium)
+                }
+            }
+            if internalCount > 0 {
+                HStack {
+                    Text("Pool Size (Internal):")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(internalCount)")
+                        .fontWeight(.medium)
+                }
+            }
             HStack {
                 Text("Highest Used (External):")
                     .foregroundColor(.secondary)
@@ -201,21 +231,99 @@ struct AccountDetailView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
-    private func noteCard() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // TODO(platform-wallet): Expose per-address detail + WIF derivation
-            // on PlatformWalletManager / ManagedPlatformWallet and bring back
-            // the full address list / private-key peek UI here.
-            Label("Address Details", systemImage: "info.circle")
+    /// Group this account's persisted addresses by pool tag, in a
+    /// stable display order (External → Internal → Absent → Absent
+    /// Hardened). Empty pools are skipped.
+    private func addressSections() -> [(String, [PersistentCoreAddress])] {
+        let grouped = Dictionary(grouping: account.coreAddresses) { $0.poolTypeTag }
+        let order: [(UInt8, String)] = [
+            (0, "External"),
+            (1, "Internal"),
+            (2, "Absent"),
+            (3, "Absent (Hardened)"),
+        ]
+        return order.compactMap { tag, name in
+            guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
+            let sorted = bucket.sorted { $0.addressIndex < $1.addressIndex }
+            return (name, sorted)
+        }
+    }
+
+    private func addressListCard(
+        name: String,
+        systemImage: String,
+        addresses: [PersistentCoreAddress]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("\(name) Addresses (\(addresses.count))", systemImage: systemImage)
                 .font(.headline)
                 .foregroundColor(.primary)
-            Text("Per-address and private-key details are not yet exposed by the new PlatformWalletManager. They will return once the FFI surface is extended.")
+
+            Divider()
+
+            ForEach(Array(addresses.enumerated()), id: \.element.id) { idx, addr in
+                NavigationLink(destination: CoreAddressDetailView(record: addr)) {
+                    addressRow(addr)
+                }
+                .buttonStyle(.plain)
+                if idx < addresses.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    private func addressRow(_ addr: PersistentCoreAddress) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(addr.address)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.primary)
+                HStack(spacing: 6) {
+                    Text("#\(addr.addressIndex)")
+                    if addr.isUsed { Text("• used") }
+                    if addr.balance > 0 {
+                        Text("• \(formatBalance(addr.balance))")
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    private func emptyAddressesCard() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Addresses", systemImage: "info.circle")
+                .font(.headline)
+                .foregroundColor(.primary)
+            Text("No addresses have been persisted for this account yet. They land here after the wallet is (re)created via `PlatformWalletManager`.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
         .padding()
         .background(Color(.secondarySystemBackground))
         .cornerRadius(12)
+    }
+
+    private func poolIcon(for name: String) -> String {
+        switch name {
+        case "External": return "arrow.down.circle"
+        case "Internal": return "arrow.triangle.2.circlepath"
+        default: return "square.stack"
+        }
     }
 
     // MARK: - Helpers

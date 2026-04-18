@@ -1684,6 +1684,7 @@ dependencies = [
  "bitvec",
  "blake3",
  "blsful",
+ "cbindgen 0.29.2",
  "dashcore-private",
  "dashcore_hashes",
  "ed25519-dalek",
@@ -4932,9 +4933,11 @@ dependencies = [
 name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
+ "bincode",
  "dash-sdk",
  "dashcore",
  "dpp",
+ "hex",
  "key-wallet",
  "lazy_static",
  "once_cell",
