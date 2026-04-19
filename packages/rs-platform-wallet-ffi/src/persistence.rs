@@ -33,6 +33,7 @@ use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, LoadWalletListFn, LoadWalletListFreeFn, PersistAccountFn,
     PersistWalletMetadataFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
 };
+use dpp::address_funds::platform_address::PlatformAddress;
 
 /// C callback vtable for wallet persistence.
 ///
@@ -322,12 +323,33 @@ impl PlatformWalletPersistence for FFIPersister {
             AddressPoolType::AbsentHardened => AddressPoolTypeTagFFI::AbsentHardened,
         } as u8;
 
+        // Whether the address pool belongs to a DIP-17 PlatformPayment
+        // account. The addresses themselves are the same (P2PKH / P2SH
+        // hashes derived from the wallet), but Platform Payment
+        // addresses are rendered as DIP-0018 bech32m (`dash1…` /
+        // `tdash1…`) rather than the base58check Core form.
+        let is_platform_payment =
+            matches!(account_type, AccountType::PlatformPayment { .. });
+
         // Build owned CStrings for every (address, path) pair so they
         // outlive the callback window. `entries` borrows the pointers.
         let mut owned_strings: Vec<CString> = Vec::with_capacity(addresses.len() * 2);
         let mut entries: Vec<CoreAddressEntryFFI> = Vec::with_capacity(addresses.len());
         for info in addresses {
-            let address_c = CString::new(info.address.to_string())
+            // Pick the right display encoding based on whether this
+            // address belongs to a PlatformPayment pool. If the
+            // `PlatformAddress` conversion fails (only supports P2PKH
+            // and P2SH), fall back to the base58check form so the
+            // address is still surfaced to the caller.
+            let rendered_address = if is_platform_payment {
+                let network = *info.address.network();
+                PlatformAddress::try_from(info.address.clone())
+                    .map(|p| p.to_bech32m_string(network))
+                    .unwrap_or_else(|_| info.address.to_string())
+            } else {
+                info.address.to_string()
+            };
+            let address_c = CString::new(rendered_address)
                 .map_err(|e| format!("address contained NUL byte: {}", e))?;
             let path_c = CString::new(info.path.to_string())
                 .map_err(|e| format!("derivation path contained NUL byte: {}", e))?;
