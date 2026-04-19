@@ -38,12 +38,13 @@ struct ReceiveAddressView: View {
     }
 
     /// Lowest-indexed unused address on the primary PlatformPayment
-    /// account. DIP-17 PlatformPayment pools use a single `External`
-    /// pool (tag 0) with a single `AddressPool` owning all addresses,
-    /// so the filter logic is identical to the Core path.
+    /// account. DIP-17 PlatformPayment pools don't split into External
+    /// / Internal like BIP44 — the key-wallet side emits them under
+    /// the `Absent` pool tag (2), so filter on that rather than the
+    /// External tag used by the Core path.
     private var nextPlatformReceiveAddress: PersistentCoreAddress? {
         guard let account = primaryPlatformPaymentAccount else { return nil }
-        return firstUnusedAddress(in: account, poolTag: 0)
+        return firstUnusedAddress(in: account, poolTag: 2)
     }
 
     /// Primary Standard account (BIP44 or BIP32) for the active wallet,
