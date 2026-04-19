@@ -16,7 +16,7 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: HDWallet
 
-    @Query private var persistentWallets: [PersistentWallet]
+    @Query private var bip44Accounts: [PersistentAccount]
 
     @State private var selectedTab: ReceiveAddressTab = .core
     @State private var copiedToClipboard = false
@@ -24,21 +24,31 @@ struct ReceiveAddressView: View {
     init(wallet: HDWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        _persistentWallets = Query(
-            filter: #Predicate<PersistentWallet> { $0.walletId == walletId }
+        // Primary BIP44 Standard account:
+        //   accountType == 0  (AccountTypeTagFFI::Standard)
+        //   accountIndex == 0 (first account)
+        //   standardTag == 0  (BIP44)
+        // Direct @Query over PersistentAccount is cheaper and more
+        // robust than walking `PersistentWallet.accounts`, which can
+        // lag on inverse-relationship updates across SwiftData
+        // contexts.
+        _bip44Accounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet?.walletId == walletId
+                    && $0.accountType == 0
+                    && $0.accountIndex == 0
+                    && $0.standardTag == 0
+            }
         )
     }
 
     /// Lowest-indexed unused external address on the primary BIP44
-    /// Standard account. `PersistentCoreAddress` rows are populated by
-    /// the Rust `on_persist_account_addresses_fn` callback at wallet
-    /// creation (initial gap-limit fill), so they're available without
-    /// any runtime FFI hop.
+    /// account. `PersistentCoreAddress` rows are populated by the Rust
+    /// `on_persist_account_addresses_fn` callback at wallet creation
+    /// (initial gap-limit fill), so they're available without a
+    /// runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {
-        guard let persistent = persistentWallets.first else { return nil }
-        guard let account = persistent.accounts.first(where: {
-            $0.accountType == 0 && $0.standardTag == 0 && $0.accountIndex == 0
-        }) else { return nil }
+        guard let account = bip44Accounts.first else { return nil }
         return account.coreAddresses
             .filter { $0.poolTypeTag == 0 && !$0.isUsed }
             .min(by: { $0.addressIndex < $1.addressIndex })
