@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
+import LocalAuthentication
 
 struct WalletDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
@@ -176,6 +177,10 @@ struct WalletInfoView: View {
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
 
+    // "View Seed Phrase" flow.
+    @State private var isAuthorizingSeedPhrase = false
+    @State private var revealedMnemonic: String?
+
     // Account counts come from SwiftData now.
     @Query private var accounts: [PersistentAccount]
 
@@ -331,6 +336,27 @@ struct WalletInfoView: View {
                     }
                 }
 
+                // View Seed Phrase Section — above Delete so the
+                // destructive action stays at the bottom.
+                Section {
+                    Button(action: {
+                        Task { await authorizeAndRevealMnemonic() }
+                    }) {
+                        HStack {
+                            Spacer()
+                            if isAuthorizingSeedPhrase {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                            } else {
+                                Label("View Seed Phrase", systemImage: "eye")
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(isAuthorizingSeedPhrase)
+                }
+
                 // Delete Wallet Section
                 Section {
                     Button(action: {
@@ -384,6 +410,58 @@ struct WalletInfoView: View {
             } message: {
                 Text("Are you sure you want to delete this wallet? This action cannot be undone and you will lose access to all funds unless you have backed up your recovery phrase.")
             }
+            .sheet(
+                isPresented: Binding(
+                    get: { revealedMnemonic != nil },
+                    set: { if !$0 { revealedMnemonic = nil } }
+                )
+            ) {
+                if let phrase = revealedMnemonic {
+                    SeedPhraseRevealSheet(mnemonic: phrase)
+                }
+            }
+        }
+    }
+
+    /// Prompt the user via biometric / passcode, then pull the
+    /// wallet's mnemonic out of the keychain for display. On failure
+    /// surfaces the error via `errorMessage`/`showError`.
+    @MainActor
+    private func authorizeAndRevealMnemonic() async {
+        guard !isAuthorizingSeedPhrase else { return }
+        isAuthorizingSeedPhrase = true
+        defer { isAuthorizingSeedPhrase = false }
+
+        let context = LAContext()
+        context.localizedCancelTitle = "Cancel"
+        var policyError: NSError?
+        guard context.canEvaluatePolicy(
+            .deviceOwnerAuthentication,
+            error: &policyError
+        ) else {
+            errorMessage = "Authentication is unavailable on this device: "
+                + (policyError?.localizedDescription ?? "unknown")
+            showError = true
+            return
+        }
+
+        do {
+            let authorized = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Reveal your wallet's recovery phrase."
+            )
+            guard authorized else { return }
+        } catch {
+            errorMessage = "Authorization failed: \(error.localizedDescription)"
+            showError = true
+            return
+        }
+
+        do {
+            revealedMnemonic = try WalletStorage().retrieveMnemonic(for: wallet.walletId)
+        } catch {
+            errorMessage = "This wallet's recovery phrase isn't stored on this device."
+            showError = true
         }
     }
 
@@ -594,5 +672,82 @@ private struct WalletBalanceRow: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+}
+
+// MARK: - Seed Phrase Reveal Sheet
+
+/// Read-only reveal of the mnemonic, gated by biometric auth on the
+/// caller side. Renders the 12-word phrase in a numbered grid with a
+/// copy-to-clipboard convenience and a warning banner.
+private struct SeedPhraseRevealSheet: View {
+    let mnemonic: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+
+    private var words: [String] {
+        mnemonic.split(separator: " ").map(String.init)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Label(
+                        "Never share this phrase. Anyone who sees it can spend your funds.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red)
+                    .cornerRadius(10)
+
+                    let columns = [GridItem(.flexible()), GridItem(.flexible())]
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(Array(words.enumerated()), id: \.offset) { idx, word in
+                            HStack(spacing: 8) {
+                                Text(String(format: "%2d.", idx + 1))
+                                    .font(.body.monospacedDigit())
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 28, alignment: .trailing)
+                                Text(word)
+                                    .font(.body)
+                                    .textSelection(.enabled)
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(8)
+                        }
+                    }
+
+                    Button {
+                        UIPasteboard.general.string = mnemonic
+                        copied = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            copied = false
+                        }
+                    } label: {
+                        Label(
+                            copied ? "Copied!" : "Copy to Clipboard",
+                            systemImage: copied ? "checkmark" : "doc.on.doc"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
+            }
+            .navigationTitle("Recovery Phrase")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
