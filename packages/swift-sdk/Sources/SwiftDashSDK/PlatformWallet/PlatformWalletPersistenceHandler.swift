@@ -547,7 +547,13 @@ public class PlatformWalletPersistenceHandler {
         )
         let existing = (try? backgroundContext.fetch(descriptor)) ?? []
         let match = existing.first { acc in
-            acc.registrationIndex == registrationIndex
+            // `standardTag` splits Standard accounts into BIP44 (0)
+            // and BIP32 (1) variants. Without it, the second emit
+            // (whichever the Rust side serializes last) silently
+            // aliases onto the first row and the BIP32 account is
+            // never persisted as its own record.
+            acc.standardTag == spec.standard_tag
+                && acc.registrationIndex == registrationIndex
                 && acc.keyClass == keyClass
                 && acc.userIdentityId == userIdentityId
                 && acc.friendIdentityId == friendIdentityId
