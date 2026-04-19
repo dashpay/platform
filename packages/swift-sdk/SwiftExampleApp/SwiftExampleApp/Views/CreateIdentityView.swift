@@ -1,0 +1,258 @@
+// CreateIdentityView.swift
+// SwiftExampleApp
+//
+// Stepped UI for spinning up a new Dash Platform identity. The
+// workflow chooses a funding source in two passes:
+//
+//   1. Source Wallet — one of the local HDWallet rows, or
+//      "Create without Wallet" for the advanced path where the caller
+//      supplies a raw asset-lock proof.
+//   2. When a wallet is chosen: either a PersistentAccount on that
+//      wallet (any type — Core pools and Platform Payment both work)
+//      or "Fund from unused Asset Lock".
+//
+// This file is UI-only — the submit button is a stub. Wiring to the
+// actual create-identity FFI comes next.
+
+import SwiftUI
+import SwiftDashSDK
+import SwiftData
+
+struct CreateIdentityView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    /// All locally-persisted wallets. Drives the Source Wallet
+    /// picker along with the synthetic "no wallet" sentinel.
+    @Query(sort: \HDWallet.createdAt) private var wallets: [HDWallet]
+
+    /// All persisted accounts across wallets. Filtered per-selection
+    /// inside `accountOptions(for:)` so switching wallets doesn't
+    /// re-fire a SwiftData query.
+    @Query private var allAccounts: [PersistentAccount]
+
+    // MARK: - Selection state
+
+    /// The source wallet selection. `nil` encodes "pick nothing yet";
+    /// `.walletless` encodes the explicit "Create without Wallet"
+    /// choice that switches step 2 to the raw asset-lock path.
+    @State private var walletSelection: WalletSelection? = nil
+
+    /// Chosen funding source when a wallet is selected.
+    @State private var fundingSelection: FundingSelection? = nil
+
+    /// Raw asset-lock proof text, used only in the walletless path.
+    /// Accepted encoding is base64 or lowercase hex — the submit
+    /// logic (future) will detect + decode.
+    @State private var walletlessProof: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                sourceWalletSection
+                fundingSection
+                if canSubmit {
+                    submitSection
+                }
+            }
+            .navigationTitle("Create Identity")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Sections
+
+    private var sourceWalletSection: some View {
+        Section {
+            Picker("Source Wallet", selection: $walletSelection) {
+                Text("Select…")
+                    .tag(Optional<WalletSelection>.none)
+                ForEach(wallets) { wallet in
+                    Text(walletLabel(for: wallet))
+                        .tag(Optional(WalletSelection.wallet(id: wallet.walletId)))
+                }
+                Divider()
+                Text("Create without Wallet")
+                    .tag(Optional(WalletSelection.walletless))
+            }
+            .onChange(of: walletSelection) { _, _ in
+                // Reset downstream selection whenever the wallet
+                // changes so a stale account / proof can't leak
+                // through.
+                fundingSelection = nil
+                walletlessProof = ""
+            }
+        } header: {
+            Text("Source Wallet")
+        } footer: {
+            Text(
+                "Pick a wallet to fund the identity from one of its accounts, "
+                + "or Create without Wallet to supply a raw asset-lock proof."
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var fundingSection: some View {
+        switch walletSelection {
+        case .none:
+            EmptyView()
+        case .walletless:
+            walletlessSection
+        case .wallet(let walletId):
+            walletAccountSection(for: walletId)
+        }
+    }
+
+    @ViewBuilder
+    private func walletAccountSection(for walletId: Data) -> some View {
+        let options = accountOptions(for: walletId)
+        Section {
+            Picker("Funding Source", selection: $fundingSelection) {
+                Text("Select…")
+                    .tag(Optional<FundingSelection>.none)
+                ForEach(options) { option in
+                    Text(option.label)
+                        .tag(Optional(FundingSelection.account(id: option.persistentId)))
+                }
+                Divider()
+                Text("Fund from unused Asset Lock")
+                    .tag(Optional(FundingSelection.unusedAssetLock))
+            }
+        } header: {
+            Text("Funding Source")
+        } footer: {
+            Text(
+                "Any account on the selected wallet can fund the identity — "
+                + "Core or Platform Payment. \"Fund from unused Asset Lock\" "
+                + "picks an existing tracked asset lock instead."
+            )
+        }
+    }
+
+    private var walletlessSection: some View {
+        Section {
+            TextEditor(text: $walletlessProof)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(minHeight: 120)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+        } header: {
+            Text("Asset Lock Proof")
+        } footer: {
+            Text("Paste the raw proof as base64 or hex.")
+        }
+    }
+
+    private var submitSection: some View {
+        Section {
+            Button {
+                // TODO(platform-wallet): wire up to the actual
+                // create-identity FFI path. For now the button is
+                // a stub so we can iterate the UI.
+            } label: {
+                Text("Create Identity")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canSubmit)
+        }
+    }
+
+    // MARK: - Derived state
+
+    /// Whether the current selection is complete enough that the
+    /// submit button should light up. Non-empty hex / base64 content
+    /// in the walletless path, or a concrete account + funding choice
+    /// otherwise.
+    private var canSubmit: Bool {
+        switch (walletSelection, fundingSelection) {
+        case (.walletless, _):
+            return !walletlessProof
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+        case (.wallet, .some):
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func walletLabel(for wallet: HDWallet) -> String {
+        let trimmed = wallet.label.trimmingCharacters(in: .whitespaces)
+        let base = trimmed.isEmpty ? shortWalletId(wallet.walletId) : trimmed
+        return "\(base) (\(wallet.network.rawValue))"
+    }
+
+    private func shortWalletId(_ walletId: Data) -> String {
+        let prefix = walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
+        return prefix.isEmpty ? "Wallet" : "Wallet \(prefix)…"
+    }
+
+    /// Turn a wallet's PersistentAccounts into the funding-picker
+    /// rows. Uses the same grouped ordering as `AccountListView`
+    /// (BIP44 → PlatformPayment → BIP32 → CoinJoin → the rest) so the
+    /// picker matches the wallet detail screen.
+    private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
+        allAccounts
+            .filter { $0.wallet?.walletId == walletId }
+            .sorted { lhs, rhs in
+                let lhsKey = CreateIdentityView.sortKey(for: lhs)
+                let rhsKey = CreateIdentityView.sortKey(for: rhs)
+                return lhsKey < rhsKey
+            }
+            .map { account in
+                FundingAccountOption(
+                    persistentId: account.persistentModelID,
+                    label: Self.fundingLabel(for: account)
+                )
+            }
+    }
+
+    private static func fundingLabel(for account: PersistentAccount) -> String {
+        // Indexed account types get a trailing "#N"; singleton types
+        // (identity registration, provider keys, etc.) just use the
+        // raw name emitted by the FFI.
+        switch account.accountType {
+        case 0, 1, 14: return "\(account.accountTypeName) #\(account.accountIndex)"
+        default: return account.accountTypeName
+        }
+    }
+
+    private static func sortKey(
+        for account: PersistentAccount
+    ) -> (UInt8, UInt32, UInt8, UInt32) {
+        let group: UInt8
+        switch account.accountType {
+        case 0: group = account.standardTag == 0 ? 0 : 2
+        case 14: group = 1
+        case 1: group = 3
+        default: group = 4
+        }
+        return (group, account.accountType, account.standardTag, account.accountIndex)
+    }
+}
+
+// MARK: - Selection types
+
+private enum WalletSelection: Hashable {
+    case wallet(id: Data)
+    case walletless
+}
+
+private enum FundingSelection: Hashable {
+    case account(id: PersistentIdentifier)
+    case unusedAssetLock
+}
+
+private struct FundingAccountOption: Identifiable {
+    let persistentId: PersistentIdentifier
+    let label: String
+    var id: PersistentIdentifier { persistentId }
+}

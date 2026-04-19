@@ -15,6 +15,7 @@ struct WalletsContentView: View {
     @Query private var wallets: [HDWallet]
     @State private var showingCreateWallet = false
     @State private var showingLoadIdentity = false
+    @State private var showingCreateIdentity = false
 
     var body: some View {
         List {
@@ -72,14 +73,25 @@ struct WalletsContentView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
 
-                        Button {
-                            showingLoadIdentity = true
-                        } label: {
-                            Label("Load Identity", systemImage: "square.and.arrow.down")
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                        HStack(spacing: 12) {
+                            Button {
+                                showingCreateIdentity = true
+                            } label: {
+                                Label("Create Identity", systemImage: "person.crop.circle.badge.plus")
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Button {
+                                showingLoadIdentity = true
+                            } label: {
+                                Label("Load Identity", systemImage: "square.and.arrow.down")
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.borderedProminent)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
@@ -102,6 +114,12 @@ struct WalletsContentView: View {
                     }
 
                     Button {
+                        showingCreateIdentity = true
+                    } label: {
+                        Label("Create Identity", systemImage: "person.crop.circle.badge.plus")
+                    }
+
+                    Button {
                         showingLoadIdentity = true
                     } label: {
                         Label("Load Identity", systemImage: "square.and.arrow.down")
@@ -118,6 +136,10 @@ struct WalletsContentView: View {
         }
         .sheet(isPresented: $showingLoadIdentity) {
             LoadIdentityView()
+                .environmentObject(platformState)
+        }
+        .sheet(isPresented: $showingCreateIdentity) {
+            CreateIdentityView()
                 .environmentObject(platformState)
         }
         .refreshable {
