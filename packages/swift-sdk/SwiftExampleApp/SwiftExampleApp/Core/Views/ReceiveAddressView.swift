@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 import CoreImage.CIFilterBuiltins
 
@@ -15,16 +16,39 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: HDWallet
 
+    @Query private var persistentWallets: [PersistentWallet]
+
     @State private var selectedTab: ReceiveAddressTab = .core
     @State private var copiedToClipboard = false
+
+    init(wallet: HDWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _persistentWallets = Query(
+            filter: #Predicate<PersistentWallet> { $0.walletId == walletId }
+        )
+    }
+
+    /// Lowest-indexed unused external address on the primary BIP44
+    /// Standard account. `PersistentCoreAddress` rows are populated by
+    /// the Rust `on_persist_account_addresses_fn` callback at wallet
+    /// creation (initial gap-limit fill), so they're available without
+    /// any runtime FFI hop.
+    private var nextCoreReceiveAddress: PersistentCoreAddress? {
+        guard let persistent = persistentWallets.first else { return nil }
+        guard let account = persistent.accounts.first(where: {
+            $0.accountType == 0 && $0.standardTag == 0 && $0.accountIndex == 0
+        }) else { return nil }
+        return account.coreAddresses
+            .filter { $0.poolTypeTag == 0 && !$0.isUsed }
+            .min(by: { $0.addressIndex < $1.addressIndex })
+    }
 
     private var currentAddress: String {
         switch selectedTab {
         case .core:
-            // TODO(platform-wallet): Expose a receive-address API on
-            // PlatformWalletManager / ManagedPlatformWallet. For now, show a
-            // placeholder until address derivation is bridged back.
-            return "Receive-address derivation pending FFI exposure."
+            return nextCoreReceiveAddress?.address
+                ?? "No unused receive address available yet — sync the wallet to extend the pool."
         case .platform:
             return "Platform receive addresses are not yet exposed via PlatformWalletManager."
         case .shielded:
@@ -34,7 +58,9 @@ struct ReceiveAddressView: View {
 
     private var hasValidAddress: Bool {
         switch selectedTab {
-        case .core, .platform:
+        case .core:
+            return nextCoreReceiveAddress != nil
+        case .platform:
             return false
         case .shielded:
             return shieldedService.orchardDisplayAddress != nil
