@@ -33,7 +33,17 @@ struct ReceiveAddressView: View {
     /// (initial gap-limit fill), so they're available without a
     /// runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {
-        primaryBip44Account.flatMap(firstUnusedExternalAddress(in:))
+        guard let account = primaryBip44Account else { return nil }
+        return firstUnusedAddress(in: account, poolTag: 0)
+    }
+
+    /// Lowest-indexed unused address on the primary PlatformPayment
+    /// account. DIP-17 PlatformPayment pools use a single `External`
+    /// pool (tag 0) with a single `AddressPool` owning all addresses,
+    /// so the filter logic is identical to the Core path.
+    private var nextPlatformReceiveAddress: PersistentCoreAddress? {
+        guard let account = primaryPlatformPaymentAccount else { return nil }
+        return firstUnusedAddress(in: account, poolTag: 0)
     }
 
     /// Primary Standard account (BIP44 or BIP32) for the active wallet,
@@ -42,24 +52,35 @@ struct ReceiveAddressView: View {
     /// accountIndex=0)` account, so the uniqueness already follows
     /// from the two upstream fields.
     private var primaryBip44Account: PersistentAccount? {
+        findAccount(accountType: 0, accountIndex: 0)
+    }
+
+    /// Primary PlatformPayment account (type tag 14, account 0) for
+    /// the active wallet.
+    private var primaryPlatformPaymentAccount: PersistentAccount? {
+        findAccount(accountType: 14, accountIndex: 0)
+    }
+
+    private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {
         let walletId = wallet.walletId
         for account in allAccounts {
             if account.wallet?.walletId != walletId { continue }
-            if account.accountType != 0 { continue }
-            if account.accountIndex != 0 { continue }
+            if account.accountType != accountType { continue }
+            if account.accountIndex != accountIndex { continue }
             return account
         }
         return nil
     }
 
-    /// Lowest-indexed unused external address within the given
-    /// account, or nil if the external pool has no unused slots.
-    private func firstUnusedExternalAddress(
-        in account: PersistentAccount
+    /// Lowest-indexed unused address in the given pool on the given
+    /// account, or nil if the pool has no unused slots.
+    private func firstUnusedAddress(
+        in account: PersistentAccount,
+        poolTag: UInt8
     ) -> PersistentCoreAddress? {
         var best: PersistentCoreAddress? = nil
         for addr in account.coreAddresses {
-            if addr.poolTypeTag != 0 { continue }
+            if addr.poolTypeTag != poolTag { continue }
             if addr.isUsed { continue }
             if let current = best, current.addressIndex <= addr.addressIndex {
                 continue
@@ -75,7 +96,8 @@ struct ReceiveAddressView: View {
             return nextCoreReceiveAddress?.address
                 ?? "No unused receive address available yet — sync the wallet to extend the pool."
         case .platform:
-            return "Platform receive addresses are not yet exposed via PlatformWalletManager."
+            return nextPlatformReceiveAddress?.address
+                ?? "No Platform receive address available yet — create a wallet after enabling Platform address persistence."
         case .shielded:
             return shieldedService.orchardDisplayAddress ?? "Not available"
         }
@@ -86,7 +108,7 @@ struct ReceiveAddressView: View {
         case .core:
             return nextCoreReceiveAddress != nil
         case .platform:
-            return false
+            return nextPlatformReceiveAddress != nil
         case .shielded:
             return shieldedService.orchardDisplayAddress != nil
         }
