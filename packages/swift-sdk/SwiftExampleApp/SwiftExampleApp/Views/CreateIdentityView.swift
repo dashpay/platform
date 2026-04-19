@@ -156,7 +156,7 @@ struct CreateIdentityView: View {
     private func fundingOptionLabel(_ option: FundingAccountOption) -> Text {
         var attr = AttributedString("\(option.label) — \(option.balanceText)")
         if !option.hasBalance {
-            attr.foregroundColor = .secondary
+            attr.foregroundColor = Color.secondary
         }
         return Text(attr)
     }
@@ -332,5 +332,7 @@ private struct FundingAccountOption: Identifiable {
     /// `true` if the account currently holds spendable funds. Drives
     /// the greyed-out picker row for zero-balance sources.
     let hasBalance: Bool
+    /// Human-readable balance suffix (`"0.01 DASH"` / `"empty"`).
+    let balanceText: String
     var id: PersistentIdentifier { persistentId }
 }
