@@ -65,9 +65,17 @@ public final class PersistentAccount {
     public var utxos: [PersistentUtxo]
 
     /// Addresses from this account's address pools (external +
-    /// internal, or a single Absent pool for degenerate types).
+    /// internal, or a single Absent pool for degenerate types). Holds
+    /// Core-chain (base58check) addresses only — PlatformPayment
+    /// accounts keep their addresses in `platformAddresses`.
     @Relationship(deleteRule: .cascade, inverse: \PersistentCoreAddress.account)
     public var coreAddresses: [PersistentCoreAddress]
+
+    /// DIP-17 Platform Payment addresses for this account, keyed on
+    /// DIP-0018 bech32m encoding. Populated only when
+    /// `accountType == 14` (PlatformPayment).
+    @Relationship(deleteRule: .cascade, inverse: \PersistentPlatformAddress.account)
+    public var platformAddresses: [PersistentPlatformAddress]
 
     public init(
         accountType: UInt32,
@@ -94,5 +102,6 @@ public final class PersistentAccount {
         self.transactions = []
         self.utxos = []
         self.coreAddresses = []
+        self.platformAddresses = []
     }
 }

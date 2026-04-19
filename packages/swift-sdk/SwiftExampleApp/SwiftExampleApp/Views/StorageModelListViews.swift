@@ -248,29 +248,6 @@ struct SyncStateStorageListView: View {
     }
 }
 
-// MARK: - PersistentAddressBalance
-
-struct AddressBalanceStorageListView: View {
-    @Query(sort: \PersistentAddressBalance.lastUpdated, order: .reverse)
-    private var records: [PersistentAddressBalance]
-
-    var body: some View {
-        List(records) { record in
-            NavigationLink(destination: AddressBalanceStorageDetailView(record: record)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.addressHash.map { String(format: "%02x", $0) }.joined())
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1).truncationMode(.middle)
-                    Text("\(record.balance) credits")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-        }
-        .navigationTitle("Address Balances (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "creditcard") } }
-    }
-}
-
 // MARK: - PersistentWallet
 
 struct WalletStorageListView: View {
@@ -408,16 +385,13 @@ struct TransactionStorageListView: View {
     }
 }
 
-// MARK: - PersistentCoreAddress (Core filter)
+// MARK: - PersistentCoreAddress
 
 struct CoreAddressStorageListView: View {
-    /// Everything except PlatformPayment (account type 14). Those
-    /// surface under a dedicated "Platform Addresses" section so the
-    /// two layers stay visually distinct.
-    @Query(
-        filter: #Predicate<PersistentCoreAddress> { $0.account?.accountType != 14 },
-        sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)]
-    )
+    /// Every Core-chain address record. PlatformPayment (DIP-17)
+    /// addresses now live in their own `PersistentPlatformAddress`
+    /// store, so no filtering is needed here.
+    @Query(sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)])
     private var records: [PersistentCoreAddress]
 
     /// Composite key identifying one (wallet, account) bucket. All
@@ -545,17 +519,15 @@ struct CoreAddressStorageListView: View {
     }
 }
 
-// MARK: - PersistentCoreAddress (Platform filter)
+// MARK: - PersistentPlatformAddress
 
-/// List view for DIP-17 PlatformPayment addresses. Reuses the same
-/// grouping + row UI as `CoreAddressStorageListView` but filters to
-/// rows whose parent account is a PlatformPayment account.
+/// List view for DIP-17 PlatformPayment addresses. Queries the
+/// dedicated `PersistentPlatformAddress` store (populated by the
+/// address-emit path for type-14 accounts, refreshed by BLAST
+/// sync).
 struct PlatformAddressStorageListView: View {
-    @Query(
-        filter: #Predicate<PersistentCoreAddress> { $0.account?.accountType == 14 },
-        sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)]
-    )
-    private var records: [PersistentCoreAddress]
+    @Query(sort: [SortDescriptor(\PersistentPlatformAddress.addressIndex)])
+    private var records: [PersistentPlatformAddress]
 
     private struct GroupKey: Hashable, Comparable {
         let walletId: Data
@@ -573,14 +545,14 @@ struct PlatformAddressStorageListView: View {
         }
     }
 
-    private var groups: [(GroupKey, [PersistentCoreAddress])] {
+    private var groups: [(GroupKey, [PersistentPlatformAddress])] {
         let grouped = Dictionary(grouping: records) { record -> GroupKey in
             let account = record.account
             let wallet = account?.wallet
             return GroupKey(
-                walletId: wallet?.walletId ?? Data(),
-                walletLabel: walletLabel(for: wallet),
-                accountIndex: account?.accountIndex ?? 0,
+                walletId: wallet?.walletId ?? record.walletId,
+                walletLabel: walletLabel(for: wallet, fallbackId: record.walletId),
+                accountIndex: account?.accountIndex ?? record.accountIndex,
                 accountLabel: account?.accountTypeName ?? "Platform Payment",
                 keyClass: account?.keyClass ?? 0
             )
@@ -596,7 +568,7 @@ struct PlatformAddressStorageListView: View {
                 let (key, addresses) = pair
                 Section(header: Text(sectionTitle(for: key))) {
                     ForEach(addresses) { record in
-                        NavigationLink(destination: CoreAddressDetailView(record: record)) {
+                        NavigationLink(destination: PlatformAddressDetailView(record: record)) {
                             addressRow(record)
                         }
                     }
@@ -625,14 +597,17 @@ struct PlatformAddressStorageListView: View {
         return title
     }
 
-    private func walletLabel(for wallet: PersistentWallet?) -> String {
-        guard let wallet = wallet else { return "Unknown Wallet" }
-        if let name = wallet.name, !name.isEmpty { return name }
-        let prefix = wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
-        return "Wallet \(prefix)…"
+    private func walletLabel(for wallet: PersistentWallet?, fallbackId: Data) -> String {
+        if let wallet = wallet {
+            if let name = wallet.name, !name.isEmpty { return name }
+            let prefix = wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
+            return "Wallet \(prefix)…"
+        }
+        let prefix = fallbackId.prefix(4).map { String(format: "%02x", $0) }.joined()
+        return prefix.isEmpty ? "Unknown Wallet" : "Wallet \(prefix)…"
     }
 
-    private func addressRow(_ record: PersistentCoreAddress) -> some View {
+    private func addressRow(_ record: PersistentPlatformAddress) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(record.address)
                 .font(.system(.caption, design: .monospaced))

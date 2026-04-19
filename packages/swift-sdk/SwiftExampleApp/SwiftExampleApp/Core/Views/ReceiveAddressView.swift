@@ -23,6 +23,9 @@ struct ReceiveAddressView: View {
     /// Swift keeps compile times reasonable at negligible runtime
     /// cost (tens of accounts per store, not thousands).
     @Query private var allAccounts: [PersistentAccount]
+    /// All PlatformPayment (DIP-17) addresses. Filtered down to this
+    /// wallet in `nextPlatformReceiveAddress`.
+    @Query private var platformAddresses: [PersistentPlatformAddress]
 
     @State private var selectedTab: ReceiveAddressTab = .core
     @State private var copiedToClipboard = false
@@ -38,13 +41,24 @@ struct ReceiveAddressView: View {
     }
 
     /// Lowest-indexed unused address on the primary PlatformPayment
-    /// account. DIP-17 PlatformPayment pools don't split into External
-    /// / Internal like BIP44 — the key-wallet side emits them under
-    /// the `Absent` pool tag (2), so filter on that rather than the
-    /// External tag used by the Core path.
-    private var nextPlatformReceiveAddress: PersistentCoreAddress? {
-        guard let account = primaryPlatformPaymentAccount else { return nil }
-        return firstUnusedAddress(in: account, poolTag: 2)
+    /// account. Queries the dedicated `PersistentPlatformAddress`
+    /// store directly (address-emit populates it for type-14
+    /// accounts). The previous implementation walked
+    /// `PersistentAccount.coreAddresses` with a pool-tag filter; that
+    /// is unnecessary now that Platform addresses have their own
+    /// model.
+    private var nextPlatformReceiveAddress: PersistentPlatformAddress? {
+        let walletId = wallet.walletId
+        var best: PersistentPlatformAddress? = nil
+        for addr in platformAddresses {
+            if addr.walletId != walletId { continue }
+            if addr.isUsed { continue }
+            if let current = best, current.addressIndex <= addr.addressIndex {
+                continue
+            }
+            best = addr
+        }
+        return best
     }
 
     /// Primary Standard account (BIP44 or BIP32) for the active wallet,
@@ -54,12 +68,6 @@ struct ReceiveAddressView: View {
     /// from the two upstream fields.
     private var primaryBip44Account: PersistentAccount? {
         findAccount(accountType: 0, accountIndex: 0)
-    }
-
-    /// Primary PlatformPayment account (type tag 14, account 0) for
-    /// the active wallet.
-    private var primaryPlatformPaymentAccount: PersistentAccount? {
-        findAccount(accountType: 14, accountIndex: 0)
     }
 
     private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {

@@ -19,93 +19,51 @@ public class PlatformWalletPersistenceHandler {
         migrateLegacySyncStateRecordsToNetworkScope()
     }
 
-    // MARK: - Address Balances
+    // MARK: - Platform Address Balances
 
-    /// Upsert address balances into SwiftData.
+    /// Apply an incremental BLAST balance changeset to SwiftData.
     ///
-    /// For every incoming BLAST entry we also mirror the balance onto
-    /// the matching `PersistentCoreAddress` row — otherwise the Storage
-    /// Explorer / address detail views keep showing `Balance: 0` even
-    /// after funds land, because that detail view reads the
-    /// HD-derived address record (keyed by `account + addressIndex`)
-    /// rather than the BLAST balance cache (keyed by `addressHash`).
-    /// DIP-17 PlatformPayment addresses are the only pool fed by this
-    /// path today (`accountType == 14`).
+    /// BLAST sync identifies each address by its 20-byte
+    /// `addressHash`. `PersistentPlatformAddress` rows are seeded by
+    /// the address-emit path (`persistAccountAddresses` for
+    /// PlatformPayment accounts), which knows the full DIP-0018
+    /// bech32m form plus derivation metadata. This callback only
+    /// refreshes the volatile fields (balance, nonce, `isUsed`). If
+    /// BLAST reports balances for an address we never emitted (e.g.
+    /// cache wipe between runs), we skip it — the next
+    /// address-emit pass will bring the row back and the next sync
+    /// will fill in the balance.
     func persistAddressBalances(
         walletId: Data,
         entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)]
     ) {
-        for (addressType, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
-            let descriptor = FetchDescriptor<PersistentAddressBalance>(
+        for (_, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
+            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
                 predicate: #Predicate { $0.addressHash == addressHash }
             )
-
-            if let existing = try? backgroundContext.fetch(descriptor).first {
-                existing.accountIndex = accountIndex
-                existing.addressIndex = addressIndex
-                existing.update(balance: balance, nonce: nonce)
-            } else {
-                let record = PersistentAddressBalance(
-                    addressType: addressType,
-                    addressHash: addressHash,
-                    balance: balance,
-                    nonce: nonce,
-                    accountIndex: accountIndex,
-                    addressIndex: addressIndex,
-                    walletId: walletId
-                )
-                backgroundContext.insert(record)
+            guard let existing = try? backgroundContext.fetch(descriptor).first else {
+                continue
             }
-
-            mirrorBalanceToCoreAddress(
-                walletId: walletId,
-                accountIndex: accountIndex,
-                addressIndex: addressIndex,
-                balance: balance,
-                nonce: nonce
-            )
+            existing.accountIndex = accountIndex
+            existing.addressIndex = addressIndex
+            existing.balance = balance
+            existing.nonce = nonce
+            if balance > 0 || nonce > 0 {
+                existing.isUsed = true
+            }
+            existing.lastUpdated = Date()
         }
 
         try? backgroundContext.save()
     }
 
-    /// Find the matching `PersistentCoreAddress` for a DIP-17
-    /// PlatformPayment entry (wallet + account 14/N + derivation
-    /// index) and mirror the balance / used flag onto it.
-    /// No-op if the address record hasn't been emitted yet.
-    private func mirrorBalanceToCoreAddress(
-        walletId: Data,
-        accountIndex: UInt32,
-        addressIndex: UInt32,
-        balance: UInt64,
-        nonce: UInt32
-    ) {
-        let platformPaymentType: UInt32 = 14
-        let descriptor = FetchDescriptor<PersistentCoreAddress>(
-            predicate: #Predicate { addr in
-                addr.addressIndex == addressIndex
-                    && addr.account?.accountType == platformPaymentType
-                    && addr.account?.accountIndex == accountIndex
-                    && addr.account?.wallet?.walletId == walletId
-            }
-        )
-        guard let row = try? backgroundContext.fetch(descriptor).first else {
-            return
-        }
-        let wasUsed = row.isUsed
-        row.balance = balance
-        if balance > 0 || nonce > 0 {
-            row.isUsed = true
-        }
-        if row.balance != balance || row.isUsed != wasUsed {
-            row.lastUpdated = Date()
-        }
-    }
-
-    /// Load all cached address balances for a wallet.
+    /// Load all cached platform-address balances for a wallet. Tuple
+    /// shape matches the Rust-side `AddressBalanceEntryFFI` layout so
+    /// the load-wallet-list path can re-seed the provider on startup
+    /// without a full rescan.
     public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32)] {
-        let descriptor = FetchDescriptor<PersistentAddressBalance>(
-            predicate: PersistentAddressBalance.predicate(walletId: walletId)
+        let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+            predicate: PersistentPlatformAddress.predicate(walletId: walletId)
         )
 
         guard let records = try? backgroundContext.fetch(descriptor) else {
@@ -464,6 +422,19 @@ public class PlatformWalletPersistenceHandler {
             return
         }
 
+        // DIP-17 PlatformPayment pool addresses land in
+        // `PersistentPlatformAddress` so they don't share a model with
+        // Core-chain (base58check) addresses.
+        let isPlatformPayment = accountKey.typeTag == 14
+        if isPlatformPayment {
+            persistPlatformPaymentAddresses(
+                account: account,
+                walletId: walletId,
+                entries: entries
+            )
+            return
+        }
+
         for entry in entries {
             let address = entry.address
             let existingDescriptor = FetchDescriptor<PersistentCoreAddress>(
@@ -497,6 +468,96 @@ public class PlatformWalletPersistenceHandler {
         }
 
         try? backgroundContext.save()
+    }
+
+    /// Upsert PlatformPayment entries into `PersistentPlatformAddress`.
+    /// Called only when the address-emit target account is a DIP-17
+    /// PlatformPayment account (type tag 14). The Rust side emits the
+    /// DIP-0018 bech32m form in `entry.address`; we derive the
+    /// 20-byte hash + address type here so BLAST balance updates
+    /// (which arrive with `addressHash` only) can upsert the same row.
+    private func persistPlatformPaymentAddresses(
+        account: PersistentAccount,
+        walletId: Data,
+        entries: [CoreAddressEntrySnapshot]
+    ) {
+        for entry in entries {
+            guard let (addressType, addressHash) =
+                platformAddressComponents(fromBech32m: entry.address)
+            else {
+                continue
+            }
+            let address = entry.address
+            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                predicate: #Predicate { $0.address == address }
+            )
+            let row: PersistentPlatformAddress
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                row = existing
+                row.addressType = addressType
+                row.addressHash = addressHash
+            } else {
+                row = PersistentPlatformAddress(
+                    address: entry.address,
+                    addressType: addressType,
+                    addressHash: addressHash,
+                    publicKey: entry.publicKey,
+                    accountIndex: account.accountIndex,
+                    addressIndex: entry.addressIndex,
+                    derivationPath: entry.derivationPath,
+                    isUsed: entry.isUsed,
+                    balance: entry.balance,
+                    nonce: 0,
+                    walletId: walletId
+                )
+                backgroundContext.insert(row)
+            }
+            // Address-emit is authoritative for derivation metadata
+            // and the used flag on first creation; we preserve any
+            // later BLAST-driven balance/nonce updates by only
+            // lowering `isUsed` if the emit says so explicitly and
+            // we don't already have funds showing.
+            row.publicKey = entry.publicKey
+            row.accountIndex = account.accountIndex
+            row.addressIndex = entry.addressIndex
+            row.derivationPath = entry.derivationPath
+            if entry.isUsed {
+                row.isUsed = true
+            } else if row.balance == 0 && row.nonce == 0 {
+                row.isUsed = false
+            }
+            if row.balance == 0 && entry.balance != 0 {
+                row.balance = entry.balance
+            }
+            row.account = account
+            row.walletId = walletId
+            row.lastUpdated = Date()
+        }
+
+        try? backgroundContext.save()
+    }
+
+    /// Split a DIP-0018 bech32m platform address back into
+    /// `(addressType, 20-byte hash)`. Returns nil on any decode
+    /// failure or unexpected type byte. Type bytes follow
+    /// DIP-0018: `0xb0` → P2PKH (stored as 0), `0x80` → P2SH
+    /// (stored as 1).
+    private func platformAddressComponents(
+        fromBech32m address: String
+    ) -> (addressType: UInt8, hash: Data)? {
+        guard let decoded = Bech32m.decode(address.lowercased()),
+              decoded.hrp == "dash" || decoded.hrp == "tdash",
+              decoded.data.count == 21
+        else {
+            return nil
+        }
+        let typeByte = decoded.data[0]
+        let hash = decoded.data.subdata(in: 1..<21)
+        switch typeByte {
+        case 0xb0: return (0, hash)
+        case 0x80: return (1, hash)
+        default: return nil
+        }
     }
 
     /// Lookup key mirroring the identifying subset of

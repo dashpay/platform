@@ -33,16 +33,30 @@ struct AccountDetailView: View {
 
                     poolSummaryCard()
 
-                    ForEach(addressSections(), id: \.0) { name, addresses in
-                        addressListCard(
-                            name: name,
-                            systemImage: poolIcon(for: name),
-                            addresses: addresses
-                        )
-                    }
+                    if account.accountType == 14 {
+                        // PlatformPayment accounts keep their address
+                        // list in `platformAddresses`, with no
+                        // external/internal pool split.
+                        let sorted = account.platformAddresses.sorted {
+                            $0.addressIndex < $1.addressIndex
+                        }
+                        if sorted.isEmpty {
+                            emptyAddressesCard()
+                        } else {
+                            platformAddressListCard(addresses: sorted)
+                        }
+                    } else {
+                        ForEach(addressSections(), id: \.0) { name, addresses in
+                            addressListCard(
+                                name: name,
+                                systemImage: poolIcon(for: name),
+                                addresses: addresses
+                            )
+                        }
 
-                    if account.coreAddresses.isEmpty {
-                        emptyAddressesCard()
+                        if account.coreAddresses.isEmpty {
+                            emptyAddressesCard()
+                        }
                     }
                 }
                 .padding()
@@ -275,6 +289,66 @@ struct AccountDetailView: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    /// DIP-17 Platform Payment address list — single section (no
+    /// external/internal split). Rows link to `PlatformAddressDetailView`
+    /// so all the platform-specific fields (bech32m string, nonce,
+    /// hash, etc.) are reachable from here.
+    private func platformAddressListCard(
+        addresses: [PersistentPlatformAddress]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(
+                "Platform Addresses (\(addresses.count))",
+                systemImage: "creditcard"
+            )
+            .font(.headline)
+            .foregroundColor(.primary)
+
+            Divider()
+
+            ForEach(Array(addresses.enumerated()), id: \.element.id) { idx, addr in
+                NavigationLink(destination: PlatformAddressDetailView(record: addr)) {
+                    platformAddressRow(addr)
+                }
+                .buttonStyle(.plain)
+                if idx < addresses.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    private func platformAddressRow(_ addr: PersistentPlatformAddress) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(addr.address)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.primary)
+                HStack(spacing: 6) {
+                    Text("#\(addr.addressIndex)")
+                    if addr.isUsed { Text("• used") }
+                    if addr.balance > 0 {
+                        Text("• \(addr.balance) credits")
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     private func addressRow(_ addr: PersistentCoreAddress) -> some View {

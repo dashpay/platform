@@ -148,16 +148,12 @@ struct StorageExplorerView: View {
         count(PersistentTransaction.self)
         count(PersistentUtxo.self)
         count(PersistentWalletManagerMetadata.self)
-        // PersistentCoreAddress is split into two explorer sections
-        // (Platform vs Core) by the parent account's type tag.
-        let platformType: UInt32 = 14 // AccountTypeTagFFI::PlatformPayment
-        let platformDescriptor = FetchDescriptor<PersistentCoreAddress>(
-            predicate: #Predicate { $0.account?.accountType == platformType }
-        )
-        counts[platformAddressesCountKey] = (try? modelContext.fetchCount(platformDescriptor)) ?? 0
-        let coreDescriptor = FetchDescriptor<PersistentCoreAddress>(
-            predicate: #Predicate { $0.account?.accountType != platformType }
-        )
-        counts[coreAddressesCountKey] = (try? modelContext.fetchCount(coreDescriptor)) ?? 0
+        // Core and Platform address rows live in separate models now
+        // (PersistentCoreAddress vs PersistentPlatformAddress), so
+        // counting them is a plain `fetchCount` per model.
+        counts[platformAddressesCountKey] =
+            (try? modelContext.fetchCount(FetchDescriptor<PersistentPlatformAddress>())) ?? 0
+        counts[coreAddressesCountKey] =
+            (try? modelContext.fetchCount(FetchDescriptor<PersistentCoreAddress>())) ?? 0
     }
 }

@@ -553,7 +553,7 @@ struct BalanceCardView: View {
     /// singleton tied to whichever wallet was most recently
     /// configured, which caused every wallet's balance to show the
     /// last-synced wallet's total.
-    @Query private var addressBalances: [PersistentAddressBalance]
+    @Query private var addressBalances: [PersistentPlatformAddress]
     /// Network-scoped BLAST sync watermark. One row per network —
     /// shared across every wallet on that network — so this query
     /// filters by `network` rather than `walletId`. Used only to
@@ -566,7 +566,7 @@ struct BalanceCardView: View {
         let networkName = wallet.network.rawValue
         _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
         _addressBalances = Query(
-            filter: #Predicate<PersistentAddressBalance> { $0.walletId == walletId }
+            filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
         )
         _syncStates = Query(
             filter: #Predicate<PersistentSyncState> { $0.network == networkName }

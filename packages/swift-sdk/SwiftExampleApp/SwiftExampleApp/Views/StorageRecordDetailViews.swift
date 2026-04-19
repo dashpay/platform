@@ -413,24 +413,54 @@ struct SyncStateStorageDetailView: View {
     }
 }
 
-// MARK: - PersistentAddressBalance
+// MARK: - PersistentPlatformAddress
 
-struct AddressBalanceStorageDetailView: View {
-    let record: PersistentAddressBalance
+struct PlatformAddressDetailView: View {
+    let record: PersistentPlatformAddress
 
     var body: some View {
         Form {
-            Section("Core") {
-                FieldRow(label: "Address Type", value: record.addressType == 0 ? "P2PKH" : "P2SH")
-                FieldRow(label: "Address Hash", value: hexString(record.addressHash))
+            Section("Address") {
+                FieldRow(label: "Address", value: record.address)
+                FieldRow(
+                    label: "Type",
+                    value: record.addressType == 0 ? "P2PKH" : "P2SH"
+                )
+                FieldRow(label: "Hash", value: hexString(record.addressHash))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+                FieldRow(label: "Index", value: "\(record.addressIndex)")
+                FieldRow(label: "Derivation Path", value: record.derivationPath)
+                FieldRow(label: "Used", value: record.isUsed ? "Yes" : "No")
+            }
+            Section("Public Key") {
+                FieldRow(
+                    label: "Bytes (hex)",
+                    value: record.publicKey.isEmpty
+                        ? "—"
+                        : record.publicKey.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Balance / Activity") {
                 FieldRow(label: "Balance", value: "\(record.balance) credits")
+                FieldRow(label: "Nonce", value: "\(record.nonce)")
+                FieldRow(
+                    label: "First Seen Height",
+                    value: record.firstSeenHeight == 0 ? "—" : "\(record.firstSeenHeight)"
+                )
+                FieldRow(
+                    label: "Last Seen Height",
+                    value: record.lastSeenHeight == 0 ? "—" : "\(record.lastSeenHeight)"
+                )
+            }
+            Section("Ownership") {
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
             }
             Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
                 FieldRow(label: "Updated", value: dateString(record.lastUpdated))
             }
         }
-        .navigationTitle("Address Balance")
+        .navigationTitle("Platform Address")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

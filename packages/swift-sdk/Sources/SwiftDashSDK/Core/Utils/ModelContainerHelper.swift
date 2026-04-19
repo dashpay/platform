@@ -19,7 +19,7 @@ public struct ModelContainerHelper {
             PersistentKeyword.self,
             PersistentIndex.self,
             PersistentProperty.self,
-            PersistentAddressBalance.self,
+            PersistentPlatformAddress.self,
             PersistentSyncState.self,
             PersistentWallet.self,
             PersistentAccount.self,
