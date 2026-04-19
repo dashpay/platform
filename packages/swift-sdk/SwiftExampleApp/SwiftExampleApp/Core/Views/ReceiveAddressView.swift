@@ -36,15 +36,17 @@ struct ReceiveAddressView: View {
         primaryBip44Account.flatMap(firstUnusedExternalAddress(in:))
     }
 
-    /// Primary BIP44 Standard account for the active wallet, or nil
-    /// if it hasn't been persisted yet.
+    /// Primary Standard account (BIP44 or BIP32) for the active wallet,
+    /// or nil if it hasn't been persisted yet. `standardTag` is not
+    /// required to match — a wallet only ever has one `(accountType=0,
+    /// accountIndex=0)` account, so the uniqueness already follows
+    /// from the two upstream fields.
     private var primaryBip44Account: PersistentAccount? {
         let walletId = wallet.walletId
         for account in allAccounts {
             if account.wallet?.walletId != walletId { continue }
             if account.accountType != 0 { continue }
             if account.accountIndex != 0 { continue }
-            if account.standardTag != 0 { continue }
             return account
         }
         return nil
