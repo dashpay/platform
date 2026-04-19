@@ -25,7 +25,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     // MARK: - Balance queries
 
     /// Platform address with its credit balance.
-    public struct AddressBalance {
+    public struct AddressBalance: Sendable {
         /// Address type (0 = P2PKH).
         public let addressType: UInt8
         /// 20-byte address hash.
@@ -104,7 +104,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     // MARK: - Sync
 
     /// Metrics from a single sync round.
-    public struct SyncMetrics {
+    public struct SyncMetrics: Sendable {
         public let trunkQueries: UInt32
         public let branchQueries: UInt32
         public let totalElementsSeen: UInt32
@@ -117,7 +117,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     }
 
     /// Sync result for a single account.
-    public struct SyncResult {
+    public struct SyncResult: Sendable {
         /// Number of addresses found with balances.
         public let foundCount: Int
         /// Number of addresses proven absent.
