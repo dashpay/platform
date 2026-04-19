@@ -104,6 +104,17 @@ struct ReceiveAddressView: View {
         }
     }
 
+    /// BIP32 derivation path for the currently-selected tab's address,
+    /// or nil when the address didn't come out of an HD pool (Shielded
+    /// today) or no address is available yet.
+    private var currentDerivationPath: String? {
+        switch selectedTab {
+        case .core: return nextCoreReceiveAddress?.derivationPath
+        case .platform: return nextPlatformReceiveAddress?.derivationPath
+        case .shielded: return nil
+        }
+    }
+
     private var hasValidAddress: Bool {
         switch selectedTab {
         case .core:
@@ -152,6 +163,17 @@ struct ReceiveAddressView: View {
                             .onTapGesture {
                                 copyToClipboard(currentAddress)
                             }
+
+                        if let path = currentDerivationPath {
+                            HStack(spacing: 4) {
+                                Text("Path")
+                                    .foregroundColor(.secondary)
+                                Text(path)
+                                    .fontDesign(.monospaced)
+                                    .textSelection(.enabled)
+                            }
+                            .font(.caption2)
+                        }
                     }
                     .padding(.horizontal)
 
