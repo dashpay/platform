@@ -116,7 +116,7 @@ struct CreateIdentityView: View {
                 Text("Select…")
                     .tag(Optional<FundingSelection>.none)
                 ForEach(options) { option in
-                    Text(option.label)
+                    fundingOptionLabel(option)
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
                 }
                 Divider()
@@ -128,9 +128,22 @@ struct CreateIdentityView: View {
         } footer: {
             Text(
                 "Any account on the selected wallet can fund the identity — "
-                + "Core or Platform Payment. \"Fund from unused Asset Lock\" "
-                + "picks an existing tracked asset lock instead."
+                + "Core or Platform Payment. Accounts with no balance are "
+                + "greyed out. \"Fund from unused Asset Lock\" picks an "
+                + "existing tracked asset lock instead."
             )
+        }
+    }
+
+    /// Picker row renderer — dims accounts whose balance is zero so
+    /// the caller sees at a glance which funding sources are usable.
+    @ViewBuilder
+    private func fundingOptionLabel(_ option: FundingAccountOption) -> some View {
+        if option.hasBalance {
+            Text(option.label)
+        } else {
+            Text(option.label)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -217,7 +230,8 @@ struct CreateIdentityView: View {
             .map { account in
                 FundingAccountOption(
                     persistentId: account.persistentModelID,
-                    label: Self.fundingLabel(for: account)
+                    label: Self.fundingLabel(for: account),
+                    hasBalance: Self.accountHasBalance(account)
                 )
             }
     }
@@ -227,6 +241,19 @@ struct CreateIdentityView: View {
         switch account.accountType {
         case 0, 1, 14: return true
         default: return false
+        }
+    }
+
+    /// Whether an account has spendable funds. Core / CoinJoin use
+    /// the SPV-maintained `balanceConfirmed` + `balanceUnconfirmed`
+    /// duffs totals; PlatformPayment sums the BLAST-synced credits
+    /// across its addresses.
+    private static func accountHasBalance(_ account: PersistentAccount) -> Bool {
+        switch account.accountType {
+        case 14:
+            return account.platformAddresses.contains { $0.balance > 0 }
+        default:
+            return account.balanceConfirmed > 0 || account.balanceUnconfirmed > 0
         }
     }
 
@@ -263,5 +290,8 @@ private enum FundingSelection: Hashable {
 private struct FundingAccountOption: Identifiable {
     let persistentId: PersistentIdentifier
     let label: String
+    /// `true` if the account currently holds spendable funds. Drives
+    /// the greyed-out picker row for zero-balance sources.
+    let hasBalance: Bool
     var id: PersistentIdentifier { persistentId }
 }
