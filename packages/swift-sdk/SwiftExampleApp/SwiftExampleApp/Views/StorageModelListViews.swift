@@ -404,10 +404,16 @@ struct TransactionStorageListView: View {
     }
 }
 
-// MARK: - PersistentCoreAddress
+// MARK: - PersistentCoreAddress (Core filter)
 
 struct CoreAddressStorageListView: View {
-    @Query(sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)])
+    /// Everything except PlatformPayment (account type 14). Those
+    /// surface under a dedicated "Platform Addresses" section so the
+    /// two layers stay visually distinct.
+    @Query(
+        filter: #Predicate<PersistentCoreAddress> { $0.account?.accountType != 14 },
+        sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)]
+    )
     private var records: [PersistentCoreAddress]
 
     /// Composite key identifying one (wallet, account, pool) bucket.
@@ -498,6 +504,109 @@ struct CoreAddressStorageListView: View {
         case 0, 1, 3, 12, 13, 14: return true
         default: return false
         }
+    }
+
+    private func walletLabel(for wallet: PersistentWallet?) -> String {
+        guard let wallet = wallet else { return "Unknown Wallet" }
+        if let name = wallet.name, !name.isEmpty { return name }
+        let prefix = wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
+        return "Wallet \(prefix)…"
+    }
+
+    private func addressRow(_ record: PersistentCoreAddress) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(record.address)
+                .font(.system(.caption, design: .monospaced))
+                .lineLimit(1).truncationMode(.middle)
+            HStack(spacing: 8) {
+                Text("#\(record.addressIndex)")
+                if record.isUsed { Text("• used") }
+                if record.balance > 0 { Text("• \(record.balance)") }
+            }
+            .font(.caption2)
+            .foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - PersistentCoreAddress (Platform filter)
+
+/// List view for DIP-17 PlatformPayment addresses. Reuses the same
+/// grouping + row UI as `CoreAddressStorageListView` but filters to
+/// rows whose parent account is a PlatformPayment account.
+struct PlatformAddressStorageListView: View {
+    @Query(
+        filter: #Predicate<PersistentCoreAddress> { $0.account?.accountType == 14 },
+        sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)]
+    )
+    private var records: [PersistentCoreAddress]
+
+    private struct GroupKey: Hashable, Comparable {
+        let walletId: Data
+        let walletLabel: String
+        let accountIndex: UInt32
+        let accountLabel: String
+        let keyClass: UInt32
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            if lhs.walletId != rhs.walletId {
+                return lhs.walletId.lexicographicallyPrecedes(rhs.walletId)
+            }
+            if lhs.accountIndex != rhs.accountIndex { return lhs.accountIndex < rhs.accountIndex }
+            return lhs.keyClass < rhs.keyClass
+        }
+    }
+
+    private var groups: [(GroupKey, [PersistentCoreAddress])] {
+        let grouped = Dictionary(grouping: records) { record -> GroupKey in
+            let account = record.account
+            let wallet = account?.wallet
+            return GroupKey(
+                walletId: wallet?.walletId ?? Data(),
+                walletLabel: walletLabel(for: wallet),
+                accountIndex: account?.accountIndex ?? 0,
+                accountLabel: account?.accountTypeName ?? "Platform Payment",
+                keyClass: account?.keyClass ?? 0
+            )
+        }
+        return grouped
+            .map { ($0.key, $0.value.sorted { $0.addressIndex < $1.addressIndex }) }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    var body: some View {
+        List {
+            ForEach(Array(groups.enumerated()), id: \.offset) { _, pair in
+                let (key, addresses) = pair
+                Section(header: Text(sectionTitle(for: key))) {
+                    ForEach(addresses) { record in
+                        NavigationLink(destination: CoreAddressDetailView(record: record)) {
+                            addressRow(record)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Platform Addresses (\(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "creditcard"
+                )
+            }
+        }
+    }
+
+    /// Header format: `"WalletName · Platform Payment #N · key class K"`.
+    /// `keyClass` is elided when zero (the common default) to reduce
+    /// visual noise.
+    private func sectionTitle(for key: GroupKey) -> String {
+        var title = "\(key.walletLabel) · \(key.accountLabel) #\(key.accountIndex)"
+        if key.keyClass != 0 {
+            title += " · key class \(key.keyClass)"
+        }
+        return title
     }
 
     private func walletLabel(for wallet: PersistentWallet?) -> String {

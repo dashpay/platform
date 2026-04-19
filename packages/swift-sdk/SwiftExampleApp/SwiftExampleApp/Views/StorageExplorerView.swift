@@ -41,8 +41,12 @@ struct StorageExplorerView: View {
             modelRow("Keywords", icon: "tag", type: PersistentKeyword.self) {
                 KeywordStorageListView()
             }
-            modelRow("Address Balances", icon: "creditcard", type: PersistentAddressBalance.self) {
-                AddressBalanceStorageListView()
+            modelCountRow(
+                "Platform Addresses",
+                icon: "creditcard",
+                countKey: platformAddressesCountKey
+            ) {
+                PlatformAddressStorageListView()
             }
             modelRow("Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentSyncState.self) {
                 SyncStateStorageListView()
@@ -53,7 +57,11 @@ struct StorageExplorerView: View {
             modelRow("Accounts", icon: "person.2", type: PersistentAccount.self) {
                 AccountStorageListView()
             }
-            modelRow("Core Addresses", icon: "square.and.pencil", type: PersistentCoreAddress.self) {
+            modelCountRow(
+                "Core Addresses",
+                icon: "square.and.pencil",
+                countKey: coreAddressesCountKey
+            ) {
                 CoreAddressStorageListView()
             }
             modelRow("Transactions", icon: "arrow.left.arrow.right.circle", type: PersistentTransaction.self) {
@@ -94,6 +102,30 @@ struct StorageExplorerView: View {
         }
     }
 
+    /// Row variant for sections whose count isn't a 1:1 match with a
+    /// persistent model type — e.g. "Core Addresses" and "Platform
+    /// Addresses" both back onto `PersistentCoreAddress` but partition
+    /// by `account.accountType`, so they need distinct count keys.
+    private func modelCountRow<D: View>(
+        _ name: String,
+        icon: String,
+        countKey: String,
+        @ViewBuilder destination: @escaping () -> D
+    ) -> some View {
+        NavigationLink(destination: destination()) {
+            HStack {
+                Label(name, systemImage: icon)
+                Spacer()
+                Text("\(counts[countKey] ?? 0)")
+                    .foregroundColor(.secondary)
+                    .font(.callout)
+            }
+        }
+    }
+
+    private var platformAddressesCountKey: String { "PlatformAddresses" }
+    private var coreAddressesCountKey: String { "CoreAddresses" }
+
     private func loadCounts() {
         func count<T: PersistentModel>(_ type: T.Type) {
             let key = String(describing: type)
@@ -110,13 +142,22 @@ struct StorageExplorerView: View {
         count(PersistentIndex.self)
         count(PersistentProperty.self)
         count(PersistentKeyword.self)
-        count(PersistentAddressBalance.self)
         count(PersistentSyncState.self)
         count(PersistentWallet.self)
         count(PersistentAccount.self)
-        count(PersistentCoreAddress.self)
         count(PersistentTransaction.self)
         count(PersistentUtxo.self)
         count(PersistentWalletManagerMetadata.self)
+        // PersistentCoreAddress is split into two explorer sections
+        // (Platform vs Core) by the parent account's type tag.
+        let platformType: UInt32 = 14 // AccountTypeTagFFI::PlatformPayment
+        let platformDescriptor = FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { $0.account?.accountType == platformType }
+        )
+        counts[platformAddressesCountKey] = (try? modelContext.fetchCount(platformDescriptor)) ?? 0
+        let coreDescriptor = FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { $0.account?.accountType != platformType }
+        )
+        counts[coreAddressesCountKey] = (try? modelContext.fetchCount(coreDescriptor)) ?? 0
     }
 }
