@@ -190,9 +190,16 @@ class PlatformBalanceSyncService: ObservableObject {
         lastError = nil
 
         do {
-            // Unified provider performs one combined trunk/branch scan
-            // across every account and returns a single result.
-            let result = try wallet.syncBalances()
+            // `wallet.syncBalances()` internally drives a tokio runtime
+            // via `block_on`. Calling it directly from `@MainActor`
+            // parks the user-interactive main thread on default-QoS
+            // tokio workers — the iOS Thread Performance Checker
+            // reports this as a priority inversion. Hop to a detached
+            // task (default priority, matches tokio's default QoS) so
+            // main yields at the `await` instead of blocking.
+            let result = try await Task.detached { [wallet] in
+                try wallet.syncBalances()
+            }.value
 
             if result.checkpointHeight > 0 {
                 checkpointHeight = result.checkpointHeight
@@ -212,8 +219,12 @@ class PlatformBalanceSyncService: ObservableObject {
             totalRecentEntries += result.metrics.recentEntriesReturned
             totalCompactedEntries += result.metrics.compactedEntriesReturned
 
-            // Read balances from the wallet (canonical source of truth)
-            let balances = try wallet.addressesWithBalances()
+            // Read balances from the wallet (canonical source of truth).
+            // Also runs through `block_on` on the Rust side, so keep
+            // it off main for the same priority-inversion reason.
+            let balances = try await Task.detached { [wallet] in
+                try wallet.addressesWithBalances()
+            }.value
             var newBalances: [String: UInt64] = [:]
             var total: UInt64 = 0
             var nonZero = 0

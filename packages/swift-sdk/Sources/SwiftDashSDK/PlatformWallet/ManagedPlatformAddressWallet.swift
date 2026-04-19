@@ -5,7 +5,12 @@ import Foundation
 /// Obtained via `ManagedPlatformWallet.platformAddressWallet()`.
 /// Replaces the manual `AddressSyncService` + `SDK.syncAddressBalances` flow
 /// with a single integrated sync that handles incremental state automatically.
-public class ManagedPlatformAddressWallet {
+///
+/// `@unchecked Sendable`: the underlying Rust handle is guarded by
+/// `platform-wallet-ffi`'s internal `HandleStorage` (parking_lot RwLock),
+/// so dispatching method calls across threads is safe. The Swift side
+/// only borrows the opaque pointer.
+public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     let handle: Handle
 
     init(handle: Handle) {
