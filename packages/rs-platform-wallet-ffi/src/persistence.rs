@@ -328,8 +328,7 @@ impl PlatformWalletPersistence for FFIPersister {
         // hashes derived from the wallet), but Platform Payment
         // addresses are rendered as DIP-0018 bech32m (`dash1…` /
         // `tdash1…`) rather than the base58check Core form.
-        let is_platform_payment =
-            matches!(account_type, AccountType::PlatformPayment { .. });
+        let is_platform_payment = matches!(account_type, AccountType::PlatformPayment { .. });
 
         // Build owned CStrings for every (address, path) pair so they
         // outlive the callback window. `entries` borrows the pointers.
