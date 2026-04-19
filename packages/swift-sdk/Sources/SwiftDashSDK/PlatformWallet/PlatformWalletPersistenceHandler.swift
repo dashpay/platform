@@ -21,19 +21,27 @@ public class PlatformWalletPersistenceHandler {
     // MARK: - Address Balances
 
     /// Upsert address balances into SwiftData.
-    func persistAddressBalances(walletId: Data, entries: [(UInt8, Data, UInt64)]) {
-        for (addressType, addressHash, balance) in entries {
+    func persistAddressBalances(
+        walletId: Data,
+        entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)]
+    ) {
+        for (addressType, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
             let descriptor = FetchDescriptor<PersistentAddressBalance>(
                 predicate: #Predicate { $0.addressHash == addressHash }
             )
 
             if let existing = try? backgroundContext.fetch(descriptor).first {
-                existing.updateBalance(balance)
+                existing.accountIndex = accountIndex
+                existing.addressIndex = addressIndex
+                existing.update(balance: balance, nonce: nonce)
             } else {
                 let record = PersistentAddressBalance(
                     addressType: addressType,
                     addressHash: addressHash,
                     balance: balance,
+                    nonce: nonce,
+                    accountIndex: accountIndex,
+                    addressIndex: addressIndex,
                     walletId: walletId
                 )
                 backgroundContext.insert(record)
@@ -44,7 +52,7 @@ public class PlatformWalletPersistenceHandler {
     }
 
     /// Load all cached address balances for a wallet.
-    public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64)] {
+    public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32)] {
         let descriptor = FetchDescriptor<PersistentAddressBalance>(
             predicate: PersistentAddressBalance.predicate(walletId: walletId)
         )
@@ -54,7 +62,14 @@ public class PlatformWalletPersistenceHandler {
         }
 
         return records.map { record in
-            (record.addressType, Array(record.addressHash), record.balance)
+            (
+                record.addressType,
+                Array(record.addressHash),
+                record.balance,
+                record.nonce,
+                record.accountIndex,
+                record.addressIndex
+            )
         }
     }
 
@@ -653,11 +668,55 @@ public class PlatformWalletPersistenceHandler {
                 allocation.accountArrays.append((buf, sortedAccounts.count))
             }
 
+            let cachedBalances = loadCachedBalances(walletId: w.walletId)
+            let addressBalancesBuffer: UnsafeMutablePointer<AddressBalanceEntryFFI>?
+            if cachedBalances.isEmpty {
+                addressBalancesBuffer = nil
+            } else {
+                let buf = UnsafeMutablePointer<AddressBalanceEntryFFI>.allocate(
+                    capacity: cachedBalances.count
+                )
+                for (j, cached) in cachedBalances.enumerated() {
+                    let (addressType, hash, balance, nonce, accountIndex, addressIndex) = cached
+                    guard hash.count == 20 else {
+                        continue
+                    }
+
+                    var hashTuple:
+                        (
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+                        ) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                    if hash.count == 20 {
+                        withUnsafeMutableBytes(of: &hashTuple) { raw in
+                            raw.copyBytes(from: hash)
+                        }
+                    }
+
+                    buf[j] = AddressBalanceEntryFFI(
+                        address: PlatformAddressFFI(address_type: addressType, hash: hashTuple),
+                        balance: balance,
+                        nonce: nonce,
+                        account_index: accountIndex,
+                        address_index: addressIndex
+                    )
+                }
+                addressBalancesBuffer = buf
+                allocation.addressBalanceArrays.append((buf, cachedBalances.count))
+            }
+
+            let syncState = loadCachedSyncState(walletId: w.walletId)
+
             var entry = WalletRestoreEntryFFI()
             copyBytes(w.walletId, into: &entry.wallet_id)
             entry.network = networkTag(for: w.network)
             entry.accounts = accountsBuffer.map { UnsafePointer($0) }
             entry.accounts_count = sortedAccounts.count
+            entry.platform_address_balances = addressBalancesBuffer.map { UnsafePointer($0) }
+            entry.platform_address_balances_count = cachedBalances.count
+            entry.platform_sync_height = syncState?.syncHeight ?? 0
+            entry.platform_sync_timestamp = syncState?.syncTimestamp ?? 0
+            entry.platform_last_known_recent_block = syncState?.lastKnownRecentBlock ?? 0
             entriesPtr[i] = entry
         }
 
@@ -742,6 +801,8 @@ private final class LoadAllocation {
     var entriesCount: Int = 0
     /// `AccountSpecFFI` arrays per wallet.
     var accountArrays: [(UnsafeMutablePointer<AccountSpecFFI>, Int)] = []
+    /// `AddressBalanceEntryFFI` arrays per wallet.
+    var addressBalanceArrays: [(UnsafeMutablePointer<AddressBalanceEntryFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
 
@@ -751,6 +812,10 @@ private final class LoadAllocation {
             entries.deallocate()
         }
         for (ptr, count) in accountArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in addressBalanceArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -795,13 +860,20 @@ private func persistAddressBalancesCallback(
     let walletId = Data(bytes: walletIdPtr, count: 32)
     let entriesPtr = entriesRaw.assumingMemoryBound(to: AddressBalanceEntryFFI.self)
 
-    var entries: [(UInt8, Data, UInt64)] = []
+    var entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)] = []
     entries.reserveCapacity(count)
 
     for i in 0..<count {
         let entry = entriesPtr[i]
         let hashData = withUnsafeBytes(of: entry.address.hash) { Data($0) }
-        entries.append((entry.address.address_type, hashData, entry.balance))
+        entries.append((
+            entry.address.address_type,
+            hashData,
+            entry.balance,
+            entry.nonce,
+            entry.account_index,
+            entry.address_index
+        ))
     }
 
     handler.persistAddressBalances(walletId: walletId, entries: entries)

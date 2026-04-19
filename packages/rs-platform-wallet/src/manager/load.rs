@@ -3,10 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{
-    ClientStartState, ClientWalletStartState, PlatformAddressSyncStartState,
-    PlatformWalletPersistence,
-};
+use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
@@ -103,31 +100,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             );
 
             // Initialize the platform-address provider. If the snapshot
-            // carried a per-wallet slice, peel it off and pass a
-            // single-wallet [`PlatformAddressSyncStartState`] down;
+            // carried a slice for this wallet, restore it directly;
             // otherwise do a fresh scan from the live wallet manager.
-            let slice = platform_addresses
-                .as_mut()
-                .and_then(|pa| pa.per_wallet.remove(&wallet_id));
-            if let Some(per_wallet_entry) = slice {
-                let (sync_height, sync_timestamp, last_known_recent_block) = platform_addresses
-                    .as_ref()
-                    .map(|pa| {
-                        (
-                            pa.sync_height,
-                            pa.sync_timestamp,
-                            pa.last_known_recent_block,
-                        )
-                    })
-                    .unwrap_or((0, 0, 0));
-                let mut per_wallet = BTreeMap::new();
-                per_wallet.insert(wallet_id, per_wallet_entry);
-                let persisted = PlatformAddressSyncStartState {
-                    per_wallet,
-                    sync_height,
-                    sync_timestamp,
-                    last_known_recent_block,
-                };
+            if let Some(persisted) = platform_addresses.remove(&wallet_id) {
                 platform_wallet
                     .platform()
                     .initialize_from_persisted(persisted)

@@ -21,6 +21,8 @@
 
 use std::os::raw::c_void;
 
+use crate::platform_address_types::AddressBalanceEntryFFI;
+
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
 /// Keep the integer values stable across releases — they end up in
@@ -101,6 +103,14 @@ pub struct WalletRestoreEntryFFI {
     pub network: u8,
     pub accounts: *const AccountSpecFFI,
     pub accounts_count: usize,
+    /// Cached platform-address balances for this wallet. The pointer is
+    /// Swift-owned and valid only for the duration of the callback.
+    pub platform_address_balances: *const AddressBalanceEntryFFI,
+    pub platform_address_balances_count: usize,
+    /// Per-wallet incremental BLAST sync watermark.
+    pub platform_sync_height: u64,
+    pub platform_sync_timestamp: u64,
+    pub platform_last_known_recent_block: u64,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
@@ -128,8 +138,9 @@ pub type LoadWalletListFn = unsafe extern "C" fn(
 
 /// Paired free callback for `LoadWalletListFn`. Releases any memory
 /// Swift allocated for the entries array, the per-wallet accounts
-/// arrays, and every xpub byte buffer. Called exactly once after a
-/// successful `LoadWalletListFn` invocation.
+/// arrays, the optional per-wallet platform-address balance arrays,
+/// and every xpub byte buffer. Called exactly once after a successful
+/// `LoadWalletListFn` invocation.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);
 

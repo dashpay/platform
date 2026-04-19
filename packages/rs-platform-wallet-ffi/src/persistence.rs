@@ -19,6 +19,7 @@ use platform_wallet::changeset::{
     PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::os::raw::c_void;
@@ -138,6 +139,9 @@ impl PlatformWalletPersistence for FFIPersister {
                     .map(|entry| AddressBalanceEntryFFI {
                         address: entry.address.into(),
                         balance: entry.funds.balance,
+                        nonce: entry.funds.nonce,
+                        account_index: entry.account_index,
+                        address_index: entry.address_index,
                     })
                     .collect();
                 if !entries.is_empty() {
@@ -273,8 +277,12 @@ impl PlatformWalletPersistence for FFIPersister {
         // fires before we leave this function.
         let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
         for entry in entries {
-            let wallet_state = build_wallet_start_state(entry)?;
+            let (wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
             out.wallets.insert(entry.wallet_id, wallet_state);
+            if let Some(platform_address_state) = platform_address_state {
+                out.platform_addresses
+                    .insert(entry.wallet_id, platform_address_state);
+            }
         }
         Ok(out)
     }
@@ -574,7 +582,13 @@ impl Drop for LoadGuard {
 /// from a single `WalletRestoreEntryFFI`.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
-) -> Result<ClientWalletStartState, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (
+        ClientWalletStartState,
+        Option<platform_wallet::PlatformAddressSyncStartState>,
+    ),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let network = network_from_tag(entry.network)?;
 
     // Build the per-account collection from the typed spec array.
@@ -606,12 +620,79 @@ fn build_wallet_start_state(
     let wallet = Wallet::new_watch_only(network, entry.wallet_id, accounts);
 
     let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-    Ok(ClientWalletStartState {
+
+    let mut per_account = PerWalletPlatformAddressState::new();
+    for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
+        per_account.entry(account_key.account).or_insert_with(|| {
+            PerAccountPlatformAddressState::from_persisted(
+                account.account_xpub,
+                Default::default(),
+                Default::default(),
+            )
+        });
+    }
+
+    let platform_balance_entries: &[AddressBalanceEntryFFI] = if entry
+        .platform_address_balances
+        .is_null()
+        || entry.platform_address_balances_count == 0
+    {
+        &[]
+    } else {
+        unsafe {
+            slice::from_raw_parts(
+                entry.platform_address_balances,
+                entry.platform_address_balances_count,
+            )
+        }
+    };
+    for persisted in platform_balance_entries {
+        if persisted.address.address_type != 0 {
+            return Err("only P2PKH platform address persistence is supported".into());
+        }
+
+        let account_state = per_account
+            .get_mut(&persisted.account_index)
+            .ok_or_else(|| {
+                format!(
+                    "persisted platform address references unknown account {}",
+                    persisted.account_index
+                )
+            })?;
+        let p2pkh = key_wallet::PlatformP2PKHAddress::new(persisted.address.hash);
+        account_state.insert_persisted_entry(
+            persisted.address_index,
+            p2pkh,
+            dash_sdk::platform::address_sync::AddressFunds {
+                nonce: persisted.nonce,
+                balance: persisted.balance,
+            },
+        );
+    }
+
+    let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager: Default::default(),
         unused_asset_locks: BTreeMap::new(),
-    })
+    };
+
+    let platform_address_state = if per_account.is_empty()
+        && entry.platform_sync_height == 0
+        && entry.platform_sync_timestamp == 0
+        && entry.platform_last_known_recent_block == 0
+    {
+        None
+    } else {
+        Some(platform_wallet::PlatformAddressSyncStartState {
+            per_account,
+            sync_height: entry.platform_sync_height,
+            sync_timestamp: entry.platform_sync_timestamp,
+            last_known_recent_block: entry.platform_last_known_recent_block,
+        })
+    };
+
+    Ok((wallet_state, platform_address_state))
 }
 
 fn network_from_tag(tag: u8) -> Result<Network, Box<dyn std::error::Error + Send + Sync>> {

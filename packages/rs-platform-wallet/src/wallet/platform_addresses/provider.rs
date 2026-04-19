@@ -104,6 +104,17 @@ impl PerAccountPlatformAddressState {
             absent: BTreeSet::new(),
         }
     }
+
+    /// Seed one persisted address/funds entry into the account state.
+    pub fn insert_persisted_entry(
+        &mut self,
+        address_index: AddressIndex,
+        address: PlatformP2PKHAddress,
+        funds: AddressFunds,
+    ) {
+        self.addresses.insert(address_index, address);
+        self.found.insert(address, funds);
+    }
 }
 
 /// Per-wallet account map — keys are DIP-17 account indexes (hardened
@@ -244,10 +255,11 @@ impl PlatformPaymentAddressProvider {
 
     /// Rebuild a provider from persisted per-wallet state and an
     /// incremental-sync watermark. Used on startup when a persister
-    /// has state to restore — the caller supplies the xpubs and the
-    /// `found` balance map per account, and this constructor reads
-    /// each account's live `AddressPool` to build a fresh addresses
-    /// bimap + pending set.
+    /// has state to restore — the caller supplies the xpubs, known
+    /// derived addresses, and the `found` balance map per account.
+    /// This constructor preserves the persisted address map and
+    /// merges in any newer addresses currently present in the live
+    /// managed-account pools.
     ///
     /// Returns an error if the persisted state references a wallet
     /// or platform payment account that isn't in the live wallet
@@ -288,11 +300,13 @@ impl PlatformPaymentAddressProvider {
                             ))
                         })?;
 
-                    // Refresh `addresses` from the live pool (source
-                    // of truth); `extended_public_key`, `found`, and
-                    // `absent` carry over from the persisted state
-                    // verbatim.
-                    account_state.addresses.clear();
+                    // Preserve the persisted address map, then merge
+                    // any newer live-pool addresses on top so startup
+                    // doesn't lose addresses that fell out of the
+                    // current in-memory gap window.
+                    for (&index, &p2pkh) in account_state.addresses.iter() {
+                        pending.insert((wallet_id, account_index, index), p2pkh);
+                    }
                     for (&index, addr_info) in &managed.addresses.addresses {
                         let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
                         else {
@@ -339,18 +353,19 @@ impl PlatformPaymentAddressProvider {
     }
 
     /// Re-populate `pending` for every tracked wallet and account
-    /// from their respective `AddressPool`s and clear the per-pass
-    /// `absent` set. `found` is intentionally preserved across syncs
-    /// — it doubles as the `current_balances()` seed for the next
-    /// incremental round.
+    /// from their persisted address map plus any additional live-pool
+    /// addresses, then clear the per-pass `absent` set. `found` is
+    /// intentionally preserved across syncs — it doubles as the
+    /// `current_balances()` seed for the next incremental round.
     ///
     /// Call before each sync round.
     pub(crate) async fn prepare_for_sync(&mut self) -> Result<(), PlatformWalletError> {
         let wallet_ids: Vec<WalletId> = self.per_wallet.keys().copied().collect();
 
-        // Refresh provider-level pending and, in the same pass, each
-        // account's `addresses` bimap so both stay in sync with the
-        // wallet's pool.
+        // Refresh provider-level pending and merge in any new
+        // addresses the managed account has derived since the last
+        // pass. Persisted addresses remain tracked even if the live
+        // pool no longer exposes them.
         let fresh_pending: BiBTreeMap<PlatformAddressTag, PlatformP2PKHAddress> = {
             let wm = self.wallet_manager.read().await;
             let mut out: BiBTreeMap<PlatformAddressTag, PlatformP2PKHAddress> = BiBTreeMap::new();
@@ -372,14 +387,15 @@ impl PlatformPaymentAddressProvider {
                     let Some(account_state) = state.get_mut(&account_index) else {
                         continue;
                     };
-                    account_state.addresses.clear();
                     for (&index, addr_info) in &managed.addresses.addresses {
                         let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
                         else {
                             continue;
                         };
-                        out.insert((wallet_id, account_index, index), p2pkh);
                         account_state.addresses.insert(index, p2pkh);
+                    }
+                    for (&index, &p2pkh) in account_state.addresses.iter() {
+                        out.insert((wallet_id, account_index, index), p2pkh);
                     }
                 }
             }

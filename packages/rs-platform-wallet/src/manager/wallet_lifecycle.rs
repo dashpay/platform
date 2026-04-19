@@ -232,7 +232,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Per-wallet UTXOs / unused asset locks ship in the snapshot
         // but don't have an active restore path yet.
         let crate::changeset::ClientStartState {
-            platform_addresses,
+            mut platform_addresses,
             wallets: _,
         } = platform_wallet.load_persisted().map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
@@ -241,7 +241,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ))
         })?;
 
-        if let Some(persisted) = platform_addresses {
+        if let Some(persisted) = platform_addresses.remove(&wallet_id) {
             platform_wallet
                 .platform()
                 .initialize_from_persisted(persisted)

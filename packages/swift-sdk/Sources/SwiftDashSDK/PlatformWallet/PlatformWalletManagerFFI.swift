@@ -124,14 +124,25 @@ struct WalletRestoreEntryFFI {
     var network: UInt8 = 0
     var accounts: UnsafePointer<AccountSpecFFI>? = nil
     var accounts_count: Int = 0
+    var platform_address_balances: UnsafePointer<AddressBalanceEntryFFI>? = nil
+    var platform_address_balances_count: Int = 0
+    var platform_sync_height: UInt64 = 0
+    var platform_sync_timestamp: UInt64 = 0
+    var platform_last_known_recent_block: UInt64 = 0
 }
 
 // MARK: - Event Handler Callbacks
 
 struct EventHandlerCallbacks {
-    var context: UnsafeMutableRawPointer?
-    var on_wallet_event_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int) -> Void)?
-    var on_error_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void)?
+    var context: UnsafeMutableRawPointer? = nil
+    var on_wallet_event_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int) -> Void)? = nil
+    var on_error_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void)? = nil
+    var on_platform_address_sync_completed_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafeRawPointer?,
+        Int,
+        UInt64
+    ) -> Void)? = nil
 }
 
 // MARK: - Platform Address Types
@@ -146,6 +157,9 @@ struct PlatformAddressFFI {
 struct AddressBalanceEntryFFI {
     var address: PlatformAddressFFI
     var balance: UInt64
+    var nonce: UInt32
+    var account_index: UInt32
+    var address_index: UInt32
 }
 
 struct AddressSyncConfigFFI {
@@ -160,19 +174,7 @@ struct PlatformAddressChangeSetFFI {
     var updated_count: Int
 }
 
-struct FoundAddressEntryFFI {
-    var index: UInt32
-    var address: PlatformAddressFFI
-    var nonce: UInt32
-    var balance: UInt64
-}
-
-struct AbsentAddressEntryFFI {
-    var index: UInt32
-    var address: PlatformAddressFFI
-}
-
-struct AddressSyncMetricsFFI {
+struct PlatformAddressSyncMetricsFFI {
     var trunk_queries: UInt32
     var branch_queries: UInt32
     var total_elements_seen: UInt32
@@ -184,16 +186,22 @@ struct AddressSyncMetricsFFI {
     var compacted_entries_returned: UInt32
 }
 
-struct AddressSyncResultFFI {
-    var found: UnsafeMutablePointer<FoundAddressEntryFFI>?
+struct PlatformAddressSyncWalletResultFFI {
+    var wallet_id: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+    var success: Bool
     var found_count: Int
-    var absent: UnsafeMutablePointer<AbsentAddressEntryFFI>?
     var absent_count: Int
     var checkpoint_height: UInt64
     var new_sync_height: UInt64
     var new_sync_timestamp: UInt64
     var last_known_recent_block: UInt64
-    var metrics: AddressSyncMetricsFFI
+    var metrics: PlatformAddressSyncMetricsFFI
+    var error_message: UnsafePointer<CChar>?
 }
 
 // MARK: - SPV Sync Progress
@@ -316,6 +324,61 @@ func platform_wallet_manager_spv_clear_storage(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+// MARK: - PlatformWalletManager Platform Address Sync FFI
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_start")
+func platform_wallet_manager_platform_address_sync_start(
+    _ handle: Handle,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_stop")
+func platform_wallet_manager_platform_address_sync_stop(
+    _ handle: Handle,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_is_running")
+func platform_wallet_manager_platform_address_sync_is_running(
+    _ handle: Handle,
+    _ out_running: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_is_syncing")
+func platform_wallet_manager_platform_address_sync_is_syncing(
+    _ handle: Handle,
+    _ out_syncing: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_last_sync_unix_seconds")
+func platform_wallet_manager_platform_address_sync_last_sync_unix_seconds(
+    _ handle: Handle,
+    _ out_last_sync_unix: UnsafeMutablePointer<UInt64>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_set_interval")
+func platform_wallet_manager_platform_address_sync_set_interval(
+    _ handle: Handle,
+    _ interval_seconds: UInt64,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_set_config")
+func platform_wallet_manager_platform_address_sync_set_config(
+    _ handle: Handle,
+    _ config: UnsafePointer<AddressSyncConfigFFI>?,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_manager_platform_address_sync_sync_now")
+func platform_wallet_manager_platform_address_sync_sync_now(
+    _ handle: Handle,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 @_silgen_name("platform_wallet_manager_load_from_persistor")
 func platform_wallet_manager_load_from_persistor(
     _ manager_handle: Handle,
@@ -420,24 +483,6 @@ func platform_address_wallet_addresses_with_balances(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
-@_silgen_name("platform_address_wallet_sync_balances")
-func platform_address_wallet_sync_balances(
-    _ handle: Handle,
-    _ has_config: Bool,
-    _ config: UnsafePointer<AddressSyncConfigFFI>?,
-    _ out_result: UnsafeMutablePointer<AddressSyncResultFFI>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_address_wallet_restore_sync_state")
-func platform_address_wallet_restore_sync_state(
-    _ handle: Handle,
-    _ sync_height: UInt64,
-    _ sync_timestamp: UInt64,
-    _ last_known_recent_block: UInt64,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 @_silgen_name("platform_address_wallet_destroy")
 func platform_address_wallet_destroy(
     _ handle: Handle,
@@ -454,7 +499,3 @@ func platform_address_wallet_free_address_balances(
 
 @_silgen_name("platform_address_wallet_free_changeset")
 func platform_address_wallet_free_changeset(_ changeset: UnsafePointer<PlatformAddressChangeSetFFI>?)
-
-@_silgen_name("platform_address_wallet_free_sync_result")
-func platform_address_wallet_free_sync_result(_ result: UnsafePointer<AddressSyncResultFFI>?)
-

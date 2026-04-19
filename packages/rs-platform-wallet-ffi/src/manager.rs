@@ -280,6 +280,8 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
     _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+    if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
+        manager.platform_address_sync().stop();
+    }
     PlatformWalletFFIResult::Success
 }

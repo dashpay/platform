@@ -6,23 +6,20 @@
 //! [`PlatformPaymentAddressProvider`](crate::wallet::platform_addresses::PlatformPaymentAddressProvider)
 //! without replaying a changeset.
 
-use std::collections::BTreeMap;
-
 use crate::wallet::platform_addresses::PerWalletPlatformAddressState;
-use crate::wallet::platform_wallet::WalletId;
 
 /// Platform-address provider state restored from storage.
 ///
 /// Carries everything
 /// [`PlatformPaymentAddressProvider::from_persisted`](crate::wallet::platform_addresses::PlatformPaymentAddressProvider::from_persisted)
-/// needs to rebuild the provider — the per-wallet xpub +
-/// `found`/`absent` map and the incremental-sync watermark. The
+/// needs to rebuild one wallet's provider — the per-account xpub +
+/// `found`/`absent` map and that wallet's incremental-sync watermark. The
 /// live `AddressPool` in the wallet manager supplies the current
 /// address set at reconstruction time.
 #[derive(Debug, Default)]
 pub struct PlatformAddressSyncStartState {
-    /// Per-wallet, per-account committed state to restore.
-    pub per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState>,
+    /// Per-account committed state to restore for one wallet.
+    pub per_account: PerWalletPlatformAddressState,
     /// Highest block height covered by the last successful sync.
     pub sync_height: u64,
     /// Latest block timestamp (Unix seconds) covered by the last sync.

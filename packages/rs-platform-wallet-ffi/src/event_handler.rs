@@ -1,6 +1,10 @@
 //! FFI callback-based implementation of PlatformEventHandler.
 
+use crate::platform_address_sync::{
+    PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
+};
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
+use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
 use std::os::raw::{c_char, c_void};
 
 /// C callback vtable for event handling.
@@ -18,6 +22,15 @@ pub struct EventHandlerCallbacks {
     >,
     /// Called on fatal errors.
     pub on_error_fn: Option<unsafe extern "C" fn(context: *mut c_void, error_msg: *const c_char)>,
+    /// Called when a platform-address sync pass completes.
+    pub on_platform_address_sync_completed_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            results: *const PlatformAddressSyncWalletResultFFI,
+            count: usize,
+            sync_unix_seconds: u64,
+        ),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -62,4 +75,69 @@ impl EventHandler for FFIEventHandler {
     }
 }
 
-impl PlatformEventHandler for FFIEventHandler {}
+impl PlatformEventHandler for FFIEventHandler {
+    fn on_platform_address_sync_completed(&self, summary: &PlatformAddressSyncSummary) {
+        let Some(cb) = self.callbacks.on_platform_address_sync_completed_fn else {
+            return;
+        };
+
+        if summary.wallet_results.is_empty() {
+            unsafe {
+                cb(
+                    self.callbacks.context,
+                    std::ptr::null(),
+                    0,
+                    summary.sync_unix_seconds,
+                );
+            }
+            return;
+        }
+
+        let mut owned_errors = Vec::new();
+        let mut results = Vec::with_capacity(summary.wallet_results.len());
+        for (&wallet_id, outcome) in &summary.wallet_results {
+            match outcome {
+                WalletSyncOutcome::Ok(result) => {
+                    results.push(PlatformAddressSyncWalletResultFFI {
+                        wallet_id,
+                        success: true,
+                        found_count: result.found.len(),
+                        absent_count: result.absent.len(),
+                        checkpoint_height: result.checkpoint_height,
+                        new_sync_height: result.new_sync_height,
+                        new_sync_timestamp: result.new_sync_timestamp,
+                        last_known_recent_block: result.last_known_recent_block,
+                        metrics: PlatformAddressSyncMetricsFFI::from(&result.metrics),
+                        error_message: std::ptr::null(),
+                    });
+                }
+                WalletSyncOutcome::Err(error) => {
+                    let error_message = std::ffi::CString::new(error.as_str()).ok();
+                    let error_ptr = error_message
+                        .as_ref()
+                        .map_or(std::ptr::null(), |message| message.as_ptr());
+                    if let Some(error_message) = error_message {
+                        owned_errors.push(error_message);
+                    }
+
+                    results.push(PlatformAddressSyncWalletResultFFI {
+                        wallet_id,
+                        success: false,
+                        metrics: PlatformAddressSyncMetricsFFI::default(),
+                        error_message: error_ptr,
+                        ..PlatformAddressSyncWalletResultFFI::default()
+                    });
+                }
+            }
+        }
+
+        unsafe {
+            cb(
+                self.callbacks.context,
+                results.as_ptr(),
+                results.len(),
+                summary.sync_unix_seconds,
+            );
+        }
+    }
+}

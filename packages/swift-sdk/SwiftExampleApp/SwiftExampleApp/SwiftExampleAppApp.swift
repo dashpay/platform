@@ -40,7 +40,6 @@ struct SwiftExampleAppApp: App {
     @State private var isInitialized = false
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
-    @State private var platformBalanceSyncTask: Task<Void, Never>?
 
     init() {
         // Suppress auto layout constraint warnings in debug builds
@@ -92,6 +91,13 @@ struct SwiftExampleAppApp: App {
     @MainActor
     private func rebindWalletScopedServices() {
         guard let wallet = walletManager.wallet else {
+            do {
+                try walletManager.stopPlatformAddressSync()
+            } catch {
+                SDKLogger.error(
+                    "Failed to stop platform address sync: \(error.localizedDescription)"
+                )
+            }
             platformBalanceSyncService.reset()
             return
         }
@@ -99,9 +105,13 @@ struct SwiftExampleAppApp: App {
             let platformAddressWallet = try wallet.platformAddressWallet()
             platformBalanceSyncService.configure(
                 platformAddressWallet: platformAddressWallet,
+                walletManager: walletManager,
                 persistenceHandler: walletManager.persistence,
                 walletId: wallet.walletId
             )
+            if try !walletManager.isPlatformAddressSyncRunning() {
+                try walletManager.startPlatformAddressSync()
+            }
             SDKLogger.log(
                 "🔗 Bound platform-balance-sync to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())…",
                 minimumLevel: .medium
@@ -148,12 +158,7 @@ struct SwiftExampleAppApp: App {
 
                 // Initialize shielded pool using first available wallet's data.
                 initializeShieldedService()
-
-                // SPV is NOT started automatically on launch — kicked
-                // off by a user action instead (e.g. wallet open).
-
-                // Start the periodic BLAST balance sync loop.
-                startPlatformBalanceSyncLoop()
+                rebindWalletScopedServices()
             }
 
             isInitialized = true
@@ -197,25 +202,5 @@ struct SwiftExampleAppApp: App {
         // wallet instead of reusing the legacy HDWallet.serializedWalletBytes.
         // For now the shielded service starts empty; it will be re-initialized
         // once the user creates/loads a wallet via `createWallet(...)`.
-    }
-
-    /// Start a background loop that drives `platformBalanceSyncService` every
-    /// 15 seconds. Cancelled when the app is torn down.
-    private func startPlatformBalanceSyncLoop() {
-        platformBalanceSyncTask?.cancel()
-        platformBalanceSyncTask = Task { [platformBalanceSyncService] in
-            // Small initial delay to let the SDK pre-fetch quorums.
-            try? await Task.sleep(for: .seconds(2))
-            await platformBalanceSyncService.performSync()
-
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(15))
-                } catch {
-                    break
-                }
-                await platformBalanceSyncService.performSync()
-            }
-        }
     }
 }

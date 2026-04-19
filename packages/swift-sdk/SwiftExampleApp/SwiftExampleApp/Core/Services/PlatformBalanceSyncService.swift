@@ -1,19 +1,20 @@
 // PlatformBalanceSyncService.swift
 // SwiftExampleApp
 //
-// App-level service that performs periodic BLAST address sync via
-// PlatformAddressWallet (platform-wallet-ffi). All address derivation,
-// incremental state, and balance tracking is handled on the Rust side.
+// App-level service that reflects Rust-owned BLAST address sync state
+// into SwiftUI. Scheduling, incremental state, and balance tracking
+// are handled on the Rust side.
 
 import Foundation
 import SwiftUI
+import Combine
 import SwiftDashSDK
 
-/// Observable service managing periodic BLAST address balance sync.
+/// Observable service managing BLAST address balance sync UI state.
 ///
-/// Syncs every 15 seconds while the app is active, or on manual pull-to-refresh.
-/// Incremental sync state (timestamps, heights, known balances) is retained
-/// by the Rust-side provider between calls — no UserDefaults needed.
+/// The Rust manager owns the background sync loop; this service loads
+/// cached balances for immediate display, issues manual sync requests,
+/// and applies Rust-emitted completion events to the UI.
 @MainActor
 class PlatformBalanceSyncService: ObservableObject {
     // MARK: - Published State
@@ -70,26 +71,38 @@ class PlatformBalanceSyncService: ObservableObject {
     /// The platform address wallet handle (retained for incremental sync state).
     private var platformAddressWallet: ManagedPlatformAddressWallet?
 
+    /// Wallet manager used to control the Rust-owned background sync loop.
+    private weak var walletManager: PlatformWalletManager?
+
     /// Persistence handler for loading cached balances.
     private var persistenceHandler: PlatformWalletPersistenceHandler?
 
     /// Wallet ID for querying cached balances.
     private var walletId: Data?
 
+    /// Observes Rust-side sync completion events.
+    private var syncEventCancellable: AnyCancellable?
+
+    /// Mirrors the Rust manager's current `is_syncing` flag for the UI.
+    private var syncStateCancellable: AnyCancellable?
+
     // MARK: - Lifecycle
 
     /// Configure for a wallet. Call after wallet creation/switch.
     func configure(
         platformAddressWallet: ManagedPlatformAddressWallet,
+        walletManager: PlatformWalletManager,
         persistenceHandler: PlatformWalletPersistenceHandler? = nil,
         walletId: Data? = nil
     ) {
         self.platformAddressWallet = platformAddressWallet
+        self.walletManager = walletManager
         self.persistenceHandler = persistenceHandler
         self.walletId = walletId
+        self.syncEventCancellable?.cancel()
+        self.syncStateCancellable?.cancel()
 
-        // Load cached state from SwiftData for immediate display and
-        // incremental sync resume.
+        // Load cached state from SwiftData for immediate display.
         if let handler = persistenceHandler, let wid = walletId {
             // Restore address balances for UI.
             let cached = handler.loadCachedBalances(walletId: wid)
@@ -98,7 +111,7 @@ class PlatformBalanceSyncService: ObservableObject {
                 var total: UInt64 = 0
                 var nonZero = 0
 
-                for (_, hash, balance) in cached {
+                for (_, hash, balance, _, _, _) in cached {
                     let key = hash.map { String(format: "%02x", $0) }.joined()
                     newBalances[key] = balance
                     total += balance
@@ -110,13 +123,8 @@ class PlatformBalanceSyncService: ObservableObject {
                 activeAddressCount = nonZero
             }
 
-            // Restore sync state so next sync is incremental.
+            // Load the last persisted sync markers for display.
             if let state = handler.loadCachedSyncState(walletId: wid) {
-                try? platformAddressWallet.restoreSyncState(
-                    syncHeight: state.syncHeight,
-                    syncTimestamp: state.syncTimestamp,
-                    lastKnownRecentBlock: state.lastKnownRecentBlock
-                )
                 chainTipHeight = state.syncHeight
                 lastSyncHeight = state.syncHeight
                 if state.syncTimestamp > 0 {
@@ -130,11 +138,17 @@ class PlatformBalanceSyncService: ObservableObject {
                 )
             }
         }
-    }
 
-    /// Initialize periodic sync. The actual loop is managed by UnifiedAppState.
-    func startPeriodicSync(network: AppNetwork) {
-        // No state to restore — cached balances are loaded in configure().
+        syncStateCancellable = walletManager.$platformAddressSyncIsSyncing
+            .sink { [weak self] isSyncing in
+                self?.isSyncing = isSyncing
+            }
+
+        syncEventCancellable = walletManager.$lastPlatformAddressSyncEvent
+            .sink { [weak self] event in
+                guard let self, let event else { return }
+                self.handlePlatformAddressSyncEvent(event)
+            }
     }
 
     /// Clear UI display state — balances, metrics, last sync timestamps.
@@ -169,6 +183,9 @@ class PlatformBalanceSyncService: ObservableObject {
     func reset() {
         clearDisplay()
         platformAddressWallet = nil
+        walletManager = nil
+        syncEventCancellable?.cancel()
+        syncStateCancellable?.cancel()
     }
 
     /// Trigger a manual sync. No-op if already syncing.
@@ -181,7 +198,7 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Perform the actual BLAST address sync via platform-wallet.
     func performSync() async {
         guard !isSyncing else { return }
-        guard let wallet = platformAddressWallet else {
+        guard let walletManager = walletManager else {
             lastError = "Platform address wallet not configured"
             return
         }
@@ -190,17 +207,24 @@ class PlatformBalanceSyncService: ObservableObject {
         lastError = nil
 
         do {
-            // `wallet.syncBalances()` internally drives a tokio runtime
-            // via `block_on`. Calling it directly from `@MainActor`
-            // parks the user-interactive main thread on default-QoS
-            // tokio workers — the iOS Thread Performance Checker
-            // reports this as a priority inversion. Hop to a detached
-            // task (default priority, matches tokio's default QoS) so
-            // main yields at the `await` instead of blocking.
-            let result = try await Task.detached { [wallet] in
-                try wallet.syncBalances()
-            }.value
+            try await walletManager.syncPlatformAddressNow()
+        } catch {
+            isSyncing = false
+            lastError = error.localizedDescription
+            SDKLogger.log(
+                "BLAST sync error: \(error.localizedDescription)",
+                minimumLevel: .medium
+            )
+        }
+    }
 
+    private func handlePlatformAddressSyncEvent(_ event: PlatformAddressSyncEvent) {
+        guard let walletId, let result = event.result(for: walletId) else {
+            return
+        }
+
+        if result.success {
+            lastError = nil
             if result.checkpointHeight > 0 {
                 checkpointHeight = result.checkpointHeight
             }
@@ -208,6 +232,7 @@ class PlatformBalanceSyncService: ObservableObject {
                 chainTipHeight = result.newSyncHeight
             }
             lastSyncHeight = result.newSyncHeight
+            lastKnownRecentBlock = result.lastKnownRecentBlock
             if result.newSyncTimestamp > 0 {
                 lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
             }
@@ -219,12 +244,27 @@ class PlatformBalanceSyncService: ObservableObject {
             totalRecentEntries += result.metrics.recentEntriesReturned
             totalCompactedEntries += result.metrics.compactedEntriesReturned
 
-            // Read balances from the wallet (canonical source of truth).
-            // Also runs through `block_on` on the Rust side, so keep
-            // it off main for the same priority-inversion reason.
-            let balances = try await Task.detached { [wallet] in
-                try wallet.addressesWithBalances()
+            lastSyncTime = Date(timeIntervalSince1970: TimeInterval(event.syncUnixSeconds))
+            syncCountSinceLaunch += 1
+
+            Task {
+                await refreshBalanceSnapshot()
+            }
+        } else {
+            lastError = result.errorMessage ?? "Platform address sync failed"
+        }
+    }
+
+    private func refreshBalanceSnapshot() async {
+        guard let wallet = platformAddressWallet else { return }
+
+        do {
+            let (balances, credits) = try await Task.detached { [wallet] in
+                let balances = try wallet.addressesWithBalances()
+                let credits = try wallet.totalCredits()
+                return (balances, credits)
             }.value
+
             var newBalances: [String: UInt64] = [:]
             var total: UInt64 = 0
             var nonZero = 0
@@ -237,31 +277,19 @@ class PlatformBalanceSyncService: ObservableObject {
             }
 
             addressBalances = newBalances
-            totalPlatformBalance = total
+            totalPlatformBalance = credits == total ? total : credits
             activeAddressCount = nonZero
 
-            // Update total credits as a cross-check
-            let credits = try wallet.totalCredits()
-            if credits != total {
-                totalPlatformBalance = credits
-            }
-
-            lastSyncTime = Date()
-            syncCountSinceLaunch += 1
-
             SDKLogger.log(
-                "BLAST sync complete: \(balances.count) addresses, total balance: \(total)",
+                "BLAST sync complete: \(balances.count) addresses, total balance: \(totalPlatformBalance)",
                 minimumLevel: .medium
             )
-
         } catch {
             lastError = error.localizedDescription
             SDKLogger.log(
-                "BLAST sync error: \(error.localizedDescription)",
+                "BLAST sync snapshot refresh error: \(error.localizedDescription)",
                 minimumLevel: .medium
             )
         }
-
-        isSyncing = false
     }
 }

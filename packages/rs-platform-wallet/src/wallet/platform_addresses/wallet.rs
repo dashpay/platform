@@ -91,9 +91,11 @@ impl PlatformAddressWallet {
         &self,
         persisted: crate::PlatformAddressSyncStartState,
     ) -> Result<(), PlatformWalletError> {
+        let mut per_wallet = std::collections::BTreeMap::new();
+        per_wallet.insert(self.wallet_id, persisted.per_account);
         let provider = PlatformPaymentAddressProvider::from_persisted(
             Arc::clone(&self.wallet_manager),
-            persisted.per_wallet,
+            per_wallet,
             persisted.sync_height,
             persisted.sync_timestamp,
             persisted.last_known_recent_block,

@@ -376,11 +376,11 @@ impl PlatformWallet {
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let ClientStartState {
-            platform_addresses,
+            mut platform_addresses,
             wallets: _,
         } = self.load_persisted()?;
 
-        if let Some(persisted) = platform_addresses {
+        if let Some(persisted) = platform_addresses.remove(&self.wallet_id) {
             self.platform
                 .initialize_from_persisted(persisted)
                 .await

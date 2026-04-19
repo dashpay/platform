@@ -25,6 +25,12 @@ public class PlatformWalletManager: ObservableObject {
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
 
+    /// Whether the Rust-owned platform-address sync manager is currently in flight.
+    @Published public private(set) var platformAddressSyncIsSyncing: Bool = false
+
+    /// Last completed platform-address sync event emitted by Rust.
+    @Published public internal(set) var lastPlatformAddressSyncEvent: PlatformAddressSyncEvent?
+
     /// The active wallet (at most one per manager for now).
     @Published public private(set) var wallet: ManagedPlatformWallet?
 
@@ -39,6 +45,10 @@ public class PlatformWalletManager: ObservableObject {
     /// Retained for the lifetime of the FFI handle so the callback
     /// context pointer remains valid.
     private var persistenceHandler: PlatformWalletPersistenceHandler?
+
+    /// Retained for the lifetime of the FFI handle so the event-handler
+    /// context pointer remains valid.
+    private var eventHandler: PlatformWalletEventHandler?
 
     /// Background task that polls SPV progress.
     private var progressPollTask: Task<Void, Never>?
@@ -58,6 +68,8 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
+            var stopError = PlatformWalletFFIError()
+            _ = platform_wallet_manager_platform_address_sync_stop(handle, &stopError)
             var error = PlatformWalletFFIError()
             _ = platform_wallet_manager_destroy(handle, &error)
         }
@@ -97,16 +109,13 @@ public class PlatformWalletManager: ObservableObject {
             handler = nil
         }
 
-        var eventHandler = EventHandlerCallbacks(
-            context: nil,
-            on_wallet_event_fn: nil,
-            on_error_fn: nil
-        )
+        let eventHandler = PlatformWalletEventHandler(manager: self)
+        var eventHandlerCallbacks = eventHandler.makeCallbacks()
 
         let result = platform_wallet_manager_create(
             sdkPointer,
             &persistence,
-            &eventHandler,
+            &eventHandlerCallbacks,
             &handle,
             &error
         )
@@ -117,6 +126,7 @@ public class PlatformWalletManager: ObservableObject {
 
         self.handle = handle
         self.persistenceHandler = handler
+        self.eventHandler = eventHandler
         self.isConfigured = true
 
         startProgressPolling()
@@ -234,9 +244,10 @@ public class PlatformWalletManager: ObservableObject {
     /// Calls `platform_wallet_manager_load_from_persistor` which fires
     /// the Swift-side `on_load_wallet_list_fn` callback. For each
     /// persisted wallet, Rust reconstructs a **watch-only** `Wallet`
-    /// from its stored root xpub + per-account xpubs. After the FFI
-    /// returns, we call `platform_wallet_manager_get_wallet` for each
-    /// restored id so Swift gets a `ManagedPlatformWallet` handle.
+    /// plus the wallet's persisted platform-address sync snapshot.
+    /// After the FFI returns, we call `platform_wallet_manager_get_wallet`
+    /// for each restored id so Swift gets a `ManagedPlatformWallet`
+    /// handle.
     ///
     /// Signing operations will fail until a future unlock flow
     /// upgrades a watch-only wallet to a signing wallet via the
@@ -282,7 +293,8 @@ public class PlatformWalletManager: ObservableObject {
                 )
             }
             if fetchResult == Success {
-                restored.append(ManagedPlatformWallet(handle: walletHandle, walletId: walletId))
+                let managedWallet = ManagedPlatformWallet(handle: walletHandle, walletId: walletId)
+                restored.append(managedWallet)
             } else {
                 // Log and skip — one wallet failing doesn't fail the
                 // whole restore. Usually means wallet_id / xpub
@@ -347,6 +359,9 @@ public class PlatformWalletManager: ObservableObject {
                 guard let self = self else { return }
                 if let progress = try? self.syncProgress() {
                     self.spvProgress = progress
+                }
+                if let isSyncing = try? self.isPlatformAddressSyncing() {
+                    self.platformAddressSyncIsSyncing = isSyncing
                 }
                 try? await Task.sleep(for: .seconds(1))
             }

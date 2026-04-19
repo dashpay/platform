@@ -174,6 +174,12 @@ pub unsafe fn parse_explicit_inputs_with_nonces(
 pub struct AddressBalanceEntryFFI {
     pub address: PlatformAddressFFI,
     pub balance: u64,
+    /// Address nonce used for anti-replay. Zero when unknown / unused.
+    pub nonce: u32,
+    /// DIP-17 account index for persisted platform-address state.
+    pub account_index: u32,
+    /// DIP-17 derivation index within the account.
+    pub address_index: u32,
 }
 
 /// Parse output entries into a BTreeMap.
@@ -380,18 +386,15 @@ impl
 
 impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeSetFFI {
     fn from(cs: &platform_wallet::PlatformAddressChangeSet) -> Self {
-        // The FFI boundary is per-wallet — the Swift caller already
-        // knows which wallet this changeset belongs to, and each entry
-        // flattens `(wallet_id, account_index, address, funds)` down to
-        // the address + balance that the existing FFI struct carries.
-        // Account index and wallet id are dropped here; if future
-        // persisters need them we'll widen the FFI entry shape.
         let updated: Vec<AddressBalanceEntryFFI> = cs
             .addresses
             .iter()
             .map(|entry| AddressBalanceEntryFFI {
                 address: entry.address.into(),
                 balance: entry.funds.balance,
+                nonce: entry.funds.nonce,
+                account_index: entry.account_index,
+                address_index: entry.address_index,
             })
             .collect();
 

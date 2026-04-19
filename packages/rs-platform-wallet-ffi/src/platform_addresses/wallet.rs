@@ -117,6 +117,9 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
                 .map(|(address, balance)| AddressBalanceEntryFFI {
                     address: address.into(),
                     balance,
+                    nonce: 0,
+                    account_index: 0,
+                    address_index: 0,
                 })
                 .collect();
             *out_count = entries.len();
