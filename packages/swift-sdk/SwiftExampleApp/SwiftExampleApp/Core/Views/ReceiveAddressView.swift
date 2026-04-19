@@ -115,6 +115,21 @@ struct ReceiveAddressView: View {
         }
     }
 
+    /// 33-byte compressed secp256k1 public key rendered as lowercase
+    /// hex. `nil` when the entry was persisted without a public key
+    /// (BLS accounts, script-only pool entries) or when the tab
+    /// doesn't expose one.
+    private var currentPublicKeyHex: String? {
+        let bytes: Data?
+        switch selectedTab {
+        case .core: bytes = nextCoreReceiveAddress?.publicKey
+        case .platform: bytes = nextPlatformReceiveAddress?.publicKey
+        case .shielded: bytes = nil
+        }
+        guard let data = bytes, !data.isEmpty else { return nil }
+        return data.map { String(format: "%02x", $0) }.joined()
+    }
+
     private var hasValidAddress: Bool {
         switch selectedTab {
         case .core:
@@ -173,6 +188,20 @@ struct ReceiveAddressView: View {
                                     .textSelection(.enabled)
                             }
                             .font(.caption2)
+                        }
+
+                        if let pubKey = currentPublicKeyHex {
+                            VStack(spacing: 2) {
+                                Text("Public Key")
+                                    .foregroundColor(.secondary)
+                                Text(pubKey)
+                                    .fontDesign(.monospaced)
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .font(.caption2)
+                            .frame(maxWidth: .infinity)
                         }
                     }
                     .padding(.horizontal)
