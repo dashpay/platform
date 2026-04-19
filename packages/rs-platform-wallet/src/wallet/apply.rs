@@ -38,9 +38,7 @@
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
 //!    the now-restored UTXO set; the returned changeset is discarded.
 
-use dpp::address_funds::PlatformAddress;
 use key_wallet::wallet::Wallet;
-use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::PlatformWalletChangeSet;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;

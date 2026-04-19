@@ -25,7 +25,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
 
 use dash_sdk::platform::address_sync::AddressFunds;
-use dpp::address_funds::PlatformAddress;
 use dpp::prelude::AssetLockProof;
 use key_wallet::PlatformP2PKHAddress;
 

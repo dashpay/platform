@@ -1118,7 +1118,11 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         funding: TopUpFundingMethod,
-        topup_index: u32,
+        // TODO(platform-wallet): route `topup_index` through the
+        // derivation path for the top-up asset lock. Currently
+        // unused; the function derives from `identity_index`
+        // alone.
+        _topup_index: u32,
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {
         // Retrieve the identity and its HD index from the manager.

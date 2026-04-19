@@ -25,7 +25,10 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     out_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
+    // No detailed error path today — the constructor is infallible
+    // once the null-pointer check passes. Kept in the ABI for
+    // forward-compat.
+    _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if sdk_ptr.is_null() || persistence.is_null() || event_handler.is_null() || out_handle.is_null()
     {

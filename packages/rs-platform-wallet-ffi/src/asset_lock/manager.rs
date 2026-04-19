@@ -95,7 +95,15 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
             }
             PlatformWalletFFIResult::Success
         })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidHandle,
+                    "Invalid asset-lock manager handle",
+                );
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
 }
 
 /// Free tracked locks array.

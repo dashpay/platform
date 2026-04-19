@@ -17,7 +17,6 @@ pub use withdrawal::*;
 
 use crate::error::*;
 use crate::platform_address_types::*;
-use dpp::address_funds::PlatformAddress;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 
 use crate::runtime::runtime;

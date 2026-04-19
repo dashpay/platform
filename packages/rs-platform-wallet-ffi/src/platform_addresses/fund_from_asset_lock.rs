@@ -78,19 +78,31 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
 
     // Parse private key (network is irrelevant for raw key bytes)
     let key_bytes = std::slice::from_raw_parts(private_key_bytes, 32);
-    let private_key = match dashcore::PrivateKey::from_slice(key_bytes, dashcore::Network::Mainnet)
-    {
-        Ok(k) => k,
-        Err(e) => {
+    let key_array: &[u8; 32] = match key_bytes.try_into() {
+        Ok(arr) => arr,
+        Err(_) => {
             if !out_error.is_null() {
                 *out_error = PlatformWalletFFIError::new(
                     PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!("Invalid private key: {}", e),
+                    "Private key must be exactly 32 bytes",
                 );
             }
             return PlatformWalletFFIResult::ErrorInvalidParameter;
         }
     };
+    let private_key =
+        match dashcore::PrivateKey::from_byte_array(key_array, dashcore::Network::Mainnet) {
+            Ok(k) => k,
+            Err(e) => {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidParameter,
+                        format!("Invalid private key: {}", e),
+                    );
+                }
+                return PlatformWalletFFIResult::ErrorInvalidParameter;
+            }
+        };
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
