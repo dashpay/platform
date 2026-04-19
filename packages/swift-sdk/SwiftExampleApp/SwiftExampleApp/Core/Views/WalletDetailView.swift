@@ -546,11 +546,31 @@ struct BalanceCardView: View {
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
 
     @Query private var persistentWallets: [PersistentWallet]
+    /// Per-wallet platform-address balance rows. SwiftData drives
+    /// the sum directly so every wallet's card reflects its own
+    /// funds — the previous code read
+    /// `platformBalanceSyncService.totalPlatformBalance`, a
+    /// singleton tied to whichever wallet was most recently
+    /// configured, which caused every wallet's balance to show the
+    /// last-synced wallet's total.
+    @Query private var addressBalances: [PersistentAddressBalance]
+    /// Network-scoped BLAST sync watermark. One row per network —
+    /// shared across every wallet on that network — so this query
+    /// filters by `network` rather than `walletId`. Used only to
+    /// distinguish "synced with zero balance" from "never synced".
+    @Query private var syncStates: [PersistentSyncState]
 
     init(wallet: HDWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
+        let networkName = wallet.network.rawValue
         _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
+        _addressBalances = Query(
+            filter: #Predicate<PersistentAddressBalance> { $0.walletId == walletId }
+        )
+        _syncStates = Query(
+            filter: #Predicate<PersistentSyncState> { $0.network == networkName }
+        )
     }
 
     private var confirmedBalance: UInt64 {
@@ -563,8 +583,10 @@ struct BalanceCardView: View {
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
     var platformBalance: UInt64 {
-        let blastBalance = platformBalanceSyncService.totalPlatformBalance
-        if blastBalance > 0 || platformBalanceSyncService.lastSyncTime != nil {
+        let blastBalance = addressBalances.reduce(0) { $0 + $1.balance }
+        let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
+            ?? false
+        if blastBalance > 0 || hasSynced {
             return blastBalance
         }
         return platformState.identities
