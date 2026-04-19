@@ -416,31 +416,32 @@ struct CoreAddressStorageListView: View {
     )
     private var records: [PersistentCoreAddress]
 
-    /// Composite key identifying one (wallet, account, pool) bucket.
-    /// Sorts stably on wallet-id bytes → account type → account index
-    /// → pool tag so the section order is deterministic across
-    /// relaunches.
+    /// Composite key identifying one (wallet, account) bucket. All
+    /// pools (External / Internal / Absent / Absent Hardened) for a
+    /// given account collapse into a single section — the pool name
+    /// rides on the address row instead of the header. Sorting is
+    /// stable across relaunches (wallet-id bytes → account type →
+    /// account index).
     private struct GroupKey: Hashable, Comparable {
         let walletId: Data
         let walletLabel: String
         let accountType: UInt32
         let accountIndex: UInt32
         let accountLabel: String
-        let poolTag: UInt8
-        let poolLabel: String
 
         static func < (lhs: Self, rhs: Self) -> Bool {
             if lhs.walletId != rhs.walletId {
                 return lhs.walletId.lexicographicallyPrecedes(rhs.walletId)
             }
             if lhs.accountType != rhs.accountType { return lhs.accountType < rhs.accountType }
-            if lhs.accountIndex != rhs.accountIndex { return lhs.accountIndex < rhs.accountIndex }
-            return lhs.poolTag < rhs.poolTag
+            return lhs.accountIndex < rhs.accountIndex
         }
     }
 
-    /// Group addresses by (wallet, account, pool) triple. Addresses
-    /// within a group are sorted by their derivation index.
+    /// Group addresses by (wallet, account). Addresses within a group
+    /// are sorted by (pool tag, derivation index) so external pool
+    /// entries come first, followed by internal, followed by any
+    /// absent-pool entries — each in index order.
     private var groups: [(GroupKey, [PersistentCoreAddress])] {
         let grouped = Dictionary(grouping: records) { record -> GroupKey in
             let account = record.account
@@ -450,13 +451,19 @@ struct CoreAddressStorageListView: View {
                 walletLabel: walletLabel(for: wallet),
                 accountType: account?.accountType ?? 0,
                 accountIndex: account?.accountIndex ?? 0,
-                accountLabel: account?.accountTypeName ?? "Unknown",
-                poolTag: record.poolTypeTag,
-                poolLabel: record.poolTypeName
+                accountLabel: account?.accountTypeName ?? "Unknown"
             )
         }
         return grouped
-            .map { ($0.key, $0.value.sorted { $0.addressIndex < $1.addressIndex }) }
+            .map { entry in
+                let sorted = entry.value.sorted { lhs, rhs in
+                    if lhs.poolTypeTag != rhs.poolTypeTag {
+                        return lhs.poolTypeTag < rhs.poolTypeTag
+                    }
+                    return lhs.addressIndex < rhs.addressIndex
+                }
+                return (entry.key, sorted)
+            }
             .sorted { $0.0 < $1.0 }
     }
 
@@ -484,14 +491,14 @@ struct CoreAddressStorageListView: View {
         }
     }
 
-    /// Header format: `"WalletName · AccountName #N · Pool"`.
-    /// `#N` is dropped for non-indexed account types so the title
-    /// doesn't dangle a stray `#0`.
+    /// Header format: `"WalletName · AccountName #N"`. `#N` is dropped
+    /// for non-indexed account types (identity registration, provider
+    /// keys, etc.) so the title doesn't dangle a stray `#0`.
     private func sectionTitle(for key: GroupKey) -> String {
         let accountPart = hasMeaningfulIndex(for: key.accountType)
             ? "\(key.accountLabel) #\(key.accountIndex)"
             : key.accountLabel
-        return "\(key.walletLabel) · \(accountPart) · \(key.poolLabel)"
+        return "\(key.walletLabel) · \(accountPart)"
     }
 
     /// Account types whose `accountIndex` carries real meaning (BIP44
@@ -519,7 +526,8 @@ struct CoreAddressStorageListView: View {
                 .font(.system(.caption, design: .monospaced))
                 .lineLimit(1).truncationMode(.middle)
             HStack(spacing: 8) {
-                Text("#\(record.addressIndex)")
+                Text(record.poolTypeName)
+                Text("• #\(record.addressIndex)")
                 if record.isUsed { Text("• used") }
                 if record.balance > 0 { Text("• \(record.balance)") }
             }
