@@ -419,14 +419,16 @@ struct CoreAddressStorageListView: View {
     /// Composite key identifying one (wallet, account) bucket. All
     /// pools (External / Internal / Absent / Absent Hardened) for a
     /// given account collapse into a single section — the pool name
-    /// rides on the address row instead of the header. Sorting is
-    /// stable across relaunches (wallet-id bytes → account type →
-    /// account index).
+    /// rides on the address row instead of the header. `standardTag`
+    /// is part of the key because a Standard account at index 0 can
+    /// coexist in both BIP44 (tag 0) and BIP32 (tag 1) forms for the
+    /// same wallet, and they should render as distinct sections.
     private struct GroupKey: Hashable, Comparable {
         let walletId: Data
         let walletLabel: String
         let accountType: UInt32
         let accountIndex: UInt32
+        let standardTag: UInt8
         let accountLabel: String
 
         static func < (lhs: Self, rhs: Self) -> Bool {
@@ -434,7 +436,8 @@ struct CoreAddressStorageListView: View {
                 return lhs.walletId.lexicographicallyPrecedes(rhs.walletId)
             }
             if lhs.accountType != rhs.accountType { return lhs.accountType < rhs.accountType }
-            return lhs.accountIndex < rhs.accountIndex
+            if lhs.accountIndex != rhs.accountIndex { return lhs.accountIndex < rhs.accountIndex }
+            return lhs.standardTag < rhs.standardTag
         }
     }
 
@@ -451,6 +454,7 @@ struct CoreAddressStorageListView: View {
                 walletLabel: walletLabel(for: wallet),
                 accountType: account?.accountType ?? 0,
                 accountIndex: account?.accountIndex ?? 0,
+                standardTag: account?.standardTag ?? 0,
                 accountLabel: account?.accountTypeName ?? "Unknown"
             )
         }
