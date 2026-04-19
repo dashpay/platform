@@ -130,7 +130,14 @@ struct AccountDetailView: View {
     }
 
     private func balanceCard() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // PlatformPayment balances are in credits (1e11/DASH), live on
+        // `PersistentPlatformAddress.balance`, and have no
+        // confirmed / pending split on-chain.
+        if account.accountType == 14 {
+            return AnyView(platformBalanceCard())
+        }
+
+        return AnyView(VStack(alignment: .leading, spacing: 12) {
             Label("Balance", systemImage: "bitcoinsign.circle.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
@@ -177,13 +184,55 @@ struct AccountDetailView: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2))
+    }
+
+    private func platformBalanceCard() -> some View {
+        let total = account.platformAddresses.reduce(0) { $0 + $1.balance }
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("Balance", systemImage: "creditcard")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            HStack {
+                Text("Platform Credits")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(formatCredits(total))
+                    .font(.title3)
+                    .fontWeight(.semibold)
+            }
+
+            HStack {
+                Text("Raw Credits")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(total)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
     private func poolSummaryCard() -> some View {
+        // DIP-17 PlatformPayment pools are flat — there's no
+        // external/internal split, no on-chain transactions, and no
+        // UTXOs. Surface only address-pool cardinality instead.
+        if account.accountType == 14 {
+            return AnyView(platformPoolSummaryCard())
+        }
+
         let externalCount = account.coreAddresses.filter { $0.poolTypeTag == 0 }.count
         let internalCount = account.coreAddresses.filter { $0.poolTypeTag == 1 }.count
-        return VStack(alignment: .leading, spacing: 12) {
+        return AnyView(VStack(alignment: .leading, spacing: 12) {
             Label("Address Pool", systemImage: "square.stack.3d.up.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
@@ -236,6 +285,51 @@ struct AccountDetailView: View {
                     .foregroundColor(.secondary)
                 Spacer()
                 Text("\(account.utxos.count)")
+                    .fontWeight(.medium)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2))
+    }
+
+    /// Platform-payment-specific pool summary. Shows total vs used
+    /// addresses plus the highest-seen index, and omits external /
+    /// internal / transactions / UTXOs (not meaningful for DIP-17).
+    private func platformPoolSummaryCard() -> some View {
+        let total = account.platformAddresses.count
+        let used = account.platformAddresses.filter { $0.isUsed }.count
+        let highest = account.platformAddresses
+            .filter { $0.isUsed }
+            .map { $0.addressIndex }
+            .max()
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("Address Pool", systemImage: "square.stack.3d.up.fill")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            HStack {
+                Text("Total Addresses:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(total)")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("Addresses Used:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(used)")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("Highest Used:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(highest.map { "\($0)" } ?? "—")
                     .fontWeight(.medium)
             }
         }
@@ -403,11 +497,30 @@ struct AccountDetailView: View {
     // MARK: - Helpers
 
     private var shouldShowBalance: Bool {
-        ["Standard BIP44", "BIP32", "CoinJoin"].contains(account.accountTypeName)
+        switch account.accountType {
+        case 0, 1, 14: return true
+        default: return false
+        }
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        return String(format: "%.8f DASH", dash)
+    }
+
+    /// Credits (1e11 per DASH) → DASH string. Used for the
+    /// PlatformPayment balance row.
+    private func formatCredits(_ amount: UInt64) -> String {
+        let dash = Double(amount) / 100_000_000_000.0
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
