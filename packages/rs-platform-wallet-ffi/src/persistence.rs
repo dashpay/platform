@@ -33,7 +33,7 @@ use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, LoadWalletListFn, LoadWalletListFreeFn, PersistAccountFn,
     PersistWalletMetadataFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
 };
-use dpp::address_funds::platform_address::PlatformAddress;
+use dpp::address_funds::PlatformAddress;
 
 /// C callback vtable for wallet persistence.
 ///
@@ -343,7 +343,9 @@ impl PlatformWalletPersistence for FFIPersister {
             // address is still surfaced to the caller.
             let rendered_address = if is_platform_payment {
                 let network = *info.address.network();
-                PlatformAddress::try_from(info.address.clone())
+                let converted: Result<PlatformAddress, _> =
+                    PlatformAddress::try_from(info.address.clone());
+                converted
                     .map(|p| p.to_bech32m_string(network))
                     .unwrap_or_else(|_| info.address.to_string())
             } else {
