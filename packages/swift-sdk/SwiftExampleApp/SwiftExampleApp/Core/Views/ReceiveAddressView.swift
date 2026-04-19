@@ -16,31 +16,16 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: HDWallet
 
-    @Query private var bip44Accounts: [PersistentAccount]
+    /// All persisted accounts across wallets. Filtered down to this
+    /// view's wallet + primary BIP44 account inside
+    /// `nextCoreReceiveAddress`. A `Query(filter:)` with the natural
+    /// predicate exceeded Swift's type-checker budget, so filtering in
+    /// Swift keeps compile times reasonable at negligible runtime
+    /// cost (tens of accounts per store, not thousands).
+    @Query private var allAccounts: [PersistentAccount]
 
     @State private var selectedTab: ReceiveAddressTab = .core
     @State private var copiedToClipboard = false
-
-    init(wallet: HDWallet) {
-        self.wallet = wallet
-        let walletId = wallet.walletId
-        // Primary BIP44 Standard account:
-        //   accountType == 0  (AccountTypeTagFFI::Standard)
-        //   accountIndex == 0 (first account)
-        //   standardTag == 0  (BIP44)
-        // Direct @Query over PersistentAccount is cheaper and more
-        // robust than walking `PersistentWallet.accounts`, which can
-        // lag on inverse-relationship updates across SwiftData
-        // contexts.
-        _bip44Accounts = Query(
-            filter: #Predicate<PersistentAccount> {
-                $0.wallet?.walletId == walletId
-                    && $0.accountType == 0
-                    && $0.accountIndex == 0
-                    && $0.standardTag == 0
-            }
-        )
-    }
 
     /// Lowest-indexed unused external address on the primary BIP44
     /// account. `PersistentCoreAddress` rows are populated by the Rust
@@ -48,10 +33,38 @@ struct ReceiveAddressView: View {
     /// (initial gap-limit fill), so they're available without a
     /// runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {
-        guard let account = bip44Accounts.first else { return nil }
-        return account.coreAddresses
-            .filter { $0.poolTypeTag == 0 && !$0.isUsed }
-            .min(by: { $0.addressIndex < $1.addressIndex })
+        primaryBip44Account.flatMap(firstUnusedExternalAddress(in:))
+    }
+
+    /// Primary BIP44 Standard account for the active wallet, or nil
+    /// if it hasn't been persisted yet.
+    private var primaryBip44Account: PersistentAccount? {
+        let walletId = wallet.walletId
+        for account in allAccounts {
+            if account.wallet?.walletId != walletId { continue }
+            if account.accountType != 0 { continue }
+            if account.accountIndex != 0 { continue }
+            if account.standardTag != 0 { continue }
+            return account
+        }
+        return nil
+    }
+
+    /// Lowest-indexed unused external address within the given
+    /// account, or nil if the external pool has no unused slots.
+    private func firstUnusedExternalAddress(
+        in account: PersistentAccount
+    ) -> PersistentCoreAddress? {
+        var best: PersistentCoreAddress? = nil
+        for addr in account.coreAddresses {
+            if addr.poolTypeTag != 0 { continue }
+            if addr.isUsed { continue }
+            if let current = best, current.addressIndex <= addr.addressIndex {
+                continue
+            }
+            best = addr
+        }
+        return best
     }
 
     private var currentAddress: String {
