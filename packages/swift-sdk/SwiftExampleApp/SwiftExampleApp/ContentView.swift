@@ -24,7 +24,11 @@ struct ContentView: View {
 
     @State private var selectedTab: RootTab = .sync
 
-    // Orphan-mnemonic recovery flow.
+    // Orphan-mnemonic recovery flow. Prompts fire sequentially: one
+    // wallet at a time, starting with the head of `pendingOrphans`.
+    // `showRecoverAlert` drives the primary (Authorize / No) alert and
+    // `showDeletePrompt` drives the secondary (Recreate / Delete) one.
+    @State private var pendingOrphans: [Data] = []
     @State private var showRecoverAlert = false
     @State private var showDeletePrompt = false
     @State private var recoveryInProgress = false
@@ -153,33 +157,50 @@ struct ContentView: View {
 
     // MARK: - Orphan mnemonic recovery
 
-    /// Detect the "keychain has a mnemonic but SwiftData has no wallet
-    /// records" case and kick off the recovery alert. Runs once per
-    /// launch after the first tab becomes visible; subsequent
-    /// `hdWallets` changes re-evaluate so creating a wallet clears the
-    /// state without re-prompting.
+    /// Detect keychain mnemonics with no matching `HDWallet` row and
+    /// kick off the recovery alert for each in turn. Runs once per
+    /// launch after the first tab becomes visible. Subsequent
+    /// `hdWallets` changes re-evaluate so newly-recovered wallets
+    /// drop out of the queue and we advance to the next orphan.
     @MainActor
     private func checkForOrphanMnemonic() {
         guard isInitialized, !orphanCheckDone else { return }
-        guard hdWallets.isEmpty else {
-            // Wallet exists locally — nothing to recover.
-            orphanCheckDone = true
-            return
-        }
-        guard (try? WalletStorage().retrieveMnemonic()) != nil else {
-            // No keychain mnemonic — nothing to recover.
-            orphanCheckDone = true
-            return
-        }
         orphanCheckDone = true
+
+        let storage = WalletStorage()
+        let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
+        let localIds = Set(hdWallets.map(\.walletId))
+        let orphans = keychainIds.filter { !localIds.contains($0) }
+
+        guard !orphans.isEmpty else { return }
+        pendingOrphans = orphans
         showRecoverAlert = true
     }
 
+    /// Drop the just-handled orphan from the queue and re-arm the
+    /// primary alert for the next one (if any).
+    @MainActor
+    private func advanceToNextOrphan() {
+        if !pendingOrphans.isEmpty {
+            pendingOrphans.removeFirst()
+        }
+        if !pendingOrphans.isEmpty {
+            // Small defer so SwiftUI has a chance to tear the
+            // previous alert down before presenting the next.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                showRecoverAlert = true
+            }
+        }
+    }
+
     /// Authorize via device passcode / biometrics, then fetch the
-    /// keychain-stored mnemonic and re-create the wallet.
+    /// keychain-stored mnemonic for the current orphan and re-create
+    /// the wallet.
     @MainActor
     private func authorizeAndRecover() async {
         guard !recoveryInProgress else { return }
+        guard let walletId = pendingOrphans.first else { return }
         recoveryInProgress = true
         defer { recoveryInProgress = false }
 
@@ -216,7 +237,7 @@ struct ContentView: View {
 
         let mnemonic: String
         do {
-            mnemonic = try WalletStorage().retrieveMnemonic()
+            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
         } catch {
             recoveryError = "Failed to read stored mnemonic: \(error.localizedDescription)"
             return
@@ -245,17 +266,20 @@ struct ContentView: View {
             )
             modelContext.insert(hdWallet)
             try modelContext.save()
+            advanceToNextOrphan()
         } catch {
             recoveryError = "Failed to recreate wallet: \(error.localizedDescription)"
         }
     }
 
-    /// Remove the orphaned mnemonic from the keychain. Leaves an empty
-    /// app state — the user can create a fresh wallet from scratch.
+    /// Remove the currently-selected orphan's mnemonic from the
+    /// keychain and advance to the next orphan in the queue.
     @MainActor
     private func deleteStoredMnemonic() {
+        guard let walletId = pendingOrphans.first else { return }
         do {
-            try WalletStorage().deleteMnemonic()
+            try WalletStorage().deleteMnemonic(for: walletId)
+            advanceToNextOrphan()
         } catch {
             recoveryError = "Failed to delete mnemonic: \(error.localizedDescription)"
         }

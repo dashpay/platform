@@ -322,13 +322,16 @@ struct CreateWalletView: View {
                     )
                     modelContext.insert(hdWallet)
                     try modelContext.save()
-                    // Persist the mnemonic in the iOS Keychain so the
-                    // wallet can be re-derived on launch if SwiftData
-                    // is cleared (app reinstall, container wipe, etc.).
-                    // Best-effort — failure here doesn't block wallet
-                    // creation, but we log so the user can fix it.
+                    // Persist the mnemonic in the iOS Keychain keyed
+                    // by walletId so multiple wallets coexist and the
+                    // recovery flow can enumerate all of them on
+                    // launch. Best-effort — failure here doesn't
+                    // block wallet creation.
                     do {
-                        try WalletStorage().storeMnemonic(mnemonicPhrase)
+                        try WalletStorage().storeMnemonic(
+                            mnemonicPhrase,
+                            for: managed.walletId
+                        )
                     } catch {
                         SDKLogger.error(
                             "Failed to persist mnemonic to keychain: \(error.localizedDescription)"

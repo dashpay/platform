@@ -415,10 +415,15 @@ public class PlatformWalletPersistenceHandler {
 
     /// Lookup key mirroring the identifying subset of
     /// `AccountSpecFFI` so the handler can locate the
-    /// `PersistentAccount` row for address linkage.
+    /// `PersistentAccount` row for address linkage. `standardTag` is
+    /// included because a wallet can have both BIP44 (tag 0) and
+    /// BIP32 (tag 1) Standard accounts at the same index — without
+    /// disambiguating on `standardTag`, BIP32 addresses would be
+    /// routed to the BIP44 row.
     struct AccountLookupKey {
         let typeTag: UInt32
         let index: UInt32
+        let standardTag: UInt8
         let registrationIndex: UInt32
         let keyClass: UInt32
         let userIdentityId: Data
@@ -453,7 +458,8 @@ public class PlatformWalletPersistenceHandler {
         )
         let matches = (try? backgroundContext.fetch(descriptor)) ?? []
         return matches.first { acc in
-            acc.registrationIndex == key.registrationIndex
+            acc.standardTag == key.standardTag
+                && acc.registrationIndex == key.registrationIndex
                 && acc.keyClass == key.keyClass
                 && acc.userIdentityId == key.userIdentityId
                 && acc.friendIdentityId == key.friendIdentityId
@@ -925,6 +931,7 @@ private func persistAccountAddressesCallback(
     let key = PlatformWalletPersistenceHandler.AccountLookupKey(
         typeTag: UInt32(spec.type_tag),
         index: spec.index,
+        standardTag: spec.standard_tag,
         registrationIndex: spec.registration_index,
         keyClass: spec.key_class,
         userIdentityId: userIdentityId,

@@ -200,6 +200,137 @@ public class WalletStorage {
         }
     }
 
+    // MARK: - Per-Wallet Mnemonic Storage
+    //
+    // Multi-wallet variant keyed by the 32-byte walletId. Stores each
+    // mnemonic at account `wallet.mnemonic.<hex-walletId>` so any
+    // number of wallets can coexist.
+
+    private func perWalletMnemonicAccount(for walletId: Data) -> String {
+        let hex = walletId.map { String(format: "%02x", $0) }.joined()
+        return "\(mnemonicKeychainAccount).\(hex)"
+    }
+
+    /// Store a mnemonic keyed by wallet id.
+    public func storeMnemonic(_ mnemonic: String, for walletId: Data) throws {
+        let data = Data(mnemonic.utf8)
+        let account = perWalletMnemonicAccount(for: walletId)
+
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account
+        ]
+        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
+        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(deleteStatus)
+        }
+
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    /// Retrieve a mnemonic keyed by wallet id.
+    public func retrieveMnemonic(for walletId: Data) throws -> String {
+        let account = perWalletMnemonicAccount(for: walletId)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecItemNotFound {
+            throw WalletStorageError.mnemonicNotFound
+        }
+        guard status == errSecSuccess else {
+            throw WalletStorageError.keychainError(status)
+        }
+        guard let data = result as? Data,
+              let mnemonic = String(data: data, encoding: .utf8),
+              !mnemonic.isEmpty else {
+            throw WalletStorageError.mnemonicNotFound
+        }
+        return mnemonic
+    }
+
+    /// Delete a mnemonic keyed by wallet id. Idempotent.
+    public func deleteMnemonic(for walletId: Data) throws {
+        let account = perWalletMnemonicAccount(for: walletId)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    /// Enumerate all wallet ids with a stored mnemonic.
+    ///
+    /// Reads every `kSecClassGenericPassword` entry under
+    /// `org.dash.wallet`, keeps those whose account starts with
+    /// `wallet.mnemonic.` followed by a 64-character lowercase hex
+    /// string, and decodes the suffix back into 32-byte wallet ids.
+    /// Returns an empty array if the keychain has none.
+    public func listWalletIdsWithMnemonic() throws -> [Data] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return []
+        }
+        guard status == errSecSuccess else {
+            throw WalletStorageError.keychainError(status)
+        }
+        guard let items = result as? [[String: Any]] else { return [] }
+
+        let prefix = "\(mnemonicKeychainAccount)."
+        var walletIds: [Data] = []
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  account.hasPrefix(prefix) else { continue }
+            let hex = String(account.dropFirst(prefix.count))
+            guard hex.count == 64, let walletId = Self.dataFromHex(hex) else { continue }
+            walletIds.append(walletId)
+        }
+        return walletIds
+    }
+
+    /// Decode a lowercase hex string into bytes. Returns nil on any
+    /// non-hex character or an odd length.
+    private static func dataFromHex(_ hex: String) -> Data? {
+        guard hex.count % 2 == 0 else { return nil }
+        var data = Data(capacity: hex.count / 2)
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            data.append(byte)
+            index = next
+        }
+        return data
+    }
+
     // MARK: - PIN Management
 
     private func storePINHash(_ pin: String) throws {
