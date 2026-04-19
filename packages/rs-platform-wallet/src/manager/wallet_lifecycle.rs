@@ -80,7 +80,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .map(|a| (a.account_type.clone(), a.account_xpub))
             .collect();
-        let address_snapshots: Vec<(
+        // Snapshot core (BIP44/CoinJoin/identity/provider/DashPay)
+        // address pools. PlatformPayment accounts live in a separate
+        // collection on `ManagedWalletInfo` and are handled below.
+        let mut address_snapshots: Vec<(
             key_wallet::account::AccountType,
             Vec<(
                 key_wallet::managed_account::address_pool::AddressPoolType,
@@ -104,6 +107,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 (account_type, pools)
             })
             .collect();
+
+        // Platform payment (DIP-17) accounts sit in their own
+        // collection and each owns a single `AddressPool`. Snapshot
+        // them here so the Storage Explorer can show them under the
+        // PlatformPayment account row alongside core pools.
+        for managed in wallet_info.all_platform_payment_managed_accounts() {
+            let account_type = key_wallet::account::AccountType::PlatformPayment {
+                account: managed.account,
+                key_class: managed.key_class,
+            };
+            let pool = &managed.addresses;
+            let infos: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
+            address_snapshots.push((account_type, vec![(pool.pool_type, infos)]));
+        }
 
         let platform_info = PlatformWalletInfo {
             core_wallet: wallet_info,
