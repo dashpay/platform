@@ -592,7 +592,8 @@ struct BalanceCardView: View {
                     label: "Core Balance",
                     amount: confirmedBalance,
                     incoming: unconfirmedBalance,
-                    color: .primary
+                    color: .primary,
+                    unit: .duffs
                 )
 
                 // Platform Balance row
@@ -600,6 +601,7 @@ struct BalanceCardView: View {
                     label: "Platform Balance",
                     amount: platformBalance,
                     color: .blue,
+                    unit: .credits,
                     showSyncIndicator: platformBalanceSyncService.isSyncing
                 )
 
@@ -608,6 +610,7 @@ struct BalanceCardView: View {
                     label: "Shielded Balance",
                     amount: shieldedService.shieldedBalance,
                     color: .purple,
+                    unit: .credits,
                     showSyncIndicator: shieldedService.isSyncing
                 )
             }
@@ -619,11 +622,17 @@ struct BalanceCardView: View {
 }
 
 /// A single balance row showing label, amount, and optional incoming amount.
+private enum WalletBalanceUnit {
+    case duffs
+    case credits
+}
+
 private struct WalletBalanceRow: View {
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
     var color: Color
+    var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
 
     var body: some View {
@@ -661,7 +670,13 @@ private struct WalletBalanceRow: View {
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
+        let dashDivisor: Double = switch unit {
+        case .duffs:
+            100_000_000.0
+        case .credits:
+            100_000_000_000.0
+        }
+        let dash = Double(amount) / dashDivisor
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
