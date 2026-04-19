@@ -16,6 +16,7 @@ public class PlatformWalletPersistenceHandler {
         self.modelContainer = modelContainer
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
+        migrateLegacySyncStateRecordsToNetworkScope()
     }
 
     // MARK: - Address Balances
@@ -76,24 +77,33 @@ public class PlatformWalletPersistenceHandler {
     // MARK: - Sync State
 
     /// Upsert sync state into SwiftData.
+    ///
+    /// The BLAST watermark is network-scoped, not wallet-scoped: every
+    /// wallet on the same network shares one merged checkpoint.
     func persistSyncState(
         walletId: Data,
         syncHeight: UInt64,
         syncTimestamp: UInt64,
         lastKnownRecentBlock: UInt64
     ) {
+        guard let network = syncStateNetwork(forWalletId: walletId) else {
+            return
+        }
+        let scopeId = syncStateScopeId(for: network)
         let descriptor = FetchDescriptor<PersistentSyncState>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: #Predicate { $0.walletId == scopeId }
         )
 
         if let existing = try? backgroundContext.fetch(descriptor).first {
+            existing.network = network
             existing.syncHeight = syncHeight
             existing.syncTimestamp = syncTimestamp
             existing.lastKnownRecentBlock = lastKnownRecentBlock
             existing.lastUpdated = Date()
         } else {
             let record = PersistentSyncState(
-                walletId: walletId,
+                walletId: scopeId,
+                network: network,
                 syncHeight: syncHeight,
                 syncTimestamp: syncTimestamp,
                 lastKnownRecentBlock: lastKnownRecentBlock
@@ -101,13 +111,24 @@ public class PlatformWalletPersistenceHandler {
             backgroundContext.insert(record)
         }
 
+        migrateLegacySyncStateRecordsToNetworkScope()
         try? backgroundContext.save()
     }
 
-    /// Load cached sync state for a wallet.
+    /// Load cached sync state for a wallet's network.
     public func loadCachedSyncState(walletId: Data) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+        guard let network = syncStateNetwork(forWalletId: walletId) else {
+            return nil
+        }
+        return loadCachedSyncState(network: network)
+    }
+
+    /// Load cached sync state for a specific network.
+    public func loadCachedSyncState(network: String) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+        let normalizedNetwork = normalizedNetworkName(network)
+        let scopeId = syncStateScopeId(for: normalizedNetwork)
         let descriptor = FetchDescriptor<PersistentSyncState>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: #Predicate { $0.walletId == scopeId }
         )
 
         guard let record = try? backgroundContext.fetch(descriptor).first else {
@@ -493,6 +514,7 @@ public class PlatformWalletPersistenceHandler {
         wallet.birthHeight = birthHeight
         wallet.lastUpdated = Date()
         try? backgroundContext.save()
+        migrateLegacySyncStateRecordsToNetworkScope()
     }
 
     /// Set the user-facing name on the `PersistentWallet` row.
@@ -705,7 +727,7 @@ public class PlatformWalletPersistenceHandler {
                 allocation.addressBalanceArrays.append((buf, cachedBalances.count))
             }
 
-            let syncState = loadCachedSyncState(walletId: w.walletId)
+            let syncState = loadCachedSyncState(network: w.network)
 
             var entry = WalletRestoreEntryFFI()
             copyBytes(w.walletId, into: &entry.wallet_id)
@@ -790,6 +812,145 @@ public class PlatformWalletPersistenceHandler {
         case "devnet": return 2
         case "regtest": return 3
         default: return 1 // default to testnet for unknown during dev
+        }
+    }
+
+    private func normalizedNetworkName(_ network: String) -> String {
+        let trimmed = network.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else {
+            return "unknown"
+        }
+        return trimmed
+    }
+
+    private func syncStateScopeId(for network: String) -> Data {
+        let scopeString = "platform-sync:\(normalizedNetworkName(network))"
+        var data = Data(scopeString.utf8.prefix(32))
+        if data.count < 32 {
+            data.append(Data(repeating: 0, count: 32 - data.count))
+        }
+        return data
+    }
+
+    private func walletNetwork(walletId: Data) -> String? {
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        guard let wallet = try? backgroundContext.fetch(descriptor).first else {
+            return nil
+        }
+        let normalized = normalizedNetworkName(wallet.network)
+        return normalized == "unknown" && wallet.network.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : normalized
+    }
+
+    private func syncStateNetwork(forWalletId walletId: Data) -> String? {
+        if let network = walletNetwork(walletId: walletId) {
+            return network
+        }
+
+        let descriptor = FetchDescriptor<PersistentSyncState>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        guard let record = try? backgroundContext.fetch(descriptor).first else {
+            return nil
+        }
+        return syncStateNetwork(for: record)
+    }
+
+    private func syncStateNetwork(for record: PersistentSyncState) -> String? {
+        let normalized = normalizedNetworkName(record.network)
+        if normalized != "unknown" || !record.network.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return normalized
+        }
+
+        return walletNetwork(walletId: record.walletId)
+    }
+
+    private func fetchSyncStateRecord(scopeId: Data) -> PersistentSyncState? {
+        let descriptor = FetchDescriptor<PersistentSyncState>(
+            predicate: #Predicate { $0.walletId == scopeId }
+        )
+        return try? backgroundContext.fetch(descriptor).first
+    }
+
+    private func mergeSyncState(_ source: PersistentSyncState, into target: PersistentSyncState) {
+        target.syncHeight = max(target.syncHeight, source.syncHeight)
+        target.syncTimestamp = max(target.syncTimestamp, source.syncTimestamp)
+        target.lastKnownRecentBlock = max(
+            target.lastKnownRecentBlock,
+            source.lastKnownRecentBlock
+        )
+        if source.lastUpdated > target.lastUpdated {
+            target.lastUpdated = source.lastUpdated
+        }
+        if let network = syncStateNetwork(for: source) {
+            target.network = network
+        }
+    }
+
+    private func migrateLegacySyncStateRecordsToNetworkScope() {
+        let descriptor = FetchDescriptor<PersistentSyncState>()
+        guard let records = try? backgroundContext.fetch(descriptor), !records.isEmpty else {
+            return
+        }
+
+        var canonicalByNetwork: [String: PersistentSyncState] = [:]
+        var mutated = false
+
+        for record in records {
+            guard let network = syncStateNetwork(for: record) else {
+                continue
+            }
+            let scopeId = syncStateScopeId(for: network)
+
+            if record.walletId == scopeId {
+                if record.network != network {
+                    record.network = network
+                    mutated = true
+                }
+
+                if let canonical = canonicalByNetwork[network], canonical !== record {
+                    mergeSyncState(record, into: canonical)
+                    backgroundContext.delete(record)
+                    mutated = true
+                } else {
+                    canonicalByNetwork[network] = record
+                }
+                continue
+            }
+
+            let canonical: PersistentSyncState
+            if let existing = canonicalByNetwork[network] {
+                canonical = existing
+            } else if let existing = fetchSyncStateRecord(scopeId: scopeId) {
+                canonical = existing
+                if existing.network != network {
+                    existing.network = network
+                    mutated = true
+                }
+                canonicalByNetwork[network] = existing
+            } else {
+                canonical = PersistentSyncState(
+                    walletId: scopeId,
+                    network: network,
+                    syncHeight: 0,
+                    syncTimestamp: 0,
+                    lastKnownRecentBlock: 0
+                )
+                backgroundContext.insert(canonical)
+                canonicalByNetwork[network] = canonical
+                mutated = true
+            }
+
+            mergeSyncState(record, into: canonical)
+            backgroundContext.delete(record)
+            mutated = true
+        }
+
+        if mutated {
+            try? backgroundContext.save()
         }
     }
 }

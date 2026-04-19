@@ -232,10 +232,14 @@ struct SyncStateStorageListView: View {
         List(records) { record in
             NavigationLink(destination: SyncStateStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Height \(record.syncHeight)")
+                    Text(record.network.capitalized)
                         .font(.body)
-                    Text(record.lastUpdated, style: .relative)
-                        .font(.caption).foregroundColor(.secondary)
+                    Text("Height \(record.syncHeight)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Updated \(record.lastUpdated, style: .relative)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
         }

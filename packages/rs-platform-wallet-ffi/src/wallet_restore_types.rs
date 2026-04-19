@@ -107,7 +107,8 @@ pub struct WalletRestoreEntryFFI {
     /// Swift-owned and valid only for the duration of the callback.
     pub platform_address_balances: *const AddressBalanceEntryFFI,
     pub platform_address_balances_count: usize,
-    /// Per-wallet incremental BLAST sync watermark.
+    /// Network-scoped incremental BLAST sync watermark, repeated on
+    /// each wallet entry for that network during restore.
     pub platform_sync_height: u64,
     pub platform_sync_timestamp: u64,
     pub platform_last_known_recent_block: u64,

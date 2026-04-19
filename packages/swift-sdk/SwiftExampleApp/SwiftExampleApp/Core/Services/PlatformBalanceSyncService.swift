@@ -68,7 +68,8 @@ class PlatformBalanceSyncService: ObservableObject {
 
     // MARK: - Internal
 
-    /// The platform address wallet handle (retained for incremental sync state).
+    /// The platform address wallet handle used to refresh address
+    /// balances after Rust-owned sync passes complete.
     private var platformAddressWallet: ManagedPlatformAddressWallet?
 
     /// Wallet manager used to control the Rust-owned background sync loop.
@@ -123,7 +124,7 @@ class PlatformBalanceSyncService: ObservableObject {
                 activeAddressCount = nonZero
             }
 
-            // Load the last persisted sync markers for display.
+            // Load the last persisted network sync markers for display.
             if let state = handler.loadCachedSyncState(walletId: wid) {
                 chainTipHeight = state.syncHeight
                 lastSyncHeight = state.syncHeight
@@ -133,7 +134,7 @@ class PlatformBalanceSyncService: ObservableObject {
                 lastKnownRecentBlock = state.lastKnownRecentBlock
 
                 SDKLogger.log(
-                    "Restored sync state: height=\(state.syncHeight), timestamp=\(state.syncTimestamp)",
+                    "Restored network sync state: height=\(state.syncHeight), timestamp=\(state.syncTimestamp)",
                     minimumLevel: .medium
                 )
             }

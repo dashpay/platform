@@ -367,9 +367,10 @@ impl Merge for ContactChangeSet {
 /// Also carries the incremental-sync watermark (`sync_height` /
 /// `sync_timestamp`). Without it the provider would start fresh after
 /// every restart and force a full rescan instead of a delta catch-up.
-/// The watermark is tracked per wallet (not per account): it's the max
-/// across accounts — on the next sync every provider rewinds to this
-/// point, so no account can silently skip a range.
+/// The live watermark is shared across the merged provider for a
+/// network and may therefore be repeated across wallet-scoped
+/// persistence callbacks; persisters should treat it as one checkpoint
+/// per network, not one checkpoint per wallet.
 /// One updated platform payment address inside a
 /// [`PlatformAddressChangeSet`]. Carries full routing context —
 /// wallet id + DIP-17 account index + derivation index + P2PKH — so

@@ -3,13 +3,19 @@ import SwiftData
 
 /// SwiftData model for persisting BLAST address sync state.
 ///
-/// Stores the incremental-sync watermark so the engine can resume
-/// from where it left off on app restart instead of doing a full
-/// trunk/branch/compact rescan.
+/// Stores the network-scoped incremental-sync watermark so the engine
+/// can resume from where it left off on app restart instead of doing
+/// a full trunk/branch/compact rescan.
 @Model
 public final class PersistentSyncState {
-    /// 32-byte wallet ID.
+    /// Stable 32-byte scope key for this sync-state row.
+    ///
+    /// Kept as `walletId` for schema compatibility, but the persisted
+    /// value is now a network-scoped key (one row per network) rather
+    /// than a concrete wallet id.
     @Attribute(.unique) public var walletId: Data
+    /// Network this sync checkpoint belongs to.
+    public var network: String
     /// Highest block height covered by the last sync.
     public var syncHeight: UInt64
     /// Latest timestamp covered by the last sync (Unix seconds).
@@ -21,11 +27,13 @@ public final class PersistentSyncState {
 
     public init(
         walletId: Data,
+        network: String,
         syncHeight: UInt64,
         syncTimestamp: UInt64,
         lastKnownRecentBlock: UInt64
     ) {
         self.walletId = walletId
+        self.network = network
         self.syncHeight = syncHeight
         self.syncTimestamp = syncTimestamp
         self.lastKnownRecentBlock = lastKnownRecentBlock

@@ -388,6 +388,7 @@ struct SyncStateStorageDetailView: View {
     var body: some View {
         Form {
             Section("Sync Watermark") {
+                FieldRow(label: "Network", value: record.network)
                 FieldRow(label: "Sync Height", value: "\(record.syncHeight)")
                 FieldRow(label: "Sync Timestamp", value: "\(record.syncTimestamp)")
                 if let date = blockDate {
@@ -402,7 +403,6 @@ struct SyncStateStorageDetailView: View {
                 FieldRow(label: "Last Known Recent Block", value: record.lastKnownRecentBlock > 0
                     ? "\(record.lastKnownRecentBlock)"
                     : "0 (no recent address activity)")
-                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
             }
             Section("Timestamps") {
                 FieldRow(label: "Record Updated", value: dateString(record.lastUpdated))

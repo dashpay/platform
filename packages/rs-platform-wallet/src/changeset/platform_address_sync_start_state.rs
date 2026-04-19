@@ -13,9 +13,9 @@ use crate::wallet::platform_addresses::PerWalletPlatformAddressState;
 /// Carries everything
 /// [`PlatformPaymentAddressProvider::from_persisted`](crate::wallet::platform_addresses::PlatformPaymentAddressProvider::from_persisted)
 /// needs to rebuild one wallet's provider — the per-account xpub +
-/// `found`/`absent` map and that wallet's incremental-sync watermark. The
-/// live `AddressPool` in the wallet manager supplies the current
-/// address set at reconstruction time.
+/// `found`/`absent` map and the shared network-scoped incremental-sync
+/// watermark. The live `AddressPool` in the wallet manager supplies
+/// the current address set at reconstruction time.
 #[derive(Debug, Default)]
 pub struct PlatformAddressSyncStartState {
     /// Per-account committed state to restore for one wallet.
