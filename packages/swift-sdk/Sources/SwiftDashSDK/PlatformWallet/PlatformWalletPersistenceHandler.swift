@@ -22,6 +22,15 @@ public class PlatformWalletPersistenceHandler {
     // MARK: - Address Balances
 
     /// Upsert address balances into SwiftData.
+    ///
+    /// For every incoming BLAST entry we also mirror the balance onto
+    /// the matching `PersistentCoreAddress` row — otherwise the Storage
+    /// Explorer / address detail views keep showing `Balance: 0` even
+    /// after funds land, because that detail view reads the
+    /// HD-derived address record (keyed by `account + addressIndex`)
+    /// rather than the BLAST balance cache (keyed by `addressHash`).
+    /// DIP-17 PlatformPayment addresses are the only pool fed by this
+    /// path today (`accountType == 14`).
     func persistAddressBalances(
         walletId: Data,
         entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)]
@@ -47,9 +56,50 @@ public class PlatformWalletPersistenceHandler {
                 )
                 backgroundContext.insert(record)
             }
+
+            mirrorBalanceToCoreAddress(
+                walletId: walletId,
+                accountIndex: accountIndex,
+                addressIndex: addressIndex,
+                balance: balance,
+                nonce: nonce
+            )
         }
 
         try? backgroundContext.save()
+    }
+
+    /// Find the matching `PersistentCoreAddress` for a DIP-17
+    /// PlatformPayment entry (wallet + account 14/N + derivation
+    /// index) and mirror the balance / used flag onto it.
+    /// No-op if the address record hasn't been emitted yet.
+    private func mirrorBalanceToCoreAddress(
+        walletId: Data,
+        accountIndex: UInt32,
+        addressIndex: UInt32,
+        balance: UInt64,
+        nonce: UInt32
+    ) {
+        let platformPaymentType: UInt32 = 14
+        let descriptor = FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { addr in
+                addr.addressIndex == addressIndex
+                    && addr.account?.accountType == platformPaymentType
+                    && addr.account?.accountIndex == accountIndex
+                    && addr.account?.wallet?.walletId == walletId
+            }
+        )
+        guard let row = try? backgroundContext.fetch(descriptor).first else {
+            return
+        }
+        let wasUsed = row.isUsed
+        row.balance = balance
+        if balance > 0 || nonce > 0 {
+            row.isUsed = true
+        }
+        if row.balance != balance || row.isUsed != wasUsed {
+            row.lastUpdated = Date()
+        }
     }
 
     /// Load all cached address balances for a wallet.
