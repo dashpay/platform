@@ -12,6 +12,8 @@ public class WalletStorage {
     private let pinKeychainAccount = "wallet.pin"
     private let biometricKeychainAccount = "wallet.biometric"
 
+    public init() {}
+
     // MARK: - Seed Storage
 
     /// Store the wallet seed encrypted with the user's PIN.
