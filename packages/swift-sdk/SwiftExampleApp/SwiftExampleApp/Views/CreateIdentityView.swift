@@ -123,28 +123,42 @@ struct CreateIdentityView: View {
                 Text("Fund from unused Asset Lock")
                     .tag(Optional(FundingSelection.unusedAssetLock))
             }
+            .onChange(of: fundingSelection) { _, newValue in
+                // SwiftUI's menu-style Picker doesn't have a per-row
+                // `disabled` hook we can trust, so enforce "can't
+                // pick a zero-balance account" by reverting the
+                // selection if the user taps one.
+                guard case let .account(persistentId) = newValue,
+                      let option = options.first(where: { $0.persistentId == persistentId }),
+                      !option.hasBalance
+                else { return }
+                fundingSelection = nil
+            }
         } header: {
             Text("Funding Source")
         } footer: {
             Text(
                 "Any account on the selected wallet can fund the identity — "
                 + "Core or Platform Payment. Accounts with no balance are "
-                + "greyed out. \"Fund from unused Asset Lock\" picks an "
-                + "existing tracked asset lock instead."
+                + "greyed out and can't be selected. \"Fund from unused "
+                + "Asset Lock\" picks an existing tracked asset lock instead."
             )
         }
     }
 
-    /// Picker row renderer — dims accounts whose balance is zero so
-    /// the caller sees at a glance which funding sources are usable.
-    @ViewBuilder
-    private func fundingOptionLabel(_ option: FundingAccountOption) -> some View {
-        if option.hasBalance {
-            Text(option.label)
-        } else {
-            Text(option.label)
-                .foregroundStyle(.secondary)
+    /// Picker row renderer. We build the label as an
+    /// `AttributedString` because SwiftUI's menu-style Picker strips
+    /// `.foregroundStyle` / `.opacity` modifiers on the outer `Text`,
+    /// but honours per-run `foregroundColor` attributes inside an
+    /// attributed value. The balance suffix (` — 0.01 DASH` / ` —
+    /// empty`) makes the state obvious even if the colour gets
+    /// overridden on some iOS variants.
+    private func fundingOptionLabel(_ option: FundingAccountOption) -> Text {
+        var attr = AttributedString("\(option.label) — \(option.balanceText)")
+        if !option.hasBalance {
+            attr.foregroundColor = .secondary
         }
+        return Text(attr)
     }
 
     private var walletlessSection: some View {
@@ -228,10 +242,12 @@ struct CreateIdentityView: View {
                 return lhsKey < rhsKey
             }
             .map { account in
-                FundingAccountOption(
+                let (hasBalance, balanceText) = Self.accountBalanceSummary(account)
+                return FundingAccountOption(
                     persistentId: account.persistentModelID,
                     label: Self.fundingLabel(for: account),
-                    hasBalance: Self.accountHasBalance(account)
+                    hasBalance: hasBalance,
+                    balanceText: balanceText
                 )
             }
     }
@@ -244,17 +260,40 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Whether an account has spendable funds. Core / CoinJoin use
-    /// the SPV-maintained `balanceConfirmed` + `balanceUnconfirmed`
-    /// duffs totals; PlatformPayment sums the BLAST-synced credits
-    /// across its addresses.
-    private static func accountHasBalance(_ account: PersistentAccount) -> Bool {
+    /// Formatted balance for the picker row and the disabled flag.
+    /// Core / CoinJoin use the SPV-maintained
+    /// `balanceConfirmed + balanceUnconfirmed` duffs (1e8/DASH);
+    /// PlatformPayment sums the BLAST-synced credit balances across
+    /// its addresses (1e11/DASH).
+    private static func accountBalanceSummary(
+        _ account: PersistentAccount
+    ) -> (hasBalance: Bool, balanceText: String) {
         switch account.accountType {
         case 14:
-            return account.platformAddresses.contains { $0.balance > 0 }
+            let credits = account.platformAddresses.reduce(0) { $0 + $1.balance }
+            return (
+                credits > 0,
+                credits > 0 ? formatDash(raw: credits, divisor: 100_000_000_000.0) : "empty"
+            )
         default:
-            return account.balanceConfirmed > 0 || account.balanceUnconfirmed > 0
+            let duffs = account.balanceConfirmed + account.balanceUnconfirmed
+            return (
+                duffs > 0,
+                duffs > 0 ? formatDash(raw: duffs, divisor: 100_000_000.0) : "empty"
+            )
         }
+    }
+
+    /// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.
+    private static func formatDash(raw: UInt64, divisor: Double) -> String {
+        let dash = Double(raw) / divisor
+        let fmt = NumberFormatter()
+        fmt.minimumFractionDigits = 0
+        fmt.maximumFractionDigits = 8
+        fmt.numberStyle = .decimal
+        fmt.groupingSeparator = ","
+        fmt.decimalSeparator = "."
+        return (fmt.string(from: NSNumber(value: dash)) ?? String(format: "%.8f", dash)) + " DASH"
     }
 
     private static func fundingLabel(for account: PersistentAccount) -> String {
