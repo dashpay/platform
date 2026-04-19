@@ -196,12 +196,19 @@ struct CreateIdentityView: View {
     }
 
     /// Turn a wallet's PersistentAccounts into the funding-picker
-    /// rows. Uses the same grouped ordering as `AccountListView`
-    /// (BIP44 → PlatformPayment → BIP32 → CoinJoin → the rest) so the
-    /// picker matches the wallet detail screen.
+    /// rows. Restricted to accounts that actually hold spendable
+    /// funds — Core Standard (BIP44 / BIP32), CoinJoin, and
+    /// PlatformPayment. Identity / provider / asset-lock-topup
+    /// accounts are intentionally excluded; they aren't sources of
+    /// funds for a new identity. Ordering matches
+    /// `AccountListView`: BIP44 → PlatformPayment → BIP32 →
+    /// CoinJoin.
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
         allAccounts
-            .filter { $0.wallet?.walletId == walletId }
+            .filter { account in
+                guard account.wallet?.walletId == walletId else { return false }
+                return CreateIdentityView.isFundingAccount(account)
+            }
             .sorted { lhs, rhs in
                 let lhsKey = CreateIdentityView.sortKey(for: lhs)
                 let rhsKey = CreateIdentityView.sortKey(for: rhs)
@@ -215,14 +222,16 @@ struct CreateIdentityView: View {
             }
     }
 
-    private static func fundingLabel(for account: PersistentAccount) -> String {
-        // Indexed account types get a trailing "#N"; singleton types
-        // (identity registration, provider keys, etc.) just use the
-        // raw name emitted by the FFI.
+    /// Account types eligible to fund a new identity.
+    private static func isFundingAccount(_ account: PersistentAccount) -> Bool {
         switch account.accountType {
-        case 0, 1, 14: return "\(account.accountTypeName) #\(account.accountIndex)"
-        default: return account.accountTypeName
+        case 0, 1, 14: return true
+        default: return false
         }
+    }
+
+    private static func fundingLabel(for account: PersistentAccount) -> String {
+        "\(account.accountTypeName) #\(account.accountIndex)"
     }
 
     private static func sortKey(
