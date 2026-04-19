@@ -12,6 +12,23 @@ struct CoreContentView: View {
     @State private var masternodesEnabled: Bool = true
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
+    /// All persisted platform addresses across every wallet. Summed
+    /// directly here so the global Sync Status view survives app
+    /// restarts / wallet reconfigures without depending on the
+    /// singleton `PlatformBalanceSyncService.totalPlatformBalance`
+    /// (which only reflects the currently-configured wallet).
+    @Query private var platformAddresses: [PersistentPlatformAddress]
+
+    /// Aggregate platform credit balance across every wallet on disk.
+    private var aggregatePlatformBalance: UInt64 {
+        platformAddresses.reduce(0) { $0 + $1.balance }
+    }
+
+    /// Addresses with a non-zero balance across every wallet.
+    private var aggregateActiveAddressCount: Int {
+        platformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
+    }
+
     // Display helpers
     private var headerHeightsDisplay: String? {
         let headers = walletManager.spvProgress.headers
@@ -148,14 +165,15 @@ var body: some View {
                         Spacer()
                     }
 
-                    // Balance summary
+                    // Balance summary — aggregated across every wallet
+                    // on disk (SwiftData-backed, so survives restart).
                     HStack {
                         Text("Platform Balance")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
-                        if platformBalanceSyncService.totalPlatformBalance > 0 {
-                            Text(formatCredits(platformBalanceSyncService.totalPlatformBalance))
+                        if aggregatePlatformBalance > 0 {
+                            Text(formatCredits(aggregatePlatformBalance))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                         } else {
@@ -165,13 +183,14 @@ var body: some View {
                         }
                     }
 
-                    // Active addresses
+                    // Active addresses — count non-zero balance rows
+                    // across every wallet.
                     HStack {
                         Text("Active Addresses")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text("\(platformBalanceSyncService.activeAddressCount)")
+                        Text("\(aggregateActiveAddressCount)")
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
