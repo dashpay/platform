@@ -479,20 +479,12 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
     use dpp::prelude::Identifier;
-    use key_wallet::bip32::ExtendedPubKey;
+    use key_wallet::account::account_collection::AccountCollection;
     use key_wallet::Network;
     use std::collections::BTreeMap;
 
     fn create_dummy_wallet() -> Wallet {
-        // Create a dummy extended public key for testing
-        use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
-        let xpub_str = "xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ";
-        let xpub = xpub_str.parse::<ExtendedPubKey>().unwrap();
-        let root_xpub = RootExtendedPubKey::from_extended_pub_key(&xpub);
-        Wallet::from_wallet_type(
-            Network::Testnet,
-            key_wallet::wallet::WalletType::WatchOnly(root_xpub),
-        )
+        Wallet::new_watch_only(Network::Testnet, [0u8; 32], AccountCollection::new())
     }
 
     fn create_test_identity(id_bytes: [u8; 32]) -> Identity {

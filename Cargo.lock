@@ -4857,6 +4857,7 @@ name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
  "cbindgen 0.27.0",
+ "dashcore",
  "dpp",
  "key-wallet",
  "key-wallet-ffi",

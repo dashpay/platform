@@ -1,8 +1,8 @@
 use crate::error::*;
 use crate::handle::*;
+use dashcore::ffi::FFINetwork;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet_ffi::FFINetwork;
 use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 use std::os::raw::{c_char, c_uchar};
 
