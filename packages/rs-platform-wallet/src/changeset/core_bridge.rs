@@ -42,6 +42,10 @@ impl WalletPersistence for CorePersistenceBridge {
             core: Some(cs),
             ..PlatformWalletChangeSet::default()
         };
-        self.inner.store(wallet_id, platform_cs)
+        // Upstream `key_wallet_manager::WalletPersistence` still
+        // uses the `Box<dyn Error>` error type; our inner trait
+        // returns `PersistenceError`. Box it on the way out so the
+        // bridge still conforms.
+        self.inner.store(wallet_id, platform_cs).map_err(Into::into)
     }
 }

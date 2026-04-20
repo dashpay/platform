@@ -20,7 +20,9 @@ use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
 use super::tokens::TokenWallet;
-use crate::changeset::{ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+};
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -296,14 +298,12 @@ impl PlatformWallet {
     }
 
     /// Flush all queued changesets to the storage backend.
-    pub fn flush_persist(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub fn flush_persist(&self) -> Result<(), PersistenceError> {
         self.persister.flush()
     }
 
     /// Load persisted state for this wallet.
-    pub fn load_persisted(
-        &self,
-    ) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn load_persisted(&self) -> Result<ClientStartState, PersistenceError> {
         self.persister.load()
     }
 

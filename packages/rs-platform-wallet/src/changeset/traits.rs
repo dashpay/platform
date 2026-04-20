@@ -13,6 +13,55 @@ use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
 
+/// Errors returned by a [`PlatformWalletPersistence`] backend.
+///
+/// Concrete (non-`Box<dyn Error>`) so callers and downstream
+/// traits can compose the result types without erasing the
+/// error's shape. Backends that don't fit cleanly into
+/// [`Self::LockPoisoned`] render their native error via
+/// [`Self::backend`] into [`Self::Backend`].
+#[derive(Debug, thiserror::Error)]
+pub enum PersistenceError {
+    /// An internal synchronization primitive is poisoned (a
+    /// previous holder panicked while mutating state). Most
+    /// backends are unable to recover from this and should
+    /// treat it as fatal.
+    #[error("persister lock poisoned")]
+    LockPoisoned,
+
+    /// Error bubbled up from the underlying storage engine
+    /// (SQLite, file I/O, FFI callback, etc.). Carries the
+    /// backend's error message; the original error type is
+    /// intentionally erased so the trait stays object-safe
+    /// without generic error parameters.
+    #[error("persistence backend error: {0}")]
+    Backend(String),
+}
+
+impl PersistenceError {
+    /// Convenience constructor that stringifies any
+    /// `Display` error into [`PersistenceError::Backend`].
+    pub fn backend(err: impl std::fmt::Display) -> Self {
+        Self::Backend(err.to_string())
+    }
+}
+
+// Ergonomic conversions so backends can `.into()` a message without
+// spelling out the enum variant. The common pattern in FFI-style
+// backends is `Err(format!("...").into())`; the `From<String>` impl
+// keeps that terse while routing into the typed error.
+impl From<String> for PersistenceError {
+    fn from(msg: String) -> Self {
+        Self::Backend(msg)
+    }
+}
+
+impl From<&str> for PersistenceError {
+    fn from(msg: &str) -> Self {
+        Self::Backend(msg.to_string())
+    }
+}
+
 /// Storage backend for [`PlatformWalletChangeSet`] deltas.
 ///
 /// The persister persists what the changeset carries — nothing more,
@@ -83,11 +132,11 @@ pub trait PlatformWalletPersistence: Send + Sync {
         &self,
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<(), PersistenceError>;
 
     /// Write all buffered changesets atomically for the given wallet, then
     /// clear that wallet's buffer.
-    fn flush(&self, wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Load the full client state from storage.
     ///
@@ -104,7 +153,7 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// per-wallet one, because `ClientStartState::platform_addresses` is
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
-    fn load(&self) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>>;
+    fn load(&self) -> Result<ClientStartState, PersistenceError>;
 
     /// Persist an account entry for `wallet_id`. Called on account
     /// insertion (initial registration or later `add_account` calls).
@@ -123,7 +172,7 @@ pub trait PlatformWalletPersistence: Send + Sync {
         wallet_id: WalletId,
         account_type: &AccountType,
         account_xpub: &ExtendedPubKey,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         let _ = (wallet_id, account_type, account_xpub);
         Ok(())
     }
@@ -142,7 +191,7 @@ pub trait PlatformWalletPersistence: Send + Sync {
         wallet_id: WalletId,
         network: Network,
         birth_height: u32,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         let _ = (wallet_id, network, birth_height);
         Ok(())
     }
@@ -162,7 +211,7 @@ pub trait PlatformWalletPersistence: Send + Sync {
         account_type: &AccountType,
         pool_type: AddressPoolType,
         addresses: &[AddressInfo],
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         let _ = (wallet_id, account_type, pool_type, addresses);
         Ok(())
     }

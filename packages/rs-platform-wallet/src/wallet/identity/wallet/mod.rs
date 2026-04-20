@@ -280,8 +280,8 @@ impl std::fmt::Debug for IdentityWallet {
 // ---------------------------------------------------------------------------
 
 mod discovery;
-mod loading;
 mod dpns;
+mod loading;
 mod register_from_addresses;
 mod registration;
 mod top_up;

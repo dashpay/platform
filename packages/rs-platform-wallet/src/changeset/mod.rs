@@ -28,4 +28,4 @@ pub use core_bridge::CorePersistenceBridge;
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use merge::Merge;
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
-pub use traits::PlatformWalletPersistence;
+pub use traits::{PersistenceError, PlatformWalletPersistence};

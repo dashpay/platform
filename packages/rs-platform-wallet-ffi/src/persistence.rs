@@ -15,7 +15,7 @@ use key_wallet::wallet::Wallet;
 use key_wallet::{AddressInfo, Network};
 use parking_lot::RwLock;
 use platform_wallet::changeset::{
-    ClientStartState, ClientWalletStartState, Merge, PlatformWalletChangeSet,
+    ClientStartState, ClientWalletStartState, Merge, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -129,7 +129,7 @@ impl PlatformWalletPersistence for FFIPersister {
         &self,
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         // Send incremental address balance updates before merging.
         if let Some(ref addr_cs) = changeset.platform_addresses {
             if let Some(cb) = self.callbacks.on_persist_address_balances_fn {
@@ -224,7 +224,7 @@ impl PlatformWalletPersistence for FFIPersister {
         Ok(())
     }
 
-    fn flush(&self, wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         // Notify caller.
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
@@ -242,7 +242,7 @@ impl PlatformWalletPersistence for FFIPersister {
         Ok(())
     }
 
-    fn load(&self) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
         // If Swift hasn't wired up `on_load_wallet_list_fn` there's
         // nothing to restore — treat as a fresh client.
         let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
@@ -292,7 +292,7 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         account_type: &AccountType,
         account_xpub: &ExtendedPubKey,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         let Some(cb) = self.callbacks.on_persist_account_fn else {
             return Ok(());
         };
@@ -316,7 +316,7 @@ impl PlatformWalletPersistence for FFIPersister {
         account_type: &AccountType,
         pool_type: AddressPoolType,
         addresses: &[AddressInfo],
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         let Some(cb) = self.callbacks.on_persist_account_addresses_fn else {
             return Ok(());
         };
@@ -421,7 +421,7 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         network: Network,
         birth_height: u32,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         let Some(cb) = self.callbacks.on_persist_wallet_metadata_fn else {
             return Ok(());
         };
@@ -587,7 +587,7 @@ fn build_wallet_start_state(
         ClientWalletStartState,
         Option<platform_wallet::PlatformAddressSyncStartState>,
     ),
-    Box<dyn std::error::Error + Send + Sync>,
+    PersistenceError,
 > {
     let network = network_from_tag(entry.network)?;
 
@@ -695,7 +695,7 @@ fn build_wallet_start_state(
     Ok((wallet_state, platform_address_state))
 }
 
-fn network_from_tag(tag: u8) -> Result<Network, Box<dyn std::error::Error + Send + Sync>> {
+fn network_from_tag(tag: u8) -> Result<Network, PersistenceError> {
     match tag {
         0 => Ok(Network::Mainnet),
         1 => Ok(Network::Testnet),
@@ -705,9 +705,7 @@ fn network_from_tag(tag: u8) -> Result<Network, Box<dyn std::error::Error + Send
     }
 }
 
-fn account_type_from_spec(
-    spec: &AccountSpecFFI,
-) -> Result<AccountType, Box<dyn std::error::Error + Send + Sync>> {
+fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, PersistenceError> {
     Ok(match spec.type_tag {
         AccountTypeTagFFI::Standard => {
             let standard_account_type = match spec.standard_tag {

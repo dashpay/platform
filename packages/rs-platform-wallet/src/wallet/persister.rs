@@ -6,7 +6,9 @@
 
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Per-wallet persistence handle.
@@ -25,20 +27,15 @@ impl WalletPersister {
         Self { wallet_id, inner }
     }
 
-    pub(crate) fn store(
-        &self,
-        changeset: PlatformWalletChangeSet,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
         self.inner.store(self.wallet_id, changeset)
     }
 
-    pub(crate) fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
         self.inner.flush(self.wallet_id)
     }
 
-    pub(crate) fn load(
-        &self,
-    ) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+    pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.inner.load()
     }
 }
@@ -51,15 +48,15 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
         &self,
         _wallet_id: WalletId,
         _changeset: PlatformWalletChangeSet,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), PersistenceError> {
         Ok(())
     }
 
-    fn flush(&self, _wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
         Ok(())
     }
 
-    fn load(&self) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
         Ok(ClientStartState::default())
     }
 }

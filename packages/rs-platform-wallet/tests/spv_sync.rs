@@ -69,7 +69,7 @@ impl PlatformWalletPersistence for RecordingPersister {
         &self,
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
         let has_core = changeset.core.is_some();
         let synced_height = changeset
             .core
@@ -83,11 +83,14 @@ impl PlatformWalletPersistence for RecordingPersister {
         Ok(())
     }
 
-    fn flush(&self, _wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn flush(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
         Ok(())
     }
 
-    fn load(&self) -> Result<ClientStartState, Box<dyn std::error::Error + Send + Sync>> {
+    fn load(&self) -> Result<ClientStartState, platform_wallet::changeset::PersistenceError> {
         Ok(ClientStartState::default())
     }
 }

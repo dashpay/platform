@@ -20,20 +20,20 @@ impl PlatformWalletPersistence for NoopPersister {
         &self,
         _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
         _changeset: platform_wallet::changeset::PlatformWalletChangeSet,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
         Ok(())
     }
     fn flush(
         &self,
         _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
         Ok(())
     }
     fn load(
         &self,
     ) -> Result<
         platform_wallet::changeset::ClientStartState,
-        Box<dyn std::error::Error + Send + Sync>,
+        platform_wallet::changeset::PersistenceError,
     > {
         Ok(platform_wallet::changeset::ClientStartState::default())
     }
