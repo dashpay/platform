@@ -68,8 +68,8 @@ mod tests {
         let secp = Secp256k1::new();
         let mut rng = thread_rng();
 
-        let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
-        let private_key = PrivateKey::from_str(private_key_hex).unwrap();
+        let input_secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+        let private_key = PrivateKey::new(input_secret_key, Network::Testnet);
         let public_key = private_key.public_key(&secp);
         let public_key_hash = public_key.pubkey_hash();
 
