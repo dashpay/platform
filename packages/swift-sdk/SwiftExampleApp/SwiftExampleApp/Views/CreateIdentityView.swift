@@ -40,6 +40,11 @@ struct CreateIdentityView: View {
     /// Chosen funding source when a wallet is selected.
     @State private var fundingSelection: FundingSelection? = nil
 
+    /// Identity registration key slot to consume (for wallet-backed
+    /// paths). `nil` until a wallet selection populates it with the
+    /// first unused index; the user can override via the picker.
+    @State private var identityIndex: UInt32? = nil
+
     /// Raw asset-lock proof text, used only in the walletless path.
     /// Accepted encoding is base64 or lowercase hex — the submit
     /// logic (future) will detect + decode.
@@ -50,6 +55,7 @@ struct CreateIdentityView: View {
             Form {
                 sourceWalletSection
                 fundingSection
+                identityIndexSection
                 if canSubmit {
                     submitSection
                 }
@@ -79,12 +85,21 @@ struct CreateIdentityView: View {
                 Text("Create without Wallet")
                     .tag(Optional(WalletSelection.walletless))
             }
-            .onChange(of: walletSelection) { _, _ in
+            .onChange(of: walletSelection) { _, newValue in
                 // Reset downstream selection whenever the wallet
                 // changes so a stale account / proof can't leak
                 // through.
                 fundingSelection = nil
                 walletlessProof = ""
+                // Default the identity-registration index to the
+                // first unused slot on the newly-selected wallet,
+                // or clear it for the walletless / no-selection
+                // branches.
+                if case .wallet(let walletId) = newValue {
+                    identityIndex = firstUnusedIdentityIndex(for: walletId)
+                } else {
+                    identityIndex = nil
+                }
             }
         } header: {
             Text("Source Wallet")
@@ -149,6 +164,38 @@ struct CreateIdentityView: View {
         }
     }
 
+    @ViewBuilder
+    private var identityIndexSection: some View {
+        // Only relevant when a wallet is the source. Walletless
+        // creations don't burn an identity-registration slot off our
+        // HD tree.
+        if case .wallet(let walletId) = walletSelection {
+            let unused = unusedIdentityIndices(for: walletId)
+            Section {
+                if unused.isEmpty {
+                    Text("No unused identity registration keys available.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    Picker("Identity Registration Index", selection: $identityIndex) {
+                        ForEach(unused, id: \.self) { index in
+                            Text("#\(index)")
+                                .tag(Optional(index))
+                        }
+                    }
+                }
+            } header: {
+                Text("Identity Registration Index")
+            } footer: {
+                Text(
+                    "The identity-registration key slot the new identity "
+                    + "will consume. Defaults to the lowest unused slot in "
+                    + "the wallet; override to pick any other unused index."
+                )
+            }
+        }
+    }
+
     private var submitSection: some View {
         Section {
             Button {
@@ -169,7 +216,7 @@ struct CreateIdentityView: View {
     /// Whether the current selection is complete enough that the
     /// submit button should light up. Non-empty hex / base64 content
     /// in the walletless path, or a concrete account + funding choice
-    /// otherwise.
+    /// + an identity-registration index on the wallet path.
     private var canSubmit: Bool {
         switch (walletSelection, fundingSelection) {
         case (.walletless, _):
@@ -177,7 +224,7 @@ struct CreateIdentityView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
         case (.wallet, .some):
-            return true
+            return identityIndex != nil
         default:
             return false
         }
@@ -226,6 +273,34 @@ struct CreateIdentityView: View {
                     balanceText: balanceText
                 )
             }
+    }
+
+    /// Unused identity-registration key indices on the wallet's
+    /// Identity Registration account (FFI type tag 2). Each
+    /// `PersistentCoreAddress` under that account represents one
+    /// registration slot keyed by `addressIndex`; `isUsed` flips to
+    /// true once the slot has been consumed by a prior identity
+    /// creation. Returns an ascending list of the remaining slots.
+    private func unusedIdentityIndices(for walletId: Data) -> [UInt32] {
+        guard let account = identityRegistrationAccount(for: walletId) else {
+            return []
+        }
+        return account.coreAddresses
+            .filter { !$0.isUsed }
+            .map { $0.addressIndex }
+            .sorted()
+    }
+
+    /// Lowest unused identity-registration index on a wallet, or
+    /// `nil` if no slots remain. Drives the picker's default value.
+    private func firstUnusedIdentityIndex(for walletId: Data) -> UInt32? {
+        unusedIdentityIndices(for: walletId).first
+    }
+
+    private func identityRegistrationAccount(for walletId: Data) -> PersistentAccount? {
+        allAccounts.first { account in
+            account.wallet?.walletId == walletId && account.accountType == 2
+        }
     }
 
     /// Account types eligible to fund a new identity.
