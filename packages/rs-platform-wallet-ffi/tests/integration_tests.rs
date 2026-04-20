@@ -1,4 +1,5 @@
 use dpp::identity::accessors::IdentityGettersV0;
+use key_wallet_ffi::FFINetwork;
 use platform_wallet_ffi::*;
 use std::ffi::CString;
 
@@ -21,7 +22,7 @@ fn test_wallet_creation_and_destruction() {
         let mut error = PlatformWalletFFIError::success();
 
         let result = platform_wallet_info_create_from_seed(
-            Network::Testnet,
+            FFINetwork::Testnet,
             seed.as_ptr(),
             seed.len(),
             &mut handle,
@@ -51,7 +52,7 @@ fn test_wallet_from_mnemonic() {
         let mut error = PlatformWalletFFIError::success();
 
         let result = platform_wallet_info_create_from_mnemonic(
-            Network::Testnet,
+            FFINetwork::Testnet,
             mnemonic.as_ptr(),
             std::ptr::null(),
             &mut handle,
@@ -198,7 +199,7 @@ fn test_serialization() {
         let mut error = PlatformWalletFFIError::success();
 
         platform_wallet_info_create_from_seed(
-            Network::Testnet,
+            FFINetwork::Testnet,
             seed.as_ptr(),
             seed.len(),
             &mut handle,
@@ -265,7 +266,7 @@ fn test_error_handling() {
 
         // Try to create wallet with null pointer
         let result = platform_wallet_info_create_from_seed(
-            Network::Testnet,
+            FFINetwork::Testnet,
             std::ptr::null(),
             0,
             std::ptr::null_mut(),
@@ -291,7 +292,7 @@ fn test_full_workflow() {
 
         let mut wallet_handle: Handle = NULL_HANDLE;
         let result = platform_wallet_info_create_from_mnemonic(
-            Network::Testnet,
+            FFINetwork::Testnet,
             mnemonic.as_ptr(),
             std::ptr::null(),
             &mut wallet_handle,

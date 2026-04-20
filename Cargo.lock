@@ -4892,9 +4892,10 @@ dependencies = [
 name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
- "dashcore",
+ "cbindgen 0.27.0",
  "dpp",
  "key-wallet",
+ "key-wallet-ffi",
  "lazy_static",
  "once_cell",
  "parking_lot",
@@ -5873,6 +5874,7 @@ dependencies = [
 name = "rs-sdk-ffi"
 version = "3.1.0-dev.1"
 dependencies = [
+ "async-trait",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
@@ -5886,7 +5888,6 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
- "platform-wallet-ffi",
  "rand 0.8.5",
  "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
@@ -5925,6 +5926,7 @@ version = "3.1.0-dev.1"
 dependencies = [
  "dash-spv-ffi",
  "key-wallet-ffi",
+ "platform-wallet-ffi",
  "rs-sdk-ffi",
 ]
 
