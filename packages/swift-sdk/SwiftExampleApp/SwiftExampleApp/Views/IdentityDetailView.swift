@@ -158,6 +158,55 @@ struct IdentityDetailView: View {
                 }
             }
 
+            // DashPay Profile Section
+            //
+            // UI slot only for now — the backing profile data
+            // (display name, public message, avatar) lives on the
+            // Rust-side `ManagedIdentity.dashpay_profile` but isn't
+            // bridged through FFI yet. When the bridge lands this
+            // section will light up without view restructuring.
+            Section("DashPay Profile") {
+                if !identity.isLocal {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle.dashed")
+                                .font(.title2)
+                                .foregroundColor(.secondary)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("No DashPay profile yet")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text("Add a display name and avatar so friends can find you on DashPay.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Button {
+                            // TODO(dashpay-profile): wire to a
+                            // profile editor sheet once the
+                            // `DashPayProfile` FFI lands.
+                        } label: {
+                            HStack {
+                                Image(systemName: "pencil")
+                                Text("Set up profile")
+                                Spacer()
+                                Text("Coming soon")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .disabled(true)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    Text("Available once the identity is on the network.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
             // Keys Section
             Section("Keys") {
                 NavigationLink(destination: KeysListView(identity: identity)) {
