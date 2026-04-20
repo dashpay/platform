@@ -98,13 +98,21 @@ pub static IDENTITY_MANAGER_STORAGE: Lazy<HandleStorage<platform_wallet::Identit
 pub static MANAGED_IDENTITY_STORAGE: Lazy<HandleStorage<platform_wallet::ManagedIdentity>> =
     Lazy::new(HandleStorage::new);
 
-/// Storage for CoreWallet handles
-pub static CORE_WALLET_STORAGE: Lazy<HandleStorage<platform_wallet::CoreWallet>> =
-    Lazy::new(HandleStorage::new);
+/// Storage for CoreWallet handles.
+///
+/// `CoreWallet` is generic over the broadcaster type; the FFI pins
+/// it to `SpvBroadcaster` — the only production broadcaster.
+pub static CORE_WALLET_STORAGE: Lazy<
+    HandleStorage<platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>>,
+> = Lazy::new(HandleStorage::new);
 
-/// Storage for AssetLockManager handles
+/// Storage for AssetLockManager handles (pinned to `SpvBroadcaster`).
 pub static ASSET_LOCK_MANAGER_STORAGE: Lazy<
-    HandleStorage<std::sync::Arc<platform_wallet::AssetLockManager>>,
+    HandleStorage<
+        std::sync::Arc<
+            platform_wallet::AssetLockManager<platform_wallet::broadcaster::SpvBroadcaster>,
+        >,
+    >,
 > = Lazy::new(HandleStorage::new);
 
 /// Storage for PlatformAddressWallet handles

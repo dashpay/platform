@@ -3,6 +3,7 @@
 //! Contains methods for building asset lock transactions, peeking at funding
 //! addresses, and the unified `create_funded_asset_lock_proof` entry point.
 
+use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
@@ -22,7 +23,7 @@ use super::tracked::{AssetLockStatus, TrackedAssetLock};
 // Asset lock transaction building
 // ---------------------------------------------------------------------------
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Build an asset lock transaction using the key-wallet builder.
     ///
     /// Delegates UTXO selection, fee calculation, change handling, and signing

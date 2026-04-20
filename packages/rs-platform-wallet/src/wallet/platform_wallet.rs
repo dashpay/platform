@@ -20,6 +20,7 @@ use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
 use super::tokens::TokenWallet;
+use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
@@ -61,13 +62,18 @@ pub struct PlatformWallet {
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    pub(crate) core: CoreWallet,
+    // Sub-wallets that hold a broadcaster are monomorphized with
+    // `SpvBroadcaster` — the only production broadcaster in use.
+    // Swapping this out to another broadcaster is a three-line flip
+    // right here plus the `new()` signature below; the sub-wallet
+    // definitions themselves stay untouched.
+    pub(crate) core: CoreWallet<SpvBroadcaster>,
     pub(crate) identity: IdentityWallet,
-    pub(crate) dashpay: DashPayWallet,
+    pub(crate) dashpay: DashPayWallet<SpvBroadcaster>,
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
     /// Shared asset lock manager.
-    pub(crate) asset_locks: Arc<AssetLockManager>,
+    pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle.
     persister: WalletPersister,
     /// Lock-free balance for UI reads, cloned from `PlatformWalletInfo.balance`.
@@ -76,7 +82,7 @@ pub struct PlatformWallet {
 
 impl PlatformWallet {
     /// Access the core wallet (balance, UTXOs, addresses).
-    pub fn core(&self) -> &CoreWallet {
+    pub fn core(&self) -> &CoreWallet<SpvBroadcaster> {
         &self.core
     }
 
@@ -86,7 +92,7 @@ impl PlatformWallet {
     }
 
     /// Access the DashPay wallet.
-    pub fn dashpay(&self) -> &DashPayWallet {
+    pub fn dashpay(&self) -> &DashPayWallet<SpvBroadcaster> {
         &self.dashpay
     }
 
@@ -101,7 +107,7 @@ impl PlatformWallet {
     }
 
     /// Access the shared asset lock manager.
-    pub fn asset_locks(&self) -> &Arc<AssetLockManager> {
+    pub fn asset_locks(&self) -> &Arc<AssetLockManager<SpvBroadcaster>> {
         &self.asset_locks
     }
 
@@ -213,7 +219,7 @@ impl PlatformWallet {
         balance: Arc<WalletBalance>,
         lock_notify: Arc<tokio::sync::Notify>,
         persister: Arc<dyn PlatformWalletPersistence>,
-        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+        broadcaster: Arc<SpvBroadcaster>,
     ) -> Self {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets

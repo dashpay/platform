@@ -1,9 +1,10 @@
 use dashcore::{Address as DashAddress, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
 
-impl CoreWallet {
+impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Broadcast a signed transaction to the network.
     ///
     /// Build the transaction using key-wallet's

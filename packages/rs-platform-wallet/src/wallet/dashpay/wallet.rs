@@ -21,6 +21,7 @@ use tokio::sync::RwLock;
 
 use dash_sdk::platform::dashpay::{EcdhProvider, SendContactRequestInput};
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::dashpay::contact_request::ContactRequest;
 use crate::wallet::dashpay::established_contact::EstablishedContact;
@@ -31,8 +32,10 @@ use crate::wallet::signer::IdentitySigner;
 /// DashPay wallet providing contact request and payment functionality.
 ///
 /// Shares the same `WalletManager` lock as all other sub-wallets.
-#[derive(Clone)]
-pub struct DashPayWallet {
+///
+/// `B` is the concrete broadcaster type; every `send_payment` call
+/// dispatches statically instead of through a `dyn` vtable.
+pub struct DashPayWallet<B: TransactionBroadcaster + ?Sized> {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     /// The shared wallet manager lock for all mutable wallet state.
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -41,12 +44,27 @@ pub struct DashPayWallet {
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: crate::wallet::persister::WalletPersister,
     /// Transaction broadcaster (SPV or DAPI) for `send_payment`.
-    pub(crate) broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+    pub(crate) broadcaster: Arc<B>,
 }
 
-impl std::fmt::Debug for DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for DashPayWallet<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DashPayWallet").finish()
+    }
+}
+
+// Manual `Clone` impl: the derive would add a `where B: Clone`
+// bound, but `Arc<B>` clones without cloning `B` itself, so we
+// don't want that bound. `B: ?Sized` is enough.
+impl<B: TransactionBroadcaster + ?Sized> Clone for DashPayWallet<B> {
+    fn clone(&self) -> Self {
+        Self {
+            sdk: Arc::clone(&self.sdk),
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            persister: self.persister.clone(),
+            broadcaster: Arc::clone(&self.broadcaster),
+        }
     }
 }
 
@@ -54,7 +72,7 @@ impl std::fmt::Debug for DashPayWallet {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Derive the ECDH private key for the given identity's encryption key.
     ///
     /// Uses the same DIP-9 derivation as `IdentitySigner` but returns the raw
@@ -129,7 +147,7 @@ impl DashPayWallet {
 // Send contact request
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Send a contact request to another identity.
     ///
     /// All parameters that can be resolved internally are resolved automatically:
@@ -362,7 +380,7 @@ impl DashPayWallet {
 // Sync contact requests from platform
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
     /// For every identity in the local manager this method:
@@ -505,7 +523,7 @@ impl DashPayWallet {
 // Accept an incoming contact request
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Accept an incoming contact request by sending a reciprocal request and
     /// establishing the contact locally.
     ///
@@ -599,7 +617,7 @@ impl DashPayWallet {
 // Established contacts accessor
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     // TODO: We don't want to clone all contacts on get - it's terrible.
     /// Get all established contacts across every identity managed by this wallet.
     ///
@@ -621,7 +639,7 @@ impl DashPayWallet {
 // Contact xpub and payment address derivation (DIP-14 / DIP-15)
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Get the contact xpub data for a specific contact relationship.
     ///
     /// Derives the extended public key along path:
@@ -860,7 +878,7 @@ impl DashPayWallet {
 // Account label encryption / decryption (DIP-15)
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Encrypt an account label using CBC-AES-256 with a shared ECDH key.
     ///
     /// Uses the `platform_encryption` crate which prepends a random 16-byte IV
@@ -922,7 +940,7 @@ impl DashPayWallet {
 // Sent contact requests query
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Fetch sent contact requests for a specific identity from Platform.
     ///
     /// Queries the DashPay contract for `contactRequest` documents where
@@ -1035,7 +1053,7 @@ impl DashPayWallet {
 // Reject contact request
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Reject a contact request by hiding the contact.
     ///
     /// This marks the contact as hidden in the local identity manager so that
@@ -1091,7 +1109,7 @@ impl DashPayWallet {
 // Sync profiles
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Fetch DashPay profile documents from Platform for all managed
     /// identities and cache them on [`ManagedIdentity`].
     ///
@@ -1250,7 +1268,7 @@ impl DashPayWallet {
 // Comprehensive DashPay sync
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Comprehensive DashPay sync: contact requests followed by profiles.
     ///
     /// Call this on wallet open and on periodic refresh. Failures in either
@@ -1268,7 +1286,7 @@ impl DashPayWallet {
 // Profile create / update
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Create a new DashPay profile document on Platform for `identity_id`.
     ///
     /// Steps:
@@ -1631,7 +1649,7 @@ impl DashPayWallet {
 // Incoming payment recording
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Match a Core transaction output address against DashPay contact
     /// receiving accounts AND record the payment if matched.
     ///
@@ -1680,7 +1698,7 @@ impl DashPayWallet {
 // External contact account registration (sending)
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Register a watch-only `DashpayExternalAccount` for sending payments
     /// to a contact. Uses the contact's decrypted xpub from their
     /// `contactRequest.encrypted_public_key`.
@@ -1891,7 +1909,7 @@ impl DashPayWallet {
 // Send payment to contact
 // ---------------------------------------------------------------------------
 
-impl DashPayWallet {
+impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     /// Send a Core payment to a DashPay contact.
     ///
     /// Derives the next payment address from the contact's `DashpayExternalAccount`

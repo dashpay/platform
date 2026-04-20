@@ -1,5 +1,6 @@
 //! Proof lifecycle: waiting for proofs, validation, and IS-lock to ChainLock upgrade.
 
+use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::OutPoint;
@@ -8,7 +9,7 @@ use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Validate an IS-lock proof and upgrade it to a ChainLock proof if the
     /// transaction is old enough that the IS-lock may have expired.
     ///

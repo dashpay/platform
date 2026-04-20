@@ -18,6 +18,7 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
+use crate::broadcaster::SpvBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -95,7 +96,10 @@ pub struct IdentityWallet {
     /// Shared asset lock manager for building, broadcasting, and tracking
     /// asset lock transactions. Used by funding methods that build asset
     /// locks from wallet UTXOs.
-    pub(crate) asset_locks: Arc<AssetLockManager>,
+    // Pinned to `SpvBroadcaster` to match the parent `PlatformWallet`.
+    // If/when the outer broadcaster choice changes, flip this line
+    // and the corresponding field in `PlatformWallet`.
+    pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: crate::wallet::persister::WalletPersister,
 }

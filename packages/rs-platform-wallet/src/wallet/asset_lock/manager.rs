@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock};
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -23,7 +24,10 @@ pub(super) const DEFAULT_FEE_PER_KB: u64 = 1000;
 /// Shared across sub-wallets via `Arc<AssetLockManager>` so that any sub-wallet
 /// (identity, platform-address, shielded) can create and consume asset locks
 /// without going through `CoreWallet`.
-pub struct AssetLockManager {
+///
+/// `B` is the concrete broadcaster type; every `broadcast()` call dispatches
+/// statically instead of through a `dyn` vtable.
+pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) sdk: Arc<dash_sdk::Sdk>,
     /// The shared wallet manager lock for all mutable wallet state.
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -42,7 +46,7 @@ pub struct AssetLockManager {
     ///
     /// Injected at construction by `PlatformWallet::new()`. The caller
     /// (typically `PlatformWalletManager`) decides which implementation to use.
-    pub(super) broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+    pub(super) broadcaster: Arc<B>,
     /// Per-wallet persistence handle. Cloned from the parent
     /// `PlatformWallet` at construction so asset lock mutations can
     /// queue their own `AssetLockChangeSet`s into the changeset flush
@@ -56,14 +60,14 @@ pub struct AssetLockManager {
     pub(super) persister: WalletPersister,
 }
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Create a new `AssetLockManager`.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         lock_notify: Arc<Notify>,
-        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+        broadcaster: Arc<B>,
         persister: WalletPersister,
     ) -> Self {
         Self {
@@ -101,7 +105,7 @@ impl AssetLockManager {
 // Public read accessors
 // ---------------------------------------------------------------------------
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// List all tracked asset locks (blocking version for UI / synchronous contexts).
     ///
     /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from
@@ -122,7 +126,7 @@ impl AssetLockManager {
     }
 }
 
-impl std::fmt::Debug for AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for AssetLockManager<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AssetLockManager")
             .field("network", &self.sdk.network)

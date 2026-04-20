@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -17,24 +18,27 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// This is a lightweight handle — all mutable state lives in the shared
 /// `WalletManager<PlatformWalletInfo>` behind an `Arc<RwLock<…>>`.
 /// The handle holds `Arc` references and is cheaply `Clone`able.
-#[derive(Clone)]
-pub struct CoreWallet {
+///
+/// `B` is the concrete transaction-broadcaster type. The generic
+/// parameter lets broadcast calls dispatch statically instead of
+/// through a `dyn` vtable.
+pub struct CoreWallet<B: TransactionBroadcaster + ?Sized> {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     pub(crate) wallet_id: WalletId,
     /// Injected broadcaster — delegates to SPV or DAPI depending on how
     /// the wallet was constructed by `PlatformWalletManager`.
-    pub(crate) broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+    pub(crate) broadcaster: Arc<B>,
     /// Lock-free balance for UI reads.
     balance: Arc<WalletBalance>,
 }
 
-impl CoreWallet {
+impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
-        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
+        broadcaster: Arc<B>,
         balance: Arc<WalletBalance>,
     ) -> Self {
         Self {
@@ -221,10 +225,25 @@ impl CoreWallet {
     }
 }
 
-impl std::fmt::Debug for CoreWallet {
+impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for CoreWallet<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoreWallet")
             .field("network", &self.sdk.network)
             .finish()
+    }
+}
+
+// Manual `Clone` impl: the derive would add a `where B: Clone`
+// bound, but `Arc<B>` clones without cloning `B` itself, so we
+// don't want that bound. `B: ?Sized` is enough.
+impl<B: TransactionBroadcaster + ?Sized> Clone for CoreWallet<B> {
+    fn clone(&self) -> Self {
+        Self {
+            sdk: Arc::clone(&self.sdk),
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            broadcaster: Arc::clone(&self.broadcaster),
+            balance: Arc::clone(&self.balance),
+        }
     }
 }

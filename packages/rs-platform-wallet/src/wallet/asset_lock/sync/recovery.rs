@@ -4,6 +4,7 @@
 //! resolving status from wallet info, resuming interrupted locks,
 //! and re-deriving private keys.
 
+use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
@@ -21,7 +22,7 @@ use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 // Blocking accessor (for synchronous / evo-tool contexts)
 // ---------------------------------------------------------------------------
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Blocking version of [`recover_asset_lock`](Self::recover_asset_lock).
     ///
     /// Uses `tokio::sync::RwLock::blocking_write` / `blocking_read` — must NOT
@@ -131,7 +132,7 @@ impl AssetLockManager {
 // Resumable asset lock
 // ---------------------------------------------------------------------------
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Resume a tracked asset lock from whatever stage it's at.
     ///
     /// Looks up the tracked lock by `txid`, then:

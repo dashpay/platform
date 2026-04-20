@@ -1,5 +1,6 @@
 //! Asset lock state management: tracking, removing, and advancing status.
 
+use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
 
 use crate::changeset::changeset::AssetLockChangeSet;
@@ -8,7 +9,7 @@ use crate::error::PlatformWalletError;
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
-impl AssetLockManager {
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///
