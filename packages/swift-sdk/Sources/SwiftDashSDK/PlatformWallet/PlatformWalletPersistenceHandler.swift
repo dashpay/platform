@@ -274,12 +274,27 @@ public class PlatformWalletPersistenceHandler {
         let descriptor = FetchDescriptor<PersistentTransaction>(
             predicate: #Predicate { $0.txid == txidHex }
         )
+        // Pull the denormalized walletId from the account's parent
+        // wallet relationship. Both hops are optional on the model,
+        // but in regular (non-predicate) Swift code the chain is
+        // cheap — and defaulting to `Data()` for orphaned rows is
+        // harmless because such rows won't be matched by any
+        // per-wallet query anyway.
+        let resolvedWalletId: Data = account.wallet?.walletId ?? Data()
+
         let record: PersistentTransaction
         if let existing = try? backgroundContext.fetch(descriptor).first {
             record = existing
+            // Backfill for rows created before the `walletId`
+            // column existed (lightweight migration defaulted them
+            // to empty Data).
+            if record.walletId.isEmpty, !resolvedWalletId.isEmpty {
+                record.walletId = resolvedWalletId
+            }
         } else {
             record = PersistentTransaction(
                 txid: txidHex,
+                walletId: resolvedWalletId,
                 context: tx.context,
                 blockHeight: tx.block_height,
                 direction: tx.direction,

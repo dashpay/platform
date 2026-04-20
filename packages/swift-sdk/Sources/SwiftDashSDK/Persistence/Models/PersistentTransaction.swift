@@ -35,11 +35,23 @@ public final class PersistentTransaction {
     public var createdAt: Date
     public var lastUpdated: Date
 
+    /// 32-byte wallet ID that owns this transaction. Denormalized
+    /// from `account?.wallet?.walletId` so per-wallet `@Query`
+    /// predicates can filter with a single equality check instead
+    /// of chaining two optional relationships — SwiftData's
+    /// predicate compiler can't translate that nested chain into
+    /// SQLite and crashes with
+    /// `Unsupported function expression TERNARY(...).walletId`.
+    /// Empty `Data()` for rows migrated from older schema; the
+    /// next sync pass will populate it.
+    public var walletId: Data = Data()
+
     /// Parent account.
     public var account: PersistentAccount?
 
     public init(
         txid: String,
+        walletId: Data = Data(),
         context: UInt32 = 0,
         blockHeight: UInt32 = 0,
         direction: UInt32 = 0,
@@ -48,6 +60,7 @@ public final class PersistentTransaction {
         firstSeen: UInt64 = 0
     ) {
         self.txid = txid
+        self.walletId = walletId
         self.context = context
         self.blockHeight = blockHeight
         self.blockTimestamp = 0

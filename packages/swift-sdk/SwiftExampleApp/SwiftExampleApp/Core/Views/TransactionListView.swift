@@ -11,9 +11,14 @@ struct TransactionListView: View {
     init(wallet: HDWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
+        // Use the denormalized `PersistentTransaction.walletId`
+        // column rather than chaining `tx.account?.wallet?.walletId`.
+        // SwiftData's predicate compiler can't lower a double
+        // optional-relationship chain to SQLite and crashes with
+        // `Unsupported function expression TERNARY(...).walletId`.
         _transactions = Query(
             filter: #Predicate<PersistentTransaction> { tx in
-                tx.account?.wallet?.walletId == walletId
+                tx.walletId == walletId
             },
             sort: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
         )
