@@ -116,7 +116,7 @@ struct DataContractStorageDetailView: View {
             Section("Core") {
                 FieldRow(label: "ID (Base58)", value: record.idBase58)
                 FieldRow(label: "Name", value: record.name)
-                FieldRow(label: "Version", value: "\(record.version)")
+                FieldRow(label: "Version", value: record.version.map { "\($0)" } ?? "None")
                 FieldRow(label: "Owner (Base58)", value: record.ownerIdBase58 ?? "None")
                 FieldRow(label: "Network", value: record.network)
                 FieldRow(label: "Has Tokens", value: record.hasTokens ? "Yes" : "No")
@@ -245,8 +245,8 @@ struct TokenHistoryStorageDetailView: View {
             Section("Core") {
                 FieldRow(label: "Event Type", value: record.eventType)
                 FieldRow(label: "Transaction ID", value: record.transactionId.map { hexString($0) } ?? "None")
-                FieldRow(label: "Block Height", value: "\(record.blockHeight)")
-                FieldRow(label: "Amount", value: "\(record.amount)")
+                FieldRow(label: "Block Height", value: record.blockHeight.map { "\($0)" } ?? "None")
+                FieldRow(label: "Amount", value: record.amount.map { "\($0)" } ?? "None")
             }
             Section("Parties") {
                 FieldRow(label: "From", value: record.fromIdentity.map { hexString($0) } ?? "None")
@@ -254,8 +254,8 @@ struct TokenHistoryStorageDetailView: View {
                 FieldRow(label: "Performed By", value: hexString(record.performedByIdentity))
             }
             Section("Balance") {
-                FieldRow(label: "Before", value: "\(record.balanceBefore)")
-                FieldRow(label: "After", value: "\(record.balanceAfter)")
+                FieldRow(label: "Before", value: record.balanceBefore.map { "\($0)" } ?? "None")
+                FieldRow(label: "After", value: record.balanceAfter.map { "\($0)" } ?? "None")
             }
             Section("Timestamps") {
                 FieldRow(label: "Event", value: dateString(record.eventTimestamp))
