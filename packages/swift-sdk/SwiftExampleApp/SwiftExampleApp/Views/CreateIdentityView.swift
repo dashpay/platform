@@ -462,26 +462,54 @@ struct CreateIdentityView: View {
         return remaining == 0 ? inputs : []
     }
 
-    /// Insert a `PersistentIdentity` row for the newly-created
-    /// identity. The platform-serialized bytes aren't persisted here
-    /// in the first pass — `PersistentIdentity`'s schema doesn't
-    /// have a slot for them and rebuilding from SwiftData is the
-    /// canonical path for all other flows.
+    /// Insert a fully-populated `PersistentIdentity` row together
+    /// with one `PersistentPublicKey` per key registered on the
+    /// identity. Pulls revision + keys off the returned
+    /// `ManagedIdentity` via the FFI — the wallet's local identity
+    /// manager stays the source of truth, this is the SwiftData
+    /// mirror that drives the UI.
+    ///
+    /// Private-key material is intentionally not stashed here. The
+    /// authentication keys were derived from the wallet seed at
+    /// DIP-9 paths; re-deriving is cheaper and safer than
+    /// duplicating them into the Keychain. A follow-up will add a
+    /// `derivationPath` column so we can round-trip back to the
+    /// seed when a signer is needed.
     private func persistCreatedIdentity(
         _ created: ManagedPlatformWallet.CreatedIdentity,
         walletId: Data,
         networkRaw: String,
         initialCreditBalance: Int64
     ) throws {
+        let revision = (try? created.identity.getRevision()) ?? 0
+        let publicKeys = (try? created.identity.getPublicKeys()) ?? []
+
         let identity = PersistentIdentity(
             identityId: created.identityId,
             balance: initialCreditBalance,
-            revision: 0,
+            revision: Int64(revision),
             isLocal: true,
             identityType: .user,
             network: networkRaw,
             walletId: walletId
         )
+
+        let identityIdString = created.identityId.toHexString()
+        for info in publicKeys {
+            let persistent = PersistentPublicKey(
+                keyId: info.keyId,
+                purpose: info.purpose,
+                securityLevel: info.securityLevel,
+                keyType: info.keyType,
+                publicKeyData: info.data,
+                readOnly: info.readOnly,
+                disabledAt: info.disabledAt,
+                contractBounds: nil,
+                identityId: identityIdString
+            )
+            identity.addPublicKey(persistent)
+        }
+
         modelContext.insert(identity)
     }
 

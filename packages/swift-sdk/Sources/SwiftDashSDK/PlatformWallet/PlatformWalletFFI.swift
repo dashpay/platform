@@ -160,6 +160,44 @@ func managed_identity_get_last_synced_keys_block_time(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+// MARK: - Revision / public keys
+
+@_silgen_name("managed_identity_get_revision")
+func managed_identity_get_revision(
+    _ identity_handle: Handle,
+    _ out_revision: UnsafeMutablePointer<UInt64>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `IdentityPublicKeyFFI` from
+/// `rs-platform-wallet-ffi/src/managed_identity.rs`. See there for
+/// the field semantics and ownership rules.
+struct IdentityPublicKeyFFI {
+    var key_id: UInt32
+    var purpose: UInt8
+    var security_level: UInt8
+    var key_type: UInt8
+    var read_only: Bool
+    var disabled_at_is_some: Bool
+    var disabled_at: UInt64
+    var data_ptr: UnsafeMutablePointer<UInt8>?
+    var data_len: Int
+}
+
+@_silgen_name("managed_identity_get_public_keys")
+func managed_identity_get_public_keys(
+    _ identity_handle: Handle,
+    _ out_keys: UnsafeMutablePointer<UnsafeMutablePointer<IdentityPublicKeyFFI>?>,
+    _ out_count: UnsafeMutablePointer<Int>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("managed_identity_free_public_keys")
+func managed_identity_free_public_keys(
+    _ keys: UnsafeMutablePointer<IdentityPublicKeyFFI>?,
+    _ count: Int
+)
+
 @_silgen_name("managed_identity_get_sent_contact_request_ids")
 func managed_identity_get_sent_contact_request_ids(
     _ identity_handle: Handle,

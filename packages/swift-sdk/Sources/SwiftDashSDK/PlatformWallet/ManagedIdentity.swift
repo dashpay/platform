@@ -60,6 +60,110 @@ public class ManagedIdentity {
         return balance
     }
 
+    /// Get the identity revision.
+    ///
+    /// Revisions advance on every Platform-side state transition
+    /// (key add/remove, balance change, etc.). Value 0 means the
+    /// identity was just created and has not been mutated.
+    public func getRevision() throws -> UInt64 {
+        var revision: UInt64 = 0
+        var error = PlatformWalletFFIError()
+
+        let result = managed_identity_get_revision(handle, &revision, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return revision
+    }
+
+    /// Snapshot of an identity's registered public keys. Mirrors the
+    /// DPP `IdentityPublicKeyV0` shape. Contract bounds aren't
+    /// included yet — see the FFI docstring.
+    public struct IdentityPublicKeyInfo: Sendable {
+        public let keyId: Int32
+        public let purpose: KeyPurpose
+        public let securityLevel: SecurityLevel
+        public let keyType: KeyType
+        public let readOnly: Bool
+        /// Milliseconds-since-epoch when this key was disabled, or
+        /// `nil` if it's still active.
+        public let disabledAt: Int64?
+        /// Public-key payload. Format depends on `keyType`
+        /// (compressed secp256k1 pubkey for ECDSA, hash160 for
+        /// HASH160 variants, etc.).
+        public let data: Data
+    }
+
+    /// Return every `IdentityPublicKey` registered on this identity.
+    /// Calls into the Rust side, copies the flat C buffer into
+    /// Swift-owned values, and releases the FFI buffer before
+    /// returning.
+    public func getPublicKeys() throws -> [IdentityPublicKeyInfo] {
+        var outPtr: UnsafeMutablePointer<IdentityPublicKeyFFI>? = nil
+        var outCount: Int = 0
+        var error = PlatformWalletFFIError()
+
+        let result = managed_identity_get_public_keys(
+            handle,
+            &outPtr,
+            &outCount,
+            &error
+        )
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        // Empty-identity branch. Rust sets ptr=null / count=0.
+        guard let ptr = outPtr, outCount > 0 else {
+            return []
+        }
+
+        defer {
+            managed_identity_free_public_keys(ptr, outCount)
+        }
+
+        var keys: [IdentityPublicKeyInfo] = []
+        keys.reserveCapacity(outCount)
+        for i in 0..<outCount {
+            let ffi = ptr[i]
+
+            guard let purpose = KeyPurpose(rawValue: ffi.purpose),
+                  let securityLevel = SecurityLevel(rawValue: ffi.security_level),
+                  let keyType = KeyType(rawValue: ffi.key_type)
+            else {
+                // Rust emitted a discriminant Swift doesn't know
+                // about. Keep the deallocation (defer) and surface
+                // a typed error so callers can recover.
+                throw PlatformWalletError.deserialization(
+                    "Unknown public-key enum discriminant at index \(i)"
+                )
+            }
+
+            let data: Data
+            if let blob = ffi.data_ptr, ffi.data_len > 0 {
+                data = Data(bytes: blob, count: ffi.data_len)
+            } else {
+                data = Data()
+            }
+
+            keys.append(
+                IdentityPublicKeyInfo(
+                    keyId: Int32(bitPattern: ffi.key_id),
+                    purpose: purpose,
+                    securityLevel: securityLevel,
+                    keyType: keyType,
+                    readOnly: ffi.read_only,
+                    disabledAt: ffi.disabled_at_is_some
+                        ? Int64(bitPattern: ffi.disabled_at)
+                        : nil,
+                    data: data
+                )
+            )
+        }
+
+        return keys
+    }
+
     /// Get the identity label
     public func getLabel() throws -> String? {
         var labelPtr: UnsafeMutablePointer<CChar>? = nil
