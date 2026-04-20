@@ -116,49 +116,23 @@ struct CreateIdentityView: View {
                 Text("Select…")
                     .tag(Optional<FundingSelection>.none)
                 ForEach(options) { option in
-                    fundingOptionLabel(option)
+                    Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
                 }
                 Divider()
                 Text("Fund from unused Asset Lock")
                     .tag(Optional(FundingSelection.unusedAssetLock))
             }
-            .onChange(of: fundingSelection) { _, newValue in
-                // SwiftUI's menu-style Picker doesn't have a per-row
-                // `disabled` hook we can trust, so enforce "can't
-                // pick a zero-balance account" by reverting the
-                // selection if the user taps one.
-                guard case let .account(persistentId) = newValue,
-                      let option = options.first(where: { $0.persistentId == persistentId }),
-                      !option.hasBalance
-                else { return }
-                fundingSelection = nil
-            }
         } header: {
             Text("Funding Source")
         } footer: {
             Text(
-                "Any account on the selected wallet can fund the identity — "
-                + "Core or Platform Payment. Accounts with no balance are "
-                + "greyed out and can't be selected. \"Fund from unused "
-                + "Asset Lock\" picks an existing tracked asset lock instead."
+                "Any account on the selected wallet with a balance can fund "
+                + "the identity — Core or Platform Payment. Empty accounts "
+                + "are hidden. \"Fund from unused Asset Lock\" picks an "
+                + "existing tracked asset lock instead."
             )
         }
-    }
-
-    /// Picker row renderer. We build the label as an
-    /// `AttributedString` because SwiftUI's menu-style Picker strips
-    /// `.foregroundStyle` / `.opacity` modifiers on the outer `Text`,
-    /// but honours per-run `foregroundColor` attributes inside an
-    /// attributed value. The balance suffix (` — 0.01 DASH` / ` —
-    /// empty`) makes the state obvious even if the colour gets
-    /// overridden on some iOS variants.
-    private func fundingOptionLabel(_ option: FundingAccountOption) -> Text {
-        var attr = AttributedString("\(option.label) — \(option.balanceText)")
-        if !option.hasBalance {
-            attr.foregroundColor = Color.secondary
-        }
-        return Text(attr)
     }
 
     private var walletlessSection: some View {
@@ -225,16 +199,19 @@ struct CreateIdentityView: View {
     /// Turn a wallet's PersistentAccounts into the funding-picker
     /// rows. Restricted to accounts that actually hold spendable
     /// funds — Core Standard (BIP44 / BIP32), CoinJoin, and
-    /// PlatformPayment. Identity / provider / asset-lock-topup
-    /// accounts are intentionally excluded; they aren't sources of
-    /// funds for a new identity. Ordering matches
-    /// `AccountListView`: BIP44 → PlatformPayment → BIP32 →
-    /// CoinJoin.
+    /// PlatformPayment — AND filtered to a non-zero balance.
+    /// Identity / provider / asset-lock-topup accounts are
+    /// intentionally excluded; they aren't sources of funds. Empty
+    /// accounts are filtered out rather than greyed, because
+    /// SwiftUI's menu-style Picker strips visual-dim modifiers on
+    /// child rows. Ordering matches `AccountListView`: BIP44 →
+    /// PlatformPayment → BIP32 → CoinJoin.
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
         allAccounts
             .filter { account in
                 guard account.wallet?.walletId == walletId else { return false }
-                return CreateIdentityView.isFundingAccount(account)
+                guard CreateIdentityView.isFundingAccount(account) else { return false }
+                return CreateIdentityView.accountBalanceSummary(account).hasBalance
             }
             .sorted { lhs, rhs in
                 let lhsKey = CreateIdentityView.sortKey(for: lhs)
@@ -242,11 +219,10 @@ struct CreateIdentityView: View {
                 return lhsKey < rhsKey
             }
             .map { account in
-                let (hasBalance, balanceText) = Self.accountBalanceSummary(account)
+                let (_, balanceText) = Self.accountBalanceSummary(account)
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
                     label: Self.fundingLabel(for: account),
-                    hasBalance: hasBalance,
                     balanceText: balanceText
                 )
             }
@@ -329,10 +305,9 @@ private enum FundingSelection: Hashable {
 private struct FundingAccountOption: Identifiable {
     let persistentId: PersistentIdentifier
     let label: String
-    /// `true` if the account currently holds spendable funds. Drives
-    /// the greyed-out picker row for zero-balance sources.
-    let hasBalance: Bool
-    /// Human-readable balance suffix (`"0.01 DASH"` / `"empty"`).
+    /// Human-readable balance suffix (`"0.01 DASH"`). Zero-balance
+    /// accounts are filtered out upstream so this is always a
+    /// positive amount.
     let balanceText: String
     var id: PersistentIdentifier { persistentId }
 }
