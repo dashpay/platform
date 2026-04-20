@@ -15,6 +15,7 @@ pub mod established_contact;
 pub mod event_handler;
 pub mod handle;
 pub mod identity_manager;
+pub mod identity_registration;
 pub mod managed_identity;
 pub mod manager;
 pub mod persistence;

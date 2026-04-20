@@ -14,7 +14,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::prelude::{AssetLockProof, Identifier};
+use dpp::prelude::{AddressNonce, AssetLockProof, Identifier};
 use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -1614,6 +1614,192 @@ impl IdentityWallet {
             .await?;
 
         Ok(result)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Register identity from platform addresses
+// ---------------------------------------------------------------------------
+
+impl IdentityWallet {
+    /// Register a new identity funded by Platform-address balances.
+    ///
+    /// Address-funded identity creation uses the
+    /// `IdentityCreateFromAddressesTransition` on the SDK side
+    /// (`put_with_address_funding`). Unlike the asset-lock path, no
+    /// Core-chain transaction is built — the inputs are existing
+    /// credits already committed to Platform under the caller's
+    /// `PlatformPayment` (DIP-17) addresses. `platform_address_wallet`
+    /// doubles as the `Signer<PlatformAddress>` used to authorise the
+    /// input-address contributions.
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs` — contributing addresses, each with its current
+    ///   `AddressNonce` + `Credits` to spend.
+    /// * `output` — optional refund-style output pinning change to an
+    ///   explicit platform address. `None` means no refund (any
+    ///   residual goes into the new identity's balance).
+    /// * `identity_index` — BIP-9 identity index (hardened) in the
+    ///   key tree. Drives the DIP-9 key derivation paths.
+    /// * `key_count` — number of authentication keys to register
+    ///   (must be >= 1).
+    /// * `platform_address_wallet` — the wallet's platform address
+    ///   wallet (provides the `Signer<PlatformAddress>` impl and the
+    ///   DIP-17 extended public keys).
+    pub async fn register_from_addresses(
+        &self,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_index: u32,
+        key_count: u32,
+        platform_address_wallet: &PlatformAddressWallet,
+        settings: Option<PutSettings>,
+    ) -> Result<Identity, PlatformWalletError> {
+        if key_count == 0 {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "key_count must be at least 1".to_string(),
+            ));
+        }
+        if inputs.is_empty() {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "At least one input address is required".to_string(),
+            ));
+        }
+
+        // Step 1: Derive identity authentication keys at DIP-9 paths.
+        // Matches `register_identity_with_funding` — first key is
+        // MASTER, remaining keys are HIGH. First key's public key
+        // appears as the "master" auth key on the resulting identity.
+        let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+        {
+            use dashcore::secp256k1::Secp256k1;
+            use key_wallet::bip32::ExtendedPubKey;
+
+            let wm = self.wallet_manager.read().await;
+            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet not found in wallet manager".to_string(),
+                )
+            })?;
+
+            let base_path: DerivationPath = match self.sdk.network {
+                key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+                _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+            }
+            .into();
+
+            let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+            let secp = Secp256k1::new();
+
+            for key_index in 0..key_count {
+                let full_path = base_path.extend([
+                    ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Invalid key type index: {}",
+                            e
+                        ))
+                    })?,
+                    ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Invalid identity index: {}",
+                            e
+                        ))
+                    })?,
+                    ChildNumber::from_hardened_idx(key_index).map_err(|e| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Invalid key index: {}",
+                            e
+                        ))
+                    })?,
+                ]);
+
+                let ext_priv = wallet
+                    .derive_extended_private_key(&full_path)
+                    .map_err(|e| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Failed to derive authentication key: {}",
+                            e
+                        ))
+                    })?;
+
+                let ext_pub = ExtendedPubKey::from_priv(&secp, &ext_priv);
+                let compressed_pubkey = ext_pub.public_key.serialize();
+
+                let security_level = if key_index == 0 {
+                    SecurityLevel::MASTER
+                } else {
+                    SecurityLevel::HIGH
+                };
+
+                let identity_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: key_index,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(compressed_pubkey.to_vec()),
+                    disabled_at: None,
+                });
+
+                keys_map.insert(key_index, identity_public_key);
+            }
+        }
+
+        // Step 2: Build a placeholder Identity and submit via
+        // `put_with_address_funding`. The SDK recomputes the identity
+        // id from the input-address map so the placeholder
+        // `Identifier::default()` is fine.
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::default(),
+            public_keys: keys_map,
+            balance: 0,
+            revision: 0,
+        });
+
+        let identity_signer = self.signer_for_identity(identity_index);
+
+        let (identity, _address_infos) = identity
+            .put_with_address_funding(
+                &self.sdk,
+                inputs,
+                output,
+                &identity_signer,
+                platform_address_wallet,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register identity from addresses: {}",
+                    e
+                ))
+            })?;
+
+        // Step 3: Add the identity to the local manager (with its HD
+        // index) so subsequent operations route through it.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            info.identity_manager.add_identity(
+                identity.clone(),
+                identity_index,
+                &self.persister,
+            )?;
+        }
+
+        // TODO(platform-wallet): mirror `transfer()` and push the
+        // returned `address_infos` through the platform-address
+        // balance cache so SwiftData reflects the spent balances +
+        // advanced nonces immediately. For now the next BLAST sync
+        // round refreshes them.
+
+        Ok(identity)
     }
 }
 
