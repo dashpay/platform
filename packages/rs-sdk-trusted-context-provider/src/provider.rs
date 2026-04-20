@@ -544,6 +544,28 @@ impl TrustedHttpContextProvider {
             quorum_hash: hex::encode(quorum_hash),
         })
     }
+
+    /// Parse a BLS quorum public key from its hex representation.
+    ///
+    /// Accepts an optional `0x` prefix. Returns `ContextProviderError::Generic`
+    /// on invalid hex, wrong length (must be 48 bytes), or conversion failure.
+    fn parse_quorum_public_key(key: &str) -> Result<[u8; 48], ContextProviderError> {
+        let pubkey_hex = key.trim_start_matches("0x");
+        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+        })?;
+
+        if pubkey_bytes.len() != 48 {
+            return Err(ContextProviderError::Generic(format!(
+                "Invalid public key length: {} bytes, expected 48",
+                pubkey_bytes.len()
+            )));
+        }
+
+        pubkey_bytes.try_into().map_err(|_| {
+            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+        })
+    }
 }
 
 impl ContextProvider for TrustedHttpContextProvider {
@@ -563,25 +585,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.current_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in current cache");
-
-                // Parse the public key from the 'key' field
-                let pubkey_hex = quorum.key.trim_start_matches("0x");
-                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-                })?;
-
-                if pubkey_bytes.len() != 48 {
-                    return Err(ContextProviderError::Generic(format!(
-                        "Invalid public key length: {} bytes, expected 48",
-                        pubkey_bytes.len()
-                    )));
-                }
-
-                return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic(
-                        "Failed to convert public key to array".to_string(),
-                    )
-                });
+                return Self::parse_quorum_public_key(&quorum.key);
             }
         }
 
@@ -589,25 +593,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.previous_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in previous cache");
-
-                // Parse the public key from the 'key' field
-                let pubkey_hex = quorum.key.trim_start_matches("0x");
-                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-                })?;
-
-                if pubkey_bytes.len() != 48 {
-                    return Err(ContextProviderError::Generic(format!(
-                        "Invalid public key length: {} bytes, expected 48",
-                        pubkey_bytes.len()
-                    )));
-                }
-
-                return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic(
-                        "Failed to convert public key to array".to_string(),
-                    )
-                });
+                return Self::parse_quorum_public_key(&quorum.key);
             }
         }
 
@@ -621,29 +607,13 @@ impl ContextProvider for TrustedHttpContextProvider {
 
         let this = self.clone();
         let quorum =
-            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })
-                .map_err(|e| ContextProviderError::Generic(format!("block_on failed: {}", e)))?
+            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })?
                 .map_err(|e| {
                     debug!("Error finding quorum: {}", e);
                     ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
                 })?;
 
-        // Parse the public key from the 'key' field
-        let pubkey_hex = quorum.key.trim_start_matches("0x");
-        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-        })?;
-
-        if pubkey_bytes.len() != 48 {
-            return Err(ContextProviderError::Generic(format!(
-                "Invalid public key length: {} bytes, expected 48",
-                pubkey_bytes.len()
-            )));
-        }
-
-        pubkey_bytes.try_into().map_err(|_| {
-            ContextProviderError::Generic("Failed to convert public key to array".to_string())
-        })
+        Self::parse_quorum_public_key(&quorum.key)
     }
 
     fn get_data_contract(

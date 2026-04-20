@@ -76,17 +76,23 @@ where
                     .map(|rt| rt.block_on(fut));
                 let _ = tx.send(result);
             });
-            let recv_result = rx.recv()?;
-            join_handle
-                .join()
-                .map_err(|_| AsyncError::Generic("block_on worker thread panicked".to_string()))?;
-            recv_result
+            let recv_result = rx.recv();
+            let join_result = join_handle.join();
+            match (join_result, recv_result) {
+                (Err(_), _) => Err(AsyncError::Generic(
+                    "block_on worker thread panicked".to_string(),
+                )),
+                (Ok(()), Err(_)) => Err(AsyncError::Generic(
+                    "block_on worker exited without sending a result".to_string(),
+                )),
+                (Ok(()), Ok(result)) => result,
+            }
         }
         // RuntimeFlavor is #[non_exhaustive]; all multi-threaded flavors (MultiThread,
         // MultiThreadAlt, and any future variants) support block_in_place.
         _ => {
             tracing::trace!("block_on: multi-thread runtime, using block_in_place");
-            let (tx, rx) = std::sync::mpsc::channel();
+            let (tx, rx) = std::sync::mpsc::sync_channel::<F::Output>(1);
             let hdl = handle.spawn(worker(fut, tx));
             let resp = tokio::task::block_in_place(|| rx.recv())?;
             if !hdl.is_finished() {
@@ -125,7 +131,7 @@ where
 #[cfg(not(target_arch = "wasm32"))]
 async fn worker<F: Future>(
     fut: F,
-    response: std::sync::mpsc::Sender<F::Output>,
+    response: std::sync::mpsc::SyncSender<F::Output>,
 ) -> Result<(), AsyncError> {
     tracing::trace!("Worker start");
     let result = fut.await;
@@ -213,7 +219,7 @@ mod test {
     /// runtime flavor and spawns a dedicated OS thread with its own runtime when running
     /// on a current-thread scheduler.
     #[test]
-    fn test_block_on_fails_on_current_thread_runtime() {
+    fn test_block_on_succeeds_on_current_thread_runtime() {
         let rt = Builder::new_current_thread()
             .enable_all()
             .build()
