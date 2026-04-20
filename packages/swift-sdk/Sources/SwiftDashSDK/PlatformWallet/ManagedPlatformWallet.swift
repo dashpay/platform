@@ -133,21 +133,22 @@ public class ManagedPlatformWallet {
     // MARK: - Identity registration (address-funded)
 
     /// One contributing address for an address-funded identity.
+    ///
+    /// Nonces are resolved on the Rust side at submit time (the SDK
+    /// fetches each address's on-chain nonce right before building
+    /// the transition), so callers do not need to track them.
     public struct IdentityAddressInput: Sendable {
         /// `0` = P2PKH, `1` = P2SH. Mirrors the Rust-side
         /// `PlatformAddress` discriminant.
         public let addressType: UInt8
         /// 20-byte address hash.
         public let hash: Data
-        /// Current anti-replay nonce for this address.
-        public let nonce: UInt32
         /// Credits to spend from this address.
         public let credits: UInt64
 
-        public init(addressType: UInt8, hash: Data, nonce: UInt32, credits: UInt64) {
+        public init(addressType: UInt8, hash: Data, credits: UInt64) {
             self.addressType = addressType
             self.hash = hash
-            self.nonce = nonce
             self.credits = credits
         }
     }
@@ -190,8 +191,9 @@ public class ManagedPlatformWallet {
     /// `async` context.
     ///
     /// - Parameters:
-    ///   - inputs: Contributing addresses with their current nonce and
-    ///     credits to spend.
+    ///   - inputs: Contributing addresses with the credit amount to
+    ///     spend from each. Nonces are resolved by the SDK at submit
+    ///     time — the caller does not track them.
     ///   - output: Optional refund address + credits. `nil` when any
     ///     residual should go into the new identity.
     ///   - identityIndex: BIP-9 identity index in the HD tree.
@@ -244,7 +246,6 @@ public class ManagedPlatformWallet {
                 return IdentityInputAddressFFI(
                     address_type: input.addressType,
                     hash: hashTuple,
-                    nonce: input.nonce,
                     credits: input.credits
                 )
             }

@@ -30,7 +30,6 @@
 //!   Identity + its HD `identity_index`. The caller owns the handle
 //!   and must free it via `managed_identity_destroy` when done.
 
-use dash_sdk::platform::FetchMany;
 use dashcore::secp256k1::Secp256k1;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -39,8 +38,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::prelude::{AddressNonce, Identifier};
-use drive_proof_verifier::types::AddressInfo;
+use dpp::prelude::Identifier;
 use key_wallet::bip32::{
     ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, KeyDerivationType,
 };
@@ -50,7 +48,7 @@ use key_wallet::dip9::{
 use key_wallet::mnemonic::{Language, Mnemonic};
 use key_wallet::Network;
 use platform_wallet::wallet::signer::{SeedBackedIdentitySigner, SeedBackedPlatformAddressSigner};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::slice;
@@ -62,6 +60,11 @@ use crate::runtime::runtime;
 
 /// Flat input entry matching the SDK `put_with_address_funding`
 /// shape. One row per contributing Platform Payment address.
+///
+/// Nonces are intentionally **not** part of this struct — the SDK's
+/// auto-fetching variant resolves them from Platform right before
+/// submit. Callers that need an explicit-nonce variant should use
+/// the lower-level SDK API directly.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct IdentityInputAddressFFI {
@@ -70,8 +73,6 @@ pub struct IdentityInputAddressFFI {
     pub address_type: u8,
     /// 20-byte address hash.
     pub hash: [u8; 20],
-    /// Current anti-replay nonce for the address.
-    pub nonce: u32,
     /// Credits to spend from this address for the new identity.
     pub credits: u64,
 }
@@ -193,9 +194,11 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
     };
     let seed = Zeroizing::new(mnemonic_obj.to_seed(passphrase_str));
 
-    // Decode the inputs array into the SDK's expected map shape.
+    // Decode the inputs array into a `(address, credits)` map. The
+    // SDK variant we call below resolves nonces from Platform
+    // itself right before submit, so no nonce travels across FFI.
     let entries = slice::from_raw_parts(inputs, inputs_count);
-    let mut input_map: BTreeMap<PlatformAddress, (AddressNonce, Credits)> = BTreeMap::new();
+    let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
     for entry in entries {
         let address = match entry.address_type {
             0 => PlatformAddress::P2pkh(entry.hash),
@@ -210,7 +213,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
                 return PlatformWalletFFIResult::ErrorInvalidParameter;
             }
         };
-        input_map.insert(address, (entry.nonce, entry.credits));
+        input_map.insert(address, entry.credits);
     }
 
     // `output` is allowed to be null — it means "no refund, any
@@ -352,51 +355,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
             let address_signer =
                 SeedBackedPlatformAddressSigner::new(&*seed, network, address_wallet);
 
-            // ---- Refresh nonces from Platform -----------------------------
-            // Ignore the caller-supplied nonces in `input_map` — they come
-            // from SwiftData/BLAST and may be stale. Match the SDK's
-            // `withdraw_address_funds` pattern: fetch the on-chain
-            // "last-used" nonce via `AddressInfo::fetch_many`, then
-            // increment by 1 to produce the "next-to-use" value Platform
-            // expects. The caller-supplied nonce is preserved in the FFI
-            // struct only as a forward-compat hint; nothing reads it.
-            let sdk = wallet.sdk();
-            let addresses: BTreeSet<PlatformAddress> = input_map.keys().copied().collect();
-            let fresh_inputs_result: Result<
-                BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-                String,
-            > = runtime().block_on(async {
-                let infos = AddressInfo::fetch_many(sdk, addresses.clone())
-                    .await
-                    .map_err(|e| format!("failed to fetch address nonces: {}", e))?;
-                let mut fresh: BTreeMap<PlatformAddress, (AddressNonce, Credits)> = BTreeMap::new();
-                for (addr, (_caller_nonce, credits)) in input_map.iter() {
-                    let info = infos.get(addr).and_then(|maybe| maybe.as_ref());
-                    // Platform returns `None` for addresses that have
-                    // never been touched — nonce = 0, so first
-                    // transition uses 1 (= 0 + 1). Treat missing as 0.
-                    let current_nonce = info.map(|i| i.nonce).unwrap_or(0);
-                    fresh.insert(*addr, (current_nonce + 1, *credits));
-                }
-                Ok(fresh)
-            });
-            let fresh_inputs = match fresh_inputs_result {
-                Ok(f) => f,
-                Err(msg) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            msg,
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorWalletOperation;
-                }
-            };
-
             // ---- Submit ---------------------------------------------------
+            // `register_from_addresses` uses
+            // `put_with_address_funding_fetching_nonces` internally, so
+            // the `(address, credits)` map we pass is enough —
+            // Platform's current nonces are resolved at submit time.
             let result = runtime().block_on(identity_wallet.register_from_addresses(
                 &placeholder,
-                fresh_inputs,
+                input_map,
                 output_map,
                 identity_index,
                 &identity_signer,

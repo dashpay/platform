@@ -465,7 +465,6 @@ struct CreateIdentityView: View {
                 ManagedPlatformWallet.IdentityAddressInput(
                     addressType: addr.addressType,
                     hash: addr.addressHash,
-                    nonce: addr.nonce,
                     credits: spend
                 )
             )

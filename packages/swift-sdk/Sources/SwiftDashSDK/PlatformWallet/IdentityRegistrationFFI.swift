@@ -12,9 +12,12 @@ import Foundation
 
 /// Mirrors `IdentityInputAddressFFI` from Rust.
 ///
+/// Nonces are intentionally absent — the SDK fetches each address's
+/// on-chain nonce at submit time, so callers only need to name the
+/// address + the credit amount to spend.
+///
 /// - `address_type`: 0 = P2PKH, 1 = P2SH.
 /// - `hash`: 20-byte address hash (BE tuple of `UInt8` x 20).
-/// - `nonce`: current anti-replay nonce for the address.
 /// - `credits`: credits to spend from this address.
 @frozen
 public struct IdentityInputAddressFFI {
@@ -23,7 +26,6 @@ public struct IdentityInputAddressFFI {
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
     )
-    public var nonce: UInt32
     public var credits: UInt64
 }
 

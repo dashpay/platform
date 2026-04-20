@@ -14,7 +14,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::prelude::{AddressNonce, AssetLockProof, Identifier};
+use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -1643,8 +1643,11 @@ impl IdentityWallet {
     ///   every auth pubkey already populated at its DIP-9 path, and
     ///   `id = Identifier::default()` — the SDK recomputes it from
     ///   the input-address map).
-    /// * `inputs` — contributing addresses, each with its current
-    ///   `AddressNonce` + `Credits` to spend.
+    /// * `inputs` — contributing addresses, each with the
+    ///   `Credits` amount to spend. The on-chain nonces are fetched
+    ///   automatically by the SDK right before submit (see
+    ///   [`PutIdentity::put_with_address_funding_fetching_nonces`]),
+    ///   so the caller doesn't need to maintain a nonce cache.
     /// * `output` — optional refund-style output pinning change to an
     ///   explicit platform address. `None` means no refund (any
     ///   residual goes into the new identity's balance).
@@ -1664,7 +1667,7 @@ impl IdentityWallet {
     >(
         &self,
         identity: &Identity,
-        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
         identity_index: u32,
         identity_signer: &IS,
@@ -1677,8 +1680,11 @@ impl IdentityWallet {
             ));
         }
 
+        // Route through the auto-fetching SDK variant so the caller
+        // doesn't need to maintain its own nonce cache — Platform is
+        // always the source of truth at submit time.
         let (identity, _address_infos) = identity
-            .put_with_address_funding(
+            .put_with_address_funding_fetching_nonces(
                 &self.sdk,
                 inputs,
                 output,
