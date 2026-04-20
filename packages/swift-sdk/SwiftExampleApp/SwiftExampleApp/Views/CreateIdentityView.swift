@@ -11,8 +11,9 @@
 //      wallet (any type — Core pools and Platform Payment both work)
 //      or "Fund from unused Asset Lock".
 //
-// This file is UI-only — the submit button is a stub. Wiring to the
-// actual create-identity FFI comes next.
+// The first-pass implementation only wires the Platform Payment
+// funding path — see `submit()`. Core / CoinJoin / walletless paths
+// are still stubs pending their respective FFI entry points.
 
 import SwiftUI
 import SwiftDashSDK
@@ -20,6 +21,20 @@ import SwiftData
 
 struct CreateIdentityView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
+
+    /// Default number of Platform identity authentication keys to
+    /// register in this first-pass flow. First key is MASTER, the
+    /// rest are HIGH. Advanced override is intentionally not exposed
+    /// here yet.
+    private static let defaultKeyCount: UInt32 = 3
+
+    /// Credits per DASH (1e11) — the divisor used for Platform-side
+    /// credit amounts. Duplicated from `PersistentPlatformAddress`
+    /// docstring; kept here so the conversion logic stays local.
+    private static let creditsPerDash: UInt64 = 100_000_000_000
 
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
@@ -50,13 +65,35 @@ struct CreateIdentityView: View {
     /// logic (future) will detect + decode.
     @State private var walletlessProof: String = ""
 
+    /// Amount (in DASH) to fund the new identity with. Populated
+    /// automatically from the selected account's balance; the user
+    /// can lower it but not exceed the available balance.
+    @State private var amountDash: String = ""
+
+    // MARK: - Submit state
+
+    /// True while the FFI `registerIdentityFromAddresses` call is in
+    /// flight. Used to swap the submit button for a progress
+    /// indicator and block input.
+    @State private var isCreating: Bool = false
+
+    /// User-facing error surfaced via the `.alert` modifier.
+    @State private var submitError: SubmitError? = nil
+
+    /// Success payload. Populated after the identity is persisted;
+    /// the submit section swaps to a success banner and auto-dismiss.
+    @State private var createdIdentityId: Data? = nil
+
     var body: some View {
         NavigationStack {
             Form {
                 sourceWalletSection
                 fundingSection
+                amountSection
                 identityIndexSection
-                if canSubmit {
+                if createdIdentityId != nil {
+                    successSection
+                } else if canSubmit {
                     submitSection
                 }
             }
@@ -65,7 +102,15 @@ struct CreateIdentityView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isCreating)
                 }
+            }
+            .alert(item: $submitError) { err in
+                Alert(
+                    title: Text("Could not create identity"),
+                    message: Text(err.message),
+                    dismissButton: .default(Text("OK"))
+                )
             }
         }
     }
@@ -138,6 +183,12 @@ struct CreateIdentityView: View {
                 Text("Fund from unused Asset Lock")
                     .tag(Optional(FundingSelection.unusedAssetLock))
             }
+            .onChange(of: fundingSelection) { _, newValue in
+                // Pre-fill the amount with the full available balance
+                // of the selected Platform Payment account so the
+                // happy path is one tap. Users can dial it down.
+                amountDash = defaultAmountString(for: newValue)
+            }
         } header: {
             Text("Funding Source")
         } footer: {
@@ -147,6 +198,33 @@ struct CreateIdentityView: View {
                 + "are hidden. \"Fund from unused Asset Lock\" picks an "
                 + "existing tracked asset lock instead."
             )
+        }
+    }
+
+    /// Amount (in DASH) to fund the new identity with. Only shown
+    /// once the user has picked a funding source the current flow
+    /// can actually spend from (Platform Payment account).
+    @ViewBuilder
+    private var amountSection: some View {
+        if let account = selectedPlatformAccount {
+            Section {
+                HStack {
+                    TextField("Amount", text: $amountDash)
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isCreating)
+                    Text("DASH")
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Amount")
+            } footer: {
+                let available = Self.formatDash(
+                    raw: accountBalance(account),
+                    divisor: Double(Self.creditsPerDash)
+                )
+                Text("Available: \(available). The new identity will start with this amount funded from the selected addresses.")
+            }
         }
     }
 
@@ -199,15 +277,49 @@ struct CreateIdentityView: View {
     private var submitSection: some View {
         Section {
             Button {
-                // TODO(platform-wallet): wire up to the actual
-                // create-identity FFI path. For now the button is
-                // a stub so we can iterate the UI.
+                submit()
             } label: {
-                Text("Create Identity")
-                    .frame(maxWidth: .infinity)
+                HStack {
+                    if isCreating {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                        Text("Creating Identity…")
+                    } else {
+                        Text("Create Identity")
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit)
+            .disabled(!canSubmit || isCreating)
+        }
+    }
+
+    /// Success banner + "Done" button shown after the identity is
+    /// registered and persisted. Replaces the submit section so
+    /// the user can't accidentally double-submit.
+    private var successSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Identity created", systemImage: "checkmark.seal.fill")
+                    .foregroundColor(.green)
+                    .font(.headline)
+                if let id = createdIdentityId {
+                    Text(id.toBase58String())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                }
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
         }
     }
 
@@ -216,7 +328,9 @@ struct CreateIdentityView: View {
     /// Whether the current selection is complete enough that the
     /// submit button should light up. Non-empty hex / base64 content
     /// in the walletless path, or a concrete account + funding choice
-    /// + an identity-registration index on the wallet path.
+    /// + an identity-registration index on the wallet path. For the
+    /// Platform-payment path we additionally require a positive
+    /// amount that doesn't exceed the account balance.
     private var canSubmit: Bool {
         switch (walletSelection, fundingSelection) {
         case (.walletless, _):
@@ -224,10 +338,222 @@ struct CreateIdentityView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
         case (.wallet, .some):
-            return identityIndex != nil
+            guard identityIndex != nil else { return false }
+            if let account = selectedPlatformAccount {
+                guard let credits = parsedAmountCredits else { return false }
+                return credits > 0 && credits <= accountBalance(account)
+            }
+            // Non-Platform-payment wallet-backed paths are still
+            // stubbed — don't light the button until they're wired.
+            return false
         default:
             return false
         }
+    }
+
+    // MARK: - Submit
+
+    /// Runs the Platform-payment-funded identity registration path.
+    /// Other funding branches are intentionally stubbed — the button
+    /// stays disabled for them via `canSubmit`.
+    private func submit() {
+        guard
+            let account = selectedPlatformAccount,
+            let identityIndex = identityIndex,
+            let targetCredits = parsedAmountCredits,
+            targetCredits > 0,
+            case .wallet(let walletId) = walletSelection
+        else {
+            submitError = .init(message: "Selection is incomplete.")
+            return
+        }
+        guard let managedWallet = walletManager.wallet else {
+            submitError = .init(message: "No wallet is currently loaded. Select the wallet from the wallets list first.")
+            return
+        }
+        guard managedWallet.walletId == walletId else {
+            submitError = .init(message: "The selected wallet is not the active wallet. Switch to it before creating an identity.")
+            return
+        }
+
+        // Greedy-select addresses to cover `targetCredits`. The
+        // last address's credits field is capped to the remaining
+        // amount so the total spent matches exactly.
+        let inputs = buildInputs(
+            from: account,
+            targetCredits: targetCredits
+        )
+        guard !inputs.isEmpty else {
+            submitError = .init(message: "No funded Platform addresses available on this account.")
+            return
+        }
+
+        isCreating = true
+
+        let networkRaw: String = platformState.currentNetwork.rawValue
+
+        Task {
+            do {
+                let created = try await managedWallet.registerIdentityFromAddresses(
+                    inputs: inputs,
+                    output: nil,
+                    identityIndex: identityIndex,
+                    keyCount: Self.defaultKeyCount
+                )
+
+                try await MainActor.run {
+                    try persistCreatedIdentity(
+                        created,
+                        walletId: walletId,
+                        networkRaw: networkRaw,
+                        initialCreditBalance: Int64(targetCredits)
+                    )
+                    markIdentitySlotUsed(
+                        walletId: walletId,
+                        identityIndex: identityIndex
+                    )
+                    try modelContext.save()
+                    self.createdIdentityId = created.identityId
+                    self.isCreating = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.submitError = .init(
+                        message: error.localizedDescription
+                    )
+                    self.isCreating = false
+                }
+            }
+        }
+    }
+
+    /// Convert the selected Platform Payment account's
+    /// `PersistentPlatformAddress` rows into the flat FFI input list,
+    /// stopping once we have enough credits to cover `targetCredits`.
+    /// Addresses are sorted by balance descending to minimize the
+    /// number of spent inputs.
+    private func buildInputs(
+        from account: PersistentAccount,
+        targetCredits: UInt64
+    ) -> [ManagedPlatformWallet.IdentityAddressInput] {
+        let candidates = account.platformAddresses
+            .filter { $0.balance > 0 }
+            .sorted { $0.balance > $1.balance }
+
+        var remaining = targetCredits
+        var inputs: [ManagedPlatformWallet.IdentityAddressInput] = []
+        for addr in candidates {
+            guard remaining > 0 else { break }
+            let spend = min(addr.balance, remaining)
+            inputs.append(
+                ManagedPlatformWallet.IdentityAddressInput(
+                    addressType: addr.addressType,
+                    hash: addr.addressHash,
+                    nonce: addr.nonce,
+                    credits: spend
+                )
+            )
+            remaining -= spend
+        }
+        // If we couldn't cover the target, return empty — `submit`
+        // surfaces this as "no funded addresses", which matches the
+        // practical cause (account underfunded by the time the user
+        // tapped).
+        return remaining == 0 ? inputs : []
+    }
+
+    /// Insert a `PersistentIdentity` row for the newly-created
+    /// identity. The platform-serialized bytes aren't persisted here
+    /// in the first pass — `PersistentIdentity`'s schema doesn't
+    /// have a slot for them and rebuilding from SwiftData is the
+    /// canonical path for all other flows.
+    private func persistCreatedIdentity(
+        _ created: ManagedPlatformWallet.CreatedIdentity,
+        walletId: Data,
+        networkRaw: String,
+        initialCreditBalance: Int64
+    ) throws {
+        let identity = PersistentIdentity(
+            identityId: created.identityId,
+            balance: initialCreditBalance,
+            revision: 0,
+            isLocal: true,
+            identityType: .user,
+            network: networkRaw,
+            walletId: walletId
+        )
+        modelContext.insert(identity)
+    }
+
+    /// Flip `isUsed` on the consumed identity-registration slot so
+    /// the next call to `unusedIdentityIndices` skips it. Silent
+    /// no-op if the slot isn't found — this is cosmetic bookkeeping
+    /// and the Rust side is already the source of truth.
+    private func markIdentitySlotUsed(
+        walletId: Data,
+        identityIndex: UInt32
+    ) {
+        guard let account = identityRegistrationAccount(for: walletId) else {
+            return
+        }
+        if let slot = account.coreAddresses.first(where: {
+            $0.addressIndex == identityIndex
+        }) {
+            slot.isUsed = true
+        }
+    }
+
+    /// The currently-selected Platform Payment account, if any.
+    /// Everything downstream (amount section, inputs builder, submit
+    /// gate) keys off this.
+    private var selectedPlatformAccount: PersistentAccount? {
+        guard
+            case .account(let persistentId) = fundingSelection,
+            let account = allAccounts.first(where: {
+                $0.persistentModelID == persistentId
+            }),
+            account.accountType == 14
+        else {
+            return nil
+        }
+        return account
+    }
+
+    /// Raw credit balance across all addresses in a PlatformPayment
+    /// account.
+    private func accountBalance(_ account: PersistentAccount) -> UInt64 {
+        account.platformAddresses.reduce(0) { $0 + $1.balance }
+    }
+
+    /// Default amount string (DASH) for the amount field — the full
+    /// balance of the selected Platform Payment account.
+    private func defaultAmountString(for funding: FundingSelection?) -> String {
+        guard
+            case .account(let persistentId) = funding,
+            let account = allAccounts.first(where: {
+                $0.persistentModelID == persistentId
+            }),
+            account.accountType == 14
+        else {
+            return ""
+        }
+        let balance = accountBalance(account)
+        if balance == 0 { return "" }
+        let dash = Double(balance) / Double(Self.creditsPerDash)
+        return String(format: "%g", dash)
+    }
+
+    /// Parse the amount text back into credits. Returns `nil` on
+    /// invalid / negative / overflow input.
+    private var parsedAmountCredits: UInt64? {
+        let trimmed = amountDash.trimmingCharacters(in: .whitespaces)
+        guard let dash = Double(trimmed), dash.isFinite, dash > 0 else {
+            return nil
+        }
+        // Round to nearest credit to avoid floating-point dust.
+        let credits = (dash * Double(Self.creditsPerDash)).rounded()
+        guard credits >= 1, credits <= Double(UInt64.max) else { return nil }
+        return UInt64(credits)
     }
 
     // MARK: - Helpers
@@ -385,4 +711,11 @@ private struct FundingAccountOption: Identifiable {
     /// positive amount.
     let balanceText: String
     var id: PersistentIdentifier { persistentId }
+}
+
+/// Wrapper so SwiftUI's `.alert(item:)` can render a fresh alert each
+/// time the error changes.
+private struct SubmitError: Identifiable {
+    let id = UUID()
+    let message: String
 }
