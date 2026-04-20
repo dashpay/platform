@@ -340,3 +340,259 @@ impl std::fmt::Debug for ManagedIdentitySigner {
             .finish()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Seed-backed signers (no wallet key material required)
+// ---------------------------------------------------------------------------
+//
+// These signers derive private keys from a BIP-39 seed held in memory for
+// the duration of a single operation (typically `register_from_addresses`).
+// They exist so that watch-only / external-signable wallets — which carry
+// no key material in `Wallet::wallet_type` — can still drive flows that
+// need actual signatures. The seed is the caller's responsibility: it
+// comes from iOS Keychain, travels through FFI inside a `Zeroizing`
+// buffer, and is dropped as soon as the operation completes.
+
+use dashcore::secp256k1::Secp256k1;
+use dpp::address_funds::PlatformAddress;
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
+use key_wallet::dip9::{
+    IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
+};
+use key_wallet::PlatformP2PKHAddress;
+
+use crate::wallet::platform_addresses::PlatformAddressWallet;
+
+/// Build the DIP-9 identity authentication path
+/// `m/9'/COIN'/5'/0'/ECDSA'/identity_index'/key_index'`.
+fn dip9_identity_auth_path(
+    network: Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<DerivationPath, ProtocolError> {
+    let base = match network {
+        Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+        _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+    };
+    let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+
+    Ok(DerivationPath::from(base).extend([
+        ChildNumber::from_hardened_idx(key_type_index)
+            .map_err(|e| ProtocolError::Generic(format!("Invalid key type index: {}", e)))?,
+        ChildNumber::from_hardened_idx(identity_index)
+            .map_err(|e| ProtocolError::Generic(format!("Invalid identity index: {}", e)))?,
+        ChildNumber::from_hardened_idx(key_index)
+            .map_err(|e| ProtocolError::Generic(format!("Invalid key index: {}", e)))?,
+    ]))
+}
+
+/// Derive a 32-byte ECDSA private key at `path` from a BIP-39 seed.
+fn derive_ecdsa_bytes_from_seed(
+    seed: &[u8],
+    network: Network,
+    path: &DerivationPath,
+) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
+    let master = ExtendedPrivKey::new_master(network, seed)
+        .map_err(|e| ProtocolError::Generic(format!("Failed to derive master key: {}", e)))?;
+    let secp = Secp256k1::new();
+    let derived = master
+        .derive_priv(&secp, path)
+        .map_err(|e| ProtocolError::Generic(format!("Failed to derive key at path: {}", e)))?;
+    Ok(Zeroizing::new(derived.private_key.secret_bytes()))
+}
+
+/// Sign `data` with an ECDSA secp256k1 private key and return a
+/// `BinaryData`-wrapped compact signature (the form DPP expects).
+fn sign_ecdsa_with_bytes(
+    data: &[u8],
+    secret_bytes: &[u8; 32],
+) -> Result<BinaryData, ProtocolError> {
+    let signature = dashcore::signer::sign(data, secret_bytes)
+        .map_err(|e| ProtocolError::Generic(format!("ECDSA signing failed: {}", e)))?;
+    Ok(BinaryData::new(signature.to_vec()))
+}
+
+/// `Signer<IdentityPublicKey>` impl backed by a BIP-39 seed.
+///
+/// Derives the DIP-9 identity authentication key on every `sign` call
+/// (master key HMAC is ~microseconds). Drop the signer as soon as the
+/// operation completes so the seed is scrubbed.
+pub struct SeedBackedIdentitySigner {
+    seed: Zeroizing<Vec<u8>>,
+    network: Network,
+    identity_index: u32,
+}
+
+impl SeedBackedIdentitySigner {
+    /// Construct from an already-computed BIP-39 seed (typically 64
+    /// bytes from `Mnemonic::to_seed`). The seed is cloned into a
+    /// `Zeroizing` buffer owned by the signer.
+    pub fn new(seed: &[u8], network: Network, identity_index: u32) -> Self {
+        Self {
+            seed: Zeroizing::new(seed.to_vec()),
+            network,
+            identity_index,
+        }
+    }
+}
+
+impl Signer<IdentityPublicKey> for SeedBackedIdentitySigner {
+    fn sign(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        // Identity auth keys only — the DIP-9 path is keyed by the
+        // `IdentityPublicKey.id` (KeyID == key_index on our tree).
+        match identity_public_key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                let path = dip9_identity_auth_path(
+                    self.network,
+                    self.identity_index,
+                    identity_public_key.id(),
+                )?;
+                let secret = derive_ecdsa_bytes_from_seed(&self.seed, self.network, &path)?;
+                sign_ecdsa_with_bytes(data, &secret)
+            }
+            other => Err(ProtocolError::Generic(format!(
+                "Seed-backed signer does not support key type {:?}",
+                other
+            ))),
+        }
+    }
+
+    fn sign_create_witness(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        let signature = self.sign(identity_public_key, data)?;
+        match identity_public_key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                Ok(AddressWitness::P2pkh { signature })
+            }
+            other => Err(ProtocolError::Generic(format!(
+                "Key type {:?} is not supported for address witnesses",
+                other
+            ))),
+        }
+    }
+
+    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
+        matches!(
+            identity_public_key.key_type(),
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
+        )
+    }
+}
+
+impl std::fmt::Debug for SeedBackedIdentitySigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeedBackedIdentitySigner")
+            .field("network", &self.network)
+            .field("identity_index", &self.identity_index)
+            .finish()
+    }
+}
+
+/// `Signer<PlatformAddress>` impl backed by a BIP-39 seed.
+///
+/// Looks up the DIP-17 derivation path for the P2PKH hash on the
+/// wrapped [`PlatformAddressWallet`] (the pool still knows which path
+/// produced which address), then derives the private key from the
+/// seed using that path.
+pub struct SeedBackedPlatformAddressSigner<'a> {
+    seed: Zeroizing<Vec<u8>>,
+    network: Network,
+    wallet: &'a PlatformAddressWallet,
+}
+
+impl<'a> SeedBackedPlatformAddressSigner<'a> {
+    pub fn new(seed: &[u8], network: Network, wallet: &'a PlatformAddressWallet) -> Self {
+        Self {
+            seed: Zeroizing::new(seed.to_vec()),
+            network,
+            wallet,
+        }
+    }
+
+    /// Synchronously look up the DIP-17 path for a P2PKH platform
+    /// address by scanning all platform-payment accounts in the
+    /// wallet manager. Mirrors the path-lookup portion of
+    /// [`PlatformAddressWallet::find_private_key_for_platform_address`]
+    /// but stops before the privkey-derivation step.
+    fn path_for(&self, p2pkh: &PlatformP2PKHAddress) -> Result<DerivationPath, ProtocolError> {
+        let dashcore_addr = p2pkh.to_address(self.wallet.sdk.network);
+        let handle = tokio::runtime::Handle::current();
+        let found = tokio::task::block_in_place(|| {
+            handle.block_on(async {
+                let wm = self.wallet.wallet_manager.read().await;
+                // `PlatformWalletInfo` is not `Clone`, so resolve the
+                // path while the read guard is still held and copy
+                // out only the `DerivationPath`.
+                wm.get_wallet_info(&self.wallet.wallet_id).and_then(|info| {
+                    info.core_wallet
+                        .accounts
+                        .platform_payment_accounts
+                        .values()
+                        .find_map(|account| {
+                            account
+                                .addresses
+                                .address_info(&dashcore_addr)
+                                .map(|ai| ai.path.clone())
+                        })
+                })
+            })
+        });
+        found.ok_or_else(|| {
+            ProtocolError::Generic(format!(
+                "Platform address {} not found in wallet's address pools",
+                p2pkh
+            ))
+        })
+    }
+}
+
+impl<'a> Signer<PlatformAddress> for SeedBackedPlatformAddressSigner<'a> {
+    fn sign(
+        &self,
+        platform_address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        let PlatformAddress::P2pkh(hash) = platform_address else {
+            return Err(ProtocolError::Generic(
+                "Only P2PKH Platform addresses are supported for signing".to_string(),
+            ));
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        let path = self.path_for(&p2pkh)?;
+        let secret = derive_ecdsa_bytes_from_seed(&self.seed, self.network, &path)?;
+        sign_ecdsa_with_bytes(data, &secret)
+    }
+
+    fn sign_create_witness(
+        &self,
+        platform_address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        let signature = self.sign(platform_address, data)?;
+        Ok(AddressWitness::P2pkh { signature })
+    }
+
+    fn can_sign_with(&self, platform_address: &PlatformAddress) -> bool {
+        let PlatformAddress::P2pkh(hash) = platform_address else {
+            return false;
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        self.path_for(&p2pkh).is_ok()
+    }
+}
+
+impl<'a> std::fmt::Debug for SeedBackedPlatformAddressSigner<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeedBackedPlatformAddressSigner")
+            .field("network", &self.network)
+            .field("wallet_id", &hex::encode(self.wallet.wallet_id))
+            .finish()
+    }
+}
