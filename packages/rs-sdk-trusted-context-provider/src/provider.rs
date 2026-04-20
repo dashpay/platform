@@ -550,7 +550,10 @@ impl TrustedHttpContextProvider {
     /// Accepts an optional `0x` prefix. Returns `ContextProviderError::Generic`
     /// on invalid hex, wrong length (must be 48 bytes), or conversion failure.
     fn parse_quorum_public_key(key: &str) -> Result<[u8; 48], ContextProviderError> {
-        let pubkey_hex = key.trim_start_matches("0x");
+        let pubkey_hex = key
+            .strip_prefix("0x")
+            .or_else(|| key.strip_prefix("0X"))
+            .unwrap_or(key);
         let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
             ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
         })?;
