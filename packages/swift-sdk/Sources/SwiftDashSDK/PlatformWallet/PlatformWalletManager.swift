@@ -31,8 +31,14 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed platform-address sync event emitted by Rust.
     @Published public internal(set) var lastPlatformAddressSyncEvent: PlatformAddressSyncEvent?
 
-    /// The active wallet (at most one per manager for now).
-    @Published public private(set) var wallet: ManagedPlatformWallet?
+    /// All wallets currently held by the Rust-side
+    /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
+    ///
+    /// The Rust manager holds N wallets concurrently — BLAST sync
+    /// iterates every wallet in this map. Views should look up the
+    /// wallet they care about via [`wallet(for:)`] rather than
+    /// assuming a single "active" wallet.
+    @Published public private(set) var wallets: [Data: ManagedPlatformWallet] = [:]
 
     /// Last error from a wallet operation, if any. Cleared on successful op.
     @Published public private(set) var lastError: Error?
@@ -184,7 +190,7 @@ public class PlatformWalletManager: ObservableObject {
             persistenceHandler?.setWalletName(walletId: idData, name: name)
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
-        self.wallet = w
+        self.wallets[idData] = w
         return w
     }
 
@@ -233,7 +239,7 @@ public class PlatformWalletManager: ObservableObject {
             persistenceHandler?.setWalletName(walletId: idData, name: name)
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
-        self.wallet = w
+        self.wallets[idData] = w
         return w
     }
 
@@ -254,7 +260,7 @@ public class PlatformWalletManager: ObservableObject {
     /// mnemonic stored in Keychain.
     ///
     /// Idempotent: if there's no persisted state, does nothing and
-    /// leaves `self.wallet` untouched. Safe to call before any
+    /// leaves `self.wallets` untouched. Safe to call before any
     /// `createWallet` flow.
     @discardableResult
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
@@ -295,6 +301,7 @@ public class PlatformWalletManager: ObservableObject {
             if fetchResult == Success {
                 let managedWallet = ManagedPlatformWallet(handle: walletHandle, walletId: walletId)
                 restored.append(managedWallet)
+                self.wallets[walletId] = managedWallet
             } else {
                 // Log and skip — one wallet failing doesn't fail the
                 // whole restore. Usually means wallet_id / xpub
@@ -303,13 +310,30 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
 
-        // Publish the first restored wallet for single-wallet UX
-        // compatibility; multi-wallet callers iterate the return
-        // value directly.
-        if self.wallet == nil, let first = restored.first {
-            self.wallet = first
-        }
         return restored
+    }
+
+    // MARK: - Per-wallet lookup
+
+    /// Return the managed wallet with the given 32-byte id, or `nil`
+    /// if it is not loaded.
+    ///
+    /// The Rust manager can hold multiple wallets at once (BLAST
+    /// sync operates on all of them); UI surfaces that act against a
+    /// specific wallet should route through this lookup rather than
+    /// assuming a single active wallet exists.
+    public func wallet(for walletId: Data) -> ManagedPlatformWallet? {
+        wallets[walletId]
+    }
+
+    /// Convenience for bootstrap / single-wallet UI surfaces: an
+    /// arbitrary-but-deterministic wallet from the managed set
+    /// (sorted by walletId). Returns `nil` when no wallets are
+    /// loaded.
+    public var firstWallet: ManagedPlatformWallet? {
+        guard !wallets.isEmpty else { return nil }
+        let key = wallets.keys.min(by: { $0.lexicographicallyPrecedes($1) })
+        return key.flatMap { wallets[$0] }
     }
 
     // MARK: - Xpub rendering

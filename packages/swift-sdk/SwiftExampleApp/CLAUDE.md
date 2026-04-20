@@ -68,11 +68,14 @@ Private keys are stored separately from identities:
 
 - `AppState` - Platform identity/document/contract state (SDK wrapper)
 - `PlatformWalletManager` - Drives wallet creation, SPV sync, and BLAST
-  balance sync via the Rust-side `platform-wallet` crate. Publishes
-  `spvProgress`, `wallet`, `lastError`. Persists data via SwiftData using
-  `PlatformWalletPersistenceHandler` — UI queries `PersistentWallet`,
-  `PersistentAccount`, `PersistentTransaction`, and `PersistentUtxo`
-  directly with `@Query`.
+  balance sync via the Rust-side `platform-wallet` crate. Holds **N
+  wallets concurrently** keyed by walletId — BLAST sync iterates all
+  of them. Publishes `spvProgress`, `wallets` (the full map), and
+  `lastError`. Look up a specific wallet with `wallet(for: walletId)`
+  or grab a deterministic default via `firstWallet`. Persists data
+  via SwiftData using `PlatformWalletPersistenceHandler` — UI queries
+  `PersistentWallet`, `PersistentAccount`, `PersistentTransaction`,
+  and `PersistentUtxo` directly with `@Query`.
 - `PlatformBalanceSyncService` - Drives periodic BLAST address sync on the
   platform side.
 - `ShieldedService` - Shielded pool (Orchard) operations.

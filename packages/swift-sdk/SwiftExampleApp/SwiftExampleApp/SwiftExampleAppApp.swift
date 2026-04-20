@@ -71,26 +71,32 @@ struct SwiftExampleAppApp: App {
                     await bootstrap()
                     SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
                 }
-                // Rebind wallet-scoped services whenever the active
-                // wallet appears or changes (create flow, restore on
-                // launch, network switch). Keyed on walletId so we
-                // don't re-fire on unrelated publishes of the same
-                // wallet.
-                .onChange(of: walletManager.wallet?.walletId) { _, _ in
+                // Rebind wallet-scoped services whenever the set of
+                // managed wallets changes — wallet creation, restore
+                // on launch, or a full wipe. The Rust manager holds
+                // N wallets concurrently; BLAST sync is started once
+                // at manager scope and iterates all of them.
+                //
+                // Keyed on the sorted id set so unrelated republishes
+                // of the same dictionary don't retrigger.
+                .onChange(of: walletManager.wallets.keys.sorted(by: {
+                    $0.lexicographicallyPrecedes($1)
+                })) { _, _ in
                     rebindWalletScopedServices()
                 }
         }
     }
 
-    /// Hand the active wallet's platform-address-wallet + persistence
-    /// handle to the services that depend on them. Called on any
-    /// change to `walletManager.wallet`.
-    ///
-    /// If no wallet is active (fresh install, cleared store) services
-    /// get reset so their UI doesn't carry stale state.
+    /// Drive manager-wide BLAST sync state from the set of loaded
+    /// wallets. With no wallets present, sync is stopped and the
+    /// per-wallet `PlatformBalanceSyncService` UI surface is reset.
+    /// Otherwise, we ensure sync is running and bind the balance
+    /// service to `firstWallet` for the single-wallet UI surfaces
+    /// that still expect one focused wallet (detail views reconfigure
+    /// the service per-wallet themselves).
     @MainActor
     private func rebindWalletScopedServices() {
-        guard let wallet = walletManager.wallet else {
+        guard let wallet = walletManager.firstWallet else {
             do {
                 try walletManager.stopPlatformAddressSync()
             } catch {
@@ -113,7 +119,7 @@ struct SwiftExampleAppApp: App {
                 try walletManager.startPlatformAddressSync()
             }
             SDKLogger.log(
-                "🔗 Bound platform-balance-sync to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())…",
+                "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… (of \(walletManager.wallets.count) loaded)",
                 minimumLevel: .medium
             )
         } catch {

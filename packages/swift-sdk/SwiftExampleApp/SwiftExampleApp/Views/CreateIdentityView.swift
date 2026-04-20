@@ -367,12 +367,12 @@ struct CreateIdentityView: View {
             submitError = .init(message: "Selection is incomplete.")
             return
         }
-        guard let managedWallet = walletManager.wallet else {
-            submitError = .init(message: "No wallet is currently loaded. Select the wallet from the wallets list first.")
-            return
-        }
-        guard managedWallet.walletId == walletId else {
-            submitError = .init(message: "The selected wallet is not the active wallet. Switch to it before creating an identity.")
+        // The Rust manager holds every loaded wallet — route by id
+        // rather than assuming a single active wallet. If the
+        // selected wallet isn't loaded (create flow never ran /
+        // restore failed) we surface a concrete error.
+        guard let managedWallet = walletManager.wallet(for: walletId) else {
+            submitError = .init(message: "The selected wallet isn't loaded. Try restoring it from the wallets list first.")
             return
         }
 

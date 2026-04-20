@@ -110,7 +110,15 @@ struct SendTransactionView: View {
                     Button("Send") {
                         Task {
                             guard let sdk = platformState.sdk else { return }
-                            let coreWallet = try? walletManager.wallet?.coreWallet()
+                            // Look up the managed wallet by the
+                            // HDWallet we were handed, not the
+                            // "active" manager slot — the Rust
+                            // manager holds all wallets and this
+                            // view's `wallet` may not be the one
+                            // that was last created.
+                            let coreWallet = try? walletManager
+                                .wallet(for: wallet.walletId)?
+                                .coreWallet()
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 shieldedService: shieldedService,
