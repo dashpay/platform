@@ -5,14 +5,17 @@
 //! nonce, credits)` tuples. The optional refund output is expressed as
 //! a sibling triple plus an `has_output` flag.
 //!
-//! Returns the newly-created identity as platform-serialized bytes
-//! that the caller frees via [`free_identity_bytes`].
+//! Returns the newly-created identity through two out-params:
+//! * `out_identity_id` — the 32-byte platform identifier.
+//! * `out_identity_handle` — a handle into `MANAGED_IDENTITY_STORAGE`
+//!   pointing at a `platform_wallet::ManagedIdentity` wrapping the
+//!   Identity + its HD `identity_index`. The caller owns the handle
+//!   and must free it via `managed_identity_destroy` when done.
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::AddressNonce;
-use dpp::serialization::PlatformSerializable;
 use std::collections::BTreeMap;
 use std::slice;
 
@@ -49,10 +52,18 @@ pub struct IdentityOutputAddressFFI {
 
 /// Register a new identity funded by Platform-address balances.
 ///
-/// On success `out_identity_bytes` is set to a heap-allocated
-/// `PlatformVersion`-serialized `Identity`. The caller takes
-/// ownership and must free with [`free_identity_bytes`].
-/// `out_identity_id` receives the 32-byte identity id.
+/// On success both `out_identity_id` (32 bytes) and
+/// `out_identity_handle` are populated. The returned handle points at
+/// a freshly-inserted `ManagedIdentity` in `MANAGED_IDENTITY_STORAGE`
+/// wrapping the new identity together with `identity_index`. The
+/// caller owns the handle and must release it via
+/// `managed_identity_destroy`.
+///
+/// Note: the wallet's internal `IdentityManager` also receives a copy
+/// of the same identity (via
+/// `IdentityWallet::register_from_addresses`), so this handle is a
+/// convenience for the caller to query right after creation — the
+/// canonical source of truth remains the wallet.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
     wallet_handle: Handle,
@@ -62,15 +73,13 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
     inputs_count: usize,
     output: IdentityOutputAddressFFI,
     out_identity_id: *mut [u8; 32],
-    out_identity_bytes: *mut *mut u8,
-    out_identity_bytes_len: *mut usize,
+    out_identity_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if inputs.is_null()
         || inputs_count == 0
         || out_identity_id.is_null()
-        || out_identity_bytes.is_null()
-        || out_identity_bytes_len.is_null()
+        || out_identity_handle.is_null()
     {
         if !out_error.is_null() {
             *out_error = PlatformWalletFFIError::new(
@@ -138,22 +147,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
                     let id_bytes: [u8; 32] = identity.id().to_buffer();
                     *out_identity_id = id_bytes;
 
-                    let bytes = match identity.serialize_to_bytes() {
-                        Ok(b) => b,
-                        Err(e) => {
-                            if !out_error.is_null() {
-                                *out_error = PlatformWalletFFIError::new(
-                                    PlatformWalletFFIResult::ErrorSerialization,
-                                    format!("failed to serialize identity: {}", e),
-                                );
-                            }
-                            return PlatformWalletFFIResult::ErrorSerialization;
-                        }
-                    };
-                    let len = bytes.len();
-                    let boxed = bytes.into_boxed_slice();
-                    *out_identity_bytes_len = len;
-                    *out_identity_bytes = Box::into_raw(boxed) as *mut u8;
+                    // Wrap the new identity in a ManagedIdentity and
+                    // hand the caller a handle into the global FFI
+                    // storage. The wallet's IdentityManager keeps its
+                    // own copy — this is a convenience reference for
+                    // the caller that avoids a follow-up lookup.
+                    let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
+                    let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+                    *out_identity_handle = handle;
                     PlatformWalletFFIResult::Success
                 }
                 Err(e) => {
@@ -176,15 +177,4 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
             }
             PlatformWalletFFIResult::ErrorInvalidHandle
         })
-}
-
-/// Free the identity-bytes buffer returned by
-/// [`platform_wallet_register_identity_from_addresses`].
-#[no_mangle]
-pub unsafe extern "C" fn free_identity_bytes(ptr: *mut u8, len: usize) {
-    if ptr.is_null() || len == 0 {
-        return;
-    }
-    let slice = std::slice::from_raw_parts_mut(ptr, len);
-    let _ = Box::from_raw(slice as *mut [u8]);
 }

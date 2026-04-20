@@ -56,13 +56,6 @@ func platform_wallet_register_identity_from_addresses(
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
     )>,
-    _ out_identity_bytes: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>,
-    _ out_identity_bytes_len: UnsafeMutablePointer<Int>,
+    _ out_identity_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
-
-@_silgen_name("free_identity_bytes")
-func free_identity_bytes(
-    _ ptr: UnsafeMutablePointer<UInt8>?,
-    _ len: Int
-)

@@ -166,13 +166,17 @@ public class ManagedPlatformWallet {
     }
 
     /// Result of a successful identity registration.
-    public struct CreatedIdentity: Sendable {
+    public struct CreatedIdentity {
         /// 32-byte identity id.
         public let identityId: Data
-        /// Platform-serialized identity bytes. Round-trips via
-        /// `Identity::deserialize_from_bytes_no_limit` on the Rust
-        /// side and is the canonical form used for persistence.
-        public let serializedBytes: Data
+        /// Fully-populated `ManagedIdentity` wrapping the new
+        /// identity's Rust-side handle. Carries the DPP `Identity`
+        /// (public keys, balance, revision) plus the wallet-level
+        /// metadata (`identity_index`, labels, block-time stamps).
+        /// The returned handle is owned by this object — it is
+        /// released automatically when the `ManagedIdentity`
+        /// deinitializes.
+        public let identity: ManagedIdentity
     }
 
     /// Register a new identity funded by Platform-address balances.
@@ -209,8 +213,15 @@ public class ManagedPlatformWallet {
         // via `block_on`; calling from the main thread would park
         // user-interactive QoS on default-QoS workers (same pattern
         // we use for BLAST sync).
+        //
+        // The detached task returns primitive `(Data, Handle)` which
+        // are `Sendable`. The `ManagedIdentity` wrapper is constructed
+        // back in the calling isolation domain so we don't need to
+        // add a Sendable bound on the non-sendable FFI wrapper type.
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> CreatedIdentity in
+        let (idData, identityHandle): (Data, Handle) = try await Task.detached(
+            priority: .userInitiated
+        ) { () -> (Data, Handle) in
             var ffiInputs = inputs.map { input -> IdentityInputAddressFFI in
                 var hashTuple = hashTupleInit()
                 withUnsafeMutableBytes(of: &hashTuple) { raw in
@@ -263,8 +274,7 @@ public class ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0
             )
-            var outBytesPtr: UnsafeMutablePointer<UInt8>? = nil
-            var outBytesLen: Int = 0
+            var outIdentityHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
 
             let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
@@ -276,8 +286,7 @@ public class ManagedPlatformWallet {
                     inputsBuf.count,
                     outputFFI,
                     &outIdentityId,
-                    &outBytesPtr,
-                    &outBytesLen,
+                    &outIdentityHandle,
                     &error
                 )
             }
@@ -285,19 +294,18 @@ public class ManagedPlatformWallet {
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
-            guard let bytesPtr = outBytesPtr, outBytesLen > 0 else {
-                throw PlatformWalletError.serialization("identity bytes not returned")
+            guard outIdentityHandle != NULL_HANDLE else {
+                throw PlatformWalletError.walletOperation("identity handle not returned")
             }
 
-            let identityBytes = Data(bytes: bytesPtr, count: outBytesLen)
-            free_identity_bytes(bytesPtr, outBytesLen)
-
             let idData = withUnsafeBytes(of: outIdentityId) { Data($0) }
-            return CreatedIdentity(
-                identityId: idData,
-                serializedBytes: identityBytes
-            )
+            return (idData, outIdentityHandle)
         }.value
+
+        return CreatedIdentity(
+            identityId: idData,
+            identity: ManagedIdentity(handle: identityHandle)
+        )
     }
 }
 
