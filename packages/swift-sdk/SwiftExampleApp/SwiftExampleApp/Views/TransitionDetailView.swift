@@ -126,6 +126,12 @@ struct TransitionDetailView: View {
           .cornerRadius(8)
       } else {
         Picker("Identity", selection: $selectedIdentityId) {
+          // Placeholder option matching the `@State` initial
+          // empty-string value. Without this SwiftUI emits
+          // "Picker: the selection '' is invalid and does not
+          // have an associated tag" until the user picks a real
+          // identity.
+          Text("Select an identity").tag("")
           ForEach(appState.identities, id: \.idString) { identity in
             Text(identity.displayName)
               .tag(identity.idString)

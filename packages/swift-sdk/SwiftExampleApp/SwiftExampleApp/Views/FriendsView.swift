@@ -74,6 +74,13 @@ struct FriendsView: View {
                         .padding(.top, 8)
 
                         Picker("Identity", selection: $selectedIdentityId) {
+                            // Placeholder tag matching the initial
+                            // empty-string state, so SwiftUI doesn't
+                            // warn "the selection '' is invalid and
+                            // does not have an associated tag". The
+                            // `onAppear` default-selector replaces
+                            // this with the first real identity.
+                            Text("Select an identity").tag("")
                             ForEach(availableIdentities) { identity in
                                 HStack {
                                     VStack(alignment: .leading) {
