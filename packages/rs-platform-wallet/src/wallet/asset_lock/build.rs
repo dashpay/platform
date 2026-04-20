@@ -86,9 +86,26 @@ impl AssetLockManager {
             })?;
 
         // 4. Convert the raw key bytes to a PrivateKey.
-        let key_bytes = result.keys.into_iter().next().ok_or_else(|| {
-            PlatformWalletError::AssetLockTransaction("Builder returned no keys".to_string())
-        })?;
+        //
+        // `build_asset_lock` is the soft-wallet variant, so the
+        // keys are always the `Private` variant of
+        // `AssetLockCreditKeys`. The `Public` variant would only
+        // come from `build_asset_lock_with_signer` (external
+        // signer path) which we don't use here.
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockCreditKeys;
+        let key_bytes = match result.keys {
+            AssetLockCreditKeys::Private(mut keys) => keys.drain(..).next().ok_or_else(|| {
+                PlatformWalletError::AssetLockTransaction(
+                    "Builder returned no credit-output keys".to_string(),
+                )
+            })?,
+            AssetLockCreditKeys::Public(_) => {
+                return Err(PlatformWalletError::AssetLockTransaction(
+                    "Builder returned Public keys (signer path); expected Private from soft wallet"
+                        .to_string(),
+                ));
+            }
+        };
         let one_time_private_key = PrivateKey::from_byte_array(&key_bytes, self.sdk.network)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
