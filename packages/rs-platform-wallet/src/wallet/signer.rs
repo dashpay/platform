@@ -501,14 +501,21 @@ impl std::fmt::Debug for SeedBackedIdentitySigner {
 /// wrapped [`PlatformAddressWallet`] (the pool still knows which path
 /// produced which address), then derives the private key from the
 /// seed using that path.
-pub struct SeedBackedPlatformAddressSigner<'a> {
+///
+/// The wallet is held by value — [`PlatformAddressWallet`] is
+/// `Clone` and all its internal state lives behind `Arc`s, so this
+/// is a cheap refcount bump that frees the signer from any
+/// lifetime tied to the caller's stack. That in turn lets it be
+/// captured by a `'static + Send` future (e.g. one handed to
+/// `tokio::spawn`).
+pub struct SeedBackedPlatformAddressSigner {
     seed: Zeroizing<Vec<u8>>,
     network: Network,
-    wallet: &'a PlatformAddressWallet,
+    wallet: PlatformAddressWallet,
 }
 
-impl<'a> SeedBackedPlatformAddressSigner<'a> {
-    pub fn new(seed: &[u8], network: Network, wallet: &'a PlatformAddressWallet) -> Self {
+impl SeedBackedPlatformAddressSigner {
+    pub fn new(seed: &[u8], network: Network, wallet: PlatformAddressWallet) -> Self {
         Self {
             seed: Zeroizing::new(seed.to_vec()),
             network,
@@ -553,7 +560,7 @@ impl<'a> SeedBackedPlatformAddressSigner<'a> {
     }
 }
 
-impl<'a> Signer<PlatformAddress> for SeedBackedPlatformAddressSigner<'a> {
+impl Signer<PlatformAddress> for SeedBackedPlatformAddressSigner {
     fn sign(
         &self,
         platform_address: &PlatformAddress,
@@ -588,7 +595,7 @@ impl<'a> Signer<PlatformAddress> for SeedBackedPlatformAddressSigner<'a> {
     }
 }
 
-impl<'a> std::fmt::Debug for SeedBackedPlatformAddressSigner<'a> {
+impl std::fmt::Debug for SeedBackedPlatformAddressSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SeedBackedPlatformAddressSigner")
             .field("network", &self.network)

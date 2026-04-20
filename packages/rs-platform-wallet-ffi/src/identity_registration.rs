@@ -56,7 +56,7 @@ use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::block_on_worker;
 
 /// Flat input entry matching the SDK `put_with_address_funding`
 /// shape. One row per contributing Platform Payment address.
@@ -246,8 +246,13 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let identity_wallet = wallet.identity();
-            let address_wallet = wallet.platform();
+            // Clone the sub-wallet facades so the heavy async work
+            // can be handed to a tokio worker thread (which has an
+            // 8 MB stack — see `runtime.rs`). Both types are `Clone`
+            // on top of internal `Arc`s, so this is a cheap refcount
+            // bump, not a deep copy.
+            let identity_wallet = wallet.identity().clone();
+            let address_wallet = wallet.platform().clone();
             let network: Network = wallet.sdk().network;
 
             // ---- Derive DIP-9 auth pubkeys from the seed ------------------
@@ -360,15 +365,25 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
             // `put_with_address_funding_fetching_nonces` internally, so
             // the `(address, credits)` map we pass is enough —
             // Platform's current nonces are resolved at submit time.
-            let result = runtime().block_on(identity_wallet.register_from_addresses(
-                &placeholder,
-                input_map,
-                output_map,
-                identity_index,
-                &identity_signer,
-                &address_signer,
-                None,
-            ));
+            //
+            // Drive the async work on a tokio worker (8 MB stack).
+            // Running directly on the calling thread via `block_on`
+            // blew the stack inside
+            // `verify_state_transition_was_executed_with_proof`.
+            // All captures are owned + `Send + 'static`.
+            let result = block_on_worker(async move {
+                identity_wallet
+                    .register_from_addresses(
+                        &placeholder,
+                        input_map,
+                        output_map,
+                        identity_index,
+                        &identity_signer,
+                        &address_signer,
+                        None,
+                    )
+                    .await
+            });
 
             match result {
                 Ok(identity) => {
