@@ -30,6 +30,7 @@
 //!   Identity + its HD `identity_index`. The caller owns the handle
 //!   and must free it via `managed_identity_destroy` when done.
 
+use dash_sdk::platform::FetchMany;
 use dashcore::secp256k1::Secp256k1;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -39,6 +40,7 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{AddressNonce, Identifier};
+use drive_proof_verifier::types::AddressInfo;
 use key_wallet::bip32::{
     ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, KeyDerivationType,
 };
@@ -48,7 +50,7 @@ use key_wallet::dip9::{
 use key_wallet::mnemonic::{Language, Mnemonic};
 use key_wallet::Network;
 use platform_wallet::wallet::signer::{SeedBackedIdentitySigner, SeedBackedPlatformAddressSigner};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::slice;
@@ -350,10 +352,51 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
             let address_signer =
                 SeedBackedPlatformAddressSigner::new(&*seed, network, address_wallet);
 
+            // ---- Refresh nonces from Platform -----------------------------
+            // Ignore the caller-supplied nonces in `input_map` — they come
+            // from SwiftData/BLAST and may be stale. Match the SDK's
+            // `withdraw_address_funds` pattern: fetch the on-chain
+            // "last-used" nonce via `AddressInfo::fetch_many`, then
+            // increment by 1 to produce the "next-to-use" value Platform
+            // expects. The caller-supplied nonce is preserved in the FFI
+            // struct only as a forward-compat hint; nothing reads it.
+            let sdk = wallet.sdk();
+            let addresses: BTreeSet<PlatformAddress> = input_map.keys().copied().collect();
+            let fresh_inputs_result: Result<
+                BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+                String,
+            > = runtime().block_on(async {
+                let infos = AddressInfo::fetch_many(sdk, addresses.clone())
+                    .await
+                    .map_err(|e| format!("failed to fetch address nonces: {}", e))?;
+                let mut fresh: BTreeMap<PlatformAddress, (AddressNonce, Credits)> = BTreeMap::new();
+                for (addr, (_caller_nonce, credits)) in input_map.iter() {
+                    let info = infos.get(addr).and_then(|maybe| maybe.as_ref());
+                    // Platform returns `None` for addresses that have
+                    // never been touched — nonce = 0, so first
+                    // transition uses 1 (= 0 + 1). Treat missing as 0.
+                    let current_nonce = info.map(|i| i.nonce).unwrap_or(0);
+                    fresh.insert(*addr, (current_nonce + 1, *credits));
+                }
+                Ok(fresh)
+            });
+            let fresh_inputs = match fresh_inputs_result {
+                Ok(f) => f,
+                Err(msg) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            msg,
+                        );
+                    }
+                    return PlatformWalletFFIResult::ErrorWalletOperation;
+                }
+            };
+
             // ---- Submit ---------------------------------------------------
             let result = runtime().block_on(identity_wallet.register_from_addresses(
                 &placeholder,
-                input_map,
+                fresh_inputs,
                 output_map,
                 identity_index,
                 &identity_signer,

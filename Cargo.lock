@@ -4937,6 +4937,7 @@ dependencies = [
  "dash-sdk",
  "dashcore",
  "dpp",
+ "drive-proof-verifier",
  "hex",
  "key-wallet",
  "lazy_static",
