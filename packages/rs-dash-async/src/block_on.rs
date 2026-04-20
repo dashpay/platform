@@ -112,11 +112,16 @@ where
 ///
 /// Until JSPI lands, WASM callers must use async interfaces directly
 /// via `#[wasm_bindgen]` instead.
+///
+/// The `Send` / `'static` bounds from the native signature are intentionally
+/// dropped here: WASM is single-threaded and this stub never drives the
+/// future, so requiring them would reject otherwise-valid callers whose
+/// futures capture non-`Send` WASM types like `JsFuture` or
+/// `reqwest::Response`.
 #[cfg(target_arch = "wasm32")]
 pub fn block_on<F>(_fut: F) -> Result<F::Output, AsyncError>
 where
-    F: Future + Send + 'static,
-    F::Output: Send,
+    F: Future,
 {
     Err(AsyncError::Generic(
         "block_on is not yet supported in WASM. \
