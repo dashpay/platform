@@ -238,7 +238,10 @@ public class ManagedPlatformWallet {
                 )
             }
 
-            let outputFFI: IdentityOutputAddressFFI = {
+            // Build a single FFI output struct; we pass it by
+            // pointer (`&outputFFI`) below. `has_output=false`
+            // tells Rust to ignore the rest of the fields.
+            var outputFFI: IdentityOutputAddressFFI = {
                 if let output {
                     var hashTuple = hashTupleInit()
                     withUnsafeMutableBytes(of: &hashTuple) { raw in
@@ -278,17 +281,19 @@ public class ManagedPlatformWallet {
             var error = PlatformWalletFFIError()
 
             let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                platform_wallet_register_identity_from_addresses(
-                    handle,
-                    identityIndex,
-                    keyCount,
-                    inputsBuf.baseAddress,
-                    inputsBuf.count,
-                    outputFFI,
-                    &outIdentityId,
-                    &outIdentityHandle,
-                    &error
-                )
+                withUnsafePointer(to: &outputFFI) { outputPtr in
+                    platform_wallet_register_identity_from_addresses(
+                        handle,
+                        identityIndex,
+                        keyCount,
+                        inputsBuf.baseAddress,
+                        inputsBuf.count,
+                        outputPtr,
+                        &outIdentityId,
+                        &outIdentityHandle,
+                        &error
+                    )
+                }
             }
 
             guard result == Success else {

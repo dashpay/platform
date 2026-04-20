@@ -84,35 +84,48 @@ public enum PlatformWalletError: LocalizedError {
     }
 
     init(result: PlatformWalletFFIResult, error: PlatformWalletFFIError) {
-        let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+        // Prefer the Rust-side detail message when one was supplied —
+        // the payload-less enum cases below otherwise drop it on the
+        // floor, which makes alerts like "Null pointer" impossible to
+        // diagnose. When Rust gave us no message we fall back to the
+        // typed bare case (keeps existing behavior for callers that
+        // only compare on the case label).
+        let rustMessage: String? = error.message.map { String(cString: $0) }
+
+        /// Promote a payload-less enum case to `.unknown(detail)`
+        /// when Rust supplied a message; otherwise keep the typed case.
+        func withDetail(_ bare: PlatformWalletError, prefix: String) -> PlatformWalletError {
+            guard let msg = rustMessage, !msg.isEmpty else { return bare }
+            return .unknown("\(prefix): \(msg)")
+        }
 
         switch result {
         case ErrorInvalidHandle:
-            self = .invalidHandle
+            self = withDetail(.invalidHandle, prefix: "Invalid handle")
         case ErrorInvalidParameter:
-            self = .invalidParameter
+            self = withDetail(.invalidParameter, prefix: "Invalid parameter")
         case ErrorNullPointer:
-            self = .nullPointer
+            self = withDetail(.nullPointer, prefix: "Null pointer")
         case ErrorSerialization:
-            self = .serialization(message)
+            self = .serialization(rustMessage ?? "Unknown error")
         case ErrorDeserialization:
-            self = .deserialization(message)
+            self = .deserialization(rustMessage ?? "Unknown error")
         case ErrorWalletOperation:
-            self = .walletOperation(message)
+            self = .walletOperation(rustMessage ?? "Unknown error")
         case ErrorIdentityNotFound:
-            self = .identityNotFound
+            self = withDetail(.identityNotFound, prefix: "Identity not found")
         case ErrorContactNotFound:
-            self = .contactNotFound
+            self = withDetail(.contactNotFound, prefix: "Contact not found")
         case ErrorInvalidNetwork:
-            self = .invalidNetwork
+            self = withDetail(.invalidNetwork, prefix: "Invalid network")
         case ErrorInvalidIdentifier:
-            self = .invalidIdentifier
+            self = withDetail(.invalidIdentifier, prefix: "Invalid identifier")
         case ErrorMemoryAllocation:
-            self = .memoryAllocation
+            self = withDetail(.memoryAllocation, prefix: "Memory allocation")
         case ErrorUtf8Conversion:
-            self = .utf8Conversion
+            self = withDetail(.utf8Conversion, prefix: "UTF-8 conversion")
         default:
-            self = .unknown(message)
+            self = .unknown(rustMessage ?? "Unknown error")
         }
     }
 }

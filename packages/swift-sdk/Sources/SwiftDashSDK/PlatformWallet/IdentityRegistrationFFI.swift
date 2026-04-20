@@ -49,7 +49,10 @@ func platform_wallet_register_identity_from_addresses(
     _ key_count: UInt32,
     _ inputs: UnsafePointer<IdentityInputAddressFFI>?,
     _ inputs_count: Int,
-    _ output: IdentityOutputAddressFFI,
+    // Passed by pointer, not value — C struct-by-value across
+    // the Swift/Rust boundary is brittle when the struct size
+    // straddles the 16-byte register-passing threshold.
+    _ output: UnsafePointer<IdentityOutputAddressFFI>?,
     _ out_identity_id: UnsafeMutablePointer<(
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,

@@ -71,21 +71,33 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
     key_count: u32,
     inputs: *const IdentityInputAddressFFI,
     inputs_count: usize,
-    output: IdentityOutputAddressFFI,
+    // Pointer rather than by-value because a 32-byte C struct
+    // straddles the "passed by register vs. by stack" boundary
+    // differently across toolchains. Swift + Rust agree on
+    // pointer ABI, so we dodge that question entirely.
+    output: *const IdentityOutputAddressFFI,
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if inputs.is_null()
-        || inputs_count == 0
-        || out_identity_id.is_null()
-        || out_identity_handle.is_null()
-    {
+    // Distinct messages per pointer so the caller can tell which
+    // invariant was violated. Swift currently surfaces `.nullPointer`
+    // generically; the detail here makes the alert actionable.
+    let invariant_violation: Option<&'static str> = if inputs.is_null() {
+        Some("`inputs` pointer is null")
+    } else if inputs_count == 0 {
+        Some("`inputs_count` is zero")
+    } else if out_identity_id.is_null() {
+        Some("`out_identity_id` pointer is null")
+    } else if out_identity_handle.is_null() {
+        Some("`out_identity_handle` pointer is null")
+    } else {
+        None
+    };
+    if let Some(detail) = invariant_violation {
         if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "null pointer or empty inputs",
-            );
+            *out_error =
+                PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorNullPointer, detail);
         }
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
@@ -110,23 +122,32 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
         input_map.insert(address, (entry.nonce, entry.credits));
     }
 
-    let output_map = if output.has_output {
-        let address = match output.address_type {
-            0 => PlatformAddress::P2pkh(output.hash),
-            1 => PlatformAddress::P2sh(output.hash),
-            _ => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        "invalid output address_type (expected 0 or 1)",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
-            }
-        };
-        Some((address, output.credits))
-    } else {
+    // `output` is allowed to be null — it means "no refund, any
+    // residual credits stay with the new identity". Swift always
+    // passes a real pointer, but we keep the null branch so the
+    // ABI is forgiving to other callers.
+    let output_map = if output.is_null() {
         None
+    } else {
+        let output_ref = &*output;
+        if output_ref.has_output {
+            let address = match output_ref.address_type {
+                0 => PlatformAddress::P2pkh(output_ref.hash),
+                1 => PlatformAddress::P2sh(output_ref.hash),
+                _ => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorInvalidParameter,
+                            "invalid output address_type (expected 0 or 1)",
+                        );
+                    }
+                    return PlatformWalletFFIResult::ErrorInvalidParameter;
+                }
+            };
+            Some((address, output_ref.credits))
+        } else {
+            None
+        }
     };
 
     PLATFORM_WALLET_STORAGE
