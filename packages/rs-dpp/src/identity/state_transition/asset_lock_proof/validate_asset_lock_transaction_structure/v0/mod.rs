@@ -17,8 +17,11 @@ pub(super) fn validate_asset_lock_transaction_structure_v0(
     let input_count = transaction.input.len();
     if input_count > max_inputs as usize {
         return ConsensusValidationResult::new_with_error(
-            IdentityAssetLockTransactionTooManyInputsError::new(input_count as u16, max_inputs)
-                .into(),
+            IdentityAssetLockTransactionTooManyInputsError::new(
+                u16::try_from(input_count).unwrap_or(u16::MAX),
+                max_inputs,
+            )
+            .into(),
         );
     }
 
@@ -150,6 +153,10 @@ mod tests {
         assert!(
             !has_too_many_inputs_error,
             "Should not reject exactly 100 inputs"
+        );
+        assert!(
+            result.is_valid(),
+            "Transaction at max inputs should be valid"
         );
     }
 
