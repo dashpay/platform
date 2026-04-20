@@ -96,9 +96,9 @@ mod tests {
 
         #[test]
         fn test_too_many_actions_returns_error() {
-            // NOTE: We call validate_structure directly because 17 actions (~7KB)
-            // could exceed max_state_transition_size (20KB) with real proofs before
-            // the actions count check can trigger.
+            // NOTE: We call validate_structure directly to exercise the
+            // max_shielded_transition_actions check in isolation, without
+            // depending on the full transition-processing pipeline.
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
