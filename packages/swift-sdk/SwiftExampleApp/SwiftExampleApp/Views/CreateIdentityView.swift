@@ -499,11 +499,16 @@ struct CreateIdentityView: View {
         let revision = (try? created.identity.getRevision()) ?? 0
         let publicKeys = (try? created.identity.getPublicKeys()) ?? []
 
+        // `put_with_address_funding` blocks until Platform confirms
+        // the transition and returns the canonical Identity, so by
+        // the time we get here the identity is network-resident —
+        // not "local only". Mark `isLocal = false` so the UI stops
+        // showing the orange "Local Only" badge after relaunch.
         let identity = PersistentIdentity(
             identityId: created.identityId,
             balance: initialCreditBalance,
             revision: Int64(revision),
-            isLocal: true,
+            isLocal: false,
             identityType: .user,
             network: networkRaw,
             walletId: walletId
