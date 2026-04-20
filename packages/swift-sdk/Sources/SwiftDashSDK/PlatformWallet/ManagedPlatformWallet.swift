@@ -197,13 +197,24 @@ public class ManagedPlatformWallet {
     ///   - identityIndex: BIP-9 identity index in the HD tree.
     ///   - keyCount: Number of authentication keys to register
     ///     (must be ≥ 1). First key is MASTER, the rest HIGH.
+    ///   - mnemonic: BIP-39 mnemonic phrase (English). The Rust
+    ///     side uses it to derive DIP-9 auth keys + sign both the
+    ///     new identity and each spent platform address. Not
+    ///     retained beyond this call.
+    ///   - passphrase: Optional BIP-39 passphrase. `nil` encodes
+    ///     the empty passphrase.
     public func registerIdentityFromAddresses(
         inputs: [IdentityAddressInput],
         output: IdentityAddressOutput?,
         identityIndex: UInt32,
-        keyCount: UInt32
+        keyCount: UInt32,
+        mnemonic: String,
+        passphrase: String? = nil
     ) async throws -> CreatedIdentity {
         guard !inputs.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
+        guard !mnemonic.isEmpty else {
             throw PlatformWalletError.invalidParameter
         }
 
@@ -280,19 +291,34 @@ public class ManagedPlatformWallet {
             var outIdentityHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
 
-            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                withUnsafePointer(to: &outputFFI) { outputPtr in
-                    platform_wallet_register_identity_from_addresses(
-                        handle,
-                        identityIndex,
-                        keyCount,
-                        inputsBuf.baseAddress,
-                        inputsBuf.count,
-                        outputPtr,
-                        &outIdentityId,
-                        &outIdentityHandle,
-                        &error
-                    )
+            // `withCString` guarantees a null-terminated UTF-8
+            // buffer valid for the closure's lifetime. The Rust
+            // side copies what it needs and does not retain the
+            // pointer.
+            let result = mnemonic.withCString { mnemonicPtr -> PlatformWalletFFIResult in
+                let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { passphrasePtr in
+                    ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                        withUnsafePointer(to: &outputFFI) { outputPtr in
+                            platform_wallet_register_identity_from_addresses(
+                                handle,
+                                identityIndex,
+                                keyCount,
+                                mnemonicPtr,
+                                passphrasePtr,
+                                inputsBuf.baseAddress,
+                                inputsBuf.count,
+                                outputPtr,
+                                &outIdentityId,
+                                &outIdentityHandle,
+                                &error
+                            )
+                        }
+                    }
+                }
+                if let passphrase {
+                    return passphrase.withCString { passphrasePtr in call(passphrasePtr) }
+                } else {
+                    return call(nil)
                 }
             }
 

@@ -376,6 +376,20 @@ struct CreateIdentityView: View {
             return
         }
 
+        // Identity registration needs the BIP-39 mnemonic to derive
+        // DIP-9 auth keys + sign on the Rust side. The wallet struct
+        // itself is watch-only / external-signable; the secret lives
+        // in Keychain, keyed by walletId.
+        let mnemonic: String
+        do {
+            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+        } catch {
+            submitError = .init(
+                message: "Could not read the wallet's mnemonic from Keychain: \(error.localizedDescription)"
+            )
+            return
+        }
+
         // Greedy-select addresses to cover `targetCredits`. The
         // last address's credits field is capped to the remaining
         // amount so the total spent matches exactly.
@@ -398,7 +412,9 @@ struct CreateIdentityView: View {
                     inputs: inputs,
                     output: nil,
                     identityIndex: identityIndex,
-                    keyCount: Self.defaultKeyCount
+                    keyCount: Self.defaultKeyCount,
+                    mnemonic: mnemonic,
+                    passphrase: nil
                 )
 
                 try await MainActor.run {

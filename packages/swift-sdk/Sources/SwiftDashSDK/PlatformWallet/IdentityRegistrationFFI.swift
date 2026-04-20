@@ -47,6 +47,11 @@ func platform_wallet_register_identity_from_addresses(
     _ wallet_handle: Handle,
     _ identity_index: UInt32,
     _ key_count: UInt32,
+    // UTF-8 null-terminated BIP-39 mnemonic; used only for the
+    // duration of this call to derive DIP-9 auth keys + sign.
+    _ mnemonic: UnsafePointer<CChar>?,
+    // UTF-8 null-terminated BIP-39 passphrase; nil for empty.
+    _ passphrase: UnsafePointer<CChar>?,
     _ inputs: UnsafePointer<IdentityInputAddressFFI>?,
     _ inputs_count: Int,
     // Passed by pointer, not value — C struct-by-value across

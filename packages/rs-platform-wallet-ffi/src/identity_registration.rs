@@ -5,6 +5,24 @@
 //! nonce, credits)` tuples. The optional refund output is expressed as
 //! a sibling triple plus an `has_output` flag.
 //!
+//! The caller supplies the BIP-39 mnemonic (typically from iOS
+//! Keychain) plus an optional passphrase. This layer:
+//!
+//! 1. Derives a seed from the mnemonic.
+//! 2. Derives every DIP-9 identity-authentication pubkey at
+//!    `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` for
+//!    `key_index ∈ 0..key_count`.
+//! 3. Builds a placeholder `Identity` carrying those pubkeys.
+//! 4. Spins up `SeedBackedIdentitySigner` + `SeedBackedPlatformAddressSigner`
+//!    against the same seed.
+//! 5. Hands everything to the thin-wrapper
+//!    `IdentityWallet::register_from_addresses`.
+//!
+//! The wallet struct stays key-material-free (WatchOnly /
+//! ExternalSignable). The seed + intermediate xprivs live only for
+//! the duration of this call — wrapped in `Zeroizing` where the
+//! upstream types support it.
+//!
 //! Returns the newly-created identity through two out-params:
 //! * `out_identity_id` — the 32-byte platform identifier.
 //! * `out_identity_handle` — a handle into `MANAGED_IDENTITY_STORAGE`
@@ -12,12 +30,29 @@
 //!   Identity + its HD `identity_index`. The caller owns the handle
 //!   and must free it via `managed_identity_destroy` when done.
 
+use dashcore::secp256k1::Secp256k1;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::AddressNonce;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::v0::IdentityV0;
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
+use dpp::prelude::{AddressNonce, Identifier};
+use key_wallet::bip32::{
+    ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, KeyDerivationType,
+};
+use key_wallet::dip9::{
+    IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
+};
+use key_wallet::mnemonic::{Language, Mnemonic};
+use key_wallet::Network;
+use platform_wallet::wallet::signer::{SeedBackedIdentitySigner, SeedBackedPlatformAddressSigner};
 use std::collections::BTreeMap;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 use std::slice;
+use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::handle::*;
@@ -69,6 +104,13 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
     wallet_handle: Handle,
     identity_index: u32,
     key_count: u32,
+    // BIP-39 mnemonic phrase (UTF-8, English). Used to derive
+    // the DIP-9 auth keys + sign both the new identity and each
+    // spent platform address. Not retained beyond this call.
+    mnemonic: *const c_char,
+    // Optional BIP-39 passphrase. Pass NULL for the empty
+    // passphrase.
+    passphrase: *const c_char,
     inputs: *const IdentityInputAddressFFI,
     inputs_count: usize,
     // Pointer rather than by-value because a 32-byte C struct
@@ -87,10 +129,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
         Some("`inputs` pointer is null")
     } else if inputs_count == 0 {
         Some("`inputs_count` is zero")
+    } else if mnemonic.is_null() {
+        Some("`mnemonic` pointer is null")
     } else if out_identity_id.is_null() {
         Some("`out_identity_id` pointer is null")
     } else if out_identity_handle.is_null() {
         Some("`out_identity_handle` pointer is null")
+    } else if key_count == 0 {
+        Some("`key_count` must be >= 1")
     } else {
         None
     };
@@ -101,6 +147,49 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
         }
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
+
+    // Decode mnemonic + passphrase.
+    let mnemonic_str = match CStr::from_ptr(mnemonic).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorUtf8Conversion,
+                    "mnemonic is not valid UTF-8",
+                );
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+    let passphrase_str: &str = if passphrase.is_null() {
+        ""
+    } else {
+        match CStr::from_ptr(passphrase).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorUtf8Conversion,
+                        "passphrase is not valid UTF-8",
+                    );
+                }
+                return PlatformWalletFFIResult::ErrorUtf8Conversion;
+            }
+        }
+    };
+    let mnemonic_obj = match Mnemonic::from_phrase(mnemonic_str, Language::English) {
+        Ok(m) => m,
+        Err(e) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidParameter,
+                    format!("invalid mnemonic: {}", e),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidParameter;
+        }
+    };
+    let seed = Zeroizing::new(mnemonic_obj.to_seed(passphrase_str));
 
     // Decode the inputs array into the SDK's expected map shape.
     let entries = slice::from_raw_parts(inputs, inputs_count);
@@ -154,12 +243,121 @@ pub unsafe extern "C" fn platform_wallet_register_identity_from_addresses(
         .with_item(wallet_handle, |wallet| {
             let identity_wallet = wallet.identity();
             let address_wallet = wallet.platform();
+            let network: Network = wallet.sdk().network;
+
+            // ---- Derive DIP-9 auth pubkeys from the seed ------------------
+            // The seed lives in `Zeroizing` until end of this closure. The
+            // intermediate xprivs are derived on the stack and dropped per
+            // iteration; they don't impl Zeroize upstream (noted).
+            let base_path: DerivationPath = match network {
+                Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+                _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+            }
+            .into();
+            let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+            let secp = Secp256k1::new();
+
+            let master = match ExtendedPrivKey::new_master(network, &*seed) {
+                Ok(m) => m,
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!("failed to derive master key from seed: {}", e),
+                        );
+                    }
+                    return PlatformWalletFFIResult::ErrorWalletOperation;
+                }
+            };
+
+            let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+            for key_index in 0..key_count {
+                let full_path = base_path.extend([
+                    ChildNumber::from_hardened_idx(key_type_index).unwrap_or_else(|_| {
+                        ChildNumber::from_hardened_idx(0).expect("0' is always valid")
+                    }),
+                    match ChildNumber::from_hardened_idx(identity_index) {
+                        Ok(cn) => cn,
+                        Err(e) => {
+                            if !out_error.is_null() {
+                                *out_error = PlatformWalletFFIError::new(
+                                    PlatformWalletFFIResult::ErrorInvalidParameter,
+                                    format!("invalid identity_index: {}", e),
+                                );
+                            }
+                            return PlatformWalletFFIResult::ErrorInvalidParameter;
+                        }
+                    },
+                    match ChildNumber::from_hardened_idx(key_index) {
+                        Ok(cn) => cn,
+                        Err(e) => {
+                            if !out_error.is_null() {
+                                *out_error = PlatformWalletFFIError::new(
+                                    PlatformWalletFFIResult::ErrorInvalidParameter,
+                                    format!("invalid key_index: {}", e),
+                                );
+                            }
+                            return PlatformWalletFFIResult::ErrorInvalidParameter;
+                        }
+                    },
+                ]);
+
+                let ext_priv = match master.derive_priv(&secp, &full_path) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        if !out_error.is_null() {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorWalletOperation,
+                                format!("failed to derive auth key at index {}: {}", key_index, e),
+                            );
+                        }
+                        return PlatformWalletFFIResult::ErrorWalletOperation;
+                    }
+                };
+                let ext_pub = ExtendedPubKey::from_priv(&secp, &ext_priv);
+                let compressed_pubkey = ext_pub.public_key.serialize();
+
+                let security_level = if key_index == 0 {
+                    SecurityLevel::MASTER
+                } else {
+                    SecurityLevel::HIGH
+                };
+
+                keys_map.insert(
+                    key_index,
+                    IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                        id: key_index,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level,
+                        contract_bounds: None,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        read_only: false,
+                        data: BinaryData::new(compressed_pubkey.to_vec()),
+                        disabled_at: None,
+                    }),
+                );
+            }
+
+            // ---- Build placeholder Identity + signers ---------------------
+            let placeholder = Identity::V0(IdentityV0 {
+                id: Identifier::default(),
+                public_keys: keys_map,
+                balance: 0,
+                revision: 0,
+            });
+
+            let identity_signer = SeedBackedIdentitySigner::new(&*seed, network, identity_index);
+            let address_signer =
+                SeedBackedPlatformAddressSigner::new(&*seed, network, address_wallet);
+
+            // ---- Submit ---------------------------------------------------
             let result = runtime().block_on(identity_wallet.register_from_addresses(
+                &placeholder,
                 input_map,
                 output_map,
                 identity_index,
-                key_count,
-                address_wallet,
+                &identity_signer,
+                &address_signer,
                 None,
             ));
 
