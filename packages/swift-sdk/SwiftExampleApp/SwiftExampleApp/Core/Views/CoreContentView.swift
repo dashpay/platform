@@ -653,93 +653,205 @@ struct WalletRowView: View {
         _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
     }
 
-    private func getNetworksList() -> String {
-        // Wallets are now single-network, just return the wallet's network
-        return wallet.network.rawValue.capitalized
+    private var record: PersistentWallet? { persistentWallets.first }
+
+    private var identitiesForWallet: [IdentityModel] {
+        platformState.identities.filter { identity in
+            identity.walletId == wallet.walletId &&
+                identity.network == wallet.network.rawValue
+        }
     }
 
-    var platformBalance: UInt64 {
-        // Only sum balances of identities that belong to this specific wallet
-        // and are on the same network
-
-        return platformState.identities
-            .filter { identity in
-                identity.walletId == wallet.walletId &&
-                identity.network == wallet.network.rawValue
-            }
-            .reduce(0) { sum, identity in
-                sum + identity.balance
-            }
+    private var platformBalance: UInt64 {
+        identitiesForWallet.reduce(0) { $0 + $1.balance }
     }
 
     private var totalCoreBalance: UInt64 {
-        guard let record = persistentWallets.first else { return 0 }
-        return record.balanceConfirmed
-            + record.balanceUnconfirmed
-            + record.balanceImmature
-            + record.balanceLocked
+        guard let r = record else { return 0 }
+        return r.balanceConfirmed + r.balanceUnconfirmed
+            + r.balanceImmature + r.balanceLocked
+    }
+
+    private var walletIdShort: String {
+        let hex = wallet.walletId.prefix(6)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        // Render as `aabbcc…ddeeff` using first/last 6 hex chars.
+        guard hex.count >= 12 else { return hex }
+        return "\(String(hex.prefix(6)))…\(String(hex.suffix(6)))"
+    }
+
+    private var lastSyncedText: String {
+        guard let lastSynced = record?.lastSynced, lastSynced > 0 else {
+            return "never synced"
+        }
+        let date = Date(timeIntervalSince1970: TimeInterval(lastSynced))
+        return Self.relativeFormatter.localizedString(
+            for: date,
+            relativeTo: Date()
+        )
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
         let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
-        formatter.numberStyle = .decimal
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
     }
 
+    /// Platform credits use 100B credits = 1 DASH (vs Core's 100M duffs).
+    private func formatCredits(_ amount: UInt64) -> String {
+        let dash = Double(amount) / 100_000_000_000.0
+        return String(format: "%.4f DASH", dash)
+    }
+
+    private func balanceBreakdown() -> String? {
+        guard let r = record else { return nil }
+        var parts: [String] = []
+        if r.balanceConfirmed > 0 {
+            parts.append("\(formatBalance(r.balanceConfirmed)) confirmed")
+        }
+        if r.balanceUnconfirmed > 0 {
+            parts.append("\(formatBalance(r.balanceUnconfirmed)) unconfirmed")
+        }
+        if r.balanceImmature > 0 {
+            parts.append("\(formatBalance(r.balanceImmature)) immature")
+        }
+        if r.balanceLocked > 0 {
+            parts.append("\(formatBalance(r.balanceLocked)) locked")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(wallet.label)
-                    .font(.headline)
-            }
-
-            HStack {
-                // Show all networks this wallet supports
-                HStack(spacing: 4) {
-                    Image(systemName: "network")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    // Build the network list
-                    Text(getNetworksList())
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    // Show wallet balance or "Empty"
-                    if totalCoreBalance == 0 {
-                        Text("Empty")
+        VStack(alignment: .leading, spacing: 6) {
+            // Header: label (+ status badges) and total Core balance.
+            HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: 6) {
+                    Text(wallet.label)
+                        .font(.headline)
+                    if wallet.isWatchOnly {
+                        Image(systemName: "eye")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .help("Watch-only")
+                    }
+                    if wallet.isImported {
+                        Image(systemName: "tray.and.arrow.down")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                    } else {
-                        Text(formatBalance(totalCoreBalance))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-
-                    // Show platform balance if any
-                    if platformBalance > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "p.circle.fill")
-                                .font(.system(size: 9))
-                            Text(platformBalance.formatted())
-                        }
-                        .font(.caption2)
-                        .foregroundColor(.blue)
+                            .help("Imported")
                     }
                 }
+                Spacer()
+                Text(totalCoreBalance == 0 ? "Empty" : formatBalance(totalCoreBalance))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(totalCoreBalance == 0 ? .secondary : .primary)
+            }
+
+            // Row 1: network + created date.
+            WalletInfoRow(
+                icon: "network",
+                iconColor: .blue,
+                text: "\(wallet.network.rawValue.capitalized) • Created "
+                    + Self.dateFormatter.string(from: wallet.createdAt)
+            )
+
+            // Row 2: Core balance breakdown. Falls back to a terse
+            // message when the wallet has no UTXOs yet so the row
+            // count stays consistent across all wallets.
+            WalletInfoRow(
+                icon: "bitcoinsign.circle",
+                iconColor: .green,
+                text: balanceBreakdown() ?? "No Core balance"
+            )
+
+            // Row 3: account + identity counts.
+            WalletInfoRow(
+                icon: "square.stack.3d.up",
+                iconColor: .purple,
+                text: {
+                    let accounts = record?.accounts.count ?? 0
+                    let ids = identitiesForWallet.count
+                    let acctWord = accounts == 1 ? "account" : "accounts"
+                    let idWord = ids == 1 ? "identity" : "identities"
+                    return "\(accounts) \(acctWord) • \(ids) \(idWord)"
+                }()
+            )
+
+            // Row 4: SPV sync progress.
+            WalletInfoRow(
+                icon: "arrow.triangle.2.circlepath",
+                iconColor: .indigo,
+                text: {
+                    let height = record?.syncedHeight ?? 0
+                    if height == 0 {
+                        return "Not yet synced"
+                    }
+                    return "Synced to block \(height.formatted()) • \(lastSyncedText)"
+                }()
+            )
+
+            // Row 5: Platform balance (if any identities hold credits)
+            // or wallet id fingerprint as a stable fallback so the
+            // row count stays at 5.
+            if platformBalance > 0 {
+                WalletInfoRow(
+                    icon: "p.circle.fill",
+                    iconColor: .blue,
+                    text: "Platform: \(formatCredits(platformBalance)) • \(walletIdShort)"
+                )
+            } else {
+                WalletInfoRow(
+                    icon: "tag",
+                    iconColor: .secondary,
+                    text: "ID \(walletIdShort)"
+                )
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// Single-line icon + caption row used by `WalletRowView` to keep
+/// rows visually aligned.
+private struct WalletInfoRow: View {
+    let icon: String
+    let iconColor: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(iconColor)
+                .frame(width: 16)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
     }
 }
 
