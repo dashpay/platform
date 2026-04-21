@@ -2,7 +2,10 @@
 
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
-use crate::changeset::{IdentityChangeSet, IdentityEntry};
+use crate::changeset::{
+    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
+    PlatformWalletChangeSet,
+};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::ManagedIdentitySigner;
@@ -16,17 +19,46 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 impl ManagedIdentity {
-    /// Helper: produce an [`IdentityChangeSet`] containing a full
+    /// Helper: produce an [`IdentityChangeSet`] containing a scalar-only
     /// [`IdentityEntry`] snapshot of `self`.
     ///
-    /// Every mutation method on `ManagedIdentity` calls this after
-    /// mutating state so that the returned changeset faithfully
-    /// describes the resulting identity.
+    /// Every scalar mutation method on `ManagedIdentity` calls this
+    /// after mutating state so that the returned changeset faithfully
+    /// describes the resulting identity. Public keys + private-key
+    /// storage are snapshotted separately via
+    /// [`Self::keys_snapshot_changeset`] so scalar mutations don't drag
+    /// the full key payload through every persist.
     pub(crate) fn snapshot_changeset(&self) -> IdentityChangeSet {
         let mut cs = IdentityChangeSet::default();
         cs.identities
             .insert(self.id(), IdentityEntry::from_managed(self));
         cs
+    }
+
+    /// Helper: produce an [`IdentityKeysChangeSet`] containing one
+    /// [`IdentityKeyEntry`] upsert per registered public key on this
+    /// identity. Private-key material is populated from `key_storage`
+    /// when available; unregistered watched keys emit `None` for the
+    /// private-key half.
+    pub(crate) fn keys_snapshot_changeset(&self) -> IdentityKeysChangeSet {
+        let identity_id = self.id();
+        let mut upserts = BTreeMap::new();
+        for (key_id, pub_key) in self.identity.public_keys() {
+            let private_key = self.key_storage.get(key_id).map(|(_, pk)| pk.clone());
+            upserts.insert(
+                (identity_id, *key_id),
+                IdentityKeyEntry {
+                    identity_id,
+                    key_id: *key_id,
+                    public_key: pub_key.clone(),
+                    private_key,
+                },
+            );
+        }
+        IdentityKeysChangeSet {
+            upserts,
+            removed: Default::default(),
+        }
     }
 
     /// Create a new managed identity with its BIP-9 HD identity index.
@@ -56,10 +88,9 @@ impl ManagedIdentity {
     ///
     /// TODO: This is `pub` transitionally — evo-tool's backend tasks
     /// still fetch/create DashPay profiles themselves and push results
-    /// back here. Once `DashPayWallet` has its own `sync_profiles()`
-    /// (like `PlatformAddressWallet::sync_balances()`), this should
-    /// become `pub(crate)` and evo-tool's `platform_wallet_cache.rs`
-    /// can be deleted.
+    /// back here. `IdentityWallet::sync_profiles` now covers the
+    /// happy path; once evo-tool's `platform_wallet_cache.rs` migrates
+    /// off the direct setter, this should drop to `pub(crate)`.
     pub fn set_dashpay_profile(
         &mut self,
         profile: Option<crate::wallet::identity::DashPayProfile>,
@@ -135,7 +166,10 @@ impl ManagedIdentity {
 
     /// Store a private key entry in the key storage.
     ///
-    /// Persists the resulting changeset via `persister` and returns `()`.
+    /// Persists both the scalar identity snapshot (so any concurrent
+    /// scalar changes observed by this call are captured) and a
+    /// single-key [`IdentityKeysChangeSet`] upsert for the just-added
+    /// key.
     pub fn add_key(
         &mut self,
         key_id: KeyID,
@@ -144,9 +178,24 @@ impl ManagedIdentity {
         persister: &WalletPersister,
     ) {
         self.key_storage
-            .insert(key_id, (public_key, private_key_data));
-        let cs = self.snapshot_changeset();
-        if let Err(e) = persister.store(cs.into()) {
+            .insert(key_id, (public_key.clone(), private_key_data.clone()));
+        let identity_id = self.id();
+        let mut keys_cs = IdentityKeysChangeSet::default();
+        keys_cs.upserts.insert(
+            (identity_id, key_id),
+            IdentityKeyEntry {
+                identity_id,
+                key_id,
+                public_key,
+                private_key: Some(private_key_data),
+            },
+        );
+        let cs = PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
     }

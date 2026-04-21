@@ -86,6 +86,7 @@ impl PlatformWalletInfo {
         let PlatformWalletChangeSet {
             core,
             identities,
+            identity_keys,
             contacts,
             platform_addresses,
             asset_locks,
@@ -137,6 +138,23 @@ impl PlatformWalletInfo {
             }
             if let Some(idx) = new_scan_index {
                 self.identity_manager.last_scanned_index = idx;
+            }
+        }
+
+        // 2b. Identity keys. Runs after the scalar identity pass so
+        //     the owning ManagedIdentity is guaranteed to exist before
+        //     we layer keys into it. Upserts land first, then removals,
+        //     matching the discipline used across the rest of this
+        //     function. Orphan entries (owner not in the wallet) are
+        //     logged and skipped by the per-entry apply helpers.
+        if let Some(keys_cs) = identity_keys {
+            let crate::changeset::IdentityKeysChangeSet { upserts, removed } = keys_cs;
+            for (_key, entry) in upserts {
+                self.identity_manager.apply_identity_key_entry(entry);
+            }
+            for (identity_id, key_id) in removed {
+                self.identity_manager
+                    .apply_identity_key_removal(&identity_id, key_id);
             }
         }
 

@@ -42,9 +42,9 @@ pub use wallet::TokenWallet;
 pub use changeset::Merge;
 pub use changeset::{
     AssetLockChangeSet, AssetLockEntry, ClientStartState, ClientWalletStartState, ContactChangeSet,
-    ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityManagerStartState,
-    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformAddressSyncStartState,
-    PlatformWalletChangeSet, TokenBalanceChangeSet,
+    ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
+    IdentityManagerStartState, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
+    PlatformAddressSyncStartState, PlatformWalletChangeSet, TokenBalanceChangeSet,
 };
 
 pub use key_wallet_manager;

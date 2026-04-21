@@ -38,7 +38,8 @@ pub enum PaymentStatus {
     Failed,
 }
 
-/// Match result from [`DashPayWallet::match_incoming_dashpay_address`].
+/// Match result from
+/// [`IdentityWallet::match_incoming_dashpay_address`](crate::wallet::identity::IdentityWallet).
 ///
 /// Returned when an on-chain address matches one of the DashPay
 /// contact receival accounts registered in this wallet's

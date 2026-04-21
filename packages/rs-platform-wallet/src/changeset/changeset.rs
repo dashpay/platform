@@ -30,9 +30,10 @@ use key_wallet::PlatformP2PKHAddress;
 
 use crate::wallet::platform_wallet::WalletId;
 
+use dpp::balances::credits::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::Identity;
-use dpp::prelude::Identifier;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::prelude::{Identifier, Revision};
 
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -40,7 +41,7 @@ use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
-    BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
+    BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity, PrivateKeyData,
 };
 use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 
@@ -69,18 +70,31 @@ impl Merge for key_wallet::changeset::WalletChangeSet {
 // Identities
 // ---------------------------------------------------------------------------
 
-/// A full snapshot of a managed identity's state, keyed into
+/// A scalar-only snapshot of a managed identity's state, keyed into
 /// [`IdentityChangeSet`] by identity ID.
 ///
-/// Mirrors every persistable field of
+/// Carries the per-identity scalars (id / balance / revision + wallet
+/// metadata) but NOT the DPP `public_keys` map or the private
+/// `KeyStorage`. Keys live in the sibling [`IdentityKeysChangeSet`]
+/// keyed by `(identity_id, key_id)` so that a simple scalar mutation
+/// (e.g. a balance refresh) serializes only the scalar fields without
+/// re-serializing every public-key byte and private-key data blob.
+///
+/// Mirrors every persistable scalar field of
 /// [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity) except
-/// contact state (which lives in [`ContactChangeSet`]) — mutation
-/// methods call [`IdentityEntry::from_managed`] to produce a fresh
+/// contact state (which lives in [`ContactChangeSet`]) and identity
+/// keys (which live in [`IdentityKeysChangeSet`]) — mutation methods
+/// call [`IdentityEntry::from_managed`] to produce a fresh scalar
 /// snapshot so the merge can resolve the latest state by last-write-wins.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentityEntry {
-    /// The Platform identity.
-    pub identity: Identity,
+    /// Identity identifier.
+    pub id: Identifier,
+    /// Identity balance (credits).
+    pub balance: Credits,
+    /// On-chain identity revision; used as the monotonic gate for
+    /// `balance`/`revision` replacement in merge + apply.
+    pub revision: Revision,
     /// HD identity index used during registration.
     pub identity_index: u32,
     /// User-defined label.
@@ -93,8 +107,6 @@ pub struct IdentityEntry {
     pub dpns_names: Vec<DpnsNameInfo>,
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
-    /// Private key storage (public keys + private key data for each KeyID).
-    pub key_storage: KeyStorage,
     /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
     /// the wallet that owns this identity, if known.
     pub wallet_id: Option<[u8; 32]>,
@@ -109,25 +121,76 @@ pub struct IdentityEntry {
 }
 
 impl IdentityEntry {
-    /// Capture a full snapshot of a [`ManagedIdentity`] as an entry.
+    /// Capture a scalar-only snapshot of a [`ManagedIdentity`] as an entry.
     ///
-    /// Every persistable field is copied into the entry so that
-    /// [`IdentityChangeSet::merge`] can resolve the latest state via
-    /// last-write-wins without needing partial-update diffing.
+    /// Only the scalars copied by this method are carried; per-identity
+    /// public keys and private-key storage are captured separately via
+    /// [`ManagedIdentity::keys_snapshot_changeset`](crate::wallet::identity::ManagedIdentity)
+    /// into an [`IdentityKeysChangeSet`].
     pub fn from_managed(managed: &ManagedIdentity) -> Self {
         Self {
-            identity: managed.identity.clone(),
+            id: managed.identity.id(),
+            balance: managed.identity.balance(),
+            revision: managed.identity.revision(),
             identity_index: managed.identity_index,
             label: managed.label.clone(),
             last_updated_balance_block_time: managed.last_updated_balance_block_time,
             last_synced_keys_block_time: managed.last_synced_keys_block_time,
             dpns_names: managed.dpns_names.clone(),
             status: managed.status,
-            key_storage: managed.key_storage.clone(),
             wallet_id: managed.wallet_id,
             dashpay_profile: managed.dashpay_profile.clone(),
             dashpay_payments: managed.dashpay_payments.clone(),
         }
+    }
+}
+
+/// A single identity-key entry in an [`IdentityKeysChangeSet`].
+///
+/// Carries both the DPP-level public key and (when available) the
+/// private-key material so that a persister can reconstruct the full
+/// signing surface of an identity on restart.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdentityKeyEntry {
+    /// Owning identity.
+    pub identity_id: Identifier,
+    /// Key id inside that identity's public-key map.
+    pub key_id: KeyID,
+    /// The DPP public-key record.
+    pub public_key: IdentityPublicKey,
+    /// Private-key material if the wallet holds a signing surface for
+    /// this key. `None` for watched / view-only keys where the wallet
+    /// only tracks the public half.
+    pub private_key: Option<PrivateKeyData>,
+}
+
+/// Changes to per-identity key storage.
+///
+/// Keyed by `(identity_id, key_id)`. Entries in `upserts` are
+/// applied before entries in `removed`, matching the other changeset
+/// conventions in this file. Emitters should produce only one of
+/// `{upsert, remove}` per key per mutation — the merge does not resolve
+/// insert-vs-tombstone for the same key.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IdentityKeysChangeSet {
+    /// Inserted or updated identity keys keyed by (identity_id, key_id).
+    pub upserts: BTreeMap<(Identifier, KeyID), IdentityKeyEntry>,
+    /// Identity keys explicitly removed, keyed by (identity_id, key_id).
+    pub removed: BTreeSet<(Identifier, KeyID)>,
+}
+
+impl Merge for IdentityKeysChangeSet {
+    fn merge(&mut self, other: Self) {
+        // Last-write-wins per composite key. Matches the discipline
+        // used by other scalar-entry changesets in this module; the
+        // "don't emit both upsert + remove for the same key in one
+        // mutation" invariant is enforced on the emitter side.
+        self.upserts.extend(other.upserts);
+        self.removed.extend(other.removed);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.upserts.is_empty() && self.removed.is_empty()
     }
 }
 
@@ -160,19 +223,21 @@ pub struct IdentityChangeSet {
 
 impl Merge for IdentityChangeSet {
     fn merge(&mut self, other: Self) {
-        // IdentityEntry is a full snapshot via `IdentityEntry::from_managed`,
-        // so "later wins" is the correct policy for scalar fields. DPNS
-        // names are merged as a union because each mutation method
-        // produces a complete current snapshot but partial per-field
-        // races across wallets are possible.
+        // IdentityEntry is a scalar-only snapshot via
+        // `IdentityEntry::from_managed`; public keys / private keys
+        // live in the sibling `IdentityKeysChangeSet`. "Later wins"
+        // for scalar fields, revision-gated for balance/revision.
         for (id, entry) in other.identities {
             self.identities
                 .entry(id)
                 .and_modify(|existing| {
-                    // Last write wins for the identity blob if the revision
-                    // is at least the current one.
-                    if entry.identity.revision() >= existing.identity.revision() {
-                        existing.identity = entry.identity.clone();
+                    // Revision is the monotonic gate for replacing
+                    // balance + revision. Balance rides the same gate
+                    // because identity state transitions bump both
+                    // together.
+                    if entry.revision >= existing.revision {
+                        existing.balance = entry.balance;
+                        existing.revision = entry.revision;
                     }
                     existing.label = entry.label.clone();
                     existing.last_updated_balance_block_time =
@@ -195,10 +260,6 @@ impl Merge for IdentityChangeSet {
                         if !existing.dpns_names.iter().any(|n| n.label == name.label) {
                             existing.dpns_names.push(name.clone());
                         }
-                    }
-                    // Merge key storage entries (last write wins per KeyID).
-                    for (kid, slot) in &entry.key_storage {
-                        existing.key_storage.insert(*kid, slot.clone());
                     }
                     // Merge DashPay payments (last-write-wins per tx_id).
                     // Every mutation snapshot copies the full map via
@@ -563,6 +624,12 @@ pub struct PlatformWalletChangeSet {
     pub core: Option<key_wallet::changeset::WalletChangeSet>,
     /// Identity changes (registered, updated).
     pub identities: Option<IdentityChangeSet>,
+    /// Identity key changes (public keys + private-key storage) keyed
+    /// by `(identity_id, key_id)`. Separate from [`IdentityChangeSet`]
+    /// so scalar-only mutations (e.g. `set_balance`, `set_label`) don't
+    /// drag the full public-key + private-key payload through every
+    /// persist.
+    pub identity_keys: Option<IdentityKeysChangeSet>,
     /// DashPay contact changes (requests sent/received, established).
     pub contacts: Option<ContactChangeSet>,
     /// Platform address balance/nonce changes.
@@ -602,6 +669,15 @@ impl From<IdentityChangeSet> for PlatformWalletChangeSet {
     }
 }
 
+impl From<IdentityKeysChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: IdentityKeysChangeSet) -> Self {
+        Self {
+            identity_keys: Some(cs),
+            ..Default::default()
+        }
+    }
+}
+
 impl From<ContactChangeSet> for PlatformWalletChangeSet {
     fn from(cs: ContactChangeSet) -> Self {
         Self {
@@ -636,6 +712,7 @@ impl Merge for PlatformWalletChangeSet {
         // this crate's merge module.
         self.core.merge(other.core);
         self.identities.merge(other.identities);
+        self.identity_keys.merge(other.identity_keys);
         self.contacts.merge(other.contacts);
         self.platform_addresses.merge(other.platform_addresses);
         self.asset_locks.merge(other.asset_locks);
@@ -659,6 +736,7 @@ impl Merge for PlatformWalletChangeSet {
     fn is_empty(&self) -> bool {
         self.core.is_empty()
             && self.identities.is_empty()
+            && self.identity_keys.is_empty()
             && self.contacts.is_empty()
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()

@@ -8,11 +8,13 @@
 //!   for round-trip via the persister. No raw avatar bytes — only
 //!   the computed hashes survive after document creation.
 //!
-//! - [`ProfileUpdate`] — input for [`DashPayWallet::create_profile`] /
-//!   [`DashPayWallet::update_profile`]. Carries the user-provided
-//!   fields plus raw avatar bytes (pre-downloaded by the app layer).
-//!   Platform-wallet computes SHA-256 hash + DHash fingerprint from
-//!   the bytes, includes them in the document, then drops the bytes.
+//! - [`ProfileUpdate`] — input for
+//!   [`IdentityWallet::create_profile`](crate::wallet::identity::IdentityWallet)
+//!   / [`IdentityWallet::update_profile`](crate::wallet::identity::IdentityWallet).
+//!   Carries the user-provided fields plus raw avatar bytes
+//!   (pre-downloaded by the app layer). Platform-wallet computes
+//!   SHA-256 hash + DHash fingerprint from the bytes, includes them in
+//!   the document, then drops the bytes.
 
 use sha2::{Digest, Sha256};
 

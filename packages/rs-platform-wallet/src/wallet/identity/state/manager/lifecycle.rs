@@ -6,7 +6,7 @@
 //! the supplied [`WalletPersister`].
 
 use super::IdentityManager;
-use crate::changeset::{IdentityChangeSet, IdentityEntry};
+use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
@@ -40,18 +40,35 @@ impl IdentityManager {
 
         let managed_identity = ManagedIdentity::new(identity, identity_index);
         let entry = IdentityEntry::from_managed(&managed_identity);
+        // Snapshot keys before inserting so we don't need to re-borrow
+        // from the map after the move. Fresh `ManagedIdentity::new`
+        // starts with an empty `key_storage`, but the incoming
+        // `identity` may already carry `public_keys` (e.g. during
+        // discovery / recovery); persist those as upserts with `None`
+        // for the private-key half.
+        let keys_cs = managed_identity.keys_snapshot_changeset();
         self.identities.insert(identity_id, managed_identity);
 
-        let mut cs = IdentityChangeSet::default();
-        cs.identities.insert(identity_id, entry);
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs.identities.insert(identity_id, entry);
 
         // If this is the first identity, make it primary
         if self.identities.len() == 1 {
             self.primary_identity_id = Some(identity_id);
-            cs.primary_identity = Some(identity_id);
+            id_cs.primary_identity = Some(identity_id);
         }
 
-        if let Err(e) = persister.store(cs.into()) {
+        let cs = PlatformWalletChangeSet {
+            identities: Some(id_cs),
+            identity_keys: if keys_cs.upserts.is_empty() {
+                None
+            } else {
+                Some(keys_cs)
+            },
+            ..Default::default()
+        };
+
+        if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
 
