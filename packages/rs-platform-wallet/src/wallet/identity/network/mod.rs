@@ -37,6 +37,7 @@ mod dashpay_sync;
 mod payments;
 mod profile;
 
+pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::IdentityWallet;
 
 // Helpers declared on `identity_handle.rs` that siblings reach

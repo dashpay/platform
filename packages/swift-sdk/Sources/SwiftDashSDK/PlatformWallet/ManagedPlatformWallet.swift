@@ -512,6 +512,47 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Fetch the current vote state for a contested DPNS label
+    /// `identityId` is contending for. Returns `nil` when the
+    /// lookup doesn't hit (contest doesn't exist, identity isn't
+    /// contending, or contest already resolved).
+    ///
+    /// Ephemeral — never cached. Vote tallies, winner state, and
+    /// contender set change throughout the voting period, so the
+    /// caller asks fresh whenever it needs the details. Safe to
+    /// call on pull-to-refresh. Prefer this over
+    /// `sdk.dpnsGetContestedVoteState` directly so the unified
+    /// DashPay/DPNS read surface stays consistent across the UI.
+    public func fetchContestVoteState(
+        identityId: Identifier,
+        label: String
+    ) async throws -> ContestVoteState? {
+        let handle = self.handle
+        let ffiId = identifierToFFI(identityId)
+        return try await Task.detached(priority: .userInitiated) {
+            () -> ContestVoteState? in
+            var state = contestVoteStateFFIEmpty()
+            var found = false
+            var error = PlatformWalletFFIError()
+            let result = label.withCString { labelPtr in
+                platform_wallet_fetch_contest_vote_state(
+                    handle,
+                    ffiId,
+                    labelPtr,
+                    &state,
+                    &found,
+                    &error
+                )
+            }
+            defer { contest_vote_state_ffi_free(state) }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            guard found else { return nil }
+            return ContestVoteState(ffi: state)
+        }.value
+    }
+
     /// Fetch the labels of DPNS contests `identityId` is currently
     /// contending for (voting period active, not resolved) and
     /// replace `ManagedIdentity.contested_dpns_names` wholesale.

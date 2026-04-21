@@ -1,4 +1,4 @@
-//! DPNS name registration, resolution, and search.
+//! DPNS name registration, resolution, search, and contest queries.
 
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -15,6 +15,57 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
 use super::*;
+
+// ---------------------------------------------------------------------------
+// Contest vote-state public types
+// ---------------------------------------------------------------------------
+
+/// Ephemeral snapshot of a DPNS contest's vote state.
+///
+/// NOT cached on [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity)
+/// — contest dynamics (votes accruing, winner resolution) change
+/// throughout the voting period, so a cached snapshot would go
+/// stale fast. Produced on-demand by
+/// [`IdentityWallet::contest_vote_state`] and consumed by the UI
+/// layer for an instantaneous read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContestVoteState {
+    /// The contested label (e.g., "alice").
+    pub label: String,
+    /// Voting end time in milliseconds since epoch.
+    pub end_time_ms: u64,
+    /// Current contenders + their vote tallies.
+    pub contenders: Vec<ContestContender>,
+    /// Count of abstain votes cast by masternodes.
+    pub abstain_votes: u32,
+    /// Count of lock votes (contest → no winner, no registration).
+    pub lock_votes: u32,
+    /// Resolution state. `None` while voting is ongoing.
+    pub winner: ContestWinner,
+}
+
+/// One contender's summary within a [`ContestVoteState`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContestContender {
+    /// The contending identity.
+    pub identity_id: Identifier,
+    /// Masternode vote count supporting this contender. 0 before
+    /// any votes are cast.
+    pub vote_tally: u32,
+}
+
+/// Contest resolution status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContestWinner {
+    /// Contest is still in the voting period (no winner yet).
+    #[default]
+    None,
+    /// Contest resolved — this identity won the name.
+    WonByIdentity(Identifier),
+    /// Contest resolved as locked — nobody wins, the label becomes
+    /// unavailable.
+    Locked,
+}
 
 // ---------------------------------------------------------------------------
 // DPNS name operations
@@ -283,6 +334,71 @@ impl IdentityWallet {
             }
         }
         Ok(labels)
+    }
+
+    /// Fetch the current vote state for a contested DPNS label the
+    /// identity is contending for.
+    ///
+    /// Goes via
+    /// `Sdk::get_non_resolved_dpns_contests_for_identity` under the
+    /// hood so the returned snapshot includes the contest's
+    /// `end_time` alongside the contender list + vote tallies +
+    /// winner (if any). Returns `None` when `identity_id` isn't a
+    /// contender for `label` — either because the contest doesn't
+    /// exist, the identity isn't contending, or the contest already
+    /// resolved and the identity filter dropped it.
+    ///
+    /// NOT cached on `ManagedIdentity` — vote state changes
+    /// throughout the voting period, so the UI queries this fresh
+    /// every time it needs it.
+    pub async fn contest_vote_state(
+        &self,
+        identity_id: &Identifier,
+        label: &str,
+    ) -> Result<Option<ContestVoteState>, PlatformWalletError> {
+        use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+
+        let contests = self
+            .sdk
+            .get_non_resolved_dpns_contests_for_identity(*identity_id, None)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch contest vote state for identity {identity_id}, \
+                     label {label:?}: {e}",
+                ))
+            })?;
+
+        let Some(contest_info) = contests.get(label) else {
+            return Ok(None);
+        };
+
+        let contenders: Vec<ContestContender> = contest_info
+            .contenders
+            .contenders
+            .iter()
+            .map(|(id, c)| ContestContender {
+                identity_id: *id,
+                vote_tally: c.vote_tally().unwrap_or(0),
+            })
+            .collect();
+
+        let winner = match &contest_info.contenders.winner {
+            Some((ContestedDocumentVotePollWinnerInfo::WonByIdentity(id), _)) => {
+                ContestWinner::WonByIdentity(*id)
+            }
+            Some((ContestedDocumentVotePollWinnerInfo::Locked, _)) => ContestWinner::Locked,
+            Some((ContestedDocumentVotePollWinnerInfo::NoWinner, _)) | None => ContestWinner::None,
+        };
+
+        Ok(Some(ContestVoteState {
+            label: label.to_string(),
+            end_time_ms: contest_info.end_time,
+            contenders,
+            abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
+            lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
+            winner,
+        }))
     }
 
     /// Search for DPNS names by prefix.

@@ -633,6 +633,64 @@ func managed_identity_get_contested_dpns_names(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+// MARK: - Contest vote state FFI
+
+/// Mirrors `ContestContenderFFI` from
+/// `rs-platform-wallet-ffi/src/dpns.rs`. Plain scalar struct; no
+/// owned allocations (reclaimed wholesale when the parent's
+/// contenders buffer is freed via `contest_vote_state_ffi_free`).
+struct ContestContenderFFI {
+    var identity_id: FFIByteTuple32
+    var vote_tally: UInt32
+}
+
+/// Mirrors `ContestVoteStateFFI`. Caller owns `label` + the
+/// `contenders_ptr` array; release via
+/// `contest_vote_state_ffi_free`. Safe to free on a zeroed default.
+struct ContestVoteStateFFI {
+    var label: UnsafeMutablePointer<CChar>?
+    var end_time_ms: UInt64
+    var contenders_ptr: UnsafeMutablePointer<ContestContenderFFI>?
+    var contenders_count: Int
+    var abstain_votes: UInt32
+    var lock_votes: UInt32
+    /// 0 = None, 1 = WonByIdentity, 2 = Locked.
+    /// `winner_identity_id` only valid when `winner_kind == 1`.
+    var winner_kind: UInt8
+    var winner_identity_id: FFIByteTuple32
+}
+
+/// All-zero initial value — the "not found" path leaves this
+/// shape, and `contest_vote_state_ffi_free` treats it as a no-op.
+func contestVoteStateFFIEmpty() -> ContestVoteStateFFI {
+    ContestVoteStateFFI(
+        label: nil,
+        end_time_ms: 0,
+        contenders_ptr: nil,
+        contenders_count: 0,
+        abstain_votes: 0,
+        lock_votes: 0,
+        winner_kind: 0,
+        winner_identity_id: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        )
+    )
+}
+
+@_silgen_name("platform_wallet_fetch_contest_vote_state")
+func platform_wallet_fetch_contest_vote_state(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ label: UnsafePointer<CChar>?,
+    _ out_state: UnsafeMutablePointer<ContestVoteStateFFI>,
+    _ out_found: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("contest_vote_state_ffi_free")
+func contest_vote_state_ffi_free(_ state: ContestVoteStateFFI)
+
 // MARK: - DashPay contact requests + payments FFI
 
 /// Mirrors `ContactRequestHandleArray` from

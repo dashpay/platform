@@ -562,6 +562,241 @@ pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
 }
 
 // ---------------------------------------------------------------------------
+// Contest vote state (ephemeral — not cached)
+// ---------------------------------------------------------------------------
+
+/// One contender row in [`ContestVoteStateFFI`]. Plain scalar struct
+/// (no owned allocations) — reclaimed wholesale when the parent's
+/// `contenders_ptr` array is freed.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ContestContenderFFI {
+    pub identity_id: [u8; 32],
+    pub vote_tally: u32,
+}
+
+/// Winner-kind discriminant for [`ContestVoteStateFFI`].
+///
+/// `winner_identity_id` is only populated when `winner_kind` is
+/// `WonByIdentity` (1); ignore the field for `None` / `Locked`.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContestWinnerKindFFI {
+    None = 0,
+    WonByIdentity = 1,
+    Locked = 2,
+}
+
+/// Flat FFI snapshot of a DPNS contest's vote state, returned by
+/// [`platform_wallet_fetch_contest_vote_state`].
+///
+/// Caller owns `label` + `contenders_ptr`; both are released by
+/// [`contest_vote_state_ffi_free`]. Safe to call free on an
+/// all-null snapshot (the default / "not found" state).
+#[repr(C)]
+pub struct ContestVoteStateFFI {
+    /// Heap-owned NUL-terminated UTF-8 label. `null` only on an
+    /// empty/default-initialized struct.
+    pub label: *mut c_char,
+    /// Voting end time in milliseconds since epoch.
+    pub end_time_ms: u64,
+    /// Heap-owned contender array. `null` with `contenders_count = 0`
+    /// when the contest has no listed contenders yet.
+    pub contenders_ptr: *mut ContestContenderFFI,
+    pub contenders_count: usize,
+    pub abstain_votes: u32,
+    pub lock_votes: u32,
+    /// Winner discriminant. Maps to [`ContestWinnerKindFFI`].
+    pub winner_kind: u8,
+    /// Populated only when `winner_kind == WonByIdentity`.
+    pub winner_identity_id: [u8; 32],
+}
+
+impl ContestVoteStateFFI {
+    /// All-null/zeroed snapshot used as the out-param initial
+    /// value. Writing an empty before the FFI call means the "not
+    /// found" path leaves a well-defined struct that
+    /// [`contest_vote_state_ffi_free`] can safely no-op on.
+    pub fn empty() -> Self {
+        Self {
+            label: std::ptr::null_mut(),
+            end_time_ms: 0,
+            contenders_ptr: std::ptr::null_mut(),
+            contenders_count: 0,
+            abstain_votes: 0,
+            lock_votes: 0,
+            winner_kind: ContestWinnerKindFFI::None as u8,
+            winner_identity_id: [0u8; 32],
+        }
+    }
+}
+
+/// Fetch the current vote state for a DPNS contest `identity_id`
+/// is contending for. `out_found` signals whether the lookup
+/// returned a hit; `out_state` is populated only when `out_found`
+/// is `true`. Release `out_state` with
+/// [`contest_vote_state_ffi_free`] whether or not `out_found` was
+/// set — free is a no-op on the empty / zeroed struct that the
+/// "not found" path leaves behind.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
+    wallet_handle: Handle,
+    identity_id: IdentifierBytes,
+    label: *const c_char,
+    out_state: *mut ContestVoteStateFFI,
+    out_found: *mut bool,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if label.is_null() || out_state.is_null() || out_found.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "Null pointer provided to fetch_contest_vote_state",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let id = match identity_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid identity identifier: {e}"),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+    let label_str = match unsafe { CStr::from_ptr(label) }.to_str() {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorUtf8Conversion,
+                        "label is not valid UTF-8",
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            let identity = wallet.identity().clone();
+            let result =
+                block_on_worker(async move { identity.contest_vote_state(&id, &label_str).await });
+            match result {
+                Ok(Some(state)) => {
+                    use platform_wallet::wallet::identity::network::ContestWinner;
+
+                    // Heap-alloc the label + contenders; ownership
+                    // moves to the caller, released by
+                    // `contest_vote_state_ffi_free`.
+                    let label_c = CString::new(state.label)
+                        .map(|c| c.into_raw())
+                        .unwrap_or(std::ptr::null_mut());
+
+                    let (contenders_ptr, contenders_count) = if state.contenders.is_empty() {
+                        (std::ptr::null_mut(), 0usize)
+                    } else {
+                        let buf: Vec<ContestContenderFFI> = state
+                            .contenders
+                            .into_iter()
+                            .map(|c| ContestContenderFFI {
+                                identity_id: c.identity_id.to_buffer(),
+                                vote_tally: c.vote_tally,
+                            })
+                            .collect();
+                        let count = buf.len();
+                        let boxed = buf.into_boxed_slice();
+                        let ptr = Box::into_raw(boxed) as *mut ContestContenderFFI;
+                        (ptr, count)
+                    };
+
+                    let (winner_kind, winner_identity_id) = match state.winner {
+                        ContestWinner::None => (ContestWinnerKindFFI::None as u8, [0u8; 32]),
+                        ContestWinner::WonByIdentity(id) => {
+                            (ContestWinnerKindFFI::WonByIdentity as u8, id.to_buffer())
+                        }
+                        ContestWinner::Locked => (ContestWinnerKindFFI::Locked as u8, [0u8; 32]),
+                    };
+
+                    unsafe {
+                        *out_state = ContestVoteStateFFI {
+                            label: label_c,
+                            end_time_ms: state.end_time_ms,
+                            contenders_ptr,
+                            contenders_count,
+                            abstain_votes: state.abstain_votes,
+                            lock_votes: state.lock_votes,
+                            winner_kind,
+                            winner_identity_id,
+                        };
+                        *out_found = true;
+                    }
+                    PlatformWalletFFIResult::Success
+                }
+                Ok(None) => {
+                    unsafe {
+                        *out_state = ContestVoteStateFFI::empty();
+                        *out_found = false;
+                    }
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    unsafe {
+                        *out_state = ContestVoteStateFFI::empty();
+                        *out_found = false;
+                    }
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorWalletOperation,
+                                format!("fetch_contest_vote_state failed: {e}"),
+                            );
+                        }
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid platform-wallet handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Release heap allocations owned by a [`ContestVoteStateFFI`] —
+/// the `label` C-string and the `contenders_ptr` array. Safe on an
+/// `empty()` snapshot (every owned pointer is null-checked).
+#[no_mangle]
+pub unsafe extern "C" fn contest_vote_state_ffi_free(state: ContestVoteStateFFI) {
+    if !state.label.is_null() {
+        let _ = unsafe { CString::from_raw(state.label) };
+    }
+    if !state.contenders_ptr.is_null() && state.contenders_count > 0 {
+        let slice =
+            unsafe { std::slice::from_raw_parts_mut(state.contenders_ptr, state.contenders_count) };
+        let _ = unsafe { Box::from_raw(slice as *mut [ContestContenderFFI]) };
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Contested DPNS names
 // ---------------------------------------------------------------------------
 
