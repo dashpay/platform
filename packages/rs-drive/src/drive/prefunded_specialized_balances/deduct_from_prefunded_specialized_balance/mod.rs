@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -43,9 +44,15 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.deduct_from_prefunded_specialized_balance_v1(
+                specialized_balance_id,
+                amount,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "deduct_from_prefunded_specialized_balance".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
