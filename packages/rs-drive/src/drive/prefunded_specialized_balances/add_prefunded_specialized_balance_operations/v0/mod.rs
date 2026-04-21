@@ -124,8 +124,19 @@ mod tests {
         // push additional cost operations into the drive_operations vec.
         assert!(!ops.is_empty());
 
-        // Apply and verify.
-        seed_balance(&drive, id, 1_000, platform_version);
+        // Apply the operations that the function actually returned (rather
+        // than going through the seed helper) so the insert branch's
+        // GroveDB write is what we verify.
+        let mut drive_ops = vec![];
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                ops,
+                &mut drive_ops,
+                &platform_version.drive,
+            )
+            .expect("apply add ops");
 
         let fetched = drive
             .fetch_prefunded_specialized_balance(id.to_buffer(), None, platform_version)
@@ -250,7 +261,6 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let id = Identifier::from([12u8; 32]);
 
-        let mut drive_ops: Vec<LowLevelDriveOperation> = vec![];
         let mut estimated = None;
         let ops = drive
             .add_prefunded_specialized_balance_operations_v0(
@@ -261,8 +271,24 @@ mod tests {
                 platform_version,
             )
             .expect("zero add");
-        drive_ops.extend(ops);
-        // Must produce at least the insert op; read cost ops may also be present.
-        assert!(!drive_ops.is_empty());
+
+        // Apply the emitted ops and confirm the entry exists with value 0 —
+        // this verifies the insert_or_replace_op was emitted correctly rather
+        // than merely that *some* ops were produced.
+        let mut drive_ops = vec![];
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                ops,
+                &mut drive_ops,
+                &platform_version.drive,
+            )
+            .expect("apply zero add ops");
+
+        let fetched = drive
+            .fetch_prefunded_specialized_balance(id.to_buffer(), None, platform_version)
+            .expect("fetch balance");
+        assert_eq!(fetched, Some(0));
     }
 }

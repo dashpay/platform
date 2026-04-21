@@ -424,6 +424,32 @@ mod tests {
         (contract, token_id, owner_id)
     }
 
+    /// Assert that the given path query targets the TokenHistory system
+    /// contract by matching the contract id as an exact path segment (not a
+    /// flattened byte substring, which could spuriously match across segment
+    /// boundaries).
+    fn assert_path_targets_token_history(
+        path_query: &PathQuery,
+        platform_version: &PlatformVersion,
+    ) {
+        let token_history_contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::system_data_contracts::SystemDataContract::TokenHistory,
+            platform_version,
+        )
+        .expect("expected TokenHistory contract");
+        let contract_id_bytes = token_history_contract.id().into_buffer();
+        assert!(
+            path_query
+                .path
+                .iter()
+                .any(|segment| segment.as_slice() == contract_id_bytes.as_slice()),
+            "expected path_query.path to contain the TokenHistory contract id \
+             ({:?}) as an exact segment, got path: {:?}",
+            contract_id_bytes,
+            path_query.path
+        );
+    }
+
     // --- Burn with history enabled → historical document query path.
     #[test]
     fn burn_transition_with_history_produces_historical_document_query() {
@@ -440,28 +466,7 @@ mod tests {
             .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
             .expect("expected historical-document path query");
 
-        // The path should target the TokenHistory system contract — we don't
-        // reconstruct the expected query here, but we know the path must
-        // contain the TokenHistory contract ID in its first path segment.
-        let token_history_contract = dpp::system_data_contracts::load_system_data_contract(
-            dpp::system_data_contracts::SystemDataContract::TokenHistory,
-            platform_version,
-        )
-        .expect("expected TokenHistory contract");
-        let expected_prefix = token_history_contract.id().into_buffer();
-        // The SingleDocumentDriveQuery::construct_path_query places the
-        // contract id bytes somewhere in the path; assert it appears at all.
-        let full_path: Vec<u8> = path_query
-            .path
-            .iter()
-            .flat_map(|p| p.iter().copied())
-            .collect();
-        assert!(
-            full_path
-                .windows(expected_prefix.len())
-                .any(|w| w == expected_prefix),
-            "expected historical-document path to reference TokenHistory contract id"
-        );
+        assert_path_targets_token_history(&path_query, platform_version);
     }
 
     // --- Freeze with history → historical document query path.
@@ -478,17 +483,11 @@ mod tests {
                 public_note: None,
             }));
 
-        // Should still succeed — produces the TokenHistory document query.
-        let result = transition.try_transition_into_path_query_with_contract(
-            &contract,
-            owner_id,
-            platform_version,
-        );
-        assert!(
-            result.is_ok(),
-            "expected freeze with history to produce historical query, got {:?}",
-            result.err()
-        );
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected freeze with history to produce historical query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
     }
 
     // --- Unknown token position → expected_token_configuration returns Err.
@@ -539,12 +538,11 @@ mod tests {
                 public_note: None,
             }));
 
-        let result = transition.try_transition_into_path_query_with_contract(
-            &contract,
-            owner_id,
-            platform_version,
-        );
-        assert!(result.is_ok());
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected unfreeze with history to produce historical query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
     }
 
     // --- SetPriceForDirectPurchase with history → historical document query.
@@ -563,11 +561,10 @@ mod tests {
             ),
         );
 
-        let result = transition.try_transition_into_path_query_with_contract(
-            &contract,
-            owner_id,
-            platform_version,
-        );
-        assert!(result.is_ok());
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected set-price with history to produce historical query");
+
+        assert_path_targets_token_history(&path_query, platform_version);
     }
 }

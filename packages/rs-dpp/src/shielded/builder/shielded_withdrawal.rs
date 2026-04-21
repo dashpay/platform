@@ -329,13 +329,17 @@ mod tests {
             platform_version,
         );
         // Boundary value passes the validation, so it must NOT fail with
-        // "exceeds 1000x" — any later stage can fail (anchor/add_spend).
-        let err = result.unwrap_err().to_string();
-        assert!(
-            !err.contains("exceeds 1000x"),
-            "boundary value should not trigger upper-bound error: {}",
-            err
-        );
+        // "exceeds 1000x". A successful build is also acceptable; only a
+        // later-stage failure (anchor/add_spend) should surface — and never
+        // as the upper-bound error.
+        if let Err(err) = result {
+            let err = err.to_string();
+            assert!(
+                !err.contains("exceeds 1000x"),
+                "boundary value should not trigger upper-bound error: {}",
+                err
+            );
+        }
     }
 
     #[test]
@@ -369,12 +373,17 @@ mod tests {
             Some(min_fee),
             platform_version,
         );
-        let err = result.unwrap_err().to_string();
-        assert!(
-            !err.contains("below minimum required fee"),
-            "fee at min must not trip the lower bound: {}",
-            err
-        );
+        // Fee == min_fee is accepted by validation; a successful build is
+        // fine. Only a later-stage failure should surface — and never with
+        // the "below minimum required fee" message.
+        if let Err(err) = result {
+            let err = err.to_string();
+            assert!(
+                !err.contains("below minimum required fee"),
+                "fee at min must not trip the lower bound: {}",
+                err
+            );
+        }
     }
 
     #[test]

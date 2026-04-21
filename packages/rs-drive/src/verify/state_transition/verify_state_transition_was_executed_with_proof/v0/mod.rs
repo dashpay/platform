@@ -2621,9 +2621,15 @@ mod tests {
         }
     }
 
-    // --- ShieldedWithdrawal: no nullifiers → InvalidTransition error.
+    // --- ShieldedWithdrawal: empty proof + no nullifiers → error.
+    //
+    // The `first_nullifier` guard in the verifier is only reachable once
+    // `verify_shielded_nullifiers` returns Ok. With an empty proof, grove-db
+    // proof verification errors out first, so this test cannot reach the
+    // `InvalidTransition` guard specifically — we only assert that some
+    // Error::Proof / Error::GroveDB is returned on the failing path.
     #[test]
-    fn verify_shielded_withdrawal_no_nullifiers_returns_invalid_transition() {
+    fn verify_shielded_withdrawal_empty_proof_error() {
         let platform_version = PlatformVersion::latest();
         use dpp::identity::core_script::CoreScript;
         use dpp::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
@@ -2645,10 +2651,6 @@ mod tests {
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
-        // The proof content doesn't matter: we expect the grove-db call to
-        // either fail or return with no spent nullifiers, but the path runs
-        // through several verify_shielded_nullifiers calls which typically
-        // error out first. The test only asserts the result is an Error.
         let result = Drive::verify_state_transition_was_executed_with_proof(
             &st,
             &BlockInfo::default(),
@@ -2662,7 +2664,7 @@ mod tests {
                 result,
                 Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
             ),
-            "expected error for shielded withdrawal with no nullifiers, got: {:?}",
+            "expected error for shielded withdrawal with empty proof, got: {:?}",
             result
         );
     }

@@ -309,13 +309,17 @@ mod tests {
             Some(boundary),
             platform_version,
         );
-        let err = result.unwrap_err().to_string();
-        // Must not trip the upper-bound branch.
-        assert!(
-            !err.contains("exceeds 1000x"),
-            "boundary fee should be accepted: {}",
-            err
-        );
+        // Boundary value passes validation; a successful build is fine. If a
+        // later-stage failure (anchor/add_spend) surfaces, it must NOT be the
+        // upper-bound error.
+        if let Err(err) = result {
+            let err = err.to_string();
+            assert!(
+                !err.contains("exceeds 1000x"),
+                "boundary fee should be accepted: {}",
+                err
+            );
+        }
     }
 
     #[test]

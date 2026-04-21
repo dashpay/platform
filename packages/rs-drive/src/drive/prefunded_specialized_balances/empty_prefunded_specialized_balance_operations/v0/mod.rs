@@ -88,23 +88,36 @@ impl Drive {
 mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::fees::op::LowLevelDriveOperation::GroveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
+    use grovedb::batch::GroveOp;
     use std::collections::HashMap;
 
+    /// Returns true if the op vec contains any GroveDB delete op. Each test
+    /// operates on a fresh drive and only touches one balance id, so any
+    /// delete op present must be the one for our target.
+    fn has_delete_op(ops: &[crate::fees::op::LowLevelDriveOperation]) -> bool {
+        ops.iter().any(|op| match op {
+            GroveOperation(qualified) => {
+                matches!(qualified.op, GroveOp::Delete | GroveOp::DeleteTree { .. })
+            }
+            _ => false,
+        })
+    }
+
     #[test]
-    fn empty_missing_without_error_flag_returns_zero_and_no_ops() {
+    fn empty_missing_without_error_flag_returns_zero_and_no_delete_op() {
         // error_if_does_not_exist = false, missing balance -> return (0, drive_operations-so-far)
-        // before pushing the delete op. We assert the returned credits is 0 and that no
-        // delete op was added (len remains the grove-get cost ops length at most, but the
-        // key thing is the explicit zero-credits return).
+        // BEFORE pushing the delete op. We explicitly assert the delete op
+        // was NOT emitted, to protect the early-return branch.
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let id = Identifier::from([20u8; 32]);
 
         let mut estimated = None;
-        let (credits, _ops) = drive
+        let (credits, ops) = drive
             .empty_prefunded_specialized_balance_operations_v0(
                 id,
                 false,
@@ -114,6 +127,11 @@ mod tests {
             )
             .expect("empty should succeed with error_if_does_not_exist=false");
         assert_eq!(credits, 0);
+        assert!(
+            !has_delete_op(&ops),
+            "delete op must not be emitted when balance is missing and \
+             error_if_does_not_exist=false"
+        );
     }
 
     #[test]
@@ -179,8 +197,13 @@ mod tests {
             )
             .expect("estimation path should not error even with error_if_does_not_exist=true");
         assert_eq!(credits, 0);
-        // Delete op was pushed even in estimation mode.
-        assert!(!ops.is_empty());
+        // Delete op WAS pushed even in estimation mode — assert its presence
+        // directly rather than checking that ops is merely non-empty (read /
+        // cost ops would also satisfy non-empty).
+        assert!(
+            has_delete_op(&ops),
+            "delete op must be emitted in estimation mode"
+        );
         assert!(!estimated.unwrap().is_empty());
     }
 }

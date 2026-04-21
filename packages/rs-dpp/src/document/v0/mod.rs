@@ -314,8 +314,11 @@ mod tests {
         // Timestamps that overflow DateTime should use `.unwrap_or_default()`.
         // This ensures the "unwrap_or_default()" branch of Display is hit.
         let mut doc = minimal_doc();
-        // i64::MAX as u64 — from_timestamp_millis will return None
-        doc.created_at = Some(u64::MAX);
+        // u64::MAX casts to -1i64, which IS inside chrono's range (1 ms before
+        // epoch). Use i64::MAX instead — it exceeds chrono's supported ms
+        // range (~262,000 years) so `from_timestamp_millis` returns None and
+        // the `.unwrap_or_default()` branch is actually exercised.
+        doc.created_at = Some(i64::MAX as u64);
         let s = format!("{}", doc);
         // Must not panic and must contain the created_at prefix
         assert!(s.contains("created_at:"));

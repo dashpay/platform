@@ -299,8 +299,8 @@ mod tests {
         assert!(result.is_err(), "overflow case should error");
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("overflow") || err.contains("exceeds total"),
-            "unexpected error: {}",
+            err.contains("fee + transfer_amount overflows u64"),
+            "expected checked_add overflow branch, got: {}",
             err
         );
     }
