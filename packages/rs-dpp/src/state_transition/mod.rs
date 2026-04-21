@@ -1528,4 +1528,318 @@ mod tests {
         assert!(debug_str.contains("allow_signing_with_any_security_level"));
         assert!(debug_str.contains("allow_signing_with_any_purpose"));
     }
+
+    // -----------------------------------------------------------------------
+    // StateTransition enum accessor / mutator / classification tests
+    //
+    // These exercise the non-trivial match arms across the large enum, using
+    // the IdentityCreditTransfer, MasternodeVote, IdentityCreditWithdrawal and
+    // DataContractCreate variants as representative signed / unsigned /
+    // voting / contract cases. They intentionally do NOT use `sign`/`verify`
+    // (those go through BLS/ECDSA and have their own coverage elsewhere).
+    // -----------------------------------------------------------------------
+    use crate::identity::core_script::CoreScript;
+    use crate::identity::{Purpose, SecurityLevel};
+    use crate::prelude::Identifier;
+    use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+    use crate::withdrawal::Pooling;
+
+    fn sample_transfer_st() -> StateTransition {
+        let v0 = IdentityCreditTransferTransitionV0 {
+            identity_id: Identifier::from([1u8; 32]),
+            recipient_id: Identifier::from([2u8; 32]),
+            amount: 1_000,
+            nonce: 7,
+            user_fee_increase: 3,
+            signature_public_key_id: 11,
+            signature: BinaryData::new(vec![0u8; 65]),
+        };
+        StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(v0))
+    }
+
+    fn sample_masternode_vote_st() -> StateTransition {
+        let v0 = MasternodeVoteTransitionV0 {
+            pro_tx_hash: Identifier::from([3u8; 32]),
+            voter_identity_id: Identifier::from([4u8; 32]),
+            vote: Default::default(),
+            nonce: 2,
+            signature_public_key_id: 5,
+            signature: BinaryData::new(vec![9u8; 10]),
+        };
+        StateTransition::MasternodeVote(MasternodeVoteTransition::V0(v0))
+    }
+
+    fn sample_withdrawal_st() -> StateTransition {
+        let v0 = IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::from([5u8; 32]),
+            amount: 42,
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes(vec![0x76, 0xa9]),
+            nonce: 4,
+            user_fee_increase: 1,
+            signature_public_key_id: 3,
+            signature: BinaryData::new(vec![8u8; 65]),
+        };
+        StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(v0))
+    }
+
+    #[test]
+    fn test_name_returns_variant_names() {
+        assert_eq!(sample_transfer_st().name(), "IdentityCreditTransfer");
+        assert_eq!(sample_masternode_vote_st().name(), "MasternodeVote");
+        assert_eq!(sample_withdrawal_st().name(), "IdentityCreditWithdrawal");
+    }
+
+    #[test]
+    fn test_state_transition_type_matches_variant() {
+        assert_eq!(
+            sample_transfer_st().state_transition_type(),
+            StateTransitionType::IdentityCreditTransfer
+        );
+        assert_eq!(
+            sample_masternode_vote_st().state_transition_type(),
+            StateTransitionType::MasternodeVote
+        );
+        assert_eq!(
+            sample_withdrawal_st().state_transition_type(),
+            StateTransitionType::IdentityCreditWithdrawal
+        );
+    }
+
+    #[test]
+    fn test_is_identity_signed_excludes_asset_lock_and_shielded() {
+        assert!(sample_transfer_st().is_identity_signed());
+        assert!(sample_masternode_vote_st().is_identity_signed());
+        assert!(sample_withdrawal_st().is_identity_signed());
+    }
+
+    #[test]
+    fn test_signature_accessor() {
+        let st = sample_transfer_st();
+        let sig = st.signature().expect("transfer should expose signature");
+        assert_eq!(sig.len(), 65);
+
+        let st = sample_masternode_vote_st();
+        let sig = st.signature().expect("masternode vote has signature");
+        assert_eq!(sig.as_slice(), &[9u8; 10]);
+    }
+
+    #[test]
+    fn test_owner_id_accessor() {
+        let transfer = sample_transfer_st();
+        assert_eq!(transfer.owner_id(), Some(Identifier::from([1u8; 32])));
+
+        let vote = sample_masternode_vote_st();
+        assert_eq!(vote.owner_id(), Some(Identifier::from([4u8; 32])));
+
+        let withdraw = sample_withdrawal_st();
+        assert_eq!(withdraw.owner_id(), Some(Identifier::from([5u8; 32])));
+    }
+
+    #[test]
+    fn test_signature_public_key_id_accessor() {
+        assert_eq!(sample_transfer_st().signature_public_key_id(), Some(11));
+        assert_eq!(
+            sample_masternode_vote_st().signature_public_key_id(),
+            Some(5)
+        );
+        assert_eq!(sample_withdrawal_st().signature_public_key_id(), Some(3));
+    }
+
+    #[test]
+    fn test_user_fee_increase_for_various_variants() {
+        // Transfer exposes its internal value.
+        assert_eq!(sample_transfer_st().user_fee_increase(), 3);
+        // Masternode vote returns 0 unconditionally.
+        assert_eq!(sample_masternode_vote_st().user_fee_increase(), 0);
+        // Withdrawal exposes its internal value.
+        assert_eq!(sample_withdrawal_st().user_fee_increase(), 1);
+    }
+
+    #[test]
+    fn test_set_signature_returns_true_for_supported() {
+        let mut st = sample_transfer_st();
+        let ok = st.set_signature(BinaryData::new(vec![0xaa; 65]));
+        assert!(ok);
+        assert_eq!(st.signature().unwrap().as_slice(), &[0xaa; 65]);
+    }
+
+    #[test]
+    fn test_set_user_fee_increase_updates_value() {
+        let mut st = sample_transfer_st();
+        st.set_user_fee_increase(42);
+        assert_eq!(st.user_fee_increase(), 42);
+
+        // Masternode vote ignores the setter (documented no-op) — still reads 0.
+        let mut vote = sample_masternode_vote_st();
+        vote.set_user_fee_increase(99);
+        assert_eq!(vote.user_fee_increase(), 0);
+    }
+
+    #[test]
+    fn test_set_signature_public_key_id() {
+        let mut st = sample_transfer_st();
+        st.set_signature_public_key_id(1234);
+        assert_eq!(st.signature_public_key_id(), Some(1234));
+    }
+
+    #[test]
+    fn test_required_number_of_private_keys_default() {
+        // Non asset-lock transitions always require 1 key.
+        assert_eq!(sample_transfer_st().required_number_of_private_keys(), 1);
+        assert_eq!(
+            sample_masternode_vote_st().required_number_of_private_keys(),
+            1
+        );
+        assert_eq!(sample_withdrawal_st().required_number_of_private_keys(), 1);
+    }
+
+    #[test]
+    fn test_inputs_none_for_legacy_variants() {
+        // All these variants have no PlatformAddress inputs.
+        assert!(sample_transfer_st().inputs().is_none());
+        assert!(sample_masternode_vote_st().inputs().is_none());
+        assert!(sample_withdrawal_st().inputs().is_none());
+    }
+
+    #[test]
+    fn test_active_version_range_legacy_transitions() {
+        // These all report ALL_VERSIONS per the mod.rs table.
+        assert_eq!(sample_transfer_st().active_version_range(), ALL_VERSIONS);
+        assert_eq!(
+            sample_masternode_vote_st().active_version_range(),
+            ALL_VERSIONS
+        );
+        assert_eq!(sample_withdrawal_st().active_version_range(), ALL_VERSIONS);
+    }
+
+    #[test]
+    fn test_unique_identifiers_non_empty() {
+        let ids = sample_transfer_st().unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_required_asset_lock_balance_rejects_non_asset_lock() {
+        let platform_version = PlatformVersion::latest();
+        let st = sample_transfer_st();
+        let err = st
+            .required_asset_lock_balance_for_processing_start(platform_version)
+            .expect_err("credit transfer is not an asset lock state transition");
+        match err {
+            ProtocolError::CorruptedCodeExecution(msg) => {
+                assert!(
+                    msg.contains("is not an asset lock transaction"),
+                    "unexpected error message: {msg}"
+                );
+            }
+            other => panic!("expected CorruptedCodeExecution, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_security_level_requirement_for_transfer() {
+        // IdentityCreditTransfer requires CRITICAL at TRANSFER purpose.
+        let st = sample_transfer_st();
+        let levels = st
+            .security_level_requirement(Purpose::TRANSFER)
+            .expect("transfer state transition should return a requirement");
+        assert_eq!(levels, vec![SecurityLevel::CRITICAL]);
+    }
+
+    #[test]
+    fn test_purpose_requirement_for_transfer() {
+        let st = sample_transfer_st();
+        let purposes = st
+            .purpose_requirement()
+            .expect("transfer state transition should have a purpose");
+        assert_eq!(purposes, vec![Purpose::TRANSFER]);
+    }
+
+    #[test]
+    fn test_optional_asset_lock_proof_none_for_transfer() {
+        let st = sample_transfer_st();
+        assert!(st.optional_asset_lock_proof().is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Enum construction: From<V0 / outer enum> → StateTransition
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_from_outer_enum_into_state_transition() {
+        let outer: IdentityCreditTransferTransition =
+            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default());
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::IdentityCreditTransfer(_)));
+    }
+
+    #[test]
+    fn test_from_masternode_vote_outer_into_state_transition() {
+        let outer: MasternodeVoteTransition =
+            MasternodeVoteTransition::V0(MasternodeVoteTransitionV0::default());
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::MasternodeVote(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Serialization round-trip: platform serialize / deserialize via enum.
+    // Exercises the top-level `StateTransition` (de)serialize glue.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_state_transition_platform_serialize_roundtrip() {
+        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        let original = sample_transfer_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
+        let restored =
+            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_deserialize_from_bytes_in_version_succeeds_for_latest() {
+        use crate::serialization::PlatformSerializable;
+        let original = sample_transfer_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+        let restored =
+            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
+                .expect("deserialize_from_bytes_in_version should succeed");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_transaction_id_is_deterministic() {
+        let st = sample_transfer_st();
+        let a = st.transaction_id().expect("hash should succeed");
+        let b = st.transaction_id().expect("hash should succeed");
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 32);
+    }
+
+    #[test]
+    fn test_transaction_id_changes_on_signature_change() {
+        let mut st = sample_transfer_st();
+        let before = st.transaction_id().expect("hash should succeed");
+        st.set_signature(BinaryData::new(vec![0xbb; 65]));
+        let after = st.transaction_id().expect("hash should succeed");
+        // Different signatures produce a different serialized form.
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn test_clone_preserves_inner_state() {
+        let st = sample_transfer_st();
+        let cloned = st.clone();
+        assert_eq!(st, cloned);
+    }
 }
