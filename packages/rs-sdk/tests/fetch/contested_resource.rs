@@ -436,3 +436,99 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
         Err(errors)
     }
 }
+
+/// Regression test: contestedResources with start_index_values produces an
+/// invalid GroveDB proof that fails verification.
+///
+/// For a composite contested index with N properties, the caller provides N-1
+/// values via start_index_values to select the depth of traversal. The API
+/// should return the remaining "middle" property values.
+///
+/// For DPNS `parentNameAndLabel` (2 properties: normalizedParentDomainName,
+/// normalizedLabel):
+///   - start_index_values = []        → returns parent values, e.g. ["dash"]  ✓
+///   - start_index_values = ["dash"]  → should return contested labels        ✗
+///
+/// The second form fails with:
+///   "Proof is missing data for query range. Encountered unexpected node
+///    type: KVHash(...)"
+///
+/// Reproduced on mainnet 2026-04-21 against evo-sdk 3.1.0-dev.1.
+///
+/// ## Preconditions
+///
+/// At least one contested DPNS name exists under the "dash" parent.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    not(feature = "network-testing"),
+    ignore = "this test requires a live platform node to reproduce the proof bug"
+)]
+async fn contested_resources_start_index_values_proof_verification_failure() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let sdk = cfg
+        .setup_api("contested_resources_start_index_values_proof_bug")
+        .await;
+
+    // 1. Without start_index_values → succeeds, returns top-level keys.
+    let query_no_prefix = VotePollsByDocumentTypeQuery {
+        contract_id: cfg.existing_data_contract_id,
+        document_type_name: cfg.existing_document_type_name.clone(),
+        index_name: "parentNameAndLabel".to_string(),
+        start_at_value: None,
+        start_index_values: vec![],
+        end_index_values: vec![],
+        limit: None,
+        order_ascending: true,
+    };
+
+    let top_level = ContestedResource::fetch_many(&sdk, query_no_prefix)
+        .await
+        .expect("query without start_index_values should succeed");
+    tracing::info!(?top_level, "Top-level values (no start_index_values)");
+    assert!(
+        !top_level.0.is_empty(),
+        "expected at least one top-level value (e.g. 'dash')"
+    );
+
+    // 2. With start_index_values = ["dash"] → should return contested labels
+    //    but currently fails proof verification.
+    let query_with_prefix = VotePollsByDocumentTypeQuery {
+        contract_id: cfg.existing_data_contract_id,
+        document_type_name: cfg.existing_document_type_name.clone(),
+        index_name: "parentNameAndLabel".to_string(),
+        start_at_value: None,
+        start_index_values: vec![Value::Text("dash".to_string())],
+        end_index_values: vec![],
+        limit: None,
+        order_ascending: true,
+    };
+
+    let result = ContestedResource::fetch_many(&sdk, query_with_prefix).await;
+
+    match result {
+        Err(ref e) => {
+            let msg = e.to_string();
+            tracing::error!(%msg, "Confirmed: start_index_values proof verification failure");
+            assert!(
+                msg.contains("Proof is missing data for query range")
+                    || msg.contains("invalid proof"),
+                "Expected proof verification error, got: {}",
+                msg
+            );
+        }
+        Ok(ref resources) => {
+            // If this branch is reached, the platform bug has been fixed.
+            // Update this test to always expect Ok once the fix lands.
+            tracing::info!(
+                ?resources,
+                "start_index_values query now succeeds — bug is fixed!"
+            );
+            assert!(
+                !resources.0.is_empty(),
+                "expected contested labels under 'dash'"
+            );
+        }
+    }
+}
