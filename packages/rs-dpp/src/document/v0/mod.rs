@@ -210,3 +210,192 @@ impl fmt::Display for DocumentV0 {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::{DocumentV0Getters, DocumentV0Setters};
+    use platform_value::Identifier;
+
+    fn minimal_doc() -> DocumentV0 {
+        DocumentV0 {
+            id: Identifier::new([1u8; 32]),
+            owner_id: Identifier::new([2u8; 32]),
+            properties: BTreeMap::new(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+    }
+
+    // ================================================================
+    //  Display impl: exercise each optional-field branch
+    // ================================================================
+
+    #[test]
+    fn display_minimal_document_has_no_properties_marker() {
+        let doc = minimal_doc();
+        let s = format!("{}", doc);
+        assert!(s.contains("id:"), "should contain id");
+        assert!(s.contains("owner_id:"), "should contain owner_id");
+        assert!(
+            s.contains("no properties"),
+            "empty properties should render as 'no properties', got: {s}"
+        );
+    }
+
+    #[test]
+    fn display_with_properties_formats_key_value_pairs() {
+        let mut doc = minimal_doc();
+        doc.properties
+            .insert("name".to_string(), Value::Text("Bob".to_string()));
+        let s = format!("{}", doc);
+        assert!(!s.contains("no properties"));
+        assert!(s.contains("name:"), "should contain property key");
+    }
+
+    #[test]
+    fn display_formats_all_optional_timestamp_fields() {
+        let mut doc = minimal_doc();
+        // Set every optional field to exercise each branch of Display
+        doc.created_at = Some(1_700_000_000_000);
+        doc.updated_at = Some(1_700_000_100_000);
+        doc.transferred_at = Some(1_700_000_200_000);
+        doc.created_at_block_height = Some(10);
+        doc.updated_at_block_height = Some(20);
+        doc.transferred_at_block_height = Some(30);
+        doc.created_at_core_block_height = Some(1);
+        doc.updated_at_core_block_height = Some(2);
+        doc.transferred_at_core_block_height = Some(3);
+        doc.creator_id = Some(Identifier::new([9u8; 32]));
+
+        let s = format!("{}", doc);
+        // Each branch should emit its labeled prefix
+        assert!(s.contains("created_at:"), "missing created_at: {s}");
+        assert!(s.contains("updated_at:"), "missing updated_at: {s}");
+        assert!(s.contains("transferred_at:"), "missing transferred_at: {s}");
+        assert!(
+            s.contains("created_at_block_height:10"),
+            "missing created_at_block_height: {s}"
+        );
+        assert!(
+            s.contains("updated_at_block_height:20"),
+            "missing updated_at_block_height: {s}"
+        );
+        assert!(
+            s.contains("transferred_at_block_height:30"),
+            "missing transferred_at_block_height: {s}"
+        );
+        assert!(
+            s.contains("created_at_core_block_height:1"),
+            "missing created_at_core_block_height: {s}"
+        );
+        assert!(
+            s.contains("updated_at_core_block_height:2"),
+            "missing updated_at_core_block_height: {s}"
+        );
+        assert!(
+            s.contains("transferred_at_core_block_height:3"),
+            "missing transferred_at_core_block_height: {s}"
+        );
+        assert!(s.contains("creator_id:"), "missing creator_id: {s}");
+    }
+
+    #[test]
+    fn display_invalid_timestamp_uses_default_formatter() {
+        // Timestamps that overflow DateTime should use `.unwrap_or_default()`.
+        // This ensures the "unwrap_or_default()" branch of Display is hit.
+        let mut doc = minimal_doc();
+        // u64::MAX casts to -1i64, which IS inside chrono's range (1 ms before
+        // epoch). Use i64::MAX instead — it exceeds chrono's supported ms
+        // range (~262,000 years) so `from_timestamp_millis` returns None and
+        // the `.unwrap_or_default()` branch is actually exercised.
+        doc.created_at = Some(i64::MAX as u64);
+        let s = format!("{}", doc);
+        // Must not panic and must contain the created_at prefix
+        assert!(s.contains("created_at:"));
+    }
+
+    // ================================================================
+    //  bump_revision: saturating behavior and None pass-through
+    // ================================================================
+
+    #[test]
+    fn bump_revision_increments_when_some() {
+        let mut doc = minimal_doc();
+        doc.set_revision(Some(5));
+        doc.bump_revision();
+        assert_eq!(doc.revision(), Some(6));
+    }
+
+    #[test]
+    fn bump_revision_is_noop_when_none() {
+        let mut doc = minimal_doc();
+        assert_eq!(doc.revision(), None);
+        doc.bump_revision();
+        // None -> None; no panic, no change.
+        assert_eq!(doc.revision(), None);
+    }
+
+    #[test]
+    fn bump_revision_saturates_at_max() {
+        let mut doc = minimal_doc();
+        doc.set_revision(Some(Revision::MAX));
+        doc.bump_revision();
+        // saturating_add should cap at MAX, not wrap
+        assert_eq!(doc.revision(), Some(Revision::MAX));
+    }
+
+    // ================================================================
+    //  Default impl
+    // ================================================================
+
+    #[test]
+    fn default_document_has_zero_identifiers_and_none_fields() {
+        let doc = DocumentV0::default();
+        assert_eq!(doc.id, Identifier::new([0u8; 32]));
+        assert_eq!(doc.owner_id, Identifier::new([0u8; 32]));
+        assert!(doc.properties.is_empty());
+        assert_eq!(doc.revision, None);
+        assert_eq!(doc.created_at, None);
+        assert_eq!(doc.updated_at, None);
+        assert_eq!(doc.transferred_at, None);
+        assert_eq!(doc.creator_id, None);
+    }
+
+    // ================================================================
+    //  PartialEq semantics
+    // ================================================================
+
+    #[test]
+    fn documents_with_different_creator_id_are_not_equal() {
+        let a = minimal_doc();
+        let mut b = minimal_doc();
+        b.creator_id = Some(Identifier::new([7u8; 32]));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn documents_with_equal_fields_are_equal() {
+        let a = minimal_doc();
+        let b = minimal_doc();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn clone_produces_equal_document() {
+        let mut doc = minimal_doc();
+        doc.properties.insert("k".to_string(), Value::U64(42));
+        doc.revision = Some(3);
+        let cloned = doc.clone();
+        assert_eq!(doc, cloned);
+    }
+}

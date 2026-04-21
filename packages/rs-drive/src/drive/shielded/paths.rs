@@ -140,3 +140,68 @@ pub fn nullifiers_path_for_pool(
         )))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+
+    #[test]
+    fn pool_type_0_returns_credit_pool_nullifiers_path() {
+        // pool_type = 0 maps to the main credit shielded pool.
+        let path = nullifiers_path_for_pool(0, None).expect("credit pool path");
+        assert_eq!(path, shielded_credit_pool_nullifiers_path_vec());
+        // pool_identifier being Some(_) is ignored for pool_type 0.
+        let path2 = nullifiers_path_for_pool(0, Some(&[0xABu8; 32])).expect("credit pool path");
+        assert_eq!(path2, shielded_credit_pool_nullifiers_path_vec());
+    }
+
+    #[test]
+    fn pool_type_1_and_2_return_not_supported() {
+        // Pool types 1 and 2 hit the NotSupported error branch.
+        let err1 =
+            nullifiers_path_for_pool(1, None).expect_err("pool type 1 should return NotSupported");
+        assert!(matches!(err1, Error::Drive(DriveError::NotSupported(_))));
+
+        let err2 = nullifiers_path_for_pool(2, Some(&[0xFFu8; 32]))
+            .expect_err("pool type 2 should return NotSupported");
+        assert!(matches!(err2, Error::Drive(DriveError::NotSupported(_))));
+    }
+
+    #[test]
+    fn unknown_pool_type_returns_invalid_input() {
+        let err = nullifiers_path_for_pool(999, None)
+            .expect_err("unknown pool type should return InvalidInput");
+        match err {
+            Error::Drive(DriveError::InvalidInput(msg)) => assert!(msg.contains("999")),
+            other => panic!("expected InvalidInput, got: {:?}", other),
+        }
+        // Also exercise edge values (u32::MAX).
+        let err_max =
+            nullifiers_path_for_pool(u32::MAX, None).expect_err("u32::MAX should be invalid input");
+        assert!(matches!(err_max, Error::Drive(DriveError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn shielded_pool_path_vec_matches_static_path() {
+        // Cross-check: the vec and static-slice versions encode the same path bytes.
+        let arr = shielded_credit_pool_path();
+        let v = shielded_credit_pool_path_vec();
+        assert_eq!(arr.len(), v.len());
+        for (a, b) in arr.iter().zip(v.iter()) {
+            assert_eq!(*a, b.as_slice());
+        }
+    }
+
+    #[test]
+    fn anchors_paths_by_height_vs_pool_tree_use_distinct_keys() {
+        // Regression guard: SHIELDED_ANCHORS_IN_POOL_KEY != SHIELDED_ANCHORS_BY_HEIGHT_KEY.
+        // A bug confusing these keys would silently break pruning.
+        let pool_path = shielded_credit_pool_anchors_path_vec();
+        let by_height = shielded_credit_pool_anchors_by_height_path_vec();
+        assert_eq!(pool_path.len(), 3);
+        assert_eq!(by_height.len(), 3);
+        assert_ne!(pool_path[2], by_height[2]);
+    }
+}
