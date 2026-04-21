@@ -381,3 +381,182 @@ pub unsafe extern "C" fn dpns_search_results_free(results: *mut DpnsSearchResult
     }
     let _ = unsafe { Box::from_raw(slice as *mut [DpnsSearchResultFFI]) };
 }
+
+// ---------------------------------------------------------------------------
+// DPNS cache sync + read (per-identity)
+// ---------------------------------------------------------------------------
+
+/// Fetch DPNS usernames for `identity_id` from Platform and merge
+/// them into `ManagedIdentity.dpns_names`. Returns the number of
+/// newly-added labels via `out_added` (unchanged when the cache
+/// already contains every name).
+///
+/// Use this from iOS load paths instead of
+/// `dash_sdk_dpns_get_usernames_by_identity` directly — the wallet
+/// path updates the persister changeset on success so
+/// `PersistentIdentity` refreshes via the
+/// `on_persist_identities_fn` callback, and the local cache is the
+/// source of truth for subsequent reads without another round-trip.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_sync_dpns_names(
+    wallet_handle: Handle,
+    identity_id: IdentifierBytes,
+    out_added: *mut u32,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    let id = match identity_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid identity identifier: {e}"),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            let identity = wallet.identity().clone();
+            let result = block_on_worker(async move { identity.sync_dpns_names(&id).await });
+            match result {
+                Ok(added) => {
+                    if !out_added.is_null() {
+                        unsafe { *out_added = added };
+                    }
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorWalletOperation,
+                                format!("sync_dpns_names failed: {e}"),
+                            );
+                        }
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid platform-wallet handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Heap-allocated array of DPNS labels returned by
+/// [`managed_identity_get_dpns_names`]. Each `labels[i]` is a
+/// NUL-terminated UTF-8 C-string owned by the array and released
+/// wholesale by [`dpns_name_array_free`].
+#[repr(C)]
+pub struct DpnsNameArray {
+    pub labels: *mut *mut c_char,
+    pub count: usize,
+}
+
+impl DpnsNameArray {
+    pub fn empty() -> Self {
+        Self {
+            labels: std::ptr::null_mut(),
+            count: 0,
+        }
+    }
+}
+
+/// Read the cached DPNS labels for a [`ManagedIdentity`] handle.
+///
+/// Returns the labels from
+/// [`ManagedIdentity.dpns_names`](platform_wallet::ManagedIdentity).
+/// Empty when nothing has been synced yet — follow with
+/// [`platform_wallet_sync_dpns_names`] to populate.
+///
+/// Release the returned array via [`dpns_name_array_free`].
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_dpns_names(
+    identity_handle: Handle,
+    out_array: *mut DpnsNameArray,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_array.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "out_array is null",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item(identity_handle, |identity| {
+            if identity.dpns_names.is_empty() {
+                unsafe { *out_array = DpnsNameArray::empty() };
+                return PlatformWalletFFIResult::Success;
+            }
+            // Build a vector of owned C-string pointers; the array
+            // itself is heap-allocated and released with every
+            // label by `dpns_name_array_free`.
+            let mut labels: Vec<*mut c_char> = Vec::with_capacity(identity.dpns_names.len());
+            for info in &identity.dpns_names {
+                let c = match CString::new(info.label.clone()) {
+                    Ok(c) => c.into_raw(),
+                    // NUL in label is unreachable in practice;
+                    // keep the entry but surface as a null pointer
+                    // so the caller's iteration doesn't crash.
+                    Err(_) => std::ptr::null_mut(),
+                };
+                labels.push(c);
+            }
+            let count = labels.len();
+            let boxed = labels.into_boxed_slice();
+            let ptr = Box::into_raw(boxed) as *mut *mut c_char;
+            unsafe {
+                *out_array = DpnsNameArray { labels: ptr, count };
+            }
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid managed identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Release an array previously returned by
+/// [`managed_identity_get_dpns_names`]. Walks the array to free every
+/// label C-string before releasing the array itself. Safe to call
+/// with `labels = null` / `count = 0`.
+#[no_mangle]
+pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
+    if array.labels.is_null() || array.count == 0 {
+        return;
+    }
+    let slice = unsafe { std::slice::from_raw_parts_mut(array.labels, array.count) };
+    for entry in slice.iter_mut() {
+        if !entry.is_null() {
+            let _ = unsafe { CString::from_raw(*entry) };
+            *entry = std::ptr::null_mut();
+        }
+    }
+    let _ = unsafe { Box::from_raw(slice as *mut [*mut c_char]) };
+}

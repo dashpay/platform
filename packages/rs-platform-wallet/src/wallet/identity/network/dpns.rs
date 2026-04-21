@@ -168,6 +168,77 @@ impl IdentityWallet {
         })
     }
 
+    /// Fetch all DPNS usernames owned by `identity_id` from Platform
+    /// and merge them into the local
+    /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
+    /// cache.
+    ///
+    /// Skips labels that are already in the cache, so repeated syncs
+    /// don't emit duplicate entries. New labels get an
+    /// `acquired_at` timestamp of best-effort wall-clock millis —
+    /// DPNS documents carry their own `$createdAt` but
+    /// `DpnsUsername` doesn't surface it on the query result today.
+    ///
+    /// Returns the number of newly-added labels.
+    ///
+    /// Use this from the iOS load path instead of
+    /// [`Sdk::get_dpns_usernames_by_identity`] directly — the wallet
+    /// path additionally updates the persister changeset, so
+    /// `PersistentIdentity` + in-app views see the refresh via
+    /// `on_persist_identities_fn`.
+    pub async fn sync_dpns_names(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
+        let usernames = self
+            .sdk
+            .get_dpns_usernames_by_identity(*identity_id, None)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch DPNS usernames for identity {identity_id}: {e}",
+                ))
+            })?;
+
+        if usernames.is_empty() {
+            return Ok(0);
+        }
+
+        let acquired_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .ok();
+
+        let mut added = 0u32;
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return Ok(0);
+            };
+            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+                return Ok(0);
+            };
+            for username in usernames {
+                if managed
+                    .dpns_names
+                    .iter()
+                    .any(|existing| existing.label == username.label)
+                {
+                    continue;
+                }
+                managed.add_dpns_name(
+                    DpnsNameInfo {
+                        label: username.label,
+                        acquired_at,
+                    },
+                    &self.persister,
+                );
+                added += 1;
+            }
+        }
+        Ok(added)
+    }
+
     /// Search for DPNS names by prefix.
     pub async fn search_names(
         &self,

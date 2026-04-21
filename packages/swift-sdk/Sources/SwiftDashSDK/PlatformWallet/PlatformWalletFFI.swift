@@ -591,6 +591,33 @@ func dpns_search_results_free(
     _ count: Int
 )
 
+/// Mirrors `DpnsNameArray` from `rs-platform-wallet-ffi/src/dpns.rs`.
+/// Each `labels[i]` is an owned NUL-terminated UTF-8 C-string;
+/// release the whole array (labels included) via
+/// `dpns_name_array_free`.
+struct DpnsNameArray {
+    var labels: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+    var count: Int
+}
+
+@_silgen_name("platform_wallet_sync_dpns_names")
+func platform_wallet_sync_dpns_names(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ out_added: UnsafeMutablePointer<UInt32>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("managed_identity_get_dpns_names")
+func managed_identity_get_dpns_names(
+    _ identity_handle: Handle,
+    _ out_array: UnsafeMutablePointer<DpnsNameArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("dpns_name_array_free")
+func dpns_name_array_free(_ array: DpnsNameArray)
+
 // MARK: - DashPay contact requests + payments FFI
 
 /// Mirrors `ContactRequestHandleArray` from

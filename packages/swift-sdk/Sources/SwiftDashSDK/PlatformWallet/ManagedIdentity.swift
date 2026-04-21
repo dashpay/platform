@@ -460,6 +460,39 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
     }
 
+    // MARK: - DPNS names
+
+    /// Read the cached DPNS labels for this identity. Empty when
+    /// the cache hasn't been populated yet (new identity, or an
+    /// existing identity that hasn't been synced). Call
+    /// `ManagedPlatformWallet.syncDpnsNames(identityId:)` to
+    /// refresh from Platform before reading.
+    ///
+    /// Returns the label strings only (no acquired-at metadata) —
+    /// they're what the iOS UI needs today; exposing the full
+    /// `DpnsNameInfo` is a future wrapper if the UI grows an
+    /// acquisition-date column.
+    public func getDpnsNames() throws -> [String] {
+        var array = DpnsNameArray(labels: nil, count: 0)
+        var error = PlatformWalletFFIError()
+        let result = managed_identity_get_dpns_names(handle, &array, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        defer { dpns_name_array_free(array) }
+        guard let labels = array.labels, array.count > 0 else {
+            return []
+        }
+        var names: [String] = []
+        names.reserveCapacity(array.count)
+        for i in 0..<array.count {
+            if let labelPtr = labels[i] {
+                names.append(String(cString: labelPtr))
+            }
+        }
+        return names
+    }
+
     // MARK: - DashPay Profile
 
     /// Read the cached DashPay profile for this identity.

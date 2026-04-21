@@ -421,18 +421,48 @@ struct IdentityDetailView: View {
         }
     }
 
+    /// Fetch the identity's registered DPNS names.
+    ///
+    /// Prefers the platform-wallet cache path now that
+    /// `IdentityWallet::sync_dpns_names` populates
+    /// `ManagedIdentity.dpns_names` and routes the update through
+    /// the identity changeset / persister callback. Falls back to
+    /// the direct `sdk.dpnsGetUsername` RPC when the identity isn't
+    /// attached to a loaded `ManagedPlatformWallet` (e.g. a legacy
+    /// local-only row that predates walletId denormalization).
     @MainActor
     private func fetchRegularDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
-        guard let sdk = appState.sdk else { return ([], [:]) }
+        if let walletId = identity.walletId,
+           let wallet = walletManager.wallet(for: walletId) {
+            do {
+                // Refresh Rust-side cache from Platform, then read
+                // the cached labels back. Two-round-trip: one sync
+                // (Platform RPC) + one cache read (sync, in-memory).
+                // The Rust sync path only adds new labels — existing
+                // cached entries are preserved, so the read-back is
+                // a superset of whatever the cache had before.
+                _ = try await wallet.syncDpnsNames(identityId: identity.id)
+                let managed = try wallet.managedIdentity(identityId: identity.id)
+                let names = try managed.getDpnsNames()
+                print("🔵 Got \(names.count) regular DPNS names via platform-wallet cache")
+                return (names, [:])
+            } catch {
+                // Log and fall through to the direct-SDK path so the
+                // list isn't empty when the wallet path hits a
+                // transient error.
+                print("⚠️ Platform-wallet DPNS path failed, falling back to SDK: \(error)")
+            }
+        }
 
+        // Legacy / fallback: direct SDK RPC. No local cache update.
+        guard let sdk = appState.sdk else { return ([], [:]) }
         do {
-            print("🔵 Fetching regular DPNS names from network...")
+            print("🔵 Fetching regular DPNS names via direct SDK RPC...")
             let usernames = try await sdk.dpnsGetUsername(
                 identityId: identity.idString,
                 limit: 10
             )
-
-            print("🔵 Got \(usernames.count) regular DPNS names from network")
+            print("🔵 Got \(usernames.count) regular DPNS names from SDK")
             return (usernames.compactMap { $0["label"] as? String }, [:])
         } catch {
             print("❌ No regular DPNS names found for identity: \(error)")

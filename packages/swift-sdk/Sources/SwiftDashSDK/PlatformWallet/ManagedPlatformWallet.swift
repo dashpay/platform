@@ -484,6 +484,35 @@ extension ManagedPlatformWallet {
     }
 }
 
+// MARK: - DPNS name cache sync
+
+extension ManagedPlatformWallet {
+    /// Fetch DPNS usernames owned by `identityId` from Platform and
+    /// merge them into the local cache
+    /// (`ManagedIdentity.dpns_names`). Returns the number of
+    /// newly-added labels.
+    ///
+    /// Prefer this over `sdk.dpnsGetUsername(...)` — this path goes
+    /// through the wallet's identity changeset so the
+    /// `PersistentIdentity` row refreshes via the persister
+    /// callback, and subsequent reads can come off the local cache
+    /// via `ManagedIdentity.getDpnsNames()` without an RPC.
+    @discardableResult
+    public func syncDpnsNames(identityId: Identifier) async throws -> UInt32 {
+        let handle = self.handle
+        let ffiId = identifierToFFI(identityId)
+        return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
+            var added: UInt32 = 0
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_sync_dpns_names(handle, ffiId, &added, &error)
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return added
+        }.value
+    }
+}
+
 // MARK: - DashPay contact requests + payments
 
 extension ManagedPlatformWallet {
