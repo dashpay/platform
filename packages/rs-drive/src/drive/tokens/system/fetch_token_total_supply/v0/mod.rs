@@ -99,3 +99,139 @@ impl Drive {
         Ok(total_token_supply_in_platform)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_return_none_for_non_existent_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let token_id = [99u8; 32];
+
+        let supply = drive
+            .fetch_token_total_supply_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+        assert_eq!(supply, None);
+    }
+
+    #[test]
+    fn should_return_zero_for_freshly_created_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [11u8; 32];
+        let contract_id = Identifier::from([12u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        let supply = drive
+            .fetch_token_total_supply_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+        assert_eq!(supply, Some(0));
+    }
+
+    #[test]
+    fn should_return_supply_after_additions() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [13u8; 32];
+        let contract_id = Identifier::from([14u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                7_500,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to add supply");
+
+        let supply = drive
+            .fetch_token_total_supply_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+        assert_eq!(supply, Some(7_500));
+    }
+
+    #[test]
+    fn should_return_supply_with_cost() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [15u8; 32];
+        let contract_id = Identifier::from([16u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                42,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to add supply");
+
+        let (supply, fees) = drive
+            .fetch_token_total_supply_with_cost_v0(token_id, &block_info, None, platform_version)
+            .expect("expected fetch with cost to succeed");
+
+        assert_eq!(supply, Some(42));
+        // At minimum, fetching costs something (read ops or storage)
+        assert!(
+            fees.processing_fee > 0 || fees.storage_fee > 0,
+            "expected non-zero fees for a fetch"
+        );
+    }
+}
