@@ -838,3 +838,41 @@ struct IdentityKeyRemovalFFI {
     var identity_id: FFIByteTuple32
     var key_id: UInt32
 }
+
+// MARK: - Identity discovery FFI
+
+/// Mirrors `DiscoveredIdentityIdsFFI` from
+/// `rs-platform-wallet-ffi/src/identity_discovery.rs`. `ids` points
+/// at a contiguous `[[u8; 32]; count]` buffer; reclaim the whole
+/// struct by handing it back to
+/// `platform_wallet_discover_identities_free`. Safe to free on a
+/// zero / null struct (no-op).
+struct DiscoveredIdentityIdsFFI {
+    var ids: UnsafeMutablePointer<FFIByteTuple32>?
+    var count: Int
+}
+
+/// Initial all-zero value. Useful as a placeholder before calling
+/// the FFI and for the unused-error branches.
+func discoveredIdentityIdsFFIEmpty() -> DiscoveredIdentityIdsFFI {
+    DiscoveredIdentityIdsFFI(ids: nil, count: 0)
+}
+
+/// Gap-limit scan of the wallet's DIP-9 identity auth-key path.
+/// `start_index_or_neg1 >= 0` starts at that index; negative means
+/// "resume from the wallet's cached last_scanned_index". Pass
+/// `gap_limit = 0` to use the Rust default (`IDENTITY_GAP_LIMIT`,
+/// currently 5). On success, `out_found` receives a heap-allocated
+/// id array the caller frees via
+/// `platform_wallet_discover_identities_free`.
+@_silgen_name("platform_wallet_discover_identities")
+func platform_wallet_discover_identities(
+    _ wallet_handle: Handle,
+    _ start_index_or_neg1: Int64,
+    _ gap_limit: UInt32,
+    _ out_found: UnsafeMutablePointer<DiscoveredIdentityIdsFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_discover_identities_free")
+func platform_wallet_discover_identities_free(_ found: DiscoveredIdentityIdsFFI)

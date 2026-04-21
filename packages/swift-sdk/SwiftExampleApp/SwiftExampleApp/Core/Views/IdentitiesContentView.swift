@@ -13,6 +13,7 @@ struct IdentitiesContentView: View {
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @State private var showingLoadIdentity = false
     @State private var showingCreateIdentity = false
+    @State private var showingSearchWallets = false
 
     var body: some View {
         List {
@@ -77,6 +78,12 @@ struct IdentitiesContentView: View {
                     } label: {
                         Label("Load Identity", systemImage: "square.and.arrow.down")
                     }
+
+                    Button {
+                        showingSearchWallets = true
+                    } label: {
+                        Label("Search Wallets for Identities", systemImage: "magnifyingglass")
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -89,6 +96,9 @@ struct IdentitiesContentView: View {
         .sheet(isPresented: $showingCreateIdentity) {
             CreateIdentityView()
                 .environmentObject(platformState)
+        }
+        .sheet(isPresented: $showingSearchWallets) {
+            SearchWalletsForIdentitiesView()
         }
         .refreshable {
             await platformBalanceSyncService.performSync()

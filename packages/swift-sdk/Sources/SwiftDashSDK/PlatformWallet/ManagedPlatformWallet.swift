@@ -360,6 +360,70 @@ private func hashTupleInit() -> (
     )
 }
 
+// MARK: - Identity discovery (HD gap-limit scan)
+
+extension ManagedPlatformWallet {
+    /// Scan the wallet's DIP-9 identity authentication derivation
+    /// tree for registered identities and fold any matches into the
+    /// local identity manager.
+    ///
+    /// For each identity index in the scan range, derives the MASTER
+    /// authentication public key at key index 0 and asks Platform
+    /// "is there an identity registered with this pubkey hash?"
+    /// (unique-hash lookup). Stops after `gapLimit` consecutive
+    /// misses. Newly-discovered identities are persisted via the
+    /// existing identity persister callback, so SwiftData `@Query`
+    /// views refresh automatically once this call returns.
+    ///
+    /// - Parameters:
+    ///   - startIndex: Pass `nil` (the default) to resume from the
+    ///     wallet's cached last-scanned index. Pass `0` (or any
+    ///     explicit `UInt32`) to start a full rescan from that
+    ///     index. The cached index is never rewound — an explicit
+    ///     `startIndex` below the cache just re-walks that range.
+    ///   - gapLimit: Maximum consecutive empty identity indices to
+    ///     tolerate before stopping. Defaults to the Rust default
+    ///     (`IDENTITY_GAP_LIMIT`, currently 5) when omitted.
+    /// - Returns: The identifiers of any identities the scan
+    ///   discovered that weren't already in the local manager.
+    ///   Identities already tracked are not re-reported.
+    public func discoverIdentities(
+        startIndex: UInt32? = nil,
+        gapLimit: UInt32? = nil
+    ) async throws -> [Identifier] {
+        let handle = self.handle
+        let startArg: Int64 = startIndex.map(Int64.init) ?? -1
+        let gapArg: UInt32 = gapLimit ?? 0
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [Identifier] in
+            var found = discoveredIdentityIdsFFIEmpty()
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_discover_identities(
+                handle,
+                startArg,
+                gapArg,
+                &found,
+                &error
+            )
+            defer { platform_wallet_discover_identities_free(found) }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            guard let base = found.ids, found.count > 0 else {
+                return []
+            }
+            var ids: [Identifier] = []
+            ids.reserveCapacity(found.count)
+            for i in 0..<found.count {
+                var tuple = base[i]
+                let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
+                ids.append(data)
+            }
+            return ids
+        }.value
+    }
+}
+
 // MARK: - DPNS operations
 
 /// Simple search-result struct surfaced by `searchDpnsNames`. Mirrors
