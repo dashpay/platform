@@ -500,12 +500,10 @@ async fn should_contested_resources_start_index_values_no_limit_match_explicit_d
     );
 
     // 1. With limit → works fine.
-    let with_limit = ContestedResource::fetch_many(
-        &sdk,
-        make_query(Some(drive::config::DEFAULT_QUERY_LIMIT)),
-    )
-        .await
-        .expect("query with start_index_values + limit should succeed");
+    let with_limit =
+        ContestedResource::fetch_many(&sdk, make_query(Some(drive::config::DEFAULT_QUERY_LIMIT)))
+            .await
+            .expect("query with start_index_values + limit should succeed");
     tracing::info!(count = with_limit.0.len(), "With limit: OK");
     assert!(!with_limit.0.is_empty(), "expected contested labels");
 
@@ -515,7 +513,10 @@ async fn should_contested_resources_start_index_values_no_limit_match_explicit_d
         .expect("query with omitted limit should verify successfully");
 
     tracing::info!(count = no_limit.0.len(), "No-limit query: OK");
-    assert!(!no_limit.0.is_empty(), "expected contested labels under 'dash'");
+    assert!(
+        !no_limit.0.is_empty(),
+        "expected contested labels under 'dash'"
+    );
     assert_eq!(
         no_limit.0, with_limit.0,
         "omitted-limit proof should match the explicit default-limit result set",
