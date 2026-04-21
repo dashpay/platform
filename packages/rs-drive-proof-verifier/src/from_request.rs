@@ -27,16 +27,9 @@ use drive::query::{
     VotePollsByEndDateDriveQuery,
 };
 
-use crate::Error;
+use crate::{proved_request_limit, Error, DEFAULT_QUERY_LIMIT};
 
 const BINCODE_CONFIG: dpp::bincode::config::Configuration = dpp::bincode::config::standard();
-/// Default contested-resources limit applied by Platform when `count` is omitted.
-///
-/// The proof verifier must mirror this behavior; otherwise it can reconstruct an
-/// unbounded query from a request that the server actually executed with the
-/// default limit, which makes valid proofs look truncated.
-const DEFAULT_CONTESTED_RESOURCES_LIMIT: u16 = 100;
-
 /// Convert a gRPC request into a query object.
 ///
 /// This trait is implemented on Drive queries that can be created from gRPC requests.
@@ -92,7 +85,7 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
         let result = match grpc_request.version.ok_or(Error::EmptyVersion)? {
             get_contested_resource_vote_state_request::Version::V0(v) => {
                 ContestedDocumentVotePollDriveQuery {
-                    limit: v.count.map(|v| v as u16),
+                    limit: Some(proved_request_limit(v.count)?),
                     vote_poll: ContestedDocumentResourceVotePoll {
                         contract_id: Identifier::from_bytes(&v.contract_id).map_err(|e| {
                             Error::RequestError {
@@ -149,7 +142,7 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
         Ok(proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
             prove:true,
             contract_id:self.vote_poll.contract_id.to_vec(),
-            count: self.limit.map(|v| v as u32),
+            count: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
             document_type_name: self.vote_poll.document_type_name.clone(),
             index_name: self.vote_poll.index_name.clone(),
             index_values: self.vote_poll.index_values.iter().map(|v|
@@ -202,7 +195,7 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                 }
             })?,
             offset: None,
-            limit: value.limit.map(|x| x as u16),
+            limit: Some(proved_request_limit(value.limit)?),
             start_at,
             order_ascending: value.order_ascending,
         })
@@ -218,7 +211,7 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                     prove: true,
                     identity_id: self.identity_id.to_vec(),
                     offset: self.offset.map(|x| x as u32),
-                    limit: self.limit.map(|x| x as u32),
+                    limit: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
                     start_at_vote_poll_id_info: self.start_at.map(|(id, included)| {
                         request_v0::StartAtVotePollIdInfo {
                             start_at_poll_identifier: id.to_vec(),
@@ -257,7 +250,7 @@ impl TryFromRequest<GetContestedResourceVotersForIdentityRequest>
                             error: format!("cannot decode contestant_id: {}", e),
                         }
                     })?,
-                    limit: v.count.map(|v| v as u16),
+                    limit: Some(proved_request_limit(v.count)?),
                     offset: None,
                     start_at: v
                         .start_at_identifier_info
@@ -291,7 +284,7 @@ impl TryFromRequest<GetContestedResourceVotersForIdentityRequest>
                 dpp::bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e|
                     Error::RequestError { error: e.to_string()})).collect::<Result<Vec<_>,_>>()?,
             order_ascending: self.order_ascending,
-            count: self.limit.map(|v| v as u32),
+            count: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
             contestant_id: self.contestant_id.to_vec(),
             start_at_identifier_info: self.start_at.map(|v| request_v0::StartAtIdentifierInfo{
                 start_identifier: v.0.to_vec(),
@@ -327,11 +320,7 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
                     .transpose()?,
                 start_index_values: bincode_decode_values(req.start_index_values.iter())?,
                 end_index_values: bincode_decode_values(req.end_index_values.iter())?,
-                limit: Some(
-                    req.count
-                        .unwrap_or(DEFAULT_CONTESTED_RESOURCES_LIMIT as u32)
-                        as u16,
-                ),
+                limit: Some(proved_request_limit(req.count)?),
                 order_ascending: req.order_ascending,
             },
         };
@@ -342,7 +331,7 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
         Ok(GetContestedResourcesRequestV0 {
             prove: true,
             contract_id: self.contract_id.to_vec(),
-            count: Some(self.limit.unwrap_or(DEFAULT_CONTESTED_RESOURCES_LIMIT) as u32),
+            count: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
             document_type_name: self.document_type_name.clone(),
             end_index_values: bincode_encode_values(&self.end_index_values)?,
             start_index_values: bincode_encode_values(&self.start_index_values)?,
@@ -377,7 +366,7 @@ impl TryFromRequest<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQue
                 end_time: v
                     .end_time_info
                     .map(|v| (v.end_time_ms, v.end_time_included)),
-                limit: v.limit.map(|v| v as u16),
+                limit: Some(proved_request_limit(v.limit)?),
                 offset: v.offset.map(|v| v as u16),
                 order_ascending: v.ascending,
             },
@@ -410,7 +399,7 @@ impl TryFromRequest<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQue
                         end_time_included,
                     }
                 }),
-                limit: self.limit.map(|v| v as u32),
+                limit: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
                 offset: self.offset.map(|v| v as u32),
                 ascending: self.order_ascending,
             }
@@ -481,6 +470,15 @@ mod tests {
     use super::*;
     use dpp::identifier::Identifier;
     use dpp::platform_value::Value;
+
+    fn sample_vote_poll() -> ContestedDocumentResourceVotePoll {
+        ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::from_bytes(&[1u8; 32]).unwrap(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![Value::Text("dash".to_string())],
+        }
+    }
 
     // ---------------------------------------------------------------
     // Helper: to_bytes32
@@ -669,7 +667,7 @@ mod tests {
         let proto::get_contested_resources_request::Version::V0(v0) =
             request.version.expect("request should contain a version");
 
-        assert_eq!(v0.count, Some(DEFAULT_CONTESTED_RESOURCES_LIMIT as u32));
+        assert_eq!(v0.count, Some(DEFAULT_QUERY_LIMIT as u32));
     }
 
     #[test]
@@ -691,7 +689,161 @@ mod tests {
         let query =
             VotePollsByDocumentTypeQuery::try_from_request(request).expect("request should decode");
 
-        assert_eq!(query.limit, Some(DEFAULT_CONTESTED_RESOURCES_LIMIT));
+        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+    }
+
+    #[test]
+    fn test_contested_resource_vote_state_request_defaults_limit_when_encoding() {
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: sample_vote_poll(),
+            result_type: ContestedDocumentVotePollDriveQueryResultType::Documents,
+            offset: None,
+            limit: None,
+            start_at: None,
+            allow_include_locked_and_abstaining_vote_tally: false,
+        };
+
+        let request = query.try_to_request().expect("request should encode");
+        let proto::get_contested_resource_vote_state_request::Version::V0(v0) =
+            request.version.expect("request should contain a version");
+
+        assert_eq!(v0.count, Some(DEFAULT_QUERY_LIMIT as u32));
+    }
+
+    #[test]
+    fn test_contested_resource_vote_state_request_defaults_limit_when_decoding() {
+        let request: GetContestedResourceVoteStateRequest =
+            proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
+                prove: true,
+                contract_id: sample_vote_poll().contract_id.to_vec(),
+                count: None,
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: bincode_encode_values([&Value::Text("dash".to_string())])
+                    .expect("index values should encode"),
+                result_type: get_contested_resource_vote_state_request_v0::ResultType::Documents.into(),
+                start_at_identifier_info: None,
+                allow_include_locked_and_abstaining_vote_tally: false,
+            }
+            .into();
+
+        let query = ContestedDocumentVotePollDriveQuery::try_from_request(request)
+            .expect("request should decode");
+
+        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+    }
+
+    #[test]
+    fn test_contested_resource_identity_votes_request_defaults_limit_when_encoding() {
+        let query = ContestedResourceVotesGivenByIdentityQuery {
+            identity_id: Identifier::from_bytes(&[9u8; 32]).unwrap(),
+            offset: None,
+            limit: None,
+            start_at: None,
+            order_ascending: true,
+        };
+
+        let request = query.try_to_request().expect("request should encode");
+        let proto::get_contested_resource_identity_votes_request::Version::V0(v0) =
+            request.version.expect("request should contain a version");
+
+        assert_eq!(v0.limit, Some(DEFAULT_QUERY_LIMIT as u32));
+    }
+
+    #[test]
+    fn test_contested_resource_identity_votes_request_defaults_limit_when_decoding() {
+        let request: GetContestedResourceIdentityVotesRequest =
+            proto::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0 {
+                prove: true,
+                identity_id: Identifier::from_bytes(&[8u8; 32]).unwrap().to_vec(),
+                offset: None,
+                limit: None,
+                start_at_vote_poll_id_info: None,
+                order_ascending: true,
+            }
+            .into();
+
+        let query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)
+            .expect("request should decode");
+
+        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+    }
+
+    #[test]
+    fn test_contested_resource_voters_for_identity_request_defaults_limit_when_encoding() {
+        let query = ContestedDocumentVotePollVotesDriveQuery {
+            vote_poll: sample_vote_poll(),
+            contestant_id: Identifier::from_bytes(&[3u8; 32]).unwrap(),
+            offset: None,
+            limit: None,
+            start_at: None,
+            order_ascending: true,
+        };
+
+        let request = query.try_to_request().expect("request should encode");
+        let proto::get_contested_resource_voters_for_identity_request::Version::V0(v0) =
+            request.version.expect("request should contain a version");
+
+        assert_eq!(v0.count, Some(DEFAULT_QUERY_LIMIT as u32));
+    }
+
+    #[test]
+    fn test_contested_resource_voters_for_identity_request_defaults_limit_when_decoding() {
+        let request: GetContestedResourceVotersForIdentityRequest =
+            proto::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0 {
+                prove: true,
+                contract_id: sample_vote_poll().contract_id.to_vec(),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: bincode_encode_values([&Value::Text("dash".to_string())])
+                    .expect("index values should encode"),
+                contestant_id: Identifier::from_bytes(&[4u8; 32]).unwrap().to_vec(),
+                start_at_identifier_info: None,
+                count: None,
+                order_ascending: true,
+            }
+            .into();
+
+        let query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)
+            .expect("request should decode");
+
+        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+    }
+
+    #[test]
+    fn test_vote_polls_by_end_date_request_defaults_limit_when_encoding() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, true)),
+            end_time: Some((2000, false)),
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        };
+
+        let request = query.try_to_request().expect("request should encode");
+        let proto::get_vote_polls_by_end_date_request::Version::V0(v0) =
+            request.version.expect("request should contain a version");
+
+        assert_eq!(v0.limit, Some(DEFAULT_QUERY_LIMIT as u32));
+    }
+
+    #[test]
+    fn test_vote_polls_by_end_date_request_defaults_limit_when_decoding() {
+        let request: GetVotePollsByEndDateRequest =
+            proto::get_vote_polls_by_end_date_request::GetVotePollsByEndDateRequestV0 {
+                prove: true,
+                start_time_info: None,
+                end_time_info: None,
+                limit: None,
+                offset: None,
+                ascending: true,
+            }
+            .into();
+
+        let query =
+            VotePollsByEndDateDriveQuery::try_from_request(request).expect("request should decode");
+
+        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
     }
 
     // ---------------------------------------------------------------

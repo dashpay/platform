@@ -1,6 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
-use crate::{types::TokenPreProgrammedDistributions, ContextProvider, Error};
+use crate::{proved_request_limit, types::TokenPreProgrammedDistributions, ContextProvider, Error};
 use dapi_grpc::platform::v0::{
     get_token_pre_programmed_distributions_request, GetTokenPreProgrammedDistributionsRequest,
     GetTokenPreProgrammedDistributionsResponse, Proof, ResponseMetadata,
@@ -68,14 +68,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
             None => None,
         };
 
-        let limit = req_v0
-            .limit
-            .map(|l| {
-                u16::try_from(l).map_err(|_| Error::RequestError {
-                    error: "limit exceeds u16::MAX".into(),
-                })
-            })
-            .transpose()?;
+        let limit = Some(proved_request_limit(req_v0.limit)?);
 
         let metadata = response
             .metadata()

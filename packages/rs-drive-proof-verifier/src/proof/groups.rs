@@ -1,7 +1,7 @@
 use crate::error::MapGroveDbError;
 use crate::types::groups::{GroupActionSigners, GroupActions, Groups};
 use crate::verify::verify_tenderdash_proof;
-use crate::{ContextProvider, Error, FromProof};
+use crate::{proved_request_limit, ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_group_action_signers_request, get_group_actions_request, get_group_info_request,
     get_group_infos_request, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
@@ -109,7 +109,7 @@ impl FromProof<GetGroupInfosRequest> for Groups {
                         )
                     });
 
-                let count = v0.count.map(|count| count as u16);
+                let count = Some(proved_request_limit(v0.count)?);
 
                 (contract_id, start_group_contract_position, count)
             }
@@ -195,7 +195,7 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
                     let group_contract_position =
                         v0.group_contract_position as GroupContractPosition;
 
-                    let count = v0.count.map(|count| count as u16);
+                    let count = Some(proved_request_limit(v0.count)?);
 
                     let status = GroupActionStatus::try_from(v0.status).map_err(|error| {
                         Error::RequestError {
