@@ -2510,4 +2510,331 @@ mod tests {
             result
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage for rarely-executed error branches.
+    //
+    // The following tests exercise variants that were not previously
+    // covered by the inline suite, and in particular focus on error arms
+    // (unknown-contract, invalid-transition, malformed-input) that are
+    // otherwise hard to exercise through happy-path tests.
+    // -----------------------------------------------------------------------
+
+    // --- DataContractUpdate: empty proof returns Error::Proof or Error::GroveDB.
+    #[test]
+    fn verify_data_contract_update_empty_proof_returns_error() {
+        let (_drive, contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+        let data_contract_serialized: DataContractInSerializationFormat = contract
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to serialize contract");
+
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+        let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
+            DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
+                data_contract: data_contract_serialized,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        // Empty proof → must error (either Error::Proof or Error::GroveDB).
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- MasternodeVote: unknown contract returns a specific
+    // `ProofError::UnknownContract` because the provider returns None.
+    #[test]
+    fn verify_masternode_vote_unknown_contract_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+        use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+        use dpp::voting::vote_polls::VotePoll;
+        use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+        use dpp::voting::votes::resource_vote::ResourceVote;
+        use dpp::voting::votes::Vote;
+
+        let st = StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+            MasternodeVoteTransitionV0 {
+                pro_tx_hash: dpp::prelude::Identifier::from([1u8; 32]),
+                voter_identity_id: dpp::prelude::Identifier::from([2u8; 32]),
+                vote: Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                    vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: dpp::prelude::Identifier::from([7u8; 32]),
+                            document_type_name: "some_type".to_string(),
+                            index_name: "idx".to_string(),
+                            index_values: vec![],
+                        },
+                    ),
+                    resource_vote_choice: ResourceVoteChoice::Abstain,
+                })),
+                nonce: 1,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            },
+        ));
+
+        // Provider always returns None – triggers UnknownContract.
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        let err = result.expect_err("expected UnknownContract error, got Ok");
+        match err {
+            crate::error::Error::Proof(ProofError::UnknownContract(msg)) => {
+                assert!(
+                    msg.contains("unknown contract") && msg.contains("resource vote"),
+                    "unexpected UnknownContract message: {msg}"
+                );
+            }
+            other => panic!("expected Error::Proof(UnknownContract), got {:?}", other),
+        }
+    }
+
+    // --- ShieldedWithdrawal: no nullifiers → InvalidTransition error.
+    #[test]
+    fn verify_shielded_withdrawal_no_nullifiers_returns_invalid_transition() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::identity::core_script::CoreScript;
+        use dpp::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
+        use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+        use dpp::withdrawal::Pooling;
+
+        let st = StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(
+            ShieldedWithdrawalTransitionV0 {
+                actions: vec![],
+                unshielding_amount: 0,
+                anchor: [0u8; 32],
+                proof: vec![],
+                binding_signature: [0u8; 64],
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::from_bytes(vec![]),
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        // The proof content doesn't matter: we expect the grove-db call to
+        // either fail or return with no spent nullifiers, but the path runs
+        // through several verify_shielded_nullifiers calls which typically
+        // error out first. The test only asserts the result is an Error.
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected error for shielded withdrawal with no nullifiers, got: {:?}",
+            result
+        );
+    }
+
+    // --- ShieldedTransfer: empty proof leads to an error (Error::Proof
+    // or Error::GroveDB) through the verify_shielded_nullifiers path.
+    #[test]
+    fn verify_shielded_transfer_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+        use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+
+        let st = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+            ShieldedTransferTransitionV0 {
+                actions: vec![],
+                value_balance: 0,
+                anchor: [0u8; 32],
+                proof: vec![],
+                binding_signature: [0u8; 64],
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected error for shielded transfer with empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- Unshield: empty proof leads to an error.
+    #[test]
+    fn verify_unshield_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::state_transition::unshield_transition::v0::UnshieldTransitionV0;
+        use dpp::state_transition::unshield_transition::UnshieldTransition;
+
+        let st = StateTransition::Unshield(UnshieldTransition::V0(UnshieldTransitionV0 {
+            output_address: Default::default(),
+            actions: vec![],
+            unshielding_amount: 0,
+            anchor: [0u8; 32],
+            proof: vec![],
+            binding_signature: [0u8; 64],
+        }));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected error for unshield with empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- IdentityCreditTransferToAddresses: empty proof returns error.
+    #[test]
+    fn verify_identity_credit_transfer_to_addresses_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+        use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+
+        let st = StateTransition::IdentityCreditTransferToAddresses(
+            IdentityCreditTransferToAddressesTransition::V0(
+                IdentityCreditTransferToAddressesTransitionV0 {
+                    identity_id: dpp::prelude::Identifier::from([3u8; 32]),
+                    ..Default::default()
+                },
+            ),
+        );
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected error for identity credit transfer to addresses with empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- Batch with a single Token transition + unknown contract returns
+    // UnknownContract error (covers the token transition branch).
+    #[test]
+    fn verify_batch_token_transition_unknown_contract_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::batch_transition::batched_transition::token_burn_transition::v0::TokenBurnTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_burn_transition::TokenBurnTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV1;
+
+        let token_base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: dpp::prelude::Identifier::from([55u8; 32]),
+            token_id: dpp::prelude::Identifier::from([66u8; 32]),
+            using_group_info: None,
+        });
+        let token_transition =
+            TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+                base: token_base,
+                burn_amount: 42,
+                public_note: None,
+            }));
+
+        // V1 supports BatchedTransition::Token. V0 only supports document
+        // transitions — use V1 to include a token transition.
+        let st = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: dpp::prelude::Identifier::from([9u8; 32]),
+            transitions: vec![BatchedTransition::Token(token_transition)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }));
+
+        // Provider returns None — triggers UnknownContract for the token.
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        let err = result.expect_err("expected UnknownContract error, got Ok");
+        match err {
+            crate::error::Error::Proof(ProofError::UnknownContract(msg)) => {
+                assert!(
+                    msg.contains("unknown contract") && msg.contains("token verification"),
+                    "unexpected UnknownContract message: {msg}"
+                );
+            }
+            other => panic!("expected Error::Proof(UnknownContract), got {:?}", other),
+        }
+    }
 }

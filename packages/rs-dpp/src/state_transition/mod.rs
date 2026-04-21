@@ -1842,4 +1842,862 @@ mod tests {
         let cloned = st.clone();
         assert_eq!(st, cloned);
     }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: enum arms that weren't previously exercised.
+    //
+    // The tests below intentionally target variants the earlier tests did not
+    // touch (DataContractCreate, DataContractUpdate, Batch, IdentityCreate,
+    // IdentityTopUp, IdentityUpdate, shielded / address variants) to cover
+    // the remaining match-arm branches in accessor / mutator / classification
+    // methods.
+    // -----------------------------------------------------------------------
+
+    use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use crate::state_transition::batch_transition::document_delete_transition::{
+        DocumentDeleteTransition, DocumentDeleteTransitionV0,
+    };
+    use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+    use crate::state_transition::data_contract_create_transition::{
+        DataContractCreateTransition, DataContractCreateTransitionV0,
+    };
+    use crate::state_transition::data_contract_update_transition::{
+        DataContractUpdateTransition, DataContractUpdateTransitionV0,
+    };
+    use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+    use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use crate::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+    use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
+    use crate::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+    use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
+    use crate::state_transition::unshield_transition::UnshieldTransition;
+
+    /// Build a DataContractInSerializationFormat from a crate-private v0
+    /// constructor via the public TryFromPlatformVersioned impl and DataContract V1.
+    fn sample_data_contract_in_serialization_format() -> DataContractInSerializationFormat {
+        use crate::data_contract::config::v0::DataContractConfigV0;
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::v1::DataContractV1;
+        use crate::data_contract::DataContract;
+        use platform_version::TryIntoPlatformVersioned;
+        use std::collections::BTreeMap;
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Identifier::from([9u8; 32]),
+            version: 1,
+            owner_id: Identifier::from([7u8; 32]),
+            document_types: BTreeMap::new(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        contract
+            .try_into_platform_versioned(PlatformVersion::latest())
+            .expect("expected to serialize a trivial contract")
+    }
+
+    fn sample_data_contract_create_st() -> StateTransition {
+        StateTransition::DataContractCreate(DataContractCreateTransition::V0(
+            DataContractCreateTransitionV0 {
+                data_contract: sample_data_contract_in_serialization_format(),
+                identity_nonce: 1,
+                user_fee_increase: 5,
+                signature_public_key_id: 2,
+                signature: BinaryData::new(vec![0xAB; 65]),
+            },
+        ))
+    }
+
+    fn sample_data_contract_update_st() -> StateTransition {
+        StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
+            DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 4,
+                data_contract: sample_data_contract_in_serialization_format(),
+                user_fee_increase: 9,
+                signature_public_key_id: 6,
+                signature: BinaryData::new(vec![0xCD; 65]),
+            },
+        ))
+    }
+
+    fn sample_batch_st_with_delete() -> StateTransition {
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::from([1u8; 32]),
+            identity_contract_nonce: 3,
+            document_type_name: "preorder".to_string(),
+            data_contract_id: Identifier::from([2u8; 32]),
+        });
+        let delete =
+            DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![delete],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    fn sample_batch_st_empty() -> StateTransition {
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::from([1u8; 32]),
+            transitions: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![]),
+        }))
+    }
+
+    fn sample_identity_create_st() -> StateTransition {
+        StateTransition::IdentityCreate(IdentityCreateTransition::V0(IdentityCreateTransitionV0 {
+            identity_id: Identifier::from([3u8; 32]),
+            ..Default::default()
+        }))
+    }
+
+    fn sample_identity_top_up_st() -> StateTransition {
+        StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
+            identity_id: Identifier::from([4u8; 32]),
+            ..Default::default()
+        }))
+    }
+
+    fn sample_identity_update_st() -> StateTransition {
+        StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
+            identity_id: Identifier::from([5u8; 32]),
+            revision: 1,
+            nonce: 2,
+            add_public_keys: vec![],
+            disable_public_keys: vec![],
+            user_fee_increase: 11,
+            signature_public_key_id: 33,
+            signature: BinaryData::new(vec![0xFF; 65]),
+        }))
+    }
+
+    fn sample_unshield_st() -> StateTransition {
+        StateTransition::Unshield(UnshieldTransition::V0(UnshieldTransitionV0 {
+            output_address: Default::default(),
+            actions: vec![],
+            unshielding_amount: 0,
+            anchor: [0u8; 32],
+            proof: vec![],
+            binding_signature: [0u8; 64],
+        }))
+    }
+
+    fn sample_shielded_transfer_st() -> StateTransition {
+        StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+            ShieldedTransferTransitionV0 {
+                actions: vec![],
+                value_balance: 0,
+                anchor: [0u8; 32],
+                proof: vec![],
+                binding_signature: [0u8; 64],
+            },
+        ))
+    }
+
+    fn sample_shielded_withdrawal_st() -> StateTransition {
+        use crate::identity::core_script::CoreScript;
+        use crate::withdrawal::Pooling;
+        StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(
+            ShieldedWithdrawalTransitionV0 {
+                actions: vec![],
+                unshielding_amount: 0,
+                anchor: [0u8; 32],
+                proof: vec![],
+                binding_signature: [0u8; 64],
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::from_bytes(vec![]),
+            },
+        ))
+    }
+
+    // --- name() covers all previously-untested arms, including the nested
+    // match for Batch variants. ---
+    #[test]
+    fn test_name_for_newly_covered_variants() {
+        assert_eq!(
+            sample_data_contract_create_st().name(),
+            "DataContractCreate"
+        );
+        assert_eq!(
+            sample_data_contract_update_st().name(),
+            "DataContractUpdate"
+        );
+        assert_eq!(sample_identity_create_st().name(), "IdentityCreate");
+        assert_eq!(sample_identity_top_up_st().name(), "IdentityTopUp");
+        assert_eq!(sample_identity_update_st().name(), "IdentityUpdate");
+        assert_eq!(sample_unshield_st().name(), "Unshield");
+        assert_eq!(sample_shielded_transfer_st().name(), "ShieldedTransfer");
+        assert_eq!(sample_shielded_withdrawal_st().name(), "ShieldedWithdrawal");
+
+        // Batch with a single Delete – exercises the nested DocumentTransition
+        // match arm in `name()`.
+        let batch_name = sample_batch_st_with_delete().name();
+        assert_eq!(batch_name, "DocumentsBatch([Delete])");
+
+        // Empty batch – still renders, with an empty list.
+        let empty_name = sample_batch_st_empty().name();
+        assert_eq!(empty_name, "DocumentsBatch([])");
+    }
+
+    // --- state_transition_type covers the call_method! dispatch. ---
+    #[test]
+    fn test_state_transition_type_for_newly_covered_variants() {
+        assert_eq!(
+            sample_data_contract_create_st().state_transition_type(),
+            StateTransitionType::DataContractCreate
+        );
+        assert_eq!(
+            sample_data_contract_update_st().state_transition_type(),
+            StateTransitionType::DataContractUpdate
+        );
+        assert_eq!(
+            sample_batch_st_with_delete().state_transition_type(),
+            StateTransitionType::Batch
+        );
+        assert_eq!(
+            sample_identity_create_st().state_transition_type(),
+            StateTransitionType::IdentityCreate
+        );
+        assert_eq!(
+            sample_identity_top_up_st().state_transition_type(),
+            StateTransitionType::IdentityTopUp
+        );
+        assert_eq!(
+            sample_identity_update_st().state_transition_type(),
+            StateTransitionType::IdentityUpdate
+        );
+        assert_eq!(
+            sample_unshield_st().state_transition_type(),
+            StateTransitionType::Unshield
+        );
+        assert_eq!(
+            sample_shielded_transfer_st().state_transition_type(),
+            StateTransitionType::ShieldedTransfer
+        );
+        assert_eq!(
+            sample_shielded_withdrawal_st().state_transition_type(),
+            StateTransitionType::ShieldedWithdrawal
+        );
+    }
+
+    // --- active_version_range uses different branches per transition
+    // "group". Exercises the contract-format V1 branch for
+    // DataContractCreate/Update (9..=LATEST), the BatchTransitionV0 branch
+    // (ALL_VERSIONS), and the shielded range (12..=LATEST).
+    #[test]
+    fn test_active_version_range_contract_and_shielded_branches() {
+        // DataContractCreate/Update on PlatformVersion::latest use the V1
+        // contract serialization format, which restricts active range.
+        let contract_v1_range = 9..=LATEST_VERSION;
+        assert_eq!(
+            sample_data_contract_create_st().active_version_range(),
+            contract_v1_range
+        );
+        let contract_v1_range = 9..=LATEST_VERSION;
+        assert_eq!(
+            sample_data_contract_update_st().active_version_range(),
+            contract_v1_range
+        );
+        // BatchTransition::V0 → ALL_VERSIONS
+        assert_eq!(
+            sample_batch_st_with_delete().active_version_range(),
+            ALL_VERSIONS
+        );
+        // IdentityCreate/TopUp/Update are ALL_VERSIONS.
+        assert_eq!(
+            sample_identity_create_st().active_version_range(),
+            ALL_VERSIONS
+        );
+        assert_eq!(
+            sample_identity_top_up_st().active_version_range(),
+            ALL_VERSIONS
+        );
+        assert_eq!(
+            sample_identity_update_st().active_version_range(),
+            ALL_VERSIONS
+        );
+        // Shielded variants report a shielded range (12..=LATEST_VERSION).
+        let shielded_range = 12..=LATEST_VERSION;
+        assert_eq!(
+            sample_shielded_transfer_st().active_version_range(),
+            shielded_range.clone()
+        );
+        assert_eq!(
+            sample_unshield_st().active_version_range(),
+            shielded_range.clone()
+        );
+        assert_eq!(
+            sample_shielded_withdrawal_st().active_version_range(),
+            shielded_range
+        );
+    }
+
+    // --- is_identity_signed exercises the inverted-match logic for the
+    // shielded / identity-create / topup variants. ---
+    #[test]
+    fn test_is_identity_signed_false_for_identity_create_topup_and_shielded() {
+        assert!(!sample_identity_create_st().is_identity_signed());
+        assert!(!sample_identity_top_up_st().is_identity_signed());
+        assert!(!sample_unshield_st().is_identity_signed());
+        assert!(!sample_shielded_transfer_st().is_identity_signed());
+        assert!(!sample_shielded_withdrawal_st().is_identity_signed());
+    }
+
+    // --- signature accessor for each arm that returns Some/None; previously
+    // only IdentityCreditTransfer / MasternodeVote / IdentityCreditWithdrawal
+    // were covered.
+    #[test]
+    fn test_signature_accessor_for_other_variants() {
+        // Some(_) arms
+        assert_eq!(
+            sample_data_contract_create_st().signature().unwrap().len(),
+            65
+        );
+        assert_eq!(
+            sample_data_contract_update_st().signature().unwrap().len(),
+            65
+        );
+        assert_eq!(sample_batch_st_with_delete().signature().unwrap().len(), 65);
+        assert_eq!(sample_identity_update_st().signature().unwrap().len(), 65);
+
+        // None arms for address / shielded variants.
+        assert!(sample_unshield_st().signature().is_none());
+        assert!(sample_shielded_transfer_st().signature().is_none());
+        assert!(sample_shielded_withdrawal_st().signature().is_none());
+    }
+
+    // --- owner_id accessor for each arm.
+    #[test]
+    fn test_owner_id_accessor_for_other_variants() {
+        assert_eq!(
+            sample_data_contract_create_st().owner_id(),
+            Some(Identifier::from([7u8; 32]))
+        );
+        assert_eq!(
+            sample_data_contract_update_st().owner_id(),
+            Some(Identifier::from([7u8; 32]))
+        );
+        assert_eq!(
+            sample_batch_st_with_delete().owner_id(),
+            Some(Identifier::from([8u8; 32]))
+        );
+        assert_eq!(
+            sample_identity_update_st().owner_id(),
+            Some(Identifier::from([5u8; 32]))
+        );
+        // These variants unconditionally return None.
+        assert!(sample_unshield_st().owner_id().is_none());
+        assert!(sample_shielded_transfer_st().owner_id().is_none());
+        assert!(sample_shielded_withdrawal_st().owner_id().is_none());
+    }
+
+    // --- user_fee_increase accessor — includes arms that return 0
+    // unconditionally (shielded/masternode) vs the variants' stored value.
+    #[test]
+    fn test_user_fee_increase_for_newly_covered_variants() {
+        assert_eq!(sample_data_contract_create_st().user_fee_increase(), 5);
+        assert_eq!(sample_data_contract_update_st().user_fee_increase(), 9);
+        assert_eq!(sample_batch_st_with_delete().user_fee_increase(), 2);
+        assert_eq!(sample_identity_update_st().user_fee_increase(), 11);
+        // Unconditionally 0 for shielded.
+        assert_eq!(sample_shielded_transfer_st().user_fee_increase(), 0);
+        assert_eq!(sample_shielded_withdrawal_st().user_fee_increase(), 0);
+        assert_eq!(sample_unshield_st().user_fee_increase(), 0);
+    }
+
+    // --- set_user_fee_increase for the no-op shielded arms and for the
+    // transitions that actually do store the value.
+    #[test]
+    fn test_set_user_fee_increase_for_newly_covered_variants() {
+        let mut st = sample_data_contract_create_st();
+        st.set_user_fee_increase(42);
+        assert_eq!(st.user_fee_increase(), 42);
+
+        let mut st = sample_data_contract_update_st();
+        st.set_user_fee_increase(13);
+        assert_eq!(st.user_fee_increase(), 13);
+
+        let mut st = sample_batch_st_with_delete();
+        st.set_user_fee_increase(101);
+        assert_eq!(st.user_fee_increase(), 101);
+
+        let mut st = sample_identity_update_st();
+        st.set_user_fee_increase(77);
+        assert_eq!(st.user_fee_increase(), 77);
+
+        // Shielded no-ops: value stays 0.
+        let mut shielded = sample_shielded_transfer_st();
+        shielded.set_user_fee_increase(99);
+        assert_eq!(shielded.user_fee_increase(), 0);
+
+        let mut withdrawal = sample_shielded_withdrawal_st();
+        withdrawal.set_user_fee_increase(99);
+        assert_eq!(withdrawal.user_fee_increase(), 0);
+
+        let mut unshield = sample_unshield_st();
+        unshield.set_user_fee_increase(99);
+        assert_eq!(unshield.user_fee_increase(), 0);
+    }
+
+    // --- set_signature: exercises the `true` arms we didn't test before
+    // (DataContractCreate/Update/Batch/IdentityUpdate) and the `false` arms
+    // (shielded transitions).
+    #[test]
+    fn test_set_signature_false_for_shielded_and_identity_create_topup() {
+        // `false` arms: shield*, shielded*, unshield, address* (no-op, returns false).
+        let mut st = sample_unshield_st();
+        assert!(!st.set_signature(BinaryData::new(vec![0xAB; 65])));
+        let mut st = sample_shielded_transfer_st();
+        assert!(!st.set_signature(BinaryData::new(vec![0xAB; 65])));
+        let mut st = sample_shielded_withdrawal_st();
+        assert!(!st.set_signature(BinaryData::new(vec![0xAB; 65])));
+    }
+
+    #[test]
+    fn test_set_signature_true_for_newly_covered_variants() {
+        let mut st = sample_data_contract_create_st();
+        assert!(st.set_signature(BinaryData::new(vec![0x11; 65])));
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x11; 65]);
+
+        let mut st = sample_data_contract_update_st();
+        assert!(st.set_signature(BinaryData::new(vec![0x22; 65])));
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x22; 65]);
+
+        let mut st = sample_batch_st_with_delete();
+        assert!(st.set_signature(BinaryData::new(vec![0x33; 65])));
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x33; 65]);
+
+        let mut st = sample_identity_update_st();
+        assert!(st.set_signature(BinaryData::new(vec![0x44; 65])));
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x44; 65]);
+    }
+
+    // --- signature_public_key_id: identity-signed arms return Some, others
+    // (shielded/identity-create/topup/address) return None.
+    #[test]
+    fn test_signature_public_key_id_returns_none_for_non_signed() {
+        // IdentityCreate / IdentityTopUp / shielded / address variants are all
+        // "not identity-signed" and return None.
+        assert!(sample_identity_create_st()
+            .signature_public_key_id()
+            .is_none());
+        assert!(sample_identity_top_up_st()
+            .signature_public_key_id()
+            .is_none());
+        assert!(sample_unshield_st().signature_public_key_id().is_none());
+        assert!(sample_shielded_transfer_st()
+            .signature_public_key_id()
+            .is_none());
+        assert!(sample_shielded_withdrawal_st()
+            .signature_public_key_id()
+            .is_none());
+    }
+
+    #[test]
+    fn test_signature_public_key_id_for_signed_variants() {
+        assert_eq!(
+            sample_data_contract_create_st().signature_public_key_id(),
+            Some(2)
+        );
+        assert_eq!(
+            sample_data_contract_update_st().signature_public_key_id(),
+            Some(6)
+        );
+        assert_eq!(
+            sample_batch_st_with_delete().signature_public_key_id(),
+            Some(7)
+        );
+        assert_eq!(
+            sample_identity_update_st().signature_public_key_id(),
+            Some(33)
+        );
+    }
+
+    // --- set_signature_public_key_id: no-op for IdentityCreate/TopUp and
+    // shielded variants; updates for identity-signed variants. ---
+    #[test]
+    fn test_set_signature_public_key_id_noop_for_non_signed() {
+        // These variants are not identity-signed; setter is a no-op in the
+        // call_method_identity_signed! macro.
+        let mut st = sample_identity_create_st();
+        st.set_signature_public_key_id(100);
+        assert_eq!(st.signature_public_key_id(), None);
+
+        let mut st = sample_identity_top_up_st();
+        st.set_signature_public_key_id(100);
+        assert_eq!(st.signature_public_key_id(), None);
+
+        let mut st = sample_unshield_st();
+        st.set_signature_public_key_id(100);
+        assert_eq!(st.signature_public_key_id(), None);
+    }
+
+    #[test]
+    fn test_set_signature_public_key_id_updates_for_signed_variants() {
+        let mut st = sample_data_contract_create_st();
+        st.set_signature_public_key_id(42);
+        assert_eq!(st.signature_public_key_id(), Some(42));
+
+        let mut st = sample_batch_st_with_delete();
+        st.set_signature_public_key_id(43);
+        assert_eq!(st.signature_public_key_id(), Some(43));
+
+        let mut st = sample_identity_update_st();
+        st.set_signature_public_key_id(44);
+        assert_eq!(st.signature_public_key_id(), Some(44));
+    }
+
+    // --- required_number_of_private_keys defaults to 1 for "signed" variants
+    // and 0 for shielded ones.
+    #[test]
+    fn test_required_number_of_private_keys_various_variants() {
+        assert_eq!(
+            sample_data_contract_create_st().required_number_of_private_keys(),
+            1
+        );
+        assert_eq!(
+            sample_data_contract_update_st().required_number_of_private_keys(),
+            1
+        );
+        assert_eq!(
+            sample_batch_st_with_delete().required_number_of_private_keys(),
+            1
+        );
+        assert_eq!(
+            sample_identity_update_st().required_number_of_private_keys(),
+            1
+        );
+        assert_eq!(
+            sample_identity_create_st().required_number_of_private_keys(),
+            1
+        );
+        // Shielded variants return 0 unconditionally.
+        assert_eq!(
+            sample_shielded_transfer_st().required_number_of_private_keys(),
+            0
+        );
+        assert_eq!(
+            sample_shielded_withdrawal_st().required_number_of_private_keys(),
+            0
+        );
+        assert_eq!(sample_unshield_st().required_number_of_private_keys(), 0);
+    }
+
+    // --- inputs(): None for all these variants (covers the big
+    // wildcard/None arm in the match).
+    #[test]
+    fn test_inputs_none_for_many_variants() {
+        assert!(sample_data_contract_create_st().inputs().is_none());
+        assert!(sample_data_contract_update_st().inputs().is_none());
+        assert!(sample_batch_st_with_delete().inputs().is_none());
+        assert!(sample_identity_create_st().inputs().is_none());
+        assert!(sample_identity_top_up_st().inputs().is_none());
+        assert!(sample_identity_update_st().inputs().is_none());
+        // Shielded variants also return None for inputs().
+        assert!(sample_unshield_st().inputs().is_none());
+        assert!(sample_shielded_transfer_st().inputs().is_none());
+        assert!(sample_shielded_withdrawal_st().inputs().is_none());
+    }
+
+    // --- optional_asset_lock_proof: None for everything that isn't
+    // IdentityCreate / IdentityTopUp / ShieldFromAssetLock. The IdentityCreate
+    // default contains the asset lock proof field, so this forwards to its
+    // implementation.
+    #[test]
+    fn test_optional_asset_lock_proof_returns_none_for_wildcard_arms() {
+        assert!(sample_data_contract_create_st()
+            .optional_asset_lock_proof()
+            .is_none());
+        assert!(sample_data_contract_update_st()
+            .optional_asset_lock_proof()
+            .is_none());
+        assert!(sample_batch_st_with_delete()
+            .optional_asset_lock_proof()
+            .is_none());
+        assert!(sample_identity_update_st()
+            .optional_asset_lock_proof()
+            .is_none());
+        assert!(sample_unshield_st().optional_asset_lock_proof().is_none());
+        assert!(sample_shielded_transfer_st()
+            .optional_asset_lock_proof()
+            .is_none());
+        assert!(sample_shielded_withdrawal_st()
+            .optional_asset_lock_proof()
+            .is_none());
+    }
+
+    // --- required_asset_lock_balance_for_processing_start returns an
+    // CorruptedCodeExecution error for non asset-lock variants. Exercise
+    // additional arms beyond what the original transfer test covered.
+    #[test]
+    fn test_required_asset_lock_balance_errors_for_other_non_asset_lock_variants() {
+        let platform_version = PlatformVersion::latest();
+
+        let cases: Vec<(&str, StateTransition)> = vec![
+            ("DataContractCreate", sample_data_contract_create_st()),
+            ("DataContractUpdate", sample_data_contract_update_st()),
+            ("Batch", sample_batch_st_with_delete()),
+            ("IdentityUpdate", sample_identity_update_st()),
+            ("MasternodeVote", sample_masternode_vote_st()),
+            ("Unshield", sample_unshield_st()),
+            ("ShieldedTransfer", sample_shielded_transfer_st()),
+            ("ShieldedWithdrawal", sample_shielded_withdrawal_st()),
+        ];
+
+        for (label, st) in cases {
+            let err = st
+                .required_asset_lock_balance_for_processing_start(platform_version)
+                .expect_err(&format!("expected error for {label}"));
+            match err {
+                ProtocolError::CorruptedCodeExecution(msg) => {
+                    assert!(
+                        msg.contains("is not an asset lock transaction"),
+                        "unexpected error for {label}: {msg}"
+                    );
+                }
+                other => panic!("expected CorruptedCodeExecution for {label}, got {other:?}"),
+            }
+        }
+    }
+
+    // --- unique_identifiers: covers the call_method! dispatch for arms
+    // beyond credit transfer. Each variant's `unique_identifiers`
+    // implementation returns a non-empty vector; the individual identifier
+    // strings may be empty for some variants whose IDs are encoded as empty
+    // (this method simply shouldn't panic or short-circuit).
+    #[test]
+    fn test_unique_identifiers_non_empty_for_other_variants() {
+        for st in [
+            sample_data_contract_create_st(),
+            sample_data_contract_update_st(),
+            sample_batch_st_with_delete(),
+            sample_identity_create_st(),
+            sample_identity_top_up_st(),
+            sample_identity_update_st(),
+        ] {
+            let ids = st.unique_identifiers();
+            assert!(!ids.is_empty(), "unique_identifiers should not be empty");
+        }
+    }
+
+    // --- security_level_requirement returns None for identity-create/topup
+    // and for every shielded/address variant. This hits the None arms in
+    // call_getter_method_identity_signed!.
+    #[test]
+    fn test_security_level_requirement_returns_none_for_non_signed_variants() {
+        let purpose = Purpose::AUTHENTICATION;
+        assert!(sample_identity_create_st()
+            .security_level_requirement(purpose)
+            .is_none());
+        assert!(sample_identity_top_up_st()
+            .security_level_requirement(purpose)
+            .is_none());
+        assert!(sample_unshield_st()
+            .security_level_requirement(purpose)
+            .is_none());
+        assert!(sample_shielded_transfer_st()
+            .security_level_requirement(purpose)
+            .is_none());
+        assert!(sample_shielded_withdrawal_st()
+            .security_level_requirement(purpose)
+            .is_none());
+    }
+
+    #[test]
+    fn test_purpose_requirement_returns_none_for_non_signed_variants() {
+        assert!(sample_identity_create_st().purpose_requirement().is_none());
+        assert!(sample_identity_top_up_st().purpose_requirement().is_none());
+        assert!(sample_unshield_st().purpose_requirement().is_none());
+        assert!(sample_shielded_transfer_st()
+            .purpose_requirement()
+            .is_none());
+        assert!(sample_shielded_withdrawal_st()
+            .purpose_requirement()
+            .is_none());
+    }
+
+    // --- From impls: each From<Outer> → StateTransition uses `derive_more::From`.
+    #[test]
+    fn test_from_outer_data_contract_create_into_state_transition() {
+        let outer: DataContractCreateTransition =
+            DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+                data_contract: sample_data_contract_in_serialization_format(),
+                identity_nonce: 1,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            });
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::DataContractCreate(_)));
+    }
+
+    #[test]
+    fn test_from_outer_data_contract_update_into_state_transition() {
+        let outer: DataContractUpdateTransition =
+            DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 2,
+                data_contract: sample_data_contract_in_serialization_format(),
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            });
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::DataContractUpdate(_)));
+    }
+
+    #[test]
+    fn test_from_outer_batch_into_state_transition() {
+        let outer: BatchTransition = BatchTransition::V0(BatchTransitionV0::default());
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::Batch(_)));
+    }
+
+    #[test]
+    fn test_from_outer_identity_create_into_state_transition() {
+        let outer: IdentityCreateTransition =
+            IdentityCreateTransition::V0(IdentityCreateTransitionV0::default());
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::IdentityCreate(_)));
+    }
+
+    #[test]
+    fn test_from_outer_identity_update_into_state_transition() {
+        let outer: IdentityUpdateTransition =
+            IdentityUpdateTransition::V0(IdentityUpdateTransitionV0::default());
+        let st: StateTransition = outer.into();
+        assert!(matches!(st, StateTransition::IdentityUpdate(_)));
+    }
+
+    // --- transaction_id + clone for additional variants — triggers the
+    // serialize path for each arm.
+    #[test]
+    fn test_transaction_id_and_clone_for_identity_update() {
+        let st = sample_identity_update_st();
+        let id_a = st.transaction_id().expect("hash should succeed");
+        let cloned = st.clone();
+        let id_b = cloned.transaction_id().expect("hash should succeed");
+        assert_eq!(id_a, id_b);
+        assert_eq!(id_a.len(), 32);
+    }
+
+    #[test]
+    fn test_transaction_id_and_clone_for_data_contract_create() {
+        let st = sample_data_contract_create_st();
+        let id_a = st.transaction_id().expect("hash should succeed");
+        let cloned = st.clone();
+        let id_b = cloned.transaction_id().expect("hash should succeed");
+        assert_eq!(id_a, id_b);
+        assert_eq!(id_a.len(), 32);
+    }
+
+    // --- serialize round-trip for variants beyond credit transfer. ---
+    #[test]
+    fn test_serialize_roundtrip_identity_update() {
+        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        let original = sample_identity_update_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
+        let restored =
+            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_serialize_roundtrip_data_contract_update() {
+        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        let original = sample_data_contract_update_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
+        let restored =
+            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_serialize_roundtrip_batch_empty() {
+        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        let original = sample_batch_st_empty();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
+        let restored =
+            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        assert_eq!(original, restored);
+    }
+
+    // --- deserialize_from_bytes_in_version error path: craft bytes for a
+    // variant whose `active_version_range()` starts at 11 or 12 and then
+    // attempt to deserialize them with a PlatformVersion whose protocol
+    // version is below that range. Exercises the
+    // `StateTransitionIsNotActiveError` arm.
+    // ---
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn test_deserialize_from_bytes_in_version_returns_not_active_error() {
+        use crate::serialization::PlatformSerializable;
+
+        // ShieldedTransfer has active_version_range = 12..=LATEST_VERSION.
+        let original = sample_shielded_transfer_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+
+        // Find a real PlatformVersion whose protocol_version is < 12 so the
+        // range check rejects it. PlatformVersion::get(1) corresponds to
+        // protocol version 1 which is guaranteed below any shielded range.
+        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        assert!(
+            low_version.protocol_version < 12,
+            "expected sub-12 version for this test, got {}",
+            low_version.protocol_version
+        );
+
+        let err = StateTransition::deserialize_from_bytes_in_version(&bytes, low_version)
+            .expect_err("expected StateTransitionIsNotActiveError for sub-12 protocol");
+        match err {
+            ProtocolError::StateTransitionError(
+                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                    state_transition_type,
+                    active_version_range,
+                    current_protocol_version,
+                },
+            ) => {
+                assert_eq!(state_transition_type, "ShieldedTransfer");
+                assert_eq!(current_protocol_version, low_version.protocol_version);
+                assert!(active_version_range.start() >= &12);
+            }
+            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
+        }
+    }
 }

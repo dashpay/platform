@@ -1059,4 +1059,262 @@ mod tests {
 
         assert_eq!(ext_doc.document_type_name, "profile");
     }
+
+    // ================================================================
+    //  from_untrusted_platform_value: fails when document type missing
+    // ================================================================
+
+    #[test]
+    fn from_untrusted_platform_value_fails_for_missing_type_name() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+
+        // Value with no $type field — should error out of remove_string
+        let val = Value::Map(vec![(
+            Value::Text("$id".to_string()),
+            Value::Identifier([1u8; 32]),
+        )]);
+
+        let result =
+            ExtendedDocumentV0::from_untrusted_platform_value(val, contract, platform_version);
+        assert!(
+            result.is_err(),
+            "missing $type should cause from_untrusted_platform_value to fail"
+        );
+    }
+
+    #[test]
+    fn from_untrusted_platform_value_fails_for_unknown_document_type() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+
+        // Value with $type that's not in the contract — document_type_for_name fails
+        let val = Value::Map(vec![
+            (
+                Value::Text("$type".to_string()),
+                Value::Text("doesNotExist".to_string()),
+            ),
+            (Value::Text("$id".to_string()), Value::Identifier([1u8; 32])),
+            (
+                Value::Text("$ownerId".to_string()),
+                Value::Identifier([2u8; 32]),
+            ),
+        ]);
+
+        let result =
+            ExtendedDocumentV0::from_untrusted_platform_value(val, contract, platform_version);
+        assert!(
+            result.is_err(),
+            "unknown document type name should cause error"
+        );
+    }
+
+    // ================================================================
+    //  from_trusted_platform_value: fails when document type missing
+    // ================================================================
+
+    #[test]
+    fn from_trusted_platform_value_fails_for_missing_type_name() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+
+        let val = Value::Map(vec![(
+            Value::Text("$id".to_string()),
+            Value::Identifier([1u8; 32]),
+        )]);
+
+        let result =
+            ExtendedDocumentV0::from_trusted_platform_value(val, contract, platform_version);
+        assert!(result.is_err());
+    }
+
+    // ================================================================
+    //  set_untrusted: exercises identifier-path, binary-path, and other branches
+    // ================================================================
+
+    #[test]
+    fn set_untrusted_non_identifier_non_binary_path_sets_raw_value() {
+        let platform_version = PlatformVersion::latest();
+        let (mut ext_doc, _) = make_extended_document(platform_version);
+
+        // "displayName" is neither an identifier path nor a binary path
+        ext_doc
+            .set_untrusted("displayName", Value::Text("Alice".to_string()))
+            .expect("set_untrusted should succeed for plain string field");
+
+        assert_eq!(
+            ext_doc.get_optional_value("displayName"),
+            Some(&Value::Text("Alice".to_string()))
+        );
+    }
+
+    // ================================================================
+    //  hash: differs when documents differ
+    // ================================================================
+
+    #[test]
+    fn hash_differs_for_different_documents() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_dashpay_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected profile document type");
+
+        let doc_a = document_type
+            .random_document(Some(1), platform_version)
+            .expect("random doc a");
+        let doc_b = document_type
+            .random_document(Some(2), platform_version)
+            .expect("random doc b");
+
+        let ext_a = ExtendedDocumentV0::from_document_with_additional_info(
+            doc_a,
+            contract.clone(),
+            "profile".to_string(),
+            None,
+        );
+        let ext_b = ExtendedDocumentV0::from_document_with_additional_info(
+            doc_b,
+            contract,
+            "profile".to_string(),
+            None,
+        );
+
+        let hash_a = ext_a.hash(platform_version).expect("hash a");
+        let hash_b = ext_b.hash(platform_version).expect("hash b");
+        assert_ne!(hash_a, hash_b, "hashes of different documents must differ");
+    }
+
+    // ================================================================
+    //  serialize_specific_version_to_bytes
+    // ================================================================
+
+    #[test]
+    fn serialize_specific_version_to_bytes_v0_succeeds() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let bytes = ext_doc
+            .serialize_specific_version_to_bytes(0, platform_version)
+            .expect("v0 serialization should succeed");
+        assert!(!bytes.is_empty());
+        // First byte should be the varint for 0
+        assert_eq!(bytes[0], 0);
+    }
+
+    #[test]
+    fn serialize_specific_version_to_bytes_rejects_unknown_version() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let result = ext_doc.serialize_specific_version_to_bytes(99, platform_version);
+        assert!(
+            matches!(
+                result,
+                Err(crate::ProtocolError::UnknownVersionMismatch { received: 99, .. })
+            ),
+            "unknown feature version should yield UnknownVersionMismatch, got {:?}",
+            result
+        );
+    }
+
+    // ================================================================
+    //  from_bytes deserialization error paths
+    // ================================================================
+
+    #[test]
+    fn from_bytes_empty_buffer_fails() {
+        let platform_version = PlatformVersion::latest();
+        let result = ExtendedDocumentV0::from_bytes(&[], platform_version);
+        assert!(
+            result.is_err(),
+            "empty buffer should fail ExtendedDocumentV0::from_bytes"
+        );
+    }
+
+    #[test]
+    fn from_bytes_unknown_version_fails() {
+        let platform_version = PlatformVersion::latest();
+        use integer_encoding::VarInt;
+        // Varint 42 followed by junk
+        let mut buf = 42u64.encode_var_vec();
+        buf.extend_from_slice(&[0u8; 32]);
+
+        let result = ExtendedDocumentV0::from_bytes(&buf, platform_version);
+        assert!(
+            matches!(
+                result,
+                Err(crate::ProtocolError::UnknownVersionMismatch { received: 42, .. })
+            ),
+            "unknown serialized version should yield UnknownVersionMismatch, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn from_bytes_v0_truncated_contract_fails() {
+        let platform_version = PlatformVersion::latest();
+        use integer_encoding::VarInt;
+        // Valid version prefix but no contract data at all — the contract
+        // deserialization should fail.
+        let buf = 0u64.encode_var_vec();
+
+        let result = ExtendedDocumentV0::from_bytes(&buf, platform_version);
+        assert!(
+            result.is_err(),
+            "truncated buffer (no contract) must fail deserialization"
+        );
+    }
+
+    // ================================================================
+    //  to_json / to_json_with_identifiers_using_bytes
+    // ================================================================
+
+    #[test]
+    fn to_json_includes_type_and_data_contract() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let json = ext_doc
+            .to_json(platform_version)
+            .expect("to_json should succeed");
+        let obj = json.as_object().expect("json object");
+        assert!(
+            obj.contains_key(property_names::DOCUMENT_TYPE_NAME),
+            "must contain $type"
+        );
+        assert!(
+            obj.contains_key(property_names::DATA_CONTRACT),
+            "must contain $dataContract"
+        );
+    }
+
+    #[test]
+    fn to_json_with_identifiers_using_bytes_includes_type_and_contract() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+
+        let json = ext_doc
+            .to_json_with_identifiers_using_bytes(platform_version)
+            .expect("to_json_with_identifiers_using_bytes should succeed");
+        let obj = json.as_object().expect("json object");
+        assert!(obj.contains_key(property_names::DOCUMENT_TYPE_NAME));
+        assert!(obj.contains_key(property_names::DATA_CONTRACT));
+    }
+
+    // ================================================================
+    //  to_map_value: token_payment_info is serialized when Some
+    // ================================================================
+
+    #[test]
+    fn to_map_value_omits_token_payment_info_when_none() {
+        let platform_version = PlatformVersion::latest();
+        let (ext_doc, _) = make_extended_document(platform_version);
+        assert!(ext_doc.token_payment_info.is_none());
+        let map = ext_doc.to_map_value().expect("to_map_value should succeed");
+        assert!(
+            !map.contains_key(property_names::TOKEN_PAYMENT_INFO),
+            "token_payment_info should be absent when None"
+        );
+    }
 }
