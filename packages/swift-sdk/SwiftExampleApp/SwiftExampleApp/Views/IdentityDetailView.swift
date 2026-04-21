@@ -701,23 +701,31 @@ struct DashPayProfileEditorView: View {
         }
     }
 
-    /// Submit the create / update transition. Avatar byte download is
-    /// not implemented yet — when the user supplies an `avatarUrl` the
-    /// on-chain `avatarHash` + `avatarFingerprint` are left empty,
-    /// matching what the Rust FFI does when `avatar_bytes` is null.
-    /// A follow-up can fetch the URL, compute the hashes, and pass
-    /// the raw bytes to the same entry point.
+    /// Submit the create / update transition.
+    ///
+    /// When the user enters an avatar URL, we fetch the image bytes
+    /// before submitting so the Rust side can compute the DIP-15
+    /// `avatarHash` (SHA-256) + `avatarFingerprint` (dHash 64-bit)
+    /// and include them in the on-chain document. Without the
+    /// accompanying bytes the URL would land on-chain but the two
+    /// integrity fields would be empty, which violates DIP-15 (the
+    /// contract requires them whenever `avatarUrl` is set).
+    ///
+    /// The fetch is skipped on update when the URL hasn't changed —
+    /// Rust-side `update_profile` preserves the existing cached hash
+    /// + fingerprint in that case, so there's no point re-downloading.
+    /// On create the fetch always runs when a URL is present.
     private func save() {
         let cleanedDisplay = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedMsg = publicMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedUrl = avatarUrl.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let update = DashPayProfileUpdate(
-            displayName: cleanedDisplay.isEmpty ? nil : cleanedDisplay,
-            publicMessage: cleanedMsg.isEmpty ? nil : cleanedMsg,
-            avatarUrl: cleanedUrl.isEmpty ? nil : cleanedUrl,
-            avatarBytes: nil
-        )
+        // Did the user set/change the avatar URL? If so we need to
+        // fetch bytes so Rust can compute the DIP-15 integrity hashes.
+        // On update + same URL, we skip — Rust preserves the existing
+        // cached hash/fingerprint.
+        let urlChanged = cleanedUrl != (existing?.avatarUrl ?? "")
+        let shouldFetchBytes = !cleanedUrl.isEmpty && (isCreating || urlChanged)
 
         isSaving = true
         errorMessage = nil
@@ -725,6 +733,20 @@ struct DashPayProfileEditorView: View {
         Task { @MainActor in
             defer { isSaving = false }
             do {
+                let avatarBytes: Data?
+                if shouldFetchBytes {
+                    avatarBytes = try await fetchAvatarBytes(urlString: cleanedUrl)
+                } else {
+                    avatarBytes = nil
+                }
+
+                let update = DashPayProfileUpdate(
+                    displayName: cleanedDisplay.isEmpty ? nil : cleanedDisplay,
+                    publicMessage: cleanedMsg.isEmpty ? nil : cleanedMsg,
+                    avatarUrl: cleanedUrl.isEmpty ? nil : cleanedUrl,
+                    avatarBytes: avatarBytes
+                )
+
                 // Resolve the wallet via the identity's `walletId`;
                 // fall back to `firstWallet` for legacy data rows
                 // that predate walletId denormalization.
@@ -751,6 +773,83 @@ struct DashPayProfileEditorView: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// Download the avatar image and return its raw bytes.
+    ///
+    /// Runs on the MainActor via `URLSession`. The returned bytes get
+    /// handed straight to the Rust side, which computes SHA-256 +
+    /// dHash and drops the bytes after embedding the hashes in the
+    /// profile document (see `DashPayProfileUpdate.avatarBytes` and
+    /// the Rust-side `calculate_avatar_hash` /
+    /// `calculate_dhash_fingerprint` helpers).
+    ///
+    /// Validates up-front:
+    /// - `urlString` parses as a URL (else `.avatarFetchFailed("invalid URL")`)
+    /// - Response is HTTP 2xx (else `.avatarFetchFailed("status N")`)
+    /// - Payload is at most [`avatarFetchMaxBytes`] so a hostile / huge
+    ///   image can't OOM the app; Rust then double-checks by trying to
+    ///   decode it as an image inside `calculate_dhash_fingerprint`.
+    ///
+    /// A 15-second timeout applies (see `avatarFetchTimeout`) to keep
+    /// the save-in-flight UI responsive — the default `URLSession`
+    /// timeout is 60s which feels broken inside an editor sheet.
+    private func fetchAvatarBytes(urlString: String) async throws -> Data {
+        guard let url = URL(string: urlString) else {
+            throw DashPayProfileEditorError.avatarFetchFailed("Invalid URL: \(urlString)")
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = Self.avatarFetchTimeout
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw DashPayProfileEditorError.avatarFetchFailed(
+                "Download failed: \(error.localizedDescription)"
+            )
+        }
+
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw DashPayProfileEditorError.avatarFetchFailed(
+                "HTTP status \(http.statusCode) from \(url.host ?? urlString)"
+            )
+        }
+
+        if data.count > Self.avatarFetchMaxBytes {
+            throw DashPayProfileEditorError.avatarFetchFailed(
+                "Image too large (\(data.count) bytes, max \(Self.avatarFetchMaxBytes))"
+            )
+        }
+
+        return data
+    }
+
+    /// 15-second timeout for the avatar download. Tuned for a modal
+    /// editor sheet — anything longer starts to feel broken while
+    /// `isSaving` is true.
+    private static let avatarFetchTimeout: TimeInterval = 15
+
+    /// Max avatar byte count we'll accept from the network. 1 MiB
+    /// covers typical PNG/JPEG avatars with headroom; larger files
+    /// are almost certainly not a genuine avatar and risk OOM when
+    /// ferried through the FFI or decoded by the `image` crate on
+    /// the Rust side.
+    private static let avatarFetchMaxBytes = 1 * 1024 * 1024
+}
+
+/// Typed errors emitted by `DashPayProfileEditorView`.
+///
+/// Currently only the avatar-fetch path throws; the FFI path throws
+/// its own `PlatformWalletError` so we don't wrap those.
+enum DashPayProfileEditorError: LocalizedError {
+    case avatarFetchFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .avatarFetchFailed(let detail):
+            return "Avatar download failed: \(detail)"
         }
     }
 }
