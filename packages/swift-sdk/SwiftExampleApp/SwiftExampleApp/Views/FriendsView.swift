@@ -638,6 +638,20 @@ struct SendDashPayPaymentSheet: View {
     @State private var errorMessage: String?
     @State private var successTxid: Data?
 
+    /// Cached recipient profile resolved from the platform-wallet
+    /// cache on appear. Empty until the first lookup completes; the
+    /// recipient section falls back to the `DashPayContact` fields
+    /// until then so the sheet doesn't flicker.
+    @State private var recipientProfile: DashPayProfile?
+    @State private var recipientDpnsName: String?
+
+    /// Sender's current Core balance (spendable duffs). Pulled from
+    /// the Core wallet's lock-free balance on appear so the user
+    /// can see what they actually have before submitting. `nil`
+    /// while the async fetch is in flight or if the wallet handle
+    /// can't be resolved.
+    @State private var senderBalanceDuffs: UInt64?
+
     /// DASH → duffs. Returns nil when the input isn't a parseable
     /// non-negative decimal or overflows `UInt64`.
     private var amountDuffs: UInt64? {
@@ -656,18 +670,100 @@ struct SendDashPayPaymentSheet: View {
         return roundTrip == duffsDecimal ? duffs : nil
     }
 
+    /// Pretty name to show in the "To" section. Prefers the
+    /// DashPay profile's display name, then the identity's DPNS
+    /// label, then the contact's stored display name (truncated
+    /// hex by default). Recalculated whenever the resolved
+    /// profile / DPNS changes.
+    private var recipientDisplayName: String {
+        if let trimmed = recipientProfile?.displayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            return trimmed
+        }
+        if let dpns = recipientDpnsName, !dpns.isEmpty {
+            return dpns
+        }
+        return contact.displayName
+    }
+
+    /// Subtitle on the recipient row: public message if present,
+    /// else DPNS (when the headline is already the profile name),
+    /// else the truncated hex id.
+    private var recipientSubtitle: String? {
+        if let msg = recipientProfile?.publicMessage?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !msg.isEmpty {
+            return msg
+        }
+        if let dpns = recipientDpnsName,
+           recipientProfile?.displayName?.isEmpty == false {
+            return dpns
+        }
+        return String(contact.identityId.toHexString().prefix(20)) + "…"
+    }
+
+    /// "1.23456789 DASH" — only rendered when we have a balance
+    /// number to show.
+    private var senderBalanceText: String? {
+        guard let duffs = senderBalanceDuffs else { return nil }
+        let dash = Double(duffs) / 100_000_000
+        return String(format: "%.8f DASH", dash)
+    }
+
+    /// Duffs available for spending, minus the current amount
+    /// input. `nil` when either the balance hasn't loaded or the
+    /// amount input doesn't parse. Used to flag over-spends in the
+    /// validation row + disable the Send button.
+    private var exceedsBalance: Bool {
+        guard let balance = senderBalanceDuffs,
+              let duffs = amountDuffs else {
+            return false
+        }
+        return duffs > balance
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("To") {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(contact.displayName)
-                            .font(.headline)
-                        Text(contact.identityId.toHexString().prefix(20) + "…")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 10) {
+                            if let url = recipientProfile?.avatarUrl
+                                .flatMap({ URL(string: $0) }) {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image {
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                    } else {
+                                        Color.blue.opacity(0.15)
+                                    }
+                                }
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                            } else {
+                                Circle()
+                                    .fill(Color.blue.opacity(0.2))
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Text(recipientDisplayName.prefix(1).uppercased())
+                                            .font(.headline)
+                                            .foregroundColor(.blue)
+                                    )
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(recipientDisplayName)
+                                    .font(.headline)
+                                if let sub = recipientSubtitle {
+                                    Text(sub)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -676,8 +772,24 @@ struct SendDashPayPaymentSheet: View {
                         .keyboardType(.decimalPad)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                    if let balanceText = senderBalanceText {
+                        HStack {
+                            Text("Your balance")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(balanceText)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(exceedsBalance ? .red : .secondary)
+                        }
+                    }
                     if !amountText.isEmpty, amountDuffs == nil {
                         Text("Enter a valid decimal Dash amount")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    } else if exceedsBalance {
+                        Text("Amount exceeds your spendable balance")
                             .font(.caption)
                             .foregroundColor(.red)
                     }
@@ -713,10 +825,71 @@ struct SendDashPayPaymentSheet: View {
                         ProgressView()
                     } else {
                         Button("Send") { send() }
-                            .disabled(amountDuffs == nil || (amountDuffs ?? 0) == 0)
+                            .disabled(
+                                amountDuffs == nil
+                                || (amountDuffs ?? 0) == 0
+                                || exceedsBalance
+                            )
                     }
                 }
             }
+            .task {
+                await loadRecipientMetadata()
+                await loadSenderBalance()
+            }
+        }
+    }
+
+    /// Resolve the recipient's profile + DPNS label from the
+    /// platform-wallet cache. Both are in-memory cache reads (no
+    /// network roundtrips) — the profile came from
+    /// `syncDashPayProfiles` and the DPNS label from any prior
+    /// `syncDpnsNames` for that identity. When the cache is empty
+    /// we fall back to the hex id display in the computed
+    /// properties above.
+    ///
+    /// We do NOT trigger a network sync here — opening a payment
+    /// sheet for every contact would spam the wallet; recipient
+    /// profiles refresh whenever the parent `FriendsView` runs its
+    /// own sync on appear.
+    private func loadRecipientMetadata() async {
+        guard let walletId = senderIdentity.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            return
+        }
+        do {
+            recipientProfile = try wallet.getDashPayProfile(identityId: contact.identityId)
+        } catch {
+            // Profile isn't cached — stay with fallback rendering.
+            recipientProfile = nil
+        }
+        do {
+            let managed = try wallet.managedIdentity(identityId: contact.identityId)
+            let names = (try? managed.getDpnsNames()) ?? []
+            recipientDpnsName = names.first
+        } catch {
+            // The recipient isn't a managed identity on this
+            // wallet (they're a contact, not an owned identity).
+            // That's the common case; leave DPNS unset.
+            recipientDpnsName = nil
+        }
+    }
+
+    /// Fetch the sender wallet's current Core balance so the
+    /// amount row can show "spendable: X DASH" and block submits
+    /// that exceed it. Uses the lock-free balance accessor —
+    /// atomic reads, no async work.
+    private func loadSenderBalance() async {
+        guard let walletId = senderIdentity.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            senderBalanceDuffs = nil
+            return
+        }
+        do {
+            let balance = try wallet.balance()
+            senderBalanceDuffs = balance.spendable
+        } catch {
+            senderBalanceDuffs = nil
         }
     }
 
