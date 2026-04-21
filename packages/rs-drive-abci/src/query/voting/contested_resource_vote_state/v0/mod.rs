@@ -315,4 +315,87 @@ mod tests {
             [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
         ));
     }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_contract_not_found_prove() {
+        // Exercises the prove branch dispatch when the contract is missing.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 32],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // The contract-not-found check fires before the prove split, so this
+        // still returns a DataContractNotFound error.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_count_zero_rejected() {
+        // count = 0 must be rejected as out-of-bounds.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 8], // fail before the contract is needed
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: Some(0),
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // The contract_id check runs first; contract_id (vec![0; 8]) is invalid.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_count_out_of_bounds_u16() {
+        // count overflowing u16 should flag "limit out of bounds" - but
+        // contract_id validation runs first, so this primarily guards against
+        // changes that reorder validation.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 8],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: Some((u16::MAX as u32) + 1),
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(!result.errors.is_empty());
+    }
 }
