@@ -393,7 +393,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
 }
 
 /// Shared body for `create` / `update`. `do_create` picks between the
-/// two operation paths in `DashPayWallet`. On success the caller owns
+/// two operation paths on `IdentityWallet`. On success the caller owns
 /// strings inside `out_profile` and must free them with
 /// [`dashpay_profile_ffi_free`].
 unsafe fn create_or_update_profile(
