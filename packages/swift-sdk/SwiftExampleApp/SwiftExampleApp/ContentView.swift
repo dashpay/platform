@@ -4,7 +4,7 @@ import SwiftData
 import LocalAuthentication
 
 enum RootTab: Hashable {
-    case sync, wallets, friends, platform, settings
+    case sync, wallets, identities, friends, settings
 }
 
 struct ContentView: View {
@@ -74,28 +74,28 @@ struct ContentView: View {
                     }
                     .tag(RootTab.sync)
 
-                // Tab 2: Wallets (includes identities)
+                // Tab 2: Wallets
                 WalletsTabView()
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
                     }
                     .tag(RootTab.wallets)
 
-                // Tab 3: Friends
+                // Tab 3: Identities
+                IdentitiesTabView()
+                    .tabItem {
+                        Label("Identities", systemImage: "person.crop.circle")
+                    }
+                    .tag(RootTab.identities)
+
+                // Tab 4: Friends
                 FriendsView()
                     .tabItem {
                         Label("Friends", systemImage: "person.2")
                     }
                     .tag(RootTab.friends)
 
-                // Tab 4: Platform
-                PlatformView()
-                    .tabItem {
-                        Label("Platform", systemImage: "network")
-                    }
-                    .tag(RootTab.platform)
-
-                // Tab 5: Settings
+                // Tab 5: Settings (includes Platform section)
                 SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
@@ -356,6 +356,14 @@ struct WalletsTabView: View {
     var body: some View {
         NavigationStack {
             WalletsContentView()
+        }
+    }
+}
+
+struct IdentitiesTabView: View {
+    var body: some View {
+        NavigationStack {
+            IdentitiesContentView()
         }
     }
 }

@@ -10,6 +10,8 @@ struct OptionsView: View {
     @State private var showingAbout = false
     @State private var showingContracts = false
     @State private var isSwitchingNetwork = false
+    @State private var sdkStatus: SDKStatus?
+    @State private var isLoadingStatus = false
 
     var body: some View {
         NavigationView {
@@ -131,6 +133,65 @@ struct OptionsView: View {
                     }
                 }
 
+                Section(header: Text("Platform")) {
+                    NavigationLink(destination: PlatformQueriesView()) {
+                        Label("Queries", systemImage: "magnifyingglass")
+                    }
+
+                    NavigationLink(destination: PlatformStateTransitionsView()) {
+                        Label("State Transitions", systemImage: "arrow.up.arrow.down")
+                    }
+
+                    HStack {
+                        Text("SDK Initialized")
+                        Spacer()
+                        Image(systemName: appState.sdk != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(appState.sdk != nil ? .green : .red)
+                    }
+
+                    if let status = sdkStatus {
+                        HStack {
+                            Text("Version")
+                            Spacer()
+                            Text(status.version)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Network")
+                            Spacer()
+                            Text(status.network.capitalized)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Mode")
+                            Spacer()
+                            Text(status.mode.uppercased())
+                                .foregroundColor(status.mode == "trusted" ? .blue : .orange)
+                        }
+
+                        HStack {
+                            Text("Quorums in Memory")
+                            Spacer()
+                            Text("\(status.quorumCount)")
+                                .foregroundColor(status.quorumCount > 0 ? .green : .red)
+                        }
+                    }
+
+                    Button(action: loadSDKStatus) {
+                        HStack {
+                            Label("Refresh SDK Status", systemImage: "arrow.clockwise")
+                            Spacer()
+                            if isLoadingStatus {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                        }
+                    }
+                    .disabled(isLoadingStatus)
+                }
+
                 Section("Developer") {
                     Toggle("Show Test Data", isOn: .constant(false))
                         .disabled(true)
@@ -176,6 +237,7 @@ struct OptionsView: View {
             .navigationTitle("Options")
             .task {
                 await loadDataStatistics()
+                loadSDKStatus()
             }
             .sheet(isPresented: $showingDataManagement) {
                 DataManagementView()
@@ -191,6 +253,30 @@ struct OptionsView: View {
         if let stats = await appState.getDataStatistics() {
             await MainActor.run {
                 appState.dataStatistics = stats
+            }
+        }
+    }
+
+    /// Fetch the SDK version / network / mode / quorum count for
+    /// display in the Platform section. Called once on appear and
+    /// on demand via the refresh button.
+    private func loadSDKStatus() {
+        guard let sdk = appState.sdk else { return }
+
+        isLoadingStatus = true
+
+        Task {
+            do {
+                let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
+                await MainActor.run {
+                    self.sdkStatus = status
+                    self.isLoadingStatus = false
+                }
+            } catch {
+                print("Failed to get SDK status: \(error)")
+                await MainActor.run {
+                    self.isLoadingStatus = false
+                }
             }
         }
     }

@@ -1,7 +1,9 @@
 // WalletsContentView.swift
 // SwiftExampleApp
 //
-// Combined wallets + identities screen (Tab 2).
+// Wallets-only tab content. Identities live in the sibling
+// `IdentitiesContentView` tab so users navigate to the right place
+// instead of scrolling through a combined list.
 
 import SwiftUI
 import SwiftDashSDK
@@ -14,12 +16,9 @@ struct WalletsContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
     @State private var showingCreateWallet = false
-    @State private var showingLoadIdentity = false
-    @State private var showingCreateIdentity = false
 
     var body: some View {
         List {
-            // Section 1: Wallets
             Section("Wallets (\(platformState.currentNetwork.displayName))") {
                 if wallets.isEmpty {
                     VStack(spacing: 12) {
@@ -57,73 +56,12 @@ struct WalletsContentView: View {
                     }
                 }
             }
-
-            // Section 2: Identities
-            Section("Identities") {
-                if platformState.identities.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "person.crop.circle.badge.plus")
-                            .font(.system(size: 40))
-                            .foregroundColor(.gray)
-
-                        Text("No Identities")
-                            .font(.headline)
-
-                        Text("Load an identity to interact with Dash Platform")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        HStack(spacing: 12) {
-                            Button {
-                                showingCreateIdentity = true
-                            } label: {
-                                Label("Create Identity", systemImage: "person.crop.circle.badge.plus")
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button {
-                                showingLoadIdentity = true
-                            } label: {
-                                Label("Load Identity", systemImage: "square.and.arrow.down")
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                } else {
-                    ForEach(platformState.identities) { identity in
-                        IdentityRow(identity: identity)
-                            .environmentObject(platformState)
-                    }
-                }
-            }
         }
         .navigationTitle("Wallets")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button {
-                        showingCreateWallet = true
-                    } label: {
-                        Label("Create Wallet", systemImage: "plus")
-                    }
-
-                    Button {
-                        showingCreateIdentity = true
-                    } label: {
-                        Label("Create Identity", systemImage: "person.crop.circle.badge.plus")
-                    }
-
-                    Button {
-                        showingLoadIdentity = true
-                    } label: {
-                        Label("Load Identity", systemImage: "square.and.arrow.down")
-                    }
+                Button {
+                    showingCreateWallet = true
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -133,14 +71,6 @@ struct WalletsContentView: View {
             NavigationStack {
                 CreateWalletView()
             }
-        }
-        .sheet(isPresented: $showingLoadIdentity) {
-            LoadIdentityView()
-                .environmentObject(platformState)
-        }
-        .sheet(isPresented: $showingCreateIdentity) {
-            CreateIdentityView()
-                .environmentObject(platformState)
         }
         .refreshable {
             await platformBalanceSyncService.performSync()
