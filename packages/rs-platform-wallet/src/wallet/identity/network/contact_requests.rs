@@ -15,8 +15,9 @@ use dash_sdk::platform::dashpay::EcdhProvider;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::dashpay::contact_request::ContactRequest;
-use crate::wallet::dashpay::established_contact::EstablishedContact;
+use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
+use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
+use crate::wallet::signer::IdentitySigner;
 use dash_sdk::platform::dashpay::SendContactRequestInput;
 
 // ---------------------------------------------------------------------------

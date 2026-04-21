@@ -22,20 +22,15 @@ pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::core::CoreWallet;
 pub use wallet::core::WalletBalance;
-pub use wallet::dashpay::ContactRequest;
-pub use wallet::dashpay::EstablishedContact;
-pub use wallet::dashpay::{
-    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, ContactXpubData,
-    DEFAULT_CONTACT_GAP_LIMIT,
-};
-pub use wallet::identity::managed_identity::BlockTime;
-pub use wallet::identity::IdentityManager;
-pub use wallet::identity::ManagedIdentity;
-pub use wallet::identity::WatchedIdentity;
+// DashPay types + crypto helpers re-exported through the identity
+// domain (they live under `identity::types::dashpay::*` and
+// `identity::crypto::*` internally).
 pub use wallet::identity::{
-    DpnsNameInfo, IdentityFunding, IdentityFundingMethod, IdentityStatus, KeyStorage,
-    PrivateKeyData, TopUpFundingMethod,
+    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
+    derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
+    ContactXpubData, DpnsNameInfo, EstablishedContact, IdentityFunding, IdentityFundingMethod,
+    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData,
+    TopUpFundingMethod, WatchedIdentity, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::ManagedIdentitySigner;

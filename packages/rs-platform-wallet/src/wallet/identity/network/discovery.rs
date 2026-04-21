@@ -32,9 +32,9 @@ impl IdentityWallet {
     /// returned. The `last_scanned_index` is updated so subsequent calls
     /// resume where this one left off.
     pub async fn sync(&self) -> Result<Vec<Identity>, PlatformWalletError> {
-        use super::super::managed_identity::key_storage::DpnsNameInfo;
-        use super::super::managed_identity::key_storage::IdentityStatus;
-        use super::super::managed_identity::key_storage::PrivateKeyData;
+        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
+        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
+        use crate::wallet::identity::state::managed_identity::key_storage::PrivateKeyData;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

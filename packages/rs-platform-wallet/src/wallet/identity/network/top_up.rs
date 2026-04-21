@@ -10,7 +10,7 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
 use crate::error::PlatformWalletError;
 
-use crate::wallet::identity::funding::TopUpFundingMethod;
+use crate::wallet::identity::types::funding::TopUpFundingMethod;
 
 use super::*;
 

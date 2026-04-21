@@ -14,7 +14,7 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
-use crate::wallet::identity::wallet::IdentityWallet;
+use crate::wallet::identity::network::IdentityWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// A signer that uses wallet-derived keys to sign identity state transitions.
@@ -165,7 +165,7 @@ impl std::fmt::Debug for IdentitySigner {
 // ManagedIdentitySigner
 // ---------------------------------------------------------------------------
 
-use crate::wallet::identity::managed_identity::key_storage::{KeyStorage, PrivateKeyData};
+use crate::wallet::identity::state::managed_identity::key_storage::{KeyStorage, PrivateKeyData};
 
 /// Signer that resolves keys from a [`ManagedIdentity`]'s `key_storage`.
 ///

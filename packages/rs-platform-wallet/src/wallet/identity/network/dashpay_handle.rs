@@ -15,7 +15,6 @@ use tokio::sync::RwLock;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::wallet::signer::IdentitySigner;
 
 /// DashPay wallet providing contact request and payment functionality.
 ///
@@ -68,7 +67,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     ///
     /// The encryption key must be of type ECDSA_SECP256K1 or ECDSA_HASH160;
     /// other key types are not supported for ECDH derivation.
-    fn derive_encryption_private_key(
+    pub(super) fn derive_encryption_private_key(
         wallet: &Wallet,
         network: key_wallet::Network,
         identity_index: u32,
@@ -148,14 +147,3 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// Sub-modules — each groups a coherent set of DashPay operations. See the
-// per-file doc comment for what lives where.
-// ---------------------------------------------------------------------------
-
-mod account_labels;
-mod contact_requests;
-mod contacts;
-mod payments;
-mod profile;

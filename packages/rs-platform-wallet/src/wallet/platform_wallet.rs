@@ -15,7 +15,6 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance};
-use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
@@ -24,6 +23,7 @@ use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use crate::wallet::identity::DashPayWallet;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];

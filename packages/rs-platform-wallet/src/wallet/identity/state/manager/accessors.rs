@@ -9,7 +9,7 @@
 use super::IdentityManager;
 use crate::changeset::IdentityChangeSet;
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::managed_identity::ManagedIdentity;
+use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;

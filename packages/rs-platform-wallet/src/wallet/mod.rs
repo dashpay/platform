@@ -1,7 +1,6 @@
 pub mod apply;
 pub mod asset_lock;
 pub mod core;
-pub mod dashpay;
 pub mod identity;
 pub mod persister;
 pub mod platform_addresses;
@@ -14,8 +13,7 @@ pub mod tokens;
 
 pub use self::core::CoreWallet;
 pub use apply::ApplyError;
-pub use dashpay::DashPayWallet;
-pub use identity::IdentityWallet;
+pub use identity::{DashPayWallet, IdentityWallet};
 pub use platform_addresses::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
     PlatformAddressWallet,

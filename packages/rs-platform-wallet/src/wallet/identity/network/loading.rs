@@ -29,9 +29,9 @@ impl IdentityWallet {
         &self,
         identity_index: u32,
     ) -> Result<Option<Identity>, PlatformWalletError> {
-        use super::super::managed_identity::key_storage::DpnsNameInfo;
-        use super::super::managed_identity::key_storage::IdentityStatus;
-        use super::super::managed_identity::key_storage::PrivateKeyData;
+        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
+        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
+        use crate::wallet::identity::state::managed_identity::key_storage::PrivateKeyData;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
         use dpp::util::hash::ripemd160_sha256;
@@ -188,7 +188,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        use super::super::managed_identity::key_storage::IdentityStatus;
+        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::Fetch;
 
         // Verify identity exists in the manager.
@@ -266,7 +266,7 @@ impl IdentityWallet {
     /// for its current DPNS usernames, and replaces the stored
     /// `dpns_names` list with the fresh results.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
-        use super::super::managed_identity::key_storage::DpnsNameInfo;
+        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
 
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {

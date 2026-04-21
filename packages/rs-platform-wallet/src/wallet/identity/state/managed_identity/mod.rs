@@ -3,18 +3,22 @@
 //! This module provides the `ManagedIdentity` struct which wraps a Platform Identity
 //! with additional metadata for wallet management.
 
-mod block_time;
 mod contact_requests;
 mod contacts;
 mod identity_ops;
-pub mod key_storage;
 mod label;
 mod sync;
 
-pub use block_time::BlockTime;
-pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData, WatchedIdentity};
+// `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
+// Re-export so every `impl ManagedIdentity` block below keeps working
+// unchanged and external users can still reach them through the old
+// `state::managed_identity::*` path.
+pub use crate::wallet::identity::types::block_time::{self, BlockTime};
+pub use crate::wallet::identity::types::key_storage::{
+    self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData, WatchedIdentity,
+};
 
-use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
+use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;

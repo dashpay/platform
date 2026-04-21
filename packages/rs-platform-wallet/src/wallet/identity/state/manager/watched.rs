@@ -6,7 +6,7 @@
 
 use super::IdentityManager;
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::managed_identity::{IdentityStatus, WatchedIdentity};
+use crate::wallet::identity::state::managed_identity::{IdentityStatus, WatchedIdentity};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;

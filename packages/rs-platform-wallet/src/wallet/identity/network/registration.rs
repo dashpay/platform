@@ -21,10 +21,10 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
 use crate::error::PlatformWalletError;
 
-use crate::wallet::identity::funding::IdentityFunding;
+use crate::wallet::identity::types::funding::IdentityFunding;
 
 use super::*;
-use crate::wallet::identity::funding::IdentityFundingMethod;
+use crate::wallet::identity::types::funding::IdentityFundingMethod;
 
 // ---------------------------------------------------------------------------
 // Identity registration

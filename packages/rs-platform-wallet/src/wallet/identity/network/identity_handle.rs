@@ -25,14 +25,14 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
 /// Default gap limit for identity discovery scanning.
-pub(super) const IDENTITY_GAP_LIMIT: u32 = 5;
+pub(crate) const IDENTITY_GAP_LIMIT: u32 = 5;
 
 /// Derive the 20-byte RIPEMD160(SHA256) hash of the public key at the given
 /// identity authentication path.
 ///
 /// Path format: `base_path / key_type' / identity_index' / key_index'`
 /// where `base_path` is `m/9'/COIN_TYPE'/5'/0'` (mainnet or testnet).
-pub(super) fn derive_identity_auth_key_hash(
+pub(crate) fn derive_identity_auth_key_hash(
     wallet: &Wallet,
     network: key_wallet::Network,
     identity_index: u32,
@@ -261,7 +261,7 @@ impl IdentityWallet {
     /// For instant proofs, this is the txid of the embedded transaction
     /// combined with the output index from the proof.
     /// For chain proofs, this is the out_point directly.
-    fn out_point_from_proof(proof: &AssetLockProof) -> Option<dashcore::OutPoint> {
+    pub(super) fn out_point_from_proof(proof: &AssetLockProof) -> Option<dashcore::OutPoint> {
         match proof {
             AssetLockProof::Instant(instant) => Some(dashcore::OutPoint::new(
                 instant.transaction().txid(),
@@ -277,20 +277,3 @@ impl std::fmt::Debug for IdentityWallet {
         f.debug_struct("IdentityWallet").finish()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Sub-modules — each groups a coherent set of identity operations. See the
-// per-file doc comment for what lives where.
-// ---------------------------------------------------------------------------
-
-mod discovery;
-mod dpns;
-mod loading;
-mod register_from_addresses;
-mod registration;
-mod top_up;
-mod top_up_from_addresses;
-mod transfer;
-mod transfer_to_addresses;
-mod update;
-mod withdrawal;

@@ -340,9 +340,9 @@ mod tests {
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::core::WalletBalance;
-    use crate::wallet::dashpay::{ContactRequest, EstablishedContact};
-    use crate::wallet::identity::managed_identity::ManagedIdentity;
+    use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
+    use crate::wallet::identity::{ContactRequest, EstablishedContact};
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -870,7 +870,7 @@ mod tests {
 
     #[test]
     fn round_trip_dpns_name() {
-        use crate::wallet::identity::managed_identity::DpnsNameInfo;
+        use crate::wallet::identity::state::managed_identity::DpnsNameInfo;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
@@ -924,7 +924,7 @@ mod tests {
 
     #[test]
     fn round_trip_block_time_updates() {
-        use crate::wallet::identity::managed_identity::BlockTime;
+        use crate::wallet::identity::state::managed_identity::BlockTime;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
@@ -1344,7 +1344,7 @@ mod tests {
 
     #[test]
     fn round_trip_set_dashpay_profile() {
-        use crate::wallet::dashpay::DashPayProfile;
+        use crate::wallet::identity::DashPayProfile;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
@@ -1394,7 +1394,7 @@ mod tests {
 
     #[test]
     fn round_trip_record_dashpay_payment() {
-        use crate::wallet::dashpay::PaymentEntry;
+        use crate::wallet::identity::PaymentEntry;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
@@ -1440,7 +1440,7 @@ mod tests {
 
     #[test]
     fn round_trip_payment_status_update_overwrites() {
-        use crate::wallet::dashpay::{PaymentEntry, PaymentStatus};
+        use crate::wallet::identity::{PaymentEntry, PaymentStatus};
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
@@ -1503,7 +1503,7 @@ mod tests {
 
     #[test]
     fn round_trip_clear_dashpay_profile() {
-        use crate::wallet::dashpay::DashPayProfile;
+        use crate::wallet::identity::DashPayProfile;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);

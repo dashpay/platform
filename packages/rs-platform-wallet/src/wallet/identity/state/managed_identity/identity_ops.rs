@@ -62,7 +62,7 @@ impl ManagedIdentity {
     /// can be deleted.
     pub fn set_dashpay_profile(
         &mut self,
-        profile: Option<crate::wallet::dashpay::DashPayProfile>,
+        profile: Option<crate::wallet::identity::DashPayProfile>,
         persister: &WalletPersister,
     ) {
         self.dashpay_profile = profile;
@@ -86,7 +86,7 @@ impl ManagedIdentity {
     pub fn record_dashpay_payment(
         &mut self,
         tx_id: String,
-        entry: crate::wallet::dashpay::PaymentEntry,
+        entry: crate::wallet::identity::PaymentEntry,
         persister: &WalletPersister,
     ) {
         self.dashpay_payments.insert(tx_id, entry);

@@ -5,7 +5,7 @@ use dpp::prelude::Identifier;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::dashpay::payment::DashpayAddressMatch;
+use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 
 // ---------------------------------------------------------------------------
 // Incoming payment recording
@@ -44,7 +44,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&owner_id) {
                         managed.record_dashpay_payment(
                             txid,
-                            super::super::payment::PaymentEntry::new_received(
+                            crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_received(
                                 contact_id, value, None,
                             ),
                             &this.persister,
@@ -94,7 +94,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
         to_contact_id: &Identifier,
         amount_duffs: u64,
         memo: Option<String>,
-    ) -> Result<(dashcore::Txid, super::super::payment::PaymentEntry), PlatformWalletError> {
+    ) -> Result<
+        (
+            dashcore::Txid,
+            crate::wallet::identity::types::dashpay::payment::PaymentEntry,
+        ),
+        PlatformWalletError,
+    > {
         use key_wallet::account::account_collection::DashpayAccountKey;
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
@@ -251,8 +257,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
         );
 
         // --- 4. Record the outgoing payment on the sender's ManagedIdentity. ---
-        let entry =
-            super::super::payment::PaymentEntry::new_sent(*to_contact_id, amount_duffs, memo);
+        let entry = crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
+            *to_contact_id,
+            amount_duffs,
+            memo,
+        );
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {

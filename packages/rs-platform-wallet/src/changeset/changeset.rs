@@ -39,10 +39,10 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::dashpay::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
-use crate::wallet::identity::managed_identity::{
+use crate::wallet::identity::state::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, KeyStorage, ManagedIdentity,
 };
+use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 
 // ---------------------------------------------------------------------------
 // Bridge: key_wallet::changeset::WalletChangeSet -> platform-wallet Merge
@@ -246,7 +246,7 @@ impl Merge for IdentityChangeSet {
 
 /// A single contact request entry in the changeset.
 ///
-/// Modelled after [`crate::wallet::dashpay::ContactRequest`].
+/// Modelled after [`crate::wallet::identity::ContactRequest`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContactRequestEntry {
     /// The contact request.

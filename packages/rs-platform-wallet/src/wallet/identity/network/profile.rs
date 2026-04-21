@@ -12,6 +12,7 @@ use dpp::prelude::Identifier;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::signer::IdentitySigner;
 
 // ---------------------------------------------------------------------------
 // Sync profiles
@@ -103,7 +104,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
         &self,
         dashpay_contract: &Arc<dpp::data_contract::DataContract>,
         identity_id: &Identifier,
-    ) -> Result<Option<crate::wallet::dashpay::DashPayProfile>, PlatformWalletError> {
+    ) -> Result<Option<crate::wallet::identity::DashPayProfile>, PlatformWalletError> {
         use dash_sdk::drive::query::WhereClause;
         use dash_sdk::drive::query::WhereOperator;
         use dash_sdk::platform::FetchMany;
@@ -161,7 +162,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
             .and_then(|v: &Value| v.as_bytes())
             .and_then(|bytes| <[u8; 8]>::try_from(bytes.as_slice()).ok());
 
-        Ok(Some(crate::wallet::dashpay::DashPayProfile {
+        Ok(Some(crate::wallet::identity::DashPayProfile {
             display_name,
             // `publicMessage` from the contract is the bio/about-me field.
             bio: public_message.clone(),
@@ -192,8 +193,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     pub async fn create_profile(
         &self,
         identity_id: &Identifier,
-        input: crate::wallet::dashpay::ProfileUpdate,
-    ) -> Result<crate::wallet::dashpay::DashPayProfile, PlatformWalletError> {
+        input: crate::wallet::identity::ProfileUpdate,
+    ) -> Result<crate::wallet::identity::DashPayProfile, PlatformWalletError> {
         use dash_sdk::platform::transition::put_document::PutDocument;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::Document;
@@ -215,8 +216,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 
         // 2. Compute avatar hashes when raw bytes are provided.
         let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
-            let hash = crate::wallet::dashpay::calculate_avatar_hash(bytes);
-            let fingerprint = crate::wallet::dashpay::calculate_dhash_fingerprint(bytes)
+            let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
+            let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
                 .map_err(|e| PlatformWalletError::InvalidIdentityData(e))?;
             (Some(hash), Some(fingerprint))
         } else {
@@ -316,7 +317,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
             .map_err(PlatformWalletError::Sdk)?;
 
         // 6. Build and cache the profile locally.
-        let profile = crate::wallet::dashpay::DashPayProfile {
+        let profile = crate::wallet::identity::DashPayProfile {
             display_name: input.display_name,
             bio: input.public_message.clone(),
             avatar_url: input.avatar_url,
@@ -345,8 +346,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
     pub async fn update_profile(
         &self,
         identity_id: &Identifier,
-        input: crate::wallet::dashpay::ProfileUpdate,
-    ) -> Result<crate::wallet::dashpay::DashPayProfile, PlatformWalletError> {
+        input: crate::wallet::identity::ProfileUpdate,
+    ) -> Result<crate::wallet::identity::DashPayProfile, PlatformWalletError> {
         use dash_sdk::platform::transition::put_document::PutDocument;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::Document;
@@ -409,8 +410,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 
         // 3. Compute avatar hashes when raw bytes are provided.
         let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
-            let hash = crate::wallet::dashpay::calculate_avatar_hash(bytes);
-            let fingerprint = crate::wallet::dashpay::calculate_dhash_fingerprint(bytes)
+            let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
+            let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
                 .map_err(|e| PlatformWalletError::InvalidIdentityData(e))?;
             (Some(hash), Some(fingerprint))
         } else {
@@ -518,7 +519,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
             .map_err(PlatformWalletError::Sdk)?;
 
         // 8. Build and cache the updated profile.
-        let profile = crate::wallet::dashpay::DashPayProfile {
+        let profile = crate::wallet::identity::DashPayProfile {
             display_name: input.display_name,
             bio: input.public_message.clone(),
             avatar_url: input.avatar_url,

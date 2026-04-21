@@ -9,8 +9,8 @@ use key_wallet::account::AccountType;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::dashpay::established_contact::EstablishedContact;
-use crate::wallet::dashpay::payment::DashpayAddressMatch;
+use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
+use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 // ---------------------------------------------------------------------------
@@ -57,12 +57,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
         account_index: u32,
         sender_id: &Identifier,
         recipient_id: &Identifier,
-    ) -> Result<super::super::dip14::ContactXpubData, PlatformWalletError> {
+    ) -> Result<crate::wallet::identity::crypto::dip14::ContactXpubData, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let wallet = wm
             .get_wallet(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        super::super::dip14::derive_contact_xpub(
+        crate::wallet::identity::crypto::dip14::derive_contact_xpub(
             wallet,
             self.sdk.network,
             account_index,
@@ -258,14 +258,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
         let wallet = wm
             .get_wallet(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let data = super::super::dip14::derive_contact_xpub(
+        let data = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
             wallet,
             self.sdk.network,
             account_index,
             sender_id,
             recipient_id,
         )?;
-        super::super::dip14::derive_contact_payment_addresses(
+        crate::wallet::identity::crypto::dip14::derive_contact_payment_addresses(
             &data.xpub,
             start_index,
             count,

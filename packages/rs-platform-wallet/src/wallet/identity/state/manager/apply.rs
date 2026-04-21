@@ -12,7 +12,7 @@
 
 use super::IdentityManager;
 use crate::changeset::IdentityEntry;
-use crate::wallet::identity::managed_identity::ManagedIdentity;
+use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 
 impl IdentityManager {
     /// Restore a single [`IdentityEntry`] into the manager.
