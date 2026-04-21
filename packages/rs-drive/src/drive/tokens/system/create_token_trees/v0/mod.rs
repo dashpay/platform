@@ -255,6 +255,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::Identifier;
+    use dpp::tokens::status::v0::TokenStatusV0Accessors;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -433,5 +434,24 @@ mod tests {
                 .expect("expected to fetch supply");
             assert_eq!(supply, Some(0));
         }
+
+        // And critically: the paused flag must actually be persisted distinctly.
+        let active_status = drive
+            .fetch_token_status(token_id_active, None, platform_version)
+            .expect("expected to fetch active token status")
+            .expect("active token status must exist");
+        assert!(
+            !active_status.paused(),
+            "token created with start_as_paused=false should not be paused"
+        );
+
+        let paused_status = drive
+            .fetch_token_status(token_id_paused, None, platform_version)
+            .expect("expected to fetch paused token status")
+            .expect("paused token status must exist");
+        assert!(
+            paused_status.paused(),
+            "token created with start_as_paused=true should be paused"
+        );
     }
 }

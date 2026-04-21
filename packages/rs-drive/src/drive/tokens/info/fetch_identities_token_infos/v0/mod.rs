@@ -226,13 +226,12 @@ mod tests {
             .fetch_identities_token_infos_v0(token_id, &identity_ids, None, platform_version)
             .expect("expected fetch to succeed even when token tree does not exist");
 
-        for (_, v) in infos.iter() {
-            assert!(
-                v.is_none(),
-                "expected all values to be None for non-existent token, got {:?}",
-                infos
-            );
-        }
+        let expected: BTreeMap<[u8; 32], Option<IdentityTokenInfo>> =
+            identity_ids.into_iter().map(|id| (id, None)).collect();
+        assert_eq!(
+            infos, expected,
+            "expected a None entry for every requested identity"
+        );
     }
 
     #[test]

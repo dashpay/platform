@@ -230,13 +230,12 @@ mod tests {
 
         // grove_get_raw_path_query_with_optional returns entries for each requested key
         // even when nothing exists — they should all be None.
-        for (_, v) in infos.iter() {
-            assert!(
-                v.is_none(),
-                "expected every entry to be None, got {:?}",
-                infos
-            );
-        }
+        let expected: BTreeMap<[u8; 32], Option<IdentityTokenInfo>> =
+            token_ids.into_iter().map(|id| (id, None)).collect();
+        assert_eq!(
+            infos, expected,
+            "expected a None entry for every requested token"
+        );
     }
 
     #[test]

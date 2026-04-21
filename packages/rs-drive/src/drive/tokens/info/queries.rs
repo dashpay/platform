@@ -204,6 +204,10 @@ mod tests {
 
         assert_eq!(path_query.path, token_identity_infos_path_vec(token_id));
         assert_eq!(path_query.query.limit, Some(50));
+        assert!(
+            path_query.query.query.left_to_right,
+            "expected ascending query direction when ascending=true"
+        );
 
         let items = &path_query.query.query.items;
         assert_eq!(items.len(), 1);
@@ -292,6 +296,10 @@ mod tests {
         let path_query = Drive::token_infos_for_range_query(token_id, None, false, 100);
 
         assert_eq!(path_query.query.limit, Some(100));
+        assert!(
+            !path_query.query.query.left_to_right,
+            "expected descending query direction when ascending=false"
+        );
         let items = &path_query.query.query.items;
         assert_eq!(items.len(), 1);
         assert!(
