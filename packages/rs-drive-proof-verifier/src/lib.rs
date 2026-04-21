@@ -25,7 +25,7 @@ pub mod unproved;
 ///
 /// Proof verification must mirror this behavior; otherwise a valid proof for a default-bounded
 /// server query is reconstructed locally as an unbounded query and looks truncated.
-pub(crate) const DEFAULT_QUERY_LIMIT: u16 = 100;
+pub(crate) use drive::config::DEFAULT_QUERY_LIMIT;
 
 /// Parse a proved request's optional `count`/`limit`, applying Platform's default when omitted.
 pub(crate) fn proved_request_limit(limit: Option<u32>) -> Result<u16, Error> {
