@@ -257,3 +257,62 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_contested_resource_vote_state_invalid_contract_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 8],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_contract_not_found() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 32],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+}

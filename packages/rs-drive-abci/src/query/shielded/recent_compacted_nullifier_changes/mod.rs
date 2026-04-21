@@ -65,3 +65,58 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_recent_compacted_nullifier_changes_request::GetRecentCompactedNullifierChangesRequestV0;
+    use dapi_grpc::platform::v0::get_recent_compacted_nullifier_changes_response::get_recent_compacted_nullifier_changes_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn missing_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetRecentCompactedNullifierChangesRequest { version: None };
+
+        let result = platform
+            .query_recent_compacted_nullifier_changes(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)]
+                if msg.contains("recent compacted nullifier changes")
+        ));
+    }
+
+    #[test]
+    fn dispatcher_wraps_v0_response() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetRecentCompactedNullifierChangesRequest {
+            version: Some(RequestVersion::V0(
+                GetRecentCompactedNullifierChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: false,
+                },
+            )),
+        };
+
+        let result = platform
+            .query_recent_compacted_nullifier_changes(request, &state, version)
+            .expect("expected query to succeed");
+        assert!(result.errors.is_empty());
+
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v0)) => v0,
+            other => panic!("expected ResponseVersion::V0, got {:?}", other),
+        };
+        assert!(matches!(
+            inner.result,
+            Some(get_recent_compacted_nullifier_changes_response_v0::Result::CompactedNullifierUpdateEntries(_))
+        ));
+    }
+}

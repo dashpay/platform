@@ -199,3 +199,91 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_invalid_identity_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 8],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("identity_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_offset_out_of_bounds() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        // offset > u16::MAX triggers InvalidArgument("offset out of bounds")
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: Some((u16::MAX as u32) + 1),
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("offset out of bounds")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_empty() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // empty platform should return the Votes variant with no entries and finished_results=true
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(
+                    get_contested_resource_identity_votes_response_v0::Result::Votes(
+                        get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVotes {
+                            contested_resource_identity_votes,
+                            finished_results,
+                        },
+                    ),
+                ),
+                metadata: Some(_),
+            }) if contested_resource_identity_votes.is_empty() && finished_results
+        ));
+    }
+}

@@ -308,3 +308,242 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    fn make_validator(pro_tx_hash: ProTxHash, is_banned: bool) -> ValidatorV0 {
+        let mut rng = StdRng::seed_from_u64(1);
+        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
+        ValidatorV0 {
+            pro_tx_hash,
+            public_key,
+            node_ip: "192.168.0.1".to_string(),
+            node_id: PubkeyHash::from_slice(&[7; 20]).unwrap(),
+            core_port: 10,
+            platform_http_port: 20,
+            platform_p2p_port: 30,
+            is_banned,
+        }
+    }
+
+    fn make_set(
+        quorum_hash_seed: u8,
+        core_height: u32,
+        threshold_seed: u64,
+        members: BTreeMap<ProTxHash, ValidatorV0>,
+    ) -> ValidatorSetV0 {
+        let mut rng = StdRng::seed_from_u64(threshold_seed);
+        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        ValidatorSetV0 {
+            quorum_hash: QuorumHash::from_slice(&[quorum_hash_seed; 32]).unwrap(),
+            quorum_index: Some(1),
+            core_height,
+            members,
+            threshold_public_key,
+        }
+    }
+
+    #[test]
+    fn test_update_difference_quorum_hash_mismatch() {
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members_a = BTreeMap::new();
+        members_a.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let mut members_b = BTreeMap::new();
+        members_b.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let lhs = make_set(1, 100, 1, members_a);
+        let rhs = make_set(2, 100, 1, members_b);
+
+        let err = lhs.update_difference(&rhs).unwrap_err();
+        assert!(
+            matches!(err, Error::Execution(ExecutionError::CorruptedCachedState(ref msg)) if msg.contains("quorum hash"))
+        );
+    }
+
+    #[test]
+    fn test_update_difference_core_height_mismatch() {
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members_a = BTreeMap::new();
+        members_a.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let mut members_b = BTreeMap::new();
+        members_b.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let lhs = make_set(1, 100, 1, members_a);
+        let rhs = make_set(1, 200, 1, members_b);
+
+        let err = lhs.update_difference(&rhs).unwrap_err();
+        assert!(
+            matches!(err, Error::Execution(ExecutionError::CorruptedCachedState(ref msg)) if msg.contains("core height"))
+        );
+    }
+
+    #[test]
+    fn test_update_difference_threshold_public_key_mismatch() {
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members_a = BTreeMap::new();
+        members_a.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let mut members_b = BTreeMap::new();
+        members_b.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        // Same quorum_hash & core_height but distinct threshold keys (different seeds)
+        let lhs = make_set(1, 100, 1, members_a);
+        let rhs = make_set(1, 100, 2, members_b);
+
+        let err = lhs.update_difference(&rhs).unwrap_err();
+        assert!(
+            matches!(err, Error::Execution(ExecutionError::CorruptedCachedState(ref msg)) if msg.contains("threshold public key"))
+        );
+    }
+
+    #[test]
+    fn test_update_difference_missing_member() {
+        // lhs has a member that is not present in rhs -> error
+        let pro_tx_hash_a = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let pro_tx_hash_b = ProTxHash::from_slice(&[10; 32]).unwrap();
+        let mut members_a = BTreeMap::new();
+        members_a.insert(pro_tx_hash_a, make_validator(pro_tx_hash_a, false));
+
+        let mut members_b = BTreeMap::new();
+        members_b.insert(pro_tx_hash_b, make_validator(pro_tx_hash_b, false));
+
+        let lhs = make_set(1, 100, 1, members_a);
+        // Same threshold key as lhs by reusing seed 1
+        let rhs_temp = make_set(1, 100, 1, members_b);
+        // force threshold keys equal by copying
+        let rhs = ValidatorSetV0 {
+            threshold_public_key: lhs.threshold_public_key,
+            ..rhs_temp
+        };
+
+        let err = lhs.update_difference(&rhs).unwrap_err();
+        assert!(
+            matches!(err, Error::Execution(ExecutionError::CorruptedCachedState(ref msg)) if msg.contains("does not contain all same members"))
+        );
+    }
+
+    #[test]
+    fn test_update_difference_identical_sets_emit_for_non_banned_old_members() {
+        // When rhs members are structurally equal to lhs members, the code
+        // takes the "else" branch that emits an update for each non-banned
+        // old-state validator.
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members_a = BTreeMap::new();
+        members_a.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let lhs = make_set(1, 100, 1, members_a.clone());
+        let rhs = ValidatorSetV0 {
+            threshold_public_key: lhs.threshold_public_key,
+            ..make_set(1, 100, 1, members_a)
+        };
+
+        let update = lhs.update_difference(&rhs).expect("expected ok");
+        assert_eq!(update.validator_updates.len(), 1);
+        assert_eq!(
+            update.validator_updates[0].pro_tx_hash,
+            pro_tx_hash.to_byte_array().to_vec()
+        );
+        assert_eq!(update.quorum_hash.len(), 32);
+    }
+
+    #[test]
+    fn test_update_difference_identical_but_banned_emits_nothing() {
+        // Both sets have identical, banned validator => banned short-circuits
+        // to None in the equal branch.
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members_a = BTreeMap::new();
+        members_a.insert(pro_tx_hash, make_validator(pro_tx_hash, true));
+
+        let lhs = make_set(1, 100, 1, members_a.clone());
+        let rhs = ValidatorSetV0 {
+            threshold_public_key: lhs.threshold_public_key,
+            ..make_set(1, 100, 1, members_a)
+        };
+
+        let update = lhs.update_difference(&rhs).expect("expected ok");
+        assert!(update.validator_updates.is_empty());
+    }
+
+    #[test]
+    fn test_update_difference_banned_new_is_skipped() {
+        // new_validator_state differs (is_banned=true) -> the function takes the
+        // "different" branch and emits None because banned.
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members_old = BTreeMap::new();
+        members_old.insert(pro_tx_hash, make_validator(pro_tx_hash, false));
+
+        let mut members_new = BTreeMap::new();
+        members_new.insert(pro_tx_hash, make_validator(pro_tx_hash, true));
+
+        let lhs = make_set(1, 100, 1, members_old);
+        let rhs = ValidatorSetV0 {
+            threshold_public_key: lhs.threshold_public_key,
+            ..make_set(1, 100, 1, members_new)
+        };
+
+        let update = lhs.update_difference(&rhs).expect("expected ok");
+        assert!(update.validator_updates.is_empty());
+    }
+
+    #[test]
+    fn test_to_update_excludes_banned_validators() {
+        let pro_tx_hash_a = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let pro_tx_hash_b = ProTxHash::from_slice(&[10; 32]).unwrap();
+        let mut members = BTreeMap::new();
+        members.insert(pro_tx_hash_a, make_validator(pro_tx_hash_a, false));
+        members.insert(pro_tx_hash_b, make_validator(pro_tx_hash_b, true));
+
+        let set = make_set(1, 100, 1, members);
+
+        let update = set.to_update();
+        assert_eq!(update.validator_updates.len(), 1);
+        assert_eq!(
+            update.validator_updates[0].pro_tx_hash,
+            pro_tx_hash_a.to_byte_array().to_vec()
+        );
+        // quorum hash round-trips
+        assert_eq!(update.quorum_hash, vec![1u8; 32]);
+    }
+
+    #[test]
+    fn test_to_update_owned_excludes_banned_validators() {
+        let pro_tx_hash_a = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let pro_tx_hash_b = ProTxHash::from_slice(&[10; 32]).unwrap();
+        let mut members = BTreeMap::new();
+        members.insert(pro_tx_hash_a, make_validator(pro_tx_hash_a, true));
+        members.insert(pro_tx_hash_b, make_validator(pro_tx_hash_b, false));
+
+        let set = make_set(3, 100, 1, members);
+
+        let update = set.to_update_owned();
+        assert_eq!(update.validator_updates.len(), 1);
+        assert_eq!(
+            update.validator_updates[0].pro_tx_hash,
+            pro_tx_hash_b.to_byte_array().to_vec()
+        );
+        assert_eq!(update.quorum_hash, vec![3u8; 32]);
+    }
+
+    #[test]
+    fn test_to_update_all_banned_produces_no_updates() {
+        let pro_tx_hash = ProTxHash::from_slice(&[9; 32]).unwrap();
+        let mut members = BTreeMap::new();
+        members.insert(pro_tx_hash, make_validator(pro_tx_hash, true));
+
+        let set = make_set(4, 100, 1, members);
+
+        let update = set.to_update();
+        assert!(update.validator_updates.is_empty());
+        // threshold_public_key is still present
+        assert!(update.threshold_public_key.is_some());
+    }
+}

@@ -60,3 +60,27 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn missing_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetNullifiersTrunkStateRequest { version: None };
+
+        let result = platform
+            .query_nullifiers_trunk_state(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)]
+                if msg.contains("nullifiers trunk state")
+        ));
+    }
+}
