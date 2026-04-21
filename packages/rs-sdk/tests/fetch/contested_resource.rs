@@ -466,8 +466,8 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
 /// At least one contested DPNS name exists under the "dash" parent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
-    not(feature = "network-testing"),
-    ignore = "this test requires a live platform node to verify the proof fix"
+    all(feature = "network-testing", not(feature = "offline-testing")),
+    ignore = "this regression is fixture-backed in offline mode; regenerate vectors instead of running it live"
 )]
 async fn should_contested_resources_start_index_values_no_limit_match_explicit_default_limit() {
     setup_logs();
