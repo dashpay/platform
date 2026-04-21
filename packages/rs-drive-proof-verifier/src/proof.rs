@@ -3306,25 +3306,47 @@ mod tests {
         );
     }
 
+    /// A minimal `FromProof` impl whose `maybe_from_proof_with_metadata`
+    /// returns `Ok((None, ..))`, isolating the `from_proof` wrapper's
+    /// `None -> Error::NotFound` mapping from the decode/verify pipeline.
+    #[derive(Debug)]
+    struct MissingFromProof;
+
+    impl FromProof<()> for MissingFromProof {
+        type Request = ();
+        type Response = ();
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _request: I,
+            _response: O,
+            _network: Network,
+            _platform_version: &PlatformVersion,
+            _provider: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+        where
+            Self: Sized + 'a,
+        {
+            Ok((None, ResponseMetadata::default(), Proof::default()))
+        }
+    }
+
     #[test]
-    fn identity_from_proof_returns_notfound_when_maybe_returns_none() {
-        // `from_proof` (vs `maybe_from_proof`) maps None -> Error::NotFound.
-        // We trigger a decode error path first, verifying the error propagates
-        // through the convenience wrapper unchanged.
-        let request = platform::GetIdentityRequest::default();
-        let response = platform::GetIdentityResponse::default();
+    fn from_proof_maps_none_to_not_found() {
+        // `from_proof` (vs `maybe_from_proof`) is expected to map `Ok(None)`
+        // to `Error::NotFound`. Verify that wrapper behavior directly rather
+        // than conflating it with decode-error propagation.
         let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityRequest>>::from_proof(
-            request,
-            response,
+        let err = <MissingFromProof as FromProof<()>>::from_proof(
+            (),
+            (),
             Network::Testnet,
             default_platform_version(),
             &provider,
         )
         .unwrap_err();
         assert!(
-            matches!(err, Error::NoProofInResult),
-            "expected NoProofInResult propagated through from_proof, got: {err:?}"
+            matches!(err, Error::NotFound),
+            "expected NotFound when maybe_from_proof returns None, got: {err:?}"
         );
     }
 
