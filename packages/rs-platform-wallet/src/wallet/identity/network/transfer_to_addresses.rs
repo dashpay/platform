@@ -70,7 +70,11 @@ impl IdentityWallet {
                 ))
             })?;
 
-        // Update the sender's balance in the local manager.
+        // Update the sender's balance in the local manager and
+        // queue the snapshot so the new balance survives relaunch.
+        // See the comment on `top_up` for rationale on driving the
+        // persister directly from the call site instead of through
+        // a dedicated `ManagedIdentity::set_balance` method.
         {
             let mut wm = self.wallet_manager.write().await;
             let info_guard = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
@@ -78,8 +82,18 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
-                identity.set_balance(new_balance);
+            if let Some(managed) = info_guard
+                .identity_manager
+                .managed_identity_mut(identity_id)
+            {
+                managed.identity.set_balance(new_balance);
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::error!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to persist identity balance update after transfer_to_addresses"
+                    );
+                }
             }
         }
 
