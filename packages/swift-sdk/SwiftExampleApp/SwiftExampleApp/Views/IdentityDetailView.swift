@@ -5,6 +5,7 @@ import SwiftDashSDK
 struct IdentityDetailView: View {
     let identityId: Data
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
     private var identity: IdentityModel? {
         appState.identities.first { $0.id == identityId }
@@ -15,6 +16,13 @@ struct IdentityDetailView: View {
     @State private var isLoadingDPNS = false
     @State private var showingRegisterName = false
     @State private var showingSelectMainName = false
+
+    // DashPay profile state — read from the platform-wallet cache,
+    // refreshed on appear via `syncDashPayProfiles()`.
+    @State private var dashpayProfile: DashPayProfile?
+    @State private var isLoadingProfile = false
+    @State private var showingProfileEditor = false
+    @State private var profileError: String?
 
     // Computed properties that get DPNS names from the identity model
     private var dpnsNames: [String] {
@@ -160,46 +168,13 @@ struct IdentityDetailView: View {
 
             // DashPay Profile Section
             //
-            // UI slot only for now — the backing profile data
-            // (display name, public message, avatar) lives on the
-            // Rust-side `ManagedIdentity.dashpay_profile` but isn't
-            // bridged through FFI yet. When the bridge lands this
-            // section will light up without view restructuring.
+            // Reads `ManagedIdentity.dashpay_profile` through the
+            // platform-wallet FFI. Refreshes from Platform on appear
+            // via `syncDashPayProfiles()` so the cache reflects the
+            // latest on-chain state without blocking the first paint.
             Section("DashPay Profile") {
                 if !identity.isLocal {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.crop.circle.dashed")
-                                .font(.title2)
-                                .foregroundColor(.secondary)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("No DashPay profile yet")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Text("Add a display name and avatar so friends can find you on DashPay.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        Button {
-                            // TODO(dashpay-profile): wire to a
-                            // profile editor sheet once the
-                            // `DashPayProfile` FFI lands.
-                        } label: {
-                            HStack {
-                                Image(systemName: "pencil")
-                                Text("Set up profile")
-                                Spacer()
-                                Text("Coming soon")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .disabled(true)
-                    }
-                    .padding(.vertical, 4)
+                    dashPayProfileCard(identity: identity)
                 } else {
                     Text("Available once the identity is on the network.")
                         .font(.caption)
@@ -273,6 +248,21 @@ struct IdentityDetailView: View {
             SelectMainNameView(identity: identity)
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $showingProfileEditor) {
+            DashPayProfileEditorView(
+                identityId: identity.id,
+                walletId: identity.walletId,
+                existing: dashpayProfile,
+                onSaved: { saved in
+                    // Adopt the freshly-broadcast profile into the UI
+                    // cache immediately — syncDashPayProfiles would
+                    // pick it up on the next refresh, but this keeps
+                    // the detail view in-sync without a round-trip.
+                    dashpayProfile = saved
+                }
+            )
+            .environmentObject(walletManager)
+        }
         .onAppear {
             print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
 
@@ -282,6 +272,15 @@ struct IdentityDetailView: View {
                 loadDPNSNames()
             } else if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty {
                 print("🔵 Using cached DPNS names: \(dpnsNames.count) regular, \(contestedDpnsNames.count) contested")
+            }
+
+            if !identity.isLocal {
+                // Read whatever's currently cached synchronously so the
+                // card renders immediately, then kick off a background
+                // sync to freshen it. The sync uses the merged
+                // `IdentityWallet` `sync_profiles` FFI path.
+                loadCachedDashPayProfile(for: identity)
+                Task { await refreshDashPayProfilesFromPlatform(for: identity) }
             }
         }
         } else {
@@ -468,6 +467,290 @@ struct IdentityDetailView: View {
         } catch {
             print("❌ Failed to fetch contested DPNS names: \(error)")
             return ([], [:])
+        }
+    }
+
+    // MARK: - DashPay profile
+
+    /// Card contents for the DashPay Profile section. Renders whichever
+    /// of the three states applies: populated profile, empty placeholder,
+    /// or "loading" spinner. Also surfaces the most recent profile error
+    /// (sync or save) under a caption.
+    @ViewBuilder
+    private func dashPayProfileCard(identity: IdentityModel) -> some View {
+        if let profile = dashpayProfile {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: profile.avatarUrl != nil
+                        ? "person.crop.circle.fill"
+                        : "person.crop.circle")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(profile.displayName?.nilIfEmpty ?? "(no display name)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        if let msg = profile.publicMessage?.nilIfEmpty {
+                            Text(msg)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        if let url = profile.avatarUrl?.nilIfEmpty {
+                            Text(url)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+
+                Button {
+                    showingProfileEditor = true
+                } label: {
+                    HStack {
+                        Image(systemName: "pencil")
+                        Text("Edit Profile")
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } else if isLoadingProfile {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Loading DashPay profile…")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle.dashed")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No DashPay profile yet")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("Add a display name and avatar so friends can find you on DashPay.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Button {
+                    showingProfileEditor = true
+                } label: {
+                    HStack {
+                        Image(systemName: "pencil")
+                        Text("Set up profile")
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+
+        if let err = profileError {
+            Text(err)
+                .font(.caption)
+                .foregroundColor(.red)
+        }
+    }
+
+    /// Synchronously read the cached DashPay profile from the Rust side
+    /// without a network roundtrip. Fires on view appear so the card
+    /// renders filled-in immediately when the app already sync'd this
+    /// identity on a previous session. Silently no-ops when the
+    /// identity doesn't have a wallet associated yet — that only
+    /// happens for local-only identities, which we gate out upstream.
+    private func loadCachedDashPayProfile(for identity: IdentityModel) {
+        guard let walletId = identity.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            return
+        }
+        do {
+            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.id)
+        } catch {
+            print("⚠️ Failed to read cached DashPay profile: \(error)")
+        }
+    }
+
+    /// Drive a Platform-side sync for every identity on the wallet,
+    /// then re-read this identity's cache. Runs in a background task
+    /// (the FFI dispatches to an 8 MB tokio worker internally).
+    @MainActor
+    private func refreshDashPayProfilesFromPlatform(for identity: IdentityModel) async {
+        guard let walletId = identity.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            return
+        }
+        isLoadingProfile = dashpayProfile == nil
+        defer { isLoadingProfile = false }
+
+        do {
+            _ = try await wallet.syncDashPayProfiles()
+            // Pick up whatever the sync wrote back into the cache.
+            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.id)
+            profileError = nil
+        } catch {
+            // Don't blow away a previously-shown profile on transient
+            // sync failure — surface the error underneath instead.
+            print("⚠️ DashPay profile sync failed: \(error)")
+            profileError = "Profile sync failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - String nil-if-empty helper
+
+private extension String {
+    /// Returns `nil` when the string is empty (after trimming), so
+    /// caller sites don't render blank rows for explicitly-present
+    /// but empty profile fields.
+    var nilIfEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+// MARK: - DashPay profile editor sheet
+
+/// Modal editor for a DashPay profile. Fields correspond 1:1 with the
+/// on-chain DashPay `profile` document; every field is optional.
+/// `onSaved` fires with the post-broadcast cached profile so the
+/// parent view can adopt it without re-fetching.
+struct DashPayProfileEditorView: View {
+    let identityId: Data
+    /// Wallet that owns `identityId`. When `nil` the editor falls
+    /// back to `walletManager.firstWallet` — acceptable for the
+    /// current single-wallet UI but will need tightening once the
+    /// app supports multiple concurrent wallets.
+    let walletId: Data?
+    let existing: DashPayProfile?
+    let onSaved: (DashPayProfile) -> Void
+
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var displayName: String = ""
+    @State private var publicMessage: String = ""
+    @State private var avatarUrl: String = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    private var isCreating: Bool { existing == nil }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Display name") {
+                    TextField("e.g. Alice", text: $displayName)
+                        .textInputAutocapitalization(.words)
+                }
+
+                Section("Public message") {
+                    TextField("A short bio that contacts can see", text: $publicMessage, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+                }
+
+                Section("Avatar URL") {
+                    TextField("https://…", text: $avatarUrl)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Text("Paste an HTTPS image URL. SHA-256 + dHash " +
+                         "are computed client-side when you save — see " +
+                         "DIP-15.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if let err = errorMessage {
+                    Section {
+                        Text(err)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle(isCreating ? "Set Up Profile" : "Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button(isCreating ? "Create" : "Save") { save() }
+                    }
+                }
+            }
+            .onAppear {
+                // Pre-fill fields on edit; create mode starts blank.
+                if let existing {
+                    displayName = existing.displayName ?? ""
+                    publicMessage = existing.publicMessage ?? ""
+                    avatarUrl = existing.avatarUrl ?? ""
+                }
+            }
+        }
+    }
+
+    /// Submit the create / update transition. Avatar byte download is
+    /// not implemented yet — when the user supplies an `avatarUrl` the
+    /// on-chain `avatarHash` + `avatarFingerprint` are left empty,
+    /// matching what the Rust FFI does when `avatar_bytes` is null.
+    /// A follow-up can fetch the URL, compute the hashes, and pass
+    /// the raw bytes to the same entry point.
+    private func save() {
+        let cleanedDisplay = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedMsg = publicMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedUrl = avatarUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let update = DashPayProfileUpdate(
+            displayName: cleanedDisplay.isEmpty ? nil : cleanedDisplay,
+            publicMessage: cleanedMsg.isEmpty ? nil : cleanedMsg,
+            avatarUrl: cleanedUrl.isEmpty ? nil : cleanedUrl,
+            avatarBytes: nil
+        )
+
+        isSaving = true
+        errorMessage = nil
+
+        Task { @MainActor in
+            defer { isSaving = false }
+            do {
+                // Resolve the wallet via the identity's `walletId`;
+                // fall back to `firstWallet` for legacy data rows
+                // that predate walletId denormalization.
+                let wallet = walletId.flatMap { walletManager.wallet(for: $0) }
+                    ?? walletManager.firstWallet
+                guard let wallet else {
+                    errorMessage = "No wallet available for this identity"
+                    return
+                }
+                let saved: DashPayProfile
+                if isCreating {
+                    saved = try await wallet.createDashPayProfile(
+                        identityId: identityId,
+                        update: update
+                    )
+                } else {
+                    saved = try await wallet.updateDashPayProfile(
+                        identityId: identityId,
+                        update: update
+                    )
+                }
+                onSaved(saved)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

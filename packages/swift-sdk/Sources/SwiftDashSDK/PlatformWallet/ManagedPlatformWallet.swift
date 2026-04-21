@@ -4,7 +4,14 @@ import Foundation
 ///
 /// Provides access to sub-wallets (platform addresses, core, identity, etc.)
 /// and lock-free balance reads.
-public class ManagedPlatformWallet {
+///
+/// `@unchecked Sendable`: the only instance state is an immutable
+/// `Handle` (UInt64) and an immutable 32-byte `walletId`. All mutable
+/// state lives behind the Rust-side `Arc<RwLock<WalletManager<...>>>`,
+/// which is already thread-safe. Making the class Sendable lets call
+/// sites `await` async FFI methods from `@MainActor` contexts without
+/// having to juggle `Task.detached { ... }` wrappers.
+public final class ManagedPlatformWallet: @unchecked Sendable {
     let handle: Handle
 
     /// The 32-byte wallet identifier.
@@ -351,4 +358,245 @@ private func hashTupleInit() -> (
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     )
+}
+
+// MARK: - DashPay Profile operations
+
+extension ManagedPlatformWallet {
+    /// Read the cached DashPay profile for `identityId` directly from
+    /// this wallet's live state.
+    ///
+    /// Convenient for UI layers that track identities by ID and don't
+    /// hold a live `ManagedIdentity` handle. Returns `nil` when the
+    /// identity has no cached profile; throws `.identityNotFound`
+    /// when the wallet doesn't know this identity.
+    ///
+    /// Sync, lock-free — call `syncDashPayProfiles()` first when you
+    /// want the freshest on-chain data.
+    public func getDashPayProfile(identityId: Identifier) throws -> DashPayProfile? {
+        var ffiProfile = dashPayProfileFFIEmpty()
+        var hasProfile: Bool = false
+        var error = PlatformWalletFFIError()
+        let ffiId = identifierToFFI(identityId)
+
+        let result = platform_wallet_get_dashpay_profile(
+            handle,
+            ffiId,
+            &ffiProfile,
+            &hasProfile,
+            &error
+        )
+        defer { dashpay_profile_ffi_free(ffiProfile) }
+
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        guard hasProfile else { return nil }
+        return DashPayProfile(ffi: ffiProfile)
+    }
+
+    /// Refresh every managed identity's DashPay profile cache from
+    /// Platform.
+    ///
+    /// Returns the number of identities for which a `profile` document
+    /// was found on-chain. Identities with no on-chain profile have
+    /// their local cache cleared (if any).
+    ///
+    /// Blocks the Rust side on an 8 MB tokio worker until the sync
+    /// completes — expected to be driven from an async context so the
+    /// main thread isn't blocked on proof verification.
+    @discardableResult
+    public func syncDashPayProfiles() async throws -> UInt32 {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
+            var syncedCount: UInt32 = 0
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_sync_dashpay_profiles(
+                handle,
+                &syncedCount,
+                &error
+            )
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return syncedCount
+        }.value
+    }
+
+    /// Create a new DashPay profile document on Platform for
+    /// `identityId`, then refresh the local cache with the result.
+    ///
+    /// Fails with `.walletOperation` when a profile already exists —
+    /// use `updateDashPayProfile` in that case. All fields in `update`
+    /// are optional; `nil` fields are simply omitted from the outgoing
+    /// document. `avatarBytes` triggers SHA-256 + dHash computation
+    /// on the Rust side.
+    @discardableResult
+    public func createDashPayProfile(
+        identityId: Identifier,
+        update: DashPayProfileUpdate
+    ) async throws -> DashPayProfile {
+        try await submitDashPayProfile(
+            identityId: identityId,
+            update: update,
+            doCreate: true
+        )
+    }
+
+    /// Update an existing DashPay profile document. Errors with
+    /// `.walletOperation` when no profile is on Platform yet — use
+    /// `createDashPayProfile` in that case.
+    @discardableResult
+    public func updateDashPayProfile(
+        identityId: Identifier,
+        update: DashPayProfileUpdate
+    ) async throws -> DashPayProfile {
+        try await submitDashPayProfile(
+            identityId: identityId,
+            update: update,
+            doCreate: false
+        )
+    }
+
+    /// Shared submit path for create / update — same inputs, same
+    /// error mapping; only the routed FFI function differs.
+    ///
+    /// `Task.detached` keeps the tokio-driven blocking call off the
+    /// calling (user-interactive) thread, mirroring the pattern used
+    /// by `registerIdentityFromAddresses`.
+    private func submitDashPayProfile(
+        identityId: Identifier,
+        update: DashPayProfileUpdate,
+        doCreate: Bool
+    ) async throws -> DashPayProfile {
+        let handle = self.handle
+        let ffiId = identifierToFFI(identityId)
+        let displayName = update.displayName
+        let publicMessage = update.publicMessage
+        let avatarUrl = update.avatarUrl
+        let avatarBytes = update.avatarBytes
+
+        return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
+            var outProfile = dashPayProfileFFIEmpty()
+            var error = PlatformWalletFFIError()
+
+            // Each optional CString gets its own `withCString` scope —
+            // nested closures keep all three string buffers alive
+            // across the FFI call (their lifetime is bounded by the
+            // closure, not by the `let` binding). Absent fields pass
+            // `nil` directly.
+            let result = invokeWithOptionalCStrings(
+                displayName,
+                publicMessage,
+                avatarUrl
+            ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
+                let bytes = avatarBytes ?? Data()
+                if let avatarBytes, !avatarBytes.isEmpty {
+                    return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
+                        let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                        if doCreate {
+                            return platform_wallet_create_dashpay_profile(
+                                handle,
+                                ffiId,
+                                namePtr,
+                                msgPtr,
+                                urlPtr,
+                                bytesPtr,
+                                avatarBytes.count,
+                                &outProfile,
+                                &error
+                            )
+                        } else {
+                            return platform_wallet_update_dashpay_profile(
+                                handle,
+                                ffiId,
+                                namePtr,
+                                msgPtr,
+                                urlPtr,
+                                bytesPtr,
+                                avatarBytes.count,
+                                &outProfile,
+                                &error
+                            )
+                        }
+                    }
+                } else {
+                    // Referenced only so the compiler keeps the
+                    // enclosing `bytes` scope in a consistent type.
+                    _ = bytes
+                    if doCreate {
+                        return platform_wallet_create_dashpay_profile(
+                            handle,
+                            ffiId,
+                            namePtr,
+                            msgPtr,
+                            urlPtr,
+                            nil,
+                            0,
+                            &outProfile,
+                            &error
+                        )
+                    } else {
+                        return platform_wallet_update_dashpay_profile(
+                            handle,
+                            ffiId,
+                            namePtr,
+                            msgPtr,
+                            urlPtr,
+                            nil,
+                            0,
+                            &outProfile,
+                            &error
+                        )
+                    }
+                }
+            }
+
+            defer { dashpay_profile_ffi_free(outProfile) }
+
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return DashPayProfile(ffi: outProfile)
+        }.value
+    }
+}
+
+/// Run `body` with three optional C-string pointers, each `nil` when
+/// the corresponding input string is `nil`. Swift's `withCString` has
+/// closure-bounded lifetime, so this helper keeps all three buffers
+/// alive across a single FFI call without deeply nested ternaries.
+///
+/// Deliberately non-escaping: the closure runs synchronously while
+/// the enclosing `withCString` frames are live.
+private func invokeWithOptionalCStrings<R>(
+    _ a: String?,
+    _ b: String?,
+    _ c: String?,
+    body: (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> R
+) -> R {
+    func step2(
+        _ aPtr: UnsafePointer<CChar>?,
+        _ bPtr: UnsafePointer<CChar>?
+    ) -> R {
+        if let c {
+            return c.withCString { cPtr in body(aPtr, bPtr, cPtr) }
+        } else {
+            return body(aPtr, bPtr, nil)
+        }
+    }
+
+    func step1(_ aPtr: UnsafePointer<CChar>?) -> R {
+        if let b {
+            return b.withCString { bPtr in step2(aPtr, bPtr) }
+        } else {
+            return step2(aPtr, nil)
+        }
+    }
+
+    if let a {
+        return a.withCString { aPtr in step1(aPtr) }
+    } else {
+        return step1(nil)
+    }
 }

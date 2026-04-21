@@ -454,4 +454,38 @@ public class ManagedIdentity {
             throw PlatformWalletError(result: result, error: error)
         }
     }
+
+    // MARK: - DashPay Profile
+
+    /// Read the cached DashPay profile for this identity.
+    ///
+    /// Returns `nil` when no profile has been fetched from Platform
+    /// (or when the on-chain profile was explicitly cleared). This is
+    /// a sync, lock-free read of the in-memory cache — call
+    /// `ManagedPlatformWallet.syncDashPayProfiles()` first when you
+    /// want the freshest on-chain data.
+    public func getDashPayProfile() throws -> DashPayProfile? {
+        var ffiProfile = dashPayProfileFFIEmpty()
+        var hasProfile: Bool = false
+        var error = PlatformWalletFFIError()
+
+        let result = managed_identity_get_dashpay_profile(
+            handle,
+            &ffiProfile,
+            &hasProfile,
+            &error
+        )
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        // `dashpay_profile_ffi_free` walks the three nullable string
+        // pointers — calling it on an empty / no-profile struct is
+        // safe because each pointer is independently null-checked on
+        // the Rust side.
+        defer { dashpay_profile_ffi_free(ffiProfile) }
+
+        guard hasProfile else { return nil }
+        return DashPayProfile(ffi: ffiProfile)
+    }
 }

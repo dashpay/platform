@@ -280,6 +280,107 @@ func managed_identity_reject_contact_request(
 @_silgen_name("managed_identity_destroy")
 func managed_identity_destroy(_ handle: Handle)
 
+// MARK: - DashPay Profile
+
+/// Mirrors `DashPayProfileFFI` from
+/// `rs-platform-wallet-ffi/src/dashpay_profile.rs`. See there for
+/// field semantics and ownership rules.
+///
+/// `display_name`, `public_message`, `avatar_url` are heap-allocated
+/// C strings (nullable); the caller releases them with
+/// `dashpay_profile_ffi_free`. `avatar_hash` / `avatar_fingerprint`
+/// are inline arrays — read them only when the corresponding
+/// `_is_some` flag is true.
+struct DashPayProfileFFI {
+    var display_name: UnsafeMutablePointer<CChar>?
+    var public_message: UnsafeMutablePointer<CChar>?
+    var avatar_url: UnsafeMutablePointer<CChar>?
+    var avatar_hash_is_some: Bool
+    var avatar_hash: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+    var avatar_fingerprint_is_some: Bool
+    var avatar_fingerprint: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+}
+
+/// All-zero `DashPayProfileFFI` — used as the out-param initial
+/// value. Writing an empty instance before the FFI call guarantees
+/// any early-exit paths still leave a well-defined struct.
+func dashPayProfileFFIEmpty() -> DashPayProfileFFI {
+    DashPayProfileFFI(
+        display_name: nil,
+        public_message: nil,
+        avatar_url: nil,
+        avatar_hash_is_some: false,
+        avatar_hash: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0
+        ),
+        avatar_fingerprint_is_some: false,
+        avatar_fingerprint: (0, 0, 0, 0, 0, 0, 0, 0)
+    )
+}
+
+@_silgen_name("managed_identity_get_dashpay_profile")
+func managed_identity_get_dashpay_profile(
+    _ identity_handle: Handle,
+    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
+    _ out_has_profile: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_get_dashpay_profile")
+func platform_wallet_get_dashpay_profile(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
+    _ out_has_profile: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("dashpay_profile_ffi_free")
+func dashpay_profile_ffi_free(_ profile: DashPayProfileFFI)
+
+@_silgen_name("platform_wallet_sync_dashpay_profiles")
+func platform_wallet_sync_dashpay_profiles(
+    _ wallet_handle: Handle,
+    _ out_synced_count: UnsafeMutablePointer<UInt32>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_create_dashpay_profile")
+func platform_wallet_create_dashpay_profile(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ display_name: UnsafePointer<CChar>?,
+    _ public_message: UnsafePointer<CChar>?,
+    _ avatar_url: UnsafePointer<CChar>?,
+    _ avatar_bytes: UnsafePointer<UInt8>?,
+    _ avatar_bytes_len: Int,
+    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_update_dashpay_profile")
+func platform_wallet_update_dashpay_profile(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ display_name: UnsafePointer<CChar>?,
+    _ public_message: UnsafePointer<CChar>?,
+    _ avatar_url: UnsafePointer<CChar>?,
+    _ avatar_bytes: UnsafePointer<UInt8>?,
+    _ avatar_bytes_len: Int,
+    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - ContactRequest Functions
 
 @_silgen_name("contact_request_create")

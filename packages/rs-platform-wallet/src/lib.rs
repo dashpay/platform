@@ -28,9 +28,9 @@ pub use wallet::core::WalletBalance;
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
     derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
-    ContactXpubData, DpnsNameInfo, EstablishedContact, IdentityFunding, IdentityFundingMethod,
-    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData,
-    TopUpFundingMethod, WatchedIdentity, DEFAULT_CONTACT_GAP_LIMIT,
+    ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityFunding,
+    IdentityFundingMethod, IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity,
+    PrivateKeyData, ProfileUpdate, TopUpFundingMethod, WatchedIdentity, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::ManagedIdentitySigner;
