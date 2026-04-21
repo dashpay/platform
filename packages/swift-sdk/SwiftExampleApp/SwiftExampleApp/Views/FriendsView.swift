@@ -633,7 +633,6 @@ struct SendDashPayPaymentSheet: View {
     /// human-readable (a 0.001 DASH payment is `0.001` in the
     /// field, not `100000`).
     @State private var amountText = ""
-    @State private var memo = ""
     @State private var isSending = false
     @State private var errorMessage: String?
     @State private var successTxid: Data?
@@ -795,9 +794,14 @@ struct SendDashPayPaymentSheet: View {
                     }
                 }
 
-                Section("Memo (optional)") {
-                    TextField("Dinner, rent share, …", text: $memo)
-                }
+                // Memo row intentionally absent. DashPay payments
+                // are plain Core-chain transactions — there's no
+                // on-chain memo slot and no DashPay document type
+                // for per-payment notes — so a memo field here
+                // would be misleading. `PaymentEntry.memo` on the
+                // Rust side is a local-only record the sender's
+                // wallet could populate from elsewhere if needed;
+                // the payment sheet stays honest by omitting it.
 
                 if let successTxid = successTxid {
                     Section {
@@ -908,8 +912,6 @@ struct SendDashPayPaymentSheet: View {
             errorMessage = "Amount must be greater than zero"
             return
         }
-        let trimmedMemo = memo.trimmingCharacters(in: .whitespacesAndNewlines)
-        let memoCopy: String? = trimmedMemo.isEmpty ? nil : trimmedMemo
 
         isSending = true
         errorMessage = nil
@@ -917,11 +919,16 @@ struct SendDashPayPaymentSheet: View {
         Task { @MainActor in
             defer { isSending = false }
             do {
+                // `memo: nil` — DashPay payments don't carry memos
+                // on-chain or via a document, so there's nothing
+                // useful to pass. The Rust-side
+                // `PaymentEntry.memo` slot stays available for
+                // future local-note wiring.
                 let txid = try await wallet.sendDashPayPayment(
                     fromIdentityId: senderIdentity.id,
                     toContactIdentityId: contact.identityId,
                     amountDuffs: duffs,
-                    memo: memoCopy
+                    memo: nil
                 )
                 successTxid = txid
                 onSent()
