@@ -43,6 +43,110 @@ use crate::runtime::block_on_worker;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
+// Managed identity lookup
+// ---------------------------------------------------------------------------
+
+/// Look up the live [`ManagedIdentity`](platform_wallet::ManagedIdentity)
+/// for `identity_id` under `wallet_handle` and return a fresh handle
+/// into the shared `MANAGED_IDENTITY_STORAGE`.
+///
+/// The returned handle is a *snapshot clone* — it doesn't track
+/// further mutations on the Rust-side live identity. Call again
+/// after each mutation (e.g. after a sync round) to pick up fresh
+/// state. Release via [`crate::managed_identity_destroy`].
+///
+/// This wraps `WalletManager::get_wallet_info(...).identity_manager
+/// .managed_identity(...)` so callers on the new
+/// `ManagedPlatformWallet` / `PlatformWallet` path can read
+/// `ManagedIdentity` fields (contact requests, established contacts,
+/// DPNS names, etc.) without spinning up a separate
+/// `IdentityManager` handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_managed_identity(
+    wallet_handle: Handle,
+    identity_id: IdentifierBytes,
+    out_managed_identity_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_managed_identity_handle.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "out_managed_identity_handle is null",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    let id = match identity_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid identity identifier: {e}"),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            // `blocking_read` is safe here — the caller is a non-
+            // tokio FFI thread. Matches the pattern used by
+            // `platform_wallet_get_dashpay_profile`.
+            let wm = wallet.wallet_manager().blocking_read();
+            let info = match wm.get_wallet_info(&wallet.wallet_id()) {
+                Some(i) => i,
+                None => {
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorInvalidHandle,
+                                "Wallet info not found for wallet handle",
+                            );
+                        }
+                    }
+                    return PlatformWalletFFIResult::ErrorInvalidHandle;
+                }
+            };
+            match info.identity_manager.managed_identity(&id).cloned() {
+                Some(managed) => {
+                    let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+                    unsafe { *out_managed_identity_handle = handle };
+                    PlatformWalletFFIResult::Success
+                }
+                None => {
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorIdentityNotFound,
+                                format!("Identity {id} not found in wallet"),
+                            );
+                        }
+                    }
+                    PlatformWalletFFIResult::ErrorIdentityNotFound
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid platform-wallet handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+// ---------------------------------------------------------------------------
 // Array helpers
 // ---------------------------------------------------------------------------
 

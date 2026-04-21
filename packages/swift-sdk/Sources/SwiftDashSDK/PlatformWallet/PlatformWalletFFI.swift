@@ -606,6 +606,14 @@ struct ContactRequestHandleArray {
 @_silgen_name("platform_wallet_contact_request_handle_array_free")
 func platform_wallet_contact_request_handle_array_free(_ array: ContactRequestHandleArray)
 
+@_silgen_name("platform_wallet_get_managed_identity")
+func platform_wallet_get_managed_identity(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ out_managed_identity_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 @_silgen_name("platform_wallet_send_contact_request")
 func platform_wallet_send_contact_request(
     _ wallet_handle: Handle,

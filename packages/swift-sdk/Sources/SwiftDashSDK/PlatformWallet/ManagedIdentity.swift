@@ -1,8 +1,13 @@
 import Foundation
 import DashSDKFFI
 
-/// Managed Identity with DashPay metadata
-public class ManagedIdentity {
+/// Managed Identity with DashPay metadata.
+///
+/// `@unchecked Sendable`: immutable `Handle` (UInt64); all mutable
+/// state lives in the Rust-side `MANAGED_IDENTITY_STORAGE` under
+/// parking_lot RwLock. Same pattern as `ContactRequest`,
+/// `EstablishedContact`, and `ManagedPlatformWallet`.
+public final class ManagedIdentity: @unchecked Sendable {
     internal let handle: Handle
 
     internal init(handle: Handle) {

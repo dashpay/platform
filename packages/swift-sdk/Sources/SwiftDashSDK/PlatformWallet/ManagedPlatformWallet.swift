@@ -487,6 +487,30 @@ extension ManagedPlatformWallet {
 // MARK: - DashPay contact requests + payments
 
 extension ManagedPlatformWallet {
+    /// Return a Swift-owned `ManagedIdentity` handle for `identityId`
+    /// by looking it up inside this wallet's `IdentityManager`.
+    ///
+    /// The returned handle is a snapshot clone — it doesn't track
+    /// further Rust-side mutations on the live identity. Call again
+    /// after each sync round to pick up fresh contact-request state
+    /// etc. Throws `.identityNotFound` when the wallet doesn't know
+    /// this identity.
+    public func managedIdentity(identityId: Identifier) throws -> ManagedIdentity {
+        var outHandle: Handle = NULL_HANDLE
+        var error = PlatformWalletFFIError()
+        let ffiId = identifierToFFI(identityId)
+        let result = platform_wallet_get_managed_identity(
+            handle,
+            ffiId,
+            &outHandle,
+            &error
+        )
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return ManagedIdentity(handle: outHandle)
+    }
+
     /// Send a contact request to `recipientIdentityId` owned by
     /// `senderIdentityId`.
     ///

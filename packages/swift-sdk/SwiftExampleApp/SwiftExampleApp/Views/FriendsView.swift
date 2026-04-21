@@ -4,6 +4,7 @@ import SwiftDashSDK
 
 struct FriendsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @StateObject private var dashPayService = ObservableDashPayService()
     @State private var selectedIdentityId: String = ""
     @State private var contacts: [DashPayContact] = []
@@ -175,7 +176,11 @@ struct FriendsView: View {
                     }
                 }
                 .sheet(isPresented: $showAddFriend) {
-                    AddFriendView(selectedIdentity: selectedIdentity)
+                    AddFriendView(
+                        selectedIdentity: selectedIdentity,
+                        onSent: { loadFriends() }
+                    )
+                    .environmentObject(walletManager)
                 }
                 .onAppear {
                     // Set initial selected identity if not set
@@ -190,48 +195,138 @@ struct FriendsView: View {
         }
     }
 
+    /// Resolve the `ManagedPlatformWallet` anchored to `identity.walletId`.
+    /// Errors when the identity has no wallet association or the
+    /// wallet isn't currently loaded in the manager.
+    private func requireWallet(
+        for identity: IdentityModel
+    ) throws -> ManagedPlatformWallet {
+        guard let walletId = identity.walletId else {
+            throw PlatformWalletError.walletOperation(
+                "Identity \(identity.idString) has no walletId"
+            )
+        }
+        guard let wallet = walletManager.wallet(for: walletId) else {
+            throw PlatformWalletError.walletOperation(
+                "No ManagedPlatformWallet for this identity's walletId"
+            )
+        }
+        return wallet
+    }
+
+    /// Refresh the friends list for the currently-selected identity.
+    ///
+    /// Two-stage:
+    ///   1. `wallet.syncContactRequests()` — fetches incoming
+    ///      contact-request documents from Platform and populates
+    ///      `ManagedIdentity.incoming_contact_requests` (and
+    ///      auto-establishes any bidirectional matches).
+    ///   2. Re-read local state off the `ManagedIdentity` snapshot
+    ///      (incoming / sent / established ID arrays) and convert
+    ///      to the UI value types.
     private func loadFriends() {
-        guard selectedIdentity != nil else { return }
+        guard let identity = selectedIdentity else { return }
+        let wallet: ManagedPlatformWallet
+        do {
+            wallet = try requireWallet(for: identity)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
 
         isLoading = true
+        Task { @MainActor in
+            defer { isLoading = false }
 
-        Task {
-            // Load the managed identity for this identity
-            // In a real implementation, you would serialize the identity to bytes
-            // For now, we'll skip this and show the pattern
+            // Stage 1: sync from Platform. Non-fatal — a sync error
+            // doesn't block reading whatever local state we already
+            // have.
+            do {
+                _ = try await wallet.syncContactRequests()
+                errorMessage = nil
+            } catch {
+                errorMessage = "Contact request sync failed: \(error.localizedDescription)"
+            }
 
-            // If we had a ManagedIdentity:
-            // let establishedContacts = try dashPayService.getEstablishedContacts(identity: managedIdentity)
-            // let incoming = try dashPayService.getIncomingContactRequests(identity: managedIdentity)
-            // let sent = try dashPayService.getSentContactRequests(identity: managedIdentity)
+            // Stage 2: local read via a fresh `ManagedIdentity`
+            // snapshot. Every sync invalidates the prior snapshot,
+            // so we grab a new one here rather than holding onto one
+            // across calls.
+            do {
+                let managed = try wallet.managedIdentity(identityId: identity.id)
+                let incomingIds = try managed.getIncomingContactRequestIds()
+                let sentIds = try managed.getSentContactRequestIds()
+                let establishedIds = try managed.getEstablishedContactIds()
 
-            // For now, show empty state
-            await MainActor.run {
+                incomingRequests = incomingIds.map { senderId in
+                    DashPayContactRequest(
+                        id: "incoming-\(senderId.toHexString())",
+                        senderId: senderId,
+                        recipientId: identity.id
+                    )
+                }
+                sentRequests = sentIds.map { recipientId in
+                    DashPayContactRequest(
+                        id: "sent-\(recipientId.toHexString())",
+                        senderId: identity.id,
+                        recipientId: recipientId
+                    )
+                }
+                contacts = establishedIds.map { contactId in
+                    // Display name defaults to a truncated hex id —
+                    // DashPay profile display names aren't looked up
+                    // here yet (would require per-contact
+                    // `getDashPayProfile(identityId:)` calls).
+                    DashPayContact(
+                        id: contactId,
+                        displayName: String(contactId.toHexString().prefix(12)) + "…",
+                        identityId: contactId
+                    )
+                }
+            } catch {
                 contacts = []
                 incomingRequests = []
                 sentRequests = []
-                isLoading = false
+                errorMessage = "Failed to read local DashPay state: \(error.localizedDescription)"
             }
         }
     }
 
     private func acceptRequest(_ request: DashPayContactRequest) {
-        guard selectedIdentity != nil else { return }
-
-        Task {
-            // In real implementation:
-            // try await dashPayService.acceptContactRequest(identity: managedIdentity, from: request.senderId)
-            loadFriends()
+        guard let identity = selectedIdentity else { return }
+        Task { @MainActor in
+            do {
+                let wallet = try requireWallet(for: identity)
+                let managed = try wallet.managedIdentity(identityId: identity.id)
+                guard let contactRequest = try managed.getIncomingContactRequest(
+                    senderId: request.senderId
+                ) else {
+                    errorMessage = "Incoming request from \(request.senderId.toHexString().prefix(12))… not in local state"
+                    return
+                }
+                _ = try await wallet.acceptContactRequest(contactRequest)
+                errorMessage = nil
+                loadFriends()
+            } catch {
+                errorMessage = "Accept failed: \(error.localizedDescription)"
+            }
         }
     }
 
     private func rejectRequest(_ request: DashPayContactRequest) {
-        guard selectedIdentity != nil else { return }
-
-        Task {
-            // In real implementation:
-            // try await dashPayService.rejectContactRequest(identity: managedIdentity, from: request.senderId)
-            loadFriends()
+        guard let identity = selectedIdentity else { return }
+        Task { @MainActor in
+            do {
+                let wallet = try requireWallet(for: identity)
+                try await wallet.rejectContactRequest(
+                    ourIdentityId: identity.id,
+                    contactIdentityId: request.senderId
+                )
+                errorMessage = nil
+                loadFriends()
+            } catch {
+                errorMessage = "Reject failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -353,9 +448,17 @@ struct ContactRequestRow: View {
 
 struct AddFriendView: View {
     let selectedIdentity: IdentityModel?
+    /// Fires after a contact request has been successfully broadcast
+    /// + persisted. The parent re-runs `loadFriends()` to refresh
+    /// the sent-request list.
+    let onSent: () -> Void
+
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var searchMethod = 0 // 0: DPNS, 1: Identity ID
+    @State private var isSending = false
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -380,21 +483,36 @@ struct AddFriendView: View {
                     } footer: {
                         Text(searchMethod == 0 ?
                             "Search for friends by their Dash Platform Name Service (DPNS) username" :
-                            "Search for friends by their unique identity identifier")
+                            "Search for friends by their unique identity identifier (base58)")
                     }
 
                     Section {
                         Button {
-                            // TODO: Implement friend search and add
-                            dismiss()
+                            sendRequest()
                         } label: {
                             HStack {
                                 Spacer()
-                                Label("Search & Add", systemImage: "magnifyingglass")
+                                if isSending {
+                                    ProgressView()
+                                } else {
+                                    Label("Send Friend Request", systemImage: "paperplane")
+                                }
                                 Spacer()
                             }
                         }
-                        .disabled(searchText.isEmpty)
+                        .disabled(
+                            searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || isSending
+                            || selectedIdentity == nil
+                        )
+                    }
+
+                    if let errorMessage = errorMessage {
+                        Section {
+                            Text(errorMessage)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
                     }
                 }
             }
@@ -405,7 +523,57 @@ struct AddFriendView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .disabled(isSending)
                 }
+            }
+        }
+    }
+
+    /// Resolve the recipient identity id (via DPNS name lookup or
+    /// direct base58 parse) and fire `sendContactRequest` against
+    /// the selected identity's wallet. On success, dismisses the
+    /// sheet and invokes `onSent` so the parent refreshes.
+    private func sendRequest() {
+        guard let identity = selectedIdentity,
+              let walletId = identity.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            errorMessage = "No wallet available for this identity"
+            return
+        }
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        isSending = true
+        errorMessage = nil
+
+        Task { @MainActor in
+            defer { isSending = false }
+            do {
+                // Resolve recipient. DPNS mode goes through
+                // `resolveDpnsName`; ID mode parses base58 directly.
+                let recipientId: Identifier
+                if searchMethod == 0 {
+                    guard let resolved = try await wallet.resolveDpnsName(trimmed) else {
+                        errorMessage = "DPNS name not found"
+                        return
+                    }
+                    recipientId = resolved
+                } else {
+                    guard let parsed = Data.identifier(fromBase58: trimmed) else {
+                        errorMessage = "Invalid identity id (expected base58)"
+                        return
+                    }
+                    recipientId = parsed
+                }
+
+                _ = try await wallet.sendContactRequest(
+                    senderIdentityId: identity.id,
+                    recipientIdentityId: recipientId
+                )
+                onSent()
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }
