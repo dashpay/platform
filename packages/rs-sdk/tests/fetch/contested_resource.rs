@@ -442,8 +442,8 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
     }
 }
 
-/// Regression test: contestedResources with start_index_values and NO limit
-/// produces an invalid GroveDB proof that fails verification.
+/// Regression test: contestedResources with start_index_values and no limit
+/// previously produced an invalid GroveDB proof that failed verification.
 ///
 /// For a composite contested index with N properties, the caller provides N-1
 /// values via start_index_values to select the depth of traversal. The API
@@ -451,11 +451,11 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
 ///
 /// For DPNS `parentNameAndLabel` (2 properties: normalizedParentDomainName,
 /// normalizedLabel):
-///   - start_index_values = ["dash"], limit = None  → FAILS proof verification
-///   - start_index_values = ["dash"], limit = Some   → works
-///   - start_index_values = [],       limit = None  → works (returns ["dash"])
+///   - start_index_values = ["dash"], limit = None  → failed proof verification
+///   - start_index_values = ["dash"], limit = Some  → worked
+///   - start_index_values = [],       limit = None  → worked (returned ["dash"])
 ///
-/// The unbounded query (no limit) fails with:
+/// The unbounded query (no limit) failed with:
 ///   "Proof is missing data for query range. Encountered unexpected node
 ///    type: KVHash(...)"
 ///
@@ -469,7 +469,7 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
     not(feature = "network-testing"),
     ignore = "this test requires a live platform node to verify the proof fix"
 )]
-async fn contested_resources_start_index_values_no_limit_matches_explicit_default_limit() {
+async fn should_contested_resources_start_index_values_no_limit_match_explicit_default_limit() {
     setup_logs();
 
     let cfg = Config::new();
@@ -500,7 +500,10 @@ async fn contested_resources_start_index_values_no_limit_matches_explicit_defaul
     );
 
     // 1. With limit → works fine.
-    let with_limit = ContestedResource::fetch_many(&sdk, make_query(Some(100)))
+    let with_limit = ContestedResource::fetch_many(
+        &sdk,
+        make_query(Some(drive::config::DEFAULT_QUERY_LIMIT)),
+    )
         .await
         .expect("query with start_index_values + limit should succeed");
     tracing::info!(count = with_limit.0.len(), "With limit: OK");

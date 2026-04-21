@@ -79,21 +79,41 @@ const DEFAULT_DPNS_CONTRACT_ID =
 const DEFAULT_DPNS_DOCUMENT_TYPE = process.env.DPNS_DOCUMENT_TYPE ?? 'domain';
 const DEFAULT_DPNS_INDEX = process.env.DPNS_INDEX ?? 'parentNameAndLabel';
 const DEFAULT_PARENT = process.env.CONTESTED_PARENT ?? 'dash';
-const DEFAULT_LIMIT = Number(process.env.DEFAULT_LIMIT ?? '100');
 const NETWORK = process.env.NETWORK ?? 'mainnet';
 const TRUSTED = (process.env.TRUSTED ?? 'true').toLowerCase() !== 'false';
 const localSdkImport = new URL('../packages/js-evo-sdk/dist/sdk.js', import.meta.url).href;
 const EVO_SDK_IMPORT = process.env.EVO_SDK_IMPORT ?? null;
 
 const nowMs = Date.now();
-const defaultVotePollsStartMs = Number(process.env.VOTE_POLLS_START_MS ?? '0');
-const defaultVotePollsEndMs = Number(
-  process.env.VOTE_POLLS_END_MS ?? String(nowMs + 365 * 24 * 60 * 60 * 1000),
-);
 
 function printHeading(title) {
   console.log(`\n=== ${title} ===`);
 }
+
+function parseNumericEnv(name, defaultValue, { integer = false } = {}) {
+  const raw = process.env[name];
+
+  if (raw == null || raw === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed))) {
+    throw new Error(
+      `Invalid ${name}: expected ${integer ? 'an integer' : 'a finite number'}, got ${JSON.stringify(raw)}`,
+    );
+  }
+
+  return parsed;
+}
+
+const DEFAULT_LIMIT = parseNumericEnv('DEFAULT_LIMIT', 100, { integer: true });
+const defaultVotePollsStartMs = parseNumericEnv('VOTE_POLLS_START_MS', 0, { integer: true });
+const defaultVotePollsEndMs = parseNumericEnv(
+  'VOTE_POLLS_END_MS',
+  nowMs + 365 * 24 * 60 * 60 * 1000,
+  { integer: true },
+);
 
 function shorten(value, max = 140) {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -281,19 +301,38 @@ async function runPair(name, buildNoLimit, buildWithLimit) {
   ];
 
   for (const [key, build] of cases) {
+    let result;
+
     try {
-      const result = await build();
-      record[key] = {
-        ok: true,
-        count: countResult(result),
-        summary: summarizeResult(result),
-      };
-    } catch (error) {
+      result = await build();
+    } catch (queryError) {
       record[key] = {
         ok: false,
-        error: normalizeError(error),
+        error: normalizeError(queryError),
       };
+      continue;
     }
+
+    const value = { ok: true };
+
+    try {
+      value.count = countResult(result);
+    } catch (formatError) {
+      value.count = null;
+      value.formattingError = normalizeError(formatError);
+    }
+
+    try {
+      value.summary = summarizeResult(result);
+    } catch (formatError) {
+      value.summary = '<unavailable>';
+      const normalized = normalizeError(formatError);
+      value.formattingError = value.formattingError
+        ? `${value.formattingError}; ${normalized}`
+        : normalized;
+    }
+
+    record[key] = value;
   }
 
   if (record.noLimit?.ok === false && record.explicitLimit?.ok === true) {
@@ -345,6 +384,11 @@ function getTokenPreProgrammedDistributionsMethod(sdk) {
 }
 
 async function autoDiscoverContestedLabel(sdk) {
+  const explicit = process.env.VOTE_STATE_LABEL;
+  if (explicit) {
+    return { label: explicit, labels: undefined };
+  }
+
   const labels = await sdk.group.contestedResources({
     dataContractId: DEFAULT_DPNS_CONTRACT_ID,
     documentTypeName: DEFAULT_DPNS_DOCUMENT_TYPE,
@@ -353,11 +397,6 @@ async function autoDiscoverContestedLabel(sdk) {
     limit: DEFAULT_LIMIT,
     orderAscending: true,
   });
-
-  const explicit = process.env.VOTE_STATE_LABEL;
-  if (explicit) {
-    return { label: explicit, labels };
-  }
 
   const activeEntries = await sdk.voting.votePollsByEndDate({
     startTimeMs: defaultVotePollsStartMs,
@@ -655,7 +694,9 @@ async function main() {
       && process.env.GROUP_ACTIONS_POSITION
       && process.env.GROUP_ACTIONS_STATUS
     ) {
-      const groupContractPosition = Number(process.env.GROUP_ACTIONS_POSITION);
+      const groupContractPosition = parseNumericEnv('GROUP_ACTIONS_POSITION', null, {
+        integer: true,
+      });
       records.push(
         await runPair(
           `group.actions(contractId=${process.env.GROUP_ACTIONS_CONTRACT_ID}, position=${groupContractPosition})`,
