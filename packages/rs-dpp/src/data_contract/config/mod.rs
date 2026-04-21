@@ -583,4 +583,69 @@ mod tests {
             }
         }
     }
+
+    mod get_contract_configuration_properties {
+        use super::*;
+        use crate::data_contract::config::property::{
+            REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY, REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY,
+        };
+        use platform_value::Value;
+        use std::collections::BTreeMap;
+
+        /// Regression test for a copy-paste bug where V0 parsing read both
+        /// encryption and decryption bounded-key fields from the same map key
+        /// (`requiresIdentityEncryptionBoundedKey`), making it impossible to
+        /// set them to different values via the map-based parser.
+        #[test]
+        fn v0_parses_encryption_and_decryption_keys_from_distinct_properties() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Unique as u8),
+            );
+            map.insert(
+                REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Multiple as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert_eq!(
+                config.requires_identity_encryption_bounded_key,
+                Some(StorageKeyRequirements::Unique)
+            );
+            assert_eq!(
+                config.requires_identity_decryption_bounded_key,
+                Some(StorageKeyRequirements::Multiple)
+            );
+        }
+
+        #[test]
+        fn v0_leaves_bounded_key_fields_none_when_absent() {
+            let map: BTreeMap<String, Value> = BTreeMap::new();
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config with defaults");
+            assert!(config.requires_identity_encryption_bounded_key.is_none());
+            assert!(config.requires_identity_decryption_bounded_key.is_none());
+        }
+
+        #[test]
+        fn v0_parses_only_decryption_when_encryption_absent() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::MultipleReferenceToLatest as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert!(config.requires_identity_encryption_bounded_key.is_none());
+            assert_eq!(
+                config.requires_identity_decryption_bounded_key,
+                Some(StorageKeyRequirements::MultipleReferenceToLatest)
+            );
+        }
+    }
 }
