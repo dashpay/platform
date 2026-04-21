@@ -12,6 +12,7 @@ use dpp::prelude::Identifier;
 use dpp::identity::signer::Signer;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
 use super::*;
 
@@ -81,6 +82,45 @@ impl IdentityWallet {
                 name, e
             ))
         })?;
+
+        // Record the just-registered name on the `ManagedIdentity` so
+        // subsequent reads (and the persisted snapshot) reflect it
+        // without an extra round-trip to Platform. `add_dpns_name`
+        // emits an `IdentityChangeSet` via the persister handle.
+        //
+        // The `acquired_at` timestamp is best-effort wall-clock — the
+        // DPNS contract carries its own `$createdAt` on the document
+        // but the SDK doesn't surface it back on the register result
+        // today. If that changes, swap this for the contract-side
+        // value.
+        let acquired_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .ok();
+        let label_to_store = name.to_string();
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                    // Skip if we already have this label recorded —
+                    // `add_dpns_name` has no idempotency guard of its
+                    // own and would emit a duplicate entry otherwise.
+                    if !managed
+                        .dpns_names
+                        .iter()
+                        .any(|existing| existing.label == label_to_store)
+                    {
+                        managed.add_dpns_name(
+                            DpnsNameInfo {
+                                label: label_to_store,
+                                acquired_at,
+                            },
+                            &self.persister,
+                        );
+                    }
+                }
+            }
+        }
 
         Ok(result.full_domain_name)
     }

@@ -541,6 +541,56 @@ func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>)
 @_silgen_name("platform_wallet_ffi_error_free")
 func platform_wallet_ffi_error_free(_ error: PlatformWalletFFIError)
 
+// MARK: - DPNS name FFI
+
+/// Mirrors `DpnsSearchResultFFI` from
+/// `rs-platform-wallet-ffi/src/dpns.rs`. Caller owns each entry's
+/// `label` C-string; release the whole array (labels included) via
+/// `dpns_search_results_free`.
+struct DpnsSearchResultFFI {
+    var identity_id: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+    var label: UnsafeMutablePointer<CChar>?
+}
+
+@_silgen_name("platform_wallet_register_dpns_name")
+func platform_wallet_register_dpns_name(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ name: UnsafePointer<CChar>?,
+    _ out_full_domain_name: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_resolve_dpns_name")
+func platform_wallet_resolve_dpns_name(
+    _ wallet_handle: Handle,
+    _ name: UnsafePointer<CChar>?,
+    _ out_identity_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_found: UnsafeMutablePointer<Bool>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_search_dpns_names")
+func platform_wallet_search_dpns_names(
+    _ wallet_handle: Handle,
+    _ prefix: UnsafePointer<CChar>?,
+    _ limit: UInt32,
+    _ out_results: UnsafeMutablePointer<UnsafeMutablePointer<DpnsSearchResultFFI>?>,
+    _ out_count: UnsafeMutablePointer<Int>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("dpns_search_results_free")
+func dpns_search_results_free(
+    _ results: UnsafeMutablePointer<DpnsSearchResultFFI>?,
+    _ count: Int
+)
+
 // MARK: - Identity persistence FFI
 
 /// 32-byte C tuple — mirrors a single `[u8; 32]` on the Rust side.

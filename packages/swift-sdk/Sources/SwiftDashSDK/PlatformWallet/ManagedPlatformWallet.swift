@@ -360,6 +360,130 @@ private func hashTupleInit() -> (
     )
 }
 
+// MARK: - DPNS operations
+
+/// Simple search-result struct surfaced by `searchDpnsNames`. Mirrors
+/// the Rust `DpnsSearchResultFFI` row shape in a Sendable Swift value.
+public struct DpnsSearchResult: Sendable, Equatable {
+    public let identityId: Identifier
+    public let fullName: String
+}
+
+extension ManagedPlatformWallet {
+    /// Register a DPNS name for `identityId` on Platform.
+    ///
+    /// Goes through `IdentityWallet::register_name`, which on success:
+    ///   1. broadcasts the DPNS preorder + domain documents
+    ///   2. appends the new `DpnsNameInfo` to
+    ///      `ManagedIdentity.dpns_names`
+    ///   3. queues the updated identity in the persister so the
+    ///      SwiftData `PersistentIdentity` row refreshes via the
+    ///      `on_persist_identities_fn` callback.
+    ///
+    /// Returns the full domain name (e.g. `"alice.dash"`).
+    @discardableResult
+    public func registerDpnsName(
+        identityId: Identifier,
+        name: String
+    ) async throws -> String {
+        let handle = self.handle
+        let ffiId = identifierToFFI(identityId)
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var outPtr: UnsafeMutablePointer<CChar>? = nil
+            var error = PlatformWalletFFIError()
+            let result = name.withCString { namePtr in
+                platform_wallet_register_dpns_name(
+                    handle,
+                    ffiId,
+                    namePtr,
+                    &outPtr,
+                    &error
+                )
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            defer { if let p = outPtr { platform_wallet_string_free(p) } }
+            guard let p = outPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "register_dpns_name returned a null full-domain-name pointer"
+                )
+            }
+            return String(cString: p)
+        }.value
+    }
+
+    /// Resolve a DPNS name (`"alice"` or `"alice.dash"`) to an
+    /// identity id. Returns `nil` when the name is unregistered.
+    public func resolveDpnsName(_ name: String) async throws -> Identifier? {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Identifier? in
+            var outId = IdentifierBytes(
+                bytes: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            )
+            var found = false
+            var error = PlatformWalletFFIError()
+            let result = name.withCString { namePtr in
+                platform_wallet_resolve_dpns_name(
+                    handle,
+                    namePtr,
+                    &outId,
+                    &found,
+                    &error
+                )
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            guard found else { return nil }
+            return identifierFromFFI(outId)
+        }.value
+    }
+
+    /// Prefix-search DPNS documents on Platform.
+    ///
+    /// `limit == 0` defers to the SDK's default cap (currently 100).
+    public func searchDpnsNames(
+        prefix: String,
+        limit: UInt32 = 0
+    ) async throws -> [DpnsSearchResult] {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> [DpnsSearchResult] in
+            var outPtr: UnsafeMutablePointer<DpnsSearchResultFFI>? = nil
+            var outCount: Int = 0
+            var error = PlatformWalletFFIError()
+            let result = prefix.withCString { prefixPtr in
+                platform_wallet_search_dpns_names(
+                    handle,
+                    prefixPtr,
+                    limit,
+                    &outPtr,
+                    &outCount,
+                    &error
+                )
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            guard let ptr = outPtr, outCount > 0 else {
+                return []
+            }
+            defer { dpns_search_results_free(ptr, outCount) }
+            var results: [DpnsSearchResult] = []
+            results.reserveCapacity(outCount)
+            for i in 0..<outCount {
+                let entry = ptr[i]
+                let label = entry.label.map { String(cString: $0) } ?? ""
+                var idTuple = entry.identity_id
+                let identityId = Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
+                results.append(.init(identityId: identityId, fullName: label))
+            }
+            return results
+        }.value
+    }
+}
+
 // MARK: - DashPay Profile operations
 
 extension ManagedPlatformWallet {
