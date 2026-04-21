@@ -29,6 +29,10 @@ use crate::core_address_types::{
     AddressPoolTypeTagFFI, CoreAddressEntryFFI, PersistAccountAddressesFn,
 };
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
+use crate::identity_persistence::{
+    free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
+    IdentityKeyRemovalFFI,
+};
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, LoadWalletListFn, LoadWalletListFreeFn, PersistAccountFn,
@@ -102,6 +106,41 @@ pub struct PersistenceCallbacks {
     /// (initial population, pool extension, `used` flip). See
     /// [`PersistAccountAddressesFn`].
     pub on_persist_account_addresses_fn: Option<PersistAccountAddressesFn>,
+    /// Called with an `IdentityChangeSet` slice — scalar-only
+    /// identity upserts (id / balance / revision / label / status /
+    /// wallet_id / identity_index) and identity-id removals. Swift
+    /// handlers map upserts onto `PersistentIdentity` rows and
+    /// removals onto tombstones. `primary_identity_ptr` is `null`
+    /// when the changeset doesn't touch primary selection;
+    /// `has_last_scanned_index` gates `last_scanned_index` the same
+    /// way.
+    pub on_persist_identities_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            upserts_ptr: *const IdentityEntryFFI,
+            upserts_count: usize,
+            removed_ptr: *const [u8; 32],
+            removed_count: usize,
+            primary_identity_ptr: *const [u8; 32],
+            has_last_scanned_index: bool,
+            last_scanned_index: u32,
+        ) -> i32,
+    >,
+    /// Called with an `IdentityKeysChangeSet` slice — per-key
+    /// upserts (public key + optional private-key material) and
+    /// `(identity_id, key_id)` removals. Swift handlers map upserts
+    /// onto `PersistentPublicKey` rows and removals onto row deletes.
+    pub on_persist_identity_keys_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            upserts_ptr: *const IdentityKeyEntryFFI,
+            upserts_count: usize,
+            removed_ptr: *const IdentityKeyRemovalFFI,
+            removed_count: usize,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -172,6 +211,105 @@ impl PlatformWalletPersistence for FFIPersister {
                 if result != 0 {
                     eprintln!(
                         "Wallet changeset persistence callback returned error code {}",
+                        result
+                    );
+                }
+            }
+        }
+
+        // Send identity scalar changeset — upserts, removals, primary
+        // selection, and the gap-limit watermark. Swift handler maps
+        // these onto `PersistentIdentity` row upserts / tombstones.
+        if let Some(ref id_cs) = changeset.identities {
+            if let Some(cb) = self.callbacks.on_persist_identities_fn {
+                // Build heap-allocated mirrors. Scoped so the Vec
+                // drops only after the free-loop runs even if the
+                // callback invocation panics.
+                let mut upserts: Vec<IdentityEntryFFI> = id_cs
+                    .identities
+                    .values()
+                    .map(IdentityEntryFFI::from_entry)
+                    .collect();
+                let removed: Vec<[u8; 32]> =
+                    id_cs.removed.iter().map(|id| id.to_buffer()).collect();
+                let primary_buf = id_cs.primary_identity.map(|id| id.to_buffer());
+                let primary_ptr: *const [u8; 32] = primary_buf
+                    .as_ref()
+                    .map(|b| b as *const [u8; 32])
+                    .unwrap_or(std::ptr::null());
+                let (has_scan, scan_idx) = match id_cs.last_scanned_index {
+                    Some(v) => (true, v),
+                    None => (false, 0),
+                };
+                let result = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        upserts.as_ptr(),
+                        upserts.len(),
+                        if removed.is_empty() {
+                            std::ptr::null()
+                        } else {
+                            removed.as_ptr()
+                        },
+                        removed.len(),
+                        primary_ptr,
+                        has_scan,
+                        scan_idx,
+                    )
+                };
+                // Release every heap-allocated field on the FFI
+                // entries before the Vec drops its storage.
+                for entry in upserts.iter_mut() {
+                    unsafe { free_identity_entry_ffi(entry) };
+                }
+                if result != 0 {
+                    eprintln!(
+                        "Identity changeset persistence callback returned error code {}",
+                        result
+                    );
+                }
+            }
+        }
+
+        // Send identity-keys changeset — per-key upserts +
+        // `(identity_id, key_id)` removals. Maps onto Swift's
+        // `PersistentPublicKey` rows.
+        if let Some(ref keys_cs) = changeset.identity_keys {
+            if let Some(cb) = self.callbacks.on_persist_identity_keys_fn {
+                let mut upserts: Vec<IdentityKeyEntryFFI> = keys_cs
+                    .upserts
+                    .values()
+                    .map(IdentityKeyEntryFFI::from_entry)
+                    .collect();
+                let removed: Vec<IdentityKeyRemovalFFI> = keys_cs
+                    .removed
+                    .iter()
+                    .map(|(id, key_id)| IdentityKeyRemovalFFI {
+                        identity_id: id.to_buffer(),
+                        key_id: *key_id,
+                    })
+                    .collect();
+                let result = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        upserts.as_ptr(),
+                        upserts.len(),
+                        if removed.is_empty() {
+                            std::ptr::null()
+                        } else {
+                            removed.as_ptr()
+                        },
+                        removed.len(),
+                    )
+                };
+                for entry in upserts.iter_mut() {
+                    unsafe { free_identity_key_entry_ffi(entry) };
+                }
+                if result != 0 {
+                    eprintln!(
+                        "Identity keys changeset persistence callback returned error code {}",
                         result
                     );
                 }

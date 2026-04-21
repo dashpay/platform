@@ -540,3 +540,69 @@ func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>)
 
 @_silgen_name("platform_wallet_ffi_error_free")
 func platform_wallet_ffi_error_free(_ error: PlatformWalletFFIError)
+
+// MARK: - Identity persistence FFI
+
+/// 32-byte C tuple — mirrors a single `[u8; 32]` on the Rust side.
+/// Swift imports fixed-size byte arrays this way; every persister-
+/// callback struct that carries an `identity_id` / `wallet_id` uses
+/// this shape.
+typealias FFIByteTuple32 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+)
+
+/// Mirrors `IdentityEntryFFI` from
+/// `rs-platform-wallet-ffi/src/identity_persistence.rs`. See that
+/// file for the field-by-field semantics. Heap allocations (the
+/// `label` C-string) are released by the Rust side after the
+/// callback returns — Swift must finish reading any strings before
+/// yielding.
+struct IdentityEntryFFI {
+    var identity_id: FFIByteTuple32
+    var balance: UInt64
+    var revision: UInt64
+    var identity_index: UInt32
+    var label: UnsafeMutablePointer<CChar>?
+    var status: UInt8
+    var wallet_id_is_some: Bool
+    var wallet_id: FFIByteTuple32
+}
+
+/// Mirrors `IdentityKeyEntryFFI` from
+/// `rs-platform-wallet-ffi/src/identity_persistence.rs`.
+///
+/// `private_key_kind` decodes as:
+///   0 → None (ignore the `private_key_*` columns)
+///   1 → Clear (`private_key_bytes` holds raw 32-byte key material)
+///   2 → AtWalletDerivationPath (`private_key_wallet_id` +
+///       `private_key_derivation_path` identify the seed-derived
+///       key; no Keychain write needed because the seed itself is
+///       already stored at the wallet level).
+struct IdentityKeyEntryFFI {
+    var identity_id: FFIByteTuple32
+    var key_id: UInt32
+    var purpose: UInt8
+    var security_level: UInt8
+    var key_type: UInt8
+    var read_only: Bool
+    var disabled_at_is_some: Bool
+    var disabled_at: UInt64
+    var public_key_data_ptr: UnsafeMutablePointer<UInt8>?
+    var public_key_data_len: Int
+    var private_key_kind: UInt8
+    var private_key_bytes: FFIByteTuple32
+    var private_key_wallet_id: FFIByteTuple32
+    var private_key_derivation_path: UnsafeMutablePointer<CChar>?
+}
+
+/// Mirrors `IdentityKeyRemovalFFI` from
+/// `rs-platform-wallet-ffi/src/identity_persistence.rs` — the
+/// `(identity_id, key_id)` composite used by the keys-changeset
+/// `removed` surface.
+struct IdentityKeyRemovalFFI {
+    var identity_id: FFIByteTuple32
+    var key_id: UInt32
+}

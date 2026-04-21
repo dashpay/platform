@@ -414,7 +414,254 @@ public class PlatformWalletPersistenceHandler {
         cb.on_load_wallet_list_free_fn = loadWalletListFreeCallback
         cb.on_persist_wallet_metadata_fn = persistWalletMetadataCallback
         cb.on_persist_account_addresses_fn = persistAccountAddressesCallback
+        cb.on_persist_identities_fn = persistIdentitiesCallback
+        cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         return cb
+    }
+
+    // MARK: - Identity scalar persistence
+
+    /// Upsert / remove rows from `PersistentIdentity` in response to
+    /// an `IdentityChangeSet` forwarded by the Rust side.
+    ///
+    /// Mapping:
+    /// - Each `upsert.identity_id` gets an upsert on
+    ///   `PersistentIdentity` keyed by that unique column.
+    /// - Each `removed` id drops the matching row.
+    /// - `primaryIdentity` is a wallet-level hint that currently
+    ///   maps onto `PersistentIdentity.alias == nil` semantics —
+    ///   we don't store a dedicated "primary" column yet, so the
+    ///   value is ignored on the Swift side for now. Wiring is here
+    ///   so the signal doesn't get dropped when we add a column.
+    /// - `lastScannedIndex` is wallet-level and not yet stored on
+    ///   `PersistentWallet`; also passed through as a future-wire.
+    ///
+    /// Public keys are written by `persistIdentityKeys` on a paired
+    /// callback; this path only touches the identity row itself.
+    /// Both callbacks run under the same Rust-side wallet lock so
+    /// the two-step apply is atomic from Swift's perspective.
+    func persistIdentities(
+        walletId: Data,
+        upserts: [IdentityEntrySnapshot],
+        removed: [Data],
+        primaryIdentity: Data?,
+        lastScannedIndex: UInt32?
+    ) {
+        for entry in upserts {
+            let identityId = entry.identityId
+            let descriptor = FetchDescriptor<PersistentIdentity>(
+                predicate: #Predicate { $0.identityId == identityId }
+            )
+            let row: PersistentIdentity
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                row = existing
+            } else {
+                row = PersistentIdentity(
+                    identityId: entry.identityId,
+                    balance: Int64(bitPattern: entry.balance),
+                    revision: Int64(bitPattern: entry.revision),
+                    isLocal: false,
+                    walletId: entry.walletId
+                )
+                backgroundContext.insert(row)
+            }
+            // Scalars that ride every upsert — Rust guarantees
+            // monotonic revision + paired balance/revision updates
+            // by the merge gate in `IdentityChangeSet::merge`, so
+            // overwriting unconditionally here is safe.
+            row.balance = Int64(bitPattern: entry.balance)
+            row.revision = Int64(bitPattern: entry.revision)
+            row.walletId = entry.walletId
+            if let label = entry.label {
+                row.alias = label
+            }
+            row.lastUpdated = Date()
+        }
+
+        for identityId in removed {
+            let descriptor = FetchDescriptor<PersistentIdentity>(
+                predicate: #Predicate { $0.identityId == identityId }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                backgroundContext.delete(existing)
+            }
+        }
+
+        // `primaryIdentity` + `lastScannedIndex` aren't yet mapped
+        // onto PersistentIdentity / PersistentWallet columns. Keep
+        // the call sites so the future column addition is one-line
+        // row.primary = … work.
+        _ = primaryIdentity
+        _ = lastScannedIndex
+
+        try? backgroundContext.save()
+    }
+
+    // MARK: - Identity keys persistence
+
+    /// Upsert / remove rows from `PersistentPublicKey` in response to
+    /// an `IdentityKeysChangeSet` forwarded by the Rust side.
+    ///
+    /// Mapping:
+    /// - Each `upsert` is keyed by `(identity_id, key_id)` — the
+    ///   same composite the Rust side uses for `BTreeMap` uniqueness.
+    /// - Each `removed` pair deletes the matching row.
+    ///
+    /// `PrivateKeyKindFFI` encoding:
+    /// - `None` (0): clear any stored `privateKeyKeychainIdentifier`.
+    /// - `Clear` (1): store raw 32-byte key material to the Keychain
+    ///   via `KeychainManager`, record the resulting identifier.
+    /// - `AtWalletDerivationPath` (2): no Keychain write — the seed
+    ///   is stored at wallet level, and `derivationPath` tells the
+    ///   signing path to re-derive. Stored as the identifier so
+    ///   `hasPrivateKey` still reflects presence, but with a
+    ///   `derived:` prefix so consumers can distinguish stored-bytes
+    ///   vs. derived-on-demand.
+    func persistIdentityKeys(
+        walletId: Data,
+        upserts: [IdentityKeyEntrySnapshot],
+        removed: [(identityId: Data, keyId: UInt32)]
+    ) {
+        for entry in upserts {
+            // PersistentPublicKey is keyed on (identity, keyId) via
+            // its parent relationship; fetch by keyId + identityId
+            // (stored as base58 string on the row).
+            let targetKeyId = Int32(bitPattern: entry.keyId)
+            let identityHex = entry.identityId.toBase58String()
+            let descriptor = FetchDescriptor<PersistentPublicKey>(
+                predicate: #Predicate {
+                    $0.keyId == targetKeyId && $0.identityId == identityHex
+                }
+            )
+            let row: PersistentPublicKey
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                row = existing
+            } else {
+                let purposeEnum = KeyPurpose(rawValue: entry.purpose) ?? .authentication
+                let levelEnum = SecurityLevel(rawValue: entry.securityLevel) ?? .high
+                let keyTypeEnum = KeyType(rawValue: entry.keyType) ?? .ecdsaSecp256k1
+                row = PersistentPublicKey(
+                    keyId: targetKeyId,
+                    purpose: purposeEnum,
+                    securityLevel: levelEnum,
+                    keyType: keyTypeEnum,
+                    publicKeyData: entry.publicKeyData,
+                    readOnly: entry.readOnly,
+                    disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
+                    identityId: identityHex
+                )
+                backgroundContext.insert(row)
+                // Link to the owning identity if we already have the
+                // row. (We don't insert a missing parent here —
+                // Rust-side ordering guarantees identities apply
+                // before keys within the same changeset.)
+                let identityIdData = entry.identityId
+                let parentDescriptor = FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate { $0.identityId == identityIdData }
+                )
+                if let parent = try? backgroundContext.fetch(parentDescriptor).first {
+                    row.identity = parent
+                    parent.addPublicKey(row)
+                }
+            }
+            // Refresh mutable fields every upsert.
+            row.publicKeyData = entry.publicKeyData
+            row.readOnly = entry.readOnly
+            row.disabledAt = entry.disabledAt.map { Int64(bitPattern: $0) }
+
+            // Private-key handling.
+            //
+            // Raw-bytes Keychain writes are NOT performed here —
+            // `KeychainManager.shared` is `@MainActor`-isolated and
+            // this callback runs on the Rust persister thread, so
+            // hopping actors synchronously isn't available. The
+            // existing app-layer path (`persistCreatedIdentity` in
+            // CreateIdentityView) already writes Clear private keys
+            // to the Keychain on identity creation and stamps the
+            // resulting identifier onto `privateKeyKeychainIdentifier`,
+            // so this callback intentionally leaves `Clear` entries
+            // with whatever identifier the row already carries.
+            //
+            // Future follow-up: spawn a `Task { @MainActor in … }` to
+            // perform the Keychain write + update the row's
+            // identifier, *or* move `KeychainManager` off `@MainActor`
+            // for this specific operation.
+            switch entry.privateKey {
+            case .none:
+                row.privateKeyKeychainIdentifier = nil
+            case .clear:
+                // See comment above. Preserve the existing identifier
+                // written by the app-layer path; don't clobber it.
+                _ = entry.privateKey
+            case .derived(_, let path):
+                // Seed-derived — no Keychain write needed because the
+                // seed is already stored at the wallet level. Flag
+                // presence with a namespaced `"derived:"` identifier
+                // so downstream `hasPrivateKeyIdentifier` checks still
+                // report the key as usable for signing via derivation.
+                row.privateKeyKeychainIdentifier = "derived:\(path)"
+            }
+
+            row.lastAccessed = Date()
+        }
+
+        for (identityIdBytes, keyId) in removed {
+            let targetKeyId = Int32(bitPattern: keyId)
+            let identityHex = identityIdBytes.toBase58String()
+            let descriptor = FetchDescriptor<PersistentPublicKey>(
+                predicate: #Predicate {
+                    $0.keyId == targetKeyId && $0.identityId == identityHex
+                }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                backgroundContext.delete(existing)
+            }
+        }
+
+        _ = walletId  // reserved for future wallet-scope filters
+        try? backgroundContext.save()
+    }
+
+    // MARK: - Identity snapshot structs
+
+    /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
+    /// strings + byte tuples already converted. The callback copies
+    /// these out of the raw FFI struct before handing control to
+    /// `persistIdentities` so the Rust-side free-loop can run
+    /// immediately after the callback returns.
+    struct IdentityEntrySnapshot {
+        let identityId: Data
+        let balance: UInt64
+        let revision: UInt64
+        let identityIndex: UInt32
+        let label: String?
+        let status: UInt8
+        let walletId: Data?
+    }
+
+    /// Swift-side snapshot of `IdentityKeyEntryFFI` — public-key
+    /// payload copied to owned `Data`, private-key variant decoded
+    /// into a Swift enum. Same rationale as `IdentityEntrySnapshot`:
+    /// decouple lifetime from the callback window.
+    struct IdentityKeyEntrySnapshot {
+        let identityId: Data
+        let keyId: UInt32
+        let purpose: UInt8
+        let securityLevel: UInt8
+        let keyType: UInt8
+        let readOnly: Bool
+        let disabledAt: UInt64?
+        let publicKeyData: Data
+        let privateKey: IdentityPrivateKeySnapshot
+    }
+
+    /// Decoded form of the Rust `PrivateKeyKindFFI` enum. Swift
+    /// handlers switch on this to drive Keychain writes vs. noting
+    /// seed-derived key metadata.
+    enum IdentityPrivateKeySnapshot {
+        case none
+        case clear(Data)
+        case derived(walletId: Data, derivationPath: String)
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -1337,6 +1584,169 @@ private func persistAccountAddressesCallback(
 
     handler.persistAccountAddresses(walletId: walletId, accountKey: key, entries: snapshots)
     return 0
+}
+
+/// C shim for `on_persist_identities_fn`. Copies every
+/// `IdentityEntryFFI` into an owned `IdentityEntrySnapshot` before
+/// invoking the handler so the Rust-side free-loop can release
+/// heap allocations the moment this closure returns.
+///
+/// Typed pointers arrive as `UnsafeRawPointer?` because
+/// `@convention(c)` can't carry non-`@objc`-bridgeable typed Swift
+/// pointers — we cast to the real layout via `assumingMemoryBound`
+/// here on the Swift side. The Rust `#[repr(C)]` definitions match
+/// the Swift struct layout byte-for-byte so the cast is sound.
+private func persistIdentitiesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsRaw: UnsafeRawPointer?,
+    upsertsCount: Int,
+    removedRaw: UnsafeRawPointer?,
+    removedCount: Int,
+    primaryIdentityRaw: UnsafeRawPointer?,
+    hasLastScannedIndex: Bool,
+    lastScannedIndex: UInt32
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.IdentityEntrySnapshot] = []
+    if upsertsCount > 0, let upsertsRaw = upsertsRaw {
+        let upsertsPtr = upsertsRaw.assumingMemoryBound(to: IdentityEntryFFI.self)
+        upserts.reserveCapacity(upsertsCount)
+        for i in 0..<upsertsCount {
+            let e = upsertsPtr[i]
+            let identityId = dataFromTuple32(e.identity_id)
+            let walletIdField: Data? = e.wallet_id_is_some ? dataFromTuple32(e.wallet_id) : nil
+            let label: String? = e.label.map { String(cString: $0) }
+            upserts.append(.init(
+                identityId: identityId,
+                balance: e.balance,
+                revision: e.revision,
+                identityIndex: e.identity_index,
+                label: label,
+                status: e.status,
+                walletId: walletIdField
+            ))
+        }
+    }
+
+    var removed: [Data] = []
+    if removedCount > 0, let removedRaw = removedRaw {
+        let removedPtr = removedRaw.assumingMemoryBound(to: FFIByteTuple32.self)
+        removed.reserveCapacity(removedCount)
+        for i in 0..<removedCount {
+            removed.append(dataFromTuple32(removedPtr[i]))
+        }
+    }
+
+    let primary: Data? = primaryIdentityRaw.map { raw in
+        let ptr = raw.assumingMemoryBound(to: FFIByteTuple32.self)
+        return dataFromTuple32(ptr.pointee)
+    }
+    let scanIndex: UInt32? = hasLastScannedIndex ? lastScannedIndex : nil
+
+    handler.persistIdentities(
+        walletId: walletId,
+        upserts: upserts,
+        removed: removed,
+        primaryIdentity: primary,
+        lastScannedIndex: scanIndex
+    )
+    return 0
+}
+
+/// C shim for `on_persist_identity_keys_fn`. Same snapshot + cast
+/// pattern as the identities callback.
+private func persistIdentityKeysCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsRaw: UnsafeRawPointer?,
+    upsertsCount: Int,
+    removedRaw: UnsafeRawPointer?,
+    removedCount: Int
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.IdentityKeyEntrySnapshot] = []
+    if upsertsCount > 0, let upsertsRaw = upsertsRaw {
+        let upsertsPtr = upsertsRaw.assumingMemoryBound(to: IdentityKeyEntryFFI.self)
+        upserts.reserveCapacity(upsertsCount)
+        for i in 0..<upsertsCount {
+            let e = upsertsPtr[i]
+            let identityId = dataFromTuple32(e.identity_id)
+            let pubKey: Data
+            if let ptr = e.public_key_data_ptr, e.public_key_data_len > 0 {
+                pubKey = Data(bytes: ptr, count: e.public_key_data_len)
+            } else {
+                pubKey = Data()
+            }
+            let privateKey: PlatformWalletPersistenceHandler.IdentityPrivateKeySnapshot
+            switch e.private_key_kind {
+            case 0:
+                privateKey = .none
+            case 1:
+                privateKey = .clear(dataFromTuple32(e.private_key_bytes))
+            case 2:
+                let path = e.private_key_derivation_path.map {
+                    String(cString: $0)
+                } ?? ""
+                privateKey = .derived(
+                    walletId: dataFromTuple32(e.private_key_wallet_id),
+                    derivationPath: path
+                )
+            default:
+                // Future-unknown discriminant — be conservative.
+                privateKey = .none
+            }
+            upserts.append(.init(
+                identityId: identityId,
+                keyId: e.key_id,
+                purpose: e.purpose,
+                securityLevel: e.security_level,
+                keyType: e.key_type,
+                readOnly: e.read_only,
+                disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
+                publicKeyData: pubKey,
+                privateKey: privateKey
+            ))
+        }
+    }
+
+    var removed: [(identityId: Data, keyId: UInt32)] = []
+    if removedCount > 0, let removedRaw = removedRaw {
+        let removedPtr = removedRaw.assumingMemoryBound(to: IdentityKeyRemovalFFI.self)
+        removed.reserveCapacity(removedCount)
+        for i in 0..<removedCount {
+            let r = removedPtr[i]
+            removed.append((identityId: dataFromTuple32(r.identity_id), keyId: r.key_id))
+        }
+    }
+
+    handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
+    return 0
+}
+
+/// Copy a fixed 32-byte C tuple into an owned `Data`. Used by the
+/// identity-persistence callbacks where Rust hands over `[u8; 32]`
+/// fields as `(UInt8, UInt8, ...)` tuples.
+@inline(__always)
+private func dataFromTuple32(_ tuple: FFIByteTuple32) -> Data {
+    var value = tuple
+    return Swift.withUnsafeBytes(of: &value) { Data($0) }
 }
 
 private func persistWalletMetadataCallback(

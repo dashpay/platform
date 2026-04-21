@@ -55,6 +55,40 @@ struct PersistenceCallbacks {
         UnsafeRawPointer?,
         Int
     ) -> Int32)? = nil
+    /// Mirrors `on_persist_identities_fn` on the Rust
+    /// `PersistenceCallbacks`. Carries scalar `IdentityEntryFFI`
+    /// upserts + a `[u8; 32]` tombstone array + `primary_identity` /
+    /// gap-limit scan watermark signals. See
+    /// `rs-platform-wallet-ffi/src/identity_persistence.rs` for the
+    /// payload shape.
+    ///
+    /// Pointers are typed on the Rust side but flow through the Swift
+    /// struct as `UnsafeRawPointer?` because `@convention(c)` rejects
+    /// non-`@objc`-bridgeable typed pointers (Swift structs like
+    /// `IdentityEntryFFI` aren't bridged). The receiving callback
+    /// casts via `assumingMemoryBound(to:)`.
+    var on_persist_identities_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,   // context
+        UnsafePointer<UInt8>?,      // wallet_id
+        UnsafeRawPointer?,          // upserts_ptr (cast to *IdentityEntryFFI)
+        Int,                        // upserts_count
+        UnsafeRawPointer?,          // removed_ptr (cast to *[UInt8;32] tuple)
+        Int,                        // removed_count
+        UnsafeRawPointer?,          // primary_identity_ptr (cast to *[UInt8;32] tuple, nullable)
+        Bool,                       // has_last_scanned_index
+        UInt32                      // last_scanned_index
+    ) -> Int32)? = nil
+    /// Mirrors `on_persist_identity_keys_fn`. Per-key upserts +
+    /// `(identity_id, key_id)` removals, maps onto
+    /// `PersistentPublicKey` rows on Swift side.
+    var on_persist_identity_keys_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,   // context
+        UnsafePointer<UInt8>?,      // wallet_id
+        UnsafeRawPointer?,          // upserts_ptr (cast to *IdentityKeyEntryFFI)
+        Int,                        // upserts_count
+        UnsafeRawPointer?,          // removed_ptr (cast to *IdentityKeyRemovalFFI)
+        Int                         // removed_count
+    ) -> Int32)? = nil
 }
 
 // MARK: - Core Address Entry
