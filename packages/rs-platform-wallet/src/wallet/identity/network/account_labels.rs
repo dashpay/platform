@@ -10,7 +10,7 @@ use crate::error::PlatformWalletError;
 // Account label encryption / decryption (DIP-15)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Encrypt an account label using CBC-AES-256 with a shared ECDH key.
     ///
     /// Uses the `platform_encryption` crate which prepends a random 16-byte IV

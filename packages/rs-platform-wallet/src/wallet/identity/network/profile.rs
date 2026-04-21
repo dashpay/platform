@@ -18,7 +18,7 @@ use crate::wallet::signer::IdentitySigner;
 // Sync profiles
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch DashPay profile documents from Platform for all managed
     /// identities and cache them on [`ManagedIdentity`].
     ///
@@ -178,7 +178,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Profile create / update
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Create a new DashPay profile document on Platform for `identity_id`.
     ///
     /// Steps:

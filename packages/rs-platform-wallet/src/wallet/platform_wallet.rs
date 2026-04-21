@@ -1,4 +1,4 @@
-//! The main PlatformWallet struct combining core, identity, dashpay, and platform sub-wallets.
+//! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
@@ -23,7 +23,6 @@ use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-use crate::wallet::identity::DashPayWallet;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -68,8 +67,7 @@ pub struct PlatformWallet {
     // right here plus the `new()` signature below; the sub-wallet
     // definitions themselves stay untouched.
     pub(crate) core: CoreWallet<SpvBroadcaster>,
-    pub(crate) identity: IdentityWallet,
-    pub(crate) dashpay: DashPayWallet<SpvBroadcaster>,
+    pub(crate) identity: IdentityWallet<SpvBroadcaster>,
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
     /// Shared asset lock manager.
@@ -87,13 +85,14 @@ impl PlatformWallet {
     }
 
     /// Access the identity wallet.
-    pub fn identity(&self) -> &IdentityWallet {
+    ///
+    /// Covers both identity-lifecycle and DashPay-contract operations —
+    /// these used to be split across `identity()` / `dashpay()`, but the
+    /// two facades were merged (the underlying `ManagedIdentity` state
+    /// was already shared between them). Keeps the single `SpvBroadcaster`
+    /// specialization the rest of this wallet uses.
+    pub fn identity(&self) -> &IdentityWallet<SpvBroadcaster> {
         &self.identity
-    }
-
-    /// Access the DashPay wallet.
-    pub fn dashpay(&self) -> &DashPayWallet<SpvBroadcaster> {
-        &self.dashpay
     }
 
     /// Access the platform address wallet.
@@ -234,6 +233,10 @@ impl PlatformWallet {
             Arc::clone(&balance),
         );
 
+        // Asset-lock broadcaster is pinned to `SpvBroadcaster`; the
+        // identity wallet's DashPay payment broadcaster uses a clone
+        // of the same Arc since production currently runs one
+        // broadcaster type across the stack.
         let dashpay_broadcaster = Arc::clone(&broadcaster);
 
         let asset_locks = Arc::new(AssetLockManager::new(
@@ -245,18 +248,11 @@ impl PlatformWallet {
             wallet_persister.clone(),
         ));
 
-        let identity = IdentityWallet {
+        let identity: IdentityWallet<SpvBroadcaster> = IdentityWallet {
             sdk: Arc::clone(&sdk),
             wallet_manager: Arc::clone(&wallet_manager),
             wallet_id,
             asset_locks: Arc::clone(&asset_locks),
-            persister: wallet_persister.clone(),
-        };
-
-        let dashpay = DashPayWallet {
-            sdk: Arc::clone(&sdk),
-            wallet_manager: Arc::clone(&wallet_manager),
-            wallet_id,
             persister: wallet_persister.clone(),
             broadcaster: dashpay_broadcaster,
         };
@@ -280,7 +276,6 @@ impl PlatformWallet {
             wallet_manager,
             core,
             identity,
-            dashpay,
             platform,
             tokens,
             asset_locks,
@@ -405,7 +400,6 @@ impl Clone for PlatformWallet {
             wallet_manager: self.wallet_manager.clone(),
             core: self.core.clone(),
             identity: self.identity.clone(),
-            dashpay: self.dashpay.clone(),
             platform: self.platform.clone(),
             tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),

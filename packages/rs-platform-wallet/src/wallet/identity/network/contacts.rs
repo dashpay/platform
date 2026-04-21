@@ -17,7 +17,7 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 // Established contacts accessor
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     // TODO: We don't want to clone all contacts on get - it's terrible.
     /// Get all established contacts across every identity managed by this wallet.
     ///
@@ -39,7 +39,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Contact xpub and payment address derivation (DIP-14 / DIP-15)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Get the contact xpub data for a specific contact relationship.
     ///
     /// Derives the extended public key along path:
@@ -278,7 +278,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // External contact account registration (sending)
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Register a watch-only `DashpayExternalAccount` for sending payments
     /// to a contact. Uses the contact's decrypted xpub from their
     /// `contactRequest.encrypted_public_key`.

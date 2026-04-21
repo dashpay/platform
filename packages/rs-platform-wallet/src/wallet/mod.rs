@@ -13,7 +13,7 @@ pub mod tokens;
 
 pub use self::core::CoreWallet;
 pub use apply::ApplyError;
-pub use identity::{DashPayWallet, IdentityWallet};
+pub use identity::IdentityWallet;
 pub use platform_addresses::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
     PlatformAddressWallet,

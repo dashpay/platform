@@ -24,7 +24,7 @@ use dash_sdk::platform::dashpay::SendContactRequestInput;
 // Send contact request
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Send a contact request to another identity.
     ///
     /// All parameters that can be resolved internally are resolved automatically:
@@ -257,7 +257,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Sync contact requests from platform
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
     /// For every identity in the local manager this method:
@@ -400,7 +400,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Accept an incoming contact request
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Accept an incoming contact request by sending a reciprocal request and
     /// establishing the contact locally.
     ///
@@ -494,7 +494,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Sent contact requests query
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch sent contact requests for a specific identity from Platform.
     ///
     /// Queries the DashPay contract for `contactRequest` documents where
@@ -607,7 +607,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Reject contact request
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Reject a contact request by hiding the contact.
     ///
     /// This marks the contact as hidden in the local identity manager so that

@@ -1,7 +1,24 @@
-//! Identity wallet for managing Platform identities.
+//! Identity wallet for managing Platform identities + DashPay state.
 //!
 //! Provides methods for the full identity lifecycle: registration, discovery
-//! (gap-limit scan), top-up, withdrawal, and credit transfer.
+//! (gap-limit scan), top-up, withdrawal, credit transfer — **plus** the
+//! DashPay-contract operations that live on the same identity (contact
+//! requests, contacts, payments, profile, account labels).
+//!
+//! Historically DashPay lived on a separate `DashPayWallet<B>` facade, but
+//! both views operated on the same underlying state (a single
+//! [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity) carries
+//! both identity fields and DashPay fields). The two facades were merged to
+//! cut handle-juggling at the FFI boundary and to give the DashPay
+//! operations access to the same asset-lock / signer plumbing the identity
+//! lifecycle already uses.
+//!
+//! The `B` generic parameter picks the transaction broadcaster used by
+//! DashPay payment operations (`send_payment`). It defaults to
+//! [`SpvBroadcaster`] — the only production broadcaster — so the majority
+//! of call sites don't need to name it. Asset-lock funding still pins to
+//! `SpvBroadcaster` because the [`AssetLockManager`] itself is pinned; that
+//! invariant lives in `PlatformWallet::new`.
 
 use std::sync::Arc;
 
@@ -18,7 +35,7 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
-use crate::broadcaster::SpvBroadcaster;
+use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -85,9 +102,20 @@ pub(crate) fn derive_identity_auth_key_hash(
     Ok(key_hash_array)
 }
 
-/// Identity wallet providing identity management functionality.
-#[derive(Clone)]
-pub struct IdentityWallet {
+/// Identity + DashPay wallet facade.
+///
+/// A view onto the shared `PlatformWalletInfo` state inside the wallet
+/// manager. Covers both the identity lifecycle (registration, discovery,
+/// top-up, transfer, withdrawal) and the DashPay-contract operations that
+/// live on the same identity (contact requests, contacts, payments,
+/// profile, account labels).
+///
+/// Generic parameter `B` is the [`TransactionBroadcaster`] used by
+/// payment paths (DashPay `send_payment`). Defaults to
+/// [`SpvBroadcaster`] — the only production broadcaster. Asset-lock
+/// funding uses its own pinned-to-`SpvBroadcaster` manager; the `B`
+/// parameter is only for the DashPay payment broadcast surface.
+pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     /// Shared wallet manager holding key material and wallet info.
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -102,9 +130,38 @@ pub struct IdentityWallet {
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: crate::wallet::persister::WalletPersister,
+    /// Broadcaster for DashPay payment transactions. Distinct from the
+    /// asset-lock broadcaster — the asset-lock manager is always
+    /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
+    /// used by `send_payment` (static dispatch per call).
+    pub(crate) broadcaster: Arc<B>,
 }
 
-impl IdentityWallet {
+// Manual `Debug`: the derive would require `B: Debug`, which is not part
+// of the `TransactionBroadcaster` bound.
+impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for IdentityWallet<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IdentityWallet").finish()
+    }
+}
+
+// Manual `Clone`: the derive would add `where B: Clone`, but `Arc<B>`
+// clones without cloning `B` itself, so the bound would be spurious.
+// `B: ?Sized` is enough.
+impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
+    fn clone(&self) -> Self {
+        Self {
+            sdk: Arc::clone(&self.sdk),
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            asset_locks: Arc::clone(&self.asset_locks),
+            persister: self.persister.clone(),
+            broadcaster: Arc::clone(&self.broadcaster),
+        }
+    }
+}
+
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Create an [`IdentitySigner`] for the given identity index.
     ///
     /// The returned signer implements `Signer<IdentityPublicKey>` and derives
@@ -256,6 +313,59 @@ impl IdentityWallet {
         &self.wallet_id
     }
 
+    /// Derive the ECDH private key for the given identity's encryption
+    /// key (DashPay ECDH).
+    ///
+    /// Uses the same DIP-9 derivation as [`IdentitySigner`] but returns
+    /// the raw `secp256k1::SecretKey` needed for ECDH with a contact.
+    ///
+    /// The encryption key must be `ECDSA_SECP256K1` or `ECDSA_HASH160`;
+    /// other key types are not supported for ECDH derivation.
+    pub(super) fn derive_encryption_private_key(
+        wallet: &Wallet,
+        network: key_wallet::Network,
+        identity_index: u32,
+        encryption_key: &IdentityPublicKey,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        // Validate that the encryption key type is compatible with ECDH
+        // derivation.
+        match encryption_key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {}
+            other => {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Unsupported key type {:?} for ECDH derivation; \
+                     expected ECDSA_SECP256K1 or ECDSA_HASH160",
+                    other
+                )));
+            }
+        }
+
+        let path = Self::identity_auth_derivation_path(
+            network,
+            KeyDerivationType::ECDSA,
+            identity_index,
+            encryption_key.id(),
+        )?;
+
+        let ext_priv = wallet.derive_extended_private_key(&path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to derive encryption private key: {}",
+                e
+            ))
+        })?;
+
+        // Wrap intermediate private key bytes in `Zeroizing` so they
+        // are wiped on drop.
+        let secret_bytes = Zeroizing::new(ext_priv.private_key.secret_bytes());
+
+        dashcore::secp256k1::SecretKey::from_slice(&*secret_bytes).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Invalid derived encryption private key: {}",
+                e
+            ))
+        })
+    }
+
     /// Extract the outpoint from an asset lock proof.
     ///
     /// For instant proofs, this is the txid of the embedded transaction
@@ -269,11 +379,5 @@ impl IdentityWallet {
             )),
             AssetLockProof::Chain(chain) => Some(chain.out_point),
         }
-    }
-}
-
-impl std::fmt::Debug for IdentityWallet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IdentityWallet").finish()
     }
 }

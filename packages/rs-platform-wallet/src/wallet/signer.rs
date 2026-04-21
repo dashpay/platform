@@ -14,6 +14,7 @@ use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
+use crate::broadcaster::SpvBroadcaster;
 use crate::wallet::identity::network::IdentityWallet;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -64,7 +65,7 @@ impl IdentitySigner {
         let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
             ProtocolError::Generic("Wallet not found in wallet manager".to_string())
         })?;
-        IdentityWallet::derive_identity_key_bytes(
+        IdentityWallet::<SpvBroadcaster>::derive_identity_key_bytes(
             wallet,
             self.network,
             self.identity_index,
@@ -240,7 +241,7 @@ impl ManagedIdentitySigner {
         let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
             ProtocolError::Generic("Wallet not found in wallet manager".to_string())
         })?;
-        IdentityWallet::derive_identity_key_bytes(
+        IdentityWallet::<SpvBroadcaster>::derive_identity_key_bytes(
             wallet,
             self.network,
             self.identity_index,

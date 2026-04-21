@@ -11,7 +11,7 @@ use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 // Incoming payment recording
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Match a Core transaction output address against DashPay contact
     /// receiving accounts AND record the payment if matched.
     ///
@@ -62,7 +62,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
 // Send payment to contact
 // ---------------------------------------------------------------------------
 
-impl<B: TransactionBroadcaster + ?Sized> DashPayWallet<B> {
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Send a Core payment to a DashPay contact.
     ///
     /// Derives the next payment address from the contact's `DashpayExternalAccount`

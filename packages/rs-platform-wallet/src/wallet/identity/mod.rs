@@ -9,8 +9,8 @@
 //! - [`crypto`] — deterministic cryptographic helpers.
 //! - [`state`] — in-memory data + per-identity mutations +
 //!   the per-wallet collection manager.
-//! - [`network`] — SDK wrappers (`IdentityWallet`,
-//!   `DashPayWallet`) that talk to Platform.
+//! - [`network`] — the single `IdentityWallet<B>` SDK handle
+//!   covering both identity-lifecycle and DashPay operations.
 //!
 //! Every layer depends only on layers above it (reading down).
 
@@ -20,7 +20,7 @@ pub mod state;
 pub mod types;
 
 // --- Flat re-exports for external crates + backward compatibility.
-// Consumers used `crate::wallet::identity::X` / `crate::wallet::identity::X`;
+// Consumers used `crate::wallet::identity::X` / `crate::wallet::dashpay::X`;
 // the merged re-export surface preserves the former and absorbs the
 // latter so `lib.rs`-level re-exports keep resolving.
 
@@ -29,7 +29,7 @@ pub use crypto::{
     derive_contact_payment_addresses, derive_contact_xpub, ContactXpubData,
     DEFAULT_CONTACT_GAP_LIMIT,
 };
-pub use network::{DashPayWallet, IdentityWallet};
+pub use network::IdentityWallet;
 pub use state::{BlockTime, IdentityManager, ManagedIdentity, WatchedIdentity};
 pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerprint};
 pub use types::{
