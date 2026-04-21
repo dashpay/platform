@@ -199,6 +199,343 @@ impl RewardDistributionType {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+
+    fn block_based() -> RewardDistributionType {
+        RewardDistributionType::BlockBasedDistribution {
+            interval: 100,
+            function: DistributionFunction::FixedAmount { amount: 5 },
+        }
+    }
+
+    fn time_based() -> RewardDistributionType {
+        RewardDistributionType::TimeBasedDistribution {
+            interval: 60_000,
+            function: DistributionFunction::FixedAmount { amount: 5 },
+        }
+    }
+
+    fn epoch_based() -> RewardDistributionType {
+        RewardDistributionType::EpochBasedDistribution {
+            interval: 1,
+            function: DistributionFunction::FixedAmount { amount: 5 },
+        }
+    }
+
+    // ----- moment_from_bytes -----
+
+    #[test]
+    fn test_moment_from_bytes_block_ok() {
+        let dt = block_based();
+        let bytes = [0u8, 0, 0, 0, 0, 0, 0, 42];
+        let result = dt.moment_from_bytes(&bytes).unwrap();
+        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(42));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_block_wrong_len() {
+        let dt = block_based();
+        let bytes = [0u8, 0, 0, 42];
+        let result = dt.moment_from_bytes(&bytes);
+        assert!(matches!(result, Err(ProtocolError::DecodingError(_))));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_block_empty() {
+        let dt = block_based();
+        let result = dt.moment_from_bytes(&[]);
+        assert!(matches!(result, Err(ProtocolError::DecodingError(_))));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_time_ok() {
+        let dt = time_based();
+        let bytes = [0u8, 0, 0, 0, 0, 0, 0x01, 0x00];
+        let result = dt.moment_from_bytes(&bytes).unwrap();
+        assert_eq!(result, RewardDistributionMoment::TimeBasedMoment(256));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_time_wrong_len() {
+        let dt = time_based();
+        let bytes = [0u8, 0, 0];
+        let result = dt.moment_from_bytes(&bytes);
+        assert!(matches!(result, Err(ProtocolError::DecodingError(_))));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_epoch_ok() {
+        let dt = epoch_based();
+        let bytes = [0x00, 0x07];
+        let result = dt.moment_from_bytes(&bytes).unwrap();
+        assert_eq!(result, RewardDistributionMoment::EpochBasedMoment(7));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_epoch_wrong_len_too_short() {
+        let dt = epoch_based();
+        let bytes = [0u8];
+        let result = dt.moment_from_bytes(&bytes);
+        assert!(matches!(result, Err(ProtocolError::DecodingError(_))));
+    }
+
+    #[test]
+    fn test_moment_from_bytes_epoch_wrong_len_too_long() {
+        let dt = epoch_based();
+        let bytes = [0u8, 0, 0, 0];
+        let result = dt.moment_from_bytes(&bytes);
+        assert!(matches!(result, Err(ProtocolError::DecodingError(_))));
+    }
+
+    // ----- interval() / function() accessors -----
+
+    #[test]
+    fn test_interval_accessor() {
+        assert_eq!(
+            block_based().interval(),
+            RewardDistributionMoment::BlockBasedMoment(100)
+        );
+        assert_eq!(
+            time_based().interval(),
+            RewardDistributionMoment::TimeBasedMoment(60_000)
+        );
+        assert_eq!(
+            epoch_based().interval(),
+            RewardDistributionMoment::EpochBasedMoment(1)
+        );
+    }
+
+    #[test]
+    fn test_function_accessor() {
+        match block_based().function() {
+            DistributionFunction::FixedAmount { amount } => assert_eq!(*amount, 5),
+            _ => panic!("unexpected function"),
+        }
+    }
+
+    // ----- max_cycle_moment -----
+
+    #[test]
+    fn test_max_cycle_moment_block_capped_by_current() {
+        let dt = block_based();
+        let start = RewardDistributionMoment::BlockBasedMoment(1000);
+        let current = RewardDistributionMoment::BlockBasedMoment(1500);
+        // max_cycles*interval = 10*100=1000. start+1000=2000 > current=1500 so capped at current
+        let result = dt.max_cycle_moment(start, current, 10).unwrap();
+        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(1500));
+    }
+
+    #[test]
+    fn test_max_cycle_moment_block_capped_by_max_cycles_non_fixed() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+        let dt = RewardDistributionType::BlockBasedDistribution {
+            interval: 100,
+            function: DistributionFunction::Random { min: 1, max: 10 },
+        };
+        let start = RewardDistributionMoment::BlockBasedMoment(0);
+        let current = RewardDistributionMoment::BlockBasedMoment(u64::MAX);
+        // max_cycles = 3 (non-fixed) => 0 + 100*3 = 300
+        let result = dt.max_cycle_moment(start, current, 3).unwrap();
+        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(300));
+    }
+
+    #[test]
+    fn test_max_cycle_moment_time_capped_by_current() {
+        let dt = time_based();
+        let start = RewardDistributionMoment::TimeBasedMoment(0);
+        let current = RewardDistributionMoment::TimeBasedMoment(100_000);
+        // max_cycles*interval could exceed current; should cap
+        let result = dt.max_cycle_moment(start, current, 5).unwrap();
+        // fixed amount cycles = MAX_DISTRIBUTION_CYCLES_PARAM => huge, cap by current
+        assert_eq!(result, RewardDistributionMoment::TimeBasedMoment(100_000));
+    }
+
+    #[test]
+    fn test_max_cycle_moment_epoch_subtracts_one() {
+        let dt = epoch_based();
+        let start = RewardDistributionMoment::EpochBasedMoment(0);
+        let current = RewardDistributionMoment::EpochBasedMoment(3);
+        let result = dt.max_cycle_moment(start, current, 10).unwrap();
+        // Since fixed amount: huge max_cycles, saturating_mul on u16 -> u16::MAX;
+        // min(start + step*max, current - 1) = current - 1 = 2
+        assert_eq!(result, RewardDistributionMoment::EpochBasedMoment(2));
+    }
+
+    #[test]
+    fn test_max_cycle_moment_epoch_current_zero_saturates() {
+        let dt = epoch_based();
+        let start = RewardDistributionMoment::EpochBasedMoment(0);
+        let current = RewardDistributionMoment::EpochBasedMoment(0);
+        // current - 1 saturates to 0
+        let result = dt.max_cycle_moment(start, current, 10).unwrap();
+        assert_eq!(result, RewardDistributionMoment::EpochBasedMoment(0));
+    }
+
+    #[test]
+    fn test_max_cycle_moment_type_mismatch() {
+        let dt = block_based();
+        let start = RewardDistributionMoment::BlockBasedMoment(0);
+        let current = RewardDistributionMoment::TimeBasedMoment(50);
+        let result = dt.max_cycle_moment(start, current, 10);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::CorruptedCodeExecution(_))
+        ));
+    }
+
+    // ----- Display -----
+
+    #[test]
+    fn test_display_block_based() {
+        let dt = block_based();
+        let s = format!("{}", dt);
+        assert!(s.contains("BlockBasedDistribution"));
+        assert!(s.contains("100 blocks"));
+    }
+
+    #[test]
+    fn test_display_time_based() {
+        let dt = time_based();
+        let s = format!("{}", dt);
+        assert!(s.contains("TimeBasedDistribution"));
+        assert!(s.contains("60000 milliseconds"));
+    }
+
+    #[test]
+    fn test_display_epoch_based() {
+        let dt = epoch_based();
+        let s = format!("{}", dt);
+        assert!(s.contains("EpochBasedDistribution"));
+        assert!(s.contains("1 epochs"));
+    }
+
+    // ----- validate_structure_interval_v0 -----
+
+    #[test]
+    fn test_validate_structure_interval_block_mainnet_too_short() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::BlockBasedDistribution {
+            interval: 50,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let result = dt.validate_structure_interval_v0(Network::Mainnet);
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_structure_interval_block_mainnet_ok() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::BlockBasedDistribution {
+            interval: 100,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let result = dt.validate_structure_interval_v0(Network::Mainnet);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_validate_structure_interval_block_testnet() {
+        use dashcore::Network;
+        let dt_ok = RewardDistributionType::BlockBasedDistribution {
+            interval: 5,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert!(dt_ok
+            .validate_structure_interval_v0(Network::Testnet)
+            .is_valid());
+
+        let dt_bad = RewardDistributionType::BlockBasedDistribution {
+            interval: 4,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert!(!dt_bad
+            .validate_structure_interval_v0(Network::Testnet)
+            .is_valid());
+    }
+
+    #[test]
+    fn test_validate_structure_interval_block_regtest() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::BlockBasedDistribution {
+            interval: 1,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert!(dt
+            .validate_structure_interval_v0(Network::Regtest)
+            .is_valid());
+
+        let dt_zero = RewardDistributionType::BlockBasedDistribution {
+            interval: 0,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert!(!dt_zero
+            .validate_structure_interval_v0(Network::Regtest)
+            .is_valid());
+    }
+
+    #[test]
+    fn test_validate_structure_interval_time_mainnet_too_short() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::TimeBasedDistribution {
+            interval: 60_000,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let result = dt.validate_structure_interval_v0(Network::Mainnet);
+        // Less than 1 hour = 3_600_000 ms. Should fail.
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_structure_interval_time_mainnet_not_minute_aligned() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::TimeBasedDistribution {
+            // 3_600_500 > 3_600_000 but not divisible by 60_000
+            interval: 3_600_500,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let result = dt.validate_structure_interval_v0(Network::Mainnet);
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_structure_interval_time_mainnet_ok() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::TimeBasedDistribution {
+            interval: 3_600_000,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let result = dt.validate_structure_interval_v0(Network::Mainnet);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_validate_structure_interval_time_regtest_ok() {
+        use dashcore::Network;
+        let dt = RewardDistributionType::TimeBasedDistribution {
+            interval: 60_000,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let result = dt.validate_structure_interval_v0(Network::Regtest);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_validate_structure_interval_epoch_always_ok() {
+        use dashcore::Network;
+        // Epoch-based validation does no checks; even zero interval passes.
+        let dt = RewardDistributionType::EpochBasedDistribution {
+            interval: 0,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert!(dt
+            .validate_structure_interval_v0(Network::Mainnet)
+            .is_valid());
+    }
+}
+
 impl fmt::Display for RewardDistributionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
