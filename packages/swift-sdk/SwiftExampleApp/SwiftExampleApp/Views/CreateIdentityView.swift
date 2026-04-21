@@ -420,9 +420,7 @@ struct CreateIdentityView: View {
                 try await MainActor.run {
                     try persistCreatedIdentity(
                         created,
-                        walletId: walletId,
-                        networkRaw: networkRaw,
-                        initialCreditBalance: Int64(targetCredits)
+                        networkRaw: networkRaw
                     )
                     markIdentitySlotUsed(
                         walletId: walletId,
@@ -477,60 +475,60 @@ struct CreateIdentityView: View {
         return remaining == 0 ? inputs : []
     }
 
-    /// Insert a fully-populated `PersistentIdentity` row together
-    /// with one `PersistentPublicKey` per key registered on the
-    /// identity. Pulls revision + keys off the returned
-    /// `ManagedIdentity` via the FFI — the wallet's local identity
-    /// manager stays the source of truth, this is the SwiftData
-    /// mirror that drives the UI.
+    /// Patch the UI-only fields on the newly-registered identity's
+    /// `PersistentIdentity` row.
     ///
-    /// Private-key material is intentionally not stashed here. The
-    /// authentication keys were derived from the wallet seed at
-    /// DIP-9 paths; re-deriving is cheaper and safer than
-    /// duplicating them into the Keychain. A follow-up will add a
-    /// `derivationPath` column so we can round-trip back to the
-    /// seed when a signer is needed.
+    /// `IdentityManager::add_identity` on the Rust side already
+    /// emitted an `IdentityChangeSet` + `IdentityKeysChangeSet`
+    /// during `registerIdentityFromAddresses`, so by the time we
+    /// land here the `PersistentIdentity` + `PersistentPublicKey`
+    /// rows already exist (written by the
+    /// `on_persist_identities_fn` / `on_persist_identity_keys_fn`
+    /// persister callbacks — see
+    /// `PlatformWalletPersistenceHandler.persistIdentities` /
+    /// `persistIdentityKeys`). What the Rust callback can't know:
+    ///
+    /// - `network` — the persister is wallet-id-keyed; the wallet's
+    ///   network string isn't threaded through the callback today.
+    ///   Defaults to "testnet" on `PersistentIdentity.init`, so we
+    ///   overwrite here to the caller-supplied value.
+    /// - `identityType` — fresh identities from
+    ///   `register_from_addresses` are always user identities, but
+    ///   the Rust-side type system doesn't carry the enum; stamp
+    ///   `.user` here explicitly.
+    ///
+    /// This replaces the prior full-insert path that also wrote
+    /// balance/revision/keys. Those fields are now Rust-authoritative
+    /// (the SDK returns the post-transition balance, which Rust
+    /// persists — the old `initialCreditBalance` parameter was a
+    /// stale pre-submit estimate).
+    ///
+    /// Private-key material stays out of the Keychain here. The
+    /// authentication keys are seed-derived at DIP-9 paths, so the
+    /// Rust persister emits them as `AtWalletDerivationPath`
+    /// variants that flow through the callback as namespaced
+    /// `"derived:<path>"` identifiers — no Keychain write needed.
     private func persistCreatedIdentity(
         _ created: ManagedPlatformWallet.CreatedIdentity,
-        walletId: Data,
-        networkRaw: String,
-        initialCreditBalance: Int64
+        networkRaw: String
     ) throws {
-        let revision = (try? created.identity.getRevision()) ?? 0
-        let publicKeys = (try? created.identity.getPublicKeys()) ?? []
-
-        // `put_with_address_funding` blocks until Platform confirms
-        // the transition and returns the canonical Identity, so by
-        // the time we get here the identity is network-resident —
-        // not "local only". Mark `isLocal = false` so the UI stops
-        // showing the orange "Local Only" badge after relaunch.
-        let identity = PersistentIdentity(
-            identityId: created.identityId,
-            balance: initialCreditBalance,
-            revision: Int64(revision),
-            isLocal: false,
-            identityType: .user,
-            network: networkRaw,
-            walletId: walletId
+        let identityId = created.identityId
+        let descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityId }
         )
-
-        let identityIdString = created.identityId.toHexString()
-        for info in publicKeys {
-            let persistent = PersistentPublicKey(
-                keyId: info.keyId,
-                purpose: info.purpose,
-                securityLevel: info.securityLevel,
-                keyType: info.keyType,
-                publicKeyData: info.data,
-                readOnly: info.readOnly,
-                disabledAt: info.disabledAt,
-                contractBounds: nil,
-                identityId: identityIdString
-            )
-            identity.addPublicKey(persistent)
+        guard let row = try modelContext.fetch(descriptor).first else {
+            // Row hasn't landed yet — shouldn't happen in
+            // production (Rust emits the changeset before
+            // `registerIdentityFromAddresses` returns), but if the
+            // persister callback isn't wired the UI-side fields
+            // stay unset until a subsequent refresh. Log + fall
+            // through so the registration doesn't fail.
+            print("⚠️ persistCreatedIdentity: no PersistentIdentity row for \(identityId.toHexString()) — persister callback likely not wired")
+            return
         }
-
-        modelContext.insert(identity)
+        row.network = networkRaw
+        row.identityType = SwiftDashSDK.IdentityType.user.rawValue
+        row.lastUpdated = Date()
     }
 
     /// Flip `isUsed` on the consumed identity-registration slot so
