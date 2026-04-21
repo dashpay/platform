@@ -571,28 +571,34 @@ public class PlatformWalletPersistenceHandler {
 
             // Private-key handling.
             //
-            // Raw-bytes Keychain writes are NOT performed here —
-            // `KeychainManager.shared` is `@MainActor`-isolated and
-            // this callback runs on the Rust persister thread, so
-            // hopping actors synchronously isn't available. The
-            // existing app-layer path (`persistCreatedIdentity` in
-            // CreateIdentityView) already writes Clear private keys
-            // to the Keychain on identity creation and stamps the
-            // resulting identifier onto `privateKeyKeychainIdentifier`,
-            // so this callback intentionally leaves `Clear` entries
-            // with whatever identifier the row already carries.
-            //
-            // Future follow-up: spawn a `Task { @MainActor in … }` to
-            // perform the Keychain write + update the row's
-            // identifier, *or* move `KeychainManager` off `@MainActor`
-            // for this specific operation.
+            // `KeychainManager.shared` is `@MainActor`-pinned but
+            // exposes `storePrivateKeyNonisolated` for exactly this
+            // case — the Rust persister callback runs on the
+            // persister thread, not the main actor. The underlying
+            // Security-framework APIs are thread-safe and the
+            // manager's state is `let`-only, so the off-actor write
+            // is sound.
             switch entry.privateKey {
             case .none:
                 row.privateKeyKeychainIdentifier = nil
-            case .clear:
-                // See comment above. Preserve the existing identifier
-                // written by the app-layer path; don't clobber it.
-                _ = entry.privateKey
+            case .clear(let bytes):
+                // `storePrivateKeyNonisolated` idempotently overwrites
+                // any existing slot for this (identity_id, key_id),
+                // so repeated sync callbacks stamping the same key
+                // are safe. Returns the Keychain identifier or nil
+                // on Security-framework failure.
+                if let keychainId = KeychainManager.shared.storePrivateKeyNonisolated(
+                    bytes,
+                    identityId: entry.identityId,
+                    keyIndex: row.keyId
+                ) {
+                    row.privateKeyKeychainIdentifier = keychainId
+                } else {
+                    // Leave any prior identifier in place so we
+                    // don't regress the row — the caller can retry
+                    // via the `@MainActor` path later.
+                    print("⚠️ Keychain write failed for identity \(entry.identityId.toHexString().prefix(12))… key \(row.keyId)")
+                }
             case .derived(_, let path):
                 // Seed-derived — no Keychain write needed because the
                 // seed is already stored at the wallet level. Flag

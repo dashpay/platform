@@ -56,8 +56,14 @@ public enum KeychainError: LocalizedError, Sendable {
 @MainActor
 public final class KeychainManager: Sendable {
 
-    /// Shared singleton instance with default service name
-    public static let shared = KeychainManager()
+    /// Shared singleton instance with default service name.
+    ///
+    /// `nonisolated` so the singleton can be reached from off-actor
+    /// contexts — e.g. the Rust persister callback path that writes
+    /// via `storePrivateKeyNonisolated`. Safe because
+    /// `KeychainManager` is `Sendable` (all state is `let` +
+    /// thread-safe Security-framework calls).
+    public nonisolated static let shared = KeychainManager()
 
     /// The service name used for keychain entries
     public let serviceName: String
@@ -65,8 +71,13 @@ public final class KeychainManager: Sendable {
     /// Optional access group for sharing keys between apps
     public let accessGroup: String?
 
-    /// Initialize with default service name "com.dash.sdk.keys"
-    public init() {
+    /// Initialize with default service name "com.dash.sdk.keys".
+    ///
+    /// `nonisolated` so the `shared` singleton — also `nonisolated` —
+    /// can be constructed lazily from any isolation domain. The
+    /// initializer only writes the two `let` fields; no actor-isolated
+    /// state is touched.
+    public nonisolated init() {
         self.serviceName = "com.dash.sdk.keys"
         self.accessGroup = nil
     }
@@ -75,7 +86,7 @@ public final class KeychainManager: Sendable {
     /// - Parameters:
     ///   - serviceName: The service name for keychain entries (e.g., "com.myapp.keys")
     ///   - accessGroup: Optional access group for sharing keys between apps
-    public init(serviceName: String, accessGroup: String? = nil) {
+    public nonisolated init(serviceName: String, accessGroup: String? = nil) {
         self.serviceName = serviceName
         self.accessGroup = accessGroup
     }
@@ -90,6 +101,33 @@ public final class KeychainManager: Sendable {
     /// - Returns: A unique identifier for the stored key, or nil if storage failed
     @discardableResult
     public func storePrivateKey(_ keyData: Data, identityId: Data, keyIndex: Int32) -> String? {
+        // Delegate to the nonisolated implementation so both the
+        // main-actor path and off-actor callers (e.g. Rust-side
+        // persister callbacks) share identical Keychain semantics.
+        return storePrivateKeyNonisolated(keyData, identityId: identityId, keyIndex: keyIndex)
+    }
+
+    /// Off-actor variant of [`storePrivateKey`].
+    ///
+    /// The underlying Security-framework APIs (`SecItemAdd`,
+    /// `SecItemDelete`) are thread-safe, and this class's state
+    /// (`serviceName` + `accessGroup`) is immutable (`let`), so the
+    /// write can run from any isolation domain. This is the entry
+    /// point the FFI persister callback (`persistIdentityKeys`
+    /// in `PlatformWalletPersistenceHandler`) calls when Rust
+    /// forwards a `Clear` private key — the callback runs on the
+    /// Rust persister thread, not on the main actor, so the
+    /// `@MainActor`-pinned `storePrivateKey` isn't reachable.
+    ///
+    /// Prefer the `@MainActor` wrapper when you're already in a
+    /// main-actor context; call this directly from nonisolated
+    /// contexts (background queues, detached tasks, C callbacks).
+    @discardableResult
+    public nonisolated func storePrivateKeyNonisolated(
+        _ keyData: Data,
+        identityId: Data,
+        keyIndex: Int32
+    ) -> String? {
         let keyIdentifier = generateKeyIdentifier(identityId: identityId, keyIndex: keyIndex)
 
         // Create the query
@@ -384,7 +422,11 @@ public final class KeychainManager: Sendable {
 
     // MARK: - Private Helpers
 
-    private func generateKeyIdentifier(identityId: Data, keyIndex: Int32) -> String {
+    /// Nonisolated because the result only depends on the arguments
+    /// — no access to actor-isolated state — and the function is
+    /// shared between the `@MainActor` wrapper methods and the
+    /// off-actor `storePrivateKeyNonisolated` path.
+    private nonisolated func generateKeyIdentifier(identityId: Data, keyIndex: Int32) -> String {
         let identityHex = identityId.map { String(format: "%02x", $0) }.joined()
         return "privkey_\(identityHex)_\(keyIndex)"
     }
