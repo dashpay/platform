@@ -2,7 +2,9 @@ use super::*;
 
 mod token_burn_tests {
     use super::*;
+    use crate::execution::validation::state_transition::tests::add_tokens_to_identity;
     use dpp::state_transition::batch_transition::TokenBurnTransition;
+    use dpp::tokens::MAX_TOKEN_NOTE_LEN;
 
     #[test]
     fn test_token_burn() {
@@ -892,5 +894,2697 @@ mod token_burn_tests {
 
         assert_eq!(balance1, Some(98663));
         assert_eq!(balance2, Some(1337));
+    }
+
+    // --------------------------------------------------------------
+    // Expanded coverage tests
+    // --------------------------------------------------------------
+
+    #[test]
+    fn test_token_burn_updates_total_supply_correctly() {
+        // Burn should decrement the token's total supply by the same amount removed
+        // from the identity's balance.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // Sanity: total supply should start equal to the base_supply (100000).
+        let total_supply_before = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply_before, Some(100000));
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            25000,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(75000));
+
+        let total_supply_after = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply_after, Some(75000));
+    }
+
+    #[test]
+    fn test_token_burn_with_public_note_succeeds() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            500,
+            Some("burning some old tokens".to_string()),
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(99500));
+    }
+
+    #[test]
+    fn test_token_burn_with_public_note_too_big_fails() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let oversized_note = "x".repeat(MAX_TOKEN_NOTE_LEN + 1);
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            500,
+            Some(oversized_note),
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_))
+            )]
+        );
+
+        // Balance unchanged
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_zero_amount_fails() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            0,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // A zero burn is invalid and rejected at structure validation.
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_))
+            )]
+        );
+
+        // No change to balance
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+
+        // Total supply unchanged
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_allowed_when_rule_is_contract_owner_explicit() {
+        // Explicitly set the burning rule to ContractOwner and verify the contract
+        // owner can still burn (distinct from the default-rules happy path).
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1500,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(98500));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(98500));
+    }
+
+    #[test]
+    fn test_token_burn_allowed_by_specific_identity_rule() {
+        // Allow burning only by a specific (non-owner) identity.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (owner, _owner_signer, _owner_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (burner, burner_signer, burner_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let burner_id = burner.id();
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(move |token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Identity(burner_id),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // Give the burner some tokens to burn.
+        add_tokens_to_identity(&platform, token_id, burner.id(), 40000);
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            burner.id(),
+            contract.id(),
+            0,
+            15000,
+            None,
+            None,
+            &burner_key,
+            2,
+            0,
+            &burner_signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let burner_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                burner.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(burner_balance, Some(25000));
+
+        // Owner balance untouched (still base_supply).
+        let owner_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                owner.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(owner_balance, Some(100000));
+
+        // Total supply = 100000 (owner) + 40000 (added) - 15000 (burned) = 125000
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(125000));
+    }
+
+    #[test]
+    fn test_token_burn_specific_identity_rule_rejects_other_identity() {
+        // Burning rule is Identity(burner); owner attempts to burn -> unauthorized.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (owner, owner_signer, owner_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (burner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let burner_id = burner.id();
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(move |token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Identity(burner_id),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            None,
+            &owner_key,
+            2,
+            0,
+            &owner_signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                ..
+            }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let owner_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                owner.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(owner_balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_rule_no_one_blocks_even_owner() {
+        // With NoOne rule, even the contract owner cannot burn.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                ..
+            }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_from_frozen_account_succeeds() {
+        // Burn validation does NOT check freeze status (only transfer does),
+        // so a frozen account can still have its tokens burned. This test locks
+        // in the current behavior and covers the removal path for frozen
+        // identities.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (owner, owner_signer, owner_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // Freeze the contract owner's own balance.
+        let freeze_transition = BatchTransition::new_token_freeze_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            owner.id(),
+            None,
+            None,
+            &owner_key,
+            2,
+            0,
+            &owner_signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create freeze transition");
+
+        let freeze_serialized = freeze_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize freeze");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[freeze_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process freeze");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit freeze");
+
+        // Attempt the burn on the frozen identity.
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            20000,
+            None,
+            None,
+            &owner_key,
+            3,
+            0,
+            &owner_signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let burn_serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize burn");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[burn_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process burn");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit burn");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                owner.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(80000));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(80000));
+    }
+
+    #[test]
+    fn test_token_burn_from_identity_with_no_token_balance_record() {
+        // Authorized by rule but the burning identity has no token balance record at all.
+        // Should yield IdentityDoesNotHaveEnoughTokenBalanceError.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (burner, burner_signer, burner_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let burner_id = burner.id();
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(move |token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Identity(burner_id),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // burner is authorized by the rule but has NO token balance record at all.
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            burner.id(),
+            contract.id(),
+            0,
+            1,
+            None,
+            None,
+            &burner_key,
+            2,
+            0,
+            &burner_signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Burner's balance still absent (None).
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                burner.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, None);
+
+        // Owner supply intact.
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_sequential_depletes_balance_and_supply() {
+        // Two successful burns in sequence should correctly decrement both
+        // the identity's balance and the total supply.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        for (nonce, amount, expected_balance, expected_supply) in [
+            (2u64, 30000u64, 70000u64, 70000u64),
+            (3, 40000, 30000, 30000),
+        ] {
+            let burn_transition = BatchTransition::new_token_burn_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                amount,
+                None,
+                None,
+                &key,
+                nonce,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create burn transition");
+
+            let serialized = burn_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch balance");
+            assert_eq!(balance, Some(expected_balance));
+
+            let total_supply = platform
+                .drive
+                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch total supply");
+            assert_eq!(total_supply, Some(expected_supply));
+        }
+    }
+
+    #[test]
+    fn test_token_burn_by_group_single_member_sufficient_power() {
+        // Group rule, but the proposer alone has enough power to finalize the
+        // action in one shot (mirrors the analogous mint test).
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 5), (identity_2.id(), 1)].into(),
+                        required_power: 5,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            2500,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(97500));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(97500));
+    }
+
+    #[test]
+    fn test_token_burn_group_action_resubmit_same_signer_fails() {
+        // Proposer + confirmer path, then proposer tries to submit the confirmation
+        // again -> GroupActionAlreadySignedByIdentityError.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity1, signer1, key1) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity1.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity1.id(), 1), (identity2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key1,
+            2,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Same signer tries to submit as OtherSigner -> already signed error.
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity1.id().as_bytes(),
+            2,
+            1000,
+        );
+
+        let resubmit_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key1,
+            3,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .expect("expected to create resubmit transition");
+
+        let serialized = resubmit_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::GroupActionAlreadySignedByIdentityError(_)
+                ),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Proposer's balance is unchanged because the action has not yet been
+        // finalized (only 1/2 power).
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity1.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_group_action_submit_after_completion_fails() {
+        // Three-member group with required power 2: proposer + one confirmer completes
+        // the action, then a third member tries to confirm -> AlreadyCompleted.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity1, signer1, key1) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity2, signer2, key2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity3, signer3, key3) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity1.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [
+                            (identity1.id(), 1),
+                            (identity2.id(), 1),
+                            (identity3.id(), 1),
+                        ]
+                        .into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        // 1. Proposer
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key1,
+            2,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity1.id().as_bytes(),
+            2,
+            1000,
+        );
+
+        // 2. Confirmer 2 completes (reaches required power 2).
+        let confirm_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity2.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key2,
+            2,
+            0,
+            &signer2,
+            platform_version,
+            None,
+        )
+        .expect("expected to create confirm transition");
+
+        let serialized = confirm_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Balance already burnt.
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity1.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(99000));
+
+        // 3. Third member tries to confirm an already-completed action.
+        let late_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity3.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key3,
+            2,
+            0,
+            &signer3,
+            platform_version,
+            None,
+        )
+        .expect("expected to create late transition");
+
+        let serialized = late_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::GroupActionAlreadyCompletedError(_)),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Total supply only decremented once.
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(99000));
+    }
+
+    #[test]
+    fn test_token_burn_group_proposer_not_in_group_fails() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_3, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        // identity is NOT a member
+                        members: [(identity_2.id(), 1), (identity_3.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_group_other_signer_not_in_group_fails() {
+        // Proposer succeeds, but a non-member tries to confirm.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (outsider, outsider_signer, outsider_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        // Proposer succeeds
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity.id().as_bytes(),
+            2,
+            1000,
+        );
+
+        // Outsider attempts to confirm.
+        let confirm_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            outsider.id(),
+            contract.id(),
+            0,
+            1000,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &outsider_key,
+            2,
+            0,
+            &outsider_signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create confirm transition");
+
+        let serialized = confirm_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Proposer balance still intact - action is still pending.
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_group_confirmer_with_note_fails() {
+        // Only the proposer may attach a note. The confirmer attempting to attach
+        // a note is rejected with TokenNoteOnlyAllowedWhenProposerError.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity1, signer1, key1) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity2, signer2, key2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity1.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity1.id(), 1), (identity2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        // Proposer with a valid note.
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            1500,
+            Some("proposer note".to_string()),
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key1,
+            2,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity1.id().as_bytes(),
+            2,
+            1500,
+        );
+
+        // Confirmer attaches a note -> reject.
+        let confirm_with_note = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity2.id(),
+            contract.id(),
+            0,
+            1500,
+            Some("confirmer note not allowed".to_string()),
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key2,
+            2,
+            0,
+            &signer2,
+            platform_version,
+            None,
+        )
+        .expect("expected to create confirm transition");
+
+        let serialized = confirm_with_note
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::TokenNoteOnlyAllowedWhenProposerError(_))
+            )]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Proposer balance still intact; action still pending.
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity1.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_group_confirmer_modifies_amount_fails() {
+        // Confirmer attempts to burn a different amount than the proposer -> modification
+        // of main parameters is rejected.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity1, signer1, key1) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity2, signer2, key2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity1.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity1.id(), 1), (identity2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        // 1. Proposer for burn_amount 2000
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            2000,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key1,
+            2,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // 2. Confirmer uses the proposer's action_id (2000) but submits burn_amount 3000
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity1.id().as_bytes(),
+            2,
+            2000,
+        );
+
+        let mismatched_confirm = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity2.id(),
+            contract.id(),
+            0,
+            3000, // different from proposer
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key2,
+            2,
+            0,
+            &signer2,
+            platform_version,
+            None,
+        )
+        .expect("expected to create confirm transition");
+
+        let serialized = mismatched_confirm
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
+                ),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Balance still unaffected.
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity1.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(100000));
+    }
+
+    #[test]
+    fn test_token_burn_by_main_group_rule() {
+        // Verify the MainGroup authorization path: the rule says MainGroup, and the
+        // main_control_group is set to 0. A member of group 0 proposes the burn.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity1, signer1, key1) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity2, signer2, key2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity1.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_main_control_group(Some(0));
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity1.id(), 1), (identity2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        // Proposer
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            500,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key1,
+            2,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .expect("expected to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Confirmer
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity1.id().as_bytes(),
+            2,
+            500,
+        );
+
+        let confirm_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity2.id(),
+            contract.id(),
+            0,
+            500,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key2,
+            2,
+            0,
+            &signer2,
+            platform_version,
+            None,
+        )
+        .expect("expected to create confirm transition");
+
+        let serialized = confirm_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity1.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(99500));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(99500));
+    }
+
+    #[test]
+    fn test_token_burn_after_full_depletion_fails_with_insufficient_balance() {
+        // Burn entire balance, then try to burn more -> insufficient balance.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // Burn full balance
+        let burn_all = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            100000,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_all
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Second burn at zero balance -> error.
+        let burn_again = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1,
+            None,
+            None,
+            &key,
+            3,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn_again
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(0));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(0));
+    }
+
+    #[test]
+    fn test_token_burn_by_one_then_by_another_both_independent() {
+        // Two identities both authorized via ContractOwner + Identity rules? The
+        // AuthorizedActionTakers enum only has a single variant per rule, so we
+        // pick Identity() for a second holder and verify bursts from distinct
+        // identities decrement their own balances independently.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (owner, owner_signer, owner_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // Seed a second identity with a balance. Default rule only allows contract
+        // owner to burn, so the second identity only *holds* tokens here; only the
+        // owner does burns — but the burn targets the owner's own balance.
+        let (holder, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        add_tokens_to_identity(&platform, token_id, holder.id(), 7000);
+
+        // Burn from owner (allowed).
+        let burn1 = BatchTransition::new_token_burn_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            4000,
+            None,
+            None,
+            &owner_key,
+            2,
+            0,
+            &owner_signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create burn transition");
+
+        let serialized = burn1.serialize_to_bytes().expect("expected serialized");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // The holder's balance is untouched.
+        let holder_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                holder.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(holder_balance, Some(7000));
+
+        // Owner's balance reduced.
+        let owner_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                owner.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(owner_balance, Some(96000));
+
+        // Total supply: 100000 + 7000 - 4000 = 103000
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(103000));
     }
 }

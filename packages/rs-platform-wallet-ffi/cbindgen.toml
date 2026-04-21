@@ -8,7 +8,7 @@ include_version = true
 namespaces = []
 using_namespaces = []
 sys_includes = ["stdint.h", "stdbool.h"]
-includes = []
+includes = ["../key-wallet-ffi/key-wallet-ffi.h"]
 no_includes = false
 cpp_compat = true
 documentation = true
@@ -21,11 +21,6 @@ include = ["platform_wallet_*", "identity_manager_*", "managed_identity_*", "con
 exclude = []
 prefix = ""
 item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]
-
-[export.rename]
-"Handle" = "platform_wallet_handle_t"
-"PlatformWalletFFIError" = "platform_wallet_error_t"
-"PlatformWalletFFIResult" = "platform_wallet_result_t"
 
 [fn]
 args = "horizontal"

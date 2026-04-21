@@ -73,3 +73,145 @@ impl Drive {
         Ok(total_token_aggregated_identity_balances_in_platform)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_return_none_for_non_existent_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let token_id = [21u8; 32];
+
+        let balances = drive
+            .fetch_token_total_aggregated_identity_balances_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+
+        assert_eq!(balances, None);
+    }
+
+    #[test]
+    fn should_return_zero_for_freshly_created_token_with_no_holders() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [22u8; 32];
+        let contract_id = Identifier::from([23u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        let balances = drive
+            .fetch_token_total_aggregated_identity_balances_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+
+        // The balances tree exists but is empty — sum is 0
+        assert_eq!(balances, Some(0));
+    }
+
+    #[test]
+    fn should_aggregate_single_holder_balance() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [24u8; 32];
+        let contract_id = Identifier::from([25u8; 32]);
+        let identity_id = [26u8; 32];
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        drive
+            .add_to_identity_token_balance(
+                token_id,
+                identity_id,
+                1_234,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to add token balance");
+
+        let balances = drive
+            .fetch_token_total_aggregated_identity_balances_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+
+        assert_eq!(balances, Some(1_234));
+    }
+
+    #[test]
+    fn should_aggregate_multiple_holder_balances() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [30u8; 32];
+        let contract_id = Identifier::from([31u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        for (identity_id, amount) in [
+            ([32u8; 32], 100u64),
+            ([33u8; 32], 250u64),
+            ([34u8; 32], 650u64),
+        ] {
+            drive
+                .add_to_identity_token_balance(
+                    token_id,
+                    identity_id,
+                    amount,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to add token balance");
+        }
+
+        let balances = drive
+            .fetch_token_total_aggregated_identity_balances_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+
+        assert_eq!(balances, Some(1_000));
+    }
+}
