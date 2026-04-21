@@ -467,9 +467,9 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "network-testing"),
-    ignore = "this test requires a live platform node to reproduce the proof bug"
+    ignore = "this test requires a live platform node to verify the proof fix"
 )]
-async fn contested_resources_start_index_values_no_limit_proof_failure() {
+async fn contested_resources_start_index_values_no_limit_matches_explicit_default_limit() {
     setup_logs();
 
     let cfg = Config::new();
@@ -506,31 +506,15 @@ async fn contested_resources_start_index_values_no_limit_proof_failure() {
     tracing::info!(count = with_limit.0.len(), "With limit: OK");
     assert!(!with_limit.0.is_empty(), "expected contested labels");
 
-    // 2. Without limit → proof verification fails.
-    let result = ContestedResource::fetch_many(&sdk, make_query(None)).await;
+    // 2. Without limit → should now verify successfully and match the explicit default limit.
+    let no_limit = ContestedResource::fetch_many(&sdk, make_query(None))
+        .await
+        .expect("query with omitted limit should verify successfully");
 
-    match result {
-        Err(ref e) => {
-            let msg = e.to_string();
-            tracing::error!(%msg, "Confirmed: no-limit proof verification failure");
-            assert!(
-                msg.contains("Proof is missing data for query range")
-                    || msg.contains("invalid proof"),
-                "Expected proof verification error, got: {}",
-                msg
-            );
-        }
-        Ok(ref resources) => {
-            // If this branch is reached, the platform bug has been fixed.
-            // Update this test to always expect Ok once the fix lands.
-            tracing::info!(
-                count = resources.0.len(),
-                "No-limit query now succeeds — bug is fixed!"
-            );
-            assert!(
-                !resources.0.is_empty(),
-                "expected contested labels under 'dash'"
-            );
-        }
-    }
+    tracing::info!(count = no_limit.0.len(), "No-limit query: OK");
+    assert!(!no_limit.0.is_empty(), "expected contested labels under 'dash'");
+    assert_eq!(
+        no_limit.0, with_limit.0,
+        "omitted-limit proof should match the explicit default-limit result set",
+    );
 }
