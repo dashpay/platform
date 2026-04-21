@@ -4,7 +4,12 @@ use crate::fetch::{
     common::{setup_logs, setup_sdk_for_test_case, TEST_DPNS_NAME},
     config::Config,
 };
-use dash_sdk::{platform::FetchMany, Error};
+use dapi_grpc::platform::v0::get_contested_resources_request;
+use dapi_grpc::platform::v0::GetContestedResourcesRequest;
+use dash_sdk::{
+    platform::{FetchMany, Query},
+    Error,
+};
 use dpp::{
     platform_value::Value,
     voting::{
@@ -482,6 +487,17 @@ async fn contested_resources_start_index_values_no_limit_proof_failure() {
         limit,
         order_ascending: true,
     };
+
+    let request: GetContestedResourcesRequest = make_query(None)
+        .clone()
+        .query(true)
+        .expect("query should serialize");
+    let get_contested_resources_request::Version::V0(v0) =
+        request.version.expect("request should contain version");
+    assert_eq!(
+        v0.count, None,
+        "omitted query limit must stay omitted on the wire",
+    );
 
     // 1. With limit → works fine.
     let with_limit = ContestedResource::fetch_many(&sdk, make_query(Some(100)))

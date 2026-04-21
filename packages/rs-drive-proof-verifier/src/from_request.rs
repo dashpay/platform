@@ -27,7 +27,7 @@ use drive::query::{
     VotePollsByEndDateDriveQuery,
 };
 
-use crate::{proved_request_limit, Error, DEFAULT_QUERY_LIMIT};
+use crate::{proved_request_limit, Error};
 
 const BINCODE_CONFIG: dpp::bincode::config::Configuration = dpp::bincode::config::standard();
 /// Convert a gRPC request into a query object.
@@ -142,7 +142,7 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
         Ok(proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
             prove:true,
             contract_id:self.vote_poll.contract_id.to_vec(),
-            count: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
+            count: self.limit.map(|v| v as u32),
             document_type_name: self.vote_poll.document_type_name.clone(),
             index_name: self.vote_poll.index_name.clone(),
             index_values: self.vote_poll.index_values.iter().map(|v|
@@ -211,7 +211,7 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                     prove: true,
                     identity_id: self.identity_id.to_vec(),
                     offset: self.offset.map(|x| x as u32),
-                    limit: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
+                    limit: self.limit.map(|x| x as u32),
                     start_at_vote_poll_id_info: self.start_at.map(|(id, included)| {
                         request_v0::StartAtVotePollIdInfo {
                             start_at_poll_identifier: id.to_vec(),
@@ -284,7 +284,7 @@ impl TryFromRequest<GetContestedResourceVotersForIdentityRequest>
                 dpp::bincode::encode_to_vec(v, BINCODE_CONFIG).map_err(|e|
                     Error::RequestError { error: e.to_string()})).collect::<Result<Vec<_>,_>>()?,
             order_ascending: self.order_ascending,
-            count: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
+            count: self.limit.map(|v| v as u32),
             contestant_id: self.contestant_id.to_vec(),
             start_at_identifier_info: self.start_at.map(|v| request_v0::StartAtIdentifierInfo{
                 start_identifier: v.0.to_vec(),
@@ -331,7 +331,7 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
         Ok(GetContestedResourcesRequestV0 {
             prove: true,
             contract_id: self.contract_id.to_vec(),
-            count: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
+            count: self.limit.map(|v| v as u32),
             document_type_name: self.document_type_name.clone(),
             end_index_values: bincode_encode_values(&self.end_index_values)?,
             start_index_values: bincode_encode_values(&self.start_index_values)?,
@@ -399,7 +399,7 @@ impl TryFromRequest<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQue
                         end_time_included,
                     }
                 }),
-                limit: Some(self.limit.unwrap_or(DEFAULT_QUERY_LIMIT) as u32),
+                limit: self.limit.map(|v| v as u32),
                 offset: self.offset.map(|v| v as u32),
                 ascending: self.order_ascending,
             }
@@ -651,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn test_contested_resources_request_defaults_limit_when_encoding() {
+    fn test_contested_resources_request_preserves_omitted_limit_when_encoding() {
         let query = VotePollsByDocumentTypeQuery {
             contract_id: Identifier::from_bytes(&[1u8; 32]).unwrap(),
             document_type_name: "domain".to_string(),
@@ -667,7 +667,7 @@ mod tests {
         let proto::get_contested_resources_request::Version::V0(v0) =
             request.version.expect("request should contain a version");
 
-        assert_eq!(v0.count, Some(DEFAULT_QUERY_LIMIT as u32));
+        assert_eq!(v0.count, None);
     }
 
     #[test]
@@ -689,11 +689,11 @@ mod tests {
         let query =
             VotePollsByDocumentTypeQuery::try_from_request(request).expect("request should decode");
 
-        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+        assert_eq!(query.limit, Some(crate::DEFAULT_QUERY_LIMIT));
     }
 
     #[test]
-    fn test_contested_resource_vote_state_request_defaults_limit_when_encoding() {
+    fn test_contested_resource_vote_state_request_preserves_omitted_limit_when_encoding() {
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll: sample_vote_poll(),
             result_type: ContestedDocumentVotePollDriveQueryResultType::Documents,
@@ -707,7 +707,7 @@ mod tests {
         let proto::get_contested_resource_vote_state_request::Version::V0(v0) =
             request.version.expect("request should contain a version");
 
-        assert_eq!(v0.count, Some(DEFAULT_QUERY_LIMIT as u32));
+        assert_eq!(v0.count, None);
     }
 
     #[test]
@@ -730,11 +730,11 @@ mod tests {
         let query = ContestedDocumentVotePollDriveQuery::try_from_request(request)
             .expect("request should decode");
 
-        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+        assert_eq!(query.limit, Some(crate::DEFAULT_QUERY_LIMIT));
     }
 
     #[test]
-    fn test_contested_resource_identity_votes_request_defaults_limit_when_encoding() {
+    fn test_contested_resource_identity_votes_request_preserves_omitted_limit_when_encoding() {
         let query = ContestedResourceVotesGivenByIdentityQuery {
             identity_id: Identifier::from_bytes(&[9u8; 32]).unwrap(),
             offset: None,
@@ -747,7 +747,7 @@ mod tests {
         let proto::get_contested_resource_identity_votes_request::Version::V0(v0) =
             request.version.expect("request should contain a version");
 
-        assert_eq!(v0.limit, Some(DEFAULT_QUERY_LIMIT as u32));
+        assert_eq!(v0.limit, None);
     }
 
     #[test]
@@ -766,11 +766,11 @@ mod tests {
         let query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)
             .expect("request should decode");
 
-        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+        assert_eq!(query.limit, Some(crate::DEFAULT_QUERY_LIMIT));
     }
 
     #[test]
-    fn test_contested_resource_voters_for_identity_request_defaults_limit_when_encoding() {
+    fn test_contested_resource_voters_for_identity_request_preserves_omitted_limit_when_encoding() {
         let query = ContestedDocumentVotePollVotesDriveQuery {
             vote_poll: sample_vote_poll(),
             contestant_id: Identifier::from_bytes(&[3u8; 32]).unwrap(),
@@ -784,7 +784,7 @@ mod tests {
         let proto::get_contested_resource_voters_for_identity_request::Version::V0(v0) =
             request.version.expect("request should contain a version");
 
-        assert_eq!(v0.count, Some(DEFAULT_QUERY_LIMIT as u32));
+        assert_eq!(v0.count, None);
     }
 
     #[test]
@@ -807,11 +807,11 @@ mod tests {
         let query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)
             .expect("request should decode");
 
-        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+        assert_eq!(query.limit, Some(crate::DEFAULT_QUERY_LIMIT));
     }
 
     #[test]
-    fn test_vote_polls_by_end_date_request_defaults_limit_when_encoding() {
+    fn test_vote_polls_by_end_date_request_preserves_omitted_limit_when_encoding() {
         let query = VotePollsByEndDateDriveQuery {
             start_time: Some((1000, true)),
             end_time: Some((2000, false)),
@@ -824,7 +824,7 @@ mod tests {
         let proto::get_vote_polls_by_end_date_request::Version::V0(v0) =
             request.version.expect("request should contain a version");
 
-        assert_eq!(v0.limit, Some(DEFAULT_QUERY_LIMIT as u32));
+        assert_eq!(v0.limit, None);
     }
 
     #[test]
@@ -843,7 +843,7 @@ mod tests {
         let query =
             VotePollsByEndDateDriveQuery::try_from_request(request).expect("request should decode");
 
-        assert_eq!(query.limit, Some(DEFAULT_QUERY_LIMIT));
+        assert_eq!(query.limit, Some(crate::DEFAULT_QUERY_LIMIT));
     }
 
     // ---------------------------------------------------------------
