@@ -473,9 +473,28 @@ public final class ManagedIdentity: @unchecked Sendable {
     /// `DpnsNameInfo` is a future wrapper if the UI grows an
     /// acquisition-date column.
     public func getDpnsNames() throws -> [String] {
+        try readDpnsNameArray { managed_identity_get_dpns_names(handle, &$0, &$1) }
+    }
+
+    /// Read the cached contested DPNS labels for this identity —
+    /// names where this identity is a contender and the contest
+    /// hasn't resolved yet. Empty until the wallet has run
+    /// `syncContestedDpnsNames(identityId:)` at least once.
+    public func getContestedDpnsNames() throws -> [String] {
+        try readDpnsNameArray { managed_identity_get_contested_dpns_names(handle, &$0, &$1) }
+    }
+
+    /// Shared body for the two DPNS-name readers. Both share the
+    /// same `DpnsNameArray` FFI shape + free helper, so the only
+    /// per-method variance is which C entry point fills the array.
+    /// Keeping the plumbing in one place avoids duplicating the
+    /// error handling + defer + pointer iteration block twice.
+    private func readDpnsNameArray(
+        _ fetch: (inout DpnsNameArray, inout PlatformWalletFFIError) -> PlatformWalletFFIResult
+    ) throws -> [String] {
         var array = DpnsNameArray(labels: nil, count: 0)
         var error = PlatformWalletFFIError()
-        let result = managed_identity_get_dpns_names(handle, &array, &error)
+        let result = fetch(&array, &error)
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }

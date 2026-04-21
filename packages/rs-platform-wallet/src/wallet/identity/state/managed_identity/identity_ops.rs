@@ -75,6 +75,7 @@ impl ManagedIdentity {
             key_storage: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
+            contested_dpns_names: Vec::new(),
             wallet_id: None,
             dashpay_profile: None,
             dashpay_payments: BTreeMap::new(),
@@ -158,6 +159,43 @@ impl ManagedIdentity {
     /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn add_dpns_name(&mut self, name: DpnsNameInfo, persister: &WalletPersister) {
         self.dpns_names.push(name);
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Append a contested DPNS label this identity is contending for.
+    ///
+    /// Dedup is enforced — the same label isn't added twice. When a
+    /// contest resolves (won), the caller should move the label from
+    /// `contested_dpns_names` onto `dpns_names` via a separate
+    /// mutation; on lock / loss, the label just gets dropped. Both
+    /// cases are out of scope for this method.
+    ///
+    /// Persists the resulting snapshot via `persister`.
+    pub fn add_contested_dpns_name(&mut self, label: String, persister: &WalletPersister) {
+        if self.contested_dpns_names.contains(&label) {
+            return;
+        }
+        self.contested_dpns_names.push(label);
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Replace the contested-name list wholesale.
+    ///
+    /// Use this when a sync round pulls the canonical set of
+    /// contested names from Platform — the merge-time dedup-append
+    /// policy on `IdentityChangeSet` would otherwise accumulate
+    /// stale labels (contests that resolved but still appear in
+    /// the local cache). Emitting a full snapshot here + running
+    /// the sync path on identity reapply bakes the authoritative
+    /// set into state.
+    pub fn set_contested_dpns_names(&mut self, labels: Vec<String>, persister: &WalletPersister) {
+        self.contested_dpns_names = labels;
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);

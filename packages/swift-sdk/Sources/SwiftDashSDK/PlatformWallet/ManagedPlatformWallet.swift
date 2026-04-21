@@ -511,6 +511,37 @@ extension ManagedPlatformWallet {
             return added
         }.value
     }
+
+    /// Fetch the labels of DPNS contests `identityId` is currently
+    /// contending for (voting period active, not resolved) and
+    /// replace `ManagedIdentity.contested_dpns_names` wholesale.
+    ///
+    /// Use this as the read source for contested-name lists —
+    /// resolved contests automatically drop out of the local cache
+    /// because Rust writes a full snapshot, not a dedup-append.
+    /// Contest metadata (contenders, vote state, end time) isn't
+    /// cached; callers that need those details should still query
+    /// `Sdk::get_contested_dpns_vote_state` directly since they
+    /// change throughout the voting period.
+    @discardableResult
+    public func syncContestedDpnsNames(identityId: Identifier) async throws -> UInt32 {
+        let handle = self.handle
+        let ffiId = identifierToFFI(identityId)
+        return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
+            var count: UInt32 = 0
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_sync_contested_dpns_names(
+                handle,
+                ffiId,
+                &count,
+                &error
+            )
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return count
+        }.value
+    }
 }
 
 // MARK: - DashPay contact requests + payments

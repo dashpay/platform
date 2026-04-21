@@ -560,3 +560,133 @@ pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
     }
     let _ = unsafe { Box::from_raw(slice as *mut [*mut c_char]) };
 }
+
+// ---------------------------------------------------------------------------
+// Contested DPNS names
+// ---------------------------------------------------------------------------
+
+/// Fetch the non-resolved contested DPNS names `identity_id` is a
+/// contender for and replace
+/// [`ManagedIdentity.contested_dpns_names`](platform_wallet::ManagedIdentity)
+/// wholesale with the canonical set. Writes a full snapshot via
+/// the persister (not dedup-append) so resolved contests disappear
+/// from the local cache on sync. Returns the new count via
+/// `out_count`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_sync_contested_dpns_names(
+    wallet_handle: Handle,
+    identity_id: IdentifierBytes,
+    out_count: *mut u32,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    let id = match identity_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid identity identifier: {e}"),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            let identity = wallet.identity().clone();
+            let result =
+                block_on_worker(async move { identity.sync_contested_dpns_names(&id).await });
+            match result {
+                Ok(labels) => {
+                    if !out_count.is_null() {
+                        unsafe { *out_count = labels.len() as u32 };
+                    }
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorWalletOperation,
+                                format!("sync_contested_dpns_names failed: {e}"),
+                            );
+                        }
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid platform-wallet handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Read the cached contested DPNS labels for a [`ManagedIdentity`]
+/// handle. Returns an empty [`DpnsNameArray`] when the cache hasn't
+/// been populated; follow with
+/// [`platform_wallet_sync_contested_dpns_names`] to refresh.
+/// Release via [`dpns_name_array_free`].
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_contested_dpns_names(
+    identity_handle: Handle,
+    out_array: *mut DpnsNameArray,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_array.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "out_array is null",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item(identity_handle, |identity| {
+            if identity.contested_dpns_names.is_empty() {
+                unsafe { *out_array = DpnsNameArray::empty() };
+                return PlatformWalletFFIResult::Success;
+            }
+            let mut labels: Vec<*mut c_char> =
+                Vec::with_capacity(identity.contested_dpns_names.len());
+            for label in &identity.contested_dpns_names {
+                let c = match CString::new(label.clone()) {
+                    Ok(c) => c.into_raw(),
+                    Err(_) => std::ptr::null_mut(),
+                };
+                labels.push(c);
+            }
+            let count = labels.len();
+            let boxed = labels.into_boxed_slice();
+            let ptr = Box::into_raw(boxed) as *mut *mut c_char;
+            unsafe {
+                *out_array = DpnsNameArray { labels: ptr, count };
+            }
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid managed identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}

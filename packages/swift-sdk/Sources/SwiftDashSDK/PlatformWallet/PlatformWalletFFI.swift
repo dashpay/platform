@@ -618,6 +618,21 @@ func managed_identity_get_dpns_names(
 @_silgen_name("dpns_name_array_free")
 func dpns_name_array_free(_ array: DpnsNameArray)
 
+@_silgen_name("platform_wallet_sync_contested_dpns_names")
+func platform_wallet_sync_contested_dpns_names(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ out_count: UnsafeMutablePointer<UInt32>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("managed_identity_get_contested_dpns_names")
+func managed_identity_get_contested_dpns_names(
+    _ identity_handle: Handle,
+    _ out_array: UnsafeMutablePointer<DpnsNameArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - DashPay contact requests + payments FFI
 
 /// Mirrors `ContactRequestHandleArray` from

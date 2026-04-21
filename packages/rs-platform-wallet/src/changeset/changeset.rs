@@ -105,6 +105,11 @@ pub struct IdentityEntry {
     pub last_synced_keys_block_time: Option<BlockTime>,
     /// DPNS usernames with acquisition metadata.
     pub dpns_names: Vec<DpnsNameInfo>,
+    /// DPNS labels this identity is currently contending for —
+    /// mirrored from `ManagedIdentity.contested_dpns_names`.
+    /// Contest metadata (contenders, votes, end time) isn't cached
+    /// here; the UI queries it on demand against Platform.
+    pub contested_dpns_names: Vec<String>,
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
     /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
@@ -137,6 +142,7 @@ impl IdentityEntry {
             last_updated_balance_block_time: managed.last_updated_balance_block_time,
             last_synced_keys_block_time: managed.last_synced_keys_block_time,
             dpns_names: managed.dpns_names.clone(),
+            contested_dpns_names: managed.contested_dpns_names.clone(),
             status: managed.status,
             wallet_id: managed.wallet_id,
             dashpay_profile: managed.dashpay_profile.clone(),
@@ -259,6 +265,17 @@ impl Merge for IdentityChangeSet {
                     for name in &entry.dpns_names {
                         if !existing.dpns_names.iter().any(|n| n.label == name.label) {
                             existing.dpns_names.push(name.clone());
+                        }
+                    }
+                    // Append new contested DPNS labels. Dedup
+                    // directly on the string since the field is a
+                    // plain `Vec<String>`. Resolutions (contest
+                    // won / locked) flow through a separate setter
+                    // that shrinks the list, so an always-extend
+                    // policy at merge time is correct.
+                    for label in &entry.contested_dpns_names {
+                        if !existing.contested_dpns_names.contains(label) {
+                            existing.contested_dpns_names.push(label.clone());
                         }
                     }
                     // Merge DashPay payments (last-write-wins per tx_id).

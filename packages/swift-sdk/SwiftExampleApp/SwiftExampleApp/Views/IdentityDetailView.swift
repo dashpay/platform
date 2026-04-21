@@ -470,29 +470,57 @@ struct IdentityDetailView: View {
         }
     }
 
+    /// Fetch the identity's contested DPNS names.
+    ///
+    /// Prefers the platform-wallet cache path: `syncContestedDpnsNames`
+    /// pulls the canonical non-resolved set from Platform and writes
+    /// a full snapshot to `ManagedIdentity.contested_dpns_names` (via
+    /// the identity changeset → persister callback →
+    /// `PersistentIdentity`), then we read the cached labels back.
+    /// Resolved contests (won / locked) drop out automatically
+    /// because the sync uses `set_contested_dpns_names` (full
+    /// replace), not `add_contested_dpns_name`.
+    ///
+    /// Per-contest metadata (contenders, vote state, end time) is
+    /// NOT cached — contest dynamics change throughout the voting
+    /// period, so caching them would go stale fast. `ContestDetailView`
+    /// still queries `sdk.dpnsGetNonResolvedContestsForIdentity`
+    /// directly when it needs the full details. This view only
+    /// uses the label list, so the cache is sufficient.
+    ///
+    /// Falls back to the direct-SDK RPC when the identity isn't
+    /// attached to a loaded `ManagedPlatformWallet`.
     @MainActor
     private func fetchContestedDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
+        if let walletId = identity.walletId,
+           let wallet = walletManager.wallet(for: walletId) {
+            do {
+                _ = try await wallet.syncContestedDpnsNames(identityId: identity.id)
+                let managed = try wallet.managedIdentity(identityId: identity.id)
+                let names = try managed.getContestedDpnsNames()
+                print("🔵 Got \(names.count) contested DPNS names via platform-wallet cache")
+                // Metadata map intentionally empty — ContestDetailView
+                // queries it fresh when opened.
+                return (names, [:])
+            } catch {
+                print("⚠️ Platform-wallet contested DPNS path failed, falling back to SDK: \(error)")
+            }
+        }
+
         guard let sdk = appState.sdk else { return ([], [:]) }
-
         do {
-            print("🔵 Fetching contested DPNS names from network...")
-
-            // Use the new dedicated FFI function for getting non-resolved contests for this identity
+            print("🔵 Fetching contested DPNS names via direct SDK RPC...")
             let contestsResult = try await sdk.dpnsGetNonResolvedContestsForIdentity(
                 identityId: identity.idString,
                 limit: 20
             )
-
             var contestedNames: [String] = []
             var contestInfo: [String: Any] = [:]
-
-            // Parse the result - it's a dictionary where keys are the contested names
             for (name, info) in contestsResult {
                 contestedNames.append(name)
                 contestInfo[name] = info
             }
-
-            print("🔵 Found \(contestedNames.count) contested DPNS names")
+            print("🔵 Found \(contestedNames.count) contested DPNS names from SDK")
             return (contestedNames, contestInfo)
         } catch {
             print("❌ Failed to fetch contested DPNS names: \(error)")

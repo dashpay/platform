@@ -80,6 +80,14 @@ impl IdentityManager {
                         existing.dpns_names.push(name);
                     }
                 }
+                // Same dedup-append policy for contested labels.
+                // Resolved contests (won / locked) shrink the list
+                // via a separate setter that emits a full snapshot.
+                for label in entry.contested_dpns_names {
+                    if !existing.contested_dpns_names.contains(&label) {
+                        existing.contested_dpns_names.push(label);
+                    }
+                }
                 existing.dashpay_payments.extend(entry.dashpay_payments);
             }
             None => {
@@ -100,6 +108,7 @@ impl IdentityManager {
                 managed.status = entry.status;
                 managed.wallet_id = entry.wallet_id;
                 managed.dpns_names = entry.dpns_names;
+                managed.contested_dpns_names = entry.contested_dpns_names;
                 managed.dashpay_profile = entry.dashpay_profile;
                 managed.dashpay_payments = entry.dashpay_payments;
                 self.identities.insert(id, managed);

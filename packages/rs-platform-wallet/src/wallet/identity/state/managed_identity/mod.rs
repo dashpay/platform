@@ -63,6 +63,19 @@ pub struct ManagedIdentity {
     /// DPNS usernames associated with this identity.
     pub dpns_names: Vec<DpnsNameInfo>,
 
+    /// DPNS labels this identity is currently contending for —
+    /// names that are still in the contested-voting period and
+    /// haven't been resolved (won or locked) yet.
+    ///
+    /// Caches only the label list. Contest metadata (contenders,
+    /// votes, end time) changes throughout the voting period, so
+    /// caching it would go stale quickly — the UI queries it fresh
+    /// via `Sdk::get_non_resolved_dpns_contests_for_identity` when
+    /// it needs the details. Resolved contests (won or locked)
+    /// should migrate off this list and onto `dpns_names` on
+    /// success.
+    pub contested_dpns_names: Vec<String>,
+
     /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
     /// the wallet that owns this identity, if known. Set during
     /// gap-limit scan and identity recovery.

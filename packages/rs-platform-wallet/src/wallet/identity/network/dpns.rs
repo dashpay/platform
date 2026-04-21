@@ -239,6 +239,52 @@ impl IdentityWallet {
         Ok(added)
     }
 
+    /// Fetch the list of DPNS contests `identity_id` is currently
+    /// contending for (still in the voting period, not resolved)
+    /// and replace the local
+    /// [`ManagedIdentity.contested_dpns_names`](crate::wallet::identity::ManagedIdentity)
+    /// list wholesale with the canonical set.
+    ///
+    /// Uses `set_contested_dpns_names` rather than
+    /// `add_contested_dpns_name` so resolved contests
+    /// (won / locked) automatically drop out of the local cache —
+    /// the sync result IS the authoritative set. Individual add/
+    /// remove flows (e.g. "I just contended a name") can still use
+    /// `add_contested_dpns_name` for immediate UI reflection; the
+    /// next sync round reconciles.
+    ///
+    /// Returns the canonical contested-name labels.
+    pub async fn sync_contested_dpns_names(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Vec<String>, PlatformWalletError> {
+        let contests = self
+            .sdk
+            .get_non_resolved_dpns_contests_for_identity(*identity_id, None)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch contested DPNS names for identity {identity_id}: {e}",
+                ))
+            })?;
+
+        let labels: Vec<String> = contests.keys().cloned().collect();
+
+        // Drop the write lock before returning the labels. Using
+        // `set_contested_dpns_names` means the snapshot-based
+        // changeset emits a fresh list — resolved contests that the
+        // local cache still carried get dropped on merge/apply.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                    managed.set_contested_dpns_names(labels.clone(), &self.persister);
+                }
+            }
+        }
+        Ok(labels)
+    }
+
     /// Search for DPNS names by prefix.
     pub async fn search_names(
         &self,
