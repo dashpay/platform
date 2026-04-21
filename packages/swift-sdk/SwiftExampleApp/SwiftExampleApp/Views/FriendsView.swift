@@ -14,6 +14,11 @@ struct FriendsView: View {
     @State private var showAddFriend = false
     @State private var showIncomingRequests = false
     @State private var errorMessage: String?
+    /// Set to the contact the user tapped to open the send-payment
+    /// sheet. `.sheet(item:)` presents when non-nil, tears the sheet
+    /// down when reset to nil. Also convenient because
+    /// `DashPayContact` is `Identifiable` via its `identityId: Data`.
+    @State private var paymentTarget: DashPayContact?
 
     var availableIdentities: [IdentityModel] {
         appState.identities
@@ -159,7 +164,12 @@ struct FriendsView: View {
                     } else {
                         List {
                             ForEach(contacts.filter { !$0.isHidden }) { contact in
-                                ContactRowView(contact: contact)
+                                Button {
+                                    paymentTarget = contact
+                                } label: {
+                                    ContactRowView(contact: contact)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -181,6 +191,16 @@ struct FriendsView: View {
                         onSent: { loadFriends() }
                     )
                     .environmentObject(walletManager)
+                }
+                .sheet(item: $paymentTarget) { contact in
+                    if let identity = selectedIdentity {
+                        SendDashPayPaymentSheet(
+                            senderIdentity: identity,
+                            contact: contact,
+                            onSent: { loadFriends() }
+                        )
+                        .environmentObject(walletManager)
+                    }
                 }
                 .onAppear {
                     // Set initial selected identity if not set
@@ -272,14 +292,22 @@ struct FriendsView: View {
                         recipientId: recipientId
                     )
                 }
+                // Resolve display names from the cached DashPay
+                // profile when available — falls back to a
+                // truncated hex id for contacts without a profile
+                // yet (new contacts, contacts whose profile hasn't
+                // synced, etc.). The lookup is a sync local-cache
+                // read (no network roundtrip per contact).
                 contacts = establishedIds.map { contactId in
-                    // Display name defaults to a truncated hex id —
-                    // DashPay profile display names aren't looked up
-                    // here yet (would require per-contact
-                    // `getDashPayProfile(identityId:)` calls).
-                    DashPayContact(
+                    let profile = (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+                    let trimmedName = profile?.displayName?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let displayName = trimmedName.isEmpty
+                        ? (String(contactId.toHexString().prefix(12)) + "…")
+                        : trimmedName
+                    return DashPayContact(
                         id: contactId,
-                        displayName: String(contactId.toHexString().prefix(12)) + "…",
+                        displayName: displayName,
                         identityId: contactId
                     )
                 }
@@ -571,6 +599,163 @@ struct AddFriendView: View {
                     recipientIdentityId: recipientId
                 )
                 onSent()
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - Send payment sheet
+
+/// Modal sheet for sending a Dash payment to an established DashPay
+/// contact via the platform-wallet FFI
+/// (`ManagedPlatformWallet.sendDashPayPayment`). Rust handles the
+/// address derivation (DIP-14) + Core-chain broadcast + recording
+/// a `PaymentEntry` on the sender's `ManagedIdentity`; the
+/// identity changeset callback (5f5ac06d6) forwards the state
+/// update to SwiftData.
+struct SendDashPayPaymentSheet: View {
+    let senderIdentity: IdentityModel
+    let contact: DashPayContact
+    /// Fires with the 32-byte txid once the transaction has been
+    /// broadcast. Parent uses this to refresh the friends list
+    /// (recording a payment may auto-establish a contact on the
+    /// Rust side if a reciprocal request just came in).
+    let onSent: () -> Void
+
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.dismiss) private var dismiss
+
+    /// Input in DASH — we convert to duffs before handing off to
+    /// the FFI. Keeping the field in DASH makes the units
+    /// human-readable (a 0.001 DASH payment is `0.001` in the
+    /// field, not `100000`).
+    @State private var amountText = ""
+    @State private var memo = ""
+    @State private var isSending = false
+    @State private var errorMessage: String?
+    @State private var successTxid: Data?
+
+    /// DASH → duffs. Returns nil when the input isn't a parseable
+    /// non-negative decimal or overflows `UInt64`.
+    private var amountDuffs: UInt64? {
+        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let dashValue = Decimal(string: trimmed), dashValue >= 0 else {
+            return nil
+        }
+        // 1 DASH = 100_000_000 duffs. Decimal multiply then snap
+        // to `UInt64`; a negative or overflowed intermediate
+        // yields nil.
+        let duffsDecimal = dashValue * 100_000_000
+        // `NSDecimalNumber(decimal:).uint64Value` truncates on
+        // overflow — detect by re-comparing.
+        let duffs = NSDecimalNumber(decimal: duffsDecimal).uint64Value
+        let roundTrip = Decimal(duffs)
+        return roundTrip == duffsDecimal ? duffs : nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("To") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(contact.displayName)
+                            .font(.headline)
+                        Text(contact.identityId.toHexString().prefix(20) + "…")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+
+                Section("Amount (DASH)") {
+                    TextField("0.001", text: $amountText)
+                        .keyboardType(.decimalPad)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    if !amountText.isEmpty, amountDuffs == nil {
+                        Text("Enter a valid decimal Dash amount")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+
+                Section("Memo (optional)") {
+                    TextField("Dinner, rent share, …", text: $memo)
+                }
+
+                if let successTxid = successTxid {
+                    Section {
+                        Text("Sent! txid: \(successTxid.toHexString().prefix(16))…")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                } else if let errorMessage = errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .navigationTitle("Send Dash")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSending)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if isSending {
+                        ProgressView()
+                    } else {
+                        Button("Send") { send() }
+                            .disabled(amountDuffs == nil || (amountDuffs ?? 0) == 0)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Broadcast the payment via the platform-wallet FFI. Memo is
+    /// currently passed to the Rust side but the signing path
+    /// doesn't embed it in the transaction yet — it's recorded on
+    /// the local `PaymentEntry` so the payment-history UI (when
+    /// wired) has context.
+    private func send() {
+        guard let walletId = senderIdentity.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            errorMessage = "No wallet available for this identity"
+            return
+        }
+        guard let duffs = amountDuffs, duffs > 0 else {
+            errorMessage = "Amount must be greater than zero"
+            return
+        }
+        let trimmedMemo = memo.trimmingCharacters(in: .whitespacesAndNewlines)
+        let memoCopy: String? = trimmedMemo.isEmpty ? nil : trimmedMemo
+
+        isSending = true
+        errorMessage = nil
+
+        Task { @MainActor in
+            defer { isSending = false }
+            do {
+                let txid = try await wallet.sendDashPayPayment(
+                    fromIdentityId: senderIdentity.id,
+                    toContactIdentityId: contact.identityId,
+                    amountDuffs: duffs,
+                    memo: memoCopy
+                )
+                successTxid = txid
+                onSent()
+                // Small settle-in before dismissing so the user
+                // sees the confirmation row. Mirrors the pattern in
+                // `RegisterNameView`.
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
