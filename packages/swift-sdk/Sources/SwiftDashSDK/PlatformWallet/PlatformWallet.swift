@@ -11,11 +11,11 @@ public class PlatformWallet {
     }
 
     deinit {
-        platform_wallet_info_destroy(handle)
+        _ = platform_wallet_info_destroy(handle)
     }
 
     /// Create a new Platform Wallet from a 64-byte seed
-    public static func fromSeed(_ seed: Data) throws -> PlatformWallet {
+    public static func fromSeed(_ seed: Data, network: PlatformNetwork = .testnet) throws -> PlatformWallet {
         guard seed.count == 64 else {
             throw PlatformWalletError.invalidParameter
         }
@@ -25,8 +25,9 @@ public class PlatformWallet {
 
         let result = seed.withUnsafeBytes { seedPtr in
             platform_wallet_info_create_from_seed(
+                network.ffiValue,
                 seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                seed.count,
+                UInt(seed.count),
                 &handle,
                 &error
             )
@@ -40,7 +41,11 @@ public class PlatformWallet {
     }
 
     /// Create a new Platform Wallet from a BIP39 mnemonic phrase
-    public static func fromMnemonic(_ mnemonic: String, passphrase: String? = nil) throws -> PlatformWallet {
+    public static func fromMnemonic(
+        _ mnemonic: String,
+        passphrase: String? = nil,
+        network: PlatformNetwork = .testnet
+    ) throws -> PlatformWallet {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
 
@@ -48,6 +53,7 @@ public class PlatformWallet {
         let passphraseCStr = passphrase != nil ? (passphrase! as NSString).utf8String : nil
 
         let result = platform_wallet_info_create_from_mnemonic(
+            network.ffiValue,
             mnemonicCStr,
             passphraseCStr,
             &handle,
@@ -73,7 +79,6 @@ public class PlatformWallet {
 
         let result = platform_wallet_info_get_identity_manager(
             handle,
-            network.ffiValue,
             &managerHandle,
             &error
         )
@@ -93,7 +98,6 @@ public class PlatformWallet {
 
         let result = platform_wallet_info_set_identity_manager(
             handle,
-            network.ffiValue,
             manager.handle,
             &error
         )
