@@ -2,7 +2,12 @@ import Foundation
 import DashSDKFFI
 
 /// Contact Request for DashPay
-public class ContactRequest {
+///
+/// `@unchecked Sendable`: the only instance state is an immutable
+/// `Handle` (UInt64). All mutable state behind the handle lives in
+/// the Rust-side `CONTACT_REQUEST_STORAGE` (parking_lot RwLock).
+/// Same rationale as `ManagedPlatformWallet`.
+public final class ContactRequest: @unchecked Sendable {
     internal let handle: Handle
 
     internal init(handle: Handle) {

@@ -1,8 +1,11 @@
 import Foundation
 import DashSDKFFI
 
-/// Established Contact representing a bidirectional friendship in DashPay
-public class EstablishedContact {
+/// Established Contact representing a bidirectional friendship in DashPay.
+///
+/// `@unchecked Sendable`: immutable `Handle` + Rust-side lock —
+/// same pattern as `ContactRequest` / `ManagedPlatformWallet`.
+public final class EstablishedContact: @unchecked Sendable {
     internal let handle: Handle
 
     internal init(handle: Handle) {

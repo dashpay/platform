@@ -591,6 +591,80 @@ func dpns_search_results_free(
     _ count: Int
 )
 
+// MARK: - DashPay contact requests + payments FFI
+
+/// Mirrors `ContactRequestHandleArray` from
+/// `rs-platform-wallet-ffi/src/dashpay.rs`. Caller owns both the
+/// array and every handle inside it; release via
+/// `platform_wallet_contact_request_handle_array_free` (array) and
+/// `contact_request_destroy` (each handle).
+struct ContactRequestHandleArray {
+    var handles: UnsafeMutablePointer<Handle>?
+    var count: Int
+}
+
+@_silgen_name("platform_wallet_contact_request_handle_array_free")
+func platform_wallet_contact_request_handle_array_free(_ array: ContactRequestHandleArray)
+
+@_silgen_name("platform_wallet_send_contact_request")
+func platform_wallet_send_contact_request(
+    _ wallet_handle: Handle,
+    _ sender_identity_id: IdentifierBytes,
+    _ recipient_identity_id: IdentifierBytes,
+    _ account_label: UnsafePointer<CChar>?,
+    _ auto_accept_proof: UnsafePointer<UInt8>?,
+    _ auto_accept_proof_len: Int,
+    _ out_request_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_sync_contact_requests")
+func platform_wallet_sync_contact_requests(
+    _ wallet_handle: Handle,
+    _ out_array: UnsafeMutablePointer<ContactRequestHandleArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_accept_contact_request")
+func platform_wallet_accept_contact_request(
+    _ wallet_handle: Handle,
+    _ request_handle: Handle,
+    _ out_established_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_reject_contact_request")
+func platform_wallet_reject_contact_request(
+    _ wallet_handle: Handle,
+    _ our_identity_id: IdentifierBytes,
+    _ contact_identity_id: IdentifierBytes,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_fetch_sent_contact_requests")
+func platform_wallet_fetch_sent_contact_requests(
+    _ wallet_handle: Handle,
+    _ identity_id: IdentifierBytes,
+    _ out_array: UnsafeMutablePointer<ContactRequestHandleArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_send_dashpay_payment")
+func platform_wallet_send_dashpay_payment(
+    _ wallet_handle: Handle,
+    _ from_identity_id: IdentifierBytes,
+    _ to_contact_identity_id: IdentifierBytes,
+    _ amount_duffs: UInt64,
+    _ memo: UnsafePointer<CChar>?,
+    _ out_txid: UnsafeMutablePointer<(
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - Identity persistence FFI
 
 /// 32-byte C tuple — mirrors a single `[u8; 32]` on the Rust side.

@@ -484,6 +484,252 @@ extension ManagedPlatformWallet {
     }
 }
 
+// MARK: - DashPay contact requests + payments
+
+extension ManagedPlatformWallet {
+    /// Send a contact request to `recipientIdentityId` owned by
+    /// `senderIdentityId`.
+    ///
+    /// Routes through `IdentityWallet::send_contact_request`, which
+    /// resolves signing keys internally, broadcasts the DashPay
+    /// contactRequest document, and adds the result to
+    /// `ManagedIdentity.sent_contact_requests` via the persister.
+    /// Swift persister callback (5f5ac06d6) forwards the identity
+    /// update to SwiftData.
+    ///
+    /// Returns a fresh `ContactRequest` wrapper owning a handle into
+    /// the Rust-side `CONTACT_REQUEST_STORAGE`.
+    public func sendContactRequest(
+        senderIdentityId: Identifier,
+        recipientIdentityId: Identifier,
+        accountLabel: String? = nil,
+        autoAcceptProof: Data? = nil
+    ) async throws -> ContactRequest {
+        let handle = self.handle
+        let senderFFI = identifierToFFI(senderIdentityId)
+        let recipientFFI = identifierToFFI(recipientIdentityId)
+        let accountLabel = accountLabel
+        let autoAcceptProof = autoAcceptProof
+
+        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
+            () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            var error = PlatformWalletFFIError()
+
+            // `withCString` is closure-scoped — nest optional proof
+            // access inside so both string + byte buffer are live
+            // across the FFI call window.
+            let result: PlatformWalletFFIResult = {
+                let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { labelPtr in
+                    if let autoAcceptProof, !autoAcceptProof.isEmpty {
+                        return autoAcceptProof.withUnsafeBytes { rawBuf in
+                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                            return platform_wallet_send_contact_request(
+                                handle,
+                                senderFFI,
+                                recipientFFI,
+                                labelPtr,
+                                bytesPtr,
+                                autoAcceptProof.count,
+                                &outHandle,
+                                &error
+                            )
+                        }
+                    } else {
+                        return platform_wallet_send_contact_request(
+                            handle,
+                            senderFFI,
+                            recipientFFI,
+                            labelPtr,
+                            nil,
+                            0,
+                            &outHandle,
+                            &error
+                        )
+                    }
+                }
+                if let accountLabel {
+                    return accountLabel.withCString { callWithLabel($0) }
+                } else {
+                    return callWithLabel(nil)
+                }
+            }()
+
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return outHandle
+        }.value
+
+        return ContactRequest(handle: requestHandle)
+    }
+
+    /// Sync received contact requests for every managed identity on
+    /// this wallet from Platform. Returns wrappers for each
+    /// newly-discovered request (an empty array when nothing new
+    /// arrived).
+    @discardableResult
+    public func syncContactRequests() async throws -> [ContactRequest] {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
+            var array = ContactRequestHandleArray(handles: nil, count: 0)
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_sync_contact_requests(handle, &array, &error)
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            defer { platform_wallet_contact_request_handle_array_free(array) }
+            guard let handles = array.handles, array.count > 0 else {
+                return []
+            }
+            var requests: [ContactRequest] = []
+            requests.reserveCapacity(array.count)
+            for i in 0..<array.count {
+                requests.append(ContactRequest(handle: handles[i]))
+            }
+            return requests
+        }.value
+    }
+
+    /// Accept an incoming contact request by sending a reciprocal
+    /// request. Returns the established contact.
+    public func acceptContactRequest(
+        _ request: ContactRequest
+    ) async throws -> EstablishedContact {
+        let walletHandle = self.handle
+        let requestHandle = request.handle
+        let establishedHandle: Handle = try await Task.detached(
+            priority: .userInitiated
+        ) { () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_accept_contact_request(
+                walletHandle,
+                requestHandle,
+                &outHandle,
+                &error
+            )
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return outHandle
+        }.value
+        return EstablishedContact(handle: establishedHandle)
+    }
+
+    /// Reject an incoming contact request. Today the effect is
+    /// local — drops it from `ManagedIdentity.incoming_contact_requests`.
+    /// A future follow-up (TODO in the Rust `reject_contact_request`)
+    /// will also write a `display_hidden` contactInfo document so
+    /// the rejection persists across devices.
+    public func rejectContactRequest(
+        ourIdentityId: Identifier,
+        contactIdentityId: Identifier
+    ) async throws {
+        let handle = self.handle
+        let ourFFI = identifierToFFI(ourIdentityId)
+        let contactFFI = identifierToFFI(contactIdentityId)
+        try await Task.detached(priority: .userInitiated) {
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_reject_contact_request(
+                handle,
+                ourFFI,
+                contactFFI,
+                &error
+            )
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+        }.value
+    }
+
+    /// Query Platform for contact requests sent by `identityId`.
+    public func fetchSentContactRequests(
+        identityId: Identifier
+    ) async throws -> [ContactRequest] {
+        let handle = self.handle
+        let idFFI = identifierToFFI(identityId)
+        return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
+            var array = ContactRequestHandleArray(handles: nil, count: 0)
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_fetch_sent_contact_requests(
+                handle,
+                idFFI,
+                &array,
+                &error
+            )
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            defer { platform_wallet_contact_request_handle_array_free(array) }
+            guard let handles = array.handles, array.count > 0 else {
+                return []
+            }
+            var requests: [ContactRequest] = []
+            requests.reserveCapacity(array.count)
+            for i in 0..<array.count {
+                requests.append(ContactRequest(handle: handles[i]))
+            }
+            return requests
+        }.value
+    }
+
+    /// Send a Dash payment to an established DashPay contact.
+    /// `amountDuffs` is in duffs (1 DASH = 100_000_000 duffs).
+    /// Returns the 32-byte transaction id.
+    ///
+    /// Prerequisite: `register_external_contact_account` must have
+    /// run for the `(fromIdentityId, toContactIdentityId)` pair on
+    /// the Rust side. The Rust side handles that automatically when
+    /// contacts are established via `acceptContactRequest`.
+    @discardableResult
+    public func sendDashPayPayment(
+        fromIdentityId: Identifier,
+        toContactIdentityId: Identifier,
+        amountDuffs: UInt64,
+        memo: String? = nil
+    ) async throws -> Data {
+        let handle = self.handle
+        let fromFFI = identifierToFFI(fromIdentityId)
+        let toFFI = identifierToFFI(toContactIdentityId)
+        let memoCopy = memo
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            var error = PlatformWalletFFIError()
+            let result: PlatformWalletFFIResult = {
+                let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
+                    platform_wallet_send_dashpay_payment(
+                        handle,
+                        fromFFI,
+                        toFFI,
+                        amountDuffs,
+                        memoPtr,
+                        &txidTuple,
+                        &error
+                    )
+                }
+                if let memoCopy {
+                    return memoCopy.withCString { call($0) }
+                } else {
+                    return call(nil)
+                }
+            }()
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+        }.value
+    }
+}
+
 // MARK: - DashPay Profile operations
 
 extension ManagedPlatformWallet {
