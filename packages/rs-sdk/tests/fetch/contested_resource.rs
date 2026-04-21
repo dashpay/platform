@@ -437,8 +437,8 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
     }
 }
 
-/// Regression test: contestedResources with start_index_values produces an
-/// invalid GroveDB proof that fails verification.
+/// Regression test: contestedResources with start_index_values and NO limit
+/// produces an invalid GroveDB proof that fails verification.
 ///
 /// For a composite contested index with N properties, the caller provides N-1
 /// values via start_index_values to select the depth of traversal. The API
@@ -446,10 +446,11 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
 ///
 /// For DPNS `parentNameAndLabel` (2 properties: normalizedParentDomainName,
 /// normalizedLabel):
-///   - start_index_values = []        → returns parent values, e.g. ["dash"]  ✓
-///   - start_index_values = ["dash"]  → should return contested labels        ✗
+///   - start_index_values = ["dash"], limit = None  → FAILS proof verification
+///   - start_index_values = ["dash"], limit = Some   → works
+///   - start_index_values = [],       limit = None  → works (returns ["dash"])
 ///
-/// The second form fails with:
+/// The unbounded query (no limit) fails with:
 ///   "Proof is missing data for query range. Encountered unexpected node
 ///    type: KVHash(...)"
 ///
@@ -463,7 +464,7 @@ pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<Strin
     not(feature = "network-testing"),
     ignore = "this test requires a live platform node to reproduce the proof bug"
 )]
-async fn contested_resources_start_index_values_proof_verification_failure() {
+async fn contested_resources_start_index_values_no_limit_proof_failure() {
     setup_logs();
 
     let cfg = Config::new();
@@ -471,46 +472,31 @@ async fn contested_resources_start_index_values_proof_verification_failure() {
         .setup_api("contested_resources_start_index_values_proof_bug")
         .await;
 
-    // 1. Without start_index_values → succeeds, returns top-level keys.
-    let query_no_prefix = VotePollsByDocumentTypeQuery {
-        contract_id: cfg.existing_data_contract_id,
-        document_type_name: cfg.existing_document_type_name.clone(),
-        index_name: "parentNameAndLabel".to_string(),
-        start_at_value: None,
-        start_index_values: vec![],
-        end_index_values: vec![],
-        limit: None,
-        order_ascending: true,
-    };
-
-    let top_level = ContestedResource::fetch_many(&sdk, query_no_prefix)
-        .await
-        .expect("query without start_index_values should succeed");
-    tracing::info!(?top_level, "Top-level values (no start_index_values)");
-    assert!(
-        !top_level.0.is_empty(),
-        "expected at least one top-level value (e.g. 'dash')"
-    );
-
-    // 2. With start_index_values = ["dash"] → should return contested labels
-    //    but currently fails proof verification.
-    let query_with_prefix = VotePollsByDocumentTypeQuery {
+    let make_query = |limit: Option<u16>| VotePollsByDocumentTypeQuery {
         contract_id: cfg.existing_data_contract_id,
         document_type_name: cfg.existing_document_type_name.clone(),
         index_name: "parentNameAndLabel".to_string(),
         start_at_value: None,
         start_index_values: vec![Value::Text("dash".to_string())],
         end_index_values: vec![],
-        limit: None,
+        limit,
         order_ascending: true,
     };
 
-    let result = ContestedResource::fetch_many(&sdk, query_with_prefix).await;
+    // 1. With limit → works fine.
+    let with_limit = ContestedResource::fetch_many(&sdk, make_query(Some(100)))
+        .await
+        .expect("query with start_index_values + limit should succeed");
+    tracing::info!(count = with_limit.0.len(), "With limit: OK");
+    assert!(!with_limit.0.is_empty(), "expected contested labels");
+
+    // 2. Without limit → proof verification fails.
+    let result = ContestedResource::fetch_many(&sdk, make_query(None)).await;
 
     match result {
         Err(ref e) => {
             let msg = e.to_string();
-            tracing::error!(%msg, "Confirmed: start_index_values proof verification failure");
+            tracing::error!(%msg, "Confirmed: no-limit proof verification failure");
             assert!(
                 msg.contains("Proof is missing data for query range")
                     || msg.contains("invalid proof"),
@@ -522,8 +508,8 @@ async fn contested_resources_start_index_values_proof_verification_failure() {
             // If this branch is reached, the platform bug has been fixed.
             // Update this test to always expect Ok once the fix lands.
             tracing::info!(
-                ?resources,
-                "start_index_values query now succeeds — bug is fixed!"
+                count = resources.0.len(),
+                "No-limit query now succeeds — bug is fixed!"
             );
             assert!(
                 !resources.0.is_empty(),

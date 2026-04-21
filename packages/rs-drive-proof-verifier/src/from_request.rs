@@ -30,6 +30,12 @@ use drive::query::{
 use crate::Error;
 
 const BINCODE_CONFIG: dpp::bincode::config::Configuration = dpp::bincode::config::standard();
+/// Default contested-resources limit applied by Platform when `count` is omitted.
+///
+/// The proof verifier must mirror this behavior; otherwise it can reconstruct an
+/// unbounded query from a request that the server actually executed with the
+/// default limit, which makes valid proofs look truncated.
+const DEFAULT_CONTESTED_RESOURCES_LIMIT: u16 = 100;
 
 /// Convert a gRPC request into a query object.
 ///
@@ -321,7 +327,11 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
                     .transpose()?,
                 start_index_values: bincode_decode_values(req.start_index_values.iter())?,
                 end_index_values: bincode_decode_values(req.end_index_values.iter())?,
-                limit: req.count.map(|v| v as u16),
+                limit: Some(
+                    req.count
+                        .unwrap_or(DEFAULT_CONTESTED_RESOURCES_LIMIT as u32)
+                        as u16,
+                ),
                 order_ascending: req.order_ascending,
             },
         };
@@ -332,7 +342,7 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
         Ok(GetContestedResourcesRequestV0 {
             prove: true,
             contract_id: self.contract_id.to_vec(),
-            count: self.limit.map(|v| v as u32),
+            count: Some(self.limit.unwrap_or(DEFAULT_CONTESTED_RESOURCES_LIMIT) as u32),
             document_type_name: self.document_type_name.clone(),
             end_index_values: bincode_encode_values(&self.end_index_values)?,
             start_index_values: bincode_encode_values(&self.start_index_values)?,
@@ -640,6 +650,48 @@ mod tests {
             Identifier::try_from_request(grpc_request).expect("try_from_request should succeed");
 
         assert_eq!(roundtripped, id);
+    }
+
+    #[test]
+    fn test_contested_resources_request_defaults_limit_when_encoding() {
+        let query = VotePollsByDocumentTypeQuery {
+            contract_id: Identifier::from_bytes(&[1u8; 32]).unwrap(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            start_index_values: vec![Value::Text("dash".to_string())],
+            end_index_values: vec![],
+            start_at_value: None,
+            limit: None,
+            order_ascending: true,
+        };
+
+        let request = query.try_to_request().expect("request should encode");
+        let proto::get_contested_resources_request::Version::V0(v0) =
+            request.version.expect("request should contain a version");
+
+        assert_eq!(v0.count, Some(DEFAULT_CONTESTED_RESOURCES_LIMIT as u32));
+    }
+
+    #[test]
+    fn test_contested_resources_request_defaults_limit_when_decoding() {
+        let request: GetContestedResourcesRequest = GetContestedResourcesRequestV0 {
+            prove: true,
+            contract_id: Identifier::from_bytes(&[2u8; 32]).unwrap().to_vec(),
+            count: None,
+            document_type_name: "domain".to_string(),
+            end_index_values: vec![],
+            start_index_values: bincode_encode_values([&Value::Text("dash".to_string())])
+                .expect("start index values should encode"),
+            index_name: "parentNameAndLabel".to_string(),
+            order_ascending: true,
+            start_at_value_info: None,
+        }
+        .into();
+
+        let query =
+            VotePollsByDocumentTypeQuery::try_from_request(request).expect("request should decode");
+
+        assert_eq!(query.limit, Some(DEFAULT_CONTESTED_RESOURCES_LIMIT));
     }
 
     // ---------------------------------------------------------------
