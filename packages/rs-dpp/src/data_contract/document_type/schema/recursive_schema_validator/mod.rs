@@ -15,8 +15,14 @@ mod test {
             .try_init();
     }
 
+    // NOTE: `traversal_validator` called with an empty slice of sub-validators only
+    // walks the schema tree — it does not itself reject any structural pattern. The
+    // tests below (previously named as if they asserted invalid/error results) verify
+    // that traversal completes successfully over schemas that would only fail once a
+    // real sub-validator is supplied. Rejection of these shapes lives in the callers
+    // that supply sub-validators, not in `traversal_validator` itself.
     #[test]
-    fn should_return_error_if_bytes_array_parent_contains_items_or_prefix_items() {
+    fn traversal_validator_with_no_sub_validators_accepts_byte_array_parent_with_items() {
         let schema: Value = platform_value!(
              {
                 "type": "object",
@@ -60,7 +66,7 @@ mod test {
     }
 
     #[test]
-    fn should_return_invalid_result() {
+    fn traversal_validator_with_no_sub_validators_accepts_schema_with_unsafe_pattern() {
         let schema: Value = platform_value!({
             "type": "object",
             "properties": {
@@ -89,7 +95,7 @@ mod test {
     }
 
     #[test]
-    fn invalid_result_for_array_of_object() {
+    fn traversal_validator_with_no_sub_validators_accepts_array_of_object_with_unsafe_pattern() {
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
@@ -100,7 +106,7 @@ mod test {
     }
 
     #[test]
-    fn invalid_result_for_array_of_objects() {
+    fn traversal_validator_with_no_sub_validators_accepts_array_of_objects_with_unsafe_pattern() {
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");

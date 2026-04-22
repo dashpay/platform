@@ -161,11 +161,24 @@ mod test {
         assert_eq!(defs_map.as_ref(), data_contract.schema_defs())
     }
 
+    #[test]
     fn should_set_empty_schema_defs() {
         let platform_version = PlatformVersion::latest();
 
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("should create a default config");
+
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
 
         let defs = platform_value!({
             "test": {
@@ -181,7 +194,7 @@ mod test {
             version: 0,
             owner_id: Default::default(),
             schema_defs: defs_map,
-            document_schemas: Default::default(),
+            document_schemas: BTreeMap::from([("document_type_name".to_string(), schema.clone())]),
         };
 
         let mut data_contract = DataContractV0::try_from_platform_versioned(
