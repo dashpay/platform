@@ -664,14 +664,18 @@ mod tests {
         #[test]
         fn reads_booleans_from_map() {
             let platform_version = PlatformVersion::latest();
-            let contract = make_contract_map(true, true);
-            let cfg = DataContractConfig::get_contract_configuration_properties(
-                &contract,
-                platform_version,
-            )
-            .expect("should parse config from map");
-            assert!(cfg.can_be_deleted());
-            assert!(cfg.readonly());
+            // Use distinct values for both fields so a key mix-up (reading
+            // one field from the other's key) would fail the assertion.
+            for (can_be_deleted, readonly) in [(true, false), (false, true)] {
+                let contract = make_contract_map(can_be_deleted, readonly);
+                let cfg = DataContractConfig::get_contract_configuration_properties(
+                    &contract,
+                    platform_version,
+                )
+                .expect("should parse config from map");
+                assert_eq!(cfg.can_be_deleted(), can_be_deleted);
+                assert_eq!(cfg.readonly(), readonly);
+            }
         }
 
         #[test]

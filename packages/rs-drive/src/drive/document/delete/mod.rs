@@ -1443,8 +1443,14 @@ mod tests {
             Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
         );
 
-        // Either succeeds (estimation path can be more permissive) or errors;
-        // whichever happens, it exercises the previously-uncovered branch.
-        let _ = result;
+        // The estimation-costs branch (apply=false) uses fake cost estimates
+        // instead of real grove operations, so it succeeds whether or not
+        // the document actually exists — what matters is that the branch is
+        // exercised end-to-end and produces a non-zero fee estimate.
+        let fees = result.expect("estimation path should succeed for nonexistent document");
+        assert!(
+            fees.processing_fee > 0 || fees.storage_fee > 0,
+            "expected non-zero fee estimate from estimation path, got {fees:?}"
+        );
     }
 }

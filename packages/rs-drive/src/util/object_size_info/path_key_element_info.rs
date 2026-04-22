@@ -134,7 +134,7 @@ mod tests {
             KeyElementInfo::KeyElement((key, item_element())),
         )
         .expect("ok");
-        matches!(res, PathKeyRefElement(_));
+        assert!(matches!(res, PathKeyRefElement(_)));
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
             KeyElementInfo::KeyElement((key, item_element())),
         )
         .expect("ok");
-        matches!(res, PathFixedSizeKeyRefElement(_));
+        assert!(matches!(res, PathFixedSizeKeyRefElement(_)));
     }
 
     #[test]
@@ -186,7 +186,7 @@ mod tests {
             KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![9]), 100)),
         )
         .expect("path-with-sizes supports unknown element size");
-        matches!(res, PathKeyUnknownElementSize(_));
+        assert!(matches!(res, PathKeyUnknownElementSize(_)));
     }
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
             KeyElementInfo::KeyElement((key, item_element())),
         )
         .expect("ok");
-        matches!(res, PathKeyElementSize(_));
+        assert!(matches!(res, PathKeyElementSize(_)));
     }
 
     #[test]
@@ -215,7 +215,7 @@ mod tests {
             )),
         )
         .expect("ok");
-        matches!(res, PathKeyElementSize(_));
+        assert!(matches!(res, PathKeyElementSize(_)));
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
             KeyElementInfo::KeyElement((key, item_element())),
         )
         .expect("ok");
-        matches!(res, PathFixedSizeKeyRefElement(_));
+        assert!(matches!(res, PathFixedSizeKeyRefElement(_)));
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
             )),
         )
         .expect("ok");
-        matches!(res, PathKeyElementSize(_));
+        assert!(matches!(res, PathKeyElementSize(_)));
     }
 
     #[test]
@@ -269,7 +269,7 @@ mod tests {
             KeyElementInfo::KeyElement((key, item_element())),
         )
         .expect("ok");
-        matches!(res, PathKeyRefElement(_));
+        assert!(matches!(res, PathKeyRefElement(_)));
 
         let res = PathKeyElementInfo::<0>::from_path_and_key_element(
             path.clone(),
@@ -282,13 +282,16 @@ mod tests {
             )),
         )
         .expect("ok");
-        matches!(res, PathKeyElementSize(_));
+        assert!(matches!(res, PathKeyElementSize(_)));
 
         let err = PathKeyElementInfo::<0>::from_path_and_key_element(
             path,
             KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![]), 8)),
         )
         .expect_err("err");
-        matches!(err, Error::Drive(DriveError::NotSupportedPrivate(_)));
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::NotSupportedPrivate(_))
+        ));
     }
 }

@@ -377,7 +377,7 @@ mod tests {
                 ContestedDocumentVotePollWinnerInfo::NoWinner,
             )
             .expect_err("should fail when locked");
-        matches!(err, ProtocolError::CorruptedCodeExecution(_));
+        assert!(matches!(err, ProtocolError::CorruptedCodeExecution(_)));
     }
 
     #[test]

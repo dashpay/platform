@@ -345,13 +345,17 @@ mod tests {
         ));
     }
 
+    /// NOTE: the `count` guards on lines 132-142 are not reachable here
+    /// without a valid 32-byte `contract_id` + an existing contract, so
+    /// these two tests deliberately pin validation **ordering** — i.e.
+    /// that `contract_id.try_into()` fires before the count checks. They
+    /// both assert the same `InvalidArgument("contract_id …")` message.
     #[test]
-    fn test_query_contested_resource_vote_state_count_zero_rejected() {
-        // count = 0 must be rejected as out-of-bounds.
+    fn test_query_contested_resource_vote_state_invalid_contract_id_runs_before_count_zero() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetContestedResourceVoteStateRequestV0 {
-            contract_id: vec![0; 8], // fail before the contract is needed
+            contract_id: vec![0; 8],
             document_type_name: "x".to_string(),
             index_name: "x".to_string(),
             index_values: vec![],
@@ -366,7 +370,6 @@ mod tests {
             .query_contested_resource_vote_state_v0(request, &state, version)
             .expect("expected query to succeed");
 
-        // The contract_id check runs first; contract_id (vec![0; 8]) is invalid.
         assert!(matches!(
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
@@ -374,10 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn test_query_contested_resource_vote_state_count_out_of_bounds_u16() {
-        // count overflowing u16 should flag "limit out of bounds" - but
-        // contract_id validation runs first, so this primarily guards against
-        // changes that reorder validation.
+    fn test_query_contested_resource_vote_state_invalid_contract_id_runs_before_count_over_u16() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetContestedResourceVoteStateRequestV0 {
@@ -396,6 +396,10 @@ mod tests {
             .query_contested_resource_vote_state_v0(request, &state, version)
             .expect("expected query to succeed");
 
-        assert!(!result.errors.is_empty());
+        // Same `contract_id` error as above — confirms validation ordering.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
     }
 }

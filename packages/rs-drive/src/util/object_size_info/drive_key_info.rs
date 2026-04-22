@@ -220,7 +220,7 @@ mod tests {
         let bytes = [5u8];
         let k = DriveKeyInfo::KeyRef(&bytes);
         let pk = k.add_fixed_size_path(path);
-        matches!(pk, PathKeyInfo::PathFixedSizeKeyRef(_));
+        assert!(matches!(pk, PathKeyInfo::PathFixedSizeKeyRef(_)));
 
         // KeySize -> PathKeySize
         let k = DriveKeyInfo::KeySize(MaxKeySize {
@@ -228,7 +228,7 @@ mod tests {
             max_size: 8,
         });
         let pk = k.add_fixed_size_path(path);
-        matches!(pk, PathKeyInfo::PathKeySize(..));
+        assert!(matches!(pk, PathKeyInfo::PathKeySize(..)));
     }
 
     #[test]
@@ -238,13 +238,13 @@ mod tests {
         // Key
         let k = DriveKeyInfo::Key(vec![9]);
         let pk: PathKeyInfo<0> = k.add_path(path.clone());
-        matches!(pk, PathKeyInfo::PathKey(_));
+        assert!(matches!(pk, PathKeyInfo::PathKey(_)));
 
         // KeyRef
         let bytes = [7u8];
         let k = DriveKeyInfo::KeyRef(&bytes);
         let pk: PathKeyInfo<0> = k.add_path(path.clone());
-        matches!(pk, PathKeyInfo::PathKeyRef(_));
+        assert!(matches!(pk, PathKeyInfo::PathKeyRef(_)));
 
         // KeySize
         let k = DriveKeyInfo::KeySize(MaxKeySize {
@@ -252,7 +252,7 @@ mod tests {
             max_size: 3,
         });
         let pk: PathKeyInfo<0> = k.add_path(path);
-        matches!(pk, PathKeyInfo::PathKeySize(..));
+        assert!(matches!(pk, PathKeyInfo::PathKeySize(..)));
     }
 
     #[test]

@@ -228,10 +228,10 @@ mod tests {
         // At present only V0 exists
         match info {
             ContestedDocumentVotePollStoredInfo::V0(v0) => {
-                matches!(
+                assert!(matches!(
                     v0.vote_poll_status,
                     ContestedDocumentVotePollStatus::Started(_)
-                );
+                ));
             }
         }
     }
@@ -299,10 +299,10 @@ mod tests {
         assert!(info
             .contender_votes_in_vec_of_contender_with_serialized_document()
             .is_none());
-        matches!(
+        assert!(matches!(
             info.vote_poll_status_ref(),
             ContestedDocumentVotePollStatus::Started(_)
-        );
+        ));
 
         // After an identity-winning finalize, awarded_block / winner populated.
         let id = Identifier::new([7u8; 32]);
