@@ -15,6 +15,18 @@
 //!
 //! This avoids the duplicate state transition problem that occurs when retrying
 //! the all-in-one methods after a timeout (which would create a new ST with a new nonce).
+//!
+//! ## Nonce consumption
+//!
+//! Every successful `prepareDocument*` call fetches a fresh identity-contract nonce
+//! and advances it on the node. The signed state transition embeds that nonce and
+//! is the **only** form that can be broadcast for it — a later `prepareDocument*`
+//! call for the same (identity, contract) pair will consume a different nonce.
+//!
+//! Only call `prepareDocument*` when you intend to broadcast the returned transition
+//! (or persist the bytes and retry broadcasting that exact transition). Discarding a
+//! prepared transition leaks the consumed nonce. If you need a "dry run" with no
+//! side effects on the node, do not use the prepare API.
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
@@ -460,6 +472,10 @@ impl WasmSdk {
     /// idempotent retry behavior — on timeout, you can rebroadcast the exact same
     /// signed transition instead of creating a new one with a new nonce.
     ///
+    /// **Nonce consumption:** A successful call consumes (advances) the identity-contract
+    /// nonce. Only call this when you intend to broadcast / persist-and-retry the returned
+    /// transition — discarding it leaks the nonce. See module docs for details.
+    ///
     /// @param options - Creation options including document, identity key, and signer
     /// @returns The signed StateTransition ready for broadcasting
     #[wasm_bindgen(js_name = "prepareDocumentCreate")]
@@ -470,6 +486,20 @@ impl WasmSdk {
         // Extract document from options
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
+
+        // Guard: reject documents with any explicit revision other than INITIAL_REVISION.
+        // `build_document_create_or_replace_transition` routes any `revision != INITIAL_REVISION`
+        // (including `0`) to the replace branch, so the only explicit values that are safe for
+        // create are `None` and `INITIAL_REVISION` (1). Without this guard, a `revision = 0`
+        // document would silently produce a replace transition, which is not what the caller asked for.
+        if let Some(revision) = document.revision() {
+            if revision != INITIAL_REVISION {
+                return Err(WasmSdkError::invalid_argument(format!(
+                    "Document revision is {} but create requires revision to be unset or {}. Use prepareDocumentReplace for existing documents.",
+                    revision, INITIAL_REVISION,
+                )));
+            }
+        }
 
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
@@ -518,6 +548,10 @@ impl WasmSdk {
         )
         .await?;
 
+        // Validate structure before handing the ST back to the caller, matching
+        // the check rs-sdk's `put_to_platform` performs before broadcasting.
+        validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
+
         Ok(state_transition.into())
     }
 }
@@ -560,6 +594,10 @@ impl WasmSdk {
     /// **not** broadcast or wait for a response. See `prepareDocumentCreate` for
     /// the full two-phase usage pattern.
     ///
+    /// **Nonce consumption:** A successful call consumes (advances) the identity-contract
+    /// nonce. Only call this when you intend to broadcast / persist-and-retry the returned
+    /// transition — discarding it leaks the nonce. See module docs for details.
+    ///
     /// @param options - Replace options including document, identity key, and signer
     /// @returns The signed StateTransition ready for broadcasting
     #[wasm_bindgen(js_name = "prepareDocumentReplace")]
@@ -571,16 +609,20 @@ impl WasmSdk {
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
-        // Guard: reject documents with no revision or INITIAL_REVISION — those are creates, not replaces
+        // Guard: replace requires revision > INITIAL_REVISION. Revisions 0 and 1 (and a
+        // missing revision) all indicate the caller really wants create semantics and are
+        // rejected here so we never accidentally produce a create transition from a
+        // replace call.
         let revision = document.revision().ok_or_else(|| {
             WasmSdkError::invalid_argument(
                 "Document must have a revision set for replace. Use prepareDocumentCreate for new documents.",
             )
         })?;
-        if revision == INITIAL_REVISION {
-            return Err(WasmSdkError::invalid_argument(
-                "Document revision is INITIAL_REVISION (1). Replace requires revision > 1. Use prepareDocumentCreate for new documents.",
-            ));
+        if revision <= INITIAL_REVISION {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "Document revision is {} but replace requires revision > {}. Use prepareDocumentCreate for new documents.",
+                revision, INITIAL_REVISION,
+            )));
         }
 
         // Get metadata from document
@@ -615,6 +657,10 @@ impl WasmSdk {
             settings,
         )
         .await?;
+
+        // Validate structure before handing the ST back to the caller, matching
+        // the check rs-sdk's `put_to_platform` performs before broadcasting.
+        validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
 
         Ok(state_transition.into())
     }
@@ -664,6 +710,10 @@ impl WasmSdk {
     /// This method handles nonce management, ST construction, and signing, but does
     /// **not** broadcast or wait for a response. See `prepareDocumentCreate` for
     /// the full two-phase usage pattern.
+    ///
+    /// **Nonce consumption:** A successful call consumes (advances) the identity-contract
+    /// nonce. Only call this when you intend to broadcast / persist-and-retry the returned
+    /// transition — discarding it leaks the nonce. See module docs for details.
     ///
     /// @param options - Delete options including document identifiers, identity key, and signer
     /// @returns The signed StateTransition ready for broadcasting
@@ -744,6 +794,10 @@ impl WasmSdk {
                 self.inner_sdk().version(),
             )
             .await?;
+
+        // Validate structure before handing the ST back to the caller, matching
+        // the check rs-sdk's `put_to_platform` performs before broadcasting.
+        validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
 
         Ok(state_transition.into())
     }
@@ -1189,4 +1243,72 @@ fn get_document_type(
                 document_type_name, e
             ))
         })
+}
+
+/// Validate the structure of a state transition, matching the check rs-sdk's
+/// `put_to_platform` performs before broadcasting.
+///
+/// rs-sdk's equivalent helper (`ensure_valid_state_transition_structure`) is
+/// crate-private, so we reimplement the same logic against the public
+/// `StateTransitionStructureValidation` trait.
+///
+/// `UnsupportedFeatureError` is allowed through, matching rs-sdk behavior —
+/// DPP does not implement structure validation for identity-based state
+/// transitions, and platform still validates them during execution.
+fn validate_state_transition_structure(
+    state_transition: &dash_sdk::dpp::state_transition::StateTransition,
+    platform_version: &dash_sdk::dpp::version::PlatformVersion,
+) -> Result<(), WasmSdkError> {
+    use dash_sdk::dpp::consensus::basic::BasicError;
+    use dash_sdk::dpp::consensus::ConsensusError;
+    use dash_sdk::dpp::state_transition::StateTransitionStructureValidation;
+
+    let validation_result = state_transition.validate_structure(platform_version);
+    if validation_result.is_valid() {
+        return Ok(());
+    }
+
+    let all_unsupported = validation_result.errors.iter().all(|e| {
+        matches!(
+            e,
+            ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
+        )
+    });
+    if all_unsupported {
+        return Ok(());
+    }
+
+    // Surface the first error through the ProtocolError → WasmSdkError conversion chain.
+    // `is_valid()` returned false, so `errors` is non-empty; fall back defensively.
+    let first = validation_result.errors.into_iter().next().ok_or_else(|| {
+        WasmSdkError::generic("state transition structure validation failed without an error")
+    })?;
+    Err(dash_sdk::dpp::ProtocolError::from(first).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dash_sdk::dpp::state_transition::StateTransition;
+    use dash_sdk::dpp::version::PlatformVersion;
+
+    /// Regression test for the UnsupportedFeatureError pass-through path.
+    ///
+    /// DPP's `validate_structure` implementation returns `UnsupportedFeatureError`
+    /// for identity-based state transitions (see rs-dpp `state_transition/mod.rs`
+    /// `StateTransitionStructureValidation` impl). rs-sdk intentionally allows
+    /// these through before broadcasting; we must do the same so we don't
+    /// over-reject STs in the prepare paths.
+    #[test]
+    fn validate_accepts_unsupported_feature_errors() {
+        let version = PlatformVersion::latest();
+        let st: StateTransition = IdentityCreditTransferTransition::default_versioned(version)
+            .expect("default versioned ICT transition")
+            .into();
+        assert!(
+            validate_state_transition_structure(&st, version).is_ok(),
+            "identity-based STs should pass through via UnsupportedFeatureError"
+        );
+    }
 }

@@ -280,4 +280,131 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
     });
   });
+
+  describe('prepareDocument* transition kind selection', () => {
+    // The prepare* APIs return a signed StateTransition without broadcasting.
+    // For document ops this is always a Batch state transition; the inner
+    // BatchedTransition encodes whether it's a create / replace / delete.
+    // DocumentTransitionActionType numeric codes (see wasm-dpp2
+    // document_transition.rs): Create=0, Replace=1, Delete=2.
+    const DOC_TRANSITION_CREATE = 0;
+    const DOC_TRANSITION_REPLACE = 1;
+    const DOC_TRANSITION_DELETE = 2;
+
+    function firstDocTransition(st) {
+      expect(st.actionType).to.equal('Batch');
+      const batch = sdk.BatchTransition.fromStateTransition(st);
+      const inner = batch.transitions[0].toTransition();
+      return inner;
+    }
+
+    it('prepareDocumentCreate produces a Create batched transition', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      const document = new sdk.Document({
+        properties: { message: 'prepare create' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+
+      const st = await client.prepareDocumentCreate({
+        document,
+        identityKey,
+        signer,
+      });
+
+      const docTransition = firstDocTransition(st);
+      expect(docTransition.actionTypeNumber).to.equal(DOC_TRANSITION_CREATE);
+    });
+
+    it('prepareDocumentReplace produces a Replace batched transition', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      // Create a document first so we have a real ID to target.
+      const seedDoc = new sdk.Document({
+        properties: { message: 'prepare replace seed' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+      await client.documentCreate({ document: seedDoc, identityKey, signer });
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
+      const replaceDoc = new sdk.Document({
+        id: seedDoc.id,
+        properties: { message: 'prepare replace updated' },
+        documentTypeName: 'mutableNote',
+        revision: 2,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+
+      const st = await client.prepareDocumentReplace({
+        document: replaceDoc,
+        identityKey,
+        signer,
+      });
+
+      const docTransition = firstDocTransition(st);
+      expect(docTransition.actionTypeNumber).to.equal(DOC_TRANSITION_REPLACE);
+    });
+
+    it('prepareDocumentDelete accepts a Document instance and produces a Delete transition', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      const seedDoc = new sdk.Document({
+        properties: { message: 'prepare delete seed (Document)' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+      await client.documentCreate({ document: seedDoc, identityKey, signer });
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
+      const st = await client.prepareDocumentDelete({
+        document: seedDoc,
+        identityKey,
+        signer,
+      });
+
+      const docTransition = firstDocTransition(st);
+      expect(docTransition.actionTypeNumber).to.equal(DOC_TRANSITION_DELETE);
+    });
+
+    it('prepareDocumentDelete accepts a plain identifier object and produces a Delete transition', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      const seedDoc = new sdk.Document({
+        properties: { message: 'prepare delete seed (object)' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+      await client.documentCreate({ document: seedDoc, identityKey, signer });
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
+      const st = await client.prepareDocumentDelete({
+        document: {
+          id: seedDoc.id,
+          ownerId: testData.identityId,
+          dataContractId: testContractId,
+          documentTypeName: 'mutableNote',
+        },
+        identityKey,
+        signer,
+      });
+
+      const docTransition = firstDocTransition(st);
+      expect(docTransition.actionTypeNumber).to.equal(DOC_TRANSITION_DELETE);
+    });
+  });
 });
