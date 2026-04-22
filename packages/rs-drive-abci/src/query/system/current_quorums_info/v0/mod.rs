@@ -71,3 +71,36 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_current_quorums_info_empty_state() {
+        // On an initialized platform with no validator sets, the response
+        // should contain empty quorum_hashes and validator_sets, with the
+        // default all-zeroes current_quorum_hash.
+        let (platform, state, _version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetCurrentQuorumsInfoRequestV0 {};
+
+        let result = platform
+            .query_current_quorums_info_v0(request, &state)
+            .expect("expected query to succeed");
+
+        let data = result.into_data().expect("expected data");
+
+        assert!(data.quorum_hashes.is_empty());
+        assert!(data.validator_sets.is_empty());
+        assert_eq!(data.current_quorum_hash.len(), 32);
+        // all-zeros default quorum hash
+        assert!(data.current_quorum_hash.iter().all(|b| *b == 0));
+        // default proposer pro_tx_hash is all zero bytes at genesis
+        assert_eq!(data.last_block_proposer.len(), 32);
+        assert!(data.last_block_proposer.iter().all(|b| *b == 0));
+        assert!(data.metadata.is_some());
+    }
+}

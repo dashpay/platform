@@ -210,4 +210,59 @@ mod test {
         let map = obj.into_btree_string_map().expect("should be map");
         assert!(!map.contains_key("signature"));
     }
+
+    #[test]
+    fn test_to_cleaned_object_skip_signature() {
+        let t = make_withdrawal_v1();
+        let obj = t.to_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_canonical_cleaned_object_skip_signature() {
+        let t = make_withdrawal_v1();
+        let obj = t.to_canonical_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_unique_identifier_includes_nonce() {
+        let t = make_withdrawal_v1();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        // nonce=10 in hex is "a"
+        assert!(ids[0].ends_with("-a"), "got: {}", ids[0]);
+    }
+
+    #[test]
+    fn test_into_state_transition_wraps_v1() {
+        use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use crate::state_transition::StateTransition;
+        let t = make_withdrawal_v1();
+        let outer: IdentityCreditWithdrawalTransition = t.clone().into();
+        assert!(matches!(outer, IdentityCreditWithdrawalTransition::V1(_)));
+        let st: StateTransition = t.into();
+        assert!(matches!(st, StateTransition::IdentityCreditWithdrawal(_)));
+    }
+
+    #[test]
+    fn test_owner_id_v1() {
+        let t = make_withdrawal_v1();
+        assert_eq!(t.owner_id(), t.identity_id);
+    }
+
+    #[test]
+    fn test_value_conversion_script_none_roundtrip_map() {
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let t = make_withdrawal_v1_no_script();
+        let obj = t.to_object(false).expect("to_object");
+        let map = obj.into_btree_string_map().expect("should be map");
+        let restored =
+            IdentityCreditWithdrawalTransitionV1::from_value_map(map, LATEST_PLATFORM_VERSION)
+                .expect("from_value_map");
+        assert!(restored.output_script.is_none());
+        assert_eq!(t, restored);
+    }
 }

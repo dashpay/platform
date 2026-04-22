@@ -89,3 +89,91 @@ impl Drive {
         Ok(drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+    use std::collections::HashMap;
+
+    #[test]
+    fn v1_deduct_missing_in_stateful_mode_is_error() {
+        // In v1, with estimated_costs_only = None (stateful), missing balance still errors.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([80u8; 32]);
+
+        let mut estimated = None;
+        let err = drive
+            .deduct_from_prefunded_specialized_balance_operations_v1(
+                id,
+                1,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect_err("expected missing balance error");
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::PrefundedSpecializedBalanceDoesNotExist(_))
+        ));
+    }
+
+    #[test]
+    fn v1_deduct_missing_in_stateless_mode_uses_sentinel_balance() {
+        // In v1, when estimated_costs_only is Some(_), a missing balance is treated
+        // as i64::MAX (sentinel) so estimation can proceed without an actual state entry.
+        // This exercises the None => i64::MAX as u64 branch.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([81u8; 32]);
+
+        let mut estimated = Some(HashMap::new());
+        let ops = drive
+            .deduct_from_prefunded_specialized_balance_operations_v1(
+                id,
+                1,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect("estimation should succeed even without existing balance");
+        assert!(!ops.is_empty());
+        assert!(!estimated.unwrap().is_empty());
+    }
+
+    #[test]
+    fn v1_deduct_more_than_available_returns_not_enough() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([82u8; 32]);
+
+        drive
+            .add_prefunded_specialized_balance(id, 5, None, platform_version)
+            .expect("seed");
+
+        let mut estimated = None;
+        let err = drive
+            .deduct_from_prefunded_specialized_balance_operations_v1(
+                id,
+                10,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect_err("expected not enough error");
+        match err {
+            Error::Drive(DriveError::PrefundedSpecializedBalanceNotEnough(avail, req)) => {
+                assert_eq!(avail, 5);
+                assert_eq!(req, 10);
+            }
+            other => panic!(
+                "expected PrefundedSpecializedBalanceNotEnough, got: {:?}",
+                other
+            ),
+        }
+    }
+}

@@ -379,4 +379,108 @@ mod test {
         let hash = key.hash().expect("should hash");
         assert_eq!(hash.len(), 20);
     }
+
+    #[test]
+    fn test_value_conversion_roundtrip() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let key = make_master_key(0);
+        let v = StateTransitionValueConvert::to_object(&key, false).expect("to_object");
+        assert!(v.is_map());
+        let restored = <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_object(
+            v,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("from_object");
+        assert_eq!(key, restored);
+    }
+
+    #[test]
+    fn test_value_conversion_unknown_version() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use platform_value::Value;
+        let v = Value::from([("$version", Value::U16(255))]);
+        let result = <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_object(
+            v,
+            LATEST_PLATFORM_VERSION,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clean_value_unknown_version() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use platform_value::Value;
+        let mut v = Value::from([("$version", Value::U8(255))]);
+        let result =
+            <IdentityPublicKeyInCreation as StateTransitionValueConvert>::clean_value(&mut v);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_canonical_object_inserts_version() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let key = make_master_key(0);
+        let v = StateTransitionValueConvert::to_canonical_object(&key, false)
+            .expect("to_canonical_object");
+        let map = v
+            .into_btree_string_map()
+            .expect("canonical object should be a map");
+        assert!(map.contains_key("$version"));
+    }
+
+    #[test]
+    fn test_to_canonical_cleaned_object_inserts_version() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let key = make_master_key(0);
+        let v = StateTransitionValueConvert::to_canonical_cleaned_object(&key, false)
+            .expect("to_canonical_cleaned_object");
+        let map = v.into_btree_string_map().expect("should be a map");
+        assert!(map.contains_key("$version"));
+    }
+
+    #[test]
+    fn test_from_value_map_roundtrip() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let key = make_master_key(0);
+        let v = StateTransitionValueConvert::to_object(&key, false).expect("to_object");
+        let map = v.into_btree_string_map().expect("should be a map");
+        let restored =
+            <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_value_map(
+                map,
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("from_value_map");
+        assert_eq!(key, restored);
+    }
+
+    #[test]
+    fn test_default_versioned_unknown() {
+        use platform_version::version::PlatformVersion;
+        // Use a fresh version with an unknown identity_key_structure_version.
+        let mut pv = PlatformVersion::latest().clone();
+        pv.dpp.identity_versions.identity_key_structure_version = 255;
+        let result = IdentityPublicKeyInCreation::default_versioned(&pv);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hash_duplicate_in_keys_witness() {
+        let key1 = make_master_key(0);
+        // Identical data to key1 but different id
+        let key2 = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        let keys = vec![key1, key2];
+        let dup_ids =
+            IdentityPublicKeyInCreation::duplicated_keys_witness(&keys, LATEST_PLATFORM_VERSION)
+                .expect("witness");
+        assert_eq!(dup_ids.len(), 1, "one duplicate expected");
+    }
 }

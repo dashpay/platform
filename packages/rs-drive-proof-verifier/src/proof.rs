@@ -2920,4 +2920,902 @@ mod tests {
         let result = u32_to_u16_opt(u32::MAX);
         assert!(result.is_err(), "value u32::MAX must not silently truncate");
     }
+
+    // ---------------------------------------------------------------------
+    // Length / IntoOption trait tests
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn length_vec_option_counts_some_and_total() {
+        let v: Vec<Option<u32>> = vec![Some(1), None, Some(2), None, Some(3)];
+        assert_eq!(v.count(), 5);
+        assert_eq!(v.count_some(), 3);
+
+        let empty: Vec<Option<u32>> = vec![];
+        assert_eq!(empty.count(), 0);
+        assert_eq!(empty.count_some(), 0);
+    }
+
+    #[test]
+    fn length_option_of_length_delegates() {
+        let inner: Vec<Option<u32>> = vec![Some(1), None];
+        let some_inner: Option<Vec<Option<u32>>> = Some(inner);
+        assert_eq!(some_inner.count(), 2);
+        assert_eq!(some_inner.count_some(), 1);
+
+        let none_inner: Option<Vec<Option<u32>>> = None;
+        assert_eq!(none_inner.count(), 0);
+        assert_eq!(none_inner.count_some(), 0);
+    }
+
+    #[test]
+    fn length_vec_of_key_option_pair() {
+        let v: Vec<(u8, Option<u32>)> = vec![(1, Some(10)), (2, None), (3, Some(30)), (4, None)];
+        assert_eq!(v.count(), 4);
+        assert_eq!(v.count_some(), 2);
+    }
+
+    #[test]
+    fn length_btreemap_of_option() {
+        let mut m: BTreeMap<u8, Option<u32>> = BTreeMap::new();
+        m.insert(1, Some(10));
+        m.insert(2, None);
+        m.insert(3, Some(30));
+        assert_eq!(m.count(), 3);
+        assert_eq!(m.count_some(), 2);
+    }
+
+    #[test]
+    fn length_indexmap_of_option() {
+        let mut m: IndexMap<u8, Option<u32>> = IndexMap::new();
+        m.insert(1, Some(10));
+        m.insert(2, None);
+        m.insert(3, Some(30));
+        m.insert(4, None);
+        assert_eq!(m.count(), 4);
+        assert_eq!(m.count_some(), 2);
+    }
+
+    #[test]
+    fn into_option_returns_none_for_empty_and_some_for_nonempty() {
+        // Empty collection -> None
+        let empty: Vec<Option<u32>> = vec![];
+        assert!(empty.into_option().is_none());
+
+        // Non-empty, even if all are None -> Some(self)
+        let all_none: Vec<Option<u32>> = vec![None, None];
+        let wrapped = all_none.into_option();
+        assert!(wrapped.is_some());
+        assert_eq!(wrapped.unwrap().len(), 2);
+
+        // Non-empty with some values -> Some(self)
+        let mixed: Vec<Option<u32>> = vec![Some(1), None];
+        assert!(mixed.into_option().is_some());
+    }
+
+    #[test]
+    fn into_option_for_indexmap() {
+        let empty: IndexMap<u8, Option<u32>> = IndexMap::new();
+        assert!(empty.into_option().is_none());
+
+        let mut m: IndexMap<u8, Option<u32>> = IndexMap::new();
+        m.insert(1, None); // only None value, but count() > 0
+        let wrapped = m.into_option();
+        assert!(
+            wrapped.is_some(),
+            "IntoOption must preserve maps that carry absence markers"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // parse_key_request_type tests
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn parse_key_request_type_missing_outer_request() {
+        let err = parse_key_request_type(&None)
+            .err()
+            .expect("None input must error");
+        match err {
+            Error::RequestError { error } => {
+                assert!(
+                    error.contains("missing key request type"),
+                    "unexpected error message: {error}"
+                );
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_key_request_type_missing_inner_request_field() {
+        // Outer Some, inner `request` is None -> second `ok_or` triggers.
+        let outer = Some(GrpcKeyType { request: None });
+        let err = parse_key_request_type(&outer)
+            .err()
+            .expect("missing request must error");
+        match err {
+            Error::RequestError { error } => {
+                assert!(
+                    error.contains("empty request field"),
+                    "unexpected error message: {error}"
+                );
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_key_request_type_all_keys_variant() {
+        use dapi_grpc::platform::v0::AllKeys;
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::AllKeys(AllKeys {})),
+        });
+        let parsed = parse_key_request_type(&outer).unwrap();
+        assert!(matches!(parsed, KeyRequestType::AllKeys));
+    }
+
+    #[test]
+    fn parse_key_request_type_specific_keys_variant() {
+        use dapi_grpc::platform::v0::SpecificKeys;
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::SpecificKeys(SpecificKeys {
+                key_ids: vec![1, 2, 3],
+            })),
+        });
+        let parsed = parse_key_request_type(&outer).unwrap();
+        match parsed {
+            KeyRequestType::SpecificKeys(ids) => assert_eq!(ids, vec![1, 2, 3]),
+            _ => panic!("expected SpecificKeys variant"),
+        }
+    }
+
+    #[test]
+    fn parse_key_request_type_search_key_rejects_invalid_kind() {
+        use dapi_grpc::platform::v0::{SearchKey, SecurityLevelMap};
+        let mut sec_map: std::collections::HashMap<u32, i32> = std::collections::HashMap::new();
+        // 99 is not a valid GrpcKeyKind, must produce RequestError
+        sec_map.insert(0, 99);
+
+        let mut purpose_map = std::collections::HashMap::new();
+        purpose_map.insert(
+            0u32,
+            SecurityLevelMap {
+                security_level_map: sec_map,
+            },
+        );
+
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::SearchKey(SearchKey {
+                purpose_map,
+            })),
+        });
+
+        let err = parse_key_request_type(&outer)
+            .err()
+            .expect("bad key kind must error");
+        match err {
+            Error::RequestError { error } => assert!(
+                error.contains("missing requested key type"),
+                "unexpected error: {error}"
+            ),
+            other => panic!("expected RequestError for bad key kind, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_key_request_type_search_key_accepts_valid_kinds() {
+        use dapi_grpc::platform::v0::{SearchKey, SecurityLevelMap};
+        let mut sec_map: std::collections::HashMap<u32, i32> = std::collections::HashMap::new();
+        sec_map.insert(0, GrpcKeyKind::CurrentKeyOfKindRequest as i32);
+        sec_map.insert(1, GrpcKeyKind::AllKeysOfKindRequest as i32);
+
+        let mut purpose_map = std::collections::HashMap::new();
+        purpose_map.insert(
+            0u32,
+            SecurityLevelMap {
+                security_level_map: sec_map,
+            },
+        );
+
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::SearchKey(SearchKey {
+                purpose_map,
+            })),
+        });
+
+        let parsed = parse_key_request_type(&outer).unwrap();
+        match parsed {
+            KeyRequestType::SearchKey(purposes) => {
+                let inner = purposes.get(&0u8).expect("purpose 0 parsed");
+                assert_eq!(inner.len(), 2);
+                assert!(matches!(
+                    inner.get(&0u8),
+                    Some(KeyKindRequestType::CurrentKeyOfKindRequest)
+                ));
+                assert!(matches!(
+                    inner.get(&1u8),
+                    Some(KeyKindRequestType::AllKeysOfKindRequest)
+                ));
+            }
+            _ => panic!("expected SearchKey variant"),
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // FromProof error-path tests
+    //
+    // These tests verify that response/request decoding errors fire
+    // *before* any cryptographic proof verification is attempted, so we
+    // don't need a real quorum or GroveDB proof to exercise them.
+    // ---------------------------------------------------------------------
+
+    /// A ContextProvider that must never be called during these tests —
+    /// if it is, the test has reached the cryptographic-verification stage
+    /// incorrectly, which is itself a meaningful failure.
+    struct UnreachableContextProvider;
+
+    impl dash_context_provider::ContextProvider for UnreachableContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            panic!("context provider should not be called on decode-error test")
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            panic!("context provider should not be called on decode-error test")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            panic!("context provider should not be called on decode-error test")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            panic!("context provider should not be called on decode-error test")
+        }
+    }
+
+    fn unreachable_provider() -> UnreachableContextProvider {
+        UnreachableContextProvider
+    }
+
+    fn default_platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    /// Build a fully-populated `GetIdentityResponse` shell so that
+    /// `response.proof()` and `response.metadata()` both succeed. The
+    /// enclosed proof is empty, so any real verification would fail — but
+    /// these tests stop before that point.
+    fn identity_response_with_proof_and_metadata() -> platform::GetIdentityResponse {
+        use platform::get_identity_response::{
+            get_identity_response_v0::Result as V0Result, GetIdentityResponseV0, Version,
+        };
+        platform::GetIdentityResponse {
+            version: Some(Version::V0(GetIdentityResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    #[test]
+    fn identity_from_proof_no_proof_when_response_empty() {
+        // Default response has `version: None` -> response.proof() errors
+        // -> mapped to NoProofInResult.
+        let request = platform::GetIdentityRequest::default();
+        let response = platform::GetIdentityResponse::default();
+
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(err, Error::NoProofInResult),
+            "expected NoProofInResult, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn identity_from_proof_empty_metadata_when_metadata_missing() {
+        use platform::get_identity_response::{
+            get_identity_response_v0::Result as V0Result, GetIdentityResponseV0, Version,
+        };
+        // Response has a Proof but no metadata -> EmptyResponseMetadata.
+        let response = platform::GetIdentityResponse {
+            version: Some(Version::V0(GetIdentityResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: None,
+            })),
+        };
+        let request = platform::GetIdentityRequest::default();
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_from_proof_empty_version_when_request_has_no_version() {
+        // Valid response, but request.version is None -> EmptyVersion.
+        let response = identity_response_with_proof_and_metadata();
+        let request = platform::GetIdentityRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_from_proof_protocol_error_on_bad_id_length() {
+        use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
+        // id must be 32 bytes; anything else fails Identifier::from_bytes.
+        let request: platform::GetIdentityRequest = GetIdentityRequestV0 {
+            id: vec![0u8; 8],
+            prove: true,
+        }
+        .into();
+        let response = identity_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ProtocolError { .. }),
+            "expected ProtocolError on bad id length, got: {err:?}"
+        );
+    }
+
+    /// A minimal `FromProof` impl whose `maybe_from_proof_with_metadata`
+    /// returns `Ok((None, ..))`, isolating the `from_proof` wrapper's
+    /// `None -> Error::NotFound` mapping from the decode/verify pipeline.
+    #[derive(Debug)]
+    struct MissingFromProof;
+
+    impl FromProof<()> for MissingFromProof {
+        type Request = ();
+        type Response = ();
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _request: I,
+            _response: O,
+            _network: Network,
+            _platform_version: &PlatformVersion,
+            _provider: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+        where
+            Self: Sized + 'a,
+        {
+            Ok((None, ResponseMetadata::default(), Proof::default()))
+        }
+    }
+
+    #[test]
+    fn from_proof_maps_none_to_not_found() {
+        // `from_proof` (vs `maybe_from_proof`) is expected to map `Ok(None)`
+        // to `Error::NotFound`. Verify that wrapper behavior directly rather
+        // than conflating it with decode-error propagation.
+        let provider = unreachable_provider();
+        let err = <MissingFromProof as FromProof<()>>::from_proof(
+            (),
+            (),
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::NotFound),
+            "expected NotFound when maybe_from_proof returns None, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn identity_by_public_key_hash_invalid_length_yields_drive_error() {
+        use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
+
+        // public_key_hash must be exactly 20 bytes; 10 bytes fails.
+        let request: platform::GetIdentityByPublicKeyHashRequest =
+            GetIdentityByPublicKeyHashRequestV0 {
+                public_key_hash: vec![0u8; 10],
+                prove: true,
+            }
+            .into();
+
+        // Build a response that succeeds on proof/metadata lookups.
+        use platform::get_identity_by_public_key_hash_response::{
+            get_identity_by_public_key_hash_response_v0::Result as V0Result,
+            GetIdentityByPublicKeyHashResponseV0, Version,
+        };
+        let response = platform::GetIdentityByPublicKeyHashResponse {
+            version: Some(Version::V0(GetIdentityByPublicKeyHashResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+
+        let provider = unreachable_provider();
+        let err =
+            <Identity as FromProof<platform::GetIdentityByPublicKeyHashRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+
+        match err {
+            Error::DriveError { error } => {
+                assert!(
+                    error.contains("Invalid public key hash length"),
+                    "unexpected error body: {error}"
+                );
+            }
+            other => panic!("expected DriveError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
+        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+        use platform::get_identity_by_non_unique_public_key_hash_response::{
+            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
+            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+        };
+
+        // Build a response with a proved result so we get past the response shape check
+        // and hit the request validation.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(Version::V0(
+                GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(V0Result::Proof(
+                        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
+                            identity_proof_bytes: None,
+                            grovedb_identity_public_key_hash_proof: Some(Proof::default()),
+                        },
+                    )),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+
+        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0u8; 3], // must be 20 bytes
+                start_after: None,
+                prove: true,
+            }
+            .into();
+
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+
+        match err {
+            Error::RequestError { error } => {
+                assert!(
+                    error.contains("Invalid public key hash length"),
+                    "got: {error}"
+                );
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_bad_start_after_length() {
+        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+        use platform::get_identity_by_non_unique_public_key_hash_response::{
+            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
+            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(Version::V0(
+                GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(V0Result::Proof(
+                        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
+                            identity_proof_bytes: None,
+                            grovedb_identity_public_key_hash_proof: Some(Proof::default()),
+                        },
+                    )),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+
+        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0u8; 20],   // good
+                start_after: Some(vec![0u8; 10]), // wrong length; must be 32
+                prove: true,
+            }
+            .into();
+
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("Invalid start_after length"), "got: {error}");
+            }
+            other => panic!("expected RequestError for start_after, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_response_with_no_result_yields_no_proof() {
+        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+        use platform::get_identity_by_non_unique_public_key_hash_response::{
+            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+        };
+
+        // v0 with result=None -> NoProofInResult on the `.ok_or` branch.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                result: None,
+                metadata: None,
+            })),
+        };
+        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0u8; 20],
+                start_after: None,
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_by_non_unique_response_with_no_version_yields_empty_metadata() {
+        // response.version = None hits the `_ => EmptyResponseMetadata` arm.
+        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None };
+        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0u8; 20],
+                start_after: None,
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+
+    #[test]
+    fn identities_balances_rejects_non_32_byte_id() {
+        use dapi_grpc::platform::v0::get_identities_balances_request::GetIdentitiesBalancesRequestV0;
+        use platform::get_identities_balances_response::{
+            get_identities_balances_response_v0::Result as V0Result,
+            GetIdentitiesBalancesResponseV0, Version,
+        };
+
+        let response = platform::GetIdentitiesBalancesResponse {
+            version: Some(Version::V0(GetIdentitiesBalancesResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+
+        let request: platform::GetIdentitiesBalancesRequest = GetIdentitiesBalancesRequestV0 {
+            ids: vec![vec![0u8; 10]], // wrong length
+            prove: true,
+        }
+        .into();
+
+        let provider = unreachable_provider();
+        let err =
+            <IdentityBalances as FromProof<platform::GetIdentitiesBalancesRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("all 32 bytes"), "got: {error}");
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn data_contracts_rejects_wrong_size_id() {
+        use dapi_grpc::platform::v0::get_data_contracts_request::GetDataContractsRequestV0;
+        use platform::get_data_contracts_response::{
+            get_data_contracts_response_v0::Result as V0Result, GetDataContractsResponseV0, Version,
+        };
+
+        let response = platform::GetDataContractsResponse {
+            version: Some(Version::V0(GetDataContractsResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetDataContractsRequest = GetDataContractsRequestV0 {
+            ids: vec![vec![0u8; 20]], // must be 32 bytes
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <DataContracts as FromProof<platform::GetDataContractsRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("wrong id size"), "got: {error}");
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn upgrade_vote_status_rejects_bad_start_pro_tx_hash_length() {
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::{
+            get_protocol_version_upgrade_vote_status_response_v0::Result as V0Result,
+            GetProtocolVersionUpgradeVoteStatusResponseV0, Version,
+        };
+
+        let response = GetProtocolVersionUpgradeVoteStatusResponse {
+            version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        // start_pro_tx_hash must be 32 bytes if non-empty.
+        let request: GetProtocolVersionUpgradeVoteStatusRequest =
+            GetProtocolVersionUpgradeVoteStatusRequestV0 {
+                start_pro_tx_hash: vec![0u8; 5],
+                count: 10,
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <MasternodeProtocolVotes as FromProof<
+            GetProtocolVersionUpgradeVoteStatusRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        match err {
+            Error::RequestError { .. } => {}
+            other => panic!("expected RequestError for bad pro_tx_hash length, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn upgrade_vote_status_empty_version_on_request_none() {
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::{
+            get_protocol_version_upgrade_vote_status_response_v0::Result as V0Result,
+            GetProtocolVersionUpgradeVoteStatusResponseV0, Version,
+        };
+        let response = GetProtocolVersionUpgradeVoteStatusResponse {
+            version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = GetProtocolVersionUpgradeVoteStatusRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <MasternodeProtocolVotes as FromProof<
+            GetProtocolVersionUpgradeVoteStatusRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn path_elements_no_proof_without_response() {
+        let request = GetPathElementsRequest::default();
+        let response = GetPathElementsResponse::default();
+        let provider = unreachable_provider();
+        let err = <Elements as FromProof<GetPathElementsRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn prefunded_balance_rejects_bad_id_length() {
+        use dapi_grpc::platform::v0::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0;
+        use platform::get_prefunded_specialized_balance_response::{
+            get_prefunded_specialized_balance_response_v0::Result as V0Result,
+            GetPrefundedSpecializedBalanceResponseV0, Version,
+        };
+        let response = platform::GetPrefundedSpecializedBalanceResponse {
+            version: Some(Version::V0(GetPrefundedSpecializedBalanceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetPrefundedSpecializedBalanceRequest =
+            GetPrefundedSpecializedBalanceRequestV0 {
+                id: vec![0u8; 3], // must be 32
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <PrefundedSpecializedBalance as FromProof<
+            platform::GetPrefundedSpecializedBalanceRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn epochs_info_rejects_overflowing_start_epoch() {
+        use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata {
+                    epoch: 10,
+                    ..Default::default()
+                }),
+            })),
+        };
+        // start_epoch > u16::MAX triggers try_u32_to_u16 error.
+        let request = platform::GetEpochsInfoRequest {
+            version: Some(platform::get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    start_epoch: Some(100_000),
+                    count: 1,
+                    ascending: true,
+                    prove: true,
+                },
+            )),
+        };
+        let provider = unreachable_provider();
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn broadcast_state_transition_rejects_garbage_payload() {
+        // Cannot deserialize random bytes into a StateTransition, so we hit
+        // the ProtocolError branch before any proof work happens.
+        let request = platform::BroadcastStateTransitionRequest {
+            state_transition: vec![0xFFu8; 16], // nonsense bytes
+        };
+        // Response structure only needs to have a valid proof field since
+        // deserialize happens after proof extraction.
+        use platform::wait_for_state_transition_result_response::{
+            wait_for_state_transition_result_response_v0::Result as V0Result, Version,
+            WaitForStateTransitionResultResponseV0,
+        };
+        let response = platform::WaitForStateTransitionResultResponse {
+            version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let provider = unreachable_provider();
+        let err = <StateTransitionProofResult as FromProof<
+            platform::BroadcastStateTransitionRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ProtocolError { .. }),
+            "expected ProtocolError from StateTransition decode, got: {err:?}"
+        );
+    }
 }

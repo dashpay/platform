@@ -73,3 +73,65 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_partial_status_default_state() {
+        let (platform, state, _version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetStatusRequestV0 {};
+
+        let result = platform
+            .query_partial_status_v0(request, &state)
+            .expect("expected query to succeed");
+
+        let data = result.into_data().expect("expected data");
+
+        // Version structure must be populated with Drive protocol info
+        let version = data.version.expect("expected version");
+        let protocol = version.protocol.expect("expected protocol section");
+        let drive_proto = protocol.drive.expect("expected drive protocol section");
+        assert_eq!(
+            drive_proto.latest,
+            PlatformVersion::latest().protocol_version
+        );
+        assert_eq!(
+            drive_proto.current,
+            state.current_protocol_version_in_consensus()
+        );
+
+        // Software version must be the crate version string
+        let software = version.software.expect("expected software section");
+        assert_eq!(software.drive, Some(env!("CARGO_PKG_VERSION").to_string()));
+        assert_eq!(software.dapi, "".to_string());
+
+        // Chain info reports last committed core height and empty placeholders
+        let chain = data.chain.expect("expected chain section");
+        assert!(!chain.catching_up);
+        assert!(chain.latest_block_hash.is_empty());
+        assert!(chain.latest_app_hash.is_empty());
+        assert_eq!(chain.latest_block_height, 0);
+        assert_eq!(
+            chain.core_chain_locked_height,
+            Some(state.last_committed_core_height())
+        );
+
+        // Time info includes epoch and defaults elsewhere
+        let time = data.time.expect("expected time section");
+        assert_eq!(time.local, 0);
+        assert_eq!(
+            time.epoch,
+            Some(state.last_committed_block_epoch().index as u32)
+        );
+
+        // Optional sections are None at genesis
+        assert!(data.node.is_none());
+        assert!(data.network.is_none());
+        assert!(data.state_sync.is_none());
+    }
+}
