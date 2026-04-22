@@ -11,12 +11,14 @@ import SwiftData
 public final class PersistentAccount {
     /// Account type identifier — matches the `AccountTypeTagFFI`
     /// discriminant from the Rust side (0 = Standard, 1 = CoinJoin,
-    /// … 14 = PlatformPayment). Stable across releases.
+    /// … 14 = PlatformPayment, 15 = IdentityAuthenticationEcdsa,
+    /// 16 = IdentityAuthenticationBls). Stable across releases.
     public var accountType: UInt32
     /// Account index within the type (for indexed account types). For
     /// `PlatformPayment` this is the `account` field; for
     /// `DashpayReceivingFunds` / `DashpayExternalAccount` it's the
-    /// account-level selector.
+    /// account-level selector; for
+    /// `IdentityAuthentication{Ecdsa,Bls}` it's the identity index.
     public var accountIndex: UInt32
     /// Human-readable account type name.
     public var accountTypeName: String

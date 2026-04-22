@@ -45,6 +45,14 @@ pub enum AccountTypeTagFFI {
     DashpayReceivingFunds = 12,
     DashpayExternalAccount = 13,
     PlatformPayment = 14,
+    /// DIP-13 per-identity ECDSA authentication key account.
+    /// `index` carries the identity index; the master key lives at
+    /// `.../identity_index'/0'` in the DIP-13 path.
+    IdentityAuthenticationEcdsa = 15,
+    /// DIP-13 per-identity BLS authentication key account. Shape
+    /// mirrors `IdentityAuthenticationEcdsa`; the BLS-typed storage
+    /// it maps into is gated on the `bls` feature on the Rust side.
+    IdentityAuthenticationBls = 16,
 }
 
 /// Discriminant for [`key_wallet::account::StandardAccountType`].
@@ -74,6 +82,8 @@ pub enum StandardAccountTypeTagFFI {
 ///   * `DashpayReceivingFunds`               — `index`, `user_identity_id`, `friend_identity_id`
 ///   * `DashpayExternalAccount`              — `index`, `user_identity_id`, `friend_identity_id`
 ///   * `PlatformPayment`                     — `index` (as `account`), `key_class`
+///   * `IdentityAuthenticationEcdsa`         — `index` (as `identity_index`)
+///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
 #[repr(C)]
 pub struct AccountSpecFFI {
     pub type_tag: AccountTypeTagFFI,

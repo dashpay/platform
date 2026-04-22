@@ -1180,6 +1180,8 @@ public class PlatformWalletPersistenceHandler {
         case 12: return "DashPay Receiving Funds"
         case 13: return "DashPay External Account"
         case 14: return "Platform Payment"
+        case 15: return "Identity Auth (ECDSA)"
+        case 16: return "Identity Auth (BLS)"
         default: return "Unknown(\(tag))"
         }
     }

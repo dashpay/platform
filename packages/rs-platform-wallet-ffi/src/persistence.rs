@@ -691,6 +691,14 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
             spec.index = *account;
             spec.key_class = *key_class;
         }
+        AccountType::IdentityAuthenticationEcdsa { identity_index } => {
+            spec.type_tag = AccountTypeTagFFI::IdentityAuthenticationEcdsa;
+            spec.index = *identity_index;
+        }
+        AccountType::IdentityAuthenticationBls { identity_index } => {
+            spec.type_tag = AccountTypeTagFFI::IdentityAuthenticationBls;
+            spec.index = *identity_index;
+        }
     }
     spec
 }
@@ -885,6 +893,14 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         AccountTypeTagFFI::PlatformPayment => AccountType::PlatformPayment {
             account: spec.index,
             key_class: spec.key_class,
+        },
+        AccountTypeTagFFI::IdentityAuthenticationEcdsa => {
+            AccountType::IdentityAuthenticationEcdsa {
+                identity_index: spec.index,
+            }
+        }
+        AccountTypeTagFFI::IdentityAuthenticationBls => AccountType::IdentityAuthenticationBls {
+            identity_index: spec.index,
         },
     })
 }
