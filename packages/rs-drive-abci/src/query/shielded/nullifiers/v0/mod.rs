@@ -121,3 +121,142 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    fn nullifier(byte: u8) -> Vec<u8> {
+        vec![byte; 32]
+    }
+
+    #[test]
+    fn empty_nullifier_list_returns_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedNullifiersRequestV0 {
+            nullifiers: vec![],
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_nullifiers_v0(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("must not be empty")
+        ));
+    }
+
+    #[test]
+    fn invalid_nullifier_length_returns_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        // Second nullifier has only 16 bytes, should be rejected by per-item validation.
+        let request = GetShieldedNullifiersRequestV0 {
+            nullifiers: vec![nullifier(1), vec![0u8; 16]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_nullifiers_v0(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg.contains("index 1") && msg.contains("32 bytes") && msg.contains("16")
+        ));
+    }
+
+    #[test]
+    fn too_many_nullifiers_returns_invalid_limit() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let max = version.drive_abci.query.max_returned_elements as usize;
+        let nullifiers = (0..=max).map(|i| nullifier(i as u8)).collect::<Vec<_>>();
+
+        let request = GetShieldedNullifiersRequestV0 {
+            nullifiers,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_nullifiers_v0(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidLimit(msg))] if msg.contains("maximum is")
+        ));
+    }
+
+    #[test]
+    fn unspent_nullifier_returns_is_spent_false() {
+        // With an empty shielded pool (no insertions), every queried nullifier must
+        // come back with is_spent = false, and the set of returned statuses must
+        // match the input order.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let queried = vec![nullifier(0xAA), nullifier(0xBB), nullifier(0xCC)];
+        let request = GetShieldedNullifiersRequestV0 {
+            nullifiers: queried.clone(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_nullifiers_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "expected no validation errors");
+        let response = result.data.expect("expected response data");
+        assert!(response.metadata.is_some());
+
+        match response.result {
+            Some(get_shielded_nullifiers_response_v0::Result::NullifierStatuses(statuses)) => {
+                assert_eq!(statuses.entries.len(), queried.len());
+                for (entry, expected) in statuses.entries.iter().zip(queried.iter()) {
+                    assert_eq!(&entry.nullifier, expected);
+                    assert!(
+                        !entry.is_spent,
+                        "expected nullifier {:?} to not be spent in empty pool",
+                        entry.nullifier
+                    );
+                }
+            }
+            other => panic!("expected NullifierStatuses, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn prove_branch_returns_proof_bytes() {
+        // With prove=true, the handler should produce a response whose result is the
+        // Proof variant and metadata is populated.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedNullifiersRequestV0 {
+            nullifiers: vec![nullifier(0x01)],
+            prove: true,
+        };
+
+        let result = platform
+            .query_shielded_nullifiers_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let response = result.data.expect("expected response data");
+        match response.result {
+            Some(get_shielded_nullifiers_response_v0::Result::Proof(proof)) => {
+                assert!(
+                    !proof.grovedb_proof.is_empty(),
+                    "proof bytes should not be empty"
+                );
+            }
+            other => panic!("expected Proof result, got {:?}", other),
+        }
+        assert!(response.metadata.is_some(), "expected metadata");
+    }
+}

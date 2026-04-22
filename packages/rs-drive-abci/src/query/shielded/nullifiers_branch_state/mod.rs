@@ -60,3 +60,51 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_nullifiers_branch_state_request::GetNullifiersBranchStateRequestV0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn missing_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetNullifiersBranchStateRequest { version: None };
+
+        let result = platform
+            .query_nullifiers_branch_state(request, &state, version)
+            .expect("expected query to succeed with validation errors");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)]
+                if msg.contains("nullifiers branch state")
+        ));
+    }
+
+    #[test]
+    fn invalid_input_bubbles_up_through_dispatcher() {
+        // Confirm that when the v0 handler returns Err (e.g. for out-of-range depth),
+        // the dispatcher propagates it as an Err rather than swallowing it.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetNullifiersBranchStateRequest {
+            version: Some(RequestVersion::V0(GetNullifiersBranchStateRequestV0 {
+                pool_type: 0,
+                pool_identifier: vec![],
+                key: vec![0u8; 32],
+                depth: 2, // below min_depth = 6
+                checkpoint_height: 0,
+            })),
+        };
+
+        let err = platform
+            .query_nullifiers_branch_state(request, &state, version)
+            .expect_err("expected error from out-of-range depth");
+
+        assert!(matches!(err, Error::Drive(_)));
+    }
+}
