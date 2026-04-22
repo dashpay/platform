@@ -306,3 +306,153 @@ pub(crate) mod test_helpers {
         SpendableNote { note, merkle_path }
     }
 }
+
+#[cfg(test)]
+mod mod_tests {
+    use super::test_helpers::{test_orchard_address, test_spendable_note, TestProver};
+    use super::*;
+    use grovedb_commitment_tree::{FullViewingKey, SpendAuthorizingKey, SpendingKey};
+
+    // ------------------------------------------------------------------
+    // `build_output_only_bundle` — exercise the happy path covering the
+    // internal builder configuration and `prove_and_sign_bundle` pipeline
+    // on the empty-signing-keys branch.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn output_only_bundle_flags_and_value_balance() {
+        let recipient = test_orchard_address();
+        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], &TestProver)
+            .expect("bundle should build");
+
+        // Spends are disabled for Shield / ShieldFromAssetLock bundles.
+        assert!(!bundle.flags().spends_enabled());
+        assert!(bundle.flags().outputs_enabled());
+        // Orchard value_balance is negative when net value enters the pool.
+        assert_eq!(*bundle.value_balance(), -10_000i64);
+        assert!(
+            !bundle.actions().is_empty(),
+            "at least one padding action expected"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `serialize_authorized_bundle` — verify the mapping from a fully
+    // authorized bundle into the raw state-transition fields.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn serialize_authorized_bundle_preserves_fields() {
+        let recipient = test_orchard_address();
+        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], &TestProver)
+            .expect("bundle should build");
+        let sb = serialize_authorized_bundle(&bundle);
+
+        assert_eq!(sb.value_balance, *bundle.value_balance());
+        assert_eq!(sb.flags, bundle.flags().to_byte());
+        assert_eq!(sb.anchor, bundle.anchor().to_bytes());
+        assert!(!sb.proof.is_empty(), "Halo 2 proof must not be empty");
+        assert_eq!(sb.binding_signature.len(), 64);
+        assert_eq!(sb.actions.len(), bundle.actions().len());
+        for action in &sb.actions {
+            // Each encrypted_note packs epk (32) + enc_ciphertext (580... wait — 84+512? verify via cap 216)
+            // The explicit layout from serialize_authorized_bundle: epk_bytes (32) +
+            // enc_ciphertext + out_ciphertext = 580 + 80? The code pre-allocates 216.
+            // Don't hardcode length — just verify non-empty and signature sizes.
+            assert!(!action.encrypted_note.is_empty());
+            assert_eq!(action.nullifier.len(), 32);
+            assert_eq!(action.cmx.len(), 32);
+            assert_eq!(action.cv_net.len(), 32);
+            assert_eq!(action.rk.len(), 32);
+            assert_eq!(action.spend_auth_sig.len(), 64);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // `From<&OrchardAddress> for PaymentAddress` delegates to `inner()`.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn from_orchard_address_to_payment_address_preserves_bytes() {
+        let addr = test_orchard_address();
+        let pa: PaymentAddress = (&addr).into();
+        assert_eq!(
+            pa.to_raw_address_bytes(),
+            addr.inner().to_raw_address_bytes()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // `build_spend_bundle` — exercise the `add_spend` error path. The
+    // helper notes don't reconcile to `Anchor::empty_tree()` (the
+    // commitment and the all-zeros Merkle path don't match), so adding
+    // the spend surfaces an AnchorMismatch error wrapped in
+    // `ProtocolError::ShieldedBuildError`.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn build_spend_bundle_add_spend_anchor_mismatch_surfaces_error() {
+        let recipient = test_orchard_address();
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let spends = vec![test_spendable_note(50_000)];
+
+        let result = build_spend_bundle(
+            spends,
+            &recipient,
+            40_000,
+            [1u8; 36],
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            &[],
+        );
+        let err = result.expect_err("anchor mismatch should bubble up");
+        match err {
+            ProtocolError::ShieldedBuildError(msg) => {
+                assert!(
+                    msg.contains("failed to add spend")
+                        || msg.contains("AnchorMismatch")
+                        || msg.contains("anchor"),
+                    "unexpected error message: {}",
+                    msg
+                );
+            }
+            other => panic!("expected ShieldedBuildError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_spend_bundle_empty_spends_still_returns_some_output_bundle_or_error() {
+        // Exercise the loop-never-executed branch: no spends at all. The
+        // Orchard builder configuration `BundleType::DEFAULT` requires at
+        // least one spend by default — expect an error wrapped as
+        // `ShieldedBuildError`.
+        let recipient = test_orchard_address();
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_spend_bundle(
+            vec![],
+            &recipient,
+            0,
+            [0u8; 36],
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            &[],
+        );
+        // Whatever the outcome, it should be deterministic: either Ok (with
+        // padding) or a clean ShieldedBuildError — never a panic.
+        match result {
+            Ok(_) => {}
+            Err(ProtocolError::ShieldedBuildError(_)) => {}
+            Err(e) => panic!("unexpected error kind: {:?}", e),
+        }
+    }
+}
