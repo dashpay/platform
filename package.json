@@ -34,7 +34,7 @@
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@4.12.0",
+  "packageManager": "yarn@4.14.1",
   "ultra": {
     "concurrent": [
       "clean"
@@ -128,5 +128,10 @@
   "dependencies": {
     "dompurify": "^3.3.2",
     "node-gyp": "^10.0.1"
+  },
+  "dependenciesMeta": {
+    "@dashevo/protobufjs@6.10.5": {
+      "unplugged": true
+    }
   }
 }

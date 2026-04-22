@@ -2,7 +2,7 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 8
+  version: 9
   cacheKey: 10
 
 "@aashutoshrathi/word-wrap@npm:^1.2.3":
@@ -1940,6 +1940,9 @@ __metadata:
     typedoc: "npm:^0.28.17"
     typescript: "npm:^5.7.3"
     ultra-runner: "npm:^3.10.5"
+  dependenciesMeta:
+    "@dashevo/protobufjs@6.10.5":
+      unplugged: true
   languageName: unknown
   linkType: soft
 
