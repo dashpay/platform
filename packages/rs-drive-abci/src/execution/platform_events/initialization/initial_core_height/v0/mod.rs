@@ -276,6 +276,49 @@ mod tests {
         assert_eq!(time, 500);
     }
 
+    /// Pins the currently-observable behavior when `requested <
+    /// mn_rr_fork_height`. The function docstring (lines 24-26) says this
+    /// should fail with an error, but the v0 implementation does not enforce
+    /// that invariant — it only checks `initial_height <= chain_lock_height`.
+    ///
+    /// This test locks in the actual behavior as-is so that any future change
+    /// (either tightening the implementation or relaxing the docstring) is a
+    /// conscious, reviewed decision rather than an accidental regression.
+    /// See discussion on PR #3528 for the docs-vs-impl gap.
+    #[test]
+    fn v0_requested_below_fork_height_is_currently_accepted() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let mut mock_rpc = MockCoreRPCLike::new();
+        mock_rpc
+            .expect_get_fork_info()
+            .returning(|_| Ok(Some(active_fork(10))));
+        mock_rpc
+            .expect_get_best_chain_lock()
+            .returning(|| Ok(chain_lock_at(50)));
+        mock_rpc
+            .expect_get_block_time_from_height()
+            .returning(|_| Ok(1_000));
+        platform.core_rpc = mock_rpc;
+
+        // requested = 9 is strictly below the mn_rr fork height (10).
+        let result = platform.platform.initial_core_height_and_time_v0(Some(9));
+
+        // Today the implementation accepts this; the docstring suggests it
+        // should not. Assert the current observable behavior (acceptance)
+        // rather than silently ignore the disagreement.
+        assert!(
+            result.is_ok(),
+            "v0 currently accepts requested < mn_rr_fork_height (see docstring \
+             vs. impl gap); update this test when production behavior changes, \
+             got: {:?}",
+            result
+        );
+        let (height, _time) = result.unwrap();
+        assert_eq!(height, 9);
+    }
+
     /// If the block time returned by core is in the future (> current system time),
     /// `InitializationGenesisTimeInFuture` must be returned.
     #[test]

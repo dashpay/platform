@@ -2528,7 +2528,10 @@ mod tests {
     fn serialize_specific_version_rejects_v2_for_v0_contract() {
         // V0 contracts always force serialize_v0, so feature_version 2 is
         // rejected with NotSupported before reaching the version dispatch.
-        let platform_version = PlatformVersion::latest();
+        // Use `PlatformVersion::first()` so the fixture is guaranteed to load
+        // as a V0 contract — without this, the test could pass vacuously if
+        // the dashpay contract began deserializing as a non-V0 variant.
+        let platform_version = PlatformVersion::first();
         let (contract, type_name) = dashpay_contract_and_type(platform_version);
         let document_type = contract
             .document_type_for_name(&type_name)
@@ -2539,14 +2542,19 @@ mod tests {
             .expect("expected random document");
         let crate::document::Document::V0(doc_v0) = &document;
 
-        if matches!(&contract, DataContract::V0(_)) {
-            let err = doc_v0
-                .serialize_specific_version(document_type, &contract, 2)
-                .expect_err("V0 contract should reject v2");
-            match err {
-                ProtocolError::NotSupported(_) => {}
-                other => panic!("expected NotSupported, got {:?}", other),
-            }
+        // Precondition: the fixture must actually be a V0 contract, otherwise
+        // the NotSupported branch we intend to exercise would never be hit.
+        assert!(
+            matches!(&contract, DataContract::V0(_)),
+            "fixture must be a V0 contract to exercise the V0-gated NotSupported branch"
+        );
+
+        let err = doc_v0
+            .serialize_specific_version(document_type, &contract, 2)
+            .expect_err("V0 contract should reject v2");
+        match err {
+            ProtocolError::NotSupported(_) => {}
+            other => panic!("expected NotSupported, got {:?}", other),
         }
     }
 
@@ -2581,17 +2589,11 @@ mod tests {
         // Overwrite the varint-1 prefix with varint-0.
         v1_bytes[0] = 0;
 
-        // from_bytes will dispatch to v0, which may fail, but the implementation
-        // then retries via v1. Either way, it must not return UnknownVersionMismatch.
-        let result = DocumentV0::from_bytes(&v1_bytes, document_type, platform_version);
-        match result {
-            Ok(recovered) => assert_eq!(recovered, doc_v0),
-            Err(e) => {
-                // If v1-decode also fails, we get the original v0 error — not a
-                // version mismatch, since the prefix was 0.
-                assert!(!matches!(e, ProtocolError::UnknownVersionMismatch { .. }));
-            }
-        }
+        // from_bytes dispatches to v0, which fails on the mismatched layout,
+        // then retries via v1 — the fallback must recover the original document.
+        let recovered = DocumentV0::from_bytes(&v1_bytes, document_type, platform_version)
+            .expect("v0-prefixed v1 payload must fall back to v1 deserialization");
+        assert_eq!(recovered, doc_v0);
     }
 
     // ================================================================

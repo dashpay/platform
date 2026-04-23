@@ -116,17 +116,13 @@ mod tests {
             .expect("same-height non-init must short-circuit OK");
     }
 
-    /// Even with the same core height, `is_init_chain = true` must bypass the
-    /// early return — but since we can't easily mock the downstream RPC, we
-    /// only assert the path is reachable (it will try to call core_rpc and
-    /// panic in the mock; we catch only the short-circuit case above).
-    /// This test simply confirms the same-height-short-circuit is governed
-    /// ONLY by `is_init_chain = false`: setting it to `true` with matching
-    /// heights must NOT early-return — which we observe indirectly by the
-    /// fact that the same-height non-init test above passes without touching
-    /// the mock RPC at all.
+    /// The same-height early-return short-circuit must be idempotent: calling
+    /// `update_core_info_v0` repeatedly with the same `core_block_height` and
+    /// `is_init_chain = false` must succeed every time without ever reaching
+    /// the downstream `update_masternode_list` / `update_quorum_info` paths
+    /// (which would fail because the mock Core RPC has no expectations set).
     #[test]
-    fn v0_short_circuit_is_tied_to_is_init_chain_false() {
+    fn v0_short_circuit_is_idempotent_when_not_init_chain() {
         // Re-confirm that both conditions together are required by running
         // the short-circuit case twice; idempotency guards against flakiness.
         let platform_version = PlatformVersion::latest();

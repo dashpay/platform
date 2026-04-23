@@ -47,6 +47,8 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
     use crate::platform_types::block_proposal::v0::BlockProposal;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::version::PlatformVersion;
@@ -121,12 +123,16 @@ mod tests {
             .gather_epoch_info_v0(&proposal, &transaction, &platform_state, platform_version)
             .expect_err("must fail when genesis time is missing");
 
-        let msg = err.to_string().to_lowercase();
-        assert!(
-            msg.contains("genesis"),
-            "error must mention genesis time: {}",
-            msg
-        );
+        match err {
+            Error::Execution(ExecutionError::DriveIncoherence(msg)) => {
+                assert!(
+                    msg.to_lowercase().contains("genesis"),
+                    "DriveIncoherence message must mention genesis time, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected DriveIncoherence, got: {:?}", other),
+        }
     }
 
     /// When platform_state has NO `last_committed_block_time_ms`, the epoch info

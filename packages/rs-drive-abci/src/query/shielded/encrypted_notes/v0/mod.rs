@@ -164,10 +164,18 @@ mod tests {
     #[test]
     fn test_v0_non_aligned_start_index_errors() {
         // Non-aligned start_index branch: returns InvalidArgument directly.
+        // Derive the unaligned value from the versioned chunk size so this
+        // test never degrades into a vacuous check if the constant is later
+        // tuned to 1 or 5.
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let chunk = max_chunk_size(version);
+        assert!(
+            chunk > 1,
+            "test requires a chunk size > 1 so an unaligned start_index exists"
+        );
 
         let request = GetShieldedEncryptedNotesRequestV0 {
-            start_index: 5, // not aligned to chunk size
+            start_index: chunk - 1, // not aligned to chunk size
             count: 10,
             prove: false,
         };

@@ -106,11 +106,15 @@ mod tests {
         assert!(docs.is_empty(), "unknown owner must yield empty list");
     }
 
-    /// Different owner ids on an empty state must all return empty lists —
-    /// the query is by `$ownerId`, so the owner bytes must actually matter
-    /// for the query shape (not cached across calls).
+    /// Across distinct owner ids on a fresh (empty) state, the query must
+    /// consistently return an empty `Vec`. This does not prove that owner
+    /// bytes flow into the query key — genesis has no reward-share documents,
+    /// so every owner is indistinguishable at the result level — but it does
+    /// exercise the empty-list branch for several different inputs and
+    /// guarantees the function is callable per-owner without internal state
+    /// leaking between calls.
     #[test]
-    fn v0_different_owners_all_return_empty_on_fresh_state() {
+    fn v0_empty_list_branch_holds_across_distinct_owners_on_fresh_state() {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()

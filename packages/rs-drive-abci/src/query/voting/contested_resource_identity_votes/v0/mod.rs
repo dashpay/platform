@@ -442,18 +442,23 @@ mod tests {
             .query_contested_resource_identity_votes_v0(request, &state, version)
             .expect("expected query to succeed");
 
-        // Should not hit the "offset out of bounds" error.
-        let has_offset_err = result.errors.iter().any(|e| {
-            matches!(
-                e,
-                QueryError::InvalidArgument(msg) if msg.contains("offset out of bounds")
-            )
-        });
+        // `u16::MAX` is the exact upper boundary accepted by the offset check
+        // — it must neither surface any validation error nor drop the
+        // response payload. Tightening beyond "no offset error" prevents the
+        // test from silently passing if a different validation error starts
+        // firing at this boundary.
         assert!(
-            !has_offset_err,
-            "u16::MAX should not trigger offset bounds error: {:?}",
+            result.errors.is_empty(),
+            "u16::MAX offset must be accepted without validation errors: {:?}",
             result.errors
         );
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(get_contested_resource_identity_votes_response_v0::Result::Votes(_)),
+                metadata: Some(_),
+            })
+        ));
     }
 
     #[test]
@@ -490,7 +495,8 @@ mod tests {
     #[test]
     fn test_query_contested_resource_identity_votes_valid_start_at_empty_state() {
         // Valid 32-byte start_at poll identifier + empty state → success with
-        // empty result set.
+        // an *empty* result set. Assert the inner fields so the test does not
+        // silently pass if the query started returning entries on empty state.
         use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
 
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
@@ -515,9 +521,16 @@ mod tests {
         assert!(matches!(
             result.data,
             Some(GetContestedResourceIdentityVotesResponseV0 {
-                result: Some(get_contested_resource_identity_votes_response_v0::Result::Votes(_)),
+                result: Some(
+                    get_contested_resource_identity_votes_response_v0::Result::Votes(
+                        get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVotes {
+                            contested_resource_identity_votes,
+                            finished_results,
+                        },
+                    ),
+                ),
                 metadata: Some(_),
-            })
+            }) if contested_resource_identity_votes.is_empty() && finished_results
         ));
     }
 

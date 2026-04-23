@@ -49,10 +49,64 @@ mod tests {
         }
     }
 
-    /// After `clear_drive_block_cache_v0`, the protocol_versions_counter's
-    /// global cache must be unblocked (ready for reads). We exercise this by
-    /// calling the method and then confirming a subsequent call continues to
-    /// succeed — which it can't do if the write lock became poisoned.
+    /// After `clear_drive_block_cache_v0`, the `protocol_versions_counter`'s
+    /// global cache must be unblocked (ready for reads). We prove this directly
+    /// by first blocking the global cache, observing that a read returns the
+    /// `GlobalCacheIsBlocked` error, then calling `clear_drive_block_cache_v0`
+    /// and observing that the same read now succeeds.
+    #[test]
+    fn v0_unblocks_globally_blocked_protocol_versions_cache() {
+        use drive::error::cache::CacheError;
+        use drive::error::Error as DriveError;
+
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // Block the global cache so the read path would normally error.
+        platform
+            .drive
+            .cache
+            .protocol_versions_counter
+            .write()
+            .block_global_cache();
+
+        // Sanity check: while blocked, `get` must return GlobalCacheIsBlocked.
+        // Scope the read guard so it stays alive as long as the borrowed
+        // `Option<&u64>` inside the Result.
+        {
+            let guard = platform.drive.cache.protocol_versions_counter.read();
+            let blocked_result = guard.get(&1u32);
+            assert!(
+                matches!(
+                    &blocked_result,
+                    Err(DriveError::Cache(CacheError::GlobalCacheIsBlocked))
+                ),
+                "precondition: blocked cache must return GlobalCacheIsBlocked, got {:?}",
+                blocked_result
+            );
+        }
+
+        // Now clear the block cache — this must also unblock the global cache.
+        platform.clear_drive_block_cache_v0();
+
+        // Post-condition: `get` must now succeed (returning Ok regardless of
+        // whether the key is present) — any Err would mean the cache is still
+        // blocked.
+        {
+            let guard = platform.drive.cache.protocol_versions_counter.read();
+            let unblocked_result = guard.get(&1u32);
+            assert!(
+                unblocked_result.is_ok(),
+                "clear_drive_block_cache_v0 must leave the global cache unblocked, got {:?}",
+                unblocked_result
+            );
+        }
+    }
+
+    /// After `clear_drive_block_cache_v0`, the `protocol_versions_counter`
+    /// write lock must still be usable (not poisoned) and further reads must
+    /// succeed. Complements the direct-unblock test above.
     #[test]
     fn v0_leaves_cache_usable_after_call() {
         let platform = TestPlatformBuilder::new()
