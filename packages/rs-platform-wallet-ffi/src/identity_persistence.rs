@@ -114,6 +114,39 @@ pub struct IdentityKeyRemovalFFI {
     pub key_id: u32,
 }
 
+// Compile-time guard — if anyone reshapes `IdentityKeyEntryFFI`
+// without also updating the Swift mirror in
+// `PlatformWalletFFI.swift`, cargo builds fail with an obvious
+// error rather than producing a dylib that the Swift side will
+// mis-parse at runtime (which surfaces as a random EXC_BAD_ACCESS
+// in the persistIdentityKeys callback).
+//
+// Expected layout on 64-bit targets (all fields in declaration
+// order under `#[repr(C)]`):
+//
+//   0..=31    identity_id             [u8; 32]
+//   32..=35   key_id                  u32
+//   36        purpose                 u8
+//   37        security_level          u8
+//   38        key_type                u8
+//   39        read_only               bool
+//   40        disabled_at_is_some     bool
+//   41..=47   (padding to 8)
+//   48..=55   disabled_at             u64
+//   56..=63   public_key_data_ptr     *mut u8
+//   64..=71   public_key_data_len     usize
+//   72..=91   public_key_hash         [u8; 20]
+//   92        wallet_id_is_some       bool
+//   93..=124  wallet_id               [u8; 32]
+//   125       derivation_indices_is_some bool
+//   126..=127 (padding to 4)
+//   128..=131 identity_index          u32
+//   132..=135 key_index               u32
+//
+// Total size = 136, alignment = 8 (from u64 / pointer).
+const _: [u8; 136] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
+
 // ---------------------------------------------------------------------------
 // Conversions
 // ---------------------------------------------------------------------------

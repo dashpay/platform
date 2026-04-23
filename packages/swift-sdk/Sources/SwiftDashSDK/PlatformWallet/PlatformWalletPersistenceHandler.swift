@@ -1811,6 +1811,13 @@ private func persistIdentityKeysCallback(
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
 
+    // Fail fast with a clear message if the Rust / Swift struct
+    // layouts have drifted — a subtle field reorder on either side
+    // would otherwise crash in `memmove` deep inside
+    // `Data(bytes:count:)` with garbage pointer bytes, and take
+    // ages to diagnose.
+    assertIdentityKeyEntryLayout()
+
     var upserts: [PlatformWalletPersistenceHandler.IdentityKeyEntrySnapshot] = []
     if upsertsCount > 0, let upsertsRaw = upsertsRaw {
         let upsertsPtr = upsertsRaw.assumingMemoryBound(to: IdentityKeyEntryFFI.self)

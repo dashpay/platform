@@ -845,6 +845,30 @@ struct IdentityKeyEntryFFI {
     var key_index: UInt32
 }
 
+/// Expected size of `IdentityKeyEntryFFI` as laid out by Rust's
+/// `#[repr(C)]` on 64-bit targets. Mirrors the compile-time
+/// assertion at the bottom of `rs-platform-wallet-ffi/src/
+/// identity_persistence.rs`. Tested at callback entry via
+/// `assertIdentityKeyEntryLayout()`.
+let EXPECTED_IDENTITY_KEY_ENTRY_FFI_SIZE: Int = 136
+
+/// Verify the Swift `IdentityKeyEntryFFI` mirror lays out to the
+/// same 136-byte shape that Rust's `#[repr(C)]` produces. Called
+/// once per process from the persistence-callback hot path so a
+/// drift between the two sides surfaces as a clean assertion
+/// failure rather than an EXC_BAD_ACCESS in memmove.
+func assertIdentityKeyEntryLayout() {
+    let actual = MemoryLayout<IdentityKeyEntryFFI>.size
+    let actualStride = MemoryLayout<IdentityKeyEntryFFI>.stride
+    precondition(
+        actual == EXPECTED_IDENTITY_KEY_ENTRY_FFI_SIZE
+            && actualStride == EXPECTED_IDENTITY_KEY_ENTRY_FFI_SIZE,
+        "IdentityKeyEntryFFI layout mismatch: size=\(actual) stride=\(actualStride), "
+            + "expected \(EXPECTED_IDENTITY_KEY_ENTRY_FFI_SIZE). Rust-side "
+            + "#[repr(C)] and Swift-side struct have diverged; fix one side."
+    )
+}
+
 /// Mirrors `IdentityKeyRemovalFFI` from
 /// `rs-platform-wallet-ffi/src/identity_persistence.rs` — the
 /// `(identity_id, key_id)` composite used by the keys-changeset
