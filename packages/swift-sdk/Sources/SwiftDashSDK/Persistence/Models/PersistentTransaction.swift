@@ -7,6 +7,16 @@ import SwiftData
 /// confirmed, chain-locked), direction, amounts, and fee.
 @Model
 public final class PersistentTransaction {
+    /// Compound index covering `TransactionListView`'s per-wallet
+    /// query: `walletId == ?` predicate + `firstSeen` descending
+    /// sort. Putting `walletId` first lets SQLite descend the
+    /// index straight to the matching segment; the trailing
+    /// `firstSeen` column delivers the sort order for free. Without
+    /// this index the filter degrades to a full-table scan and the
+    /// sort to an in-memory O(N log N) pass, both on the main
+    /// thread.
+    #Index<PersistentTransaction>([\.walletId, \.firstSeen])
+
     /// Transaction ID (32-byte hash, stored as hex for indexing).
     @Attribute(.unique) public var txid: String
     /// Raw transaction bytes.
