@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(built.transaction.txid(), tx.txid());
     }
 
-    #[cfg(all(feature = "identity-serialization"))]
+    #[cfg(feature = "identity-serialization")]
     #[test]
     fn create_from_buffer_roundtrips_serialized_identity() {
         use crate::serialization::PlatformSerializable;
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(restored.id(), id);
     }
 
-    #[cfg(all(feature = "identity-serialization"))]
+    #[cfg(feature = "identity-serialization")]
     #[test]
     fn create_from_buffer_errors_on_garbage() {
         let facade = facade_v1();
