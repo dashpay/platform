@@ -286,4 +286,116 @@ mod tests {
             }) if contested_resource_identity_votes.is_empty() && finished_results
         ));
     }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_empty_prove() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(get_contested_resource_identity_votes_response_v0::Result::Proof(_),),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_limit_above_max_is_error() {
+        // `limit` that overflows u16 takes the `.ok_or(...)?` path and surfaces
+        // a Drive(Query(InvalidLimit)) error via `Err(_)` rather than as a
+        // validation error in the response.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: Some((u16::MAX as u32) + 1),
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let err = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect_err("oversized limit should propagate an Err");
+
+        let msg = format!("{:?}", err);
+        assert!(
+            msg.contains("InvalidLimit") || msg.contains("limit"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_limit_zero_is_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: Some(0),
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let err = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect_err("limit=0 should propagate an Err");
+
+        let msg = format!("{:?}", err);
+        assert!(
+            msg.contains("InvalidLimit") || msg.contains("limit"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_descending_empty() {
+        // Exercise the descending branch of the `start_at` computation and the
+        // no-data path where `finished_results` short-circuits to true.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: Some(1),
+            offset: None,
+            order_ascending: false,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(
+                    get_contested_resource_identity_votes_response_v0::Result::Votes(
+                        get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVotes {
+                            contested_resource_identity_votes,
+                            finished_results,
+                        },
+                    ),
+                ),
+                metadata: Some(_),
+            }) if contested_resource_identity_votes.is_empty() && finished_results
+        ));
+    }
 }

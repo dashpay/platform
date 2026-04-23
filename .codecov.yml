@@ -42,7 +42,6 @@ ignore:
   - "packages/dashpay-contract/src/**"
   - "packages/data-contracts/src/**"
   - "packages/dpns-contract/src/**"
-  - "packages/feature-flags-contract/src/**"
   - "packages/keyword-search-contract/src/**"
   - "packages/masternode-reward-shares-contract/src/**"
   - "packages/token-history-contract/src/**"

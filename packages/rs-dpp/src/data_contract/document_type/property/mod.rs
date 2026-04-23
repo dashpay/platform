@@ -5664,4 +5664,1351 @@ mod tests {
         assert_eq!(result.len(), 17); // 1 marker + 16 bytes
         assert_eq!(result[0], 0xFF);
     }
+
+    // -----------------------------------------------------------------------
+    // random_value() tests - exercise branches not covered elsewhere
+    // -----------------------------------------------------------------------
+
+    use rand::SeedableRng;
+
+    #[test]
+    fn test_random_value_produces_expected_type_for_all_scalar_variants() {
+        let mut rng = StdRng::seed_from_u64(1);
+        assert!(matches!(
+            DocumentPropertyType::U128.random_value(&mut rng),
+            Value::U128(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I128.random_value(&mut rng),
+            Value::I128(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U64.random_value(&mut rng),
+            Value::U64(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I64.random_value(&mut rng),
+            Value::I64(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U32.random_value(&mut rng),
+            Value::U32(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I32.random_value(&mut rng),
+            Value::I32(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U16.random_value(&mut rng),
+            Value::U16(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I16.random_value(&mut rng),
+            Value::I16(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U8.random_value(&mut rng),
+            Value::U8(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I8.random_value(&mut rng),
+            Value::I8(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::F64.random_value(&mut rng),
+            Value::Float(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::Boolean.random_value(&mut rng),
+            Value::Bool(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::Date.random_value(&mut rng),
+            Value::Float(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::Identifier.random_value(&mut rng),
+            Value::Identifier(_)
+        ));
+    }
+
+    #[test]
+    fn test_random_value_string_respects_size_bounds() {
+        let mut rng = StdRng::seed_from_u64(2);
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: Some(5),
+            max_length: Some(10),
+        });
+        // Exercise several random draws
+        for _ in 0..5 {
+            if let Value::Text(s) = prop.random_value(&mut rng) {
+                assert!(
+                    s.len() >= 5 && s.len() <= 10,
+                    "length out of range: {}",
+                    s.len()
+                );
+                assert!(s.chars().all(|c| c.is_ascii_alphanumeric()));
+            } else {
+                panic!("expected Text variant");
+            }
+        }
+    }
+
+    #[test]
+    fn test_random_value_byte_array_fixed_size_20() {
+        let mut rng = StdRng::seed_from_u64(3);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(20),
+            max_size: Some(20),
+        });
+        // min == max == 20 => Value::Bytes20 specialization
+        match prop.random_value(&mut rng) {
+            Value::Bytes20(_) => {}
+            v => panic!("expected Bytes20, got {:?}", v),
+        }
+    }
+
+    #[test]
+    fn test_random_value_byte_array_fixed_size_32() {
+        let mut rng = StdRng::seed_from_u64(4);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(32),
+            max_size: Some(32),
+        });
+        // min == max == 32 => Value::Bytes32 specialization
+        match prop.random_value(&mut rng) {
+            Value::Bytes32(_) => {}
+            v => panic!("expected Bytes32, got {:?}", v),
+        }
+    }
+
+    #[test]
+    fn test_random_value_byte_array_fixed_size_36() {
+        let mut rng = StdRng::seed_from_u64(5);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(36),
+            max_size: Some(36),
+        });
+        // min == max == 36 => Value::Bytes36 specialization
+        match prop.random_value(&mut rng) {
+            Value::Bytes36(_) => {}
+            v => panic!("expected Bytes36, got {:?}", v),
+        }
+    }
+
+    #[test]
+    fn test_random_value_byte_array_fixed_size_other_uses_bytes() {
+        let mut rng = StdRng::seed_from_u64(6);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(8),
+            max_size: Some(8),
+        });
+        // min == max but not in the special {20, 32, 36} set => Value::Bytes
+        match prop.random_value(&mut rng) {
+            Value::Bytes(b) => assert_eq!(b.len(), 8),
+            v => panic!("expected Bytes, got {:?}", v),
+        }
+    }
+
+    #[test]
+    fn test_random_value_byte_array_variable_uses_bytes() {
+        let mut rng = StdRng::seed_from_u64(7);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(1),
+            max_size: Some(10),
+        });
+        // min != max => Value::Bytes (never Bytes20/32/36)
+        for _ in 0..5 {
+            match prop.random_value(&mut rng) {
+                Value::Bytes(b) => {
+                    assert!(b.len() >= 1 && b.len() <= 10);
+                }
+                v => panic!("expected Bytes, got {:?}", v),
+            }
+        }
+    }
+
+    #[test]
+    fn test_random_value_array_and_variable_type_array_return_null() {
+        let mut rng = StdRng::seed_from_u64(8);
+        assert_eq!(
+            DocumentPropertyType::Array(ArrayItemType::Integer).random_value(&mut rng),
+            Value::Null
+        );
+        assert_eq!(
+            DocumentPropertyType::VariableTypeArray(vec![]).random_value(&mut rng),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn test_random_value_object_only_includes_required_fields() {
+        let mut rng = StdRng::seed_from_u64(9);
+        let mut sub_fields = IndexMap::new();
+        sub_fields.insert(
+            "req".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U32,
+                required: true,
+                transient: false,
+            },
+        );
+        sub_fields.insert(
+            "opt".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U64,
+                required: false,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(sub_fields);
+        let val = prop.random_value(&mut rng);
+        if let Value::Map(entries) = val {
+            assert_eq!(
+                entries.len(),
+                1,
+                "only the required field should be present"
+            );
+            assert_eq!(entries[0].0, Value::Text("req".to_string()));
+            assert!(matches!(entries[0].1, Value::U32(_)));
+        } else {
+            panic!("expected Map");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // random_sub_filled_value() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_random_sub_filled_value_string_uses_min_size() {
+        let mut rng = StdRng::seed_from_u64(10);
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: Some(7),
+            max_length: Some(20),
+        });
+        if let Value::Text(s) = prop.random_sub_filled_value(&mut rng) {
+            assert_eq!(s.len(), 7);
+        } else {
+            panic!("expected Text");
+        }
+    }
+
+    #[test]
+    fn test_random_sub_filled_value_byte_array_uses_min_size() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(4),
+            max_size: Some(100),
+        });
+        if let Value::Bytes(b) = prop.random_sub_filled_value(&mut rng) {
+            assert_eq!(b.len(), 4);
+        } else {
+            panic!("expected Bytes");
+        }
+    }
+
+    #[test]
+    fn test_random_sub_filled_value_object_includes_all_fields() {
+        let mut rng = StdRng::seed_from_u64(12);
+        let mut sub_fields = IndexMap::new();
+        sub_fields.insert(
+            "req".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U32,
+                required: true,
+                transient: false,
+            },
+        );
+        sub_fields.insert(
+            "opt".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U64,
+                required: false,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(sub_fields);
+        // sub_filled_value includes ALL fields regardless of required flag
+        let val = prop.random_sub_filled_value(&mut rng);
+        if let Value::Map(entries) = val {
+            assert_eq!(entries.len(), 2);
+        } else {
+            panic!("expected Map");
+        }
+    }
+
+    #[test]
+    fn test_random_sub_filled_value_array_returns_null() {
+        let mut rng = StdRng::seed_from_u64(13);
+        assert_eq!(
+            DocumentPropertyType::Array(ArrayItemType::Integer).random_sub_filled_value(&mut rng),
+            Value::Null
+        );
+        assert_eq!(
+            DocumentPropertyType::VariableTypeArray(vec![]).random_sub_filled_value(&mut rng),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn test_random_sub_filled_value_date_returns_float() {
+        let mut rng = StdRng::seed_from_u64(14);
+        assert!(matches!(
+            DocumentPropertyType::Date.random_sub_filled_value(&mut rng),
+            Value::Float(_)
+        ));
+    }
+
+    #[test]
+    fn test_random_sub_filled_value_identifier() {
+        let mut rng = StdRng::seed_from_u64(15);
+        assert!(matches!(
+            DocumentPropertyType::Identifier.random_sub_filled_value(&mut rng),
+            Value::Identifier(_)
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // random_filled_value() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_random_filled_value_string_uses_max_size() {
+        let mut rng = StdRng::seed_from_u64(16);
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: Some(1),
+            max_length: Some(12),
+        });
+        if let Value::Text(s) = prop.random_filled_value(&mut rng) {
+            assert_eq!(s.len(), 12);
+        } else {
+            panic!("expected Text");
+        }
+    }
+
+    #[test]
+    fn test_random_filled_value_byte_array_uses_max_size() {
+        let mut rng = StdRng::seed_from_u64(17);
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(0),
+            max_size: Some(9),
+        });
+        if let Value::Bytes(b) = prop.random_filled_value(&mut rng) {
+            assert_eq!(b.len(), 9);
+        } else {
+            panic!("expected Bytes");
+        }
+    }
+
+    #[test]
+    fn test_random_filled_value_object_includes_all_fields() {
+        let mut rng = StdRng::seed_from_u64(18);
+        let mut sub_fields = IndexMap::new();
+        sub_fields.insert(
+            "a".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U8,
+                required: true,
+                transient: false,
+            },
+        );
+        sub_fields.insert(
+            "b".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::Boolean,
+                required: false,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(sub_fields);
+        let val = prop.random_filled_value(&mut rng);
+        if let Value::Map(entries) = val {
+            assert_eq!(entries.len(), 2);
+        } else {
+            panic!("expected Map");
+        }
+    }
+
+    #[test]
+    fn test_random_filled_value_scalars() {
+        let mut rng = StdRng::seed_from_u64(19);
+        // exhaustively exercise each scalar variant not already covered
+        assert!(matches!(
+            DocumentPropertyType::U128.random_filled_value(&mut rng),
+            Value::U128(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I128.random_filled_value(&mut rng),
+            Value::I128(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U64.random_filled_value(&mut rng),
+            Value::U64(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I64.random_filled_value(&mut rng),
+            Value::I64(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U32.random_filled_value(&mut rng),
+            Value::U32(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I32.random_filled_value(&mut rng),
+            Value::I32(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U16.random_filled_value(&mut rng),
+            Value::U16(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I16.random_filled_value(&mut rng),
+            Value::I16(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::U8.random_filled_value(&mut rng),
+            Value::U8(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::I8.random_filled_value(&mut rng),
+            Value::I8(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::F64.random_filled_value(&mut rng),
+            Value::Float(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::Boolean.random_filled_value(&mut rng),
+            Value::Bool(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::Date.random_filled_value(&mut rng),
+            Value::Float(_)
+        ));
+        assert!(matches!(
+            DocumentPropertyType::Identifier.random_filled_value(&mut rng),
+            Value::Identifier(_)
+        ));
+        assert_eq!(
+            DocumentPropertyType::Array(ArrayItemType::Integer).random_filled_value(&mut rng),
+            Value::Null
+        );
+        assert_eq!(
+            DocumentPropertyType::VariableTypeArray(vec![]).random_filled_value(&mut rng),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn test_random_size_respects_range() {
+        let mut rng = StdRng::seed_from_u64(20);
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: Some(3),
+            max_length: Some(6),
+        });
+        for _ in 0..10 {
+            let sz = prop.random_size(&mut rng);
+            assert!(sz >= 3 && sz <= 6);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // read_optionally_from() corrupted / truncated buffer error paths
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_read_optionally_from_u64_truncated_returns_error() {
+        // Only 3 bytes but u64 needs 8
+        let prop = DocumentPropertyType::U64;
+        let data: &[u8] = &[0, 0, 0];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_i64_truncated_returns_error() {
+        let prop = DocumentPropertyType::I64;
+        let data: &[u8] = &[1, 2];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_u128_truncated_returns_error() {
+        let prop = DocumentPropertyType::U128;
+        let data: &[u8] = &[0; 4];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_i128_truncated_returns_error() {
+        let prop = DocumentPropertyType::I128;
+        let data: &[u8] = &[0; 2];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_u32_truncated_returns_error() {
+        let prop = DocumentPropertyType::U32;
+        let data: &[u8] = &[0];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_i32_truncated_returns_error() {
+        let prop = DocumentPropertyType::I32;
+        let data: &[u8] = &[0, 1];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_u16_truncated_returns_error() {
+        let prop = DocumentPropertyType::U16;
+        let data: &[u8] = &[];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_i16_truncated_returns_error() {
+        let prop = DocumentPropertyType::I16;
+        let data: &[u8] = &[7];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_u8_eof_returns_error() {
+        // required=true but empty buffer: u8 read must fail
+        let prop = DocumentPropertyType::U8;
+        let data: &[u8] = &[];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_i8_eof_returns_error() {
+        let prop = DocumentPropertyType::I8;
+        let data: &[u8] = &[];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_f64_truncated_returns_error() {
+        let prop = DocumentPropertyType::F64;
+        let data: &[u8] = &[0, 0, 0];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_date_truncated_returns_error() {
+        let prop = DocumentPropertyType::Date;
+        let data: &[u8] = &[1, 2];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_boolean_eof_returns_error() {
+        let prop = DocumentPropertyType::Boolean;
+        let data: &[u8] = &[];
+        let mut reader = BufReader::new(data);
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_identifier_truncated_returns_error() {
+        let prop = DocumentPropertyType::Identifier;
+        // Only 16 bytes but identifier needs 32
+        let data = [1u8; 16];
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_string_invalid_utf8_returns_error() {
+        use integer_encoding::VarInt;
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        // Valid varint length but invalid UTF-8 bytes
+        let invalid_bytes = vec![0xFFu8, 0xFEu8, 0xFDu8];
+        let mut data = invalid_bytes.len().encode_var_vec();
+        data.extend_from_slice(&invalid_bytes);
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_string_truncated_returns_error() {
+        use integer_encoding::VarInt;
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        // varint says 10 bytes follow, but only provide 2
+        let mut data = 10usize.encode_var_vec();
+        data.push(b'a');
+        data.push(b'b');
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_byte_array_fixed_size_truncated_returns_error() {
+        // min == max == 32, but provide only 10 bytes
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(32),
+            max_size: Some(32),
+        });
+        let data = [1u8; 10];
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_object_truncated_length_returns_error() {
+        use integer_encoding::VarInt;
+        let mut inner_fields = IndexMap::new();
+        inner_fields.insert(
+            "x".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U32,
+                required: true,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(inner_fields);
+        // Claim 100 bytes follow but provide only 2
+        let mut data = 100usize.encode_var_vec();
+        data.push(0);
+        data.push(0);
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+    }
+
+    #[test]
+    fn test_read_optionally_from_object_required_field_after_finished_buffer() {
+        // Exercises the explicit "required field after finished buffer in object"
+        // branch: the optional first field exhausts the inner buffer by reading
+        // an absence marker from a zero-length buffer (which flips
+        // `finished_buffer` to true), then the iterator sees a required field
+        // with the buffer already finished and must produce a
+        // CorruptedSerialization error.
+        use integer_encoding::VarInt;
+        let mut inner_fields = IndexMap::new();
+        // First field is optional
+        inner_fields.insert(
+            "a".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U32,
+                required: false,
+                transient: false,
+            },
+        );
+        // Second field is required
+        inner_fields.insert(
+            "b".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U32,
+                required: true,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(inner_fields);
+
+        // Empty inner buffer: the optional-field read observes EOF on the
+        // absence-marker byte, returns (None, finished = true). On the next
+        // iteration, "b" is required and the buffer is finished => the
+        // targeted error branch fires.
+        let inner_bytes: Vec<u8> = vec![];
+        let mut data = inner_bytes.len().encode_var_vec();
+        data.extend_from_slice(&inner_bytes);
+        let mut reader = BufReader::new(data.as_slice());
+        let err = prop
+            .read_optionally_from(&mut reader, true)
+            .expect_err("required field with finished buffer must error");
+        match err {
+            DataContractError::CorruptedSerialization(msg) => {
+                assert!(
+                    msg.contains("required field after finished buffer in object"),
+                    "expected the finished-buffer branch, got: {msg}"
+                );
+            }
+            other => panic!("expected CorruptedSerialization, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // encode_value_with_size() type-mismatch errors
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_encode_value_with_size_boolean_type_mismatch() {
+        let prop = DocumentPropertyType::Boolean;
+        // U64 cannot be coerced to bool
+        let result = prop.encode_value_with_size(Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_with_size_object_type_mismatch() {
+        let prop = DocumentPropertyType::Object(IndexMap::new());
+        let result = prop.encode_value_with_size(Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_with_size_array_type_mismatch() {
+        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        // Not an Array value
+        let result = prop.encode_value_with_size(Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_with_size_f64_type_mismatch() {
+        let prop = DocumentPropertyType::F64;
+        // Text cannot be converted to a float
+        let result = prop.encode_value_with_size(Value::Text("not a number".to_string()), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_with_size_u64_type_mismatch() {
+        let prop = DocumentPropertyType::U64;
+        let result = prop.encode_value_with_size(Value::Text("x".to_string()), true);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // encode_value_ref_with_size() type-mismatch errors
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_encode_value_ref_with_size_string_type_mismatch() {
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        let result = prop.encode_value_ref_with_size(&Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_boolean_type_mismatch() {
+        let prop = DocumentPropertyType::Boolean;
+        let result = prop.encode_value_ref_with_size(&Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_object_type_mismatch() {
+        let prop = DocumentPropertyType::Object(IndexMap::new());
+        let result = prop.encode_value_ref_with_size(&Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_array_type_mismatch() {
+        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        let result = prop.encode_value_ref_with_size(&Value::U64(1), true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_object_missing_required_field_errors() {
+        let mut inner_fields = IndexMap::new();
+        inner_fields.insert(
+            "name".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::String(StringPropertySizes {
+                    min_length: None,
+                    max_length: Some(100),
+                }),
+                required: true,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(inner_fields);
+        let val = Value::Map(vec![]);
+        let result = prop.encode_value_ref_with_size(&val, true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_object_optional_absent_pushes_zero() {
+        let mut inner_fields = IndexMap::new();
+        inner_fields.insert(
+            "opt".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U32,
+                required: false,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(inner_fields);
+        // Missing optional field path encodes a 0 absence marker
+        let val = Value::Map(vec![]);
+        let encoded = prop.encode_value_ref_with_size(&val, true).unwrap();
+        // The body is one byte (0), prefixed with varint length (1).
+        assert_eq!(encoded, vec![1, 0]);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_variable_type_array_returns_error_specific() {
+        let prop = DocumentPropertyType::VariableTypeArray(vec![]);
+        let val = Value::Array(vec![]);
+        let result = prop.encode_value_ref_with_size(&val, true);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Array encode roundtrip (covers array arm of encode_value_with_size and
+    // encode_value_ref_with_size)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_encode_value_with_size_array_of_integers() {
+        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        let val = Value::Array(vec![Value::I64(1), Value::I64(2), Value::I64(3)]);
+        let result = prop.encode_value_with_size(val, true).unwrap();
+        // varint(3) + 3 * 8 bytes
+        assert_eq!(result.len(), 1 + 3 * 8);
+        assert_eq!(result[0], 3);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_array_of_integers() {
+        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        let val = Value::Array(vec![Value::I64(1), Value::I64(2)]);
+        let result = prop.encode_value_ref_with_size(&val, true).unwrap();
+        // varint(2) + 2 * 8 bytes
+        assert_eq!(result.len(), 1 + 2 * 8);
+        assert_eq!(result[0], 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // try_from_value_map() - extra branches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_try_from_value_map_string_without_sizes() {
+        let type_val = Value::Text("string".to_string());
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        let options = DocumentPropertyTypeParsingOptions::default();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert_eq!(
+            result,
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: None,
+            })
+        );
+    }
+
+    #[test]
+    fn test_try_from_value_map_object_type() {
+        let type_val = Value::Text("object".to_string());
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        let options = DocumentPropertyTypeParsingOptions::default();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert!(matches!(result, DocumentPropertyType::Object(_)));
+    }
+
+    #[test]
+    fn test_try_from_value_map_integer_only_min_positive() {
+        // sized, only min >= 0 => U64
+        let type_val = Value::Text("integer".to_string());
+        let min_val = Value::I64(10);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("minimum".to_string(), &min_val);
+        let options = DocumentPropertyTypeParsingOptions {
+            sized_integer_types: true,
+        };
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert_eq!(result, DocumentPropertyType::U64);
+    }
+
+    #[test]
+    fn test_try_from_value_map_integer_only_min_negative() {
+        // sized, only min < 0 => I64
+        let type_val = Value::Text("integer".to_string());
+        let min_val = Value::I64(-10);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("minimum".to_string(), &min_val);
+        let options = DocumentPropertyTypeParsingOptions {
+            sized_integer_types: true,
+        };
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert_eq!(result, DocumentPropertyType::I64);
+    }
+
+    #[test]
+    fn test_try_from_value_map_integer_only_max() {
+        // sized, only max <= u8::MAX => U8
+        let type_val = Value::Text("integer".to_string());
+        let max_val = Value::I64(200);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("maximum".to_string(), &max_val);
+        let options = DocumentPropertyTypeParsingOptions {
+            sized_integer_types: true,
+        };
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert_eq!(result, DocumentPropertyType::U8);
+    }
+
+    #[test]
+    fn test_try_from_value_map_integer_no_min_no_max_defaults_to_i64() {
+        // sized, no min/max, no enum => I64
+        let type_val = Value::Text("integer".to_string());
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        let options = DocumentPropertyTypeParsingOptions {
+            sized_integer_types: true,
+        };
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert_eq!(result, DocumentPropertyType::I64);
+    }
+
+    #[test]
+    fn test_try_from_value_map_integer_with_enum_min_max() {
+        // sized, enum values drive the integer selection
+        let type_val = Value::Text("integer".to_string());
+        let enum_val = Value::Array(vec![Value::I64(0), Value::I64(1), Value::I64(255)]);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("enum".to_string(), &enum_val);
+        let options = DocumentPropertyTypeParsingOptions {
+            sized_integer_types: true,
+        };
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        // min=0, max=255 => U8
+        assert_eq!(result, DocumentPropertyType::U8);
+    }
+
+    #[test]
+    fn test_try_from_value_map_integer_with_enum_single_value() {
+        // A single-element enum picks the unsigned type for that max
+        let type_val = Value::Text("integer".to_string());
+        let enum_val = Value::Array(vec![Value::I64(300)]);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("enum".to_string(), &enum_val);
+        let options = DocumentPropertyTypeParsingOptions {
+            sized_integer_types: true,
+        };
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        // 300 => U16
+        assert_eq!(result, DocumentPropertyType::U16);
+    }
+
+    #[test]
+    fn test_try_from_value_map_array_byte_array_non_identifier_media_type() {
+        // Non-identifier content-media-type => falls through to ByteArray
+        let type_val = Value::Text("array".to_string());
+        let byte_array_val = Value::Bool(true);
+        let media_type_val = Value::Text("application/octet-stream".to_string());
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("byteArray".to_string(), &byte_array_val);
+        map.insert("contentMediaType".to_string(), &media_type_val);
+        let options = DocumentPropertyTypeParsingOptions::default();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
+        assert!(matches!(result, DocumentPropertyType::ByteArray(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // find_integer_type_for_min_and_max_values() - negative boundaries
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_find_integer_type_negative_small_range_is_i8() {
+        assert_eq!(
+            find_integer_type_for_min_and_max_values(-50, 50),
+            DocumentPropertyType::I8
+        );
+    }
+
+    #[test]
+    fn test_find_integer_type_negative_medium_range_is_i16() {
+        assert_eq!(
+            find_integer_type_for_min_and_max_values(-1000, 1000),
+            DocumentPropertyType::I16
+        );
+    }
+
+    #[test]
+    fn test_find_integer_type_negative_large_range_is_i32() {
+        assert_eq!(
+            find_integer_type_for_min_and_max_values(-100_000, 100_000),
+            DocumentPropertyType::I32
+        );
+    }
+
+    #[test]
+    fn test_find_integer_type_very_large_negative_is_i64() {
+        assert_eq!(
+            find_integer_type_for_min_and_max_values(i64::MIN, 0),
+            DocumentPropertyType::I64
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // sanitize_value_mut() - additional branches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_sanitize_value_mut_byte_array_from_base64_fallback() {
+        // The hex decode should fail (contains +/= padding); base64 path should win
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: None,
+            max_size: None,
+        });
+        // "hello" in base64 is "aGVsbG8="
+        let mut val = Value::Text("aGVsbG8=".to_string());
+        prop.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Bytes(b"hello".to_vec()));
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_byte_array_size_constraint_rejects() {
+        // hex of 10 bytes, but min_size is 100 => value is left unchanged
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(100),
+            max_size: None,
+        });
+        let original = Value::Text("aabbccddee".to_string()); // 5 bytes
+        let mut val = original.clone();
+        prop.sanitize_value_mut(&mut val);
+        assert_eq!(val, original, "out-of-bounds byte array must remain text");
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_byte_array_fixed_size_32() {
+        // Fixed 32-byte hex string => Value::Bytes32 specialization
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(32),
+            max_size: Some(32),
+        });
+        // 64 hex chars = 32 bytes
+        let hex_str = "00".repeat(32);
+        let mut val = Value::Text(hex_str);
+        prop.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Bytes32(_)));
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_byte_array_fixed_size_20() {
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(20),
+            max_size: Some(20),
+        });
+        let hex_str = "ab".repeat(20);
+        let mut val = Value::Text(hex_str);
+        prop.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Bytes20(_)));
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_byte_array_fixed_size_36() {
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(36),
+            max_size: Some(36),
+        });
+        let hex_str = "cd".repeat(36);
+        let mut val = Value::Text(hex_str);
+        prop.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Bytes36(_)));
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_byte_array_undecodable_leaves_unchanged() {
+        // Neither valid hex (odd chars) nor valid base64 (has !@# chars)
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: None,
+            max_size: None,
+        });
+        let original = Value::Text("!@#not valid!".to_string());
+        let mut val = original.clone();
+        prop.sanitize_value_mut(&mut val);
+        assert_eq!(val, original);
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_object_nested() {
+        // Object sanitization should recurse into nested fields
+        let mut sub_fields = IndexMap::new();
+        sub_fields.insert(
+            "small".to_string(),
+            DocumentProperty {
+                property_type: DocumentPropertyType::U8,
+                required: true,
+                transient: false,
+            },
+        );
+        let prop = DocumentPropertyType::Object(sub_fields);
+
+        let mut val = Value::Map(vec![(
+            Value::Text("small".to_string()),
+            Value::U32(200), // will be sanitized to U8
+        )]);
+        prop.sanitize_value_mut(&mut val);
+        if let Value::Map(entries) = val {
+            assert_eq!(entries[0].1, Value::U8(200));
+        } else {
+            panic!("expected Map");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_array_elements() {
+        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        // Provide an array of Values
+        let original_vals = vec![Value::I64(1), Value::I64(2)];
+        let mut val = Value::Array(original_vals.clone());
+        prop.sanitize_value_mut(&mut val);
+        // Array path iterates every element; item_type.sanitize_value_mut is
+        // defined in array.rs and shouldn't panic on well-formed input.
+        if let Value::Array(items) = val {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("expected Array");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_variable_type_array_elements() {
+        let prop = DocumentPropertyType::VariableTypeArray(vec![
+            ArrayItemType::Integer,
+            ArrayItemType::Integer,
+        ]);
+        let mut val = Value::Array(vec![Value::I64(10), Value::I64(20)]);
+        prop.sanitize_value_mut(&mut val);
+        if let Value::Array(items) = val {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("expected Array");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_u128_already_correct_unchanged() {
+        let prop = DocumentPropertyType::U128;
+        let mut val = Value::U128(42);
+        prop.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::U128(42));
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_u8_out_of_range_unchanged() {
+        let prop = DocumentPropertyType::U8;
+        let original = Value::U16(300); // > u8::MAX
+        let mut val = original.clone();
+        prop.sanitize_value_mut(&mut val);
+        // Guard clause `n <= u8::MAX as u16` fails, so no conversion
+        assert_eq!(val, original);
+    }
+
+    #[test]
+    fn test_sanitize_value_mut_i8_out_of_range_unchanged() {
+        let prop = DocumentPropertyType::I8;
+        let original = Value::I16(500);
+        let mut val = original.clone();
+        prop.sanitize_value_mut(&mut val);
+        assert_eq!(val, original);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional numeric encode/decode roundtrips at boundaries through
+    // value_from_string()
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_value_from_string_i64_min_max() {
+        let prop = DocumentPropertyType::I64;
+        let min_str = i64::MIN.to_string();
+        let max_str = i64::MAX.to_string();
+        assert_eq!(
+            prop.value_from_string(&min_str).unwrap(),
+            Value::I64(i64::MIN)
+        );
+        assert_eq!(
+            prop.value_from_string(&max_str).unwrap(),
+            Value::I64(i64::MAX)
+        );
+    }
+
+    #[test]
+    fn test_value_from_string_u128_overflow_errors() {
+        let prop = DocumentPropertyType::U128;
+        // One larger than u128::MAX
+        let out_of_range = "340282366920938463463374607431768211456";
+        assert!(prop.value_from_string(out_of_range).is_err());
+    }
+
+    #[test]
+    fn test_value_from_string_i128_overflow_errors() {
+        let prop = DocumentPropertyType::I128;
+        // Way too small
+        let out_of_range = "-170141183460469231731687303715884105729";
+        assert!(prop.value_from_string(out_of_range).is_err());
+    }
+
+    #[test]
+    fn test_value_from_string_u8_negative_errors() {
+        let prop = DocumentPropertyType::U8;
+        assert!(prop.value_from_string("-1").is_err());
+    }
+
+    #[test]
+    fn test_value_from_string_f64_invalid_errors() {
+        let prop = DocumentPropertyType::F64;
+        assert!(prop.value_from_string("not_a_float").is_err());
+    }
+
+    #[test]
+    fn test_value_from_string_boolean_invalid_empty() {
+        let prop = DocumentPropertyType::Boolean;
+        assert!(prop.value_from_string("").is_err());
+    }
+
+    #[test]
+    fn test_value_from_string_string_at_exact_max_len_ok() {
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: Some(3),
+            max_length: Some(5),
+        });
+        // Boundary: exactly min and exactly max
+        assert!(prop.value_from_string("abc").is_ok());
+        assert!(prop.value_from_string("abcde").is_ok());
+    }
+
+    #[test]
+    fn test_value_from_string_byte_array_exact_boundaries() {
+        let prop = DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(2),
+            max_size: Some(4),
+        });
+        // 2 hex chars = 1 byte -> too small
+        assert!(prop.value_from_string("ab").is_err());
+        // 4 hex chars = 2 bytes -> ok
+        assert!(prop.value_from_string("abcd").is_ok());
+        // 8 hex chars = 4 bytes -> ok
+        assert!(prop.value_from_string("aabbccdd").is_ok());
+        // 10 hex chars = 5 bytes -> too big
+        assert!(prop.value_from_string("aabbccddee").is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // DocumentPropertyTypeParsingOptions::From<&DataContractConfig> test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_parsing_options_from_data_contract_config() {
+        let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+            .expect("should create default config");
+        let opts: DocumentPropertyTypeParsingOptions = (&config).into();
+        // Just verify that the conversion yields the same sized_integer_types
+        assert_eq!(opts.sized_integer_types, config.sized_integer_types());
+    }
+
+    // -----------------------------------------------------------------------
+    // get_field_type_matching_error() - producer of ValueWrongType
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_get_field_type_matching_error_is_value_wrong_type() {
+        let err = get_field_type_matching_error(&Value::U64(1));
+        match err {
+            DataContractError::ValueWrongType(msg) => {
+                assert!(msg.contains("document field type"));
+            }
+            other => panic!("expected ValueWrongType, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Integer encode/decode roundtrips for u128 boundary values
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_decode_i128_of_zero_roundtrip() {
+        let enc = DocumentPropertyType::encode_i128(0);
+        assert_eq!(DocumentPropertyType::decode_i128(&enc).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_encode_i128_preserves_sort_order() {
+        let values: Vec<i128> = vec![i128::MIN, -100, -1, 0, 1, 100, i128::MAX];
+        let encoded: Vec<Vec<u8>> = values
+            .iter()
+            .map(|v| DocumentPropertyType::encode_i128(*v))
+            .collect();
+        for window in encoded.windows(2) {
+            assert!(window[0] < window[1], "sort order not preserved for i128");
+        }
+    }
+
+    #[test]
+    fn test_encode_u128_preserves_sort_order() {
+        // sort order holds in the lower half of the u128 range
+        let values: Vec<u128> = vec![0, 1, 100, 1_000_000, i128::MAX as u128];
+        let encoded: Vec<Vec<u8>> = values
+            .iter()
+            .map(|v| DocumentPropertyType::encode_u128(*v))
+            .collect();
+        for window in encoded.windows(2) {
+            assert!(window[0] < window[1], "sort order not preserved for u128");
+        }
+    }
+
+    #[test]
+    fn test_encode_u32_preserves_sort_order() {
+        let values: Vec<u32> = vec![0, 1, 100, 1_000, i32::MAX as u32];
+        let encoded: Vec<Vec<u8>> = values
+            .iter()
+            .map(|v| DocumentPropertyType::encode_u32(*v))
+            .collect();
+        for window in encoded.windows(2) {
+            assert!(window[0] < window[1], "sort order not preserved for u32");
+        }
+    }
+
+    #[test]
+    fn test_encode_i16_preserves_sort_order() {
+        let values: Vec<i16> = vec![i16::MIN, -1000, -1, 0, 1, 1000, i16::MAX];
+        let encoded: Vec<Vec<u8>> = values
+            .iter()
+            .map(|v| DocumentPropertyType::encode_i16(*v))
+            .collect();
+        for window in encoded.windows(2) {
+            assert!(window[0] < window[1]);
+        }
+    }
+
+    #[test]
+    fn test_encode_i8_preserves_sort_order() {
+        let values: Vec<i8> = vec![i8::MIN, -100, -1, 0, 1, 100, i8::MAX];
+        let encoded: Vec<Vec<u8>> = values
+            .iter()
+            .map(|v| DocumentPropertyType::encode_i8(*v))
+            .collect();
+        for window in encoded.windows(2) {
+            assert!(window[0] < window[1]);
+        }
+    }
 }

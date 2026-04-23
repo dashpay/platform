@@ -1793,20 +1793,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/feature-flags-contract@workspace:*, @dashevo/feature-flags-contract@workspace:packages/feature-flags-contract":
-  version: 0.0.0-use.local
-  resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
-  dependencies:
-    "@dashevo/wasm-dpp": "workspace:*"
-    chai: "npm:^4.3.10"
-    dirty-chai: "npm:^2.0.1"
-    eslint: "npm:^9.18.0"
-    mocha: "npm:^11.1.0"
-    sinon: "npm:^18.0.1"
-    sinon-chai: "npm:^3.7.0"
-  languageName: unknown
-  linkType: soft
-
 "@dashevo/grpc-common@workspace:*, @dashevo/grpc-common@workspace:packages/js-grpc-common":
   version: 0.0.0-use.local
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
@@ -1865,7 +1851,6 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
-    "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
@@ -1940,6 +1925,11 @@ __metadata:
     typedoc: "npm:^0.28.17"
     typescript: "npm:^5.7.3"
     ultra-runner: "npm:^3.10.5"
+  dependenciesMeta:
+    ssh2@1.11.0:
+      built: false
+    ssh2@1.16.0:
+      built: false
   languageName: unknown
   linkType: soft
 

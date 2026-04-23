@@ -155,3 +155,142 @@ impl Drive {
         Ok(compacted_changes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::ProtocolError;
+    use grovedb::Element;
+
+    /// Limit=Some(0) must short-circuit before any GroveDB work and return an empty vec.
+    #[test]
+    fn limit_zero_short_circuits() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive
+            .fetch_compacted_nullifier_changes_v0(0, Some(0), None, platform_version)
+            .expect("limit 0 should return Ok([])");
+        assert_eq!(result.len(), 0);
+    }
+
+    /// Empty compacted tree should return empty vec.
+    #[test]
+    fn fetch_empty_compacted_tree_returns_empty() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive
+            .fetch_compacted_nullifier_changes_v0(0, None, None, platform_version)
+            .expect("empty tree fetch");
+        assert!(result.is_empty());
+    }
+
+    /// Querying from a block_height past the only compacted range should miss that
+    /// range entirely (because end_block < start_block_height).
+    #[test]
+    fn query_past_the_only_range_returns_none() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Force-insert one compacted entry spanning blocks 10..=20.
+        let compacted_path = shielded_compacted_nullifiers_path();
+        let mut key = Vec::with_capacity(16);
+        key.extend_from_slice(&10u64.to_be_bytes());
+        key.extend_from_slice(&20u64.to_be_bytes());
+        let serialized = CompactedNullifiers::new(vec![[1u8; 32]]).encode().unwrap();
+        drive
+            .grove
+            .insert(
+                compacted_path.as_ref(),
+                &key,
+                Element::new_item(serialized),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("insert compacted");
+
+        // Query from block 1000 — past the 10..=20 range.
+        let result = drive
+            .fetch_compacted_nullifier_changes_v0(1000, None, None, platform_version)
+            .expect("fetch");
+        assert_eq!(result.len(), 0, "range [10,20] does not cover 1000");
+    }
+
+    /// Querying from a block_height inside an existing range must return that range
+    /// (exercising the descending-query branch that covers `start_block_height`).
+    #[test]
+    fn query_inside_range_returns_it() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Force-insert a compacted entry spanning blocks 400..=600.
+        let compacted_path = shielded_compacted_nullifiers_path();
+        let mut key = Vec::with_capacity(16);
+        key.extend_from_slice(&400u64.to_be_bytes());
+        key.extend_from_slice(&600u64.to_be_bytes());
+        let nullifiers = vec![[0xAAu8; 32], [0xBBu8; 32]];
+        let serialized = CompactedNullifiers::new(nullifiers.clone())
+            .encode()
+            .unwrap();
+        drive
+            .grove
+            .insert(
+                compacted_path.as_ref(),
+                &key,
+                Element::new_item(serialized),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("insert");
+
+        let result = drive
+            .fetch_compacted_nullifier_changes_v0(505, None, None, platform_version)
+            .expect("fetch from block inside range");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].start_block, 400);
+        assert_eq!(result[0].end_block, 600);
+        assert_eq!(result[0].nullifiers.as_slice(), nullifiers.as_slice());
+    }
+
+    /// Inserting a garbage item payload under the compacted path triggers the
+    /// CorruptedSerialization branch in CompactedNullifiers::decode.
+    #[test]
+    fn fetch_rejects_undecodable_payload_in_compacted_tree() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let compacted_path = shielded_compacted_nullifiers_path();
+        let mut key = Vec::with_capacity(16);
+        key.extend_from_slice(&0u64.to_be_bytes());
+        key.extend_from_slice(&10u64.to_be_bytes());
+        // Garbage bytes that bincode cannot decode into Vec<[u8;32]>.
+        drive
+            .grove
+            .insert(
+                compacted_path.as_ref(),
+                &key,
+                Element::new_item(vec![0xFFu8; 3]),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("force-insert garbage item");
+
+        match drive.fetch_compacted_nullifier_changes_v0(0, None, None, platform_version) {
+            Err(Error::Protocol(b)) => match b.as_ref() {
+                ProtocolError::CorruptedSerialization(_) => {}
+                other => panic!("expected CorruptedSerialization, got: {:?}", other),
+            },
+            Err(other) => panic!("expected Error::Protocol, got: {:?}", other),
+            Ok(_) => panic!("should reject undecodable payload"),
+        }
+    }
+}

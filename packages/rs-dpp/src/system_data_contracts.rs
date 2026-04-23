@@ -32,10 +32,12 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(false);
                 Ok(config)
             }
+            // Reserved slot with no implementation. Any caller that reaches here
+            // has a bug (they should have short-circuited on `source()` returning
+            // `ContractReserved`). Return a harmless default config rather than
+            // panicking so this failure mode stays non-fatal.
             SystemDataContract::FeatureFlags => {
-                let mut config = DataContractConfig::default_for_version(platform_version)?;
-                config.set_sized_integer_types_enabled(false);
-                Ok(config)
+                DataContractConfig::default_for_version(platform_version)
             }
             SystemDataContract::DPNS => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;

@@ -411,4 +411,53 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    fn test_query_limit_zero_is_rejected_as_error() {
+        // limit == 0 routes through the `.ok_or(...)?` path, which propagates
+        // a Drive(Query(InvalidLimit(...))) error via `Err(...)`, not as a
+        // validation error inside the response.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenPreProgrammedDistributionsRequestV0 {
+            token_id: vec![0; 32],
+            start_at_info: None,
+            limit: Some(0),
+            prove: false,
+        };
+
+        let err = platform
+            .query_token_pre_programmed_distributions_v0(request, &state, version)
+            .expect_err("limit=0 should propagate an Err");
+
+        // Accept any Drive/Query related error; we just want to verify the
+        // `.ok_or(...)?` path is exercised.
+        let msg = format!("{:?}", err);
+        assert!(
+            msg.contains("InvalidLimit") || msg.contains("limit"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_query_limit_above_max_is_rejected_as_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenPreProgrammedDistributionsRequestV0 {
+            token_id: vec![0; 32],
+            start_at_info: None,
+            limit: Some((u16::MAX as u32) + 1),
+            prove: false,
+        };
+
+        let err = platform
+            .query_token_pre_programmed_distributions_v0(request, &state, version)
+            .expect_err("oversized limit should propagate an Err");
+
+        let msg = format!("{:?}", err);
+        assert!(
+            msg.contains("InvalidLimit") || msg.contains("limit"),
+            "unexpected error: {msg}"
+        );
+    }
 }

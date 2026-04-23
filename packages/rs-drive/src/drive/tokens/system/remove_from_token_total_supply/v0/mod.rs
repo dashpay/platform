@@ -256,6 +256,46 @@ mod tests {
     }
 
     #[test]
+    fn should_estimate_costs_without_mutating_state_when_apply_false() {
+        // Exercise the estimated_costs_only_with_layer_info branch and the
+        // u64::MAX placeholder path inside operations_v0.
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, block_info) = setup_token_with_supply(5_000);
+
+        let app_hash_before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        let fees = drive
+            .remove_from_token_total_supply_v0(
+                token_id,
+                100,
+                &block_info,
+                false, // apply=false -> estimation branch
+                None,
+                platform_version,
+            )
+            .expect("expected estimation to succeed");
+
+        let app_hash_after = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        assert_eq!(app_hash_before, app_hash_after);
+        assert!(fees.processing_fee > 0);
+
+        // Supply unchanged
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(5_000));
+    }
+
+    #[test]
     fn should_error_when_removing_from_non_existent_token() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();

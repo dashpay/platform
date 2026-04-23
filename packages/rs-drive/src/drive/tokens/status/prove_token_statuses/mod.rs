@@ -122,3 +122,44 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod dispatcher_tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    /// An empty token id list produces a PathQuery with limit=0, which GroveDB
+    /// rejects as "proved path queries can not be for limit 0". This test
+    /// pins that rejection so the downstream error-propagation branch is covered.
+    #[test]
+    fn prove_empty_token_list_errors_from_grovedb() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let err = drive
+            .prove_token_statuses(&[], None, platform_version)
+            .expect_err("empty list should bubble up a GroveDB InvalidQuery");
+        // The exact variant is GroveDB; we just verify the error propagated and
+        // did not silently return a proof of nothing.
+        let _ = err;
+    }
+
+    /// prove_token_statuses_with_costs returns both proof bytes and a FeeResult
+    /// against a real stateful query.
+    #[test]
+    fn prove_with_costs_returns_fee_result() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let token_id = [0x99u8; 32];
+        let (proof, _fees) = drive
+            .prove_token_statuses_with_costs(
+                &[token_id],
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("prove with costs");
+        assert!(!proof.is_empty());
+    }
+}

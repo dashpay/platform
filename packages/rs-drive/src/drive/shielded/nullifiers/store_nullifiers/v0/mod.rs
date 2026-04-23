@@ -150,3 +150,165 @@ impl Drive {
         Ok(false)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::shielded::nullifiers::queries::{
+        shielded_compacted_nullifiers_path_vec, shielded_recent_nullifiers_path_vec,
+    };
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use grovedb::{PathQuery, Query, SizedQuery};
+
+    /// Storing an empty nullifier list must be a no-op: nothing is written,
+    /// compaction isn't triggered, and no error is returned.
+    #[test]
+    fn store_empty_nullifiers_is_noop() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .store_nullifiers_for_block_v0(&[], 10, 1_000, None, platform_version)
+            .expect("empty store should succeed");
+
+        // Nothing should be stored in the recent-nullifiers tree.
+        let path = shielded_recent_nullifiers_path_vec();
+        let mut query = Query::new();
+        query.insert_all();
+        let pq = PathQuery::new(path, SizedQuery::new(query, None, None));
+        let (results, _) = drive
+            .grove_get_path_query(
+                &pq,
+                None,
+                grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("query should succeed");
+        assert_eq!(results.to_key_elements().len(), 0);
+    }
+
+    /// Storing a single batch of nullifiers for a block must round-trip via
+    /// fetch_recent_nullifier_changes without triggering compaction.
+    #[test]
+    fn store_single_block_round_trips_via_fetch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nullifiers = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+
+        drive
+            .store_nullifiers_for_block_v0(&nullifiers, 42, 1_000, None, platform_version)
+            .expect("store should succeed");
+
+        let changes = drive
+            .fetch_recent_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch should succeed");
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].block_height, 42);
+        assert_eq!(changes[0].nullifiers.as_slice(), nullifiers.as_slice());
+
+        // Nothing should have been compacted (we only stored one block).
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch compacted should succeed");
+        assert_eq!(compacted.len(), 0);
+    }
+
+    /// Exceeding the max_nullifiers_before_compaction threshold should trigger
+    /// compaction: recent-nullifiers tree is drained, compacted tree has one entry.
+    #[test]
+    fn compaction_triggers_on_nullifier_threshold() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Derive the compaction threshold from the active platform version so
+        // this test stays correct if the constant is bumped in a future
+        // drive version.
+        let max_nullifiers = platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_nullifiers_before_compaction;
+
+        let nullifiers: Vec<[u8; 32]> = (0..max_nullifiers)
+            .map(|i| [(i & 0xff) as u8; 32])
+            .collect();
+
+        drive
+            .store_nullifiers_for_block_v0(&nullifiers, 1, 1_000, None, platform_version)
+            .expect("first store should succeed");
+
+        // First store doesn't trigger because count=0 before, sum=0 before.
+        // new_sum = 0 + max_nullifiers >= max_nullifiers, so compaction IS
+        // triggered on the first block. That means recent is empty and
+        // compacted has one entry spanning [1,1].
+        let recent = drive
+            .fetch_recent_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch recent");
+        assert_eq!(
+            recent.len(),
+            0,
+            "recent should be empty after threshold-triggered compaction"
+        );
+
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch compacted");
+        assert_eq!(compacted.len(), 1);
+        assert_eq!(compacted[0].start_block, 1);
+        assert_eq!(compacted[0].end_block, 1);
+
+        // The compacted entry key must exist in GroveDB.
+        let path = shielded_compacted_nullifiers_path_vec();
+        let mut query = Query::new();
+        query.insert_all();
+        let pq = PathQuery::new(path, SizedQuery::new(query, None, None));
+        let (results, _) = drive
+            .grove_get_path_query(
+                &pq,
+                None,
+                grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("query compacted");
+        assert_eq!(results.to_key_elements().len(), 1);
+    }
+
+    /// Storing under a transaction (Some(&tx)) should commit the nullifiers
+    /// only after the transaction commits.
+    #[test]
+    fn store_within_transaction_commits_correctly() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .store_nullifiers_for_block_v0(
+                &[[9u8; 32]],
+                5,
+                1_000,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("store in tx");
+
+        // Without committing, the non-transactional reader should see nothing.
+        let changes_no_tx = drive
+            .fetch_recent_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch without tx");
+        assert_eq!(changes_no_tx.len(), 0);
+
+        drive
+            .commit_transaction(transaction, &platform_version.drive)
+            .expect("commit");
+
+        let changes = drive
+            .fetch_recent_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch after commit");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].block_height, 5);
+    }
+}

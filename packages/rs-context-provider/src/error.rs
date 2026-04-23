@@ -29,3 +29,9 @@ pub enum ContextProviderError {
     #[error("async error: {0}")]
     AsyncError(String),
 }
+
+impl From<dash_async::AsyncError> for ContextProviderError {
+    fn from(error: dash_async::AsyncError) -> Self {
+        ContextProviderError::AsyncError(error.to_string())
+    }
+}
