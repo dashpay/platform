@@ -128,5 +128,13 @@
   "dependencies": {
     "dompurify": "^3.3.2",
     "node-gyp": "^10.0.1"
+  },
+  "dependenciesMeta": {
+    "ssh2@1.11.0": {
+      "built": false
+    },
+    "ssh2@1.16.0": {
+      "built": false
+    }
   }
 }
