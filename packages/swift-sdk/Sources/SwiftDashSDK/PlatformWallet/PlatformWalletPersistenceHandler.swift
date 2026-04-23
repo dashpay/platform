@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import DashSDKFFI
 
 /// Bridges FFI persistence callbacks to SwiftData storage.
 ///
@@ -572,41 +573,25 @@ public class PlatformWalletPersistenceHandler {
 
             // Private-key handling.
             //
-            // `KeychainManager.shared` is `@MainActor`-pinned but
-            // exposes `storePrivateKeyNonisolated` for exactly this
-            // case — the Rust persister callback runs on the
-            // persister thread, not the main actor. The underlying
-            // Security-framework APIs are thread-safe and the
-            // manager's state is `let`-only, so the off-actor write
-            // is sound.
-            switch entry.privateKey {
-            case .none:
+            // No bytes cross the FFI — when the entry carries both a
+            // wallet_id and derivation indices, Swift re-derives the
+            // 32-byte ECDSA scalar from the named wallet's mnemonic
+            // and stores it in the keychain under the serialized
+            // derivation path. Watch-only entries (missing either
+            // breadcrumb) clear any prior stored identifier.
+            if let walletIdForKey = entry.walletId,
+                let indices = entry.derivationIndices {
+                let keychainId = deriveAndStoreIdentityKey(
+                    entry: entry,
+                    walletId: walletIdForKey,
+                    indices: indices,
+                    publicKeyHex: entry.publicKeyData.toHexString(),
+                    publicKeyHashHex: entry.publicKeyHash.toHexString(),
+                    identityIdBase58: identityHex
+                )
+                row.privateKeyKeychainIdentifier = keychainId
+            } else {
                 row.privateKeyKeychainIdentifier = nil
-            case .clear(let bytes):
-                // `storePrivateKeyNonisolated` idempotently overwrites
-                // any existing slot for this (identity_id, key_id),
-                // so repeated sync callbacks stamping the same key
-                // are safe. Returns the Keychain identifier or nil
-                // on Security-framework failure.
-                if let keychainId = KeychainManager.shared.storePrivateKeyNonisolated(
-                    bytes,
-                    identityId: entry.identityId,
-                    keyIndex: row.keyId
-                ) {
-                    row.privateKeyKeychainIdentifier = keychainId
-                } else {
-                    // Leave any prior identifier in place so we
-                    // don't regress the row — the caller can retry
-                    // via the `@MainActor` path later.
-                    print("⚠️ Keychain write failed for identity \(entry.identityId.toHexString().prefix(12))… key \(row.keyId)")
-                }
-            case .derived(_, let path):
-                // Seed-derived — no Keychain write needed because the
-                // seed is already stored at the wallet level. Flag
-                // presence with a namespaced `"derived:"` identifier
-                // so downstream `hasPrivateKeyIdentifier` checks still
-                // report the key as usable for signing via derivation.
-                row.privateKeyKeychainIdentifier = "derived:\(path)"
             }
 
             row.lastAccessed = Date()
@@ -629,6 +614,145 @@ public class PlatformWalletPersistenceHandler {
         try? backgroundContext.save()
     }
 
+    // MARK: - Identity private-key derivation
+
+    /// Derive the 32-byte ECDSA scalar for an identity key from the
+    /// owning wallet's mnemonic and stash it in the keychain at the
+    /// serialized DIP-9 derivation path. Returns the keychain
+    /// account string on success (which `PersistentPublicKey.priv-
+    /// ateKeyKeychainIdentifier` stores) or `nil` if anything in the
+    /// pipeline fails — mnemonic missing, network unresolved, path
+    /// build error, FFI derivation error, or keychain write failure.
+    ///
+    /// Idempotent per `(wallet, identity_index, key_index)` triple:
+    /// repeated persister callbacks for the same key overwrite
+    /// cleanly via `storeIdentityPrivateKey`'s delete-then-add.
+    ///
+    /// Runs off the main actor (this whole handler fires from the
+    /// Rust persister thread); every touched API is either
+    /// `nonisolated` or backed by thread-safe primitives.
+    private func deriveAndStoreIdentityKey(
+        entry: IdentityKeyEntrySnapshot,
+        walletId: Data,
+        indices: (identityIndex: UInt32, keyIndex: UInt32),
+        publicKeyHex: String,
+        publicKeyHashHex: String,
+        identityIdBase58: String
+    ) -> String? {
+        // 1. Resolve the wallet's network from SwiftData. We need it
+        //    to feed `KeyDerivation.getIdentityAuthenticationPath`
+        //    so the path chooses the right `coin_type` (mainnet vs
+        //    testnet).
+        let walletDescriptor = FetchDescriptor<PersistentWallet>(
+            predicate: PersistentWallet.predicate(walletId: walletId)
+        )
+        guard
+            let persistentWallet = try? backgroundContext.fetch(walletDescriptor).first
+        else {
+            print("⚠️ deriveAndStoreIdentityKey: wallet row not found for \(walletId.prefix(4).toHexString())…")
+            return nil
+        }
+        let network: KeyWalletNetwork = keyWalletNetwork(fromName: persistentWallet.network)
+
+        // 2. Fetch the mnemonic for this wallet from the keychain.
+        //    WalletStorage stores it under `wallet.mnemonic.<hex>`
+        //    in the unified `org.dashfoundation.wallet` service.
+        let mnemonic: String
+        do {
+            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+        } catch {
+            print("⚠️ deriveAndStoreIdentityKey: mnemonic missing for wallet \(walletId.prefix(4).toHexString())…: \(error.localizedDescription)")
+            return nil
+        }
+
+        // 3. Mnemonic → 64-byte BIP39 seed.
+        let seed: Data
+        do {
+            seed = try Mnemonic.toSeed(mnemonic: mnemonic)
+        } catch {
+            print("⚠️ deriveAndStoreIdentityKey: mnemonic-to-seed failed: \(error.localizedDescription)")
+            return nil
+        }
+
+        // 4. Build the DIP-9 authentication path. The string form
+        //    doubles as the keychain account suffix so the explorer
+        //    can render it.
+        let derivationPath: String
+        do {
+            derivationPath = try KeyDerivation.getIdentityAuthenticationPath(
+                network: network,
+                identityIndex: indices.identityIndex,
+                keyIndex: indices.keyIndex
+            )
+        } catch {
+            print("⚠️ deriveAndStoreIdentityKey: path build failed: \(error.localizedDescription)")
+            return nil
+        }
+
+        // 5. Derive the 32-byte scalar via the FFI bridge. The
+        //    bridge writes into a caller-provided buffer; we zero
+        //    the scratch `Data` on the way out for hygiene (the
+        //    keychain item is the real home for the bytes).
+        var privateKey = Data(count: 32)
+        let rc: Int32 = privateKey.withUnsafeMutableBytes { pkBytes -> Int32 in
+            guard let pkPtr = pkBytes.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+            return seed.withUnsafeBytes { seedBytes -> Int32 in
+                guard let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress else {
+                    return -1
+                }
+                return derivationPath.withCString { pathCStr in
+                    key_wallet_derive_private_key_from_seed(seedPtr, pathCStr, pkPtr)
+                }
+            }
+        }
+        guard rc == 0 else {
+            print("⚠️ deriveAndStoreIdentityKey: FFI derive failed (rc=\(rc))")
+            // Zero out any partial write before returning.
+            privateKey.resetBytes(in: 0..<privateKey.count)
+            return nil
+        }
+
+        // 6. Stash in the keychain. `KeychainManager.shared` is the
+        //    single app-wide instance backed by
+        //    `org.dashfoundation.wallet`.
+        let metadata = KeychainManager.IdentityPrivateKeyMetadata(
+            identityId: identityIdBase58,
+            keyId: entry.keyId,
+            walletId: walletId.toHexString(),
+            identityIndex: indices.identityIndex,
+            keyIndex: indices.keyIndex,
+            derivationPath: derivationPath,
+            publicKey: publicKeyHex,
+            publicKeyHash: publicKeyHashHex
+        )
+        let account = KeychainManager.shared.storeIdentityPrivateKey(
+            privateKey,
+            derivationPath: derivationPath,
+            metadata: metadata
+        )
+
+        // 7. Scrub the local copy regardless of outcome.
+        privateKey.resetBytes(in: 0..<privateKey.count)
+
+        if account == nil {
+            print("⚠️ deriveAndStoreIdentityKey: keychain write failed for \(derivationPath)")
+        }
+        return account
+    }
+
+    /// Map `PersistentWallet.network` string back onto
+    /// `KeyWalletNetwork` for `KeyDerivation` calls. Unknown
+    /// values fall back to testnet — every DIP-9 helper already
+    /// handles Testnet / Devnet / Regtest via the same coin type.
+    private func keyWalletNetwork(fromName name: String) -> KeyWalletNetwork {
+        switch name.lowercased() {
+        case "mainnet": return .mainnet
+        case "devnet": return .devnet
+        case "regtest": return .testnet
+        default: return .testnet
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -647,9 +771,10 @@ public class PlatformWalletPersistenceHandler {
     }
 
     /// Swift-side snapshot of `IdentityKeyEntryFFI` — public-key
-    /// payload copied to owned `Data`, private-key variant decoded
-    /// into a Swift enum. Same rationale as `IdentityEntrySnapshot`:
-    /// decouple lifetime from the callback window.
+    /// payload copied to owned `Data`, derivation breadcrumb +
+    /// precomputed pubkey hash captured as scalars. Same rationale
+    /// as `IdentityEntrySnapshot`: decouple lifetime from the
+    /// callback window.
     struct IdentityKeyEntrySnapshot {
         let identityId: Data
         let keyId: UInt32
@@ -659,16 +784,12 @@ public class PlatformWalletPersistenceHandler {
         let readOnly: Bool
         let disabledAt: UInt64?
         let publicKeyData: Data
-        let privateKey: IdentityPrivateKeySnapshot
-    }
-
-    /// Decoded form of the Rust `PrivateKeyKindFFI` enum. Swift
-    /// handlers switch on this to drive Keychain writes vs. noting
-    /// seed-derived key metadata.
-    enum IdentityPrivateKeySnapshot {
-        case none
-        case clear(Data)
-        case derived(walletId: Data, derivationPath: String)
+        let publicKeyHash: Data
+        /// Owning wallet if this key is derivable from one we control.
+        let walletId: Data?
+        /// DIP-9 `(identity_index, key_index)` pair. Present iff the
+        /// client is expected to re-derive the private key locally.
+        let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -1703,24 +1824,11 @@ private func persistIdentityKeysCallback(
             } else {
                 pubKey = Data()
             }
-            let privateKey: PlatformWalletPersistenceHandler.IdentityPrivateKeySnapshot
-            switch e.private_key_kind {
-            case 0:
-                privateKey = .none
-            case 1:
-                privateKey = .clear(dataFromTuple32(e.private_key_bytes))
-            case 2:
-                let path = e.private_key_derivation_path.map {
-                    String(cString: $0)
-                } ?? ""
-                privateKey = .derived(
-                    walletId: dataFromTuple32(e.private_key_wallet_id),
-                    derivationPath: path
-                )
-            default:
-                // Future-unknown discriminant — be conservative.
-                privateKey = .none
-            }
+            let walletId: Data? = e.wallet_id_is_some ? dataFromTuple32(e.wallet_id) : nil
+            let indices: (identityIndex: UInt32, keyIndex: UInt32)? =
+                e.derivation_indices_is_some
+                    ? (e.identity_index, e.key_index)
+                    : nil
             upserts.append(.init(
                 identityId: identityId,
                 keyId: e.key_id,
@@ -1730,7 +1838,9 @@ private func persistIdentityKeysCallback(
                 readOnly: e.read_only,
                 disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
                 publicKeyData: pubKey,
-                privateKey: privateKey
+                publicKeyHash: dataFromTuple20(e.public_key_hash),
+                walletId: walletId,
+                derivationIndices: indices
             ))
         }
     }
@@ -1754,6 +1864,15 @@ private func persistIdentityKeysCallback(
 /// fields as `(UInt8, UInt8, ...)` tuples.
 @inline(__always)
 private func dataFromTuple32(_ tuple: FFIByteTuple32) -> Data {
+    var value = tuple
+    return Swift.withUnsafeBytes(of: &value) { Data($0) }
+}
+
+/// Copy a fixed 20-byte C tuple into an owned `Data`. Identical
+/// idiom to `dataFromTuple32`, just for RIPEMD160(SHA256) pubkey
+/// hashes on identity-key entries.
+@inline(__always)
+private func dataFromTuple20(_ tuple: FFIByteTuple20) -> Data {
     var value = tuple
     return Swift.withUnsafeBytes(of: &value) { Data($0) }
 }

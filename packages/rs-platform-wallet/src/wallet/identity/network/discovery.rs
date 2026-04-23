@@ -215,6 +215,8 @@ impl IdentityWallet {
                                 PrivateKeyData::AtWalletDerivationPath {
                                     wallet_id,
                                     derivation_path: full_path,
+                                    identity_index,
+                                    key_index: MASTER_KEY_INDEX,
                                 },
                                 &self.persister,
                             );

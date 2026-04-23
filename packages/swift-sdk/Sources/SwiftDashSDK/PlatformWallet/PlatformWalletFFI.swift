@@ -803,16 +803,29 @@ struct IdentityEntryFFI {
     var wallet_id: FFIByteTuple32
 }
 
+/// 20-byte C tuple — mirrors a single `[u8; 20]` on the Rust side.
+/// Used for RIPEMD160(SHA256) public-key hashes on identity keys.
+typealias FFIByteTuple20 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8
+)
+
 /// Mirrors `IdentityKeyEntryFFI` from
 /// `rs-platform-wallet-ffi/src/identity_persistence.rs`.
 ///
-/// `private_key_kind` decodes as:
-///   0 → None (ignore the `private_key_*` columns)
-///   1 → Clear (`private_key_bytes` holds raw 32-byte key material)
-///   2 → AtWalletDerivationPath (`private_key_wallet_id` +
-///       `private_key_derivation_path` identify the seed-derived
-///       key; no Keychain write needed because the seed itself is
-///       already stored at the wallet level).
+/// No private-key bytes cross this boundary — when
+/// `wallet_id_is_some` + `derivation_indices_is_some` are both
+/// true, the client should re-derive the 32-byte ECDSA scalar from
+/// the named wallet's mnemonic at the DIP-9 identity authentication
+/// path `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
+/// persist it to the keychain on its own side. Any of those flags
+/// false = watch-only.
+///
+/// `public_key_hash` is the precomputed 20-byte
+/// RIPEMD160(SHA256) of the public-key bytes — convenience so
+/// clients without a RIPEMD-160 implementation can still attach
+/// the hash as metadata on the keychain item.
 struct IdentityKeyEntryFFI {
     var identity_id: FFIByteTuple32
     var key_id: UInt32
@@ -824,10 +837,12 @@ struct IdentityKeyEntryFFI {
     var disabled_at: UInt64
     var public_key_data_ptr: UnsafeMutablePointer<UInt8>?
     var public_key_data_len: Int
-    var private_key_kind: UInt8
-    var private_key_bytes: FFIByteTuple32
-    var private_key_wallet_id: FFIByteTuple32
-    var private_key_derivation_path: UnsafeMutablePointer<CChar>?
+    var public_key_hash: FFIByteTuple20
+    var wallet_id_is_some: Bool
+    var wallet_id: FFIByteTuple32
+    var derivation_indices_is_some: Bool
+    var identity_index: UInt32
+    var key_index: UInt32
 }
 
 /// Mirrors `IdentityKeyRemovalFFI` from

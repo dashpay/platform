@@ -12,10 +12,17 @@ use zeroize::Zeroizing;
 pub enum PrivateKeyData {
     /// Raw key bytes in memory (zeroized on drop).
     Clear(Zeroizing<[u8; 32]>),
-    /// Derive on-demand from wallet seed at this path.
+    /// Derive on-demand from wallet seed at this path. Carries the
+    /// DIP-9 `(identity_index, key_index)` pair alongside the fully
+    /// materialized `derivation_path` so callers that need either
+    /// form get it without reparsing.
     AtWalletDerivationPath {
         wallet_id: [u8; 32],
         derivation_path: DerivationPath,
+        /// DIP-9 identity index.
+        identity_index: u32,
+        /// DIP-9 key index within the identity.
+        key_index: u32,
     },
 }
 

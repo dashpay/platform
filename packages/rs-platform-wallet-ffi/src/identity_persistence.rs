@@ -23,7 +23,6 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use platform_wallet::changeset::{IdentityEntry, IdentityKeyEntry};
-use platform_wallet::wallet::identity::types::key_storage::PrivateKeyData;
 
 // `IdentityStatus` discriminants are mirrored on the Swift side. Keep
 // this encoding in sync with the `repr(u8)` order in
@@ -58,33 +57,14 @@ pub struct IdentityEntryFFI {
     pub wallet_id: [u8; 32],
 }
 
-/// Private-key encoding discriminant on [`IdentityKeyEntryFFI`].
-///
-/// The Rust side's [`PrivateKeyData`] enum carries either raw 32-byte
-/// key material (`Clear`) or a seed-derivation reference
-/// (`AtWalletDerivationPath`). We expose both via a tag + the fields
-/// that matter for each variant; ignore anything outside the variant's
-/// column set when decoding.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrivateKeyKindFFI {
-    /// `has_private_key == false`. The `private_key_*` columns are
-    /// unset; Swift should clear `privateKeyKeychainIdentifier`.
-    None = 0,
-    /// Raw 32-byte key material in `private_key_bytes`. Swift should
-    /// store it in the Keychain and record the resulting identifier
-    /// on `PersistentPublicKey.privateKeyKeychainIdentifier`.
-    Clear = 1,
-    /// Seed-derived key. `private_key_wallet_id` identifies the
-    /// wallet and `private_key_derivation_path` is the BIP-32 path
-    /// as a string (e.g. `m/9'/5'/...`). Swift can persist the path
-    /// string (or re-derive lazily at signing time); no Keychain
-    /// write is needed because the seed already lives in the Keychain
-    /// at the wallet level.
-    AtWalletDerivationPath = 2,
-}
-
 /// Flat C mirror of [`IdentityKeyEntry`] for forwarding across FFI.
+///
+/// No private-key bytes cross this boundary — the client receives the
+/// DPP public key plus a `(wallet_id, identity_index, key_index)`
+/// breadcrumb and is expected to re-derive the private half locally
+/// from the owning wallet's mnemonic. `public_key_hash` is the
+/// precomputed RIPEMD160(SHA256) of the pubkey so clients without a
+/// RIPEMD-160 implementation can still round-trip it into the keychain.
 ///
 /// `public_key_data_ptr` / `public_key_data_len` own a heap-allocated
 /// copy of the public-key bytes (compressed secp256k1 for ECDSA, hash
@@ -107,18 +87,21 @@ pub struct IdentityKeyEntryFFI {
     pub disabled_at: u64,
     pub public_key_data_ptr: *mut u8,
     pub public_key_data_len: usize,
+    /// 20-byte RIPEMD160(SHA256) of the public-key bytes.
+    pub public_key_hash: [u8; 20],
 
-    // Private-key payload. Layout mirrors [`PrivateKeyKindFFI`]:
-    // - `None`: every `private_key_*` column is meaningless.
-    // - `Clear`: `private_key_bytes` holds the raw 32 bytes.
-    // - `AtWalletDerivationPath`: `private_key_wallet_id` + the
-    //   NUL-terminated `private_key_derivation_path` C-string are
-    //   populated. The path is heap-owned and released by
-    //   `free_identity_key_entry_ffi`.
-    pub private_key_kind: u8,
-    pub private_key_bytes: [u8; 32],
-    pub private_key_wallet_id: [u8; 32],
-    pub private_key_derivation_path: *mut c_char,
+    // Derivation breadcrumb. When both `wallet_id_is_some` and
+    // `derivation_indices_is_some` are true the client should
+    // re-derive the 32-byte ECDSA scalar from the named wallet's
+    // mnemonic at the DIP-9 identity authentication path
+    // `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
+    // persist it locally. When either flag is false the key is
+    // watch-only.
+    pub wallet_id_is_some: bool,
+    pub wallet_id: [u8; 32],
+    pub derivation_indices_is_some: bool,
+    pub identity_index: u32,
+    pub key_index: u32,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -190,35 +173,16 @@ impl IdentityKeyEntryFFI {
             None => (false, 0u64),
         };
 
-        // Decode the private-key variant. Always initialize the
-        // column for the chosen variant; leave the rest zeroed so
-        // the Swift decoder's switch on `private_key_kind` ignores
-        // the unused fields.
-        let mut private_key_kind = PrivateKeyKindFFI::None as u8;
-        let mut private_key_bytes = [0u8; 32];
-        let mut private_key_wallet_id = [0u8; 32];
-        let mut private_key_derivation_path: *mut c_char = ptr::null_mut();
+        let (wallet_id_is_some, wallet_id) = match entry.wallet_id {
+            Some(id) => (true, id),
+            None => (false, [0u8; 32]),
+        };
 
-        if let Some(pk) = &entry.private_key {
-            match pk {
-                PrivateKeyData::Clear(zeroizing_bytes) => {
-                    private_key_kind = PrivateKeyKindFFI::Clear as u8;
-                    private_key_bytes.copy_from_slice(zeroizing_bytes.as_ref());
-                }
-                PrivateKeyData::AtWalletDerivationPath {
-                    wallet_id,
-                    derivation_path,
-                } => {
-                    private_key_kind = PrivateKeyKindFFI::AtWalletDerivationPath as u8;
-                    private_key_wallet_id = *wallet_id;
-                    // Paths never contain NUL; fall back to null on
-                    // the impossible-in-practice failure.
-                    private_key_derivation_path = CString::new(derivation_path.to_string())
-                        .map(|c| c.into_raw())
-                        .unwrap_or(ptr::null_mut());
-                }
-            }
-        }
+        let (derivation_indices_is_some, identity_index, key_index) = match entry.derivation_indices
+        {
+            Some(idx) => (true, idx.identity_index, idx.key_index),
+            None => (false, 0, 0),
+        };
 
         Self {
             identity_id: entry.identity_id.to_buffer(),
@@ -231,10 +195,12 @@ impl IdentityKeyEntryFFI {
             disabled_at,
             public_key_data_ptr,
             public_key_data_len: pk_len,
-            private_key_kind,
-            private_key_bytes,
-            private_key_wallet_id,
-            private_key_derivation_path,
+            public_key_hash: entry.public_key_hash,
+            wallet_id_is_some,
+            wallet_id,
+            derivation_indices_is_some,
+            identity_index,
+            key_index,
         }
     }
 }
@@ -292,17 +258,9 @@ pub unsafe fn free_identity_key_entry_ffi(entry: &mut IdentityKeyEntryFFI) {
         entry.public_key_data_ptr = ptr::null_mut();
         entry.public_key_data_len = 0;
     }
-    if !entry.private_key_derivation_path.is_null() {
-        let _ = unsafe { CString::from_raw(entry.private_key_derivation_path) };
-        entry.private_key_derivation_path = ptr::null_mut();
-    }
-    // Best-effort zero of the raw private key bytes on release.
-    // This doesn't substitute for full `Zeroizing` coverage — the
-    // Rust side keeps the original in `Zeroizing<[u8; 32]>` — but
-    // it closes the copy we made for the callback window.
-    for byte in entry.private_key_bytes.iter_mut() {
-        *byte = 0;
-    }
+    // No private-key heap allocations to reclaim — the new FFI shape
+    // carries only scalar derivation breadcrumbs, not an owned path
+    // string or key-material buffer.
 }
 
 #[cfg(test)]
@@ -312,9 +270,9 @@ mod tests {
     use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
-    use platform_wallet::changeset::{IdentityEntry, IdentityKeyEntry};
-    use platform_wallet::wallet::identity::types::key_storage::PrivateKeyData;
-    use zeroize::Zeroizing;
+    use platform_wallet::changeset::{
+        IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    };
 
     #[test]
     fn test_identity_entry_ffi_round_trip() {
@@ -374,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn test_identity_key_entry_ffi_clear() {
+    fn test_identity_key_entry_ffi_with_derivation_indices() {
         let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 5,
             purpose: Purpose::AUTHENTICATION,
@@ -389,7 +347,12 @@ mod tests {
             identity_id: Identifier::from([2u8; 32]),
             key_id: 5,
             public_key,
-            private_key: Some(PrivateKeyData::Clear(Zeroizing::new([0xCD; 32]))),
+            public_key_hash: [0x77; 20],
+            wallet_id: Some([0x9A; 32]),
+            derivation_indices: Some(IdentityKeyDerivationIndices {
+                identity_index: 3,
+                key_index: 5,
+            }),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [2u8; 32]);
@@ -403,16 +366,18 @@ mod tests {
         let data_slice =
             unsafe { std::slice::from_raw_parts(ffi.public_key_data_ptr, ffi.public_key_data_len) };
         assert_eq!(data_slice, &[0xAB; 33]);
-        assert_eq!(ffi.private_key_kind, PrivateKeyKindFFI::Clear as u8);
-        assert_eq!(ffi.private_key_bytes, [0xCD; 32]);
-        assert!(ffi.private_key_derivation_path.is_null());
+        assert_eq!(ffi.public_key_hash, [0x77; 20]);
+        assert!(ffi.wallet_id_is_some);
+        assert_eq!(ffi.wallet_id, [0x9A; 32]);
+        assert!(ffi.derivation_indices_is_some);
+        assert_eq!(ffi.identity_index, 3);
+        assert_eq!(ffi.key_index, 5);
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
         assert!(ffi.public_key_data_ptr.is_null());
-        assert_eq!(ffi.private_key_bytes, [0u8; 32]);
     }
 
     #[test]
-    fn test_identity_key_entry_ffi_none_private_key() {
+    fn test_identity_key_entry_ffi_watch_only() {
         let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,
             purpose: Purpose::ENCRYPTION,
@@ -427,10 +392,13 @@ mod tests {
             identity_id: Identifier::from([3u8; 32]),
             key_id: 0,
             public_key,
-            private_key: None,
+            public_key_hash: [0x00; 20],
+            wallet_id: None,
+            derivation_indices: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
-        assert_eq!(ffi.private_key_kind, PrivateKeyKindFFI::None as u8);
+        assert!(!ffi.wallet_id_is_some);
+        assert!(!ffi.derivation_indices_is_some);
         assert!(ffi.read_only);
         assert!(ffi.disabled_at_is_some);
         assert_eq!(ffi.disabled_at, 1_700_000_000);

@@ -179,22 +179,18 @@ struct KeychainExplorerView: View {
 /// account builder in `WalletStorage`.
 enum Category: CaseIterable, Hashable {
     case identityPrivateKey
+    case legacyIdentityPrivateKey
     case specialKey
     case walletMnemonic
-    case legacyMnemonic
-    case walletSeed
-    case pin
     case biometric
     case other
 
     var title: String {
         switch self {
         case .identityPrivateKey: return "Identity Private Keys"
+        case .legacyIdentityPrivateKey: return "Identity Private Keys (legacy)"
         case .specialKey: return "Special Keys (Voting / Owner / Payout)"
         case .walletMnemonic: return "Per-Wallet Mnemonics"
-        case .legacyMnemonic: return "Legacy Mnemonic"
-        case .walletSeed: return "Encrypted Seed"
-        case .pin: return "PIN Material"
         case .biometric: return "Biometric Material"
         case .other: return "Other"
         }
@@ -203,25 +199,24 @@ enum Category: CaseIterable, Hashable {
     var symbol: String {
         switch self {
         case .identityPrivateKey: return "key.fill"
+        case .legacyIdentityPrivateKey: return "key"
         case .specialKey: return "key.icloud"
         case .walletMnemonic: return "doc.text"
-        case .legacyMnemonic: return "doc.text.below.ecg"
-        case .walletSeed: return "lock.rectangle.stack"
-        case .pin: return "lock.shield"
         case .biometric: return "faceid"
         case .other: return "questionmark.square.dashed"
         }
     }
 
     static func from(_ account: String) -> Category {
-        if account.hasPrefix("privkey_") { return .identityPrivateKey }
+        // New persister-callback path: `identity_privkey.<m/9'/...>`.
+        if account.hasPrefix("identity_privkey.") { return .identityPrivateKey }
+        // Legacy `KeychainManager.storePrivateKey` path —
+        // `privkey_<identityHex>_<keyIndex>`. Still supported for
+        // direct `KeychainManager` callers but superseded by the
+        // derivation-path-keyed layout above.
+        if account.hasPrefix("privkey_") { return .legacyIdentityPrivateKey }
         if account.hasPrefix("specialkey_") { return .specialKey }
-        // Per-wallet mnemonic: "wallet.mnemonic.<hex>" — the dot
-        // distinguishes it from the legacy single-mnemonic account.
         if account.hasPrefix("wallet.mnemonic.") { return .walletMnemonic }
-        if account == "wallet.mnemonic" { return .legacyMnemonic }
-        if account == "wallet.seed" { return .walletSeed }
-        if account == "wallet.pin" { return .pin }
         if account == "wallet.biometric" { return .biometric }
         return .other
     }
@@ -233,6 +228,13 @@ enum Category: CaseIterable, Hashable {
     func displayName(for account: String) -> String {
         switch self {
         case .identityPrivateKey:
+            // Format: "identity_privkey.<derivation-path>" — drop the
+            // prefix and surface the path itself as the row label.
+            // Rich metadata (identity, key index, wallet) sits in the
+            // kSecAttrGeneric JSON payload rendered on the detail view.
+            let path = account.dropFirst("identity_privkey.".count)
+            return String(path)
+        case .legacyIdentityPrivateKey:
             // Format: "privkey_{identityHex}_{keyIndex}"
             let parts = account.dropFirst("privkey_".count).split(separator: "_")
             if parts.count == 2 {
@@ -253,12 +255,6 @@ enum Category: CaseIterable, Hashable {
         case .walletMnemonic:
             let hex = String(account.dropFirst("wallet.mnemonic.".count))
             return "Wallet \(shortHex(hex))"
-        case .legacyMnemonic:
-            return "Legacy mnemonic"
-        case .walletSeed:
-            return "Encrypted seed"
-        case .pin:
-            return "PIN hash"
         case .biometric:
             return "Biometric"
         case .other:

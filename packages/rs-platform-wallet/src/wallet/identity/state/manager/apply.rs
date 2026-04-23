@@ -16,11 +16,38 @@
 
 use super::IdentityManager;
 use crate::changeset::{IdentityEntry, IdentityKeyEntry};
-use crate::wallet::identity::state::managed_identity::ManagedIdentity;
+use crate::wallet::identity::state::managed_identity::{ManagedIdentity, PrivateKeyData};
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, KeyID};
 use dpp::prelude::Identifier;
+use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
+use key_wallet::dip9::{
+    IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
+};
+use key_wallet::Network;
 use std::collections::BTreeMap;
+
+/// Rebuild the `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`
+/// DIP-9 identity authentication path for the given network + indices.
+/// Factored out so both the apply path and the FFI layer can speak the
+/// same derivation shape.
+fn identity_auth_derivation_path(
+    network: Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Option<DerivationPath> {
+    let base: DerivationPath = match network {
+        Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+        _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+    }
+    .into();
+    let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+    Some(base.extend([
+        ChildNumber::from_hardened_idx(key_type_index).ok()?,
+        ChildNumber::from_hardened_idx(identity_index).ok()?,
+        ChildNumber::from_hardened_idx(key_index).ok()?,
+    ]))
+}
 
 impl IdentityManager {
     /// Restore a single [`IdentityEntry`] into the manager.
@@ -124,23 +151,55 @@ impl IdentityManager {
     ///
     /// Layers the public-key record into the DPP `Identity`'s
     /// `public_keys` map (overwriting any existing slot with the same
-    /// `KeyID`) and, when the entry carries private-key material,
-    /// restores the corresponding `key_storage` slot.
+    /// `KeyID`). When the entry carries both a `wallet_id` and
+    /// `derivation_indices` the DIP-9 path is rebuilt from `network`
+    /// and the matching `key_storage` slot is restored with
+    /// `PrivateKeyData::AtWalletDerivationPath` — no private-key
+    /// bytes ever cross this boundary, so a signer that needs the
+    /// scalar will re-derive from the wallet seed on demand.
+    ///
+    /// Watch-only entries (no derivation breadcrumb) update the
+    /// `public_keys` map but do not touch `key_storage`.
     ///
     /// If the owning identity isn't present in the manager (e.g. the
     /// keys changeset was persisted without its scalar sibling, or the
     /// owner was removed since), the entry is logged and skipped.
-    pub(crate) fn apply_identity_key_entry(&mut self, entry: IdentityKeyEntry) {
+    pub(crate) fn apply_identity_key_entry(&mut self, entry: IdentityKeyEntry, network: Network) {
         use dpp::identity::accessors::IdentityGettersV0;
 
         if let Some(managed) = self.identities.get_mut(&entry.identity_id) {
             // `Identity::add_public_key` inserts by `key.id()` and
             // overwrites any prior slot — replay-safe.
             managed.identity.add_public_key(entry.public_key.clone());
-            if let Some(priv_key) = entry.private_key {
-                managed
-                    .key_storage
-                    .insert(entry.key_id, (entry.public_key, priv_key));
+
+            if let (Some(wallet_id), Some(indices)) = (entry.wallet_id, entry.derivation_indices) {
+                if let Some(path) = identity_auth_derivation_path(
+                    network,
+                    indices.identity_index,
+                    indices.key_index,
+                ) {
+                    managed.key_storage.insert(
+                        entry.key_id,
+                        (
+                            entry.public_key,
+                            PrivateKeyData::AtWalletDerivationPath {
+                                wallet_id,
+                                derivation_path: path,
+                                identity_index: indices.identity_index,
+                                key_index: indices.key_index,
+                            },
+                        ),
+                    );
+                } else {
+                    tracing::warn!(
+                        identity = %entry.identity_id,
+                        key_id = entry.key_id,
+                        identity_index = indices.identity_index,
+                        key_index = indices.key_index,
+                        "failed to rebuild DIP-9 path for identity key during apply; \
+                         key recorded as public-only",
+                    );
+                }
             }
         } else {
             tracing::warn!(

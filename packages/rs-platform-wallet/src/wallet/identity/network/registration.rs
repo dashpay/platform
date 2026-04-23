@@ -8,6 +8,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::KeyID;
 use dpp::identity::KeyType;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
@@ -20,6 +21,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::managed_identity::PrivateKeyData;
 
 use crate::wallet::identity::types::funding::IdentityFunding;
 
@@ -265,15 +267,93 @@ impl IdentityWallet {
             }
         };
 
-        // Step 4: Add the identity to the local manager (with its HD index).
-        let mut wm = self.wallet_manager.write().await;
-        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-            crate::error::PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
-        info.identity_manager
-            .add_identity(identity.clone(), identity_index, &self.persister)?;
+        // Step 4: Add the identity to the local manager (with its HD
+        // index) and record each key's DIP-9 derivation breadcrumb so
+        // the client (iOS keychain, etc.) can re-derive + stash the
+        // private key on its own side. No key bytes cross this boundary
+        // — `add_key` carries `PrivateKeyData::AtWalletDerivationPath`
+        // which projects into `(wallet_id, derivation_indices)` on the
+        // emitted changeset.
+        {
+            use dpp::identity::accessors::IdentityGettersV0;
+            use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
+            use key_wallet::dip9::{
+                IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
+            };
+
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            info.identity_manager.add_identity(
+                identity.clone(),
+                identity_index,
+                &self.persister,
+            )?;
+
+            // Rebuild the DIP-9 auth path once per key (cheap — all
+            // hardened ChildNumbers, same logic as step 2 above).
+            let network = self.sdk.network;
+            let base_path: DerivationPath = match network {
+                key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+                _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+            }
+            .into();
+            let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+
+            let wallet_id = self.wallet_id;
+            let identity_id = identity.id();
+            // Clone the public-keys map so the loop doesn't hold a
+            // borrow of `identity` across the &mut borrow of `info`.
+            let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
+                .public_keys()
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect();
+
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                managed.wallet_id = Some(wallet_id);
+                for (key_id, pub_key) in public_keys {
+                    // KeyID == key_index for identities this client
+                    // registers (registration loop uses `key_index` as
+                    // both the DIP-9 suffix and the DPP KeyID).
+                    let key_index = key_id;
+                    let full_path = base_path.extend([
+                        ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Invalid key type index: {}",
+                                e
+                            ))
+                        })?,
+                        ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Invalid identity index: {}",
+                                e
+                            ))
+                        })?,
+                        ChildNumber::from_hardened_idx(key_index).map_err(|e| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Invalid key index: {}",
+                                e
+                            ))
+                        })?,
+                    ]);
+                    managed.add_key(
+                        key_id,
+                        pub_key,
+                        PrivateKeyData::AtWalletDerivationPath {
+                            wallet_id,
+                            derivation_path: full_path,
+                            identity_index,
+                            key_index,
+                        },
+                        &self.persister,
+                    );
+                }
+            }
+        }
 
         Ok(identity)
     }

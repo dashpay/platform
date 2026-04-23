@@ -3,20 +3,58 @@
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
 use crate::changeset::{
-    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
-    PlatformWalletChangeSet,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, PlatformWalletChangeSet,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::Identifier;
+use dpp::util::hash::ripemd160_sha256;
 use key_wallet::Network;
 use key_wallet_manager::WalletManager;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Project a `PrivateKeyData` into the `(wallet_id, derivation_indices)`
+/// pair carried by [`IdentityKeyEntry`]. `Clear` keys produce no
+/// derivation breadcrumb (client can't reproduce them). `None` on
+/// either side means the client should treat the key as view-only.
+fn project_derivation(
+    pkd: Option<&PrivateKeyData>,
+) -> (Option<[u8; 32]>, Option<IdentityKeyDerivationIndices>) {
+    match pkd {
+        Some(PrivateKeyData::AtWalletDerivationPath {
+            wallet_id,
+            identity_index,
+            key_index,
+            ..
+        }) => (
+            Some(*wallet_id),
+            Some(IdentityKeyDerivationIndices {
+                identity_index: *identity_index,
+                key_index: *key_index,
+            }),
+        ),
+        // Clear-key entries are never produced by this codebase for
+        // identity keys; handle the variant so the match is
+        // exhaustive but emit no derivation breadcrumb.
+        Some(PrivateKeyData::Clear(_)) | None => (None, None),
+    }
+}
+
+/// Compute the 20-byte RIPEMD160(SHA256) hash of the DPP public-key
+/// bytes. Shared between `keys_snapshot_changeset` and `add_key` so
+/// the FFI surface always carries a consistent pre-hashed form.
+fn pubkey_hash_of(pub_key: &IdentityPublicKey) -> [u8; 20] {
+    let mut out = [0u8; 20];
+    out.copy_from_slice(ripemd160_sha256(pub_key.data().as_slice()).as_slice());
+    out
+}
 
 impl ManagedIdentity {
     /// Helper: produce an [`IdentityChangeSet`] containing a scalar-only
@@ -37,21 +75,26 @@ impl ManagedIdentity {
 
     /// Helper: produce an [`IdentityKeysChangeSet`] containing one
     /// [`IdentityKeyEntry`] upsert per registered public key on this
-    /// identity. Private-key material is populated from `key_storage`
-    /// when available; unregistered watched keys emit `None` for the
-    /// private-key half.
+    /// identity. Private-key bytes never cross this boundary — when
+    /// `key_storage` has an `AtWalletDerivationPath` entry the
+    /// matching `(wallet_id, derivation_indices)` pair rides along
+    /// so the client can re-derive locally. Unregistered watched
+    /// keys emit both as `None`.
     pub(crate) fn keys_snapshot_changeset(&self) -> IdentityKeysChangeSet {
         let identity_id = self.id();
         let mut upserts = BTreeMap::new();
         for (key_id, pub_key) in self.identity.public_keys() {
-            let private_key = self.key_storage.get(key_id).map(|(_, pk)| pk.clone());
+            let stored = self.key_storage.get(key_id).map(|(_, pk)| pk);
+            let (wallet_id, derivation_indices) = project_derivation(stored);
             upserts.insert(
                 (identity_id, *key_id),
                 IdentityKeyEntry {
                     identity_id,
                     key_id: *key_id,
                     public_key: pub_key.clone(),
-                    private_key,
+                    public_key_hash: pubkey_hash_of(pub_key),
+                    wallet_id,
+                    derivation_indices,
                 },
             );
         }
@@ -215,8 +258,12 @@ impl ManagedIdentity {
         private_key_data: PrivateKeyData,
         persister: &WalletPersister,
     ) {
+        let (wallet_id, derivation_indices) = project_derivation(Some(&private_key_data));
+        let public_key_hash = pubkey_hash_of(&public_key);
+
         self.key_storage
-            .insert(key_id, (public_key.clone(), private_key_data.clone()));
+            .insert(key_id, (public_key.clone(), private_key_data));
+
         let identity_id = self.id();
         let mut keys_cs = IdentityKeysChangeSet::default();
         keys_cs.upserts.insert(
@@ -225,7 +272,9 @@ impl ManagedIdentity {
                 identity_id,
                 key_id,
                 public_key,
-                private_key: Some(private_key_data),
+                public_key_hash,
+                wallet_id,
+                derivation_indices,
             },
         );
         let cs = PlatformWalletChangeSet {

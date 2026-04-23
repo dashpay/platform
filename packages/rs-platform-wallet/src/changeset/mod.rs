@@ -19,9 +19,9 @@ pub mod traits;
 
 pub use changeset::{
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
-    IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, PlatformAddressBalanceEntry,
-    PlatformAddressChangeSet, PlatformWalletChangeSet, ReceivedContactRequestKey,
-    SentContactRequestKey, TokenBalanceChangeSet,
+    IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
+    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
+    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;

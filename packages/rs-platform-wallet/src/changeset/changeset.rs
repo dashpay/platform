@@ -41,7 +41,7 @@ use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
-    BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity, PrivateKeyData,
+    BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity,
 };
 use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 
@@ -151,11 +151,33 @@ impl IdentityEntry {
     }
 }
 
+/// DIP-9 derivation coordinates for an identity key.
+///
+/// Paired with `wallet_id` on [`IdentityKeyEntry`], this is
+/// everything a client needs to reproduce the signing private key
+/// from the wallet's mnemonic at the DIP-9 identity authentication
+/// path — platform-wallet itself never carries or persists the key
+/// bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdentityKeyDerivationIndices {
+    /// DIP-9 identity index (hardened).
+    pub identity_index: u32,
+    /// DIP-9 key index within the identity (hardened).
+    pub key_index: u32,
+}
+
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
 ///
-/// Carries both the DPP-level public key and (when available) the
-/// private-key material so that a persister can reconstruct the full
-/// signing surface of an identity on restart.
+/// Platform-wallet only carries the DPP public-key record and a
+/// breadcrumb pointing at the wallet derivation that produced it;
+/// private-key bytes live exclusively on the client side (iOS
+/// Keychain, Android Keystore, etc.), populated by the client
+/// deriving locally from the owning wallet's mnemonic. When
+/// `wallet_id` + `derivation_indices` are both set, the client
+/// should re-derive the 32-byte scalar at
+/// `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
+/// persist it. When either is `None` the key is watch-only from
+/// this wallet's point of view.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentityKeyEntry {
     /// Owning identity.
@@ -164,10 +186,17 @@ pub struct IdentityKeyEntry {
     pub key_id: KeyID,
     /// The DPP public-key record.
     pub public_key: IdentityPublicKey,
-    /// Private-key material if the wallet holds a signing surface for
-    /// this key. `None` for watched / view-only keys where the wallet
-    /// only tracks the public half.
-    pub private_key: Option<PrivateKeyData>,
+    /// 20-byte RIPEMD160(SHA256) of the compressed public key.
+    /// Precomputed on the Rust side so clients don't need
+    /// RIPEMD-160 implementations of their own.
+    pub public_key_hash: [u8; 20],
+    /// The wallet whose mnemonic derives this key. `None` for
+    /// watched-only identities with no wallet association.
+    pub wallet_id: Option<[u8; 32]>,
+    /// DIP-9 `(identity_index, key_index)` pair the client needs to
+    /// re-derive the private key. `None` means "view-only, no
+    /// private key recoverable".
+    pub derivation_indices: Option<IdentityKeyDerivationIndices>,
 }
 
 /// Changes to per-identity key storage.

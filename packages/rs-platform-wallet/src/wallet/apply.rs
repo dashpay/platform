@@ -149,8 +149,13 @@ impl PlatformWalletInfo {
         //     logged and skipped by the per-entry apply helpers.
         if let Some(keys_cs) = identity_keys {
             let crate::changeset::IdentityKeysChangeSet { upserts, removed } = keys_cs;
+            // Thread the wallet network through so the key-apply
+            // path can reproduce DIP-9 derivation paths for any
+            // entry that carries `(wallet_id, derivation_indices)`.
+            let network = wallet.network;
             for (_key, entry) in upserts {
-                self.identity_manager.apply_identity_key_entry(entry);
+                self.identity_manager
+                    .apply_identity_key_entry(entry, network);
             }
             for (identity_id, key_id) in removed {
                 self.identity_manager
