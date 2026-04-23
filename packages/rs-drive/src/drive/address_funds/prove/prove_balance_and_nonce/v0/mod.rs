@@ -109,8 +109,9 @@ mod tests {
         assert!(!ops.is_empty(), "drive_operations should track the proof");
     }
 
-    /// Proving a non-existent address still produces a valid proof bytes blob
-    /// (an absence proof). The call itself must not error.
+    /// Proving a non-existent address produces an absence proof that verifies
+    /// cleanly: the proof parses via `Drive::verify_address_info`, the root
+    /// hash is not empty, and the returned balance/nonce is `None`.
     #[test]
     fn prove_nonexistent_address_returns_absence_proof() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -123,6 +124,18 @@ mod tests {
             .prove_balance_and_nonce_v0(&ADDR_MISSING, None, platform_version)
             .expect("prove missing");
         assert!(!proof.is_empty());
+
+        // Verify the absence proof round-trips: known-absent address must
+        // decode as `None` and must produce a non-empty root hash.
+        let (root_hash, result) =
+            Drive::verify_address_info(proof.as_slice(), &ADDR_MISSING, false, platform_version)
+                .expect("absence proof should verify");
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(
+            result.is_none(),
+            "absent address must decode as None, got {:?}",
+            result
+        );
     }
 
     /// Attempting to prove from within a transaction is explicitly not

@@ -118,6 +118,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use super::*;

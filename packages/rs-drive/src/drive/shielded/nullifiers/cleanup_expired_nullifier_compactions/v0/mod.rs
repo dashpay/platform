@@ -274,6 +274,19 @@ mod tests {
             compacted.is_empty(),
             "compacted entry should have been cleaned up"
         );
+
+        // A second cleanup must be a no-op: if the first call truly deleted
+        // the expiration-index entry (not just the compacted row), there is
+        // nothing left to iterate, so the returned count is 0. If the index
+        // row had been left behind the second cleanup would try to chase a
+        // dangling reference and either re-count 1 or error.
+        let cleaned_again = drive
+            .cleanup_expired_nullifier_compactions_v0(current, None, platform_version)
+            .expect("second cleanup must be a no-op");
+        assert_eq!(
+            cleaned_again, 0,
+            "expiration index entry must also have been deleted"
+        );
     }
 
     /// Corrupting an expiration entry payload (garbage item data) triggers the
@@ -301,6 +314,19 @@ mod tests {
         let err = drive
             .cleanup_expired_nullifier_compactions_v0(u64::MAX, None, platform_version)
             .expect_err("cleanup must reject undecodable payload");
-        assert!(matches!(err, Error::Protocol(_)));
+        // Must be the specific CorruptedSerialization variant surfaced by
+        // `NullifierExpirationRanges::decode` — not any other ProtocolError.
+        match err {
+            Error::Protocol(boxed) => match *boxed {
+                ProtocolError::CorruptedSerialization(msg) => {
+                    assert!(
+                        msg.contains("cannot decode nullifier expiration ranges"),
+                        "expected the NullifierExpirationRanges decode failure, got: {msg}"
+                    );
+                }
+                other => panic!("expected CorruptedSerialization, got ProtocolError::{other:?}"),
+            },
+            other => panic!("expected Error::Protocol, got {other:?}"),
+        }
     }
 }

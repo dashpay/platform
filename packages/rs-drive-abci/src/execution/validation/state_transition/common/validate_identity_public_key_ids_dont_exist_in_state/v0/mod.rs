@@ -182,6 +182,13 @@ mod tests {
         }
     }
 
+    /// Empty input `&[]` → `key_ids = vec![]`, `limit = Some(0)`, and the
+    /// built request is `SpecificKeys(vec![])`. The production path issues
+    /// `drive.fetch_identity_keys` which must return an empty `KeyIDVec`, so
+    /// the validator's branch `if !keys.is_empty()` is skipped and the
+    /// function yields a valid (empty) `SimpleConsensusValidationResult`.
+    /// This pins the "no keys to check" short-circuit behaviour: callers that
+    /// pass an empty slice must not trigger a duplicated-id error.
     #[test]
     fn should_pass_when_empty_key_list() {
         let platform_version = PlatformVersion::latest();
@@ -206,5 +213,10 @@ mod tests {
         .expect("should succeed");
 
         assert!(result.is_valid(), "empty list should be trivially valid");
+        assert!(
+            result.errors.is_empty(),
+            "no consensus errors expected for an empty key list, got {:?}",
+            result.errors
+        );
     }
 }

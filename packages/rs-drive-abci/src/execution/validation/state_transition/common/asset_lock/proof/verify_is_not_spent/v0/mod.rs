@@ -89,6 +89,17 @@ pub(super) fn verify_asset_lock_is_not_spent_and_has_enough_balance_v0<C>(
 
 #[cfg(test)]
 mod tests {
+    // NOTE on `PlatformVersion::latest()` vs `::first()`:
+    // `TestPlatformBuilder::build_with_mock_rpc()` initializes the underlying
+    // drive / state structure at `PlatformVersion::latest()` unless an explicit
+    // `initial_protocol_version` is supplied. Because the function under test
+    // delegates to `drive.fetch_asset_lock_outpoint_info(&..., &platform_version.drive)`,
+    // the version passed here must match the drive version the platform was
+    // built with — otherwise a DriveError::UnknownVersionMismatch fires on
+    // every call. These tests therefore intentionally use `latest()` to stay
+    // aligned with the builder. If v0-specific logic is ever asserted here
+    // (beyond the _v0 function dispatch, which is already direct), rebuild the
+    // platform via `.with_initial_protocol_version(PlatformVersion::first().protocol_version)`.
     use super::*;
     use crate::platform_types::platform::PlatformRef;
     use crate::test::helpers::setup::TestPlatformBuilder;

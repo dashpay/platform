@@ -223,16 +223,27 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
-        // Max nullifiers before compaction = 2048. Store 2048 at once.
-        let nullifiers: Vec<[u8; 32]> = (0..2048u32).map(|i| [(i & 0xff) as u8; 32]).collect();
+        // Derive the compaction threshold from the active platform version so
+        // this test stays correct if the constant is bumped in a future
+        // drive version.
+        let max_nullifiers = platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_nullifiers_before_compaction;
+
+        let nullifiers: Vec<[u8; 32]> = (0..max_nullifiers)
+            .map(|i| [(i & 0xff) as u8; 32])
+            .collect();
 
         drive
             .store_nullifiers_for_block_v0(&nullifiers, 1, 1_000, None, platform_version)
             .expect("first store should succeed");
 
         // First store doesn't trigger because count=0 before, sum=0 before.
-        // new_sum = 0 + 2048 = 2048 >= 2048, so compaction IS triggered on the first block.
-        // That means recent is empty and compacted has one entry spanning [1,1].
+        // new_sum = 0 + max_nullifiers >= max_nullifiers, so compaction IS
+        // triggered on the first block. That means recent is empty and
+        // compacted has one entry spanning [1,1].
         let recent = drive
             .fetch_recent_nullifier_changes(0, None, None, platform_version)
             .expect("fetch recent");

@@ -6297,8 +6297,12 @@ mod tests {
 
     #[test]
     fn test_read_optionally_from_object_required_field_after_finished_buffer() {
-        // If the inner buffer ends before a required field is read, we should get
-        // a CorruptedSerialization error.
+        // Exercises the explicit "required field after finished buffer in object"
+        // branch: the optional first field exhausts the inner buffer by reading
+        // an absence marker from a zero-length buffer (which flips
+        // `finished_buffer` to true), then the iterator sees a required field
+        // with the buffer already finished and must produce a
+        // CorruptedSerialization error.
         use integer_encoding::VarInt;
         let mut inner_fields = IndexMap::new();
         // First field is optional
@@ -6321,13 +6325,26 @@ mod tests {
         );
         let prop = DocumentPropertyType::Object(inner_fields);
 
-        // Build inner object bytes: a is optional, marker 0 => absent. Buffer ends.
-        // Required field "b" then has no data to read => error.
-        let inner_bytes = vec![0u8];
+        // Empty inner buffer: the optional-field read observes EOF on the
+        // absence-marker byte, returns (None, finished = true). On the next
+        // iteration, "b" is required and the buffer is finished => the
+        // targeted error branch fires.
+        let inner_bytes: Vec<u8> = vec![];
         let mut data = inner_bytes.len().encode_var_vec();
         data.extend_from_slice(&inner_bytes);
         let mut reader = BufReader::new(data.as_slice());
-        assert!(prop.read_optionally_from(&mut reader, true).is_err());
+        let err = prop
+            .read_optionally_from(&mut reader, true)
+            .expect_err("required field with finished buffer must error");
+        match err {
+            DataContractError::CorruptedSerialization(msg) => {
+                assert!(
+                    msg.contains("required field after finished buffer in object"),
+                    "expected the finished-buffer branch, got: {msg}"
+                );
+            }
+            other => panic!("expected CorruptedSerialization, got {other:?}"),
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -150,8 +150,9 @@ mod tests {
         let _ = err;
     }
 
-    /// prove_address_funds_branch_query_operations_v0 populates drive_operations
-    /// even when the underlying call errors, provided validation passed.
+    /// prove_address_funds_branch_query_operations_v0 short-circuits on a
+    /// depth-below-min validation failure: the error is returned before any
+    /// GroveDB work happens, so `drive_operations` must stay empty.
     #[test]
     fn branch_query_operations_invalid_input_does_not_populate_ops() {
         let drive = setup_drive_with_initial_state_structure(None);

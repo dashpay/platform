@@ -205,17 +205,22 @@ mod tests {
 
     /// Compacting twice with the same current_block_time_ms must merge the two
     /// ranges under the same expiration key (exercising the
-    /// "existing_ranges is Some" branch).
+    /// "existing_ranges is Some" branch). We additionally drive a cleanup past
+    /// the shared expiration time: if the second compaction had *overwritten*
+    /// the expiration index entry instead of appending, cleanup would only
+    /// chase one range and leave the other compacted row dangling.
     #[test]
     fn second_compaction_with_same_time_appends_range_to_expiration() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
+        let block_time = 1_000u64;
+
         drive
             .compact_nullifiers_with_current_block_v0(
                 &[[1u8; 32]],
                 10,
-                1_000,
+                block_time,
                 None,
                 platform_version,
             )
@@ -225,7 +230,7 @@ mod tests {
             .compact_nullifiers_with_current_block_v0(
                 &[[2u8; 32]],
                 20,
-                1_000, // same block time → same expiration key
+                block_time, // same block time → same expiration key
                 None,
                 platform_version,
             )
@@ -235,6 +240,29 @@ mod tests {
             .fetch_compacted_nullifier_changes(0, None, None, platform_version)
             .expect("fetch");
         assert_eq!(compacted.len(), 2, "both compacted ranges must be present");
+
+        // Cleanup past the shared expiration must remove BOTH ranges. This is
+        // what proves the second compaction appended its range to the
+        // existing expiration-index entry rather than overwriting it — a
+        // single range under that key would leave one compacted row behind
+        // and the count would be 1, not 2.
+        let current =
+            block_time + crate::drive::shielded::nullifiers::compact_nullifiers::ONE_WEEK_IN_MS + 1;
+        let cleaned = drive
+            .cleanup_expired_nullifier_compactions_v0(current, None, platform_version)
+            .expect("cleanup");
+        assert_eq!(
+            cleaned, 2,
+            "cleanup must delete both ranges stored under the shared expiration key"
+        );
+
+        let compacted_after = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch after cleanup");
+        assert!(
+            compacted_after.is_empty(),
+            "no compacted rows should remain after cleanup"
+        );
     }
 
     /// Compacting drains entries stored via store_nullifiers_for_block_v0 and the

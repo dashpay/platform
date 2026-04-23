@@ -22,8 +22,19 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    // NOTE: no proof-verifier roundtrip here. Unlike
+    // `Drive::verify_address_info`, there is no public verifier helper for
+    // "identity-contract-nonce" proofs — callers decode via the generic
+    // `GroveDb::verify_*` API on the path_query used to produce the proof,
+    // which requires reconstructing the query shape outside this module. The
+    // present tests therefore exercise prove-path correctness by comparing
+    // absent-vs-present proof bytes (they must differ) and asserting a
+    // non-empty blob; a verifier roundtrip would be more meaningful but
+    // belongs in a higher-level integration test that already owns the
+    // verifier plumbing.
     use super::*;
     use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
