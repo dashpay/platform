@@ -548,13 +548,22 @@ public class PlatformWalletPersistenceHandler {
             // `identity.wallet?.walletId` when they need the raw
             // id. `deleteRule: .nullify` on the inverse nulls this
             // out cleanly if the wallet row is ever removed.
-            // `fetchWalletForLink` returns nil when
-            // `entry.walletId` is nil (detached identity) or when
-            // no matching `PersistentWallet` exists yet — the
-            // latter shouldn't happen in practice because
-            // `persistWalletChangeset` upserts the wallet row in
-            // the same atomic round before calling this path.
-            row.wallet = fetchWalletForLink(walletId: entry.walletId)
+            //
+            // Wallet id resolution: prefer the per-entry
+            // `walletId` when Rust sets it (covers corner cases
+            // where a changeset carries identities anchored to a
+            // different wallet — e.g. a BLAST pass that surfaces
+            // foreign identities the local wallet observes). Fall
+            // back to the scope `walletId` that parameterised this
+            // callback, which is always the wallet whose
+            // changeset we're applying. The fallback matters for
+            // the "create new identity" flow: Rust emits the
+            // identity entry with `wallet_id_is_some == false`
+            // (the identity wasn't wallet-linked in its own Rust
+            // struct at emit time), and without the fallback we'd
+            // orphan the just-registered row.
+            let resolvedWalletId = entry.walletId ?? walletId
+            row.wallet = fetchWalletForLink(walletId: resolvedWalletId)
         }
 
         for identityId in removed {
@@ -650,17 +659,23 @@ public class PlatformWalletPersistenceHandler {
 
             // Private-key handling.
             //
-            // No bytes cross the FFI — when the entry carries both a
-            // wallet_id and derivation indices, Swift re-derives the
-            // 32-byte ECDSA scalar from the named wallet's mnemonic
-            // and stores it in the keychain under the serialized
-            // derivation path. Watch-only entries (missing either
-            // breadcrumb) clear any prior stored identifier.
-            if let walletIdForKey = entry.walletId,
-                let indices = entry.derivationIndices {
+            // No bytes cross the FFI — when the entry carries
+            // derivation indices, Swift re-derives the 32-byte
+            // ECDSA scalar from the owning wallet's mnemonic and
+            // stores it in the keychain under the serialized
+            // derivation path. Wallet id resolves the same way as
+            // for the identity row itself: prefer per-entry
+            // `entry.walletId` (lets Rust route a key to a
+            // foreign wallet in some future cross-wallet-scan
+            // flow), fall back to the scope `walletId` that
+            // parameterised this callback. Keys without
+            // derivation indices are watch-only and clear any
+            // prior stored identifier.
+            if let indices = entry.derivationIndices {
+                let resolvedWalletId = entry.walletId ?? walletId
                 let keychainId = deriveAndStoreIdentityKey(
                     entry: entry,
-                    walletId: walletIdForKey,
+                    walletId: resolvedWalletId,
                     indices: indices,
                     publicKeyHex: entry.publicKeyData.toHexString(),
                     publicKeyHashHex: entry.publicKeyHash.toHexString(),
@@ -687,8 +702,10 @@ public class PlatformWalletPersistenceHandler {
             }
         }
 
-        _ = walletId  // reserved for future wallet-scope filters
-        // No save() — bracketed by changesetBegin/End.
+        // `walletId` is now consumed as the scope fallback in the
+        // derivation branch above, so it's no longer a dead
+        // parameter. No save() — bracketed by
+        // changesetBegin/End.
     }
 
     // MARK: - Identity private-key derivation
