@@ -24,26 +24,21 @@ import SwiftDashSDK
 import Security
 
 struct KeychainExplorerView: View {
-    /// The two services the example app writes to. Hard-coded
-    /// because `WalletStorage` and the app's `KeychainManager`
-    /// wrapper both pin these constants; if either grows a new
-    /// service, this list picks up the addition.
+    /// Every SDK / app keychain write now goes through the unified
+    /// `WalletStorage.keychainService` namespace. Legacy services
+    /// (`org.dash.wallet`, `com.dash.sdk.keys`,
+    /// `com.dash.swiftexampleapp.keys`) are wiped on launch by
+    /// `WalletStorage.cleanupLegacyItems`, so this single-row list
+    /// is all the explorer needs to show.
     private let services: [ServiceConfig] = [
         ServiceConfig(
-            id: "app",
-            service: "com.dash.swiftexampleapp.keys",
-            title: "App Keys",
+            id: "unified",
+            service: WalletStorage.keychainService,
+            title: "Keychain Items",
             footer:
                 "Identity private keys, special (voting/owner/payout) keys, "
-                + "and anything else written through KeychainManager."
-        ),
-        ServiceConfig(
-            id: "wallet",
-            service: "org.dash.wallet",
-            title: "Wallet Storage",
-            footer:
-                "Per-wallet mnemonics, the legacy single-mnemonic row, "
-                + "seed encryption material, and device-auth state."
+                + "per-wallet mnemonics, and any biometric-protected material "
+                + "the app has written."
         ),
     ]
 

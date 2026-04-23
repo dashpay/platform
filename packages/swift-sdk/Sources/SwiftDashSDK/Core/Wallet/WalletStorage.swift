@@ -1,204 +1,50 @@
 import Foundation
 import LocalAuthentication
 import Security
-import CryptoKit
 
 // MARK: - Wallet Storage
 
+/// Keychain-backed storage for wallet secrets.
+///
+/// The type used to carry three legacy storage modes — a
+/// PIN-encrypted seed at `wallet.seed`, a single-wallet mnemonic at
+/// `wallet.mnemonic`, and a PIN hash at `wallet.pin`. None of those
+/// had live callers, the PIN flow was never surfaced in the UI, and
+/// mixing single-wallet and per-wallet storage in the same type
+/// muddied the data model. They've all been removed; the
+/// [`cleanupLegacyItems`](x-source-tag://cleanupLegacyItems) helper
+/// wipes any residue from prior installs.
+///
+/// Current responsibilities:
+///
+/// * Per-wallet mnemonic storage at
+///   `wallet.mnemonic.<64-char-hex-walletId>`.
+/// * Enumeration of stored wallet ids (used by the orphan-mnemonic
+///   recovery flow in `ContentView`).
+/// * Biometric-protected seed stash at `wallet.biometric` — not yet
+///   wired to a caller but kept because it's a different category
+///   (hardware-protected rather than a legacy PIN construct).
 public class WalletStorage {
-    private let keychainService = "org.dash.wallet"
-    private let seedKeychainAccount = "wallet.seed"
+    /// Unified keychain service name for the app. Everything the
+    /// SDK writes — per-wallet mnemonics (here), identity private
+    /// keys, special keys (in `KeychainManager`) — is filed under
+    /// this single service so the keychain explorer + future
+    /// cross-item queries see one namespace. Legacy services are
+    /// scrubbed on launch by `cleanupLegacyItems`.
+    public static let keychainService = "org.dashfoundation.wallet"
+
+    /// Per-instance alias that lets the rest of this file stay
+    /// short; the static constant is the one external callers
+    /// should reach for.
+    private var keychainService: String { Self.keychainService }
+    /// Base account string used to build per-wallet mnemonic
+    /// accounts via `perWalletMnemonicAccount(for:)`. The legacy
+    /// single-mnemonic row at the bare `"wallet.mnemonic"` account
+    /// is no longer stored — see `cleanupLegacyItems`.
     private let mnemonicKeychainAccount = "wallet.mnemonic"
-    private let pinKeychainAccount = "wallet.pin"
     private let biometricKeychainAccount = "wallet.biometric"
 
     public init() {}
-
-    // MARK: - Seed Storage
-
-    /// Store the wallet seed encrypted with the user's PIN.
-    ///
-    /// The seed is encrypted using AES-GCM with a key derived from the PIN
-    /// via PBKDF2 (10,000 iterations, SHA-256). A random 32-byte salt is
-    /// prepended to the ciphertext. The PIN hash is stored separately for
-    /// verification on retrieval.
-    ///
-    /// - Parameters:
-    ///   - seed: The raw 64-byte BIP39 seed.
-    ///   - pin: The user's plaintext PIN used to derive the encryption key.
-    /// - Returns: The stored data (salt + ciphertext) for round-trip verification.
-    public func storeSeed(_ seed: Data, pin: String) throws -> Data {
-        let salt = generateSalt()
-        let key = try deriveKey(from: pin, salt: salt)
-        let encryptedSeed = try encryptData(seed, with: key)
-
-        var storedData = Data()
-        storedData.append(salt)
-        storedData.append(encryptedSeed)
-
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: seedKeychainAccount
-        ]
-
-        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(deleteStatus)
-        }
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: seedKeychainAccount,
-            kSecValueData as String: storedData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-
-        try storePINHash(pin)
-
-        return storedData
-    }
-
-    /// Retrieve and decrypt the wallet seed using the user's PIN.
-    ///
-    /// Verifies the PIN against the stored hash before attempting decryption.
-    ///
-    /// - Parameter pin: The user's plaintext PIN.
-    /// - Returns: The decrypted 64-byte BIP39 seed.
-    public func retrieveSeed(pin: String) throws -> Data {
-        guard try verifyPIN(pin) else {
-            throw WalletStorageError.invalidPIN
-        }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: seedKeychainAccount,
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        if status == errSecItemNotFound {
-            throw WalletStorageError.seedNotFound
-        }
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-        guard let storedData = result as? Data,
-              storedData.count > 32 else {
-            throw WalletStorageError.seedNotFound
-        }
-
-        let salt = storedData.prefix(32)
-        let encryptedSeed = storedData.suffix(from: 32)
-        let key = try deriveKey(from: pin, salt: Data(salt))
-        return try decryptData(encryptedSeed, with: key)
-    }
-
-    public func deleteSeed() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: seedKeychainAccount
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
-
-    // MARK: - Mnemonic Storage
-
-    /// Store the wallet mnemonic (BIP39 recovery phrase) in the keychain.
-    ///
-    /// Plain keychain storage with no PIN encryption — iOS keychain hardware
-    /// protection (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) is the
-    /// security boundary.
-    ///
-    /// - Parameter mnemonic: The space-separated BIP39 mnemonic phrase.
-    public func storeMnemonic(_ mnemonic: String) throws {
-        let data = Data(mnemonic.utf8)
-
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: mnemonicKeychainAccount
-        ]
-
-        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(deleteStatus)
-        }
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: mnemonicKeychainAccount,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
-
-    /// Retrieve the wallet mnemonic from the keychain.
-    ///
-    /// - Returns: The space-separated BIP39 mnemonic phrase.
-    /// - Throws: `WalletStorageError.mnemonicNotFound` if no mnemonic is stored,
-    ///   or `WalletStorageError.keychainError` for other keychain failures.
-    public func retrieveMnemonic() throws -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: mnemonicKeychainAccount,
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        if status == errSecItemNotFound {
-            throw WalletStorageError.mnemonicNotFound
-        }
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-        guard let data = result as? Data,
-              let mnemonic = String(data: data, encoding: .utf8),
-              !mnemonic.isEmpty else {
-            throw WalletStorageError.mnemonicNotFound
-        }
-
-        return mnemonic
-    }
-
-    /// Delete the wallet mnemonic from the keychain.
-    ///
-    /// Idempotent — succeeds silently if no mnemonic is stored.
-    public func deleteMnemonic() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: mnemonicKeychainAccount
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
 
     // MARK: - Per-Wallet Mnemonic Storage
     //
@@ -331,59 +177,6 @@ public class WalletStorage {
         return data
     }
 
-    // MARK: - PIN Management
-
-    private func storePINHash(_ pin: String) throws {
-        let pinData = Data(pin.utf8)
-        let hash = SHA256.hash(data: pinData)
-
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: pinKeychainAccount
-        ]
-
-        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(deleteStatus)
-        }
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: pinKeychainAccount,
-            kSecValueData as String: Data(hash),
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
-
-    private func verifyPIN(_ pin: String) throws -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: pinKeychainAccount,
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let storedHash = result as? Data else {
-            return false
-        }
-
-        let pinData = Data(pin.utf8)
-        let hash = SHA256.hash(data: pinData)
-
-        return Data(hash) == storedHash
-    }
-
     // MARK: - Biometric Protection
 
     public func enableBiometricProtection(for seed: Data) throws {
@@ -444,57 +237,63 @@ public class WalletStorage {
         return seed
     }
 
-    // MARK: - Encryption Helpers
+    // MARK: - Legacy Cleanup
 
-    private func generateSalt() -> Data {
-        var salt = Data(count: 32)
-        _ = salt.withUnsafeMutableBytes { bytes in
-            SecRandomCopyBytes(kSecRandomDefault, 32, bytes.baseAddress!)
+    /// Best-effort scrub of keychain residue from prior app
+    /// architectures. Two kinds of cleanup:
+    ///
+    /// 1. **Whole-service wipe** of the legacy namespaces we've now
+    ///    consolidated under `keychainService` (currently
+    ///    `org.dashfoundation.wallet`): `org.dash.wallet` (old
+    ///    WalletStorage service), `com.dash.sdk.keys` (old SDK
+    ///    `KeychainManager` default), and
+    ///    `com.dash.swiftexampleapp.keys` (old app-level
+    ///    `KeychainManager` wrapper). Everything filed under those
+    ///    services is deleted — on this dev example app it's
+    ///    acceptable to lose key material rather than carry
+    ///    migration code for every shape.
+    /// 2. **Legacy account wipe** of the three pre-per-wallet items
+    ///    (`wallet.seed` / `wallet.mnemonic` / `wallet.pin`) under
+    ///    the **current** service, in case they ever leaked into
+    ///    the new namespace.
+    ///
+    /// Safe to call on a fresh install — each `SecItemDelete`
+    /// returns `errSecItemNotFound` and the method ignores every
+    /// status. Per-wallet mnemonic rows under the current service
+    /// (`wallet.mnemonic.<hex-walletId>`) are unaffected because
+    /// the per-account deletions match on the full account string,
+    /// not a prefix.
+    ///
+    /// Called once per launch from `SwiftExampleAppApp.bootstrap`.
+    ///
+    /// - Tag: cleanupLegacyItems
+    public static func cleanupLegacyItems() {
+        // (1) Whole-service wipes for renamed / retired services.
+        let legacyServices = [
+            "org.dash.wallet",
+            "com.dash.sdk.keys",
+            "com.dash.swiftexampleapp.keys",
+        ]
+        for service in legacyServices {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+            ]
+            _ = SecItemDelete(query as CFDictionary)
         }
-        return salt
-    }
 
-    private func deriveKey(from pin: String, salt: Data) throws -> SymmetricKey {
-        let pinData = Data(pin.utf8)
-
-        // Use PBKDF2 for key derivation
-        var derivedKey = Data(count: 32)
-        let result = derivedKey.withUnsafeMutableBytes { derivedKeyBytes in
-            salt.withUnsafeBytes { saltBytes in
-                pinData.withUnsafeBytes { pinBytes in
-                    CCKeyDerivationPBKDF(
-                        CCPBKDFAlgorithm(kCCPBKDF2),
-                        pinBytes.baseAddress!.assumingMemoryBound(to: Int8.self),
-                        pinData.count,
-                        saltBytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                        salt.count,
-                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-                        10000, // iterations
-                        derivedKeyBytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                        32
-                    )
-                }
-            }
+        // (2) Targeted legacy-account wipes under the current
+        // consolidated service. Defensive — if anything ever wrote
+        // these accounts into the new namespace we clear them here.
+        let legacyAccounts = ["wallet.seed", "wallet.mnemonic", "wallet.pin"]
+        for account in legacyAccounts {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keychainService,
+                kSecAttrAccount as String: account,
+            ]
+            _ = SecItemDelete(query as CFDictionary)
         }
-
-        guard result == kCCSuccess else {
-            throw WalletStorageError.keyDerivationFailed
-        }
-
-        return SymmetricKey(data: derivedKey)
-    }
-
-    private func encryptData(_ data: Data, with key: SymmetricKey) throws -> Data {
-        let sealed = try AES.GCM.seal(data, using: key)
-        guard let combined = sealed.combined else {
-            throw WalletStorageError.encryptionFailed
-        }
-        return combined
-    }
-
-    private func decryptData(_ data: Data, with key: SymmetricKey) throws -> Data {
-        let box = try AES.GCM.SealedBox(combined: data)
-        return try AES.GCM.open(box, using: key)
     }
 }
 
@@ -502,68 +301,20 @@ public class WalletStorage {
 
 public enum WalletStorageError: LocalizedError {
     case keychainError(OSStatus)
-    case seedNotFound
-    case invalidPIN
+    case mnemonicNotFound
     case biometricSetupFailed
     case biometricAuthenticationFailed
-    case keyDerivationFailed
-    case encryptionFailed
-    case decryptionFailed
-    case mnemonicNotFound
 
     public var errorDescription: String? {
         switch self {
         case .keychainError(let status):
             return "Keychain error: \(status)"
-        case .seedNotFound:
-            return "Wallet seed not found"
-        case .invalidPIN:
-            return "Invalid PIN"
+        case .mnemonicNotFound:
+            return "Mnemonic not found"
         case .biometricSetupFailed:
             return "Failed to setup biometric protection"
         case .biometricAuthenticationFailed:
             return "Biometric authentication failed"
-        case .keyDerivationFailed:
-            return "Failed to derive encryption key"
-        case .encryptionFailed:
-            return "Failed to encrypt data"
-        case .decryptionFailed:
-            return "Failed to decrypt data"
-        case .mnemonicNotFound:
-            return "Mnemonic not found"
         }
-    }
-}
-
-// MARK: - CommonCrypto Import
-
-import CommonCrypto
-
-extension WalletStorage {
-    // Bridge for CommonCrypto since it's not available in Swift
-    private func CCKeyDerivationPBKDF(
-        _ algorithm: CCPBKDFAlgorithm,
-        _ password: UnsafePointer<Int8>,
-        _ passwordLen: Int,
-        _ salt: UnsafePointer<UInt8>,
-        _ saltLen: Int,
-        _ prf: CCPseudoRandomAlgorithm,
-        _ rounds: UInt32,
-        _ derivedKey: UnsafeMutablePointer<UInt8>,
-        _ derivedKeyLen: Int
-    ) -> Int32 {
-        return CCCryptorStatus(
-            CommonCrypto.CCKeyDerivationPBKDF(
-                algorithm,
-                password,
-                passwordLen,
-                salt,
-                saltLen,
-                prf,
-                rounds,
-                derivedKey,
-                derivedKeyLen
-            )
-        )
     }
 }

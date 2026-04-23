@@ -48,6 +48,16 @@ struct SwiftExampleAppApp: App {
         UserDefaults.standard.set(false, forKey: "_UIConstraintBasedLayoutLogUnsatisfiable")
         #endif
 
+        // Wipe legacy keychain residue before any SDK component gets
+        // a chance to read under a stale service name. Covers the
+        // old `org.dash.wallet` / `com.dash.sdk.keys` /
+        // `com.dash.swiftexampleapp.keys` services (now consolidated
+        // under `org.dashfoundation.wallet`) and the pre-per-wallet
+        // `wallet.seed` / `wallet.mnemonic` / `wallet.pin` accounts.
+        // Best-effort — failures are silently ignored inside
+        // `cleanupLegacyItems` itself.
+        WalletStorage.cleanupLegacyItems()
+
         do {
             self.modelContainer = try ModelContainerHelper.createContainer()
         } catch {

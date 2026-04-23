@@ -71,14 +71,19 @@ public final class KeychainManager: Sendable {
     /// Optional access group for sharing keys between apps
     public let accessGroup: String?
 
-    /// Initialize with default service name "com.dash.sdk.keys".
+    /// Initialize with the unified keychain service name shared
+    /// with `WalletStorage` (`org.dashfoundation.wallet`). All app
+    /// key material — identity private keys, special masternode
+    /// keys, per-wallet mnemonics — ends up under this single
+    /// service so the keychain explorer and any cross-item queries
+    /// see one namespace.
     ///
     /// `nonisolated` so the `shared` singleton — also `nonisolated` —
     /// can be constructed lazily from any isolation domain. The
     /// initializer only writes the two `let` fields; no actor-isolated
     /// state is touched.
     public nonisolated init() {
-        self.serviceName = "com.dash.sdk.keys"
+        self.serviceName = WalletStorage.keychainService
         self.accessGroup = nil
     }
 
