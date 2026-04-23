@@ -21,6 +21,23 @@ private func hexString(_ data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Render an owning `PersistentWallet` for one-line display on
+/// the storage-record detail screens. Priority: explicit wallet
+/// name → `"<short hex>…"` of the `walletId` → "None" for
+/// detached rows. Kept file-private so the identity and
+/// (future) other relationship-carrying storage views share the
+/// same presentation.
+private func walletLabel(_ wallet: PersistentWallet?) -> String {
+    guard let wallet else { return "None" }
+    if let name = wallet.name, !name.isEmpty {
+        return name
+    }
+    let hex = wallet.walletId.prefix(4)
+        .map { String(format: "%02x", $0) }
+        .joined()
+    return hex.isEmpty ? "None" : "\(hex)…"
+}
+
 private func dateString(_ date: Date?) -> String {
     AppDate.formatted(optional: date)
 }
@@ -47,6 +64,16 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Revision", value: "\(record.revision)")
                 FieldRow(label: "Is Local", value: record.isLocal ? "Yes" : "No")
                 FieldRow(label: "Network", value: record.network)
+                // `identityIndex` is the DIP-9 index the owning
+                // wallet registered this identity at. Only
+                // meaningful when `wallet != nil`; shown as "—"
+                // otherwise so the row is consistent for orphaned
+                // identities that predate the wallet-relationship
+                // wiring.
+                FieldRow(
+                    label: "Identity Index",
+                    value: record.wallet != nil ? "\(record.identityIndex)" : "—"
+                )
             }
             Section("Names") {
                 FieldRow(label: "Alias", value: record.alias ?? "None")
@@ -59,6 +86,14 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Payout Key", value: record.payoutPrivateKeyIdentifier != nil ? "Present" : "Not set")
             }
             Section("Relationships") {
+                // Owning wallet via the `@Relationship`. Prefer
+                // the user-visible name; fall back to a short hex
+                // fingerprint of the wallet id; fall back to
+                // "None" for orphaned identities.
+                FieldRow(
+                    label: "Wallet",
+                    value: walletLabel(record.wallet)
+                )
                 FieldRow(label: "Public Keys", value: "\(record.publicKeys.count)")
                 FieldRow(label: "Documents", value: "\(record.documents.count)")
                 FieldRow(label: "Token Balances", value: "\(record.tokenBalances.count)")
@@ -489,6 +524,11 @@ struct WalletStorageDetailView: View {
             }
             Section("Relationships") {
                 FieldRow(label: "Accounts", value: "\(record.accounts.count)")
+                // Inverse of `PersistentIdentity.wallet`. Surfaces
+                // how many identities are currently anchored to
+                // this wallet so the storage explorer shows the
+                // mapping from both sides.
+                FieldRow(label: "Identities", value: "\(record.identities.count)")
             }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
