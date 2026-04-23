@@ -78,3 +78,69 @@ impl<C> Platform<C> {
         Ok(query_documents_outcome.documents().to_owned())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::version::PlatformVersion;
+
+    /// On a genesis-state platform, no reward share documents exist for any
+    /// owner, so the v0 query must return an empty `Vec`. This is the canonical
+    /// "masternode has no explicit reward shares" case.
+    #[test]
+    fn v0_returns_empty_for_unknown_masternode_owner() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let docs = platform
+            .fetch_reward_shares_list_for_masternode_v0(
+                &[0x11u8; 32],
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("must succeed on a genesis state without reward shares");
+
+        assert!(docs.is_empty(), "unknown owner must yield empty list");
+    }
+
+    /// Different owner ids on an empty state must all return empty lists —
+    /// the query is by `$ownerId`, so the owner bytes must actually matter
+    /// for the query shape (not cached across calls).
+    #[test]
+    fn v0_different_owners_all_return_empty_on_fresh_state() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        for owner in [[0u8; 32], [1u8; 32], [0xffu8; 32]] {
+            let docs = platform
+                .fetch_reward_shares_list_for_masternode_v0(
+                    &owner,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("must succeed for any owner");
+            assert!(docs.is_empty(), "empty state must yield empty list");
+        }
+    }
+
+    /// Without a transaction handle, the query must still succeed: the query
+    /// itself is read-only and does not require a transaction.
+    #[test]
+    fn v0_works_without_transaction() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let docs = platform
+            .fetch_reward_shares_list_for_masternode_v0(&[7u8; 32], None, platform_version)
+            .expect("must succeed without a transaction");
+        assert!(docs.is_empty());
+    }
+}
