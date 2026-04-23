@@ -14,20 +14,30 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
 
-    // Transactions for this wallet come from SwiftData now.
-    @Query private var accounts: [PersistentAccount]
+    // Badge count for "View All Transactions". Backed by a
+    // bounded FetchDescriptor against the `(walletId, firstSeen)`
+    // compound index on `PersistentTransaction` — SQLite resolves
+    // it as an index-only scan. `propertiesToFetch = [\.walletId]`
+    // keeps SwiftData from hydrating `transactionData` / `label` /
+    // etc. just to produce a count; we only ever read `.count`.
+    //
+    // Previous approach queried `PersistentAccount` and reduced
+    // `accounts.reduce(0) { $0 + $1.transactions.count }`, which
+    // fault-loaded every transaction across every account just to
+    // count them — O(N) main-thread work on every render.
+    @Query private var walletTransactions: [PersistentTransaction]
 
     init(wallet: HDWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        _accounts = Query(filter: #Predicate<PersistentAccount> { acc in
-            acc.wallet?.walletId == walletId
-        })
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        descriptor.propertiesToFetch = [\.walletId]
+        _walletTransactions = Query(descriptor)
     }
 
-    private var transactionCount: Int {
-        accounts.reduce(0) { $0 + $1.transactions.count }
-    }
+    private var transactionCount: Int { walletTransactions.count }
 
     var body: some View {
         VStack(spacing: 0) {
