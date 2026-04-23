@@ -42,14 +42,74 @@ struct KeychainExplorerView: View {
         ),
     ]
 
-    /// Cached items keyed by service. `reload()` repopulates on
-    /// appear and after any manual refresh.
+    /// Cached items keyed by service. Populated once by
+    /// [`loadIfNeeded`] and only mutated via the toolbar refresh
+    /// button. Avoiding `.task` / `.onAppear` reloads on every
+    /// detail-view pop is deliberate: mutating this `@State` while
+    /// a `NavigationLink` destination is animating in invalidates
+    /// the link's identity and bounces the navigation straight back.
     @State private var itemsByService: [String: [KeychainItemSummary]] = [:]
+    /// One-shot load gate. Flipped true after the first populate so
+    /// re-appear events (returning from the detail view) don't
+    /// trigger another reload.
+    @State private var hasLoaded = false
 
     var body: some View {
         List {
-            ForEach(services) { cfg in
-                serviceSections(cfg)
+            // Collapse every service's items into a single
+            // `(category, rows)` stream, then render one Section
+            // per category. This is the simplest shape the iOS 18
+            // List diff is happy with: no nested `DisclosureGroup`,
+            // no tuple-keyed `ForEach`, no conditional footers that
+            // appear/disappear across renders.
+            ForEach(Category.allCases, id: \.self) { cat in
+                let rows = rowsForCategory(cat)
+                if !rows.isEmpty {
+                    Section {
+                        ForEach(rows) { item in
+                            NavigationLink {
+                                KeychainItemDetailView(item: item)
+                            } label: {
+                                itemRow(item, category: cat)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Label(cat.title, systemImage: cat.symbol)
+                            Spacer()
+                            Text("\(rows.count)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if allItems.isEmpty && hasLoaded {
+                Section {
+                    Text("No items")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Service-info tail. Read-only; stays in a dedicated
+            // bottom section so its re-render can't affect the
+            // NavigationLinks above.
+            Section("Services") {
+                ForEach(services) { cfg in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(cfg.title)
+                            .font(.subheadline)
+                        Text(cfg.service)
+                            .font(.caption2.monospaced())
+                            .foregroundColor(.secondary)
+                        Text(cfg.footer)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                }
             }
         }
         .navigationTitle("Keychain Explorer")
@@ -64,94 +124,39 @@ struct KeychainExplorerView: View {
                 .help("Re-query the keychain")
             }
         }
-        // `.task` fires once per view-identity (not on every re-
-        // appear after a detail-view pop). Using `.onAppear` here
-        // caused the parent `List` to re-render right as a pushed
-        // `NavigationLink` destination was appearing, invalidating
-        // the link's identity and bouncing the navigation back —
-        // visible to the user as "tapping a row kicks me out of
-        // the screen". `.task` avoids the re-render.
-        .task { reload() }
-    }
-
-    // MARK: - Sections
-
-    /// Emits one `Section` per (service, category) pair. Flattened
-    /// rather than nested inside a `DisclosureGroup` because
-    /// `NavigationLink` children of a `DisclosureGroup` inside a
-    /// `List` exhibit a push-then-immediate-pop bug in iOS 18 when
-    /// the enclosing list re-renders. Standard sections don't have
-    /// that issue.
-    @ViewBuilder
-    private func serviceSections(_ cfg: ServiceConfig) -> some View {
-        let items = itemsByService[cfg.service] ?? []
-        let grouped = Dictionary(grouping: items) { Category.from($0.account) }
-
-        if items.isEmpty {
-            Section {
-                Text("No items")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } header: {
-                Text(cfg.title)
-            } footer: {
-                serviceFooter(cfg)
-            }
-        } else {
-            // Track the first populated category so we only render
-            // the service-level footer + service-identifier under
-            // its last section — keeps the service description from
-            // repeating on every category.
-            let populated = Category.allCases.filter { grouped[$0]?.isEmpty == false }
-            ForEach(Array(populated.enumerated()), id: \.element) { idx, cat in
-                let rows = grouped[cat] ?? []
-                Section {
-                    ForEach(rows) { item in
-                        NavigationLink {
-                            KeychainItemDetailView(item: item)
-                        } label: {
-                            itemRow(item, category: cat)
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Label(cat.title, systemImage: cat.symbol)
-                        Spacer()
-                        Text("\(rows.count)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    // Stamp the service title on the first section
-                    // of each service block so the user can tell
-                    // which service they're looking at.
-                    if idx == 0 {
-                        // Nothing extra — the header above already
-                        // shows the category; service title sits
-                        // on the outermost footer.
-                        EmptyView()
-                    }
-                } footer: {
-                    // Show the service footer only on the last
-                    // populated category of the service so it
-                    // doesn't repeat.
-                    if idx == populated.count - 1 {
-                        serviceFooter(cfg)
-                    }
-                }
-            }
+        // One-shot initial load. Using `.onAppear` with an explicit
+        // gate instead of `.task` because `.task` restarts on every
+        // reappear (detail-view pop); that restart fires a reload,
+        // mutates `@State itemsByService`, and invalidates the
+        // NavigationLink identity of a tap already mid-flight —
+        // visible as "I tap a row and it bounces me back."
+        .onAppear {
+            guard !hasLoaded else { return }
+            hasLoaded = true
+            reload()
         }
     }
 
-    @ViewBuilder
-    private func serviceFooter(_ cfg: ServiceConfig) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(cfg.service)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Text(cfg.footer)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
+    // MARK: - Row aggregation
+
+    /// Flatten every service's items into a single list. Services
+    /// are already keyed on a unified namespace (`WalletStorage.
+    /// keychainService`), so cross-service deduplication isn't
+    /// needed in practice.
+    private var allItems: [KeychainItemSummary] {
+        itemsByService.values.flatMap { $0 }
+    }
+
+    /// Rows belonging to `cat`, sorted ascending by account name
+    /// (the inspector already sorts within a service, but we join
+    /// across services here so an explicit sort keeps the UI
+    /// deterministic).
+    private func rowsForCategory(_ cat: Category) -> [KeychainItemSummary] {
+        allItems
+            .filter { Category.from($0.account) == cat }
+            .sorted { lhs, rhs in
+                lhs.account.localizedCaseInsensitiveCompare(rhs.account) == .orderedAscending
+            }
     }
 
     @ViewBuilder
