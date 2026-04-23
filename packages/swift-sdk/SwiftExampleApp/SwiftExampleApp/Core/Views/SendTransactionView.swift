@@ -171,12 +171,8 @@ struct SendTransactionView: View {
     }
 
     private var platformBalance: UInt64 {
-        platformState.identities
-            .filter {
-                $0.walletId == wallet.walletId &&
-                $0.network == wallet.network.rawValue
-            }
-            .reduce(0) { $0 + $1.balance }
+        (persistentWallets.first?.identities ?? [])
+            .reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
     }
 
     private var availableSources: [FundSource] {

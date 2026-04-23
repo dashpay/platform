@@ -655,15 +655,15 @@ struct WalletRowView: View {
 
     private var record: PersistentWallet? { persistentWallets.first }
 
-    private var identitiesForWallet: [IdentityModel] {
-        platformState.identities.filter { identity in
-            identity.walletId == wallet.walletId &&
-                identity.network == wallet.network.rawValue
-        }
+    /// Identities on this wallet — via the SwiftData relationship.
+    /// The wallet↔identity relationship is the canonical source
+    /// now; no need to filter `appState.identities` by walletId.
+    private var identitiesForWallet: [PersistentIdentity] {
+        record?.identities ?? []
     }
 
     private var platformBalance: UInt64 {
-        identitiesForWallet.reduce(0) { $0 + $1.balance }
+        identitiesForWallet.reduce(0) { $0 + UInt64(bitPattern: $1.balance) }
     }
 
     private var totalCoreBalance: UInt64 {

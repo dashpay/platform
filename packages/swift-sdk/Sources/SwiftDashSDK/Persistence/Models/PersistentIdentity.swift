@@ -31,13 +31,38 @@ public final class PersistentIdentity {
     public var network: String
 
     // MARK: - Wallet Association
+    //
+    // Cardinality: an identity belongs to 0 or 1 wallet. A wallet
+    // holds N identities (see `PersistentWallet.identities`). When
+    // the wallet is deleted, `wallet` nulls out (deleteRule:
+    // `.nullify`) and the identity row survives orphaned.
+    //
+    // `walletId` is kept alongside `wallet` as a denormalized 32-
+    // byte key because:
+    //   1. Rust-side changesets ship an opaque `[u8; 32]` and it's
+    //      cheaper to persist raw than to fetch-and-link on every
+    //      upsert (`persistIdentities` fetches + assigns `wallet`
+    //      once per round, not once per scalar mutation).
+    //   2. Several predicates already filter `PersistentIdentity`
+    //      by `walletId` directly. Dropping the scalar would break
+    //      those without buying much.
+    //
+    // When both are set they MUST agree: the persister invariant
+    // is `wallet?.walletId == walletId`. `identityIndex` carries
+    // the DIP-9 index the wallet owns for this identity — required
+    // whenever `wallet != nil` (every real on-chain identity the
+    // wallet knows about was registered at some DIP-9 index), and
+    // ignored when `wallet == nil`.
     public var walletId: Data?
+    /// @Relationship is declared on the `PersistentWallet` side
+    /// (`identities`, with `inverse: \PersistentIdentity.wallet`),
+    /// so this is a plain stored property.
+    public var wallet: PersistentWallet?
     /// DIP-9 identity index within the owning wallet. Mirrors the
-    /// `identity_index` carried on `IdentityEntryFFI` from Rust. Used
-    /// to stable-sort identities within a wallet (e.g. when grouping
-    /// public keys by identity). Defaults to 0 for rows migrated from
-    /// the pre-column schema — the next identity-changeset upsert
-    /// fills in the real value.
+    /// `identity_index` carried on `IdentityEntryFFI` from Rust.
+    /// Only meaningful when `wallet != nil`; defaults to 0
+    /// otherwise. Used to stable-sort identities within a wallet
+    /// (e.g. when grouping public keys by identity).
     public var identityIndex: UInt32 = 0
 
     // MARK: - Relationships
@@ -171,6 +196,76 @@ extension PersistentIdentity {
         #Predicate<PersistentIdentity> { identity in
             identity.isLocal == true && identity.network == network
         }
+    }
+
+    /// Fetch a single `PersistentIdentity` by its raw 32-byte id.
+    /// Returns `nil` if the row doesn't exist or the fetch throws.
+    public static func fetch(
+        in context: ModelContext,
+        identityId: Data
+    ) -> PersistentIdentity? {
+        let target = identityId
+        let descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == target }
+        )
+        return try? context.fetch(descriptor).first
+    }
+}
+
+// MARK: - Mutation helpers
+//
+// Deliberately small surface: only the fields views actually
+// mutate from inside SwiftUI. Every helper fetches by identityId,
+// applies the change, bumps `lastUpdated`, and leaves `save()` to
+// the caller (or to the atomic-round bracket on the persister
+// handler). `@discardableResult` on all of them because most
+// call sites don't care whether the row existed.
+
+extension PersistentIdentity {
+    @discardableResult
+    public static func updateBalance(
+        in context: ModelContext,
+        identityId: Data,
+        balance: UInt64
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.balance = Int64(bitPattern: balance)
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func updateDpnsName(
+        in context: ModelContext,
+        identityId: Data,
+        dpnsName: String?
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.dpnsName = dpnsName
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func updateMainDpnsName(
+        in context: ModelContext,
+        identityId: Data,
+        mainDpnsName: String?
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.mainDpnsName = mainDpnsName
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func remove(
+        in context: ModelContext,
+        identityId: Data
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        context.delete(row)
+        return true
     }
 }
 

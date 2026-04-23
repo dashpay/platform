@@ -599,13 +599,13 @@ struct BalanceCardView: View {
         if blastBalance > 0 || hasSynced {
             return blastBalance
         }
-        return platformState.identities
-            .filter { identity in
-                identity.walletId == wallet.walletId &&
-                identity.network == wallet.network.rawValue
-            }
-            .reduce(0) { sum, identity in
-                sum + identity.balance
+        // Fall back to summing credits across the wallet's
+        // identities (via the SwiftData relationship). Pre-BLAST-
+        // sync state shows approximate credit balance aggregated
+        // from the on-chain identities we know about.
+        return (persistentWallets.first?.identities ?? [])
+            .reduce(UInt64(0)) { sum, identity in
+                sum + UInt64(bitPattern: identity.balance)
             }
     }
 

@@ -205,6 +205,20 @@ public class PlatformWalletPersistenceHandler {
         return record
     }
 
+    /// Look up a `PersistentWallet` to hang on
+    /// `PersistentIdentity.wallet`. Non-creating — returns `nil` if
+    /// no row exists (an identity may arrive before its owning
+    /// wallet row under weird restore orderings) or if the caller
+    /// passed `nil`. Kept separate from `ensureWalletRecord` so a
+    /// stray identity upsert never creates a placeholder wallet.
+    private func fetchWalletForLink(walletId: Data?) -> PersistentWallet? {
+        guard let walletId else { return nil }
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        return try? backgroundContext.fetch(descriptor).first
+    }
+
     /// Apply a single account changeset to SwiftData.
     private func applyAccountChangeset(
         walletRecord: PersistentWallet,
@@ -528,6 +542,16 @@ public class PlatformWalletPersistenceHandler {
                 row.alias = label
             }
             row.lastUpdated = Date()
+
+            // Keep the PersistentIdentity.wallet relationship in
+            // sync with the denormalized walletId. The relationship
+            // gives downstream `@Query` views a first-class
+            // SwiftData handle (rather than making them fetch
+            // `PersistentWallet` separately by id) and lets SwiftData
+            // enforce the `deleteRule: .nullify` invariant when a
+            // wallet row is removed. Setting to nil when
+            // `entry.walletId` is nil — the identity is detached.
+            row.wallet = fetchWalletForLink(walletId: entry.walletId)
         }
 
         for identityId in removed {

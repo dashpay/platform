@@ -36,6 +36,18 @@ public final class PersistentWallet {
     @Relationship(deleteRule: .cascade, inverse: \PersistentAccount.wallet)
     public var accounts: [PersistentAccount]
 
+    /// Identities registered against this wallet. Cardinality is
+    /// 0..N — a wallet may have zero identities (freshly created)
+    /// or many. Deletion semantics: `.nullify` so an identity
+    /// survives a wallet delete as an orphaned row (useful for
+    /// post-mortem inspection and possible re-association if the
+    /// wallet is re-imported from the same seed).
+    ///
+    /// Paired with `PersistentIdentity.wallet` (plain stored
+    /// property; the inverse key lives on this side).
+    @Relationship(deleteRule: .nullify, inverse: \PersistentIdentity.wallet)
+    public var identities: [PersistentIdentity]
+
     public init(
         walletId: Data,
         network: String,
@@ -54,6 +66,7 @@ public final class PersistentWallet {
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.accounts = []
+        self.identities = []
     }
 }
 
