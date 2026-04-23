@@ -128,44 +128,6 @@ class AppState: ObservableObject {
         }
     }
 
-    func loadSampleIdentities() async {
-        guard let dataManager = dataManager else { return }
-
-        // Add some sample local identities for testing
-        let sampleIdentities = [
-            IdentityModel(
-                idString: "1111111111111111111111111111111111111111111111111111111111111111",
-                balance: 1000000000,
-                isLocal: true,
-                alias: "Alice"
-            ),
-            IdentityModel(
-                idString: "2222222222222222222222222222222222222222222222222222222222222222",
-                balance: 500000000,
-                isLocal: true,
-                alias: "Bob"
-            ),
-            IdentityModel(
-                idString: "3333333333333333333333333333333333333333333333333333333333333333",
-                balance: 250000000,
-                isLocal: true,
-                alias: "Charlie"
-            )
-        ].compactMap { $0 }
-
-        // Save to persistence
-        for identity in sampleIdentities {
-            do {
-                try dataManager.saveIdentity(identity)
-            } catch {
-                print("Error saving sample identity: \(error)")
-            }
-        }
-
-        // Update published array
-        identities = sampleIdentities
-    }
-
     func showError(message: String) {
         errorMessage = message
         showError = true

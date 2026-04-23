@@ -203,22 +203,6 @@ struct OptionsView: View {
                     .disabled(isLoadingStatus)
                 }
 
-                Section("Developer") {
-                    Toggle("Show Test Data", isOn: .constant(false))
-                        .disabled(true)
-
-                    Toggle("Enable Debug Logging", isOn: .constant(false))
-                        .disabled(true)
-
-                    Button(action: {
-                        Task {
-                            await appState.loadSampleIdentities()
-                        }
-                    }) {
-                        Label("Load Sample Identities", systemImage: "person.badge.plus")
-                    }
-                }
-
                 Section("About") {
                     Button(action: { showingAbout = true }) {
                         HStack {
