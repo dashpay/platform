@@ -111,3 +111,158 @@ impl ResourceVoteChoiceToKeyTrait for ResourceVoteChoice {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "server")]
+mod tests {
+    use super::*;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+    use platform_version::version::PlatformVersion;
+
+    /// Helper: construct a ResourceVote referencing a given contract id / document type
+    /// / index name.
+    fn make_resource_vote(
+        contract_id: Identifier,
+        document_type_name: &str,
+        index_name: &str,
+    ) -> ResourceVote {
+        ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                ContestedDocumentResourceVotePoll {
+                    contract_id,
+                    document_type_name: document_type_name.to_string(),
+                    index_name: index_name.to_string(),
+                    index_values: vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text("label".to_string()),
+                    ],
+                },
+            ),
+            resource_vote_choice: ResourceVoteChoice::Abstain,
+        })
+    }
+
+    #[test]
+    fn resource_vote_choice_to_key_towards_identity_returns_identity_bytes() {
+        let id_bytes = [0xAAu8; 32];
+        let choice = ResourceVoteChoice::TowardsIdentity(Identifier::from(id_bytes));
+        let key = choice.to_key();
+        assert_eq!(key, id_bytes.to_vec());
+    }
+
+    #[test]
+    fn resource_vote_choice_to_key_abstain_matches_constant() {
+        assert_eq!(
+            ResourceVoteChoice::Abstain.to_key(),
+            RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec()
+        );
+    }
+
+    #[test]
+    fn resource_vote_choice_to_key_lock_matches_constant() {
+        assert_eq!(
+            ResourceVoteChoice::Lock.to_key(),
+            RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()
+        );
+    }
+
+    #[test]
+    fn resource_vote_choice_to_key_abstain_and_lock_differ() {
+        assert_ne!(
+            ResourceVoteChoice::Abstain.to_key(),
+            ResourceVoteChoice::Lock.to_key()
+        );
+    }
+
+    #[test]
+    fn tree_path_resource_vote_errors_on_contract_id_mismatch() {
+        let pv = PlatformVersion::latest();
+        let contract =
+            get_dpns_data_contract_fixture(None, 0, pv.protocol_version).data_contract_owned();
+
+        // Use a deliberately *wrong* contract id in the vote poll.
+        let wrong_contract_id = Identifier::from([0xEEu8; 32]);
+        assert_ne!(wrong_contract_id, contract.id());
+        let vote = make_resource_vote(wrong_contract_id, "domain", "parentNameAndLabel");
+
+        let err = vote.tree_path(&contract).expect_err("expected VoteError");
+        match err {
+            ProtocolError::VoteError(msg) => {
+                assert!(
+                    msg.contains("does not match supplied contract"),
+                    "msg: {msg}"
+                );
+            }
+            other => panic!("expected VoteError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tree_path_resource_vote_errors_on_unknown_document_type() {
+        let pv = PlatformVersion::latest();
+        let contract =
+            get_dpns_data_contract_fixture(None, 0, pv.protocol_version).data_contract_owned();
+
+        let vote = make_resource_vote(contract.id(), "not_a_real_type", "parentNameAndLabel");
+
+        let err = vote.tree_path(&contract).expect_err("expected error");
+        // Unknown document type surfaces as a DataContractError wrapped in ProtocolError.
+        // Accept any ProtocolError variant -- the important property is that it fails
+        // *before* reaching the indexes.get step.
+        assert!(
+            !matches!(err, ProtocolError::UnknownContestedIndexResolution(_)),
+            "should fail on doc_type, not on index lookup: {err:?}"
+        );
+    }
+
+    #[test]
+    fn tree_path_resource_vote_errors_on_unknown_index_name() {
+        let pv = PlatformVersion::latest();
+        let contract =
+            get_dpns_data_contract_fixture(None, 0, pv.protocol_version).data_contract_owned();
+
+        // Valid document type but bogus index name.
+        let vote = make_resource_vote(contract.id(), "domain", "no_such_index");
+
+        let err = vote.tree_path(&contract).expect_err("expected error");
+        match err {
+            ProtocolError::UnknownContestedIndexResolution(msg) => {
+                assert!(msg.contains("no index named no_such_index"), "msg: {msg}");
+            }
+            other => panic!("expected UnknownContestedIndexResolution, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tree_path_resource_vote_ok_for_dpns_parent_name_and_label() {
+        let pv = PlatformVersion::latest();
+        let contract =
+            get_dpns_data_contract_fixture(None, 0, pv.protocol_version).data_contract_owned();
+
+        let vote = make_resource_vote(contract.id(), "domain", "parentNameAndLabel");
+
+        let path = vote.tree_path(&contract).expect("tree_path should succeed");
+        // The path must be non-empty; we don't hard-code its exact contents so the
+        // test doesn't need to be updated whenever dpns changes its contract layout.
+        assert!(!path.is_empty());
+    }
+
+    #[test]
+    fn tree_path_vote_dispatches_to_resource_vote() {
+        let pv = PlatformVersion::latest();
+        let contract =
+            get_dpns_data_contract_fixture(None, 0, pv.protocol_version).data_contract_owned();
+
+        let vote = Vote::ResourceVote(make_resource_vote(
+            contract.id(),
+            "domain",
+            "parentNameAndLabel",
+        ));
+        let path = vote.tree_path(&contract).expect("tree_path should succeed");
+        assert!(!path.is_empty());
+    }
+}

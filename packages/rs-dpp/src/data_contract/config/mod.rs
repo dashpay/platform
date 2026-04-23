@@ -686,4 +686,124 @@ mod tests {
             assert!(config.requires_identity_decryption_bounded_key.is_none());
         }
     }
+
+    mod bincode_roundtrip {
+        use super::*;
+        use bincode::config;
+
+        #[test]
+        fn v0_bincode_roundtrip_preserves_fields() {
+            let cfg = config::standard();
+            let original = DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: true,
+                readonly: true,
+                keeps_history: true,
+                documents_keep_history_contract_default: true,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Unique),
+                requires_identity_decryption_bounded_key: None,
+            });
+            let bytes = bincode::encode_to_vec(original, cfg).expect("encode");
+            let (decoded, _): (DataContractConfig, _) =
+                bincode::decode_from_slice(&bytes, cfg).expect("decode");
+            assert_eq!(decoded, original);
+        }
+
+        #[test]
+        fn v1_bincode_roundtrip_preserves_sized_integer_types() {
+            let cfg = config::standard();
+            let original = DataContractConfig::V1(DataContractConfigV1 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: true,
+                documents_can_be_deleted_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+                sized_integer_types: false,
+            });
+            let bytes = bincode::encode_to_vec(original, cfg).expect("encode");
+            let (decoded, _): (DataContractConfig, _) =
+                bincode::decode_from_slice(&bytes, cfg).expect("decode");
+            assert_eq!(decoded, original);
+            // And sized_integer_types is correctly false on the decoded copy
+            assert!(!decoded.sized_integer_types());
+        }
+    }
+
+    mod from_value_tests {
+        use super::*;
+        use platform_value::platform_value;
+
+        #[test]
+        fn from_value_yields_default_for_empty_object() {
+            // Empty object -> defaults; succeeds on the latest platform version
+            let value = platform_value!({});
+            let platform_version = PlatformVersion::latest();
+            let cfg = DataContractConfig::from_value(value, platform_version)
+                .expect("empty object should deserialize to defaults");
+            // All booleans should match defaults
+            assert_eq!(cfg.can_be_deleted(), DEFAULT_CONTRACT_CAN_BE_DELETED);
+        }
+    }
+
+    mod get_contract_configuration_properties_tests {
+        use super::*;
+        use platform_value::Value;
+        use std::collections::BTreeMap;
+
+        fn make_contract_map(can_be_deleted: bool, readonly: bool) -> BTreeMap<String, Value> {
+            let mut m = BTreeMap::new();
+            m.insert(
+                property::CAN_BE_DELETED.to_string(),
+                Value::Bool(can_be_deleted),
+            );
+            m.insert(property::READONLY.to_string(), Value::Bool(readonly));
+            m
+        }
+
+        #[test]
+        fn reads_booleans_from_map() {
+            let platform_version = PlatformVersion::latest();
+            // Use distinct values for both fields so a key mix-up (reading
+            // one field from the other's key) would fail the assertion.
+            for (can_be_deleted, readonly) in [(true, false), (false, true)] {
+                let contract = make_contract_map(can_be_deleted, readonly);
+                let cfg = DataContractConfig::get_contract_configuration_properties(
+                    &contract,
+                    platform_version,
+                )
+                .expect("should parse config from map");
+                assert_eq!(cfg.can_be_deleted(), can_be_deleted);
+                assert_eq!(cfg.readonly(), readonly);
+            }
+        }
+
+        #[test]
+        fn missing_keys_fall_back_to_defaults() {
+            let platform_version = PlatformVersion::latest();
+            let empty: BTreeMap<String, Value> = BTreeMap::new();
+            let cfg =
+                DataContractConfig::get_contract_configuration_properties(&empty, platform_version)
+                    .expect("should parse empty contract map");
+            // Defaults preserved
+            assert_eq!(cfg.can_be_deleted(), DEFAULT_CONTRACT_CAN_BE_DELETED);
+            assert_eq!(cfg.keeps_history(), DEFAULT_CONTRACT_KEEPS_HISTORY);
+        }
+
+        #[test]
+        fn non_bool_value_errors() {
+            let platform_version = PlatformVersion::latest();
+            let mut m: BTreeMap<String, Value> = BTreeMap::new();
+            m.insert(
+                property::CAN_BE_DELETED.to_string(),
+                Value::Text("not-a-bool".to_string()),
+            );
+            let result =
+                DataContractConfig::get_contract_configuration_properties(&m, platform_version);
+            assert!(result.is_err());
+        }
+    }
 }
