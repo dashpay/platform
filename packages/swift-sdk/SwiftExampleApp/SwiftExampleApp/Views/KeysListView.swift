@@ -179,6 +179,7 @@ struct PrivateKeyView: View {
   let keyId: UInt32
   let onCopy: (Int) -> Void
   @Environment(\.dismiss) var dismiss
+  @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var appState: AppState
   @State private var showingPrivateKey = false
   @State private var showForgetKeyAlert = false
@@ -357,8 +358,15 @@ struct PrivateKeyView: View {
     let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
 
     if removed {
-      // Update the persistent public key to clear the reference
-      appState.removePrivateKeyReference(identityId: identity.identityId, keyId: Int32(keyId))
+      // Clear the keychain reference on the matching
+      // PersistentPublicKey. The @Query observing the parent
+      // identity will re-render this row automatically.
+      if let persistedKey = identity.publicKeys.first(
+        where: { $0.keyId == Int32(keyId) }
+      ) {
+        persistedKey.privateKeyKeychainIdentifier = nil
+        try? modelContext.save()
+      }
       dismiss()
     }
   }

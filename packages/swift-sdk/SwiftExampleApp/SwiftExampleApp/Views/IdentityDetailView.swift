@@ -335,10 +335,20 @@ struct IdentityDetailView: View {
                 // Update balance
                 if let balanceValue = fetchedIdentity["balance"] {
                     if let balanceNum = balanceValue as? NSNumber {
-                        appState.updateIdentityBalance(id: identity.identityId, newBalance: balanceNum.uint64Value)
+                        PersistentIdentity.updateBalance(
+                            in: modelContext,
+                            identityId: identity.identityId,
+                            balance: balanceNum.uint64Value
+                        )
+                        try? modelContext.save()
                     } else if let balanceString = balanceValue as? String,
                               let balanceUInt = UInt64(balanceString) {
-                        appState.updateIdentityBalance(id: identity.identityId, newBalance: balanceUInt)
+                        PersistentIdentity.updateBalance(
+                            in: modelContext,
+                            identityId: identity.identityId,
+                            balance: balanceUInt
+                        )
+                        try? modelContext.save()
                     }
                 }
 
@@ -378,9 +388,30 @@ struct IdentityDetailView: View {
 
                 print("🔵 Parsed \(parsedPublicKeys.count) public keys total")
 
-                // Update the identity with public keys
-                appState.updateIdentityPublicKeys(id: identity.identityId, publicKeys: parsedPublicKeys)
-                print("🔵 Called updateIdentityPublicKeys")
+                // Replace the PersistentIdentity's public key rows
+                // with the freshly-fetched set. Carries over the
+                // keychain identifier for any public key we already
+                // knew about so we don't lose track of the matching
+                // private key after a refresh.
+                let identifierByKeyId: [Int32: String] = Dictionary(
+                    uniqueKeysWithValues: identity.publicKeys.compactMap { key in
+                        guard let identifier = key.privateKeyKeychainIdentifier else { return nil }
+                        return (key.keyId, identifier)
+                    }
+                )
+                identity.publicKeys.removeAll()
+                let identityHex = identity.identityIdBase58
+                for publicKey in parsedPublicKeys {
+                    guard let persistentKey = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
+                        continue
+                    }
+                    if let identifier = identifierByKeyId[persistentKey.keyId] {
+                        persistentKey.privateKeyKeychainIdentifier = identifier
+                    }
+                    identity.addPublicKey(persistentKey)
+                }
+                try? modelContext.save()
+                print("🔵 Persisted \(parsedPublicKeys.count) public keys for identity")
 
                 // Refresh DPNS names from network
                 await loadDPNSNamesFromNetwork()
@@ -417,19 +448,17 @@ struct IdentityDetailView: View {
         let contested = await fetchContestedDPNSNames(identity: identity)
 
         await MainActor.run {
-            let regularNames = regular.0
-            let contestedNames = contested.0
-            let contestedInfo = contested.1
+            // Drive the local @State fields directly — they are the
+            // source of truth for this view's DPNS lists. The
+            // previous `appState.updateIdentityDPNSNames(...)` call
+            // wrote to the IdentityModel cache (which no longer
+            // exists post-migration) and was not bound back to this
+            // view's state, so nothing actually rendered from it.
+            self.dpnsNames = regular.0
+            self.contestedDpnsNames = contested.0
+            self.contestedDpnsInfo = contested.1
 
-            // Update all DPNS names in the identity model
-            appState.updateIdentityDPNSNames(
-                id: identity.identityId,
-                dpnsNames: regularNames,
-                contestedNames: contestedNames,
-                contestedInfo: contestedInfo
-            )
-
-            print("🔵 Updated identity with \(regularNames.count) regular names and \(contestedNames.count) contested names")
+            print("🔵 Updated view with \(dpnsNames.count) regular names and \(contestedDpnsNames.count) contested names")
         }
     }
 

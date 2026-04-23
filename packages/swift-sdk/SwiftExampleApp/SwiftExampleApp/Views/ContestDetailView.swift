@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 /// DPNS contest detail screen.
@@ -29,6 +30,7 @@ struct ContestDetailView: View {
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @Query private var identities: [PersistentIdentity]
 
     @State private var voteState: ContestVoteState?
     @State private var isRefreshing = false
@@ -367,12 +369,11 @@ struct ContestDetailView: View {
             return
         }
 
-        // We need the wallet the identity belongs to. Look it up by
-        // matching `identityData` against loaded wallets.
-        // `IdentityModel` carries `walletId`, so iterate
-        // `appState.identities` for the match.
-        let identity = appState.identities.first {
-            $0.id == identityData
+        // Look up the identity row via `@Query` to find its owning
+        // wallet. One hop via the `PersistentIdentity.walletId`
+        // scalar; the `wallet` relationship would also work.
+        let identity = identities.first {
+            $0.identityId == identityData
         }
         guard let walletId = identity?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {

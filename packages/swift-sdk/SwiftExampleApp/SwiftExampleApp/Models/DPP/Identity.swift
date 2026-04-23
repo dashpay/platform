@@ -1,25 +1,10 @@
 import Foundation
 import SwiftDashSDK
 
-// Re-export SDK Identity types for backward compatibility
+// Re-export SDK Identity types so app-side sources can use the
+// bare names. The legacy `DPPIdentity(from: IdentityModel)`
+// convenience is gone — callers build `DPPIdentity` directly, or
+// derive it from a `PersistentIdentity` row when they need the DPP
+// projection.
 public typealias DPPIdentity = SwiftDashSDK.DPPIdentity
 public typealias PartialIdentity = SwiftDashSDK.PartialIdentity
-
-// MARK: - App-Specific Extensions
-
-extension DPPIdentity {
-    /// Create an identity from our simplified IdentityModel
-    init?(from model: IdentityModel) {
-        // model.id is already Data, no conversion needed
-        let idData = model.id
-
-        self.init(
-            id: idData,
-            publicKeys: [:],
-            balance: model.balance,
-            revision: 0
-        )
-
-        // Note: In a real implementation, we would convert private keys to public keys
-    }
-}

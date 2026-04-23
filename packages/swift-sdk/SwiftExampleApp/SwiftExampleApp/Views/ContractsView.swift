@@ -1,15 +1,19 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct ContractsView: View {
     @EnvironmentObject var appState: AppState
+    @Query(sort: \PersistentDataContract.createdAt, order: .reverse)
+    private var contracts: [PersistentDataContract]
+
     @State private var showingFetchContract = false
-    @State private var selectedContract: ContractModel?
+    @State private var selectedContract: PersistentDataContract?
 
     var body: some View {
         NavigationView {
             List {
-                if appState.contracts.isEmpty {
+                if contracts.isEmpty {
                     EmptyStateView(
                         systemImage: "doc.plaintext",
                         title: "No Contracts",
@@ -17,7 +21,7 @@ struct ContractsView: View {
                     )
                     .listRowBackground(Color.clear)
                 } else {
-                    ForEach(appState.contracts) { contract in
+                    ForEach(contracts) { contract in
                         ContractRow(contract: contract) {
                             selectedContract = contract
                         }
@@ -39,72 +43,12 @@ struct ContractsView: View {
             .sheet(item: $selectedContract) { contract in
                 ContractDetailView(contract: contract)
             }
-            .onAppear {
-                if appState.contracts.isEmpty {
-                    loadSampleContracts()
-                }
-            }
         }
-    }
-
-    private func loadSampleContracts() {
-        // Add sample contracts for demonstration
-        appState.contracts = [
-            ContractModel(
-                id: "dpns-contract",
-                name: "DPNS",
-                version: 1,
-                ownerId: Data(repeating: 0, count: 32),
-                documentTypes: ["domain", "preorder"],
-                schema: [
-                    "domain": [
-                        "type": "object",
-                        "properties": [
-                            "label": ["type": "string"],
-                            "normalizedLabel": ["type": "string"],
-                            "normalizedParentDomainName": ["type": "string"]
-                        ]
-                    ]
-                ]
-            ),
-            ContractModel(
-                id: "dashpay-contract",
-                name: "DashPay",
-                version: 1,
-                ownerId: Data(repeating: 0, count: 32),
-                documentTypes: ["profile", "contactRequest"],
-                schema: [
-                    "profile": [
-                        "type": "object",
-                        "properties": [
-                            "displayName": ["type": "string"],
-                            "publicMessage": ["type": "string"]
-                        ]
-                    ]
-                ]
-            ),
-            ContractModel(
-                id: "masternode-reward-shares-contract",
-                name: "Masternode Reward Shares",
-                version: 1,
-                ownerId: Data(repeating: 0, count: 32),
-                documentTypes: ["rewardShare"],
-                schema: [
-                    "rewardShare": [
-                        "type": "object",
-                        "properties": [
-                            "payToId": ["type": "string"],
-                            "percentage": ["type": "number"]
-                        ]
-                    ]
-                ]
-            )
-        ]
     }
 }
 
 struct ContractRow: View {
-    let contract: ContractModel
+    let contract: PersistentDataContract
     let onTap: () -> Void
 
     var body: some View {
@@ -115,16 +59,18 @@ struct ContractRow: View {
                         .font(.headline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text("v\(contract.version)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.2))
-                        .cornerRadius(4)
+                    if let version = contract.version {
+                        Text("v\(version)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.2))
+                            .cornerRadius(4)
+                    }
                 }
 
-                Text(contract.id)
+                Text(contract.idBase58)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -134,7 +80,7 @@ struct ContractRow: View {
                     Image(systemName: "doc.text")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("\(contract.documentTypes.count) document types")
+                    Text("\(contract.documentTypesList.count) document types")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -146,7 +92,7 @@ struct ContractRow: View {
 }
 
 struct ContractDetailView: View {
-    let contract: ContractModel
+    let contract: PersistentDataContract
     @Environment(\.dismiss) var dismiss
     @State private var selectedDocumentType: String?
 
@@ -157,9 +103,13 @@ struct ContractDetailView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             DetailRow(label: "Contract Name", value: contract.name)
-                            DetailRow(label: "Contract ID", value: contract.id)
-                            DetailRow(label: "Version", value: "\(contract.version)")
-                            DetailRow(label: "Owner ID", value: contract.ownerIdString)
+                            DetailRow(label: "Contract ID", value: contract.idBase58)
+                            if let version = contract.version {
+                                DetailRow(label: "Version", value: "\(version)")
+                            }
+                            if let ownerId = contract.ownerIdBase58 {
+                                DetailRow(label: "Owner ID", value: ownerId)
+                            }
                         }
                         .padding()
                         .background(Color.gray.opacity(0.1))
@@ -171,7 +121,7 @@ struct ContractDetailView: View {
                             Text("Document Types")
                                 .font(.headline)
 
-                            ForEach(contract.documentTypes, id: \.self) { docType in
+                            ForEach(contract.documentTypesList, id: \.self) { docType in
                                 Button(action: {
                                     selectedDocumentType = selectedDocumentType == docType ? nil : docType
                                 }) {
@@ -208,7 +158,7 @@ struct ContractDetailView: View {
                             Text("Full Schema")
                                 .font(.headline)
 
-                            Text(contract.formattedSchema)
+                            Text(formattedSchema(contract.schema))
                                 .font(.system(.caption, design: .monospaced))
                                 .padding()
                                 .background(Color.gray.opacity(0.1))
@@ -239,6 +189,14 @@ struct ContractDetailView: View {
             return jsonString
         }
         return "Schema not available"
+    }
+
+    private func formattedSchema(_ schema: [String: Any]) -> String {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: schema, options: .prettyPrinted),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return "Invalid schema"
+        }
+        return jsonString
     }
 }
 

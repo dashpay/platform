@@ -6,6 +6,7 @@ struct FriendsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
     @StateObject private var dashPayService = ObservableDashPayService()
+    @Query private var identities: [PersistentIdentity]
     @State private var selectedIdentityId: String = ""
     @State private var contacts: [DashPayContact] = []
     @State private var incomingRequests: [DashPayContactRequest] = []
@@ -20,12 +21,12 @@ struct FriendsView: View {
     /// `DashPayContact` is `Identifiable` via its `identityId: Data`.
     @State private var paymentTarget: DashPayContact?
 
-    var availableIdentities: [IdentityModel] {
-        appState.identities
+    var availableIdentities: [PersistentIdentity] {
+        identities
     }
 
-    var selectedIdentity: IdentityModel? {
-        availableIdentities.first { $0.idString == selectedIdentityId }
+    var selectedIdentity: PersistentIdentity? {
+        availableIdentities.first { $0.identityIdBase58 == selectedIdentityId }
     }
 
     var body: some View {
@@ -92,18 +93,18 @@ struct FriendsView: View {
                                     VStack(alignment: .leading) {
                                         Text(identity.alias ?? "Identity")
                                             .font(.headline)
-                                        Text(identity.idString.prefix(12) + "...")
+                                        Text(identity.identityIdBase58.prefix(12) + "...")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }
                                     Spacer()
                                     if identity.balance > 0 {
-                                        Text(formatBalance(identity.balance))
+                                        Text(formatBalance(UInt64(bitPattern: identity.balance)))
                                             .font(.caption)
                                             .foregroundColor(.blue)
                                     }
                                 }
-                                .tag(identity.idString)
+                                .tag(identity.identityIdBase58)
                             }
                         }
                         .pickerStyle(.menu)
@@ -205,7 +206,7 @@ struct FriendsView: View {
                 .onAppear {
                     // Set initial selected identity if not set
                     if selectedIdentityId.isEmpty && !availableIdentities.isEmpty {
-                        selectedIdentityId = availableIdentities[0].idString
+                        selectedIdentityId = availableIdentities[0].identityIdBase58
                     }
                 }
                 .onChange(of: selectedIdentityId) { _, newValue in
@@ -219,11 +220,11 @@ struct FriendsView: View {
     /// Errors when the identity has no wallet association or the
     /// wallet isn't currently loaded in the manager.
     private func requireWallet(
-        for identity: IdentityModel
+        for identity: PersistentIdentity
     ) throws -> ManagedPlatformWallet {
         guard let walletId = identity.walletId else {
             throw PlatformWalletError.walletOperation(
-                "Identity \(identity.idString) has no walletId"
+                "Identity \(identity.identityIdBase58) has no walletId"
             )
         }
         guard let wallet = walletManager.wallet(for: walletId) else {
@@ -273,7 +274,7 @@ struct FriendsView: View {
             // so we grab a new one here rather than holding onto one
             // across calls.
             do {
-                let managed = try wallet.managedIdentity(identityId: identity.id)
+                let managed = try wallet.managedIdentity(identityId: identity.identityId)
                 let incomingIds = try managed.getIncomingContactRequestIds()
                 let sentIds = try managed.getSentContactRequestIds()
                 let establishedIds = try managed.getEstablishedContactIds()
@@ -282,13 +283,13 @@ struct FriendsView: View {
                     DashPayContactRequest(
                         id: "incoming-\(senderId.toHexString())",
                         senderId: senderId,
-                        recipientId: identity.id
+                        recipientId: identity.identityId
                     )
                 }
                 sentRequests = sentIds.map { recipientId in
                     DashPayContactRequest(
                         id: "sent-\(recipientId.toHexString())",
-                        senderId: identity.id,
+                        senderId: identity.identityId,
                         recipientId: recipientId
                     )
                 }
@@ -325,7 +326,7 @@ struct FriendsView: View {
         Task { @MainActor in
             do {
                 let wallet = try requireWallet(for: identity)
-                let managed = try wallet.managedIdentity(identityId: identity.id)
+                let managed = try wallet.managedIdentity(identityId: identity.identityId)
                 guard let contactRequest = try managed.getIncomingContactRequest(
                     senderId: request.senderId
                 ) else {
@@ -347,7 +348,7 @@ struct FriendsView: View {
             do {
                 let wallet = try requireWallet(for: identity)
                 try await wallet.rejectContactRequest(
-                    ourIdentityId: identity.id,
+                    ourIdentityId: identity.identityId,
                     contactIdentityId: request.senderId
                 )
                 errorMessage = nil
@@ -475,7 +476,7 @@ struct ContactRequestRow: View {
 }
 
 struct AddFriendView: View {
-    let selectedIdentity: IdentityModel?
+    let selectedIdentity: PersistentIdentity?
     /// Fires after a contact request has been successfully broadcast
     /// + persisted. The parent re-runs `loadFriends()` to refresh
     /// the sent-request list.
@@ -595,7 +596,7 @@ struct AddFriendView: View {
                 }
 
                 _ = try await wallet.sendContactRequest(
-                    senderIdentityId: identity.id,
+                    senderIdentityId: identity.identityId,
                     recipientIdentityId: recipientId
                 )
                 onSent()
@@ -617,7 +618,7 @@ struct AddFriendView: View {
 /// identity changeset callback (5f5ac06d6) forwards the state
 /// update to SwiftData.
 struct SendDashPayPaymentSheet: View {
-    let senderIdentity: IdentityModel
+    let senderIdentity: PersistentIdentity
     let contact: DashPayContact
     /// Fires with the 32-byte txid once the transaction has been
     /// broadcast. Parent uses this to refresh the friends list
@@ -925,7 +926,7 @@ struct SendDashPayPaymentSheet: View {
                 // `PaymentEntry.memo` slot stays available for
                 // future local-note wiring.
                 let txid = try await wallet.sendDashPayPayment(
-                    fromIdentityId: senderIdentity.id,
+                    fromIdentityId: senderIdentity.identityId,
                     toContactIdentityId: contact.identityId,
                     amountDuffs: duffs,
                     memo: nil

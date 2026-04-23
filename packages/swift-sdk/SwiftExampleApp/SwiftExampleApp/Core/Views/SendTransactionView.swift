@@ -11,6 +11,7 @@ struct SendTransactionView: View {
 
     @StateObject private var viewModel: SendViewModel
 
+    @Environment(\.modelContext) private var modelContext
     @Query private var persistentWallets: [PersistentWallet]
 
     init(wallet: HDWallet) {
@@ -124,7 +125,8 @@ struct SendTransactionView: View {
                                 shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,
-                                coreWallet: coreWallet
+                                coreWallet: coreWallet,
+                                modelContext: modelContext
                             )
                         }
                     }

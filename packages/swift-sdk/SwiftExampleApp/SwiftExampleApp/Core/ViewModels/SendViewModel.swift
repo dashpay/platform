@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftDashSDK
 
 /// Available send flow types based on source and destination.
@@ -160,7 +161,8 @@ class SendViewModel: ObservableObject {
         shieldedService: ShieldedService,
         platformState: AppState,
         wallet: HDWallet,
-        coreWallet: ManagedCoreWallet?
+        coreWallet: ManagedCoreWallet?,
+        modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow, let amount = amount else { return }
 
@@ -183,24 +185,49 @@ class SendViewModel: ObservableObject {
                 successMessage = "Payment sent"
 
             case .platformToShielded:
+                _ = platformState // quiet unused-param warnings
                 guard let poolClient = shieldedService.poolClient else {
                     error = "Shielded pool not initialized"
                     return
                 }
                 let bundle = try await poolClient.buildShieldBundle(amount: amount)
-                guard let identity = platformState.identities.first(where: {
-                    $0.walletId == wallet.walletId &&
-                    $0.network == wallet.network.rawValue &&
-                    $0.balance >= amount
-                }) else {
+
+                // Fetch a PersistentIdentity on this wallet/network
+                // that has enough platform balance to cover `amount`.
+                // `balance` is stored as Int64 (bit-pattern cast of
+                // the UInt64 DPP credits), so we compare against the
+                // same bit-pattern cast of the requested amount.
+                let walletId = wallet.walletId
+                let networkRaw = wallet.network.rawValue
+                let amountThreshold = Int64(bitPattern: amount)
+                let descriptor = FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate<PersistentIdentity> { identity in
+                        identity.walletId == walletId &&
+                        identity.network == networkRaw &&
+                        identity.balance >= amountThreshold
+                    }
+                )
+                guard let identity = try? modelContext.fetch(descriptor).first else {
                     error = "No identity with sufficient platform balance"
                     return
                 }
-                guard let privateKey = identity.privateKeys.first else {
+
+                // Pick the first public key that has an associated
+                // private key in the keychain. Private keys no
+                // longer live on the identity row.
+                guard let privateKey = identity.publicKeys.lazy
+                    .compactMap({ key -> Data? in
+                        KeychainManager.shared.retrievePrivateKey(
+                            identityId: identity.identityId,
+                            keyIndex: key.keyId
+                        )
+                    })
+                    .first else {
                     error = "No private key available for identity"
                     return
                 }
-                let addressBytes = identity.id.prefix(21)
+
+                let addressBytes = identity.identityId.prefix(21)
                 let input = ShieldFundsInput(
                     address: Data(addressBytes),
                     amount: amount,

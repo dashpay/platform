@@ -10,6 +10,7 @@ struct KeyDetailView: View {
     @State private var showSuccessAlert = false
     @State private var showForgetKeyAlert = false
     @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
 
     var hasPrivateKey: Bool {
@@ -193,8 +194,15 @@ struct KeyDetailView: View {
         let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
 
         if removed {
-            // Update the persistent public key to clear the reference
-            appState.removePrivateKeyReference(identityId: identity.identityId, keyId: Int32(publicKey.id))
+            // Clear the keychain reference on the matching
+            // PersistentPublicKey so the UI no longer thinks this
+            // key has a stored private key.
+            if let persistedKey = identity.publicKeys.first(
+                where: { $0.keyId == Int32(publicKey.id) }
+            ) {
+                persistedKey.privateKeyKeychainIdentifier = nil
+                try? modelContext.save()
+            }
             dismiss()
         }
     }

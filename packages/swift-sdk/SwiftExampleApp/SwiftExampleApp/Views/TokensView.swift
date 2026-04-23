@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 // MARK: - View Extensions
@@ -17,13 +18,16 @@ extension View {
 
 struct TokensView: View {
     @EnvironmentObject var appState: AppState
+    @Query private var identities: [PersistentIdentity]
     @State private var selectedToken: TokenModel?
-    @State private var selectedIdentity: IdentityModel?
+    /// Picker selection. `PersistentIdentity` is a `@Model` class
+    /// — `Identifiable` + `Hashable` are free, so it tags cleanly.
+    @State private var selectedIdentity: PersistentIdentity?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack {
-                if appState.identities.isEmpty {
+                if identities.isEmpty {
                     EmptyStateView(
                         systemImage: "person.3",
                         title: "No Identities",
@@ -33,10 +37,10 @@ struct TokensView: View {
                     List {
                         Section("Select Identity") {
                             Picker("Identity", selection: $selectedIdentity) {
-                                Text("Select an identity").tag(nil as IdentityModel?)
-                                ForEach(appState.identities) { identity in
-                                    Text(identity.alias ?? identity.idString)
-                                        .tag(identity as IdentityModel?)
+                                Text("Select an identity").tag(nil as PersistentIdentity?)
+                                ForEach(identities) { identity in
+                                    Text(identity.alias ?? identity.identityIdBase58)
+                                        .tag(identity as PersistentIdentity?)
                                 }
                             }
                             .pickerStyle(MenuPickerStyle())
@@ -151,7 +155,7 @@ struct TokenRow: View {
 
 struct TokenActionsView: View {
     let token: TokenModel
-    let selectedIdentity: IdentityModel?
+    let selectedIdentity: PersistentIdentity?
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
     @State private var selectedAction: TokenAction?
@@ -238,7 +242,7 @@ struct TokenActionsView: View {
 struct TokenActionDetailView: View {
     let token: TokenModel
     let action: TokenAction
-    let selectedIdentity: IdentityModel?
+    let selectedIdentity: PersistentIdentity?
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
     @State private var isProcessing = false
@@ -254,7 +258,7 @@ struct TokenActionDetailView: View {
                         VStack(alignment: .leading) {
                             Text(identity.alias ?? "Identity")
                                 .font(.headline)
-                            Text(identity.idString)
+                            Text(identity.identityIdBase58)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)

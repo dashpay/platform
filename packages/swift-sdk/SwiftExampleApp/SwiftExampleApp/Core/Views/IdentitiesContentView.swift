@@ -11,13 +11,15 @@ import SwiftData
 struct IdentitiesContentView: View {
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @Query(sort: \PersistentIdentity.identityIndex)
+    private var identities: [PersistentIdentity]
     @State private var showingLoadIdentity = false
     @State private var showingCreateIdentity = false
     @State private var showingSearchWallets = false
 
     var body: some View {
         List {
-            if platformState.identities.isEmpty {
+            if identities.isEmpty {
                 Section {
                     VStack(spacing: 12) {
                         Image(systemName: "person.crop.circle.badge.plus")
@@ -56,7 +58,7 @@ struct IdentitiesContentView: View {
                 }
             } else {
                 Section("Identities") {
-                    ForEach(platformState.identities) { identity in
+                    ForEach(identities) { identity in
                         IdentityRow(identity: identity)
                             .environmentObject(platformState)
                     }
