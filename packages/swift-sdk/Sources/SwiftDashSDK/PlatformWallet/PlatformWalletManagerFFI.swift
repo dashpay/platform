@@ -7,6 +7,26 @@ import Foundation
 
 struct PersistenceCallbacks {
     var context: UnsafeMutableRawPointer? = nil
+    /// Fires at the top of every Rust `store()` round, before any
+    /// per-kind callback runs. Paired with `on_changeset_end_fn` so
+    /// the Swift handler can batch all per-kind writes into a single
+    /// `ModelContext.save()` (or `rollback()` on failure) — one
+    /// atomic transaction per Rust round rather than one per kind.
+    var on_changeset_begin_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?
+    ) -> Int32)? = nil
+    /// Fires at the bottom of every Rust `store()` round, after every
+    /// per-kind callback. `Bool` argument is `true` iff every per-kind
+    /// callback returned 0; Swift saves on success, rolls back
+    /// otherwise. Must match the field order on the Rust struct —
+    /// keep this tuple in sync with
+    /// `rs-platform-wallet-ffi/src/persistence.rs::PersistenceCallbacks`.
+    var on_changeset_end_fn: (@convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<UInt8>?,
+        Bool
+    ) -> Int32)? = nil
     var on_store_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?) -> Int32)? = nil
     var on_flush_fn: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?) -> Int32)? = nil
     var on_persist_address_balances_fn: (@convention(c) (

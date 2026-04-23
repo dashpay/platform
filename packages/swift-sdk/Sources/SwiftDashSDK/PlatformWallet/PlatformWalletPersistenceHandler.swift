@@ -55,7 +55,9 @@ public class PlatformWalletPersistenceHandler {
             existing.lastUpdated = Date()
         }
 
-        try? backgroundContext.save()
+        // No save() here — this handler runs inside the Rust-side
+        // changeset round, which is bracketed by changesetBegin /
+        // changesetEnd; the atomic save fires in endChangeset.
     }
 
     /// Load all cached platform-address balances for a wallet. Tuple
@@ -121,7 +123,8 @@ public class PlatformWalletPersistenceHandler {
         }
 
         migrateLegacySyncStateRecordsToNetworkScope()
-        try? backgroundContext.save()
+        // No save() — bracketed by changesetBegin/End from the
+        // Rust store() round.
     }
 
     /// Load cached sync state for a wallet's network.
@@ -186,7 +189,7 @@ public class PlatformWalletPersistenceHandler {
             }
         }
 
-        try? backgroundContext.save()
+        // No save() — bracketed by changesetBegin/End.
     }
 
     /// Find or create the `PersistentWallet` record for this wallet id.
@@ -403,6 +406,8 @@ public class PlatformWalletPersistenceHandler {
         let contextPtr = Unmanaged.passUnretained(self).toOpaque()
         var cb = PersistenceCallbacks()
         cb.context = contextPtr
+        cb.on_changeset_begin_fn = changesetBeginCallback
+        cb.on_changeset_end_fn = changesetEndCallback
         cb.on_persist_address_balances_fn = persistAddressBalancesCallback
         cb.on_persist_wallet_changeset_fn = persistWalletChangesetCallback
         cb.on_persist_sync_state_fn = persistSyncStateCallback
@@ -418,6 +423,51 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_identities_fn = persistIdentitiesCallback
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         return cb
+    }
+
+    // MARK: - Changeset atomicity
+
+    /// Opens a persistence round. Paired with
+    /// [`endChangeset(walletId:success:)`]. Every per-kind handler
+    /// (`persistIdentities`, `persistIdentityKeys`,
+    /// `persistAccountChangeset`, …) fires between begin and end and
+    /// only mutates `backgroundContext`; `save()` happens at the end.
+    ///
+    /// Currently a no-op beyond the tag — `ModelContext`'s pending-
+    /// change buffer already gives us the batching we need. Kept as
+    /// a named hook so future work (explicit transaction scoping,
+    /// instrumented timing, etc.) has an obvious seam.
+    func beginChangeset(walletId: Data) {
+        _ = walletId  // reserved for future wallet-scope batching
+    }
+
+    /// Closes a persistence round. Commits all per-kind writes
+    /// accumulated in `backgroundContext` since the matching
+    /// `beginChangeset` in one `save()` (success path), or discards
+    /// them via `rollback()` (failure path — any per-kind callback
+    /// returned non-zero).
+    ///
+    /// One fsync per Rust `store()` round instead of one per per-
+    /// kind callback, and the whole round is atomic from SwiftData's
+    /// perspective: a crash between callbacks leaves the store in
+    /// its pre-round state rather than half-applied.
+    func endChangeset(walletId: Data, success: Bool) {
+        _ = walletId
+        if success {
+            do {
+                try backgroundContext.save()
+            } catch {
+                // The context still has the pending changes on
+                // its dirty list after a failed save; drop them so
+                // the next round starts clean. SQLite's WAL will
+                // only have committed data prior to this save, so
+                // the user-visible store is consistent.
+                print("⚠️ endChangeset: save failed: \(error.localizedDescription)")
+                backgroundContext.rollback()
+            }
+        } else {
+            backgroundContext.rollback()
+        }
     }
 
     // MARK: - Identity scalar persistence
@@ -496,7 +546,7 @@ public class PlatformWalletPersistenceHandler {
         _ = primaryIdentity
         _ = lastScannedIndex
 
-        try? backgroundContext.save()
+        // No save() — bracketed by changesetBegin/End.
     }
 
     // MARK: - Identity keys persistence
@@ -611,7 +661,7 @@ public class PlatformWalletPersistenceHandler {
         }
 
         _ = walletId  // reserved for future wallet-scope filters
-        try? backgroundContext.save()
+        // No save() — bracketed by changesetBegin/End.
     }
 
     // MARK: - Identity private-key derivation
@@ -1562,6 +1612,46 @@ private func persistWalletChangesetCallback(
     let walletId = Data(bytes: walletIdPtr, count: 32)
     let changesetPtr = changesetRaw.assumingMemoryBound(to: WalletChangeSetFFI.self)
     handler.persistWalletChangeset(walletId: walletId, changeset: changesetPtr)
+    return 0
+}
+
+/// C shim for `on_changeset_begin_fn`. Forwards to
+/// `PlatformWalletPersistenceHandler.beginChangeset` so the handler
+/// can prep any wallet-scope batching it needs for the round.
+private func changesetBeginCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    handler.beginChangeset(walletId: walletId)
+    return 0
+}
+
+/// C shim for `on_changeset_end_fn`. Forwards to
+/// `PlatformWalletPersistenceHandler.endChangeset(walletId:success:)`,
+/// which does the single `save()` (or `rollback()`) that commits all
+/// per-kind writes accumulated during the round.
+private func changesetEndCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    success: Bool
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    handler.endChangeset(walletId: walletId, success: success)
     return 0
 }
 

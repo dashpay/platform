@@ -49,6 +49,24 @@ use dpp::address_funds::PlatformAddress;
 pub struct PersistenceCallbacks {
     /// Opaque context pointer passed to all callbacks.
     pub context: *mut c_void,
+    /// Fired once at the top of every [`FFIPersister::store`] call,
+    /// before any per-kind sub-callback runs. Clients use this as a
+    /// hook to open a transaction / begin a batch / snapshot context
+    /// state; paired with `on_changeset_end_fn`. Return value is
+    /// advisory — a non-zero result is logged but does NOT abort the
+    /// round.
+    pub on_changeset_begin_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
+    /// Fired once at the bottom of every [`FFIPersister::store`]
+    /// call, after every per-kind sub-callback has run. `success`
+    /// is `true` iff every per-kind callback returned 0; `false`
+    /// otherwise. Clients use this to commit the round's
+    /// accumulated writes (success → flush / save) or roll them
+    /// back (failure → discard), making each Rust `store()` a
+    /// single atomic transaction from the client's point of view.
+    pub on_changeset_end_fn: Option<
+        unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
+    >,
     /// Called when a changeset is stored. Returns 0 on success.
     pub on_store_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
@@ -169,6 +187,22 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        // Bracket the whole per-kind callback sequence with a
+        // begin/end pair so clients (Swift, etc.) can treat the
+        // round as a single atomic transaction: begin opens a
+        // batch, each per-kind callback mutates staged state, and
+        // end either commits (`success == true`) or rolls back
+        // (`success == false`). `success` flips to false on any
+        // sub-callback returning non-zero; the result is advisory
+        // for clients (Swift uses it to decide save vs rollback).
+        if let Some(cb) = self.callbacks.on_changeset_begin_fn {
+            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
+            if result != 0 {
+                eprintln!("Changeset-begin callback returned error code {}", result);
+            }
+        }
+        let mut round_success = true;
+
         // Send incremental address balance updates before merging.
         if let Some(ref addr_cs) = changeset.platform_addresses {
             if let Some(cb) = self.callbacks.on_persist_address_balances_fn {
@@ -197,6 +231,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Address balance persistence callback returned error code {}",
                             result
                         );
+                        round_success = false;
                     }
                 }
             }
@@ -213,6 +248,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Wallet changeset persistence callback returned error code {}",
                         result
                     );
+                    round_success = false;
                 }
             }
         }
@@ -268,6 +304,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Identity changeset persistence callback returned error code {}",
                         result
                     );
+                    round_success = false;
                 }
             }
         }
@@ -312,6 +349,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Identity keys changeset persistence callback returned error code {}",
                         result
                     );
+                    round_success = false;
                 }
             }
         }
@@ -337,8 +375,21 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Sync state persistence callback returned error code {}",
                             result
                         );
+                        round_success = false;
                     }
                 }
+            }
+        }
+
+        // Close the round. Clients use this to commit (if
+        // `round_success == true`) or roll back (otherwise) the
+        // staged writes accumulated across the per-kind callbacks
+        // above, making the whole store() call a single atomic
+        // transaction from their perspective.
+        if let Some(cb) = self.callbacks.on_changeset_end_fn {
+            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), round_success) };
+            if result != 0 {
+                eprintln!("Changeset-end callback returned error code {}", result);
             }
         }
 
