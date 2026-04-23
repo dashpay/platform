@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftDashSDK
 
 struct RegisterNameView: View {
-  let identity: IdentityModel
+  let identity: PersistentIdentity
   @EnvironmentObject var appState: AppState
   @EnvironmentObject var walletManager: PlatformWalletManager
   @Environment(\.dismiss) var dismiss
@@ -390,7 +390,7 @@ struct RegisterNameView: View {
     Task {
       do {
         let registeredName = try await wallet.registerDpnsName(
-          identityId: identity.id,
+          identityId: identity.identityId,
           name: normalizedUsername
         )
 
@@ -398,41 +398,9 @@ struct RegisterNameView: View {
           // The Rust-side `IdentityWallet::register_name` already
           // appended the new label to `ManagedIdentity.dpns_names`
           // and emitted an `IdentityChangeSet` — the Swift persister
-          // callback wrote the update to `PersistentIdentity`. Views
-          // that read via the wallet path (`IdentityDetailView.
-          // fetchRegularDPNSNames`) will surface the new name on
-          // their next sync cycle automatically.
-          //
-          // For immediate UI reflection in views that still observe
-          // `appState.identities` directly (rather than SwiftData
-          // `@Query`), mirror the label into the in-memory array
-          // here. Once every consumer migrates to `@Query`, drop
-          // this block. Contested names stay mirrored until item #2
-          // (contested-name tracking on `ManagedIdentity`) lands,
-          // since those aren't in the Rust-side cache yet — the old
-          // client-side contest-info synthesis was dropped because
-          // it was guessing end-times and votes without a real
-          // source of truth.
-          if !isContested, let index = appState.identities.firstIndex(
-            where: { $0.id == identity.id }
-          ) {
-            var updatedIdentity = appState.identities[index]
-            if !updatedIdentity.dpnsNames.contains(normalizedUsername) {
-              updatedIdentity.dpnsNames.append(normalizedUsername)
-            }
-            if updatedIdentity.dpnsName == nil {
-              updatedIdentity.dpnsName = normalizedUsername
-            }
-            appState.identities[index] = updatedIdentity
-          } else if isContested, let index = appState.identities.firstIndex(
-            where: { $0.id == identity.id }
-          ) {
-            var updatedIdentity = appState.identities[index]
-            if !updatedIdentity.contestedDpnsNames.contains(normalizedUsername) {
-              updatedIdentity.contestedDpnsNames.append(normalizedUsername)
-            }
-            appState.identities[index] = updatedIdentity
-          }
+          // callback wrote the update to `PersistentIdentity`, and
+          // every view that uses `@Query` picks up the change
+          // automatically. No in-memory mirror needed.
 
           registrationSuccess = true
           errorMessage = isContested ?
@@ -472,14 +440,8 @@ private struct UsernameChangeHandler: ViewModifier {
   }
 }
 
-// Preview
-struct RegisterNameView_Previews: PreviewProvider {
-  static var previews: some View {
-    RegisterNameView(identity: IdentityModel(
-      id: Data(repeating: 0, count: 32),
-      balance: 1000000,
-      isLocal: false
-    ))
-    .environmentObject(AppState())
-  }
-}
+// Preview removed — constructing a sample `PersistentIdentity`
+// requires a mock `ModelContainer`; not worth the scaffolding for
+// this dev example app. Restore via `#Preview { … }` with a
+// `.modelContainer(for: PersistentIdentity.self, inMemory: true)`
+// if/when previews become load-bearing.

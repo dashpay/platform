@@ -122,6 +122,32 @@ public final class PersistentIdentity {
         return String(format: "%.8f DASH", dashAmount)
     }
 
+    /// Projected DPP `IdentityPublicKey` view of `publicKeys`.
+    /// Views that deal in DPP types (key signing, state
+    /// transitions, crypto helpers) get their input here without
+    /// having to thread `PersistentPublicKey` → DPP conversions
+    /// themselves. Recomputed on each access — cheap.
+    public var identityPublicKeys: [IdentityPublicKey] {
+        publicKeys.compactMap { $0.toIdentityPublicKey() }
+    }
+
+    /// User-facing short name. Priority: `alias` → `mainDpnsName`
+    /// → `dpnsName` → truncated hex id. Mirrors the old
+    /// `IdentityModel.displayName` extension so views that read
+    /// this don't change behavior post-migration.
+    public var displayName: String {
+        if let alias = alias, !alias.isEmpty {
+            return alias
+        }
+        if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
+            return mainDpnsName
+        }
+        if let dpnsName = dpnsName, !dpnsName.isEmpty {
+            return dpnsName
+        }
+        return String(identityIdString.prefix(12)) + "..."
+    }
+
     public var identityTypeEnum: IdentityType {
         IdentityType(rawValue: identityType) ?? .user
     }

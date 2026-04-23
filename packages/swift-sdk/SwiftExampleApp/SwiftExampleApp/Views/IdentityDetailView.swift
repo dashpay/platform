@@ -1,15 +1,31 @@
 import SwiftUI
-import SwiftDashSDK
+import SwiftData
 import SwiftDashSDK
 
 struct IdentityDetailView: View {
     let identityId: Data
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
 
-    private var identity: IdentityModel? {
-        appState.identities.first { $0.id == identityId }
+    /// Reactively observe the `PersistentIdentity` row for
+    /// `identityId`. `@Query` with a targeted predicate — when any
+    /// write mutates the row (balance sync, DPNS name refresh,
+    /// alias edit), SwiftUI re-renders this view automatically.
+    @Query private var identities: [PersistentIdentity]
+
+    init(identityId: Data) {
+        self.identityId = identityId
+        let target = identityId
+        _identities = Query(
+            filter: #Predicate<PersistentIdentity> { $0.identityId == target }
+        )
     }
+
+    private var identity: PersistentIdentity? {
+        identities.first
+    }
+
     @State private var isRefreshing = false
     @State private var showingEditAlias = false
     @State private var newAlias = ""
@@ -24,18 +40,16 @@ struct IdentityDetailView: View {
     @State private var showingProfileEditor = false
     @State private var profileError: String?
 
-    // Computed properties that get DPNS names from the identity model
-    private var dpnsNames: [String] {
-        identity?.dpnsNames ?? []
-    }
-
-    private var contestedDpnsNames: [String] {
-        identity?.contestedDpnsNames ?? []
-    }
-
-    private var contestedDpnsInfo: [String: Any] {
-        identity?.contestedDpnsInfo ?? [:]
-    }
+    /// DPNS names owned by this identity, fetched from the owning
+    /// wallet's `ManagedIdentity`. Empty until `loadDPNSNames` runs.
+    @State private var dpnsNames: [String] = []
+    /// Labels this identity is currently contending for.
+    @State private var contestedDpnsNames: [String] = []
+    /// Contest metadata keyed by name, surfaced to
+    /// `ContestDetailView`. Opaque to this view; deliberately
+    /// `[String: Any]` because the inspector decodes differently
+    /// per vote poll.
+    @State private var contestedDpnsInfo: [String: Any] = [:]
 
     var body: some View {
         if let identity = identity {
@@ -69,7 +83,7 @@ struct IdentityDetailView: View {
                             .foregroundColor(.blue)
                     }
 
-                    Label(identity.idHexString, systemImage: "number")
+                    Label(identity.identityIdString, systemImage: "number")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -86,9 +100,9 @@ struct IdentityDetailView: View {
                 HStack {
                     Label("Type", systemImage: "person.badge.shield.checkmark")
                     Spacer()
-                    Text(identity.type.rawValue)
-                        .foregroundColor(identity.type == .user ? .primary :
-                                      identity.type == .masternode ? .purple : .orange)
+                    Text(identity.identityType)
+                        .foregroundColor(identity.identityTypeEnum == .user ? .primary :
+                                      identity.identityTypeEnum == .masternode ? .purple : .orange)
                 }
 
                 if identity.isLocal {
@@ -129,7 +143,7 @@ struct IdentityDetailView: View {
                             NavigationLink(destination: ContestDetailView(
                                 contestName: name,
                                 contestInfo: contestedDpnsInfo[name] as? [String: Any] ?? [:],
-                                currentIdentityId: identity.idString
+                                currentIdentityId: identity.identityIdBase58
                             ).environmentObject(appState)) {
                                 HStack {
                                     Text(name)
@@ -196,12 +210,10 @@ struct IdentityDetailView: View {
                             Label("\(identity.publicKeys.count) public", systemImage: "key")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-
-                            if !identity.privateKeys.isEmpty {
-                                Label("\(identity.privateKeys.count) private", systemImage: "key.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                            }
+                            // Private-key count no longer tracked on
+                            // IdentityModel; keys live in the
+                            // Keychain, enumerate via
+                            // `KeychainManager` if needed.
                         }
                     }
                     .padding(.vertical, 4)
@@ -250,7 +262,7 @@ struct IdentityDetailView: View {
         }
         .sheet(isPresented: $showingProfileEditor) {
             DashPayProfileEditorView(
-                identityId: identity.id,
+                identityId: identity.identityId,
                 walletId: identity.walletId,
                 existing: dashpayProfile,
                 onSaved: { saved in
@@ -318,15 +330,15 @@ struct IdentityDetailView: View {
 
             do {
                 // Refresh identity data
-                let fetchedIdentity = try await sdk.identityGet(identityId: identity.idString)
+                let fetchedIdentity = try await sdk.identityGet(identityId: identity.identityIdBase58)
 
                 // Update balance
                 if let balanceValue = fetchedIdentity["balance"] {
                     if let balanceNum = balanceValue as? NSNumber {
-                        appState.updateIdentityBalance(id: identity.id, newBalance: balanceNum.uint64Value)
+                        appState.updateIdentityBalance(id: identity.identityId, newBalance: balanceNum.uint64Value)
                     } else if let balanceString = balanceValue as? String,
                               let balanceUInt = UInt64(balanceString) {
-                        appState.updateIdentityBalance(id: identity.id, newBalance: balanceUInt)
+                        appState.updateIdentityBalance(id: identity.identityId, newBalance: balanceUInt)
                     }
                 }
 
@@ -367,7 +379,7 @@ struct IdentityDetailView: View {
                 print("🔵 Parsed \(parsedPublicKeys.count) public keys total")
 
                 // Update the identity with public keys
-                appState.updateIdentityPublicKeys(id: identity.id, publicKeys: parsedPublicKeys)
+                appState.updateIdentityPublicKeys(id: identity.identityId, publicKeys: parsedPublicKeys)
                 print("🔵 Called updateIdentityPublicKeys")
 
                 // Refresh DPNS names from network
@@ -393,7 +405,7 @@ struct IdentityDetailView: View {
         guard let identity = identity,
               !identity.isLocal else { return }
 
-        print("🔵 loadDPNSNamesFromNetwork called for identity \(identity.idString)")
+        print("🔵 loadDPNSNamesFromNetwork called for identity \(identity.identityIdBase58)")
 
         isLoadingDPNS = true
         defer { isLoadingDPNS = false }
@@ -411,7 +423,7 @@ struct IdentityDetailView: View {
 
             // Update all DPNS names in the identity model
             appState.updateIdentityDPNSNames(
-                id: identity.id,
+                id: identity.identityId,
                 dpnsNames: regularNames,
                 contestedNames: contestedNames,
                 contestedInfo: contestedInfo
@@ -431,7 +443,7 @@ struct IdentityDetailView: View {
     /// attached to a loaded `ManagedPlatformWallet` (e.g. a legacy
     /// local-only row that predates walletId denormalization).
     @MainActor
-    private func fetchRegularDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
+    private func fetchRegularDPNSNames(identity: PersistentIdentity) async -> ([String], [String: Any]) {
         if let walletId = identity.walletId,
            let wallet = walletManager.wallet(for: walletId) {
             do {
@@ -441,8 +453,8 @@ struct IdentityDetailView: View {
                 // The Rust sync path only adds new labels — existing
                 // cached entries are preserved, so the read-back is
                 // a superset of whatever the cache had before.
-                _ = try await wallet.syncDpnsNames(identityId: identity.id)
-                let managed = try wallet.managedIdentity(identityId: identity.id)
+                _ = try await wallet.syncDpnsNames(identityId: identity.identityId)
+                let managed = try wallet.managedIdentity(identityId: identity.identityId)
                 let names = try managed.getDpnsNames()
                 print("🔵 Got \(names.count) regular DPNS names via platform-wallet cache")
                 return (names, [:])
@@ -459,7 +471,7 @@ struct IdentityDetailView: View {
         do {
             print("🔵 Fetching regular DPNS names via direct SDK RPC...")
             let usernames = try await sdk.dpnsGetUsername(
-                identityId: identity.idString,
+                identityId: identity.identityIdBase58,
                 limit: 10
             )
             print("🔵 Got \(usernames.count) regular DPNS names from SDK")
@@ -491,12 +503,12 @@ struct IdentityDetailView: View {
     /// Falls back to the direct-SDK RPC when the identity isn't
     /// attached to a loaded `ManagedPlatformWallet`.
     @MainActor
-    private func fetchContestedDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
+    private func fetchContestedDPNSNames(identity: PersistentIdentity) async -> ([String], [String: Any]) {
         if let walletId = identity.walletId,
            let wallet = walletManager.wallet(for: walletId) {
             do {
-                _ = try await wallet.syncContestedDpnsNames(identityId: identity.id)
-                let managed = try wallet.managedIdentity(identityId: identity.id)
+                _ = try await wallet.syncContestedDpnsNames(identityId: identity.identityId)
+                let managed = try wallet.managedIdentity(identityId: identity.identityId)
                 let names = try managed.getContestedDpnsNames()
                 print("🔵 Got \(names.count) contested DPNS names via platform-wallet cache")
                 // Metadata map intentionally empty — ContestDetailView
@@ -511,7 +523,7 @@ struct IdentityDetailView: View {
         do {
             print("🔵 Fetching contested DPNS names via direct SDK RPC...")
             let contestsResult = try await sdk.dpnsGetNonResolvedContestsForIdentity(
-                identityId: identity.idString,
+                identityId: identity.identityIdBase58,
                 limit: 20
             )
             var contestedNames: [String] = []
@@ -535,7 +547,7 @@ struct IdentityDetailView: View {
     /// or "loading" spinner. Also surfaces the most recent profile error
     /// (sync or save) under a caption.
     @ViewBuilder
-    private func dashPayProfileCard(identity: IdentityModel) -> some View {
+    private func dashPayProfileCard(identity: PersistentIdentity) -> some View {
         if let profile = dashpayProfile {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
@@ -623,13 +635,13 @@ struct IdentityDetailView: View {
     /// identity on a previous session. Silently no-ops when the
     /// identity doesn't have a wallet associated yet — that only
     /// happens for local-only identities, which we gate out upstream.
-    private func loadCachedDashPayProfile(for identity: IdentityModel) {
+    private func loadCachedDashPayProfile(for identity: PersistentIdentity) {
         guard let walletId = identity.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             return
         }
         do {
-            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.id)
+            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.identityId)
         } catch {
             print("⚠️ Failed to read cached DashPay profile: \(error)")
         }
@@ -639,7 +651,7 @@ struct IdentityDetailView: View {
     /// then re-read this identity's cache. Runs in a background task
     /// (the FFI dispatches to an 8 MB tokio worker internally).
     @MainActor
-    private func refreshDashPayProfilesFromPlatform(for identity: IdentityModel) async {
+    private func refreshDashPayProfilesFromPlatform(for identity: PersistentIdentity) async {
         guard let walletId = identity.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             return
@@ -650,7 +662,7 @@ struct IdentityDetailView: View {
         do {
             _ = try await wallet.syncDashPayProfiles()
             // Pick up whatever the sync wrote back into the cache.
-            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.id)
+            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.identityId)
             profileError = nil
         } catch {
             // Don't blow away a previously-shown profile on transient
@@ -913,13 +925,13 @@ enum DashPayProfileEditorError: LocalizedError {
 }
 
 struct EditAliasView: View {
-    let identity: IdentityModel
+    let identity: PersistentIdentity
     @Binding var newAlias: String
-    @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Set Alias") {
                     TextField("Enter alias", text: $newAlias)
@@ -954,28 +966,11 @@ struct EditAliasView: View {
         let trimmedAlias = newAlias.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedAlias.isEmpty else { return }
 
-        // Create updated identity with alias
-        var updatedIdentity = identity
-        updatedIdentity = IdentityModel(
-            id: identity.id,
-            balance: identity.balance,
-            isLocal: identity.isLocal,
-            alias: trimmedAlias,
-            type: identity.type,
-            privateKeys: identity.privateKeys,
-            votingPrivateKey: identity.votingPrivateKey,
-            ownerPrivateKey: identity.ownerPrivateKey,
-            payoutPrivateKey: identity.payoutPrivateKey,
-            dpnsName: identity.dpnsName,
-            mainDpnsName: identity.mainDpnsName,
-            dpnsNames: identity.dpnsNames,
-            contestedDpnsNames: identity.contestedDpnsNames,
-            contestedDpnsInfo: identity.contestedDpnsInfo,
-            publicKeys: identity.publicKeys
-        )
-
-        // Update in app state
-        appState.updateIdentity(updatedIdentity)
+        // Direct SwiftData write on the live `PersistentIdentity`
+        // row. @Query upstream picks up the change reactively.
+        identity.alias = trimmedAlias
+        identity.lastUpdated = Date()
+        try? modelContext.save()
 
         dismiss()
     }

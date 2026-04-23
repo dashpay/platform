@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftDashSDK
 
 struct KeyDetailView: View {
-    let identity: IdentityModel
+    let identity: PersistentIdentity
     let publicKey: IdentityPublicKey
     @State private var privateKeyInput = ""
     @State private var isValidating = false
@@ -13,7 +13,7 @@ struct KeyDetailView: View {
     @EnvironmentObject var appState: AppState
 
     var hasPrivateKey: Bool {
-        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
+        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
         print("🔑 KeyDetailView: hasPrivateKey for key \(publicKey.id) = \(result)")
         return result
     }
@@ -167,10 +167,10 @@ struct KeyDetailView: View {
 
             if validationResult.isValid {
                 // Store the private key
-                print("🔑 Storing private key for identity: \(identity.id.toHexString()), keyId: \(publicKey.id)")
+                print("🔑 Storing private key for identity: \(identity.identityId.toHexString()), keyId: \(publicKey.id)")
                 let stored = KeychainManager.shared.storePrivateKey(
                     privateKeyData,
-                    identityId: identity.id,
+                    identityId: identity.identityId,
                     keyIndex: Int32(publicKey.id)
                 )
                 print("🔑 Storage result: \(stored != nil ? "Success" : "Failed")")
@@ -190,11 +190,11 @@ struct KeyDetailView: View {
 
     private func forgetPrivateKey() {
         // Remove from keychain
-        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
+        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
 
         if removed {
             // Update the persistent public key to clear the reference
-            appState.removePrivateKeyReference(identityId: identity.id, keyId: Int32(publicKey.id))
+            appState.removePrivateKeyReference(identityId: identity.identityId, keyId: Int32(publicKey.id))
             dismiss()
         }
     }

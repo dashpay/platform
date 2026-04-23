@@ -3,12 +3,16 @@ import SwiftUI
 
 struct KeysListView: View {
   struct IdentifiableInt: Identifiable { let id: Int }
-  let identity: IdentityModel
+  let identity: PersistentIdentity
   @State private var showingPrivateKey: IdentifiableInt? = nil
   @State private var copiedKeyId: Int? = nil
 
+  private var publicKeys: [IdentityPublicKey] {
+    identity.identityPublicKeys
+  }
+
   private var privateKeysAvailableCount: Int {
-    identity.publicKeys.filter { publicKey in
+    publicKeys.filter { publicKey in
       hasPrivateKey(for: publicKey.id)
     }.count
   }
@@ -17,7 +21,7 @@ struct KeysListView: View {
     List {
       // Public Keys Section
       Section("Public Keys") {
-        ForEach(identity.publicKeys.sorted(by: { $0.id < $1.id }), id: \.id) { publicKey in
+        ForEach(publicKeys.sorted(by: { $0.id < $1.id }), id: \.id) { publicKey in
           if hasPrivateKey(for: publicKey.id) {
             // For keys with private keys, use a button instead of NavigationLink
             Button(action: {
@@ -47,7 +51,7 @@ struct KeysListView: View {
         HStack {
           Label("Total Public Keys", systemImage: "key")
           Spacer()
-          Text("\(identity.publicKeys.count)")
+          Text("\(publicKeys.count)")
             .foregroundColor(.secondary)
         }
 
@@ -58,7 +62,7 @@ struct KeysListView: View {
             .foregroundColor(.green)
         }
 
-        if identity.votingPrivateKey != nil {
+        if identity.votingPrivateKeyIdentifier != nil {
           HStack {
             Label("Voting Key", systemImage: "hand.raised.fill")
             Spacer()
@@ -67,7 +71,7 @@ struct KeysListView: View {
           }
         }
 
-        if identity.ownerPrivateKey != nil {
+        if identity.ownerPrivateKeyIdentifier != nil {
           HStack {
             Label("Owner Key", systemImage: "person.badge.key.fill")
             Spacer()
@@ -101,7 +105,7 @@ struct KeysListView: View {
 
   private func hasPrivateKey(for keyId: UInt32) -> Bool {
     // Check if we have a private key for this key ID in keychain
-    let hasKey = KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
+    let hasKey = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
     print("🔑 Checking private key for keyId: \(keyId) - found: \(hasKey)")
     return hasKey
   }
@@ -171,7 +175,7 @@ struct KeyRowView: View {
 }
 
 struct PrivateKeyView: View {
-  let identity: IdentityModel
+  let identity: PersistentIdentity
   let keyId: UInt32
   let onCopy: (Int) -> Void
   @Environment(\.dismiss) var dismiss
@@ -209,7 +213,7 @@ struct PrivateKeyView: View {
               .fontWeight(.medium)
           }
 
-          if let publicKey = identity.publicKeys.first(where: { $0.id == keyId }) {
+          if let publicKey = identity.identityPublicKeys.first(where: { $0.id == keyId }) {
             HStack {
               Text("Purpose:")
               Spacer()
@@ -232,7 +236,7 @@ struct PrivateKeyView: View {
         // Private Key Display
         if showingPrivateKey {
           if let privateKeyData = getPrivateKey(for: keyId),
-             let publicKey = identity.publicKeys.first(where: { $0.id == keyId }) {
+             let publicKey = identity.identityPublicKeys.first(where: { $0.id == keyId }) {
             VStack(alignment: .leading, spacing: 16) {
               // Hex Format
               VStack(alignment: .leading, spacing: 8) {
@@ -350,11 +354,11 @@ struct PrivateKeyView: View {
 
   private func forgetPrivateKey() {
     // Remove from keychain
-    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
+    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
 
     if removed {
       // Update the persistent public key to clear the reference
-      appState.removePrivateKeyReference(identityId: identity.id, keyId: Int32(keyId))
+      appState.removePrivateKeyReference(identityId: identity.identityId, keyId: Int32(keyId))
       dismiss()
     }
   }
@@ -362,15 +366,16 @@ struct PrivateKeyView: View {
   @MainActor
   private func getPrivateKey(for keyId: UInt32) -> Data? {
     // Use KeyManager to retrieve private key
+    let publicKeysList = identity.identityPublicKeys
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: publicKeysList.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
     let keyManager = KeyManager.withSharedKeychain()
     let privateKey = try? keyManager.getPrivateKey(for: dppIdentity, keyIndex: keyId)
-    print("🔑 Retrieving private key for identity: \(identity.id.toHexString()), keyId: \(keyId)")
+    print("🔑 Retrieving private key for identity: \(identity.identityIdString), keyId: \(keyId)")
     print("🔑 Private key found: \(privateKey != nil ? "Yes (\(privateKey!.count) bytes)" : "No")")
     return privateKey
   }
