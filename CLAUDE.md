@@ -121,7 +121,6 @@ yarn configure:tests:network
 Platform uses data contracts to define application data schemas:
 - `dpns-contract`: Dash Platform Naming Service
 - `dashpay-contract`: Social payments functionality
-- `feature-flags-contract`: System feature toggles
 - `masternode-reward-shares-contract`: Masternode reward distribution
 - `withdrawals-contract`: Platform credit withdrawals
 
