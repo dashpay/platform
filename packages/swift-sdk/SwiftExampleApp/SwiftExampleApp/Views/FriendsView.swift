@@ -216,13 +216,13 @@ struct FriendsView: View {
         }
     }
 
-    /// Resolve the `ManagedPlatformWallet` anchored to `identity.walletId`.
+    /// Resolve the `ManagedPlatformWallet` anchored to `identity.wallet?.walletId`.
     /// Errors when the identity has no wallet association or the
     /// wallet isn't currently loaded in the manager.
     private func requireWallet(
         for identity: PersistentIdentity
     ) throws -> ManagedPlatformWallet {
-        guard let walletId = identity.walletId else {
+        guard let walletId = identity.wallet?.walletId else {
             throw PlatformWalletError.walletOperation(
                 "Identity \(identity.identityIdBase58) has no walletId"
             )
@@ -564,7 +564,7 @@ struct AddFriendView: View {
     /// sheet and invokes `onSent` so the parent refreshes.
     private func sendRequest() {
         guard let identity = selectedIdentity,
-              let walletId = identity.walletId,
+              let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             errorMessage = "No wallet available for this identity"
             return
@@ -858,7 +858,7 @@ struct SendDashPayPaymentSheet: View {
     /// profiles refresh whenever the parent `FriendsView` runs its
     /// own sync on appear.
     private func loadRecipientMetadata() async {
-        guard let walletId = senderIdentity.walletId,
+        guard let walletId = senderIdentity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             return
         }
@@ -885,7 +885,7 @@ struct SendDashPayPaymentSheet: View {
     /// that exceed it. Uses the lock-free balance accessor —
     /// atomic reads, no async work.
     private func loadSenderBalance() async {
-        guard let walletId = senderIdentity.walletId,
+        guard let walletId = senderIdentity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             senderBalanceDuffs = nil
             return
@@ -904,7 +904,7 @@ struct SendDashPayPaymentSheet: View {
     /// the local `PaymentEntry` so the payment-history UI (when
     /// wired) has context.
     private func send() {
-        guard let walletId = senderIdentity.walletId,
+        guard let walletId = senderIdentity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             errorMessage = "No wallet available for this identity"
             return

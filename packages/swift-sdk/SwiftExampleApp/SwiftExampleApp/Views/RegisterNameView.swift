@@ -378,7 +378,7 @@ struct RegisterNameView: View {
     //     the persister callback — no manual SwiftData upsert needed.
     //   - Removes ~100 lines of FFI plumbing that previously had to
     //     mirror `KeyManager` + `dash_sdk_identity_create_from_components`.
-    guard let walletId = identity.walletId,
+    guard let walletId = identity.wallet?.walletId,
           let wallet = walletManager.wallet(for: walletId) else {
       errorMessage = "No wallet available for this identity"
       showingError = true

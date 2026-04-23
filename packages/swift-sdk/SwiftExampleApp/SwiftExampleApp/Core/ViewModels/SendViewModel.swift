@@ -202,7 +202,7 @@ class SendViewModel: ObservableObject {
                 let amountThreshold = Int64(bitPattern: amount)
                 let descriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate<PersistentIdentity> { identity in
-                        identity.walletId == walletId &&
+                        identity.wallet?.walletId == walletId &&
                         identity.network == networkRaw &&
                         identity.balance >= amountThreshold
                     }

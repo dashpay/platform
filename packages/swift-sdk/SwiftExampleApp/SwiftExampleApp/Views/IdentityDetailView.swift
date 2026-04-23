@@ -263,7 +263,7 @@ struct IdentityDetailView: View {
         .sheet(isPresented: $showingProfileEditor) {
             DashPayProfileEditorView(
                 identityId: identity.identityId,
-                walletId: identity.walletId,
+                walletId: identity.wallet?.walletId,
                 existing: dashpayProfile,
                 onSaved: { saved in
                     // Adopt the freshly-broadcast profile into the UI
@@ -473,7 +473,7 @@ struct IdentityDetailView: View {
     /// local-only row that predates walletId denormalization).
     @MainActor
     private func fetchRegularDPNSNames(identity: PersistentIdentity) async -> ([String], [String: Any]) {
-        if let walletId = identity.walletId,
+        if let walletId = identity.wallet?.walletId,
            let wallet = walletManager.wallet(for: walletId) {
             do {
                 // Refresh Rust-side cache from Platform, then read
@@ -533,7 +533,7 @@ struct IdentityDetailView: View {
     /// attached to a loaded `ManagedPlatformWallet`.
     @MainActor
     private func fetchContestedDPNSNames(identity: PersistentIdentity) async -> ([String], [String: Any]) {
-        if let walletId = identity.walletId,
+        if let walletId = identity.wallet?.walletId,
            let wallet = walletManager.wallet(for: walletId) {
             do {
                 _ = try await wallet.syncContestedDpnsNames(identityId: identity.identityId)
@@ -665,7 +665,7 @@ struct IdentityDetailView: View {
     /// identity doesn't have a wallet associated yet — that only
     /// happens for local-only identities, which we gate out upstream.
     private func loadCachedDashPayProfile(for identity: PersistentIdentity) {
-        guard let walletId = identity.walletId,
+        guard let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             return
         }
@@ -681,7 +681,7 @@ struct IdentityDetailView: View {
     /// (the FFI dispatches to an 8 MB tokio worker internally).
     @MainActor
     private func refreshDashPayProfilesFromPlatform(for identity: PersistentIdentity) async {
-        guard let walletId = identity.walletId,
+        guard let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             return
         }

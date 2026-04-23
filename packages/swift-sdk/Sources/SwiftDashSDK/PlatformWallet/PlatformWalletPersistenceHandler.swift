@@ -525,8 +525,7 @@ public class PlatformWalletPersistenceHandler {
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
                     revision: Int64(bitPattern: entry.revision),
-                    isLocal: false,
-                    walletId: entry.walletId
+                    isLocal: false
                 )
                 backgroundContext.insert(row)
             }
@@ -536,21 +535,25 @@ public class PlatformWalletPersistenceHandler {
             // overwriting unconditionally here is safe.
             row.balance = Int64(bitPattern: entry.balance)
             row.revision = Int64(bitPattern: entry.revision)
-            row.walletId = entry.walletId
             row.identityIndex = entry.identityIndex
             if let label = entry.label {
                 row.alias = label
             }
             row.lastUpdated = Date()
 
-            // Keep the PersistentIdentity.wallet relationship in
-            // sync with the denormalized walletId. The relationship
-            // gives downstream `@Query` views a first-class
-            // SwiftData handle (rather than making them fetch
-            // `PersistentWallet` separately by id) and lets SwiftData
-            // enforce the `deleteRule: .nullify` invariant when a
-            // wallet row is removed. Setting to nil when
-            // `entry.walletId` is nil — the identity is detached.
+            // Attach the identity to its owning `PersistentWallet`
+            // via the relationship. This is the sole wallet-side
+            // association on the row — there is no denormalized
+            // scalar — so downstream `@Query` views traverse
+            // `identity.wallet?.walletId` when they need the raw
+            // id. `deleteRule: .nullify` on the inverse nulls this
+            // out cleanly if the wallet row is ever removed.
+            // `fetchWalletForLink` returns nil when
+            // `entry.walletId` is nil (detached identity) or when
+            // no matching `PersistentWallet` exists yet — the
+            // latter shouldn't happen in practice because
+            // `persistWalletChangeset` upserts the wallet row in
+            // the same atomic round before calling this path.
             row.wallet = fetchWalletForLink(walletId: entry.walletId)
         }
 

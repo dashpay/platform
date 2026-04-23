@@ -369,13 +369,12 @@ struct ContestDetailView: View {
             return
         }
 
-        // Look up the identity row via `@Query` to find its owning
-        // wallet. One hop via the `PersistentIdentity.walletId`
-        // scalar; the `wallet` relationship would also work.
+        // Look up the identity row via `@Query` and then hop the
+        // `wallet` relationship to get the owning wallet's raw id.
         let identity = identities.first {
             $0.identityId == identityData
         }
-        guard let walletId = identity?.walletId,
+        guard let walletId = identity?.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             errorMessage = "Identity not attached to a loaded wallet"
             return

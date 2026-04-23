@@ -124,7 +124,7 @@ struct PublicKeyStorageListView: View {
     /// label (alphabetical, case-insensitive); no-wallet identities
     /// sort last so user-owned ones dominate the top of the screen.
     private var walletGroups: [WalletGroup] {
-        let grouped = Dictionary(grouping: identities) { $0.walletId ?? Data() }
+        let grouped = Dictionary(grouping: identities) { $0.wallet?.walletId ?? Data() }
         return grouped
             .map { (walletId, ids) -> WalletGroup in
                 WalletGroup(

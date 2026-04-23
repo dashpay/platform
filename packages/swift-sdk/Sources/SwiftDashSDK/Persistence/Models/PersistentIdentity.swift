@@ -37,26 +37,13 @@ public final class PersistentIdentity {
     // the wallet is deleted, `wallet` nulls out (deleteRule:
     // `.nullify`) and the identity row survives orphaned.
     //
-    // `walletId` is kept alongside `wallet` as a denormalized 32-
-    // byte key because:
-    //   1. Rust-side changesets ship an opaque `[u8; 32]` and it's
-    //      cheaper to persist raw than to fetch-and-link on every
-    //      upsert (`persistIdentities` fetches + assigns `wallet`
-    //      once per round, not once per scalar mutation).
-    //   2. Several predicates already filter `PersistentIdentity`
-    //      by `walletId` directly. Dropping the scalar would break
-    //      those without buying much.
-    //
-    // When both are set they MUST agree: the persister invariant
-    // is `wallet?.walletId == walletId`. `identityIndex` carries
-    // the DIP-9 index the wallet owns for this identity — required
-    // whenever `wallet != nil` (every real on-chain identity the
-    // wallet knows about was registered at some DIP-9 index), and
-    // ignored when `wallet == nil`.
-    public var walletId: Data?
-    /// @Relationship is declared on the `PersistentWallet` side
-    /// (`identities`, with `inverse: \PersistentIdentity.wallet`),
-    /// so this is a plain stored property.
+    // The `wallet` reference is the single source of truth — there
+    // is no denormalized scalar `walletId`. Callers that want the
+    // 32-byte wallet id read `identity.wallet?.walletId`;
+    // predicates filter with `$0.wallet?.walletId == target`.
+    // `@Relationship` is declared on the `PersistentWallet` side
+    // (`identities`, with `inverse: \PersistentIdentity.wallet`),
+    // so this is a plain stored property.
     public var wallet: PersistentWallet?
     /// DIP-9 identity index within the owning wallet. Mirrors the
     /// `identity_index` carried on `IdentityEntryFFI` from Rust.
@@ -83,7 +70,6 @@ public final class PersistentIdentity {
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
         network: String = "testnet",
-        walletId: Data? = nil,
         identityIndex: UInt32 = 0
     ) {
         self.identityId = identityId
@@ -98,7 +84,6 @@ public final class PersistentIdentity {
         self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
         self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
         self.network = network
-        self.walletId = walletId
         self.identityIndex = identityIndex
         self.publicKeys = []
         self.documents = []

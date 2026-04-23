@@ -155,7 +155,7 @@ struct SelectMainNameView: View {
     /// the identity has no wallet association — the view then
     /// shows the "No Names Available" empty state.
     private func loadNamesFromWallet() {
-        guard let walletId = identity.walletId,
+        guard let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId)
         else {
             return
