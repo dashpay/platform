@@ -19,10 +19,13 @@ extension View {
 struct TokensView: View {
     @EnvironmentObject var appState: AppState
     @Query private var identities: [PersistentIdentity]
-    @State private var selectedToken: TokenModel?
-    /// Picker selection. `PersistentIdentity` is a `@Model` class
-    /// — `Identifiable` + `Hashable` are free, so it tags cleanly.
+
+    /// Picker selection — `PersistentIdentity` is a `@Model` class,
+    /// so `Identifiable` + `Hashable` come for free.
     @State private var selectedIdentity: PersistentIdentity?
+
+    /// Row tapped in the token list. Drives the actions sheet.
+    @State private var selectedBalance: PersistentTokenBalance?
 
     var body: some View {
         NavigationStack {
@@ -46,105 +49,94 @@ struct TokensView: View {
                             .pickerStyle(MenuPickerStyle())
                         }
 
-                        if selectedIdentity != nil {
-                            Section("Available Tokens") {
-                                ForEach(appState.tokens) { token in
-                                    TokenRow(token: token) {
-                                        selectedToken = token
-                                    }
-                                }
-                            }
+                        if let identity = selectedIdentity {
+                            tokenList(for: identity)
                         }
                     }
                 }
             }
             .navigationTitle("Tokens")
-            .sheet(item: $selectedToken) { token in
-                TokenActionsView(token: token, selectedIdentity: selectedIdentity)
+            .sheet(item: $selectedBalance) { balance in
+                TokenActionsView(balance: balance, identity: selectedIdentity)
                     .environmentObject(appState)
-            }
-            .onAppear {
-                if appState.tokens.isEmpty {
-                    loadSampleTokens()
-                }
             }
         }
     }
 
-    private func loadSampleTokens() {
-        // Add sample tokens for demonstration
-        appState.tokens = [
-            TokenModel(
-                id: "token1",
-                contractId: "contract1",
-                name: "Dash Platform Token",
-                symbol: "DPT",
-                decimals: 8,
-                totalSupply: 1000000000000000,
-                balance: 10000000000,
-                frozenBalance: 250000000, // 2.5 DPT frozen
-                availableClaims: [
-                    ("Reward Distribution", 100000000), // 1 DPT
-                    ("Airdrop #42", 50000000) // 0.5 DPT
-                ],
-                pricePerToken: 0.001
-            ),
-            TokenModel(
-                id: "token2",
-                contractId: "contract2",
-                name: "Test Token",
-                symbol: "TEST",
-                decimals: 6,
-                totalSupply: 500000000000,
-                balance: 5000000,
-                frozenBalance: 0,
-                availableClaims: [],
-                pricePerToken: 0.0001
-            )
-        ]
+    @ViewBuilder
+    private func tokenList(for identity: PersistentIdentity) -> some View {
+        Section("Token Balances") {
+            if identity.tokenBalances.isEmpty {
+                Text("No token balances yet")
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+            } else {
+                ForEach(identity.tokenBalances) { balance in
+                    TokenRow(balance: balance) {
+                        selectedBalance = balance
+                    }
+                }
+            }
+        }
     }
 }
 
 struct TokenRow: View {
-    let token: TokenModel
+    let balance: PersistentTokenBalance
     let onTap: () -> Void
+
+    private var headlineName: String {
+        balance.token?.name ?? balance.tokenName ?? "Token"
+    }
+
+    private var trailingSymbol: String? {
+        balance.tokenSymbol ?? balance.token?.name
+    }
+
+    private var totalSupplyLine: String? {
+        // Prefer the cap; fall back to the base supply. Both are
+        // stored as strings on PersistentToken (they're bignum-safe).
+        guard let token = balance.token else { return nil }
+        if let cap = token.maxSupply, !cap.isEmpty {
+            return "Max Supply: \(cap)"
+        }
+        if !token.baseSupply.isEmpty {
+            return "Base Supply: \(token.baseSupply)"
+        }
+        return nil
+    }
 
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(token.name)
+                    Text(headlineName)
                         .font(.headline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text(token.symbol)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    if let symbol = trailingSymbol {
+                        Text(symbol)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 HStack {
-                    Text("Balance: \(token.formattedBalance)")
+                    Text("Balance: \(balance.displayBalance)")
                         .font(.subheadline)
                         .foregroundColor(.blue)
 
-                    if token.frozenBalance > 0 {
-                        Text("(\(token.formattedFrozenBalance) frozen)")
+                    if balance.frozen {
+                        Text("(frozen)")
                             .font(.caption)
                             .foregroundColor(.orange)
                     }
                 }
 
-                HStack {
-                    Text("Total Supply: \(token.formattedTotalSupply)")
+                if let supply = totalSupplyLine {
+                    Text(supply)
                         .font(.caption)
                         .foregroundColor(.secondary)
-
-                    if !token.availableClaims.isEmpty {
-                        Spacer()
-                        Label("\(token.availableClaims.count)", systemImage: "gift")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                    }
                 }
             }
             .padding(.vertical, 4)
@@ -154,11 +146,15 @@ struct TokenRow: View {
 }
 
 struct TokenActionsView: View {
-    let token: TokenModel
-    let selectedIdentity: PersistentIdentity?
+    let balance: PersistentTokenBalance
+    let identity: PersistentIdentity?
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
     @State private var selectedAction: TokenAction?
+
+    private var displayName: String {
+        balance.token?.name ?? balance.tokenName ?? "Token"
+    }
 
     var body: some View {
         NavigationView {
@@ -169,21 +165,23 @@ struct TokenActionsView: View {
                             Text("Name:")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(token.name)
+                            Text(displayName)
                                 .font(.subheadline)
                         }
-                        HStack {
-                            Text("Symbol:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(token.symbol)
-                                .font(.subheadline)
+                        if let symbol = balance.tokenSymbol {
+                            HStack {
+                                Text("Symbol:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(symbol)
+                                    .font(.subheadline)
+                            }
                         }
                         HStack {
                             Text("Balance:")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(token.formattedBalance)
+                            Text(balance.displayBalance)
                                 .font(.subheadline)
                                 .foregroundColor(.blue)
                         }
@@ -218,7 +216,7 @@ struct TokenActionsView: View {
                     }
                 }
             }
-            .navigationTitle(token.name)
+            .navigationTitle(displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -229,9 +227,9 @@ struct TokenActionsView: View {
             }
             .sheet(item: $selectedAction) { action in
                 TokenActionDetailView(
-                    token: token,
+                    balance: balance,
                     action: action,
-                    selectedIdentity: selectedIdentity
+                    identity: identity
                 )
                 .environmentObject(appState)
             }
@@ -240,9 +238,9 @@ struct TokenActionsView: View {
 }
 
 struct TokenActionDetailView: View {
-    let token: TokenModel
+    let balance: PersistentTokenBalance
     let action: TokenAction
-    let selectedIdentity: PersistentIdentity?
+    let identity: PersistentIdentity?
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
     @State private var isProcessing = false
@@ -250,11 +248,15 @@ struct TokenActionDetailView: View {
     @State private var amount = ""
     @State private var tokenNote = ""
 
+    private var displaySymbol: String {
+        balance.tokenSymbol ?? balance.token?.name ?? "tokens"
+    }
+
     var body: some View {
         NavigationView {
             Form {
                 Section("Selected Identity") {
-                    if let identity = selectedIdentity {
+                    if let identity = identity {
                         VStack(alignment: .leading) {
                             Text(identity.alias ?? "Identity")
                                 .font(.headline)
@@ -263,7 +265,7 @@ struct TokenActionDetailView: View {
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Text("Balance: \(identity.formattedBalance)")
+                            Text("Credits: \(identity.formattedBalance)")
                                 .font(.subheadline)
                                 .foregroundColor(.blue)
                         }
@@ -305,33 +307,13 @@ struct TokenActionDetailView: View {
 
                 case .claim:
                     Section("Claim Details") {
-                        if token.availableClaims.isEmpty {
-                            Text("No claims available at this time")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Available claims:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(token.availableClaims, id: \.name) { claim in
-                                    HStack {
-                                        Text(claim.name)
-                                        Spacer()
-                                        let divisor = pow(10.0, Double(token.decimals))
-                                        let claimAmount = Double(claim.amount) / divisor
-                                        Text(String(format: "%.\(token.decimals)f %@", claimAmount, token.symbol))
-                                            .foregroundColor(.green)
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
-
-                            Text("All available claims will be processed")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        // Claims are wired to distribution configs on
+                        // `PersistentToken`; surfacing them is a
+                        // separate feature. For now this action just
+                        // forwards to the SDK stub.
+                        Text("Submit a claim against any available distribution")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
 
                 case .freeze:
@@ -348,8 +330,8 @@ struct TokenActionDetailView: View {
 
                 case .unfreeze:
                     Section("Unfreeze Details") {
-                        if token.frozenBalance > 0 {
-                            Text("Frozen Balance: \(token.formattedFrozenBalance)")
+                        if balance.frozen {
+                            Text("Balance: \(balance.displayBalance) (frozen)")
                                 .font(.subheadline)
                                 .foregroundColor(.orange)
                         } else {
@@ -360,7 +342,7 @@ struct TokenActionDetailView: View {
 
                         TextField("Amount to Unfreeze", text: $amount)
                             .keyboardType(.numberPad)
-                            .disabled(token.frozenBalance == 0)
+                            .disabled(!balance.frozen)
 
                         Text("Unfrozen tokens will be available for use immediately")
                             .font(.caption)
@@ -369,8 +351,8 @@ struct TokenActionDetailView: View {
 
                 case .destroyFrozenFunds:
                     Section("Destroy Frozen Funds") {
-                        if token.frozenBalance > 0 {
-                            Text("Frozen Balance: \(token.formattedFrozenBalance)")
+                        if balance.frozen {
+                            Text("Balance: \(balance.displayBalance) (frozen)")
                                 .font(.subheadline)
                                 .foregroundColor(.orange)
                         } else {
@@ -395,21 +377,11 @@ struct TokenActionDetailView: View {
 
                 case .directPurchase:
                     Section("Direct Purchase") {
-                        Text("Price: \(token.pricePerToken, specifier: "%.6f") DASH per \(token.symbol)")
-                            .font(.subheadline)
-
                         TextField("Amount to Purchase", text: $amount)
                             .keyboardType(.numberPad)
 
-                        if let purchaseAmount = Double(amount) {
-                            let totalCost = purchaseAmount * token.pricePerToken
-                            Text("Total Cost: \(totalCost, specifier: "%.6f") DASH")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                        }
-
-                        if let identity = selectedIdentity {
-                            Text("Available Balance: \(identity.formattedBalance)")
+                        if let identity = identity {
+                            Text("Available Credits: \(identity.formattedBalance)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -472,7 +444,7 @@ struct TokenActionDetailView: View {
 
     private func performTokenAction() async {
         guard appState.sdk != nil,
-              selectedIdentity != nil else {
+              identity != nil else {
             appState.showError(message: "Please select an identity")
             return
         }
@@ -489,7 +461,7 @@ struct TokenActionDetailView: View {
                 }
 
                 // In a real app, we would use the SDK's token transfer functionality
-                appState.showError(message: "Transfer of \(transferAmount) \(token.symbol) tokens initiated")
+                appState.showError(message: "Transfer of \(transferAmount) \(displaySymbol) initiated")
 
             case .mint:
                 guard let mintAmount = UInt64(amount) else {
@@ -497,7 +469,7 @@ struct TokenActionDetailView: View {
                 }
 
                 // In a real app, we would use the SDK's token mint functionality
-                appState.showError(message: "Minting \(mintAmount) \(token.symbol) tokens")
+                appState.showError(message: "Minting \(mintAmount) \(displaySymbol)")
 
             case .burn:
                 guard let burnAmount = UInt64(amount) else {
@@ -505,11 +477,11 @@ struct TokenActionDetailView: View {
                 }
 
                 // In a real app, we would use the SDK's token burn functionality
-                appState.showError(message: "Burning \(burnAmount) \(token.symbol) tokens")
+                appState.showError(message: "Burning \(burnAmount) \(displaySymbol)")
 
             case .claim:
                 // In a real app, we would fetch available claims and process them
-                appState.showError(message: "Claiming available \(token.symbol) tokens from distributions")
+                appState.showError(message: "Claiming available \(displaySymbol) from distributions")
 
             case .freeze:
                 guard let freezeAmount = UInt64(amount) else {
@@ -518,7 +490,7 @@ struct TokenActionDetailView: View {
 
                 // In a real app, we would use the SDK's token freeze functionality
                 let reason = tokenNote.isEmpty ? "No reason provided" : tokenNote
-                appState.showError(message: "Freezing \(freezeAmount) \(token.symbol) tokens. Reason: \(reason)")
+                appState.showError(message: "Freezing \(freezeAmount) \(displaySymbol). Reason: \(reason)")
 
             case .unfreeze:
                 guard let unfreezeAmount = UInt64(amount) else {
@@ -526,7 +498,7 @@ struct TokenActionDetailView: View {
                 }
 
                 // In a real app, we would use the SDK's token unfreeze functionality
-                appState.showError(message: "Unfreezing \(unfreezeAmount) \(token.symbol) tokens")
+                appState.showError(message: "Unfreezing \(unfreezeAmount) \(displaySymbol)")
 
             case .destroyFrozenFunds:
                 guard let destroyAmount = UInt64(amount) else {
@@ -538,16 +510,15 @@ struct TokenActionDetailView: View {
                 }
 
                 // In a real app, we would use the SDK's destroy frozen funds functionality
-                appState.showError(message: "Destroying \(destroyAmount) frozen \(token.symbol) tokens. Reason: \(tokenNote)")
+                appState.showError(message: "Destroying \(destroyAmount) frozen \(displaySymbol). Reason: \(tokenNote)")
 
             case .directPurchase:
                 guard let purchaseAmount = UInt64(amount) else {
                     throw TokenError.invalidAmount
                 }
 
-                let cost = Double(purchaseAmount) * token.pricePerToken
                 // In a real app, we would use the SDK's direct purchase functionality
-                appState.showError(message: "Purchasing \(purchaseAmount) \(token.symbol) tokens for \(String(format: "%.6f", cost)) DASH")
+                appState.showError(message: "Purchasing \(purchaseAmount) \(displaySymbol) via direct-purchase flow")
             }
         } catch {
             appState.showError(message: "Failed to perform \(action.rawValue): \(error.localizedDescription)")

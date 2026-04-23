@@ -9,11 +9,12 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    // Identity, contract, and document state is now read directly
-    // from SwiftData via `@Query` on the `PersistentIdentity`,
-    // `PersistentDataContract`, and `PersistentDocument` models.
-    // AppState no longer mirrors them as `@Published` arrays.
-    @Published var tokens: [TokenModel] = []
+    // Identity, contract, document, and token state is now read
+    // directly from SwiftData via `@Query` on the
+    // `PersistentIdentity`, `PersistentDataContract`,
+    // `PersistentDocument`, and `PersistentToken` /
+    // `PersistentTokenBalance` models. AppState no longer mirrors
+    // any of them as `@Published` arrays.
     @Published var dataContracts: [DPPDataContract] = []
 
     @Published var currentNetwork: AppNetwork {
@@ -121,11 +122,10 @@ class AppState: ObservableObject {
     func switchNetwork(to network: AppNetwork) async {
         guard let modelContext = modelContext else { return }
 
-        // Clear in-memory caches the app still owns. Identities,
-        // contracts, and documents are scoped per-network inside
-        // SwiftData — @Query consumers filter by `network` and
-        // update reactively when DataManager's scope changes below.
-        tokens.removeAll()
+        // Identities, contracts, documents, and token balances are
+        // scoped per-network inside SwiftData. `@Query` consumers
+        // filter by `network` and update reactively once we swap
+        // the DataManager's scope below — nothing to clear here.
 
         // Update DataManager's current network
         dataManager?.currentNetwork = network
