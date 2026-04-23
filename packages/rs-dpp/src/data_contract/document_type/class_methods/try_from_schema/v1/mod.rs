@@ -1061,4 +1061,535 @@ mod tests {
             );
         }
     }
+
+    mod error_paths {
+        use super::*;
+        use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
+
+        fn default_config() -> DataContractConfig {
+            DataContractConfig::default_for_version(PlatformVersion::latest())
+                .expect("should create a default config")
+        }
+
+        // ---------- Index errors ----------
+        #[test]
+        fn duplicate_index_name_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 40_u32},
+                },
+                "indices": [
+                    {"name": "dup", "properties": [{"a": "asc"}]},
+                    {"name": "dup", "properties": [{"b": "asc"}]},
+                ],
+                "additionalProperties": false,
+            });
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(BasicError::DuplicateIndexNameError(_))
+                    )
+                }
+            );
+        }
+
+        #[test]
+        fn undefined_index_property_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "indices": [
+                    {"name": "idx", "properties": [{"missing": "asc"}]},
+                ],
+                "additionalProperties": false,
+            });
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_))
+                    )
+                }
+            );
+        }
+
+        #[test]
+        fn missing_positions_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 10_u32},
+                    "c": {"type": "string", "position": 2, "maxLength": 10_u32},
+                },
+                "additionalProperties": false,
+            });
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::MissingPositionsInDocumentTypePropertiesError(_)
+                        )
+                    )
+                }
+            );
+        }
+
+        #[test]
+        fn indexed_string_exceeding_max_length_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "big": {"type": "string", "position": 0, "maxLength": 1000_u32},
+                },
+                "indices": [
+                    {"name": "byBig", "properties": [{"big": "asc"}]},
+                ],
+                "additionalProperties": false,
+            });
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::InvalidIndexedPropertyConstraintError(_)
+                        )
+                    )
+                }
+            );
+        }
+
+        // ---------- Token cost: InvalidTokenPositionError ----------
+        #[test]
+        fn token_cost_with_unknown_position_and_no_contract_id_errors() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        // No contractId and an unknown tokenPosition -> error
+                        "tokenPosition": 99_u64,
+                        "amount": 1_u64,
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(), // no token configurations
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(BasicError::InvalidTokenPositionError(_))
+                    )
+                }
+            );
+        }
+
+        // ---------- Token cost: RedundantDocumentPaidForByTokenWithContractId ----------
+        #[test]
+        fn token_cost_with_own_contract_id_errors_redundant() {
+            let platform_version = PlatformVersion::latest();
+            let own_id = Identifier::new([42; 32]);
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        "contractId": own_id.to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let result = DocumentTypeV1::try_from_schema(
+                own_id,
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::RedundantDocumentPaidForByTokenWithContractId(_)
+                        )
+                    )
+                }
+            );
+        }
+
+        // ---------- Token cost: BurnToken on external contract is not allowed ----------
+        #[test]
+        fn burn_token_on_external_contract_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let own_id = Identifier::new([42; 32]);
+            let external_id = Identifier::new([99; 32]);
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        "contractId": external_id.to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                        "effect": 1_u64, // BurnToken
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let result = DocumentTypeV1::try_from_schema(
+                own_id,
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert_matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)) => {
+                    assert_matches!(
+                        boxed.as_ref(),
+                        ConsensusError::BasicError(
+                            BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_)
+                        )
+                    )
+                }
+            );
+        }
+
+        // ---------- Token cost: valid external contract transfer is accepted ----------
+        #[test]
+        fn valid_token_cost_with_external_contract_is_accepted() {
+            let platform_version = PlatformVersion::latest();
+            let own_id = Identifier::new([42; 32]);
+            let external_id = Identifier::new([99; 32]);
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        "contractId": external_id.to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 5_u64,
+                        "effect": 0_u64, // TransferTokenToContractOwner
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let dt = DocumentTypeV1::try_from_schema(
+                own_id,
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should be accepted");
+            // The create cost should be populated
+            let cost = dt.token_costs.document_creation_token_cost();
+            assert!(cost.is_some());
+            let cost = cost.unwrap();
+            assert_eq!(cost.token_amount, 5);
+            assert_eq!(cost.token_contract_position, 0);
+            assert_eq!(cost.contract_id, Some(external_id));
+        }
+
+        // ---------- With full_validation = false, token cost validations are skipped
+        #[test]
+        fn invalid_token_cost_without_validation_still_constructs() {
+            let platform_version = PlatformVersion::latest();
+            let own_id = Identifier::new([42; 32]);
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        // own contract id but validation skipped
+                        "contractId": own_id.to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let dt = DocumentTypeV1::try_from_schema(
+                own_id,
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                false, // skip validation
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should construct without validation");
+            assert!(dt.token_costs.document_creation_token_cost().is_some());
+        }
+
+        // ---------- TRANSFERABLE u8 conversion failure path ----------
+        #[test]
+        fn invalid_transferable_integer_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "transferable": 7_u64,
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 10_u32}
+                },
+                "additionalProperties": false,
+            });
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                false, // skip schema validation
+                &mut vec![],
+                platform_version,
+            );
+            assert!(result.is_err());
+        }
+
+        // ---------- Non-object schema fails in .to_map() ----------
+        #[test]
+        fn non_object_schema_returns_error_without_validation() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!("not_an_object");
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                false,
+                &mut vec![],
+                platform_version,
+            );
+            assert!(result.is_err());
+        }
+
+        // ---------- Valid schema with all optional configuration fields set ----------
+        #[test]
+        fn full_config_options_are_preserved_on_successful_build() {
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "documentsKeepHistory": true,
+                "documentsMutable": true,
+                "canBeDeleted": false,
+                "transferable": 1_u64,
+                "tradeMode": 1_u64,
+                "creationRestrictionMode": 1_u64,
+                "signatureSecurityLevelRequirement": 1_u64,
+                "requiresIdentityEncryptionBoundedKey": 0_u64,
+                "requiresIdentityDecryptionBoundedKey": 0_u64,
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 10_u32},
+                },
+                "additionalProperties": false,
+            });
+            let dt = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should build");
+            assert!(dt.documents_keep_history);
+            assert!(dt.documents_mutable);
+            assert!(!dt.documents_can_be_deleted);
+            assert!(dt.documents_transferable.is_transferable());
+            // Non-default SecurityLevel was parsed (1 = CRITICAL vs default HIGH)
+            assert_eq!(dt.security_level_requirement, SecurityLevel::CRITICAL);
+            assert!(dt.requires_identity_encryption_bounded_key.is_some());
+            assert!(dt.requires_identity_decryption_bounded_key.is_some());
+        }
+
+        // ---------- v1 behavior: BurnToken is allowed if contract is "own" (no contractId) ----------
+        #[test]
+        fn burn_effect_on_own_contract_is_allowed_when_token_configured() {
+            use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use crate::data_contract::TokenContractPosition;
+            use platform_value::string_encoding::Encoding;
+
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        // No contractId => "own contract"; Burn is allowed
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                        "effect": 1_u64,
+                    }
+                },
+                "additionalProperties": false,
+            });
+
+            let token_cfg = TokenConfigurationV0::default_most_restrictive();
+            let mut token_configurations: BTreeMap<TokenContractPosition, TokenConfiguration> =
+                BTreeMap::new();
+            token_configurations.insert(0, TokenConfiguration::V0(token_cfg));
+
+            // Also silence an unused-import warning on Encoding in case the compile path differs.
+            let _ = Encoding::Base58;
+
+            let dt = DocumentTypeV1::try_from_schema(
+                Identifier::new([42; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should construct with own-contract burn");
+            assert!(dt.token_costs.document_creation_token_cost().is_some());
+        }
+    }
 }

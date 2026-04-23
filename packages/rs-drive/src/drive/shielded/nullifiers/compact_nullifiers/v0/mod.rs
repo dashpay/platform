@@ -165,3 +165,113 @@ impl Drive {
         Ok((start_block, end_block))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    /// Compacting with no existing recent entries (empty pool) produces a single
+    /// compacted entry whose range is (current_block, current_block).
+    #[test]
+    fn compact_with_empty_pool_uses_current_block_as_range() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nullifiers = vec![[7u8; 32], [8u8; 32]];
+
+        let (start, end) = drive
+            .compact_nullifiers_with_current_block_v0(
+                &nullifiers,
+                42,
+                5_000,
+                None,
+                platform_version,
+            )
+            .expect("compact should succeed");
+
+        assert_eq!(start, 42);
+        assert_eq!(end, 42);
+
+        // Read back via fetch_compacted.
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch compacted");
+        assert_eq!(compacted.len(), 1);
+        assert_eq!(compacted[0].start_block, 42);
+        assert_eq!(compacted[0].end_block, 42);
+        assert_eq!(compacted[0].nullifiers.as_slice(), nullifiers.as_slice());
+    }
+
+    /// Compacting twice with the same current_block_time_ms must merge the two
+    /// ranges under the same expiration key (exercising the
+    /// "existing_ranges is Some" branch).
+    #[test]
+    fn second_compaction_with_same_time_appends_range_to_expiration() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .compact_nullifiers_with_current_block_v0(
+                &[[1u8; 32]],
+                10,
+                1_000,
+                None,
+                platform_version,
+            )
+            .expect("first compact");
+
+        drive
+            .compact_nullifiers_with_current_block_v0(
+                &[[2u8; 32]],
+                20,
+                1_000, // same block time → same expiration key
+                None,
+                platform_version,
+            )
+            .expect("second compact");
+
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch");
+        assert_eq!(compacted.len(), 2, "both compacted ranges must be present");
+    }
+
+    /// Compacting drains entries stored via store_nullifiers_for_block_v0 and the
+    /// final combined list is the concatenation of stored + current in block order.
+    #[test]
+    fn compact_drains_recent_and_concats_in_order() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .store_nullifiers_for_block_v0(&[[1u8; 32]], 1, 100, None, platform_version)
+            .expect("store 1");
+        drive
+            .store_nullifiers_for_block_v0(&[[2u8; 32]], 2, 200, None, platform_version)
+            .expect("store 2");
+
+        let (start, end) = drive
+            .compact_nullifiers_with_current_block_v0(&[[3u8; 32]], 3, 300, None, platform_version)
+            .expect("compact");
+
+        assert_eq!(start, 1);
+        assert_eq!(end, 3);
+
+        // After compaction, recent pool should be drained.
+        let recent = drive
+            .fetch_recent_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch recent");
+        assert_eq!(recent.len(), 0, "recent should be drained after compact");
+
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch compacted");
+        assert_eq!(compacted.len(), 1);
+        // Concatenation in ascending block order: [1][2][3]
+        assert_eq!(
+            compacted[0].nullifiers.as_slice(),
+            &[[1u8; 32], [2u8; 32], [3u8; 32]]
+        );
+    }
+}
