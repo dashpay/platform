@@ -664,13 +664,38 @@ struct IdentityDetailView: View {
     /// identity on a previous session. Silently no-ops when the
     /// identity doesn't have a wallet associated yet — that only
     /// happens for local-only identities, which we gate out upstream.
+    ///
+    /// Routes through the `ManagedIdentity` handle rather than the
+    /// wallet-level by-id FFI for two reasons:
+    ///   1. If the identity isn't in the wallet's manager (e.g. the
+    ///      Rust-side changeset for a freshly-registered identity
+    ///      hasn't settled into `IdentityManager::identities` by the
+    ///      time the detail view appears), we surface that as
+    ///      `.identityNotFound` from `managedIdentity(identityId:)`
+    ///      and skip silently.
+    ///   2. The profile read then goes through the handle-based
+    ///      `managed_identity_get_dashpay_profile` rather than the
+    ///      wallet-level `platform_wallet_get_dashpay_profile`.
+    ///      Only a `Handle` (u64) crosses the boundary — no
+    ///      pass-by-value aggregates.
     private func loadCachedDashPayProfile(for identity: PersistentIdentity) {
         guard let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             return
         }
         do {
-            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.identityId)
+            let managed = try wallet.managedIdentity(identityId: identity.identityId)
+            dashpayProfile = try managed.getDashPayProfile()
+        } catch let error as PlatformWalletError {
+            if case .identityNotFound = error {
+                // Expected right after a fresh register — the
+                // IdentityManager may not have observed the new
+                // entry yet. The background `syncDashPayProfiles()`
+                // task triggered from onAppear will pick it up once
+                // the Rust side has it.
+                return
+            }
+            print("⚠️ Failed to read cached DashPay profile: \(error)")
         } catch {
             print("⚠️ Failed to read cached DashPay profile: \(error)")
         }
@@ -679,6 +704,10 @@ struct IdentityDetailView: View {
     /// Drive a Platform-side sync for every identity on the wallet,
     /// then re-read this identity's cache. Runs in a background task
     /// (the FFI dispatches to an 8 MB tokio worker internally).
+    ///
+    /// Same handle-based read pattern as `loadCachedDashPayProfile`:
+    /// resolve the `ManagedIdentity` first, then call its
+    /// `getDashPayProfile()` so only a `Handle` crosses the FFI.
     @MainActor
     private func refreshDashPayProfilesFromPlatform(for identity: PersistentIdentity) async {
         guard let walletId = identity.wallet?.walletId,
@@ -691,8 +720,19 @@ struct IdentityDetailView: View {
         do {
             _ = try await wallet.syncDashPayProfiles()
             // Pick up whatever the sync wrote back into the cache.
-            dashpayProfile = try wallet.getDashPayProfile(identityId: identity.identityId)
+            let managed = try wallet.managedIdentity(identityId: identity.identityId)
+            dashpayProfile = try managed.getDashPayProfile()
             profileError = nil
+        } catch let error as PlatformWalletError {
+            if case .identityNotFound = error {
+                // Same race as in the cached-read path — the
+                // identity may not be in the Rust manager yet.
+                // Don't surface as a failure.
+                profileError = nil
+                return
+            }
+            print("⚠️ DashPay profile sync failed: \(error)")
+            profileError = "Profile sync failed: \(error.localizedDescription)"
         } catch {
             // Don't blow away a previously-shown profile on transient
             // sync failure — surface the error underneath instead.
