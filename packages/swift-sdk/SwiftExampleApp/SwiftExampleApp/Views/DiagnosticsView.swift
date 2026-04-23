@@ -535,7 +535,7 @@ struct DiagnosticsView: View {
     private func copyReport() {
         var report = "Dash Platform iOS SDK - Query Diagnostics Report\n"
         report += "================================================\n\n"
-        report += "Date: \(Date().formatted())\n"
+        report += "Date: \(AppDate.formatted(Date(), dateStyle: .abbreviated, timeStyle: .standard))\n"
         report += "SDK Network: Testnet\n\n"
 
         let successCount = results.filter { $0.success }.count

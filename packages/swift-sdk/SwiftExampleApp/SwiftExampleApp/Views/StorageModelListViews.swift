@@ -293,7 +293,8 @@ struct TokenHistoryStorageListView: View {
             NavigationLink(destination: TokenHistoryStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.displayTitle).font(.body).lineLimit(1)
-                    Text(record.eventTimestamp, style: .date).font(.caption).foregroundColor(.secondary)
+                    Text(AppDate.formatted(record.eventTimestamp, dateStyle: .abbreviated, timeStyle: .omitted))
+                        .font(.caption).foregroundColor(.secondary)
                 }
             }
         }

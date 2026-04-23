@@ -399,7 +399,7 @@ struct KeychainItemDetailView: View {
     }
 
     private var dateFormatter: DateFormatter {
-        let f = DateFormatter()
+        let f = DateFormatter.gregorian()
         f.dateStyle = .medium
         f.timeStyle = .medium
         return f

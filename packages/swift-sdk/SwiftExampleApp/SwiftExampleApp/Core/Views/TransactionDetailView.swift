@@ -194,7 +194,7 @@ struct TransactionDetailView: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
+        let formatter = DateFormatter.gregorian()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)

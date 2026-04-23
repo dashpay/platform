@@ -306,7 +306,7 @@ struct WalletInfoView: View {
                     HStack {
                         Text("Created")
                         Spacer()
-                        Text(wallet.createdAt, style: .date)
+                        Text(AppDate.formatted(wallet.createdAt, dateStyle: .abbreviated, timeStyle: .omitted))
                             .foregroundColor(.secondary)
                     }
 

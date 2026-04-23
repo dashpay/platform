@@ -248,10 +248,10 @@ var body: some View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(blockTime, style: .date)
+                            Text(AppDate.formatted(blockTime, dateStyle: .abbreviated, timeStyle: .omitted))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(blockTime, style: .time)
+                            Text(AppDate.formatted(blockTime, dateStyle: .omitted, timeStyle: .shortened))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -729,7 +729,7 @@ struct WalletRowView: View {
     }
 
     private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
+        let f = DateFormatter.gregorian()
         f.dateStyle = .medium
         f.timeStyle = .none
         return f

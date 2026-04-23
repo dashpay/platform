@@ -90,7 +90,13 @@ public final class PersistentDocument {
         parts.append("Type: \(documentType)")
         parts.append("Rev: \(revision)")
 
+        // Pin to Gregorian so the `createdAt` year stays CE even
+        // when the device is configured for a non-Gregorian
+        // calendar (e.g. Thai region → Buddhist era). The SDK
+        // doesn't depend on the app's `AppDate` helper, so we
+        // configure the formatter inline.
         let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateStyle = .short
         parts.append("Created: \(formatter.string(from: createdAt))")
 

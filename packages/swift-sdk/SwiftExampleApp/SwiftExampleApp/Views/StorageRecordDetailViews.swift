@@ -22,8 +22,7 @@ private func hexString(_ data: Data) -> String {
 }
 
 private func dateString(_ date: Date?) -> String {
-    guard let date = date else { return "None" }
-    return date.formatted(date: .abbreviated, time: .shortened)
+    AppDate.formatted(optional: date)
 }
 
 private func jsonString(_ data: Data?) -> String? {
@@ -392,9 +391,12 @@ struct SyncStateStorageDetailView: View {
                 FieldRow(label: "Sync Height", value: "\(record.syncHeight)")
                 FieldRow(label: "Sync Timestamp", value: "\(record.syncTimestamp)")
                 if let date = blockDate {
-                    FieldRow(label: "Local Time", value: date.formatted(date: .abbreviated, time: .standard))
+                    FieldRow(
+                        label: "Local Time",
+                        value: AppDate.formatted(date, dateStyle: .abbreviated, timeStyle: .standard)
+                    )
                     FieldRow(label: "UTC", value: {
-                        let f = DateFormatter()
+                        let f = DateFormatter.posixGregorian()
                         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
                         f.timeZone = TimeZone(identifier: "UTC")
                         return f.string(from: date) + " UTC"

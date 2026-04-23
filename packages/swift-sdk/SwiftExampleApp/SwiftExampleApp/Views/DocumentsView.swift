@@ -109,8 +109,8 @@ struct DocumentDetailView: View {
                             DetailRow(label: "Document ID", value: document.documentId)
                             DetailRow(label: "Contract ID", value: document.contractIdBase58)
                             DetailRow(label: "Owner ID", value: document.ownerIdBase58)
-                            DetailRow(label: "Created", value: document.createdAt.formatted())
-                            DetailRow(label: "Updated", value: document.updatedAt.formatted())
+                            DetailRow(label: "Created", value: AppDate.formatted(document.createdAt))
+                            DetailRow(label: "Updated", value: AppDate.formatted(document.updatedAt))
                         }
                         .padding()
                         .background(Color.gray.opacity(0.1))
@@ -307,7 +307,7 @@ struct DetailRow: View {
 }
 
 private let dateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
+    let formatter = DateFormatter.gregorian()
     formatter.dateStyle = .medium
     formatter.timeStyle = .short
     return formatter
