@@ -500,15 +500,15 @@ mod tests {
 
         let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected InvalidPublicKey");
-        // Could be either InvalidPublicKey or a deeper signature error
-        // depending on how the library handles a zero key. Require something
-        // from the expected set.
-        let msg = err.to_string();
+        // `PublicKey::try_from([0u8; 48])` deterministically fails in the
+        // BLS12-381 library (the infinity/identity encoding is a `0xC0` prefix,
+        // not all-zeros), so this must map to `Error::InvalidPublicKey` and
+        // cannot fall through to signature verification. The signature here is
+        // `vec![1u8; 96]` (non-zero), so the "empty signature" branch is also
+        // unreachable.
         assert!(
-            msg.contains("invalid public key")
-                || msg.contains("Could not verify signature digest")
-                || msg.contains("empty signature"),
-            "unexpected error: {msg}"
+            matches!(&err, Error::InvalidPublicKey { .. }),
+            "expected InvalidPublicKey, got: {err}"
         );
     }
 

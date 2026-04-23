@@ -408,13 +408,17 @@ mod tests {
     #[test]
     fn emergency_borrowed_copies_action_via_star_deref() {
         // The borrowed transformer writes `emergency_action: *emergency_action`
-        // which relies on `TokenEmergencyAction: Copy`.
+        // which relies on `TokenEmergencyAction: Copy`. We mirror that via an
+        // intermediate reference binding (a direct `*&pause` would trip
+        // `clippy::deref_addrof`).
         let pause = TokenEmergencyAction::Pause;
-        let copied = *&pause;
+        let pause_ref: &TokenEmergencyAction = &pause;
+        let copied: TokenEmergencyAction = *pause_ref;
         assert_eq!(copied, TokenEmergencyAction::Pause);
 
         let resume = TokenEmergencyAction::Resume;
-        let copied = *&resume;
+        let resume_ref: &TokenEmergencyAction = &resume;
+        let copied: TokenEmergencyAction = *resume_ref;
         assert_eq!(copied, TokenEmergencyAction::Resume);
     }
 

@@ -323,9 +323,15 @@ mod tests {
     #[test]
     fn limit_at_u16_max_does_not_error_on_conversion() {
         // Using limit = u16::MAX as u32 — conversion must succeed.
-        // We still need to pass a valid proof/metadata and to reach drive
-        // verification, which will error because our proof is empty. The
-        // important thing is we don't hit the "limit exceeds u16::MAX" branch.
+        //
+        // To stop deterministically BEFORE Drive verification and the provider,
+        // we use a response whose `version = None`. Control flow in
+        // `maybe_from_proof_with_metadata` is:
+        //   version -> token_id -> start_at -> limit conversion -> metadata -> proof -> drive
+        // So the limit conversion runs first; if it wrongly rejected u16::MAX,
+        // we'd see `Error::RequestError { "limit exceeds u16::MAX" }`.
+        // Instead, the conversion should succeed and we should fall through to
+        // the deterministic `EmptyResponseMetadata` branch.
         let request = GetTokenPreProgrammedDistributionsRequest {
             version: Some(ReqVersion::V0(
                 GetTokenPreProgrammedDistributionsRequestV0 {
@@ -336,10 +342,10 @@ mod tests {
                 },
             )),
         };
-        let response = response_with_proof();
-        // Provider must not be called before Drive verification — but Drive
-        // verification will fail on the empty proof. Use an unreachable provider
-        // and accept the resulting drive-level error.
+        // response.version = None ⇒ metadata() errors ⇒ EmptyResponseMetadata,
+        // which fires BEFORE proof_owned() or Drive verification, and well
+        // before the provider could ever be consulted.
+        let response = GetTokenPreProgrammedDistributionsResponse { version: None };
         let err = <TokenPreProgrammedDistributions as FromProof<_>>::maybe_from_proof(
             request,
             response,
@@ -348,12 +354,9 @@ mod tests {
             &UnreachableProvider,
         )
         .unwrap_err();
-        // Must NOT be a RequestError mentioning "limit".
-        if let Error::RequestError { error } = &err {
-            assert!(
-                !error.contains("limit exceeds u16"),
-                "u16::MAX should be acceptable, got: {error}"
-            );
-        }
+        assert!(
+            matches!(err, Error::EmptyResponseMetadata),
+            "expected EmptyResponseMetadata (proves limit conversion succeeded), got: {err:?}"
+        );
     }
 }

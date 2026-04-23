@@ -5807,26 +5807,30 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_state_transition_empty_metadata_when_missing() {
-        // Deserialization of empty state_transition fails first on real data,
-        // but in our case we want to ensure the proof branch fires correctly
-        // when metadata is missing.
+    fn broadcast_state_transition_protocol_error_fires_before_metadata_check() {
+        // This test pins the ORDERING of validation in
+        // `StateTransitionProofResult::maybe_from_proof` for broadcast
+        // state transitions: proof extraction -> state_transition decode ->
+        // metadata check. An invalid state_transition payload triggers
+        // `ProtocolError` on decode BEFORE the missing-metadata branch is
+        // reached, so even though `metadata: None` here, the assertion
+        // targets `ProtocolError`, not `EmptyResponseMetadata`.
+        //
+        // (For the happy-path `EmptyResponseMetadata` branch, a valid
+        // serialized state transition would be needed; that is covered
+        // elsewhere. This test deliberately documents the decode-first
+        // ordering.)
         use platform::wait_for_state_transition_result_response::{
             wait_for_state_transition_result_response_v0::Result as V0Result, Version,
             WaitForStateTransitionResultResponseV0,
         };
-        // Must use a payload that successfully deserializes - but without
-        // a valid one, we instead hit ProtocolError. We accept either
-        // ProtocolError (deserialize fail) or EmptyResponseMetadata
-        // depending on ordering. Use clearly-invalid payload so decode
-        // explicitly errors first and assert ProtocolError.
         let request = platform::BroadcastStateTransitionRequest {
             state_transition: vec![0xFFu8; 4],
         };
         let response = platform::WaitForStateTransitionResultResponse {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
                 result: Some(V0Result::Proof(Proof::default())),
-                metadata: None, // missing
+                metadata: None, // missing — would trigger EmptyResponseMetadata if reached
             })),
         };
         let provider = unreachable_provider();
@@ -5840,8 +5844,6 @@ mod tests {
             &provider,
         )
         .unwrap_err();
-        // Order: proof extracted -> state_transition decoded -> metadata
-        // checked. ProtocolError triggers on the decode.
         assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
     }
 }

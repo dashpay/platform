@@ -404,8 +404,11 @@ mod tests {
     #[test]
     fn unfreeze_borrowed_path_dereferences_frozen_identity_id() {
         let id = Identifier::new([0xCD; 32]);
-        // Mirror the `frozen_identity_id: *frozen_identity_id` pattern.
-        let copied = *&id;
+        // Mirror the `frozen_identity_id: *frozen_identity_id` pattern via an
+        // intermediate reference binding. Writing `*&id` directly would trip
+        // `clippy::deref_addrof`.
+        let id_ref: &Identifier = &id;
+        let copied: Identifier = *id_ref;
         assert_eq!(copied, id);
     }
 

@@ -96,17 +96,21 @@ mod tests {
         }
     }
 
-    // A `platform_value::Value` shaped exactly like the output of
-    // `IdentityV0::to_object` (via the `ValueConvertible` derive), which is what
-    // `try_from_platform_versioned` deserializes back into via
-    // `platform_value::from_value::<IdentityV0>`.
+    // A `platform_value::Value` that `try_from_platform_versioned` accepts and
+    // deserializes into an `IdentityV0` via `platform_value::from_value::<IdentityV0>`.
+    //
+    // NOTE: this is *not* a byte-for-byte mirror of `IdentityV0::to_object()`.
+    // `to_object()` produces `Value::Bytes` for `BinaryData` fields (e.g. the
+    // public-key `data`), while this fixture encodes `data` as a base64 STRING.
+    // Both shapes round-trip through the serde deserializer because the inner
+    // `platform_value` deserializer behaves as `is_human_readable() = true` for
+    // nested fields, which accepts the base64-string representation of
+    // `BinaryData`. This fixture deliberately exercises the human-readable path.
     //
     // Each inner public key carries the adjacency-tag `$formatVersion: "0"` that
     // `IdentityPublicKey`'s serde enum representation requires.
     //
-    // frozen: V0 consensus behavior — because the inner platform_value deserializer
-    // defaults to `is_human_readable() = true` for nested fields, the `data` BinaryData
-    // field must be encoded as a base64 STRING (not raw bytes) in this path.
+    // frozen: V0 consensus behavior.
     fn tagged_raw_value() -> Value {
         use platform_value::string_encoding::{encode, Encoding};
         let data_b64 = encode(&[0x22u8; 33], Encoding::Base64);

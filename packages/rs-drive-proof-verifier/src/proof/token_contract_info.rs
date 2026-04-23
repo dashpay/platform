@@ -236,8 +236,12 @@ mod tests {
     }
 
     #[test]
-    fn token_contract_info_no_proof_when_response_is_default() {
-        // response.version = None -> VersionedGrpcResponse::proof_owned() errors.
+    fn token_contract_info_empty_response_metadata_when_response_is_default() {
+        // response.version = None. In `TokenContractInfo::maybe_from_proof`,
+        // `response.metadata()` is called BEFORE `response.proof_owned()`, and
+        // the derived `VersionedGrpcResponse` impl returns Err when version is
+        // None, which maps to `Error::EmptyResponseMetadata`. Ordering is
+        // deterministic, so this is the only acceptable outcome.
         let request = GetTokenContractInfoRequest {
             version: Some(ReqVersion::V0(GetTokenContractInfoRequestV0 {
                 token_id: vec![0u8; 32],
@@ -253,10 +257,6 @@ mod tests {
             &UnreachableProvider,
         )
         .unwrap_err();
-        // default response has no version → no metadata / proof → EmptyResponseMetadata
-        assert!(
-            matches!(err, Error::EmptyResponseMetadata | Error::NoProofInResult),
-            "got: {err:?}"
-        );
+        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
     }
 }
