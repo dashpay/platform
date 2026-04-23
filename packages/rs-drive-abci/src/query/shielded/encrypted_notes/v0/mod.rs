@@ -146,3 +146,224 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    fn max_chunk_size(version: &PlatformVersion) -> u64 {
+        version
+            .drive_abci
+            .query
+            .shielded_queries
+            .max_encrypted_notes_per_query as u64
+    }
+
+    #[test]
+    fn test_v0_non_aligned_start_index_errors() {
+        // Non-aligned start_index branch: returns InvalidArgument directly.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: 5, // not aligned to chunk size
+            count: 10,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("not chunk-aligned")
+        ));
+    }
+
+    #[test]
+    fn test_v0_non_aligned_large_start_index_errors() {
+        // An almost-aligned value (chunk_size + 1) must still be rejected.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let chunk = max_chunk_size(version);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: chunk + 1,
+            count: 10,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("not chunk-aligned")
+        ));
+    }
+
+    #[test]
+    fn test_v0_aligned_start_at_chunk_size_boundary_ok() {
+        // An aligned start_index equal to exactly chunk_size should succeed
+        // (fresh pool → empty result set).
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let chunk = max_chunk_size(version);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: chunk,
+            count: 1,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_shielded_encrypted_notes_response_v0::Result::EncryptedNotes(notes)) => {
+                assert!(notes.entries.is_empty());
+            }
+            other => panic!("expected EncryptedNotes, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_v0_aligned_start_at_multiple_of_chunk_size_ok() {
+        // start_index = 2 * chunk_size must also be accepted.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let chunk = max_chunk_size(version);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: chunk * 2,
+            count: 1,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn test_v0_count_one_yields_limit_one() {
+        // count=1 bypasses the "0 or > max" branch and sets effective=1.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: 0,
+            count: 1,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_shielded_encrypted_notes_response_v0::Result::EncryptedNotes(notes)) => {
+                // Empty state → empty entries even with count=1.
+                assert!(notes.entries.is_empty());
+            }
+            other => panic!("expected EncryptedNotes, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_v0_prove_path_aligned_start() {
+        // Prove path on empty state with aligned start_index should return a
+        // Proof variant.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: 0,
+            count: 16,
+            prove: true,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(matches!(
+            result.data,
+            Some(GetShieldedEncryptedNotesResponseV0 {
+                result: Some(get_shielded_encrypted_notes_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_v0_prove_path_rejects_unaligned_start() {
+        // Non-aligned start_index is rejected even with prove=true — the
+        // alignment check is *before* the prove branch.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: 3,
+            count: 4,
+            prove: true,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("not chunk-aligned")
+        ));
+    }
+
+    #[test]
+    fn test_v0_count_exactly_max_is_accepted() {
+        // count == max is neither `0` nor `> max`, so it falls through the
+        // inner `else` that keeps count as-is. Covers that fallthrough.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version
+            .drive_abci
+            .query
+            .shielded_queries
+            .max_encrypted_notes_per_query as u32;
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: 0,
+            count: max,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn test_v0_start_index_zero_is_always_aligned() {
+        // start_index = 0 is always aligned (any X % chunk_size for 0 is 0).
+        // Exercises the `start_index % chunk_size == 0` short-path.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedEncryptedNotesRequestV0 {
+            start_index: 0,
+            count: 8,
+            prove: false,
+        };
+
+        let result = platform
+            .query_shielded_encrypted_notes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+}
