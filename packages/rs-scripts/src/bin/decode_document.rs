@@ -18,7 +18,6 @@ const SYSTEM_CONTRACTS: &[(&str, SystemDataContract)] = &[
         "masternode-reward-shares",
         SystemDataContract::MasternodeRewards,
     ),
-    ("feature-flags", SystemDataContract::FeatureFlags),
     ("wallet-utils", SystemDataContract::WalletUtils),
     ("token-history", SystemDataContract::TokenHistory),
     ("keyword-search", SystemDataContract::KeywordSearch),

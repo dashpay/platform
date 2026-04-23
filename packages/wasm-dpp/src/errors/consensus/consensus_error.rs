@@ -12,7 +12,8 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm,
-    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
+    IdentityAssetLockTransactionOutputNotFoundErrorWasm,
+    IdentityAssetLockTransactionTooManyInputsErrorWasm, IdentityCreditTransferToSelfErrorWasm,
     IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
     InvalidAssetLockProofTransactionHeightErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
@@ -38,7 +39,8 @@ use dpp::consensus::basic::BasicError::{
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
-    IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+    IdentityAssetLockTransactionTooManyInputsError, IncompatibleProtocolVersionError,
     IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
@@ -613,6 +615,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         InvalidIdentityAssetLockTransactionError(e) => {
             InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
+        }
+        IdentityAssetLockTransactionTooManyInputsError(e) => {
+            IdentityAssetLockTransactionTooManyInputsErrorWasm::from(e).into()
         }
         InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()

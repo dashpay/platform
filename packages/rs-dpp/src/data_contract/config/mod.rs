@@ -583,4 +583,227 @@ mod tests {
             }
         }
     }
+
+    /// V0's `get_contract_configuration_properties_v0` has a historical
+    /// copy-paste quirk: the decryption bounded-key field is parsed from
+    /// the `requiresIdentityEncryptionBoundedKey` property (not the matching
+    /// DECRYPTION one). This is part of V0 protocol behavior and MUST NOT be
+    /// changed — altering it would fork the chain. V1 parses correctly; see
+    /// `v1/mod.rs`. These tests lock the V0 behavior in place so the quirk
+    /// is not silently "fixed" by a future well-intentioned refactor.
+    mod get_contract_configuration_properties_v0_consensus_lock {
+        use super::*;
+        use crate::data_contract::config::property::{
+            REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY, REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY,
+        };
+        use platform_value::Value;
+        use std::collections::BTreeMap;
+
+        /// When the ENCRYPTION property is set, V0 applies that value to
+        /// BOTH the encryption and decryption fields — because the parser
+        /// reads both from the same key.
+        #[test]
+        fn encryption_property_populates_both_fields() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Unique as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert_eq!(
+                config.requires_identity_encryption_bounded_key,
+                Some(StorageKeyRequirements::Unique)
+            );
+            assert_eq!(
+                config.requires_identity_decryption_bounded_key,
+                Some(StorageKeyRequirements::Unique),
+                "V0 consensus quirk: decryption field is read from the ENCRYPTION key"
+            );
+        }
+
+        /// When ONLY the DECRYPTION property is set, V0 ignores it entirely
+        /// — neither field is populated, because V0 never reads the
+        /// DECRYPTION key.
+        #[test]
+        fn decryption_property_is_ignored_by_v0() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::MultipleReferenceToLatest as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert!(
+                config.requires_identity_encryption_bounded_key.is_none(),
+                "V0 does not read the DECRYPTION property at all"
+            );
+            assert!(
+                config.requires_identity_decryption_bounded_key.is_none(),
+                "V0 consensus quirk: decryption field is NOT sourced from the DECRYPTION key"
+            );
+        }
+
+        /// When BOTH properties are set, the ENCRYPTION value wins for both
+        /// fields; the DECRYPTION property is ignored.
+        #[test]
+        fn encryption_wins_when_both_properties_set() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Unique as u8),
+            );
+            map.insert(
+                REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Multiple as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert_eq!(
+                config.requires_identity_encryption_bounded_key,
+                Some(StorageKeyRequirements::Unique)
+            );
+            assert_eq!(
+                config.requires_identity_decryption_bounded_key,
+                Some(StorageKeyRequirements::Unique),
+                "V0 consensus quirk: the DECRYPTION property is ignored"
+            );
+        }
+
+        /// Sanity check: with neither property set, both fields stay `None`.
+        #[test]
+        fn neither_property_set_leaves_both_none() {
+            let map: BTreeMap<String, Value> = BTreeMap::new();
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config with defaults");
+            assert!(config.requires_identity_encryption_bounded_key.is_none());
+            assert!(config.requires_identity_decryption_bounded_key.is_none());
+        }
+    }
+
+    mod bincode_roundtrip {
+        use super::*;
+        use bincode::config;
+
+        #[test]
+        fn v0_bincode_roundtrip_preserves_fields() {
+            let cfg = config::standard();
+            let original = DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: true,
+                readonly: true,
+                keeps_history: true,
+                documents_keep_history_contract_default: true,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Unique),
+                requires_identity_decryption_bounded_key: None,
+            });
+            let bytes = bincode::encode_to_vec(original, cfg).expect("encode");
+            let (decoded, _): (DataContractConfig, _) =
+                bincode::decode_from_slice(&bytes, cfg).expect("decode");
+            assert_eq!(decoded, original);
+        }
+
+        #[test]
+        fn v1_bincode_roundtrip_preserves_sized_integer_types() {
+            let cfg = config::standard();
+            let original = DataContractConfig::V1(DataContractConfigV1 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: true,
+                documents_can_be_deleted_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+                sized_integer_types: false,
+            });
+            let bytes = bincode::encode_to_vec(original, cfg).expect("encode");
+            let (decoded, _): (DataContractConfig, _) =
+                bincode::decode_from_slice(&bytes, cfg).expect("decode");
+            assert_eq!(decoded, original);
+            // And sized_integer_types is correctly false on the decoded copy
+            assert!(!decoded.sized_integer_types());
+        }
+    }
+
+    mod from_value_tests {
+        use super::*;
+        use platform_value::platform_value;
+
+        #[test]
+        fn from_value_yields_default_for_empty_object() {
+            // Empty object -> defaults; succeeds on the latest platform version
+            let value = platform_value!({});
+            let platform_version = PlatformVersion::latest();
+            let cfg = DataContractConfig::from_value(value, platform_version)
+                .expect("empty object should deserialize to defaults");
+            // All booleans should match defaults
+            assert_eq!(cfg.can_be_deleted(), DEFAULT_CONTRACT_CAN_BE_DELETED);
+        }
+    }
+
+    mod get_contract_configuration_properties_tests {
+        use super::*;
+        use platform_value::Value;
+        use std::collections::BTreeMap;
+
+        fn make_contract_map(can_be_deleted: bool, readonly: bool) -> BTreeMap<String, Value> {
+            let mut m = BTreeMap::new();
+            m.insert(
+                property::CAN_BE_DELETED.to_string(),
+                Value::Bool(can_be_deleted),
+            );
+            m.insert(property::READONLY.to_string(), Value::Bool(readonly));
+            m
+        }
+
+        #[test]
+        fn reads_booleans_from_map() {
+            let platform_version = PlatformVersion::latest();
+            // Use distinct values for both fields so a key mix-up (reading
+            // one field from the other's key) would fail the assertion.
+            for (can_be_deleted, readonly) in [(true, false), (false, true)] {
+                let contract = make_contract_map(can_be_deleted, readonly);
+                let cfg = DataContractConfig::get_contract_configuration_properties(
+                    &contract,
+                    platform_version,
+                )
+                .expect("should parse config from map");
+                assert_eq!(cfg.can_be_deleted(), can_be_deleted);
+                assert_eq!(cfg.readonly(), readonly);
+            }
+        }
+
+        #[test]
+        fn missing_keys_fall_back_to_defaults() {
+            let platform_version = PlatformVersion::latest();
+            let empty: BTreeMap<String, Value> = BTreeMap::new();
+            let cfg =
+                DataContractConfig::get_contract_configuration_properties(&empty, platform_version)
+                    .expect("should parse empty contract map");
+            // Defaults preserved
+            assert_eq!(cfg.can_be_deleted(), DEFAULT_CONTRACT_CAN_BE_DELETED);
+            assert_eq!(cfg.keeps_history(), DEFAULT_CONTRACT_KEEPS_HISTORY);
+        }
+
+        #[test]
+        fn non_bool_value_errors() {
+            let platform_version = PlatformVersion::latest();
+            let mut m: BTreeMap<String, Value> = BTreeMap::new();
+            m.insert(
+                property::CAN_BE_DELETED.to_string(),
+                Value::Text("not-a-bool".to_string()),
+            );
+            let result =
+                DataContractConfig::get_contract_configuration_properties(&m, platform_version);
+            assert!(result.is_err());
+        }
+    }
 }
