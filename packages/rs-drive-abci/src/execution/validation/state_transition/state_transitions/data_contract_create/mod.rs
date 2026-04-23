@@ -4325,14 +4325,11 @@ mod tests {
             // document type via its root-level `additionalProperties: false`.
             // Pinned to v12 because this is the specific version that introduced
             // v1 meta schema enforcement.
+            //
+            // No platform/identity setup: this test exercises meta-schema
+            // validation inside `DataContract::from_value`, which is a pure DPP
+            // call and never reaches Drive or the state-transition pipeline.
             let platform_version = PlatformVersion::get(12).expect("expected v12");
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let _platform_state = platform.state.load();
-            let (_identity, _signer, _key) =
-                setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let data_contract = json_document_to_contract_with_ids(
                 "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
@@ -4362,13 +4359,40 @@ mod tests {
             match err {
                 ProtocolError::ConsensusError(consensus_err) => match *consensus_err {
                     ConsensusError::BasicError(BasicError::JsonSchemaError(js_err)) => {
-                        // The rejection should be driven by `additionalProperties`
-                        // / `unevaluatedProperties` at the meta-schema root, and
-                        // the offending property name must be `keywords`.
-                        let summary = js_err.error_summary();
+                        // The rejection must be driven by `additionalProperties`
+                        // / `unevaluatedProperties`, and the offending property
+                        // name must be `keywords` — not just any schema error
+                        // whose summary happens to mention the string.
+                        let keyword = js_err.keyword();
                         assert!(
-                            summary.contains("keywords"),
-                            "expected JSON schema error to reference `keywords`, got: {summary}"
+                            matches!(
+                                keyword,
+                                "additionalProperties" | "unevaluatedProperties"
+                            ),
+                            "expected additionalProperties/unevaluatedProperties rejection, got keyword={keyword:?}, summary={}",
+                            js_err.error_summary()
+                        );
+
+                        let param_key = if keyword == "additionalProperties" {
+                            "additionalProperties"
+                        } else {
+                            "unexpected"
+                        };
+                        let unexpected = js_err
+                            .params()
+                            .get(param_key)
+                            .ok()
+                            .flatten()
+                            .and_then(|v| v.as_array())
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "expected params[{param_key:?}] array, got params={:?}",
+                                    js_err.params()
+                                )
+                            });
+                        assert!(
+                            unexpected.iter().any(|v| v.as_str() == Some("keywords")),
+                            "expected `keywords` in rejected properties, got {unexpected:?}"
                         );
                     }
                     other => panic!(
