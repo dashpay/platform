@@ -388,4 +388,83 @@ mod tests {
             }) if vote_polls_by_timestamps.is_empty() && finished_results
         ));
     }
+
+    #[test]
+    fn test_query_vote_polls_by_end_date_limit_out_of_u16_range() {
+        // limit > u16::MAX triggers the u16::try_from failure path.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetVotePollsByEndDateRequestV0 {
+            start_time_info: None,
+            end_time_info: None,
+            limit: Some((u16::MAX as u32) + 1),
+            offset: None,
+            ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_vote_polls_by_end_date_query_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("limit out of bounds")
+        ));
+    }
+
+    #[test]
+    fn test_query_vote_polls_by_end_date_limit_above_default_but_within_u16() {
+        // A limit that fits in u16 but exceeds default_query_limit should be
+        // rejected with the "out of bounds of [1, <default>]" message.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let over_default = (platform.config.drive.default_query_limit as u32).saturating_add(1);
+
+        let request = GetVotePollsByEndDateRequestV0 {
+            start_time_info: None,
+            end_time_info: None,
+            limit: Some(over_default),
+            offset: None,
+            ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_vote_polls_by_end_date_query_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("out of bounds of")
+        ));
+    }
+
+    #[test]
+    fn test_query_vote_polls_by_end_date_empty_prove() {
+        // Exercise the prove=true branch with offset=None so the
+        // RequestingProofWithOffset guard is skipped.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetVotePollsByEndDateRequestV0 {
+            start_time_info: None,
+            end_time_info: None,
+            limit: None,
+            offset: None,
+            ascending: true,
+            prove: true,
+        };
+
+        let result = platform
+            .query_vote_polls_by_end_date_query_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetVotePollsByEndDateResponseV0 {
+                result: Some(get_vote_polls_by_end_date_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
 }
