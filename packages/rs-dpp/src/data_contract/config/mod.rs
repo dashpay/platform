@@ -584,6 +584,109 @@ mod tests {
         }
     }
 
+    /// V0's `get_contract_configuration_properties_v0` has a historical
+    /// copy-paste quirk: the decryption bounded-key field is parsed from
+    /// the `requiresIdentityEncryptionBoundedKey` property (not the matching
+    /// DECRYPTION one). This is part of V0 protocol behavior and MUST NOT be
+    /// changed — altering it would fork the chain. V1 parses correctly; see
+    /// `v1/mod.rs`. These tests lock the V0 behavior in place so the quirk
+    /// is not silently "fixed" by a future well-intentioned refactor.
+    mod get_contract_configuration_properties_v0_consensus_lock {
+        use super::*;
+        use crate::data_contract::config::property::{
+            REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY, REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY,
+        };
+        use platform_value::Value;
+        use std::collections::BTreeMap;
+
+        /// When the ENCRYPTION property is set, V0 applies that value to
+        /// BOTH the encryption and decryption fields — because the parser
+        /// reads both from the same key.
+        #[test]
+        fn encryption_property_populates_both_fields() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Unique as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert_eq!(
+                config.requires_identity_encryption_bounded_key,
+                Some(StorageKeyRequirements::Unique)
+            );
+            assert_eq!(
+                config.requires_identity_decryption_bounded_key,
+                Some(StorageKeyRequirements::Unique),
+                "V0 consensus quirk: decryption field is read from the ENCRYPTION key"
+            );
+        }
+
+        /// When ONLY the DECRYPTION property is set, V0 ignores it entirely
+        /// — neither field is populated, because V0 never reads the
+        /// DECRYPTION key.
+        #[test]
+        fn decryption_property_is_ignored_by_v0() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::MultipleReferenceToLatest as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert!(
+                config.requires_identity_encryption_bounded_key.is_none(),
+                "V0 does not read the DECRYPTION property at all"
+            );
+            assert!(
+                config.requires_identity_decryption_bounded_key.is_none(),
+                "V0 consensus quirk: decryption field is NOT sourced from the DECRYPTION key"
+            );
+        }
+
+        /// When BOTH properties are set, the ENCRYPTION value wins for both
+        /// fields; the DECRYPTION property is ignored.
+        #[test]
+        fn encryption_wins_when_both_properties_set() {
+            let mut map: BTreeMap<String, Value> = BTreeMap::new();
+            map.insert(
+                REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Unique as u8),
+            );
+            map.insert(
+                REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                Value::U8(StorageKeyRequirements::Multiple as u8),
+            );
+
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config");
+
+            assert_eq!(
+                config.requires_identity_encryption_bounded_key,
+                Some(StorageKeyRequirements::Unique)
+            );
+            assert_eq!(
+                config.requires_identity_decryption_bounded_key,
+                Some(StorageKeyRequirements::Unique),
+                "V0 consensus quirk: the DECRYPTION property is ignored"
+            );
+        }
+
+        /// Sanity check: with neither property set, both fields stay `None`.
+        #[test]
+        fn neither_property_set_leaves_both_none() {
+            let map: BTreeMap<String, Value> = BTreeMap::new();
+            let config = DataContractConfigV0::get_contract_configuration_properties_v0(&map)
+                .expect("should parse V0 config with defaults");
+            assert!(config.requires_identity_encryption_bounded_key.is_none());
+            assert!(config.requires_identity_decryption_bounded_key.is_none());
+        }
+    }
+
     mod bincode_roundtrip {
         use super::*;
         use bincode::config;
