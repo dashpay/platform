@@ -14,7 +14,14 @@ struct OptionsView: View {
     @State private var isLoadingStatus = false
 
     var body: some View {
-        NavigationView {
+        // `NavigationStack` (iOS 16+) instead of the deprecated
+        // `NavigationView`. With `NavigationView`, `NavigationLink`s
+        // embedded in a `List` (e.g. under Settings → Storage /
+        // Keychain Explorer, whose detail views themselves list
+        // NavigationLinks) push-then-immediately-pop on iOS 16+ —
+        // visible to users as "I tap a row and it bounces me out."
+        // `NavigationStack` has reliable push semantics.
+        NavigationStack {
             Form {
                 Section("Network") {
                     Picker("Current Network", selection: Binding(
@@ -292,7 +299,7 @@ struct DataManagementView: View {
     @State private var showingClearConfirmation = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Clear Data by Type") {
                     Button(role: .destructive, action: {
@@ -354,7 +361,7 @@ struct AboutView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     Image(systemName: "app.fill")
