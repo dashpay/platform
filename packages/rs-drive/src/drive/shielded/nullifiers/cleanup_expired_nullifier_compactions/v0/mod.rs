@@ -197,4 +197,136 @@ mod tests {
 
         assert_eq!(cleaned, num_entries as usize);
     }
+
+    /// Cleanup on an empty expiration tree returns 0 with no error.
+    #[test]
+    fn cleanup_empty_tree_returns_zero() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let cleaned = drive
+            .cleanup_expired_nullifier_compactions_v0(u64::MAX, None, platform_version)
+            .expect("cleanup empty");
+        assert_eq!(cleaned, 0);
+    }
+
+    /// Cleanup must NOT remove entries whose expiration time is greater than
+    /// current_block_time_ms (strict boundary).
+    #[test]
+    fn cleanup_leaves_future_expirations_alone() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Force compaction to populate both compacted entries and expiration entries.
+        drive
+            .compact_nullifiers_with_current_block_v0(
+                &[[1u8; 32]],
+                10,
+                10_000, // expires at 10_000 + ONE_WEEK_IN_MS
+                None,
+                platform_version,
+            )
+            .expect("compact");
+
+        // Cleanup at time < expiration: no entries removed.
+        let cleaned = drive
+            .cleanup_expired_nullifier_compactions_v0(5_000, None, platform_version)
+            .expect("cleanup");
+        assert_eq!(cleaned, 0);
+
+        // The compacted entry must still be present.
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch");
+        assert_eq!(compacted.len(), 1);
+    }
+
+    /// Cleanup at or past the expiration boundary deletes the compacted entry
+    /// and the corresponding expiration entry.
+    #[test]
+    fn cleanup_removes_expired_entry_and_its_compacted_counterpart() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let block_time = 10_000u64;
+        drive
+            .compact_nullifiers_with_current_block_v0(
+                &[[1u8; 32]],
+                10,
+                block_time,
+                None,
+                platform_version,
+            )
+            .expect("compact");
+
+        // Cleanup at a time past the expiration (block_time + 1 week + 1).
+        let current =
+            block_time + crate::drive::shielded::nullifiers::compact_nullifiers::ONE_WEEK_IN_MS + 1;
+        let cleaned = drive
+            .cleanup_expired_nullifier_compactions_v0(current, None, platform_version)
+            .expect("cleanup");
+        assert_eq!(cleaned, 1);
+
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch after cleanup");
+        assert!(
+            compacted.is_empty(),
+            "compacted entry should have been cleaned up"
+        );
+
+        // A second cleanup must be a no-op: if the first call truly deleted
+        // the expiration-index entry (not just the compacted row), there is
+        // nothing left to iterate, so the returned count is 0. If the index
+        // row had been left behind the second cleanup would try to chase a
+        // dangling reference and either re-count 1 or error.
+        let cleaned_again = drive
+            .cleanup_expired_nullifier_compactions_v0(current, None, platform_version)
+            .expect("second cleanup must be a no-op");
+        assert_eq!(
+            cleaned_again, 0,
+            "expiration index entry must also have been deleted"
+        );
+    }
+
+    /// Corrupting an expiration entry payload (garbage item data) triggers the
+    /// CorruptedSerialization branch in NullifierExpirationRanges::decode.
+    #[test]
+    fn cleanup_rejects_undecodable_expiration_payload() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let expiration_path = shielded_nullifiers_expiration_time_path();
+        let key = 1_000u64.to_be_bytes().to_vec();
+        drive
+            .grove
+            .insert(
+                expiration_path.as_ref(),
+                &key,
+                Element::new_item(vec![0xFFu8; 3]),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("insert");
+
+        let err = drive
+            .cleanup_expired_nullifier_compactions_v0(u64::MAX, None, platform_version)
+            .expect_err("cleanup must reject undecodable payload");
+        // Must be the specific CorruptedSerialization variant surfaced by
+        // `NullifierExpirationRanges::decode` — not any other ProtocolError.
+        match err {
+            Error::Protocol(boxed) => match *boxed {
+                ProtocolError::CorruptedSerialization(msg) => {
+                    assert!(
+                        msg.contains("cannot decode nullifier expiration ranges"),
+                        "expected the NullifierExpirationRanges decode failure, got: {msg}"
+                    );
+                }
+                other => panic!("expected CorruptedSerialization, got ProtocolError::{other:?}"),
+            },
+            other => panic!("expected Error::Protocol, got {other:?}"),
+        }
+    }
 }
