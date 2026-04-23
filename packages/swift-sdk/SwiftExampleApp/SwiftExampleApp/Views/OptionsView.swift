@@ -91,6 +91,10 @@ struct OptionsView: View {
                         Label("Storage Explorer", systemImage: "cylinder.split.1x2")
                     }
 
+                    NavigationLink(destination: KeychainExplorerView()) {
+                        Label("Keychain Explorer", systemImage: "key.viewfinder")
+                    }
+
                     NavigationLink(destination: ContractsView()) {
                         Label("Browse Contracts", systemImage: "doc.plaintext")
                     }
