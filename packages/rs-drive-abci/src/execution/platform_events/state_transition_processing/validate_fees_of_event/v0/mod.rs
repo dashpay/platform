@@ -273,3 +273,162 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::execution_event::ExecutionEvent;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::fee::fee_result::FeeResult;
+    use dpp::identity::PartialIdentity;
+    use dpp::prelude::Identifier;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn build_partial_identity_with_balance(balance: Option<u64>) -> PartialIdentity {
+        PartialIdentity {
+            id: Identifier::new([1u8; 32]),
+            loaded_public_keys: BTreeMap::new(),
+            balance,
+            revision: None,
+            not_found_public_keys: BTreeSet::new(),
+        }
+    }
+
+    /// Exercises the `CorruptedCodeExecution` error branch for
+    /// `ExecutionEvent::Paid` when `identity.balance` is None. This code path
+    /// is protective and should never actually trigger, which is exactly why
+    /// it's covered by a unit test rather than an integration test.
+    #[test]
+    fn validate_fees_of_event_v0_paid_no_balance_returns_corrupted_code_error() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+
+        let event = ExecutionEvent::Paid {
+            identity: build_partial_identity_with_balance(None),
+            removed_balance: None,
+            added_to_balance_outputs: None,
+            operations: vec![],
+            execution_operations: vec![],
+            additional_fixed_fee_cost: None,
+            user_fee_increase: 0,
+        };
+
+        let previous_fee_versions = Default::default();
+        let err = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect_err("missing balance should yield a CorruptedCodeExecution error");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("partial identity info with no balance")
+                || msg.contains("paid execution event"),
+            "expected CorruptedCodeExecution about missing balance, got: {}",
+            msg
+        );
+    }
+
+    /// Exercises the `CorruptedCodeExecution` error branch for
+    /// `ExecutionEvent::PaidFromAssetLock` when `identity.balance` is None.
+    #[test]
+    fn validate_fees_of_event_v0_asset_lock_no_balance_returns_corrupted_code_error() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+
+        let event = ExecutionEvent::PaidFromAssetLock {
+            identity: build_partial_identity_with_balance(None),
+            added_balance: 0,
+            operations: vec![],
+            execution_operations: vec![],
+            user_fee_increase: 0,
+        };
+
+        let previous_fee_versions = Default::default();
+        let err = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect_err("missing balance should yield a CorruptedCodeExecution error");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("partial identity info")
+                || msg.contains("paid from asset lock execution event"),
+            "expected CorruptedCodeExecution about missing balance, got: {}",
+            msg
+        );
+    }
+
+    /// Covers the short-circuit arms for events with no per-event fee validation:
+    /// `PaidFixedCost`, `PaidFromShieldedPool`, `Free`, and
+    /// `PaidFromAssetLockWithoutIdentity`. All four must return a
+    /// `ConsensusValidationResult` with a default `FeeResult` and no errors.
+    #[test]
+    fn validate_fees_of_event_v0_no_fee_events_return_default_fee_result() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+        let previous_fee_versions = Default::default();
+
+        let events = vec![
+            ExecutionEvent::PaidFixedCost {
+                operations: vec![],
+                fees_to_add_to_pool: 0,
+            },
+            ExecutionEvent::PaidFromShieldedPool {
+                operations: vec![],
+                fees_to_add_to_pool: 0,
+            },
+            ExecutionEvent::Free { operations: vec![] },
+            ExecutionEvent::PaidFromAssetLockWithoutIdentity {
+                processing_fees: 0,
+                operations: vec![],
+            },
+        ];
+
+        for event in events {
+            let result = platform
+                .platform
+                .validate_fees_of_event_v0(
+                    &event,
+                    &block_info,
+                    None,
+                    platform_version,
+                    &previous_fee_versions,
+                )
+                .expect("no-fee events should always succeed");
+
+            assert!(
+                result.errors.is_empty(),
+                "no-fee event should produce no consensus errors"
+            );
+            assert!(result.data.is_some(), "default FeeResult must be present");
+            let fee = result.into_data().expect("data present");
+            assert_eq!(fee, FeeResult::default());
+        }
+    }
+}
