@@ -32,6 +32,13 @@ public final class PersistentIdentity {
 
     // MARK: - Wallet Association
     public var walletId: Data?
+    /// DIP-9 identity index within the owning wallet. Mirrors the
+    /// `identity_index` carried on `IdentityEntryFFI` from Rust. Used
+    /// to stable-sort identities within a wallet (e.g. when grouping
+    /// public keys by identity). Defaults to 0 for rows migrated from
+    /// the pre-column schema — the next identity-changeset upsert
+    /// fills in the real value.
+    public var identityIndex: UInt32 = 0
 
     // MARK: - Relationships
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
@@ -51,7 +58,8 @@ public final class PersistentIdentity {
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
         network: String = "testnet",
-        walletId: Data? = nil
+        walletId: Data? = nil,
+        identityIndex: UInt32 = 0
     ) {
         self.identityId = identityId
         self.balance = balance
@@ -66,6 +74,7 @@ public final class PersistentIdentity {
         self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
         self.network = network
         self.walletId = walletId
+        self.identityIndex = identityIndex
         self.publicKeys = []
         self.documents = []
         self.tokenBalances = []

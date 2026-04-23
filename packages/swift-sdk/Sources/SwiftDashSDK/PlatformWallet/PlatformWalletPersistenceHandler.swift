@@ -472,6 +472,7 @@ public class PlatformWalletPersistenceHandler {
             row.balance = Int64(bitPattern: entry.balance)
             row.revision = Int64(bitPattern: entry.revision)
             row.walletId = entry.walletId
+            row.identityIndex = entry.identityIndex
             if let label = entry.label {
                 row.alias = label
             }

@@ -66,22 +66,179 @@ struct DataContractStorageListView: View {
 
 // MARK: - PersistentPublicKey
 
+/// Storage-explorer list of every `PersistentPublicKey`, grouped by
+/// owning wallet + identity. Keys without a parent identity land in
+/// a trailing "Unassigned" section so they stay visible but don't
+/// pollute the wallet-scoped sections above.
+///
+/// Grouping pivot: the `PersistentPublicKey.identity` relationship.
+/// We drive the top-level order from `PersistentIdentity` sorted by
+/// `(walletId, identityIndex)` — that way identity #0 of wallet A
+/// shows before identity #1, and unnamed wallets stay clustered.
 struct PublicKeyStorageListView: View {
+    @Query(sort: \PersistentIdentity.identityIndex)
+    private var identities: [PersistentIdentity]
+
     @Query(sort: \PersistentPublicKey.createdAt, order: .reverse)
-    private var records: [PersistentPublicKey]
+    private var allKeys: [PersistentPublicKey]
+
+    @Query private var hdWallets: [HDWallet]
 
     var body: some View {
-        List(records) { record in
-            NavigationLink(destination: PublicKeyStorageDetailView(record: record)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Key \(record.keyId)").font(.body)
-                    Text("\(record.purpose) / \(record.securityLevel)")
-                        .font(.caption).foregroundColor(.secondary)
+        List {
+            ForEach(walletGroups, id: \.walletId) { group in
+                walletSection(group)
+            }
+
+            let orphans = orphanKeys
+            if !orphans.isEmpty {
+                Section("Unassigned") {
+                    ForEach(orphans) { key in
+                        keyRow(key)
+                    }
                 }
             }
         }
-        .navigationTitle("Public Keys (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "key") } }
+        .navigationTitle("Public Keys (\(allKeys.count))")
+        .overlay {
+            if allKeys.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "key")
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    /// One visual section per identity, but sections belonging to the
+    /// same wallet render back-to-back because `walletGroups` already
+    /// clusters them.
+    private struct WalletGroup {
+        /// `Data()` when the identities aren't tied to a wallet.
+        let walletId: Data
+        let walletLabel: String?
+        let identities: [PersistentIdentity]
+    }
+
+    /// Cluster `identities` by `walletId` preserving the
+    /// `identityIndex` sort inside each cluster. Wallets sort by
+    /// label (alphabetical, case-insensitive); no-wallet identities
+    /// sort last so user-owned ones dominate the top of the screen.
+    private var walletGroups: [WalletGroup] {
+        let grouped = Dictionary(grouping: identities) { $0.walletId ?? Data() }
+        return grouped
+            .map { (walletId, ids) -> WalletGroup in
+                WalletGroup(
+                    walletId: walletId,
+                    walletLabel: walletLabel(for: walletId),
+                    identities: ids.sorted { $0.identityIndex < $1.identityIndex }
+                )
+            }
+            .sorted { lhs, rhs in
+                // Placeholder (empty Data) → bottom; labelled wallets
+                // alpha-sorted; named wallets before id-only ones.
+                if lhs.walletId.isEmpty != rhs.walletId.isEmpty {
+                    return !lhs.walletId.isEmpty
+                }
+                let l = lhs.walletLabel ?? walletShort(lhs.walletId)
+                let r = rhs.walletLabel ?? walletShort(rhs.walletId)
+                return l.localizedCaseInsensitiveCompare(r) == .orderedAscending
+            }
+    }
+
+    /// Keys whose `identity` relationship is nil — e.g. rows that
+    /// predate the changeset wiring or belong to identities since
+    /// deleted.
+    private var orphanKeys: [PersistentPublicKey] {
+        allKeys.filter { $0.identity == nil }
+    }
+
+    private func walletLabel(for walletId: Data) -> String? {
+        guard !walletId.isEmpty else { return nil }
+        return hdWallets.first { $0.walletId == walletId }?.label
+    }
+
+    private func walletShort(_ walletId: Data) -> String {
+        guard !walletId.isEmpty else { return "(no wallet)" }
+        let hex = walletId.prefix(4)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return "Wallet \(hex)"
+    }
+
+    @ViewBuilder
+    private func walletSection(_ group: WalletGroup) -> some View {
+        ForEach(group.identities, id: \.identityId) { identity in
+            Section {
+                let keys = identity.publicKeys
+                    .sorted { $0.keyId < $1.keyId }
+                if keys.isEmpty {
+                    Text("No keys")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(keys) { key in
+                        keyRow(key)
+                    }
+                }
+            } header: {
+                identityHeader(for: identity, group: group)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func identityHeader(
+        for identity: PersistentIdentity,
+        group: WalletGroup
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("#\(identity.identityIndex)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(identityDisplayName(identity))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .textCase(nil)
+            }
+            Text(group.walletLabel ?? walletShort(group.walletId))
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .textCase(nil)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Prefer the user-facing main DPNS name, fall back to any DPNS
+    /// name, then alias, then a short identity id — avoids the
+    /// generic "Identity" placeholder except for truly empty rows.
+    private func identityDisplayName(_ identity: PersistentIdentity) -> String {
+        if let name = identity.mainDpnsName, !name.isEmpty {
+            return name
+        }
+        if let name = identity.dpnsName, !name.isEmpty {
+            return name
+        }
+        if let alias = identity.alias, !alias.isEmpty {
+            return alias
+        }
+        // Truncated base58 id keeps rows distinguishable when no
+        // name has been fetched yet.
+        let b58 = identity.identityIdBase58
+        guard b58.count > 12 else { return b58 }
+        return "\(b58.prefix(6))…\(b58.suffix(6))"
+    }
+
+    @ViewBuilder
+    private func keyRow(_ record: PersistentPublicKey) -> some View {
+        NavigationLink(destination: PublicKeyStorageDetailView(record: record)) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Key \(record.keyId)").font(.body)
+                Text("\(record.purpose) / \(record.securityLevel)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }
 
