@@ -49,7 +49,7 @@ struct KeychainExplorerView: View {
     var body: some View {
         List {
             ForEach(services) { cfg in
-                serviceSection(cfg)
+                serviceSections(cfg)
             }
         }
         .navigationTitle("Keychain Explorer")
@@ -64,65 +64,93 @@ struct KeychainExplorerView: View {
                 .help("Re-query the keychain")
             }
         }
-        .onAppear { reload() }
+        // `.task` fires once per view-identity (not on every re-
+        // appear after a detail-view pop). Using `.onAppear` here
+        // caused the parent `List` to re-render right as a pushed
+        // `NavigationLink` destination was appearing, invalidating
+        // the link's identity and bouncing the navigation back —
+        // visible to the user as "tapping a row kicks me out of
+        // the screen". `.task` avoids the re-render.
+        .task { reload() }
     }
 
     // MARK: - Sections
 
-    /// One top-level service section, subdivided into rows by
-    /// identifier-prefix category. Categories are derived from the
-    /// account name since neither service tags items with a
-    /// discoverable "kind" field.
+    /// Emits one `Section` per (service, category) pair. Flattened
+    /// rather than nested inside a `DisclosureGroup` because
+    /// `NavigationLink` children of a `DisclosureGroup` inside a
+    /// `List` exhibit a push-then-immediate-pop bug in iOS 18 when
+    /// the enclosing list re-renders. Standard sections don't have
+    /// that issue.
     @ViewBuilder
-    private func serviceSection(_ cfg: ServiceConfig) -> some View {
+    private func serviceSections(_ cfg: ServiceConfig) -> some View {
         let items = itemsByService[cfg.service] ?? []
         let grouped = Dictionary(grouping: items) { Category.from($0.account) }
 
-        Section {
-            if items.isEmpty {
+        if items.isEmpty {
+            Section {
                 Text("No items")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            } else {
-                ForEach(Category.allCases, id: \.self) { cat in
-                    if let rows = grouped[cat], !rows.isEmpty {
-                        DisclosureGroup {
-                            ForEach(rows) { item in
-                                NavigationLink {
-                                    KeychainItemDetailView(item: item)
-                                } label: {
-                                    itemRow(item, category: cat)
-                                }
-                            }
+            } header: {
+                Text(cfg.title)
+            } footer: {
+                serviceFooter(cfg)
+            }
+        } else {
+            // Track the first populated category so we only render
+            // the service-level footer + service-identifier under
+            // its last section — keeps the service description from
+            // repeating on every category.
+            let populated = Category.allCases.filter { grouped[$0]?.isEmpty == false }
+            ForEach(Array(populated.enumerated()), id: \.element) { idx, cat in
+                let rows = grouped[cat] ?? []
+                Section {
+                    ForEach(rows) { item in
+                        NavigationLink {
+                            KeychainItemDetailView(item: item)
                         } label: {
-                            HStack {
-                                Label(cat.title, systemImage: cat.symbol)
-                                Spacer()
-                                Text("\(rows.count)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
+                            itemRow(item, category: cat)
                         }
+                    }
+                } header: {
+                    HStack {
+                        Label(cat.title, systemImage: cat.symbol)
+                        Spacer()
+                        Text("\(rows.count)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    // Stamp the service title on the first section
+                    // of each service block so the user can tell
+                    // which service they're looking at.
+                    if idx == 0 {
+                        // Nothing extra — the header above already
+                        // shows the category; service title sits
+                        // on the outermost footer.
+                        EmptyView()
+                    }
+                } footer: {
+                    // Show the service footer only on the last
+                    // populated category of the service so it
+                    // doesn't repeat.
+                    if idx == populated.count - 1 {
+                        serviceFooter(cfg)
                     }
                 }
             }
-        } header: {
-            HStack {
-                Text(cfg.title)
-                Spacer()
-                Text("\(items.count)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(cfg.service)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Text(cfg.footer)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
+        }
+    }
+
+    @ViewBuilder
+    private func serviceFooter(_ cfg: ServiceConfig) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(cfg.service)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text(cfg.footer)
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
     }
 
