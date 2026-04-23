@@ -34,4 +34,17 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: yarn install --inline-builds
+      env:
+        # Serialize native module builds to avoid EBADF races in yarn-berry
+        # when many postinstall scripts run in parallel on CI runners.
+        YARN_CHILD_CONCURRENCY: '1'
+      run: |
+        for attempt in 1 2 3; do
+          if yarn install --inline-builds; then
+            exit 0
+          fi
+          echo "::warning::yarn install failed on attempt ${attempt}, retrying..."
+          sleep $((attempt * 5))
+        done
+        echo "::error::yarn install failed after 3 attempts"
+        exit 1
