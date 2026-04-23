@@ -431,4 +431,176 @@ mod tests {
             assert_eq!(fee, FeeResult::default());
         }
     }
+
+    /// `ExecutionEvent::PaidFromAssetLockToPool` with `fees_to_add_to_pool`
+    /// strictly greater than the required fee must return a valid
+    /// `ConsensusValidationResult` with NO errors. With empty `operations`
+    /// and `execution_operations`, the required fee is zero so any
+    /// non-negative `fees_to_add_to_pool` satisfies `>= required_fee`.
+    #[test]
+    fn validate_fees_of_event_v0_paid_from_asset_lock_to_pool_sufficient_fee_is_valid() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+        let previous_fee_versions = Default::default();
+
+        let event = ExecutionEvent::PaidFromAssetLockToPool {
+            fees_to_add_to_pool: 1_000_000,
+            operations: vec![],
+            execution_operations: vec![],
+        };
+
+        let result = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect("sufficient pool fee must be Ok");
+
+        assert!(
+            result.errors.is_empty(),
+            "sufficient fees_to_add_to_pool must not produce consensus errors"
+        );
+    }
+
+    /// `ExecutionEvent::Paid` where the identity balance is smaller than
+    /// the required_balance must return an `IdentityInsufficientBalanceError`
+    /// inside the validation result (not an `Error`). With no `operations`
+    /// but a non-zero `additional_fixed_fee_cost`, required_balance is
+    /// non-zero and the zero-balance identity cannot cover it.
+    #[test]
+    fn validate_fees_of_event_v0_paid_insufficient_balance_returns_consensus_error() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+        let previous_fee_versions = Default::default();
+
+        let event = ExecutionEvent::Paid {
+            identity: build_partial_identity_with_balance(Some(0)),
+            removed_balance: None,
+            added_to_balance_outputs: None,
+            operations: vec![],
+            execution_operations: vec![],
+            additional_fixed_fee_cost: Some(1_000),
+            user_fee_increase: 0,
+        };
+
+        let result = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect("insufficient balance must be a consensus error, not a plain Error");
+
+        assert!(
+            !result.errors.is_empty(),
+            "a zero-balance identity owing a fixed fee cost must yield a consensus error"
+        );
+        let first = &result.errors[0];
+        let as_str = format!("{:?}", first);
+        assert!(
+            as_str.contains("IdentityInsufficientBalance"),
+            "expected IdentityInsufficientBalanceError, got: {}",
+            as_str
+        );
+    }
+
+    /// `ExecutionEvent::PaidFromAssetLock` where the pre-top-up balance
+    /// plus `added_balance` is at least the required fee (zero here) must
+    /// pass without errors. This covers the "enough balance after top-up"
+    /// happy-path branch that isn't exercised by the no-balance error test.
+    #[test]
+    fn validate_fees_of_event_v0_paid_from_asset_lock_with_balance_is_valid() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+        let previous_fee_versions = Default::default();
+
+        let event = ExecutionEvent::PaidFromAssetLock {
+            identity: build_partial_identity_with_balance(Some(10_000)),
+            added_balance: 5_000,
+            operations: vec![],
+            execution_operations: vec![],
+            user_fee_increase: 0,
+        };
+
+        let result = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect("Ok with sufficient top-up balance");
+
+        assert!(
+            result.errors.is_empty(),
+            "sufficient balance + top-up must not emit consensus errors"
+        );
+    }
+
+    /// `saturating_add` in the balance-with-top-up calculation must saturate,
+    /// not overflow, when `added_balance` is near `u64::MAX`. This tests the
+    /// implicit overflow-protection guarantee of the branch and ensures we
+    /// don't regress to a plain `+` in the future.
+    #[test]
+    fn validate_fees_of_event_v0_paid_from_asset_lock_saturates_on_overflow() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+        let previous_fee_versions = Default::default();
+
+        // previous_balance + added_balance would overflow without saturation.
+        let event = ExecutionEvent::PaidFromAssetLock {
+            identity: build_partial_identity_with_balance(Some(u64::MAX)),
+            added_balance: u64::MAX,
+            operations: vec![],
+            execution_operations: vec![],
+            user_fee_increase: 0,
+        };
+
+        let result = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect("saturating add must prevent panics on overflow");
+
+        // The saturated balance (u64::MAX) trivially covers the zero fee,
+        // so there should be no consensus errors.
+        assert!(
+            result.errors.is_empty(),
+            "saturating balance must cover the zero required fee"
+        );
+    }
 }
