@@ -90,4 +90,33 @@ mod tests {
         assert!(matches!(run(97, 100), CoreSyncStatus::Not));
         assert!(matches!(run(0, 1000), CoreSyncStatus::Not));
     }
+
+    /// Verifies that when `submit_chain_lock` returns an RPC error the
+    /// function propagates it as `Err` (not silently swallowed as `Ok`).
+    /// This exercises the `?` propagation path in the v0 wrapper.
+    #[test]
+    fn propagates_rpc_error_from_submit_chain_lock() {
+        use dpp::dashcore_rpc::Error as DashCoreRpcError;
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        let mut mock_rpc = MockCoreRPCLike::new();
+        mock_rpc.expect_submit_chain_lock().returning(|_| {
+            Err(DashCoreRpcError::UnexpectedStructure(
+                "simulated rpc failure".to_string(),
+            ))
+        });
+        platform.core_rpc = mock_rpc;
+
+        let platform_version = PlatformVersion::latest();
+        let result = platform
+            .platform
+            .make_sure_core_is_synced_to_chain_lock_v0(&chain_lock_at(100), platform_version);
+
+        assert!(
+            result.is_err(),
+            "RPC errors must propagate, not be swallowed"
+        );
+    }
 }

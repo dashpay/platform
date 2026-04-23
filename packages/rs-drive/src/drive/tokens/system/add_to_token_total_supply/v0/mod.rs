@@ -375,6 +375,94 @@ mod tests {
     }
 
     #[test]
+    fn should_estimate_costs_without_mutating_state_when_apply_false() {
+        // apply=false triggers the estimated_costs_only_with_layer_info branch.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [70u8; 32];
+        let contract_id = Identifier::from([71u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        let app_hash_before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        let (fees, _added) = drive
+            .add_to_token_total_supply_v0(
+                token_id,
+                500,
+                false,
+                false,
+                false, // apply=false -> estimation path
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected estimation to succeed");
+
+        let app_hash_after = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        assert_eq!(app_hash_before, app_hash_after);
+        assert!(fees.processing_fee > 0);
+
+        // Supply unchanged (still 0)
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(0));
+    }
+
+    #[test]
+    fn should_report_full_added_amount_on_fresh_first_mint() {
+        // First mint branch returns `amount` as added; covers the `allow_first_mint` insert path.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [80u8; 32];
+
+        // Do NOT call create_token_trees so the supply entry is truly absent.
+        let (_fees, added) = drive
+            .add_to_token_total_supply_v0(
+                token_id,
+                1_234_567,
+                true, // allow_first_mint
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected first-mint insert to succeed");
+
+        assert_eq!(added, 1_234_567);
+
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(1_234_567));
+    }
+
+    #[test]
     fn should_error_when_first_mint_amount_exceeds_i64_max() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
