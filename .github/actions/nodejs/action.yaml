@@ -35,13 +35,17 @@ runs:
     - name: Install dependencies
       shell: bash
       env:
-        # Cap concurrent build-script execution to avoid EBADF races when
-        # many native-module postinstall scripts run in parallel on CI.
-        # Default is 10; 2 keeps some parallelism for speed.
-        YARN_TASK_POOL_CONCURRENCY: '2'
+        # Recent ubuntu-24.04 runner images (2026-04-20+) surface
+        # intermittent `EBADF: bad file descriptor, fstat` errors from
+        # yarn postinstall scripts. Disabling libuv's io_uring fs backend
+        # reverts to the threadpool path and avoids the regression.
+        UV_USE_IO_URING: '0'
       run: |
         for attempt in 1 2 3; do
-          if yarn install --inline-builds; then
+          # --inline-builds piped every postinstall's stdio through yarn,
+          # compounding the EBADF issue. Default mode writes per-package
+          # build logs; on failure yarn prints the log paths.
+          if yarn install; then
             exit 0
           fi
           echo "::warning::yarn install failed on attempt ${attempt}, retrying..."
