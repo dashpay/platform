@@ -189,6 +189,39 @@ mod tests {
     }
 
     #[test]
+    fn should_populate_estimated_costs_in_stateless_mode() {
+        use grovedb::batch::KeyInfoPath;
+        use grovedb::EstimatedLayerInformation;
+        use std::collections::HashMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let token_id = [17u8; 32];
+
+        // Stateless mode: we pass Some(HashMap::new()) so the estimation branch runs.
+        let mut estimated_costs: Option<HashMap<KeyInfoPath, EstimatedLayerInformation>> =
+            Some(HashMap::new());
+        let mut drive_operations = vec![];
+
+        let result = drive.fetch_token_total_supply_add_to_operations_v0(
+            token_id,
+            &mut estimated_costs,
+            None,
+            &mut drive_operations,
+            platform_version,
+        );
+
+        // Even without a stored entry, stateless mode should not panic.
+        // It either returns Ok(Some(0)) or Ok(None); importantly it populates estimation info.
+        assert!(result.is_ok());
+        let estimated_costs = estimated_costs.expect("estimation state must persist");
+        assert!(
+            !estimated_costs.is_empty(),
+            "expected stateless path to populate estimation layer info"
+        );
+    }
+
+    #[test]
     fn should_return_supply_with_cost() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();

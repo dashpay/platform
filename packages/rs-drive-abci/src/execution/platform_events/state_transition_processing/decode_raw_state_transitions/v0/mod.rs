@@ -239,6 +239,79 @@ mod tests {
         }
     }
 
+    /// An empty byte slice is strictly below the max size (1 byte > 0) and
+    /// must therefore attempt deserialization — which will fail because
+    /// there's no discriminant to decode. The result must be either
+    /// `InvalidEncoding` or `FailedToDecode`, never an oversized error.
+    #[test]
+    fn test_decode_empty_bytes_is_not_oversized() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let raw_state_transitions: Vec<Vec<u8>> = vec![vec![]];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 1);
+        if let DecodedStateTransition::InvalidEncoding(inv) = &decoded[0] {
+            assert!(
+                !matches!(
+                    &inv.error,
+                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
+                ),
+                "empty bytes must not be rejected by the size check"
+            );
+        }
+    }
+
+    /// The oversized-rejection branch must attach the ACTUAL overflow size
+    /// and the configured max as metadata on the returned error. This
+    /// guards against future refactors that might drop or swap those
+    /// fields silently.
+    #[test]
+    fn test_decode_oversized_state_transition_reports_correct_sizes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let max_size = platform_version.system_limits.max_state_transition_size;
+        // Use exactly max_size + 1 so the branch condition is at the boundary.
+        let oversized = vec![0u8; max_size as usize + 1];
+
+        let raw_state_transitions = vec![oversized];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 1);
+
+        match &decoded[0] {
+            DecodedStateTransition::InvalidEncoding(inv) => match &inv.error {
+                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
+                    err,
+                )) => {
+                    // Use the Display text to avoid depending on accessor method names.
+                    let as_str = format!("{:?}", err);
+                    assert!(
+                        as_str.contains(&(max_size + 1).to_string())
+                            && as_str.contains(&max_size.to_string()),
+                        "error metadata must carry actual size and max: {}",
+                        as_str
+                    );
+                }
+                other => panic!(
+                    "expected StateTransitionMaxSizeExceededError, got {:?}",
+                    other
+                ),
+            },
+            _ => panic!("expected InvalidEncoding"),
+        }
+    }
+
     #[test]
     fn test_decode_state_transition_at_exact_max_size_is_not_rejected_as_oversized() {
         let platform_version = PlatformVersion::latest();

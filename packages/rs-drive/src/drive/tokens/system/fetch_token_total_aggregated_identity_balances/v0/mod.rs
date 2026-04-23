@@ -168,6 +168,94 @@ mod tests {
     }
 
     #[test]
+    fn should_populate_estimated_costs_in_stateless_mode() {
+        use grovedb::batch::KeyInfoPath;
+        use grovedb::EstimatedLayerInformation;
+        use std::collections::HashMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let token_id = [28u8; 32];
+
+        let mut estimated_costs: Option<HashMap<KeyInfoPath, EstimatedLayerInformation>> =
+            Some(HashMap::new());
+        let mut drive_operations = vec![];
+
+        // Stateless estimation path
+        let result = drive.fetch_token_total_aggregated_identity_balances_add_to_operations_v0(
+            token_id,
+            &mut estimated_costs,
+            None,
+            &mut drive_operations,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+        let estimated_costs = estimated_costs.expect("estimation state must persist");
+        assert!(
+            !estimated_costs.is_empty(),
+            "expected stateless path to populate estimation layer info"
+        );
+    }
+
+    #[test]
+    fn should_reflect_balance_after_remove() {
+        // Covers the aggregated value decreasing after remove_from_identity_token_balance
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [35u8; 32];
+        let contract_id = Identifier::from([36u8; 32]);
+        let identity_id = [37u8; 32];
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        drive
+            .add_to_identity_token_balance(
+                token_id,
+                identity_id,
+                2_000,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to add balance");
+
+        drive
+            .remove_from_identity_token_balance(
+                token_id,
+                identity_id,
+                750,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to remove balance");
+
+        let aggregated = drive
+            .fetch_token_total_aggregated_identity_balances_v0(token_id, None, platform_version)
+            .expect("expected fetch to succeed");
+
+        assert_eq!(aggregated, Some(1_250));
+    }
+
+    #[test]
     fn should_aggregate_multiple_holder_balances() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();

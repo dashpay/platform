@@ -128,3 +128,225 @@ impl Drive {
         Ok(drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::error::drive::DriveError;
+    use crate::error::identity::IdentityError;
+    use crate::error::Error;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+
+    fn setup_token_with_balance(
+        initial_balance: u64,
+    ) -> (crate::drive::Drive, [u8; 32], [u8; 32], BlockInfo) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [101u8; 32];
+        let identity_id = [102u8; 32];
+        let contract_id = Identifier::from([103u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        if initial_balance > 0 {
+            drive
+                .add_to_identity_token_balance(
+                    token_id,
+                    identity_id,
+                    initial_balance,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to seed balance");
+        }
+
+        (drive, token_id, identity_id, block_info)
+    }
+
+    #[test]
+    fn should_remove_partial_balance_and_retain_remainder() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, identity_id, block_info) = setup_token_with_balance(1_000);
+
+        drive
+            .remove_from_identity_token_balance(
+                token_id,
+                identity_id,
+                400,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to remove partial balance");
+
+        let balance = drive
+            .fetch_identity_token_balance(token_id, identity_id, None, platform_version)
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(600));
+    }
+
+    #[test]
+    fn should_remove_entire_balance_to_zero() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, identity_id, block_info) = setup_token_with_balance(500);
+
+        drive
+            .remove_from_identity_token_balance(
+                token_id,
+                identity_id,
+                500,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to remove full balance");
+
+        let balance = drive
+            .fetch_identity_token_balance(token_id, identity_id, None, platform_version)
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(0));
+    }
+
+    #[test]
+    fn should_error_on_underflow_when_removing_more_than_balance() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, identity_id, block_info) = setup_token_with_balance(100);
+
+        let result = drive.remove_from_identity_token_balance(
+            token_id,
+            identity_id,
+            200,
+            &block_info,
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
+                _
+            )))
+        ));
+    }
+
+    #[test]
+    fn should_error_when_identity_has_no_balance_yet() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [110u8; 32];
+        let identity_id_without_balance = [111u8; 32];
+        let contract_id = Identifier::from([112u8; 32]);
+
+        // Create trees but DO NOT add any balance for identity_id_without_balance
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        // Attempting to remove when there is no balance entry -> CorruptedCodeExecution
+        let result = drive.remove_from_identity_token_balance(
+            token_id,
+            identity_id_without_balance,
+            1,
+            &block_info,
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
+    }
+
+    #[test]
+    fn should_estimate_costs_only_without_mutating_state_when_apply_false() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [120u8; 32];
+        let identity_id = [121u8; 32];
+        let contract_id = Identifier::from([122u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        // Estimation path: apply=false. No seeded balance necessary because the
+        // stateless path assumes MAX_CREDITS when apply is false.
+        let app_hash_before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        let fee_result = drive
+            .remove_from_identity_token_balance_v0(
+                token_id,
+                identity_id,
+                1_000,
+                &block_info,
+                false, // apply=false, cost-only branch
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected estimation to succeed");
+
+        let app_hash_after = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        // State must not change in estimation mode
+        assert_eq!(app_hash_before, app_hash_after);
+        assert!(fee_result.processing_fee > 0);
+    }
+}
