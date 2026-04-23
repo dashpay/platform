@@ -27,6 +27,7 @@ members = [
     "packages/wasm-dpp",
     "packages/wasm-dpp2",
     "packages/rs-dapi-client",
+    "packages/rs-dash-async",
     "packages/rs-sdk",
     "packages/strategy-tests",
     "packages/simple-signer",
