@@ -4964,7 +4964,6 @@ name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
  "bincode",
- "cbindgen 0.27.0",
  "dash-sdk",
  "dashcore",
  "dpp",

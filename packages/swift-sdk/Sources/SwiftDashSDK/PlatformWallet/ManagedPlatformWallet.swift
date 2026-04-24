@@ -242,7 +242,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
         ) { () -> (Data, Handle) in
-            var ffiInputs = inputs.map { input -> IdentityInputAddressFFI in
+            let ffiInputs = inputs.map { input -> IdentityInputAddressFFI in
                 var hashTuple = hashTupleInit()
                 withUnsafeMutableBytes(of: &hashTuple) { raw in
                     let src = input.hash.prefix(20)

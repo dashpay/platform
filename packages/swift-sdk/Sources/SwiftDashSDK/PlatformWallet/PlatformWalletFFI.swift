@@ -7,6 +7,7 @@ import Foundation
 
 @_silgen_name("platform_wallet_info_create_from_seed")
 func platform_wallet_info_create_from_seed(
+    _ network: NetworkType,
     _ seed: UnsafePointer<UInt8>?,
     _ seed_len: Int,
     _ out_handle: UnsafeMutablePointer<Handle>,
@@ -15,6 +16,7 @@ func platform_wallet_info_create_from_seed(
 
 @_silgen_name("platform_wallet_info_create_from_mnemonic")
 func platform_wallet_info_create_from_mnemonic(
+    _ network: NetworkType,
     _ mnemonic: UnsafePointer<CChar>?,
     _ passphrase: UnsafePointer<CChar>?,
     _ out_handle: UnsafeMutablePointer<Handle>,
@@ -24,7 +26,6 @@ func platform_wallet_info_create_from_mnemonic(
 @_silgen_name("platform_wallet_info_get_identity_manager")
 func platform_wallet_info_get_identity_manager(
     _ wallet_handle: Handle,
-    _ network: NetworkType,
     _ out_manager_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -32,13 +33,12 @@ func platform_wallet_info_get_identity_manager(
 @_silgen_name("platform_wallet_info_set_identity_manager")
 func platform_wallet_info_set_identity_manager(
     _ wallet_handle: Handle,
-    _ network: NetworkType,
     _ manager_handle: Handle,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("platform_wallet_info_destroy")
-func platform_wallet_info_destroy(_ handle: Handle)
+func platform_wallet_info_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 
 // MARK: - IdentityManager Functions
 
@@ -99,7 +99,7 @@ func identity_manager_get_identity_count(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("identity_manager_destroy")
-func identity_manager_destroy(_ handle: Handle)
+func identity_manager_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 
 // MARK: - ManagedIdentity Functions
 
@@ -254,19 +254,14 @@ func managed_identity_is_contact_established(
 @_silgen_name("managed_identity_send_contact_request")
 func managed_identity_send_contact_request(
     _ identity_handle: Handle,
-    _ recipient_id: IdentifierBytes,
-    _ sender_key_index: UInt32,
-    _ recipient_key_index: UInt32,
-    _ account_reference: UInt32,
-    _ encrypted_public_key: UnsafePointer<UInt8>?,
-    _ encrypted_public_key_len: Int,
+    _ request_handle: Handle,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("managed_identity_accept_contact_request")
 func managed_identity_accept_contact_request(
     _ identity_handle: Handle,
-    _ sender_id: IdentifierBytes,
+    _ request_handle: Handle,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -278,7 +273,7 @@ func managed_identity_reject_contact_request(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("managed_identity_destroy")
-func managed_identity_destroy(_ handle: Handle)
+func managed_identity_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 
 // MARK: - DashPay Profile
 
@@ -392,6 +387,7 @@ func contact_request_create(
     _ account_reference: UInt32,
     _ encrypted_public_key: UnsafePointer<UInt8>?,
     _ encrypted_public_key_len: Int,
+    _ core_height_created_at: UInt32,
     _ created_at: UInt64,
     _ out_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
@@ -448,7 +444,7 @@ func contact_request_get_created_at(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("contact_request_destroy")
-func contact_request_destroy(_ handle: Handle)
+func contact_request_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 
 // MARK: - EstablishedContact Functions
 
@@ -519,7 +515,7 @@ func established_contact_unhide(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("established_contact_destroy")
-func established_contact_destroy(_ handle: Handle)
+func established_contact_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 
 // MARK: - Utility Functions
 
@@ -536,7 +532,7 @@ func platform_wallet_identifier_array_free(_ array: IdentifierArray)
 func platform_wallet_string_free(_ string: UnsafeMutablePointer<CChar>)
 
 @_silgen_name("platform_wallet_bytes_free")
-func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>)
+func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>, _ len: Int)
 
 @_silgen_name("platform_wallet_ffi_error_free")
 func platform_wallet_ffi_error_free(_ error: PlatformWalletFFIError)

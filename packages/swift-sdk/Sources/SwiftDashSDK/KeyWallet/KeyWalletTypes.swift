@@ -72,20 +72,6 @@ public enum AddressPoolType: UInt32 {
     }
 }
 
-// MARK: - Transaction Context
-
-/// Transaction context type
-public enum TransactionContext: UInt32 {
-    case mempool = 0
-    case instantSend = 1
-    case inBlock = 2
-    case inChainLockedBlock = 3
-
-    init(ffiContextType: FFITransactionContextType) {
-        self = TransactionContext(rawValue: ffiContextType.rawValue) ?? .mempool
-    }
-}
-
 // MARK: - Mnemonic Language
 
 /// Language for mnemonic generation
@@ -250,13 +236,13 @@ public struct TransactionCheckResult {
 
 /// Transaction context details (wraps FFITransactionContext + FFIBlockInfo)
 public struct TransactionContextDetails {
-    public let context: TransactionContext
+    public let context: TransactionContextType
     public let height: UInt32
     public let blockHash: Data?
     public let timestamp: UInt32
 
     init(ffiContext: FFITransactionContext) {
-        self.context = TransactionContext(ffiContextType: ffiContext.context_type)
+        self.context = TransactionContextType(ffiContext: ffiContext.context_type)
         self.height = ffiContext.block_info.height
         self.timestamp = ffiContext.block_info.timestamp
         let hashBytes = withUnsafeBytes(of: ffiContext.block_info.block_hash) { Data($0) }

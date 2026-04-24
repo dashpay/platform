@@ -26,7 +26,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         let result = bytes.withUnsafeBytes { bytesPtr in
             managed_identity_create_from_identity_bytes(
                 bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(bytes.count),
+                bytes.count,
                 &handle,
                 &error
             )
@@ -209,8 +209,8 @@ public final class ManagedIdentity: @unchecked Sendable {
     }
 
     /// Get the last updated balance block time
-    public func getLastUpdatedBalanceBlockTime() throws -> PlatformBlockTime? {
-        var ffiBlockTime = BlockTime(height: 0, core_height: 0, timestamp: 0)
+    public func getLastUpdatedBalanceBlockTime() throws -> BlockTime? {
+        var ffiBlockTime = FFIBlockTime(height: 0, core_height: 0, timestamp: 0)
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_last_updated_balance_block_time(handle, &ffiBlockTime, &error)
@@ -223,11 +223,11 @@ public final class ManagedIdentity: @unchecked Sendable {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return PlatformBlockTime(ffi: ffiBlockTime)
+        return BlockTime(ffiBlockTime: ffiBlockTime)
     }
 
     /// Set the last updated balance block time
-    public func setLastUpdatedBalanceBlockTime(_ blockTime: PlatformBlockTime) throws {
+    public func setLastUpdatedBalanceBlockTime(_ blockTime: BlockTime) throws {
         var error = PlatformWalletFFIError()
         let ffiBlockTime = blockTime.ffiValue
 
@@ -238,8 +238,8 @@ public final class ManagedIdentity: @unchecked Sendable {
     }
 
     /// Get the last synced keys block time
-    public func getLastSyncedKeysBlockTime() throws -> PlatformBlockTime? {
-        var ffiBlockTime = BlockTime(height: 0, core_height: 0, timestamp: 0)
+    public func getLastSyncedKeysBlockTime() throws -> BlockTime? {
+        var ffiBlockTime = FFIBlockTime(height: 0, core_height: 0, timestamp: 0)
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_last_synced_keys_block_time(handle, &ffiBlockTime, &error)
@@ -252,7 +252,7 @@ public final class ManagedIdentity: @unchecked Sendable {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return PlatformBlockTime(ffi: ffiBlockTime)
+        return BlockTime(ffiBlockTime: ffiBlockTime)
     }
 
     // MARK: - Contact Request Management

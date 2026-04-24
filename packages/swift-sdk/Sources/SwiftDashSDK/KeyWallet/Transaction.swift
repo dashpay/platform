@@ -41,7 +41,7 @@ public class Transaction {
     /// - Returns: Transaction check result
     public static func check(wallet: Wallet,
                             transactionData: Data,
-                            context: TransactionContext = .mempool,
+                            context: TransactionContextType = .mempool,
                             blockHeight: UInt32 = 0,
                             blockHash: Data? = nil,
                             timestamp: UInt64 = 0,

@@ -230,7 +230,7 @@ struct ReceiveAddressView: View {
                     .padding(.horizontal)
 
                     // Faucet button — only on local Docker, Core tab
-                    if selectedTab == .core && unifiedAppState.platformState.useDockerSetup {
+                    if selectedTab == .core && platformState.useDockerSetup {
                         Button {
                             Task { await requestFromFaucet() }
                         } label: {

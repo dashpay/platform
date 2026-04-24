@@ -42,7 +42,7 @@ public final class ContactRequest: @unchecked Sendable {
                 recipientKeyIndex,
                 accountReference,
                 keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(encryptedPublicKey.count),
+                encryptedPublicKey.count,
                 coreHeightCreatedAt,
                 createdAt,
                 &handle,
@@ -125,7 +125,7 @@ public final class ContactRequest: @unchecked Sendable {
     /// Get the encrypted public key
     public func getEncryptedPublicKey() throws -> Data {
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var length: UInt = 0
+        var length: Int = 0
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_encrypted_public_key(handle, &bytesPtr, &length, &error)

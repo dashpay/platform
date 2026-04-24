@@ -301,7 +301,7 @@ public class ManagedWallet {
     ///   - updateState: Whether to update wallet state if transaction is relevant
     /// - Returns: Transaction check result
     public func checkTransaction(wallet: Wallet, transactionData: Data,
-                                context: TransactionContext = .mempool,
+                                context: TransactionContextType = .mempool,
                                 blockHeight: UInt32 = 0,
                                 blockHash: Data? = nil,
                                 timestamp: UInt32 = 0,

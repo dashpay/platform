@@ -601,9 +601,11 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create transfer signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (transferKey, signer) = try await MainActor.run {
-      try keyManager.createTransferSigner(for: dppIdentity)
+    let (transferKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createTransferSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -660,9 +662,11 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create transfer signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createTransferSigner(for: dppIdentity)
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createTransferSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -743,12 +747,14 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with required security level and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
-      try keyManager.createDocumentSigner(
+    let (selectedKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createDocumentSigner(
         for: dppIdentity,
         minimumSecurityLevel: requiredSecurityLevel
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -794,14 +800,16 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .authentication,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -859,14 +867,16 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: fromIdentity,
         purpose: .authentication,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -924,14 +934,16 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: ownerDPPIdentity,
         purpose: .authentication,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -992,14 +1004,16 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find any key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: fromIdentity,
         purpose: nil,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1078,12 +1092,14 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with required security level and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
-      try keyManager.createDocumentSigner(
+    let (selectedKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createDocumentSigner(
         for: dppIdentity,
         minimumSecurityLevel: requiredSecurityLevel
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1159,30 +1175,32 @@ struct TransitionDetailView: View {
     let signer: OpaquePointer
 
     // Try owner purpose first
-    let ownerResult = try? await MainActor.run {
-      try keyManager.createSignerForKey(
+    let ownerResult: (IdentityPublicKey, SendableOpaquePointer)? = try? await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .owner,
         minimumSecurityLevel: .critical,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
 
-    if let (key, sig) = ownerResult {
+    if let (key, sigBox) = ownerResult {
       mintingKey = key
-      signer = sig
+      signer = sigBox.pointer
     } else {
       // Fall back to authentication
-      let (key, sig) = try await MainActor.run {
-        try keyManager.createSignerForKey(
+      let (key, sigBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+        let (k, s) = try keyManager.createSignerForKey(
           for: dppIdentity,
           purpose: .authentication,
           minimumSecurityLevel: .critical,
           preferCritical: true
         )
+        return (k, SendableOpaquePointer(s))
       }
       mintingKey = key
-      signer = sig
+      signer = sigBox.pointer
     }
     defer {
       keyManager.destroySigner(signer)
@@ -1258,30 +1276,32 @@ struct TransitionDetailView: View {
     let signer: OpaquePointer
 
     // Try owner purpose first
-    let ownerResult = try? await MainActor.run {
-      try keyManager.createSignerForKey(
+    let ownerResult: (IdentityPublicKey, SendableOpaquePointer)? = try? await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .owner,
         minimumSecurityLevel: .critical,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
 
-    if let (key, sig) = ownerResult {
+    if let (key, sigBox) = ownerResult {
       burningKey = key
-      signer = sig
+      signer = sigBox.pointer
     } else {
       // Fall back to authentication
-      let (key, sig) = try await MainActor.run {
-        try keyManager.createSignerForKey(
+      let (key, sigBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+        let (k, s) = try keyManager.createSignerForKey(
           for: dppIdentity,
           purpose: .authentication,
           minimumSecurityLevel: .critical,
           preferCritical: true
         )
+        return (k, SendableOpaquePointer(s))
       }
       burningKey = key
-      signer = sig
+      signer = sigBox.pointer
     }
     defer {
       keyManager.destroySigner(signer)
@@ -1717,9 +1737,11 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createContractSigner(for: dppIdentity)
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createContractSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1791,9 +1813,11 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createContractSigner(for: dppIdentity)
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createContractSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
