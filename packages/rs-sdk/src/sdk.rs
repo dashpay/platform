@@ -91,16 +91,18 @@ fn parse_address_list(addresses: &[&str]) -> AddressList {
     AddressList::from_iter(addresses.iter().map(|address| {
         let uri = address
             .parse::<Uri>()
-            .expect("default SDK address must be a valid URI");
-        Address::try_from(uri).expect("default SDK address must be a valid DAPI address")
+            .unwrap_or_else(|_| panic!("default SDK address must be a valid URI: {address}"));
+        Address::try_from(uri).unwrap_or_else(|_| {
+            panic!("default SDK address must be a valid DAPI address: {address}")
+        })
     }))
 }
 
-fn default_address_list_for_network(network: Network) -> Option<AddressList> {
+fn default_address_list_for_network(network: Network) -> AddressList {
     match network {
-        Network::Mainnet => Some(parse_address_list(DEFAULT_MAINNET_ADDRESSES)),
-        Network::Testnet => Some(parse_address_list(DEFAULT_TESTNET_ADDRESSES)),
-        _ => None,
+        Network::Mainnet => parse_address_list(DEFAULT_MAINNET_ADDRESSES),
+        Network::Testnet => parse_address_list(DEFAULT_TESTNET_ADDRESSES),
+        _ => panic!("default address list is only available for mainnet and testnet"),
     }
 }
 
@@ -794,8 +796,7 @@ impl SdkBuilder {
     /// Use this method if you want to connect to Dash Platform testnet during development and testing
     /// of your solution.
     pub fn new_testnet() -> Self {
-        let address_list = default_address_list_for_network(Network::Testnet)
-            .expect("testnet default address list must be available");
+        let address_list = default_address_list_for_network(Network::Testnet);
 
         Self::new(address_list).with_network(Network::Testnet)
     }
@@ -813,8 +814,7 @@ impl SdkBuilder {
     ///
     /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
-        let address_list = default_address_list_for_network(Network::Mainnet)
-            .expect("mainnet default address list must be available");
+        let address_list = default_address_list_for_network(Network::Mainnet);
 
         Self::new(address_list).with_network(Network::Mainnet)
     }
