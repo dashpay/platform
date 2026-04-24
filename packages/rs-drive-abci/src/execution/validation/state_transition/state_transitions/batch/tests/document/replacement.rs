@@ -357,8 +357,8 @@ mod replacement_tests {
         );
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size() {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
             vec![(
@@ -369,33 +369,36 @@ mod replacement_tests {
                     Identifier::default().to_buffer(),
                 ),
             )],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_smaller_size() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_smaller_size() {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
             vec![(
                 "S",
                 StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
             )],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_same_size() {
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_same_size() {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
             vec![(
                 "Max",
                 StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
             )],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size(
     ) {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
@@ -417,11 +420,12 @@ mod replacement_tests {
                     ),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size_by_3_bytes(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size_by_3_bytes(
     ) {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
@@ -443,11 +447,12 @@ mod replacement_tests {
                     ),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_smaller_size(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_smaller_size(
     ) {
         // In this case we start with the size Samuell Base epoch 0 epoch 1 added 7 bytes
         // Then we try to update it to         Sami    Base epoch 2
@@ -477,11 +482,12 @@ mod replacement_tests {
                     ),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_back_to_original(
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_back_to_original(
     ) {
         perform_document_replace_on_profile_after_epoch_change(
             "Sam",
@@ -499,7 +505,8 @@ mod replacement_tests {
                     StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
                 ),
             ],
-        );
+        )
+        .await;
     }
 
     #[tokio::test]

@@ -1456,14 +1456,14 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(101337));
         }
 
-        #[test]
-        fn test_token_mint_by_owner_requires_group_other_member_with_history() {
-            test_token_mint_by_owner_requires_group_other_member(true);
+        #[tokio::test]
+        async fn test_token_mint_by_owner_requires_group_other_member_with_history() {
+            test_token_mint_by_owner_requires_group_other_member(true).await;
         }
 
-        #[test]
-        fn test_token_mint_by_owner_requires_group_other_member_no_history() {
-            test_token_mint_by_owner_requires_group_other_member(false);
+        #[tokio::test]
+        async fn test_token_mint_by_owner_requires_group_other_member_no_history() {
+            test_token_mint_by_owner_requires_group_other_member(false).await;
         }
 
         async fn test_token_mint_by_owner_requires_group_other_member(keeps_minting_history: bool) {

@@ -1658,14 +1658,14 @@ mod token_freeze_tests {
             assert_eq!(frozen, Some(true));
         }
 
-        #[test]
-        fn test_token_freeze_two_member_group_no_keeping_history() {
-            test_token_freeze_two_member_group_with_keeps_history(false);
+        #[tokio::test]
+        async fn test_token_freeze_two_member_group_no_keeping_history() {
+            test_token_freeze_two_member_group_with_keeps_history(false).await;
         }
 
-        #[test]
-        fn test_token_freeze_two_member_group_keeping_history() {
-            test_token_freeze_two_member_group_with_keeps_history(true);
+        #[tokio::test]
+        async fn test_token_freeze_two_member_group_keeping_history() {
+            test_token_freeze_two_member_group_with_keeps_history(true).await;
         }
 
         // ──────────────────────────────────────────────────────────

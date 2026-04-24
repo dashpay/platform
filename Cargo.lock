@@ -5867,6 +5867,7 @@ dependencies = [
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
+ "dash-async",
  "dash-sdk",
  "dotenvy",
  "drive-proof-verifier",
