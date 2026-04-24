@@ -26,13 +26,21 @@ impl SingleKeySigner {
         Ok(Self { private_key })
     }
 
-    pub fn new_from_slice(private_key_data: &[u8], network: Network) -> Result<Self, String> {
+    /// Create a new SingleKeySigner from raw 32 private-key bytes.
+    ///
+    /// The network is not part of this constructor because it only affects
+    /// WIF encoding — signing itself is network-independent. The wrapped
+    /// `PrivateKey` is tagged with `Network::Mainnet` as an arbitrary
+    /// placeholder; use `from_hex` (or another constructor that takes the
+    /// network explicitly) if WIF formatting on a non-mainnet network
+    /// matters.
+    pub fn new_from_slice(private_key_data: &[u8]) -> Result<Self, String> {
         if private_key_data.len() != 32 {
             return Err("Private key must be 32 bytes".to_string());
         }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(private_key_data);
-        let private_key = PrivateKey::from_byte_array(&arr, network)
+        let private_key = PrivateKey::from_byte_array(&arr, Network::Mainnet)
             .map_err(|e| format!("Invalid private key: {}", e))?;
         Ok(Self { private_key })
     }

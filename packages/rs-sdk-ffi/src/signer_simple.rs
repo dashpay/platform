@@ -3,7 +3,6 @@
 use crate::signer::{signer_handle_from_single_key, VTableSigner};
 use crate::types::SignerHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use simple_signer::SingleKeySigner;
@@ -52,8 +51,7 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(key_slice);
 
-    // Network doesn't matter for signing purposes.
-    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), Network::Mainnet) {
+    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice()) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e));
