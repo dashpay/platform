@@ -239,4 +239,195 @@ mod tests {
             err
         );
     }
+
+    // --------------------------------------------------------------
+    // Extra coverage — bounds / overflow / empty-spends branches
+    // --------------------------------------------------------------
+
+    #[test]
+    fn test_unshield_amount_exceeds_i64_max_errors() {
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+        let output_address = PlatformAddress::P2pkh([1u8; 20]);
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_unshield_transition(
+            spends,
+            output_address,
+            (i64::MAX as u64) + 1, // overflow the i64 cap
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds maximum allowed value"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unshield_fee_at_exact_upper_bound_passes_validation() {
+        // Boundary: fee == 1000x min is accepted (strictly > fails).
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+        let output_address = PlatformAddress::P2pkh([1u8; 20]);
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(1, platform_version);
+        let boundary = min_fee.saturating_mul(1000);
+
+        let result = build_unshield_transition(
+            spends,
+            output_address,
+            100,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(boundary),
+            platform_version,
+        );
+        // Boundary value passes validation; a successful build is fine. If a
+        // later-stage failure (anchor/add_spend) surfaces, it must NOT be the
+        // upper-bound error.
+        if let Err(err) = result {
+            let err = err.to_string();
+            assert!(
+                !err.contains("exceeds 1000x"),
+                "boundary fee should be accepted: {}",
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_unshield_amount_exceeds_spendable_with_default_fee() {
+        // unshield_amount + default_min_fee > total_spent should surface
+        // the "exceeds total spendable value" branch.
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+        let output_address = PlatformAddress::P2pkh([1u8; 20]);
+
+        let note = test_spendable_note(5_000);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_unshield_transition(
+            spends,
+            output_address,
+            6_000, // more than the note's 5_000
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds total spendable value"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unshield_zero_spends_errors() {
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+        let output_address = PlatformAddress::P2pkh([1u8; 20]);
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_unshield_transition(
+            vec![],
+            output_address,
+            1,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds total spendable value"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unshield_fee_default_sufficient_value_reaches_add_spend() {
+        // When fee=None and total_spent exactly covers (amount + min_fee),
+        // we bypass all amount checks and hit the downstream add_spend
+        // AnchorMismatch. This exercises the default-fee branch.
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+        let output_address = PlatformAddress::P2pkh([1u8; 20]);
+
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(1, platform_version);
+        let unshield_amount = 42u64;
+        let note = test_spendable_note(unshield_amount + min_fee);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_unshield_transition(
+            spends,
+            output_address,
+            unshield_amount,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("failed to add spend")
+                || err_msg.contains("anchor")
+                || err_msg.contains("AnchorMismatch"),
+            "expected downstream add_spend error, got: {}",
+            err_msg
+        );
+    }
 }

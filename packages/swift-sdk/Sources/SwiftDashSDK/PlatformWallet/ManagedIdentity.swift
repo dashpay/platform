@@ -15,7 +15,7 @@ public final class ManagedIdentity: @unchecked Sendable {
     }
 
     deinit {
-        managed_identity_destroy(handle)
+        _ = managed_identity_destroy(handle)
     }
 
     /// Create a ManagedIdentity from identity bytes
@@ -26,7 +26,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         let result = bytes.withUnsafeBytes { bytesPtr in
             managed_identity_create_from_identity_bytes(
                 bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                bytes.count,
+                UInt(bytes.count),
                 &handle,
                 &error
             )
@@ -49,7 +49,7 @@ public final class ManagedIdentity: @unchecked Sendable {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI( ffiId)
+        return identifierFromFFI(ffiId)
     }
 
     /// Get the identity balance
@@ -209,8 +209,8 @@ public final class ManagedIdentity: @unchecked Sendable {
     }
 
     /// Get the last updated balance block time
-    public func getLastUpdatedBalanceBlockTime() throws -> BlockTime? {
-        var ffiBlockTime = FFIBlockTime(height: 0, core_height: 0, timestamp: 0)
+    public func getLastUpdatedBalanceBlockTime() throws -> PlatformBlockTime? {
+        var ffiBlockTime = BlockTime(height: 0, core_height: 0, timestamp: 0)
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_last_updated_balance_block_time(handle, &ffiBlockTime, &error)
@@ -223,11 +223,11 @@ public final class ManagedIdentity: @unchecked Sendable {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return BlockTime(ffiBlockTime: ffiBlockTime)
+        return PlatformBlockTime(ffi: ffiBlockTime)
     }
 
     /// Set the last updated balance block time
-    public func setLastUpdatedBalanceBlockTime(_ blockTime: BlockTime) throws {
+    public func setLastUpdatedBalanceBlockTime(_ blockTime: PlatformBlockTime) throws {
         var error = PlatformWalletFFIError()
         let ffiBlockTime = blockTime.ffiValue
 
@@ -238,8 +238,8 @@ public final class ManagedIdentity: @unchecked Sendable {
     }
 
     /// Get the last synced keys block time
-    public func getLastSyncedKeysBlockTime() throws -> BlockTime? {
-        var ffiBlockTime = FFIBlockTime(height: 0, core_height: 0, timestamp: 0)
+    public func getLastSyncedKeysBlockTime() throws -> PlatformBlockTime? {
+        var ffiBlockTime = BlockTime(height: 0, core_height: 0, timestamp: 0)
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_last_synced_keys_block_time(handle, &ffiBlockTime, &error)
@@ -252,7 +252,7 @@ public final class ManagedIdentity: @unchecked Sendable {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return BlockTime(ffiBlockTime: ffiBlockTime)
+        return PlatformBlockTime(ffi: ffiBlockTime)
     }
 
     // MARK: - Contact Request Management
@@ -276,9 +276,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<array.count {
-            let ffiId = items[Int(i)]
-            identifiers.append(identifierFromFFI( ffiId))
+        for i in 0..<Int(array.count) {
+            identifiers.append(identifierFromFFI(items[i]))
         }
 
         return identifiers
@@ -303,9 +302,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<array.count {
-            let ffiId = items[Int(i)]
-            identifiers.append(identifierFromFFI( ffiId))
+        for i in 0..<Int(array.count) {
+            identifiers.append(identifierFromFFI(items[i]))
         }
 
         return identifiers
@@ -330,9 +328,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<array.count {
-            let ffiId = items[Int(i)]
-            identifiers.append(identifierFromFFI( ffiId))
+        for i in 0..<Int(array.count) {
+            identifiers.append(identifierFromFFI(items[i]))
         }
 
         return identifiers
@@ -409,41 +406,23 @@ public final class ManagedIdentity: @unchecked Sendable {
         return isEstablished
     }
 
-    /// Send a contact request to another identity
-    public func sendContactRequest(
-        recipientId: Identifier,
-        senderKeyIndex: UInt32,
-        recipientKeyIndex: UInt32,
-        accountReference: UInt32,
-        encryptedPublicKey: Data
-    ) throws {
+    /// Send a contact request by attaching a pre-built request handle.
+    /// Build the request via `ContactRequest.create(...)` first.
+    public func sendContactRequest(_ request: ContactRequest) throws {
         var error = PlatformWalletFFIError()
-        let ffiRecipientId = identifierToFFI(recipientId)
 
-        let result = encryptedPublicKey.withUnsafeBytes { keyPtr in
-            managed_identity_send_contact_request(
-                handle,
-                ffiRecipientId,
-                senderKeyIndex,
-                recipientKeyIndex,
-                accountReference,
-                keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                encryptedPublicKey.count,
-                &error
-            )
-        }
-
+        let result = managed_identity_send_contact_request(handle, request.handle, &error)
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
 
-    /// Accept a contact request from another identity
-    public func acceptContactRequest(senderId: Identifier) throws {
+    /// Accept an incoming contact request.
+    /// The request handle typically comes from `getIncomingContactRequest(senderId:)`.
+    public func acceptContactRequest(_ request: ContactRequest) throws {
         var error = PlatformWalletFFIError()
-        let ffiSenderId = identifierToFFI(senderId)
 
-        let result = managed_identity_accept_contact_request(handle, ffiSenderId, &error)
+        let result = managed_identity_accept_contact_request(handle, request.handle, &error)
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }

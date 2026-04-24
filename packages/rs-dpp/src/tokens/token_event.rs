@@ -479,3 +479,135 @@ impl TokenEvent {
         Ok(document)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_id() -> Identifier {
+        Identifier::from([1u8; 32])
+    }
+
+    fn test_id_2() -> Identifier {
+        Identifier::from([2u8; 32])
+    }
+
+    // ---- associated_document_type_name tests ----
+
+    #[test]
+    fn associated_name_mint() {
+        let event = TokenEvent::Mint(0, test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "mint");
+    }
+
+    #[test]
+    fn associated_name_burn() {
+        let event = TokenEvent::Burn(0, test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "burn");
+    }
+
+    #[test]
+    fn associated_name_freeze() {
+        let event = TokenEvent::Freeze(test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "freeze");
+    }
+
+    #[test]
+    fn associated_name_unfreeze() {
+        let event = TokenEvent::Unfreeze(test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "unfreeze");
+    }
+
+    #[test]
+    fn associated_name_destroy_frozen_funds() {
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 0, None);
+        assert_eq!(event.associated_document_type_name(), "destroyFrozenFunds");
+    }
+
+    #[test]
+    fn associated_name_transfer() {
+        let event = TokenEvent::Transfer(test_id(), None, None, None, 0);
+        assert_eq!(event.associated_document_type_name(), "transfer");
+    }
+
+    #[test]
+    fn associated_name_claim() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let event = TokenEvent::Claim(recipient, 0, None);
+        assert_eq!(event.associated_document_type_name(), "claim");
+    }
+
+    #[test]
+    fn associated_name_emergency_action() {
+        let event = TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None);
+        assert_eq!(event.associated_document_type_name(), "emergencyAction");
+    }
+
+    #[test]
+    fn associated_name_config_update() {
+        let event = TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            None,
+        );
+        assert_eq!(event.associated_document_type_name(), "configUpdate");
+    }
+
+    #[test]
+    fn associated_name_direct_purchase() {
+        let event = TokenEvent::DirectPurchase(0, 0);
+        assert_eq!(event.associated_document_type_name(), "directPurchase");
+    }
+
+    #[test]
+    fn associated_name_change_price() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(None, None);
+        assert_eq!(event.associated_document_type_name(), "directPricing");
+    }
+
+    // ---- all associated_document_type_name values are distinct ----
+
+    #[test]
+    fn all_document_type_names_are_unique() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let events: Vec<TokenEvent> = vec![
+            TokenEvent::Mint(0, test_id(), None),
+            TokenEvent::Burn(0, test_id(), None),
+            TokenEvent::Freeze(test_id(), None),
+            TokenEvent::Unfreeze(test_id(), None),
+            TokenEvent::DestroyFrozenFunds(test_id(), 0, None),
+            TokenEvent::Transfer(test_id(), None, None, None, 0),
+            TokenEvent::Claim(recipient, 0, None),
+            TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None),
+            TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::TokenConfigurationNoChange,
+                None,
+            ),
+            TokenEvent::DirectPurchase(0, 0),
+            TokenEvent::ChangePriceForDirectPurchase(None, None),
+        ];
+        let names: Vec<&str> = events
+            .iter()
+            .map(|e| e.associated_document_type_name())
+            .collect();
+        let mut unique = names.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "Duplicate document type names found"
+        );
+    }
+
+    // ---- format_note helper ----
+
+    #[test]
+    fn format_note_none_returns_empty() {
+        assert_eq!(format_note(&None), "");
+    }
+
+    #[test]
+    fn format_note_some_returns_formatted() {
+        assert_eq!(format_note(&Some("hello".to_string())), " (note: hello)");
+    }
+}

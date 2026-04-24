@@ -272,3 +272,372 @@ where
         index.index_or_insert(self)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_value;
+
+    // ===============================================================
+    // Index<usize> for Value — access array element
+    // ===============================================================
+
+    #[test]
+    fn index_usize_access_array_element() {
+        let value = platform_value!([10, 20, 30]);
+        assert_eq!(value[0], platform_value!(10));
+        assert_eq!(value[1], platform_value!(20));
+        assert_eq!(value[2], platform_value!(30));
+    }
+
+    // ===============================================================
+    // Index<usize> for Value — out-of-bounds returns Null
+    // ===============================================================
+
+    #[test]
+    fn index_usize_out_of_bounds_returns_null() {
+        let value = platform_value!([10, 20]);
+        // The ops::Index impl returns &NULL for missing indices
+        assert_eq!(value[99], Value::Null);
+    }
+
+    // ===============================================================
+    // Index<usize> for Value — non-array returns Null
+    // ===============================================================
+
+    #[test]
+    fn index_usize_on_non_array_returns_null() {
+        let value = platform_value!(42);
+        // ops::Index returns &NULL when index_into returns None
+        assert_eq!(value[0], Value::Null);
+    }
+
+    #[test]
+    fn index_usize_on_map_returns_null() {
+        let value = platform_value!({ "key": "val" });
+        assert_eq!(value[0], Value::Null);
+    }
+
+    // ===============================================================
+    // IndexMut<usize> — panic on out-of-bounds
+    // ===============================================================
+
+    #[test]
+    #[should_panic(expected = "cannot access index 5 of JSON array of length 2")]
+    fn index_mut_usize_out_of_bounds_panics() {
+        let mut value = platform_value!([10, 20]);
+        value[5] = platform_value!(99);
+    }
+
+    // ===============================================================
+    // IndexMut<usize> — panic on non-array
+    // ===============================================================
+
+    #[test]
+    #[should_panic(expected = "cannot access index 0 of JSON")]
+    fn index_mut_usize_on_non_array_panics() {
+        let mut value = platform_value!(42);
+        value[0] = platform_value!(99);
+    }
+
+    // ===============================================================
+    // IndexMut<usize> — successfully write
+    // ===============================================================
+
+    #[test]
+    fn index_mut_usize_write() {
+        let mut value = platform_value!([10, 20, 30]);
+        value[1] = platform_value!(99);
+        assert_eq!(value[1], platform_value!(99));
+    }
+
+    // ===============================================================
+    // Index<&str> for Value — access map key
+    // ===============================================================
+
+    #[test]
+    fn index_str_access_map_key() {
+        let value = platform_value!({ "name": "Alice", "age": 30 });
+        assert_eq!(value["name"], platform_value!("Alice"));
+        assert_eq!(value["age"], platform_value!(30));
+    }
+
+    // ===============================================================
+    // Index<&str> for Value — missing key returns Null
+    // ===============================================================
+
+    #[test]
+    fn index_str_missing_key_returns_null() {
+        let value = platform_value!({ "name": "Alice" });
+        assert_eq!(value["missing"], Value::Null);
+    }
+
+    // ===============================================================
+    // Index<&str> for Value — non-map returns Null
+    // ===============================================================
+
+    #[test]
+    fn index_str_on_non_map_returns_null() {
+        let value = platform_value!(42);
+        assert_eq!(value["key"], Value::Null);
+    }
+
+    #[test]
+    fn index_str_on_array_returns_null() {
+        let value = platform_value!([1, 2, 3]);
+        assert_eq!(value["key"], Value::Null);
+    }
+
+    // ===============================================================
+    // Index<&str> for Value — nested access
+    // ===============================================================
+
+    #[test]
+    fn index_str_nested_access() {
+        let value = platform_value!({
+            "outer": {
+                "inner": {
+                    "deep": 42
+                }
+            }
+        });
+        assert_eq!(value["outer"]["inner"]["deep"], platform_value!(42));
+    }
+
+    #[test]
+    fn index_str_nested_missing_returns_null_chain() {
+        let value = platform_value!({ "a": { "b": 1 } });
+        // "a" -> "c" -> doesn't exist, returns Null
+        // then Null["anything"] also returns Null
+        assert_eq!(value["a"]["c"], Value::Null);
+        assert_eq!(value["a"]["c"]["d"], Value::Null);
+    }
+
+    // ===============================================================
+    // IndexMut<&str> — write to existing key
+    // ===============================================================
+
+    #[test]
+    fn index_mut_str_write_existing() {
+        let mut value = platform_value!({ "x": 0 });
+        value["x"] = platform_value!(42);
+        assert_eq!(value["x"], platform_value!(42));
+    }
+
+    // ===============================================================
+    // IndexMut<&str> — insert new key
+    // ===============================================================
+
+    #[test]
+    fn index_mut_str_insert_new_key() {
+        let mut value = platform_value!({ "x": 0 });
+        value["y"] = platform_value!("hello");
+        assert_eq!(value["y"], platform_value!("hello"));
+    }
+
+    // ===============================================================
+    // IndexMut<&str> — Null becomes empty map
+    // ===============================================================
+
+    #[test]
+    fn index_mut_str_null_becomes_map() {
+        let mut value = Value::Null;
+        value["key"] = platform_value!(1);
+        assert_eq!(value["key"], platform_value!(1));
+        assert!(value.is_map());
+    }
+
+    // ===============================================================
+    // IndexMut<&str> — deeply nested insert via Null
+    // ===============================================================
+
+    #[test]
+    fn index_mut_str_deeply_nested_insert() {
+        let mut value = platform_value!({ "x": 0 });
+        // "a" -> inserts Null, then Null becomes map for "b", etc.
+        value["a"]["b"]["c"] = platform_value!(true);
+        assert_eq!(value["a"]["b"]["c"], platform_value!(true));
+    }
+
+    // ===============================================================
+    // IndexMut<&str> — panic on non-map non-null
+    // ===============================================================
+
+    #[test]
+    #[should_panic(expected = "cannot access key")]
+    fn index_mut_str_on_non_map_panics() {
+        let mut value = platform_value!(42);
+        value["key"] = platform_value!(1);
+    }
+
+    // ===============================================================
+    // Index<String> delegates to str
+    // ===============================================================
+
+    #[test]
+    fn index_string_delegates_to_str() {
+        let value = platform_value!({ "name": "Bob" });
+        let key = String::from("name");
+        assert_eq!(value[&key], platform_value!("Bob"));
+    }
+
+    // ===============================================================
+    // IndexMut<String> delegates to str
+    // ===============================================================
+
+    #[test]
+    fn index_mut_string_delegates_to_str() {
+        let mut value = platform_value!({ "name": "Bob" });
+        let key = String::from("name");
+        value[&key] = platform_value!("Alice");
+        assert_eq!(value["name"], platform_value!("Alice"));
+    }
+
+    // ===============================================================
+    // index_into — returns None for various non-matching types
+    // ===============================================================
+
+    #[test]
+    fn index_into_usize_returns_none_for_non_array() {
+        let value = Value::Text("hello".into());
+        assert!(0usize.index_into(&value).is_none());
+    }
+
+    #[test]
+    fn index_into_str_returns_none_for_non_map() {
+        let value = Value::Array(vec![Value::U32(1)]);
+        assert!("key".index_into(&value).is_none());
+    }
+
+    // ===============================================================
+    // index_into_mut — returns None for non-matching types
+    // ===============================================================
+
+    #[test]
+    fn index_into_mut_usize_returns_none_for_non_array() {
+        let mut value = Value::Bool(true);
+        assert!(0usize.index_into_mut(&mut value).is_none());
+    }
+
+    #[test]
+    fn index_into_mut_str_returns_none_for_non_map() {
+        let mut value = Value::U64(100);
+        assert!("key".index_into_mut(&mut value).is_none());
+    }
+
+    // ===============================================================
+    // index_into_mut — returns Some for valid accesses
+    // ===============================================================
+
+    #[test]
+    fn index_into_mut_usize_returns_some() {
+        let mut value = platform_value!([10, 20]);
+        let got = 0usize.index_into_mut(&mut value);
+        assert!(got.is_some());
+        *got.unwrap() = platform_value!(99);
+        assert_eq!(value[0], platform_value!(99));
+    }
+
+    #[test]
+    fn index_into_mut_str_returns_some() {
+        let mut value = platform_value!({ "k": 1 });
+        let got = "k".index_into_mut(&mut value);
+        assert!(got.is_some());
+        *got.unwrap() = platform_value!(42);
+        assert_eq!(value["k"], platform_value!(42));
+    }
+
+    // ===============================================================
+    // Combined array + map indexing
+    // ===============================================================
+
+    #[test]
+    fn combined_array_map_indexing() {
+        let value = platform_value!({
+            "items": [
+                { "name": "first" },
+                { "name": "second" }
+            ]
+        });
+        assert_eq!(value["items"][0]["name"], platform_value!("first"));
+        assert_eq!(value["items"][1]["name"], platform_value!("second"));
+    }
+
+    #[test]
+    fn combined_array_map_indexing_mut() {
+        let mut value = platform_value!({
+            "items": [
+                { "name": "first" },
+                { "name": "second" }
+            ]
+        });
+        value["items"][0]["name"] = platform_value!("updated");
+        assert_eq!(value["items"][0]["name"], platform_value!("updated"));
+    }
+
+    // ===============================================================
+    // get() method — returns Some for existing, None for missing
+    // ===============================================================
+
+    #[test]
+    fn get_method_returns_some_for_existing_key() {
+        let value = platform_value!({ "x": 10 });
+        let result = value.get("x").unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), &platform_value!(10));
+    }
+
+    #[test]
+    fn get_method_returns_none_for_missing_key() {
+        let value = platform_value!({ "x": 10 });
+        let result = value.get("y").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_method_errors_on_non_map() {
+        let value = platform_value!(42);
+        let result = value.get("key");
+        assert!(result.is_err());
+    }
+
+    // ===============================================================
+    // Type display coverage (used in panic messages)
+    // ===============================================================
+
+    #[test]
+    fn type_display_covers_all_variants() {
+        use core::fmt::Write;
+        let variants: Vec<Value> = vec![
+            Value::Null,
+            Value::Bool(true),
+            Value::Float(1.0),
+            Value::Text("s".into()),
+            Value::Array(vec![]),
+            Value::Map(vec![]),
+            Value::U128(1),
+            Value::I128(1),
+            Value::U64(1),
+            Value::I64(1),
+            Value::U32(1),
+            Value::I32(1),
+            Value::U16(1),
+            Value::I16(1),
+            Value::U8(1),
+            Value::I8(1),
+            Value::Bytes(vec![]),
+            Value::Bytes20([0u8; 20]),
+            Value::Bytes32([0u8; 32]),
+            Value::Bytes36([0u8; 36]),
+            Value::Identifier([0u8; 32]),
+            Value::EnumU8(vec![]),
+            Value::EnumString(vec![]),
+        ];
+        for v in &variants {
+            let t = Type(v);
+            let mut buf = String::new();
+            write!(buf, "{}", t).unwrap();
+            assert!(!buf.is_empty());
+        }
+    }
+}

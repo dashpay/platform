@@ -84,18 +84,18 @@ mod tests {
             );
         }
 
-        /// Tests validate_structure directly because 101 actions exceed the
-        /// max_state_transition_size (20KB) before reaching the actions count check
-        /// in the full pipeline.
+        /// Tests `validate_structure` directly to exercise the
+        /// `max_shielded_transition_actions` check in isolation, without
+        /// depending on the full transition-processing pipeline.
         #[test]
         fn test_too_many_actions_returns_error() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
 
-            // 101 actions exceeds max_shielded_transition_actions (100)
+            // 17 actions exceeds max_shielded_transition_actions (16)
             let actions: Vec<SerializedAction> =
-                (0..101).map(|_| create_dummy_serialized_action()).collect();
+                (0..17).map(|_| create_dummy_serialized_action()).collect();
 
             let transition = ShieldedTransferTransitionV0 {
                 actions,
@@ -394,10 +394,13 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // DPP structure validation now catches this before proof verification
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }

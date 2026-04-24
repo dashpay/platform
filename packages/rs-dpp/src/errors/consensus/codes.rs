@@ -202,6 +202,7 @@ impl ErrorWithCode for BasicError {
             Self::IdentityAssetLockStateTransitionReplayError(_) => 10531,
             Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
             Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
+            Self::IdentityAssetLockTransactionTooManyInputsError(_) => 10534,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -237,6 +238,7 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedEmptyProofError(_) => 10820,
             Self::ShieldedZeroAnchorError(_) => 10821,
             Self::ShieldedInvalidValueBalanceError(_) => 10822,
+            Self::ShieldedEncryptedNoteSizeMismatchError(_) => 10823,
             Self::ShieldedTooManyActionsError(_) => 10825,
         }
     }

@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for a Dash wallet with HD key derivation
 public class Wallet {
-    private let handle: UnsafeMutablePointer<FFIWallet>
+    internal let handle: UnsafeMutablePointer<FFIWallet>
     private let ownsHandle: Bool
 
     // MARK: - Static Methods
@@ -406,7 +406,7 @@ public class Wallet {
 
         return count
     }
-    
+
     // MARK: - Key Derivation
 
     /// Get the extended public key for an account

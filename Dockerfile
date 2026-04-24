@@ -385,7 +385,6 @@ COPY --parents \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
@@ -409,6 +408,7 @@ COPY --parents \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -491,7 +491,6 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -514,6 +513,7 @@ COPY --parents \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts
@@ -612,7 +612,6 @@ COPY --parents \
     packages/token-history-contract \
     packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/dapi-grpc \
@@ -738,7 +737,6 @@ COPY --from=build-dashmate-helper /platform/packages/token-history-contract pack
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
 COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
@@ -841,7 +839,6 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -862,6 +859,7 @@ COPY --parents \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts

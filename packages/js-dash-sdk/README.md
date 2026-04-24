@@ -7,10 +7,34 @@
 
 Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
+> **No longer recommended for new projects.** For new projects, use [`@dashevo/evo-sdk`](../js-evo-sdk/README.md),
+> which is built on the Rust/WASM SDK and supports cryptographic proof verification.
+> This package is maintained internally for the platform test suite only.
+
+## SDK Comparison
+
+| Feature | `dash` (this package) | `@dashevo/evo-sdk` |
+| --- | --- | --- |
+| Proof verification | 🔴 Not supported — requires trusted nodes | 🟢 All queries verified |
+| Identities | 🟡 Basic — get, register, topUp, update, transfer, withdraw | 🟢 Full — 16+ methods with proof variants |
+| Documents | 🟡 Basic — create, broadcast, get | 🟢 Full — query, get, create, replace, delete, transfer, purchase, setPrice |
+| Data contracts | 🟢 Full - create, publish, update, get, history | 🟢 Full - fetch, getMany, history, publish, update |
+| DPNS / names | 🟡 Basic — register, resolve, search | 🟢 Full — register, resolve, search, availability check, homograph safety |
+| Tokens | 🔴 Not supported | 🟢 Full — mint, burn, transfer, freeze, unfreeze, purchase, claim, and more |
+| Voting | 🔴 Not supported | 🟢 Full |
+| Groups | 🔴 Not supported | 🟢 Full |
+| Epoch management | 🔴 Not supported | 🟢 Full |
+| System queries | 🔴 Not supported | 🟢 Full |
+| Platform addresses | 🔴 Not supported | 🟢 Full |
+| Wallet / key management | 🟢 Full SPV wallet via wallet-lib | 🟡 Key derivation utilities only (BIP44, WIF, signing) |
+| Module format | CommonJS + UMD bundle | ESM only |
+| Browser CDN | 🟢 unpkg (UMD) | 🟢 esm.sh (ESM) |
+| Node.js requirement | Any | >= 18.18 |
+| TypeScript | 🟢 | 🟢 |
+
 **Warning: This SDK should only be used in production when connected to trusted nodes. Although it
 provides easy access to Dash Platform without requiring a full node, it does not support Dash
-Platform’s proofs or verify synchronized blockchain data. Therefore, it is less secure than the
-[Rust SDK](../rs-sdk/), which requests proofs for all queried data.**
+Platform’s proofs or verify synchronized blockchain data.**
 
 Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/explanation-dapi) to use both the Dash Core network and Dash Platform on [supported networks](https://github.com/dashpay/platform/#supported-networks). The Dash Core network can be used to broadcast and receive payments. Dash Platform can be used to manage identities, register data contracts for applications, and submit or retrieve application data via documents.
 

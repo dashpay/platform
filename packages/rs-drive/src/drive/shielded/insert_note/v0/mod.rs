@@ -27,3 +27,25 @@ impl Drive {
         )])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::drive::Drive;
+
+    #[test]
+    fn empty_encrypted_note_still_produces_single_op() {
+        // Empty encrypted note payload - edge case - still produces one op.
+        let ops = Drive::insert_note_op_v0([0u8; 32], [0u8; 32], vec![])
+            .expect("should build op even for empty encrypted note");
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn oversized_encrypted_note_still_produces_single_op() {
+        // Oversized payload - insert_note_op_v0 itself has no size validation;
+        // this verifies the function unconditionally returns a single op.
+        let ops = Drive::insert_note_op_v0([1u8; 32], [2u8; 32], vec![0xAA; 10_000])
+            .expect("oversized payload builds op");
+        assert_eq!(ops.len(), 1);
+    }
+}

@@ -298,3 +298,411 @@ impl From<ChainLockConfig> for SignatureVerificationQuorumSetV0 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ChainLockConfig;
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore_rpc::json::QuorumType;
+
+    fn make_public_key(seed: u8) -> dpp::bls_signatures::PublicKey<Bls12381G2Impl> {
+        let mut key_bytes = [0u8; 32];
+        key_bytes[0] = seed;
+        key_bytes[31] = 1;
+        let sk =
+            BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes).expect("valid secret key");
+        sk.public_key()
+    }
+
+    fn make_verification_quorum(seed: u8, index: Option<u32>) -> VerificationQuorum {
+        VerificationQuorum {
+            index,
+            public_key: make_public_key(seed),
+        }
+    }
+
+    fn make_quorums(seeds: &[(u8, [u8; 32])]) -> Quorums<VerificationQuorum> {
+        seeds
+            .iter()
+            .map(|(seed, hash_bytes)| {
+                (
+                    QuorumHash::from_byte_array(*hash_bytes),
+                    make_verification_quorum(*seed, None),
+                )
+            })
+            .collect()
+    }
+
+    fn default_chain_lock_config() -> ChainLockConfig {
+        ChainLockConfig {
+            quorum_type: QuorumType::Llmq400_60,
+            quorum_size: 400,
+            quorum_window: 288,
+            quorum_active_signers: 4,
+            quorum_rotation: false,
+        }
+    }
+
+    // ---- Construction ----
+
+    #[test]
+    fn new_from_quorum_like_config() {
+        let config = default_chain_lock_config();
+        let qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        assert_eq!(qs.config().quorum_type, QuorumType::Llmq400_60);
+        assert_eq!(qs.config().active_signers, 4);
+        assert!(!qs.config().rotation);
+        assert_eq!(qs.config().window, 288);
+        assert!(qs.current_quorums().is_empty());
+        assert!(!qs.has_previous_past_quorums());
+    }
+
+    #[test]
+    fn from_chain_lock_config() {
+        let config = ChainLockConfig {
+            quorum_type: QuorumType::Llmq100_67,
+            quorum_size: 100,
+            quorum_window: 24,
+            quorum_active_signers: 24,
+            quorum_rotation: true,
+        };
+        let qs: SignatureVerificationQuorumSetV0 = config.into();
+
+        assert_eq!(qs.config().quorum_type, QuorumType::Llmq100_67);
+        assert_eq!(qs.config().active_signers, 24);
+        assert!(qs.config().rotation);
+        assert_eq!(qs.config().window, 24);
+    }
+
+    // ---- set_current_quorums / current_quorums ----
+
+    #[test]
+    fn set_and_get_current_quorums() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let quorums = make_quorums(&[(1, [1u8; 32]), (2, [2u8; 32])]);
+        qs.set_current_quorums(quorums);
+
+        assert_eq!(qs.current_quorums().len(), 2);
+    }
+
+    #[test]
+    fn current_quorums_mut_allows_insert() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let hash = QuorumHash::from_byte_array([10u8; 32]);
+        qs.current_quorums_mut()
+            .insert(hash, make_verification_quorum(10, None));
+
+        assert_eq!(qs.current_quorums().len(), 1);
+        assert!(qs.current_quorums().contains_key(&hash));
+    }
+
+    // ---- has_previous_past_quorums ----
+
+    #[test]
+    fn has_previous_past_quorums_initially_false() {
+        let config = default_chain_lock_config();
+        let qs = SignatureVerificationQuorumSetV0::new(&config);
+        assert!(!qs.has_previous_past_quorums());
+    }
+
+    // ---- set_previous_past_quorums ----
+
+    #[test]
+    fn set_previous_past_quorums_makes_has_previous_true() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let prev_quorums = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_previous_past_quorums(prev_quorums, 100, 105);
+
+        assert!(qs.has_previous_past_quorums());
+    }
+
+    #[test]
+    fn set_previous_past_quorums_tracks_previous_change_height() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        // First call: previous_change_height should be None because there was no prior previous
+        let q1 = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_previous_past_quorums(q1, 90, 100);
+
+        // Second call: previous_change_height should be Some(100) from the first call
+        let q2 = make_quorums(&[(2, [2u8; 32])]);
+        qs.set_previous_past_quorums(q2, 100, 110);
+
+        assert!(qs.has_previous_past_quorums());
+        // We verify indirectly via select_quorums behavior
+    }
+
+    // ---- replace_quorums ----
+
+    #[test]
+    fn replace_quorums_moves_current_to_previous() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+        assert!(!qs.has_previous_past_quorums());
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        assert!(qs.has_previous_past_quorums());
+        // Current quorums should be the replacement
+        assert_eq!(qs.current_quorums().len(), 1);
+        assert!(qs
+            .current_quorums()
+            .contains_key(&QuorumHash::from_byte_array([2u8; 32])));
+    }
+
+    #[test]
+    fn replace_quorums_twice_updates_previous_change_height() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let q1 = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(q1);
+
+        let q2 = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(q2, 90, 100);
+
+        let q3 = make_quorums(&[(3, [3u8; 32])]);
+        qs.replace_quorums(q3, 100, 110);
+
+        // After two replacements, current should be q3, previous should contain q2,
+        // and the previous_change_height inside previous should be Some(100).
+        assert_eq!(qs.current_quorums().len(), 1);
+        assert!(qs
+            .current_quorums()
+            .contains_key(&QuorumHash::from_byte_array([3u8; 32])));
+        assert!(qs.has_previous_past_quorums());
+    }
+
+    // ---- select_quorums ----
+
+    #[test]
+    fn select_quorums_no_previous_returns_current_only() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let current = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(current);
+
+        let iter = qs.select_quorums(20, 10);
+        assert_eq!(iter.len(), 1);
+        assert!(!iter.should_be_verifiable());
+    }
+
+    #[test]
+    fn select_quorums_verification_above_change_height_returns_current_and_verifiable() {
+        // Scenario from code comments:
+        //  ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height) ------ 106 (verification_height)
+        // signing_height must be > SIGN_OFFSET (8)
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        // signing_height=114, verification_height=106 >= change_quorum_height=105
+        let iter = qs.select_quorums(114, 106);
+        assert_eq!(iter.len(), 1);
+        assert!(iter.should_be_verifiable());
+    }
+
+    #[test]
+    fn select_quorums_verification_at_change_height_returns_current_and_verifiable() {
+        // verification_height == change_quorum_height
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        let iter = qs.select_quorums(113, 105);
+        assert_eq!(iter.len(), 1);
+        assert!(iter.should_be_verifiable());
+    }
+
+    #[test]
+    fn select_quorums_verification_below_previous_height_returns_previous() {
+        // Scenario:
+        // -------- 98 (verification_height) ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height)
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        // signing_height=106, verification_height=98 <= previous_quorum_height=100
+        let iter = qs.select_quorums(106, 98);
+        assert_eq!(iter.len(), 1);
+        // should_be_verifiable is false because previous_change_height is None
+        assert!(!iter.should_be_verifiable());
+    }
+
+    #[test]
+    fn select_quorums_verification_at_previous_height_returns_previous() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        // verification_height == previous_quorum_height
+        let iter = qs.select_quorums(108, 100);
+        assert_eq!(iter.len(), 1);
+        assert!(!iter.should_be_verifiable());
+    }
+
+    #[test]
+    fn select_quorums_verification_between_previous_and_change_returns_both() {
+        // Scenario:
+        //  ------- 100 (previous_quorum_height) ------ 104 (verification_height) -------105 (change_quorum_height)
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        // verification_height=104, between 100 and 105
+        let iter = qs.select_quorums(112, 104);
+        assert_eq!(iter.len(), 2);
+        assert!(!iter.should_be_verifiable());
+    }
+
+    #[test]
+    fn select_quorums_signing_at_or_below_offset_with_previous() {
+        // When signing_height <= SIGN_OFFSET, none of the first two branches match
+        // (both require signing_height > SIGN_OFFSET), so we fall to the else
+        // which pushes both current and previous.
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let initial = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(initial);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        // signing_height == SIGN_OFFSET (8), not > SIGN_OFFSET
+        let iter = qs.select_quorums(SIGN_OFFSET, 106);
+        assert_eq!(iter.len(), 2);
+    }
+
+    #[test]
+    fn select_quorums_verifiable_with_previous_change_height() {
+        // When there's a previous_change_height (from two replacements),
+        // should_be_verifiable depends on verification_height > previous_change_height.
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let q1 = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(q1);
+
+        // First replacement: creates previous with previous_change_height = None
+        let q2 = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(q2, 90, 100);
+
+        // Second replacement: creates previous with previous_change_height = Some(100)
+        let q3 = make_quorums(&[(3, [3u8; 32])]);
+        qs.replace_quorums(q3, 100, 110);
+
+        // Case: verification_height (95) <= previous_quorum_height (100),
+        // and 95 < previous_change_height (100), so NOT verifiable
+        let iter = qs.select_quorums(106, 95);
+        assert_eq!(iter.len(), 1); // previous quorums only
+        assert!(!iter.should_be_verifiable());
+
+        // Case: verification_height (101) > previous_change_height (100), so verifiable
+        // and 101 between previous_quorum_height(100) and change_quorum_height(110)
+        let iter2 = qs.select_quorums(112, 101);
+        assert_eq!(iter2.len(), 2); // both current and previous
+        assert!(iter2.should_be_verifiable());
+    }
+
+    // ---- SelectedQuorumSetIterator ----
+
+    #[test]
+    fn selected_quorum_set_iterator_len_and_is_empty() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let current = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(current);
+
+        let iter = qs.select_quorums(20, 10);
+        assert_eq!(iter.len(), 1);
+        assert!(!iter.is_empty());
+    }
+
+    #[test]
+    fn selected_quorum_set_iterator_iteration() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let current = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(current);
+
+        let replacement = make_quorums(&[(2, [2u8; 32])]);
+        qs.replace_quorums(replacement, 100, 105);
+
+        // Get both quorum sets by falling into the "between" branch
+        let iter = qs.select_quorums(112, 104);
+        let items: Vec<_> = iter.collect();
+        assert_eq!(items.len(), 2);
+        // Each item should have a reference to the config
+        for item in &items {
+            assert_eq!(item.config.quorum_type, QuorumType::Llmq400_60);
+        }
+    }
+
+    // ---- QuorumsWithConfig::choose_quorum ----
+
+    #[test]
+    fn quorums_with_config_choose_quorum_delegates() {
+        let config = default_chain_lock_config();
+        let mut qs = SignatureVerificationQuorumSetV0::new(&config);
+
+        let current = make_quorums(&[(1, [1u8; 32])]);
+        qs.set_current_quorums(current);
+
+        let mut iter = qs.select_quorums(20, 10);
+        let quorums_with_config = iter.next().unwrap();
+
+        let request_id = [0u8; 32];
+        let result = quorums_with_config.choose_quorum(&request_id);
+        assert!(result.is_some());
+    }
+
+    // ---- SIGN_OFFSET constant ----
+
+    #[test]
+    fn sign_offset_is_8() {
+        assert_eq!(SIGN_OFFSET, 8);
+    }
+}

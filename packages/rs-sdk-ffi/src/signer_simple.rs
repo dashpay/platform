@@ -6,6 +6,7 @@ use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use simple_signer::SingleKeySigner;
+use zeroize::Zeroizing;
 
 /// Create a signer from a private key
 ///
@@ -32,9 +33,9 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
         ));
     }
 
-    // Convert the pointer to an array
+    // Convert the pointer to an array (zeroized on drop to avoid key material lingering on stack)
     let key_slice = std::slice::from_raw_parts(private_key, 32);
-    let mut key_array: [u8; 32] = [0; 32];
+    let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(key_slice);
 
     // network won't matter here

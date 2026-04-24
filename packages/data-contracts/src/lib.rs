@@ -10,9 +10,6 @@ pub use dashpay_contract;
 #[cfg(feature = "dpns")]
 pub use dpns_contract;
 
-#[cfg(feature = "feature-flags")]
-pub use feature_flags_contract;
-
 #[cfg(feature = "keyword-search")]
 pub use keyword_search_contract;
 
@@ -36,6 +33,9 @@ pub use withdrawals_contract;
 pub enum SystemDataContract {
     Withdrawals = 0,
     MasternodeRewards = 1,
+    /// Reserved slot — the feature-flags contract was never deployed at genesis
+    /// and its implementation has been removed. The discriminant `2` is kept to
+    /// preserve the stable numbering of subsequent variants.
     FeatureFlags = 2,
     DPNS = 3,
     Dashpay = 4,
@@ -71,9 +71,9 @@ impl SystemDataContract {
                 34, 71, 147, 68, 99, 238, 176, 31, 247, 33, 149, 144, 149, 140,
             ],
 
-            #[cfg(feature = "feature-flags")]
-            SystemDataContract::FeatureFlags => feature_flags_contract::ID_BYTES,
-            #[cfg(not(feature = "feature-flags"))]
+            // Reserved: feature-flags contract was removed but the ID is kept for
+            // discriminant stability and to prevent reuse of a potentially meaningful
+            // Identifier on-chain.
             SystemDataContract::FeatureFlags => [
                 245, 172, 216, 200, 193, 110, 185, 172, 40, 110, 7, 132, 190, 86, 127, 80, 9, 244,
                 86, 26, 243, 212, 255, 2, 91, 7, 90, 243, 68, 55, 152, 34,
@@ -152,16 +152,9 @@ impl SystemDataContract {
                 Err(Error::ContractNotIncluded("masternode-rewards"))
             }
 
-            #[cfg(feature = "feature-flags")]
-            SystemDataContract::FeatureFlags => Ok(DataContractSource {
-                id_bytes: feature_flags_contract::ID_BYTES,
-                owner_id_bytes: feature_flags_contract::OWNER_ID_BYTES,
-                version: platform_version.system_data_contracts.feature_flags as u32,
-                definitions: feature_flags_contract::load_definitions(platform_version)?,
-                document_schemas: feature_flags_contract::load_documents_schemas(platform_version)?,
-            }),
-            #[cfg(not(feature = "feature-flags"))]
-            SystemDataContract::FeatureFlags => Err(Error::ContractNotIncluded("feature-flags")),
+            // Reserved: feature-flags contract was removed. The variant exists only
+            // to preserve discriminant stability; loading it is not supported.
+            SystemDataContract::FeatureFlags => Err(Error::ContractReserved("feature-flags")),
 
             #[cfg(feature = "dpns")]
             SystemDataContract::DPNS => Ok(DataContractSource {
