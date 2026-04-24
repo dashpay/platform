@@ -4,7 +4,7 @@
 // Stepped UI for spinning up a new Dash Platform identity. The
 // workflow chooses a funding source in two passes:
 //
-//   1. Source Wallet — one of the local HDWallet rows, or
+//   1. Source Wallet — one of the local PersistentWallet rows, or
 //      "Create without Wallet" for the advanced path where the caller
 //      supplies a raw asset-lock proof.
 //   2. When a wallet is chosen: either a PersistentAccount on that
@@ -38,7 +38,7 @@ struct CreateIdentityView: View {
 
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
-    @Query(sort: \HDWallet.createdAt) private var wallets: [HDWallet]
+    @Query(sort: \PersistentWallet.createdAt) private var wallets: [PersistentWallet]
 
     /// All persisted accounts across wallets. Filtered per-selection
     /// inside `accountOptions(for:)` so switching wallets doesn't
@@ -604,10 +604,10 @@ struct CreateIdentityView: View {
 
     // MARK: - Helpers
 
-    private func walletLabel(for wallet: HDWallet) -> String {
+    private func walletLabel(for wallet: PersistentWallet) -> String {
         let trimmed = wallet.label.trimmingCharacters(in: .whitespaces)
         let base = trimmed.isEmpty ? shortWalletId(wallet.walletId) : trimmed
-        return "\(base) (\(wallet.network.rawValue))"
+        return "\(base) (\(wallet.network))"
     }
 
     private func shortWalletId(_ walletId: Data) -> String {

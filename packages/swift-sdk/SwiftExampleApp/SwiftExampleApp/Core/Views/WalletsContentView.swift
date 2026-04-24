@@ -14,7 +14,7 @@ struct WalletsContentView: View {
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @Environment(\.modelContext) private var modelContext
-    @Query private var wallets: [HDWallet]
+    @Query private var wallets: [PersistentWallet]
     @State private var showingCreateWallet = false
 
     var body: some View {

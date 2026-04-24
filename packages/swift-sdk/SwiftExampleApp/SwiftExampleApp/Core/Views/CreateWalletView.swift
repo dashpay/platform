@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct CreateWalletView: View {
@@ -297,31 +298,21 @@ struct CreateWalletView: View {
                     }
                 }()
 
-                // Create exactly one wallet via the new PlatformWalletManager
-                // and persist a local HDWallet SwiftData record so existing
-                // views that @Query HDWallet continue to work. The walletId
-                // is what Rust returns; we stash the mnemonic-derived seed
-                // bytes here so the app can still surface "serialized" bytes
-                // if needed.
-                // TODO(platform-wallet): Replace HDWallet with PersistentWallet
-                // as the canonical SwiftData model for the UI.
-                let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonicPhrase)
+                // Create exactly one wallet via PlatformWalletManager.
+                // The Rust-side wallet creation emits
+                // `persistWalletMetadata` + `setWalletName`, which
+                // the persister callback translates into a
+                // `PersistentWallet` SwiftData row — no separate
+                // HDWallet mirror to maintain. We only have to
+                // patch `isImported` after-the-fact because that
+                // flag is UI-cosmetic and the persister doesn't
+                // know about it.
                 try await MainActor.run {
                     let managed = try walletManager.createWallet(
                         mnemonic: mnemonicPhrase,
                         network: platformNetwork,
                         name: walletLabel
                     )
-                    let hdWallet = HDWallet(
-                        walletId: managed.walletId,
-                        serializedWalletBytes: seed,
-                        label: walletLabel,
-                        network: primaryNetwork,
-                        isWatchOnly: false,
-                        isImported: showImportOption
-                    )
-                    modelContext.insert(hdWallet)
-                    try modelContext.save()
                     // Persist the mnemonic in the iOS Keychain keyed
                     // by walletId so multiple wallets coexist and the
                     // recovery flow can enumerate all of them on
@@ -336,6 +327,25 @@ struct CreateWalletView: View {
                         SDKLogger.error(
                             "Failed to persist mnemonic to keychain: \(error.localizedDescription)"
                         )
+                    }
+                    // Stamp the `isImported` flag on the
+                    // just-created PersistentWallet row. The
+                    // persister callback runs synchronously from
+                    // `walletManager.createWallet` via the
+                    // background context; SwiftData's
+                    // `autosaveEnabled = true` on that context
+                    // propagates the row into the main context
+                    // before this fetch runs. If the row somehow
+                    // isn't there yet, the flag stays `false`
+                    // (the default on `PersistentWallet`) — a
+                    // cosmetic miss, not a correctness issue.
+                    let walletIdMatch = managed.walletId
+                    let descriptor = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletIdMatch }
+                    )
+                    if let row = try? modelContext.fetch(descriptor).first {
+                        row.isImported = showImportOption
+                        try? modelContext.save()
                     }
                     dismiss()
                 }

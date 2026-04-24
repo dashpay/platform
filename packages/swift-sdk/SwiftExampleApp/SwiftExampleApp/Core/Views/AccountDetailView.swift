@@ -5,7 +5,7 @@ import SwiftData
 // MARK: - Account Detail View
 struct AccountDetailView: View {
     @EnvironmentObject var appUIState: AppUIState
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     let account: PersistentAccount
 
     @State private var errorMessage: String?
@@ -110,7 +110,7 @@ struct AccountDetailView: View {
                     Text("Network:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(wallet.network.rawValue.capitalized)
+                    Text(wallet.network.capitalized)
                         .fontWeight(.medium)
                 }
 

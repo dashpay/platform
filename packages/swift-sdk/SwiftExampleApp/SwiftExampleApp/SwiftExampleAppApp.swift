@@ -214,9 +214,12 @@ struct SwiftExampleAppApp: App {
     /// Initialize the shielded pool client. Best-effort — does nothing if no
     /// wallet is available yet.
     private func initializeShieldedService() {
-        // TODO(platform-wallet): Derive a ZIP32 spending key from the managed
-        // wallet instead of reusing the legacy HDWallet.serializedWalletBytes.
-        // For now the shielded service starts empty; it will be re-initialized
-        // once the user creates/loads a wallet via `createWallet(...)`.
+        // TODO(platform-wallet): Derive a ZIP32 spending key from
+        // the managed wallet. The legacy code path reused the
+        // seed bytes stashed on the (now-deleted) HDWallet row;
+        // the seed now lives only in the keychain, so a fresh
+        // derivation path is needed. For now the shielded
+        // service starts empty; it will be re-initialized once
+        // the user creates/loads a wallet via `createWallet(...)`.
     }
 }

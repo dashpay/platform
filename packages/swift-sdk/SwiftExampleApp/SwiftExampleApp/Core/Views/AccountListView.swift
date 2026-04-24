@@ -4,11 +4,11 @@ import SwiftData
 
 // MARK: - Account List View
 struct AccountListView: View {
-    let wallet: HDWallet
+    let wallet: PersistentWallet
 
     @Query private var accounts: [PersistentAccount]
 
-    init(wallet: HDWallet) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         _accounts = Query(

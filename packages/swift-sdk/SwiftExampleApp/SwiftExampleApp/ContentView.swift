@@ -18,9 +18,10 @@ struct ContentView: View {
 
     /// All locally persisted wallet records. Drives the
     /// orphan-mnemonic detection: a keychain mnemonic with zero
-    /// `HDWallet` rows means we landed in a reinstalled / container-
-    /// wiped state and should offer to re-derive or delete.
-    @Query private var hdWallets: [HDWallet]
+    /// matching `PersistentWallet` rows means we landed in a
+    /// reinstalled / container-wiped state and should offer to
+    /// re-derive or delete.
+    @Query private var persistentWallets: [PersistentWallet]
 
     @State private var selectedTab: RootTab = .sync
 
@@ -109,7 +110,7 @@ struct ContentView: View {
                 }
             }
             .onAppear { checkForOrphanMnemonic() }
-            .onChange(of: hdWallets.count) { _, _ in
+            .onChange(of: persistentWallets.count) { _, _ in
                 checkForOrphanMnemonic()
             }
             .alert("Recover Wallet?", isPresented: $showRecoverAlert) {
@@ -157,11 +158,12 @@ struct ContentView: View {
 
     // MARK: - Orphan mnemonic recovery
 
-    /// Detect keychain mnemonics with no matching `HDWallet` row and
-    /// kick off the recovery alert for each in turn. Runs once per
-    /// launch after the first tab becomes visible. Subsequent
-    /// `hdWallets` changes re-evaluate so newly-recovered wallets
-    /// drop out of the queue and we advance to the next orphan.
+    /// Detect keychain mnemonics with no matching `PersistentWallet`
+    /// row and kick off the recovery alert for each in turn. Runs
+    /// once per launch after the first tab becomes visible.
+    /// Subsequent `persistentWallets` changes re-evaluate so
+    /// newly-recovered wallets drop out of the queue and we advance
+    /// to the next orphan.
     @MainActor
     private func checkForOrphanMnemonic() {
         guard isInitialized, !orphanCheckDone else { return }
@@ -169,7 +171,7 @@ struct ContentView: View {
 
         let storage = WalletStorage()
         let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
-        let localIds = Set(hdWallets.map(\.walletId))
+        let localIds = Set(persistentWallets.map(\.walletId))
         let orphans = keychainIds.filter { !localIds.contains($0) }
 
         guard !orphans.isEmpty else { return }
@@ -245,27 +247,26 @@ struct ContentView: View {
 
         do {
             // Default the restored wallet to testnet with a
-            // recognizable label. The user can rename via the wallet
-            // list afterwards.
+            // recognizable label. The user can rename via the
+            // wallet list afterwards. The `PersistentWallet` row
+            // is created by the persister callback downstream of
+            // `walletManager.createWallet` — we only need to
+            // stamp the `isImported` flag here.
             let platformNetwork: PlatformNetwork = .testnet
-            let appNetwork: AppNetwork = .testnet
             let label = "Recovered Wallet"
-            let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonic)
             let managed = try walletManager.createWallet(
                 mnemonic: mnemonic,
                 network: platformNetwork,
                 name: label
             )
-            let hdWallet = HDWallet(
-                walletId: managed.walletId,
-                serializedWalletBytes: seed,
-                label: label,
-                network: appNetwork,
-                isWatchOnly: false,
-                isImported: true
+            let walletIdMatch = managed.walletId
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: #Predicate { $0.walletId == walletIdMatch }
             )
-            modelContext.insert(hdWallet)
-            try modelContext.save()
+            if let row = try? modelContext.fetch(descriptor).first {
+                row.isImported = true
+                try? modelContext.save()
+            }
             advanceToNextOrphan()
         } catch {
             recoveryError = "Failed to recreate wallet: \(error.localizedDescription)"

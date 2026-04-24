@@ -28,6 +28,17 @@ public final class PersistentWallet {
     public var balanceImmature: UInt64
     /// Locked balance in duffs.
     public var balanceLocked: UInt64
+    /// Wallet is spend-disabled — either bootstrapped watch-only
+    /// (no seed) or every account is watch-only. Surfaces as the
+    /// "👁 Watch-only" badge in the wallets list. Default `false`
+    /// keeps the schema migration trivial for rows that predate
+    /// this column.
+    public var isWatchOnly: Bool = false
+    /// User imported this wallet from an existing mnemonic (as
+    /// opposed to generating a fresh one). Cosmetic flag that
+    /// drives the "📥 Imported" badge; defaulted to `false` for
+    /// rows that predate the column.
+    public var isImported: Bool = false
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date
@@ -51,11 +62,15 @@ public final class PersistentWallet {
     public init(
         walletId: Data,
         network: String,
+        name: String? = nil,
         birthHeight: UInt32 = 0,
-        syncedHeight: UInt32 = 0
+        syncedHeight: UInt32 = 0,
+        isWatchOnly: Bool = false,
+        isImported: Bool = false
     ) {
         self.walletId = walletId
         self.network = network
+        self.name = name
         self.birthHeight = birthHeight
         self.syncedHeight = syncedHeight
         self.lastSynced = 0
@@ -63,10 +78,40 @@ public final class PersistentWallet {
         self.balanceUnconfirmed = 0
         self.balanceImmature = 0
         self.balanceLocked = 0
+        self.isWatchOnly = isWatchOnly
+        self.isImported = isImported
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.accounts = []
         self.identities = []
+    }
+}
+
+// MARK: - Display Helpers
+
+extension PersistentWallet {
+    /// User-facing short label. Prefers the persisted `name`;
+    /// falls back to `"Wallet <first-4-bytes-hex>…"` so the row
+    /// is still clickable when the user hasn't named it. Mirrors
+    /// the fallback logic the removed `HDWallet.label` gave
+    /// callers without them having to branch at every call site.
+    public var label: String {
+        if let name = name, !name.isEmpty {
+            return name
+        }
+        let hex = walletId.prefix(4)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return hex.isEmpty ? "Wallet" : "Wallet \(hex)…"
+    }
+
+    /// Parse the stored `network` raw string back into the app
+    /// enum. Falls back to `.testnet` when the string doesn't
+    /// match a known case — shouldn't happen in practice because
+    /// we write via `AppNetwork.rawValue`, but the fallback keeps
+    /// view code from having to handle the failure path.
+    public var networkEnum: AppNetwork {
+        AppNetwork(rawValue: network) ?? .testnet
     }
 }
 

@@ -25,7 +25,7 @@ struct SearchWalletsForIdentitiesView: View {
     /// count shown in the explainer copy. The actual scan walks
     /// `walletManager.wallets` because that's where the runtime
     /// `ManagedPlatformWallet` handles live.
-    @Query private var hdWallets: [HDWallet]
+    @Query private var hdWallets: [PersistentWallet]
 
     /// Toggle wired to the `startIndex` argument: `false` → resume
     /// from cache (nil); `true` → start from 0.
@@ -149,10 +149,11 @@ struct SearchWalletsForIdentitiesView: View {
         // Snapshot the map so we don't hold the publisher mid-iteration.
         let runtimeWallets = walletManager.wallets
 
-        // Join runtime wallets against the HDWallet table so we can
-        // render the user-visible label. A runtime wallet that's
-        // missing from SwiftData still gets scanned; we just fall
-        // back to its id fingerprint for the label.
+        // Join runtime wallets against the PersistentWallet table
+        // so we can render the user-visible label. A runtime
+        // wallet that's missing from SwiftData still gets
+        // scanned; we just fall back to its id fingerprint for
+        // the label.
         let labelsById = Dictionary(
             uniqueKeysWithValues: hdWallets.map { ($0.walletId, $0.label) }
         )

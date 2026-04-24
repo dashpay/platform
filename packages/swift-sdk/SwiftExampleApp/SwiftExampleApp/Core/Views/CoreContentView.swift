@@ -641,25 +641,14 @@ struct SyncProgressRow: View {
 // MARK: - Wallet Row View
 
 struct WalletRowView: View {
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     @EnvironmentObject var platformState: AppState
-
-    // Observe the persisted wallet record matching this HDWallet's wallet id.
-    @Query private var persistentWallets: [PersistentWallet]
-
-    init(wallet: HDWallet) {
-        self.wallet = wallet
-        let walletId = wallet.walletId
-        _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
-    }
-
-    private var record: PersistentWallet? { persistentWallets.first }
 
     /// Identities on this wallet — via the SwiftData relationship.
     /// The wallet↔identity relationship is the canonical source
     /// now; no need to filter `appState.identities` by walletId.
     private var identitiesForWallet: [PersistentIdentity] {
-        record?.identities ?? []
+        wallet.identities
     }
 
     private var platformBalance: UInt64 {
@@ -667,9 +656,8 @@ struct WalletRowView: View {
     }
 
     private var totalCoreBalance: UInt64 {
-        guard let r = record else { return 0 }
-        return r.balanceConfirmed + r.balanceUnconfirmed
-            + r.balanceImmature + r.balanceLocked
+        wallet.balanceConfirmed + wallet.balanceUnconfirmed
+            + wallet.balanceImmature + wallet.balanceLocked
     }
 
     private var walletIdShort: String {
@@ -682,9 +670,8 @@ struct WalletRowView: View {
     }
 
     private var lastSyncedText: String {
-        guard let lastSynced = record?.lastSynced, lastSynced > 0 else {
-            return "never synced"
-        }
+        let lastSynced = wallet.lastSynced
+        guard lastSynced > 0 else { return "never synced" }
         let date = Date(timeIntervalSince1970: TimeInterval(lastSynced))
         return Self.relativeFormatter.localizedString(
             for: date,
@@ -711,19 +698,18 @@ struct WalletRowView: View {
     }
 
     private func balanceBreakdown() -> String? {
-        guard let r = record else { return nil }
         var parts: [String] = []
-        if r.balanceConfirmed > 0 {
-            parts.append("\(formatBalance(r.balanceConfirmed)) confirmed")
+        if wallet.balanceConfirmed > 0 {
+            parts.append("\(formatBalance(wallet.balanceConfirmed)) confirmed")
         }
-        if r.balanceUnconfirmed > 0 {
-            parts.append("\(formatBalance(r.balanceUnconfirmed)) unconfirmed")
+        if wallet.balanceUnconfirmed > 0 {
+            parts.append("\(formatBalance(wallet.balanceUnconfirmed)) unconfirmed")
         }
-        if r.balanceImmature > 0 {
-            parts.append("\(formatBalance(r.balanceImmature)) immature")
+        if wallet.balanceImmature > 0 {
+            parts.append("\(formatBalance(wallet.balanceImmature)) immature")
         }
-        if r.balanceLocked > 0 {
-            parts.append("\(formatBalance(r.balanceLocked)) locked")
+        if wallet.balanceLocked > 0 {
+            parts.append("\(formatBalance(wallet.balanceLocked)) locked")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -772,7 +758,7 @@ struct WalletRowView: View {
             WalletInfoRow(
                 icon: "network",
                 iconColor: .blue,
-                text: "\(wallet.network.rawValue.capitalized) • Created "
+                text: "\(wallet.network.capitalized) • Created "
                     + Self.dateFormatter.string(from: wallet.createdAt)
             )
 
@@ -790,7 +776,7 @@ struct WalletRowView: View {
                 icon: "square.stack.3d.up",
                 iconColor: .purple,
                 text: {
-                    let accounts = record?.accounts.count ?? 0
+                    let accounts = wallet.accounts.count
                     let ids = identitiesForWallet.count
                     let acctWord = accounts == 1 ? "account" : "accounts"
                     let idWord = ids == 1 ? "identity" : "identities"
@@ -803,7 +789,7 @@ struct WalletRowView: View {
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .indigo,
                 text: {
-                    let height = record?.syncedHeight ?? 0
+                    let height = wallet.syncedHeight
                     if height == 0 {
                         return "Not yet synced"
                     }

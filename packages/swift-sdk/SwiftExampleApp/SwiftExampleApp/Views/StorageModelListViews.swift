@@ -82,7 +82,7 @@ struct PublicKeyStorageListView: View {
     @Query(sort: \PersistentPublicKey.createdAt, order: .reverse)
     private var allKeys: [PersistentPublicKey]
 
-    @Query private var hdWallets: [HDWallet]
+    @Query private var hdWallets: [PersistentWallet]
 
     var body: some View {
         List {

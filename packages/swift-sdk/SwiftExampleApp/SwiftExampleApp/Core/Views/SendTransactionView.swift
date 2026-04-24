@@ -7,18 +7,15 @@ struct SendTransactionView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
-    let wallet: HDWallet
+    let wallet: PersistentWallet
 
     @StateObject private var viewModel: SendViewModel
 
     @Environment(\.modelContext) private var modelContext
-    @Query private var persistentWallets: [PersistentWallet]
 
-    init(wallet: HDWallet) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
-        _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network))
-        let walletId = wallet.walletId
-        _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
+        _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.networkEnum))
     }
 
     var body: some View {
@@ -112,11 +109,11 @@ struct SendTransactionView: View {
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
-                            // HDWallet we were handed, not the
-                            // "active" manager slot — the Rust
-                            // manager holds all wallets and this
-                            // view's `wallet` may not be the one
-                            // that was last created.
+                            // `PersistentWallet` we were handed,
+                            // not the "active" manager slot —
+                            // the Rust manager holds all wallets
+                            // and this view's `wallet` may not
+                            // be the one that was last created.
                             let coreWallet = try? walletManager
                                 .wallet(for: wallet.walletId)?
                                 .coreWallet()
@@ -165,7 +162,7 @@ struct SendTransactionView: View {
     // MARK: - Computed
 
     private var coreBalance: UInt64 {
-        persistentWallets.first?.balanceConfirmed ?? 0
+        wallet.balanceConfirmed
     }
 
     private var shieldedBalance: UInt64 {
@@ -173,8 +170,7 @@ struct SendTransactionView: View {
     }
 
     private var platformBalance: UInt64 {
-        (persistentWallets.first?.identities ?? [])
-            .reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
+        wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
     }
 
     private var availableSources: [FundSource] {

@@ -9,7 +9,7 @@ struct WalletDetailView: View {
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
     @Environment(\.dismiss) private var dismiss
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
@@ -27,7 +27,7 @@ struct WalletDetailView: View {
     // count them — O(N) main-thread work on every render.
     @Query private var walletTransactions: [PersistentTransaction]
 
-    init(wallet: HDWallet) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         var descriptor = FetchDescriptor<PersistentTransaction>(
@@ -169,7 +169,7 @@ struct WalletDetailView: View {
 struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     var onWalletDeleted: () -> Void = {}
 
     @State private var editedName: String = ""
@@ -194,7 +194,7 @@ struct WalletInfoView: View {
     // Account counts come from SwiftData now.
     @Query private var accounts: [PersistentAccount]
 
-    init(wallet: HDWallet, onWalletDeleted: @escaping () -> Void = {}) {
+    init(wallet: PersistentWallet, onWalletDeleted: @escaping () -> Void = {}) {
         self.wallet = wallet
         self.onWalletDeleted = onWalletDeleted
         let walletId = wallet.walletId
@@ -476,7 +476,7 @@ struct WalletInfoView: View {
     }
 
     private func loadNetworkStates() {
-        switch wallet.network {
+        switch wallet.networkEnum {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
@@ -496,7 +496,10 @@ struct WalletInfoView: View {
     }
 
     private func saveWalletName() {
-        wallet.label = editedName
+        // `label` is a computed fallback; the writable backing
+        // field is `name`. Empty-string means "unnamed"; the
+        // computed `label` then falls back to the hex fingerprint.
+        wallet.name = editedName.isEmpty ? nil : editedName
         do {
             try modelContext.save()
             isEditingName = false
@@ -525,23 +528,15 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
-        // Dismiss views FIRST to prevent UI from accessing deleted relationships
-        // and then delete both the HDWallet and any persistent wallet records.
+        // Dismiss views FIRST to prevent UI from accessing deleted
+        // relationships, then delete the `PersistentWallet` row.
+        // Cascade-delete rules on `accounts` / `identities` null out
+        // or cascade the children automatically.
         await MainActor.run {
             dismiss()
             onWalletDeleted()
         }
 
-        // Remove PersistentWallet cascade-records matching walletId.
-        let walletId = wallet.walletId
-        let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
-        )
-        if let persisted = try? modelContext.fetch(descriptor) {
-            for record in persisted {
-                modelContext.delete(record)
-            }
-        }
         modelContext.delete(wallet)
         try? modelContext.save()
         // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
@@ -550,12 +545,11 @@ struct WalletInfoView: View {
 }
 
 struct BalanceCardView: View {
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
 
-    @Query private var persistentWallets: [PersistentWallet]
     /// Per-wallet platform-address balance rows. SwiftData drives
     /// the sum directly so every wallet's card reflects its own
     /// funds — the previous code read
@@ -570,11 +564,10 @@ struct BalanceCardView: View {
     /// distinguish "synced with zero balance" from "never synced".
     @Query private var syncStates: [PersistentSyncState]
 
-    init(wallet: HDWallet) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        let networkName = wallet.network.rawValue
-        _persistentWallets = Query(filter: #Predicate<PersistentWallet> { $0.walletId == walletId })
+        let networkName = wallet.network
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
         )
@@ -584,11 +577,11 @@ struct BalanceCardView: View {
     }
 
     private var confirmedBalance: UInt64 {
-        persistentWallets.first?.balanceConfirmed ?? 0
+        wallet.balanceConfirmed
     }
 
     private var unconfirmedBalance: UInt64 {
-        persistentWallets.first?.balanceUnconfirmed ?? 0
+        wallet.balanceUnconfirmed
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
@@ -603,10 +596,9 @@ struct BalanceCardView: View {
         // identities (via the SwiftData relationship). Pre-BLAST-
         // sync state shows approximate credit balance aggregated
         // from the on-chain identities we know about.
-        return (persistentWallets.first?.identities ?? [])
-            .reduce(UInt64(0)) { sum, identity in
-                sum + UInt64(bitPattern: identity.balance)
-            }
+        return wallet.identities.reduce(UInt64(0)) { sum, identity in
+            sum + UInt64(bitPattern: identity.balance)
+        }
     }
 
     var body: some View {

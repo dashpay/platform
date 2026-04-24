@@ -14,7 +14,7 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
-    let wallet: HDWallet
+    let wallet: PersistentWallet
 
     /// All persisted accounts across wallets. Filtered down to this
     /// view's wallet + primary BIP44 account inside

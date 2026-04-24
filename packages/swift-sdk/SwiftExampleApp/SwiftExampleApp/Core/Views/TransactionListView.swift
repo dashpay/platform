@@ -3,12 +3,12 @@ import SwiftData
 import SwiftDashSDK
 
 struct TransactionListView: View {
-    let wallet: HDWallet
+    let wallet: PersistentWallet
 
     @Query private var transactions: [PersistentTransaction]
     @State private var selectedTransaction: PersistentTransaction?
 
-    init(wallet: HDWallet) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         // Use the denormalized `PersistentTransaction.walletId`

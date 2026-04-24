@@ -160,7 +160,7 @@ class SendViewModel: ObservableObject {
         sdk: SDK,
         shieldedService: ShieldedService,
         platformState: AppState,
-        wallet: HDWallet,
+        wallet: PersistentWallet,
         coreWallet: ManagedCoreWallet?,
         modelContext: ModelContext
     ) async {
@@ -198,7 +198,7 @@ class SendViewModel: ObservableObject {
                 // the UInt64 DPP credits), so we compare against the
                 // same bit-pattern cast of the requested amount.
                 let walletId = wallet.walletId
-                let networkRaw = wallet.network.rawValue
+                let networkRaw = wallet.network
                 let amountThreshold = Int64(bitPattern: amount)
                 let descriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate<PersistentIdentity> { identity in
