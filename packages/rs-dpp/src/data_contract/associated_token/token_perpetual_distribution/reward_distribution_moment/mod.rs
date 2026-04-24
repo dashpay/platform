@@ -681,4 +681,534 @@ mod tests {
         let result = start.steps_till(&end, &step, true, true).unwrap();
         assert_eq!(result, 3);
     }
+
+    // ----- to_u64 / From<RewardDistributionMoment> -----
+
+    #[test]
+    fn test_to_u64_variants() {
+        assert_eq!(RewardDistributionMoment::BlockBasedMoment(0).to_u64(), 0);
+        assert_eq!(
+            RewardDistributionMoment::BlockBasedMoment(u64::MAX).to_u64(),
+            u64::MAX
+        );
+        assert_eq!(
+            RewardDistributionMoment::TimeBasedMoment(1_234_567_890).to_u64(),
+            1_234_567_890
+        );
+        assert_eq!(
+            RewardDistributionMoment::EpochBasedMoment(u16::MAX).to_u64(),
+            u16::MAX as u64
+        );
+    }
+
+    #[test]
+    fn test_from_moment_into_u64() {
+        let v: u64 = RewardDistributionMoment::EpochBasedMoment(42).into();
+        assert_eq!(v, 42);
+    }
+
+    // ----- same_type -----
+
+    #[test]
+    fn test_same_type() {
+        let b = RewardDistributionMoment::BlockBasedMoment(1);
+        let b2 = RewardDistributionMoment::BlockBasedMoment(99);
+        let t = RewardDistributionMoment::TimeBasedMoment(1);
+        let e = RewardDistributionMoment::EpochBasedMoment(1);
+
+        assert!(b.same_type(&b2));
+        assert!(!b.same_type(&t));
+        assert!(!b.same_type(&e));
+        assert!(!t.same_type(&e));
+        assert!(t.same_type(&RewardDistributionMoment::TimeBasedMoment(2)));
+        assert!(e.same_type(&RewardDistributionMoment::EpochBasedMoment(2)));
+    }
+
+    // ----- cycle_start -----
+
+    #[test]
+    fn test_cycle_start_block_aligned() {
+        let start = RewardDistributionMoment::BlockBasedMoment(100);
+        let step = RewardDistributionMoment::BlockBasedMoment(10);
+        let result = start.cycle_start(step).unwrap();
+        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(100));
+    }
+
+    #[test]
+    fn test_cycle_start_block_unaligned() {
+        let start = RewardDistributionMoment::BlockBasedMoment(107);
+        let step = RewardDistributionMoment::BlockBasedMoment(10);
+        let result = start.cycle_start(step).unwrap();
+        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(100));
+    }
+
+    #[test]
+    fn test_cycle_start_time_unaligned() {
+        let start = RewardDistributionMoment::TimeBasedMoment(98_765);
+        let step = RewardDistributionMoment::TimeBasedMoment(1_000);
+        let result = start.cycle_start(step).unwrap();
+        assert_eq!(result, RewardDistributionMoment::TimeBasedMoment(98_000));
+    }
+
+    #[test]
+    fn test_cycle_start_epoch_unaligned() {
+        let start = RewardDistributionMoment::EpochBasedMoment(17);
+        let step = RewardDistributionMoment::EpochBasedMoment(5);
+        let result = start.cycle_start(step).unwrap();
+        assert_eq!(result, RewardDistributionMoment::EpochBasedMoment(15));
+    }
+
+    #[test]
+    fn test_cycle_start_zero_step_block() {
+        let start = RewardDistributionMoment::BlockBasedMoment(100);
+        let step = RewardDistributionMoment::BlockBasedMoment(0);
+        let result = start.cycle_start(step);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::InvalidDistributionStep(_))
+        ));
+    }
+
+    #[test]
+    fn test_cycle_start_zero_step_time() {
+        let start = RewardDistributionMoment::TimeBasedMoment(100);
+        let step = RewardDistributionMoment::TimeBasedMoment(0);
+        let result = start.cycle_start(step);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::InvalidDistributionStep(_))
+        ));
+    }
+
+    #[test]
+    fn test_cycle_start_zero_step_epoch() {
+        let start = RewardDistributionMoment::EpochBasedMoment(100);
+        let step = RewardDistributionMoment::EpochBasedMoment(0);
+        let result = start.cycle_start(step);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::InvalidDistributionStep(_))
+        ));
+    }
+
+    #[test]
+    fn test_cycle_start_type_mismatch() {
+        let start = RewardDistributionMoment::BlockBasedMoment(100);
+        let step = RewardDistributionMoment::TimeBasedMoment(10);
+        let result = start.cycle_start(step);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::AddingDifferentTypes(_))
+        ));
+    }
+
+    // ----- Add<u64> -----
+
+    #[test]
+    fn test_add_u64_block() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let r = (a + 50).unwrap();
+        assert_eq!(r, RewardDistributionMoment::BlockBasedMoment(150));
+    }
+
+    #[test]
+    fn test_add_u64_block_overflow() {
+        let a = RewardDistributionMoment::BlockBasedMoment(u64::MAX);
+        let r = a + 1;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_add_u64_time() {
+        let a = RewardDistributionMoment::TimeBasedMoment(500);
+        let r = (a + 100).unwrap();
+        assert_eq!(r, RewardDistributionMoment::TimeBasedMoment(600));
+    }
+
+    #[test]
+    fn test_add_u64_time_overflow() {
+        let a = RewardDistributionMoment::TimeBasedMoment(u64::MAX);
+        let r = a + 1;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_add_u64_epoch() {
+        let a = RewardDistributionMoment::EpochBasedMoment(100);
+        let r = (a + 5).unwrap();
+        assert_eq!(r, RewardDistributionMoment::EpochBasedMoment(105));
+    }
+
+    #[test]
+    fn test_add_u64_epoch_rhs_exceeds_u16_max() {
+        let a = RewardDistributionMoment::EpochBasedMoment(0);
+        let rhs = u16::MAX as u64 + 1;
+        let r = a + rhs;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_add_u64_epoch_overflow_u16() {
+        let a = RewardDistributionMoment::EpochBasedMoment(u16::MAX);
+        let r = a + 1;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    // ----- Add<Self> -----
+
+    #[test]
+    fn test_add_self_block() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let b = RewardDistributionMoment::BlockBasedMoment(50);
+        let r = (a + b).unwrap();
+        assert_eq!(r, RewardDistributionMoment::BlockBasedMoment(150));
+    }
+
+    #[test]
+    fn test_add_self_block_overflow() {
+        let a = RewardDistributionMoment::BlockBasedMoment(u64::MAX);
+        let b = RewardDistributionMoment::BlockBasedMoment(1);
+        let r = a + b;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_add_self_time_overflow() {
+        let a = RewardDistributionMoment::TimeBasedMoment(u64::MAX);
+        let b = RewardDistributionMoment::TimeBasedMoment(100);
+        let r = a + b;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_add_self_epoch_overflow() {
+        let a = RewardDistributionMoment::EpochBasedMoment(u16::MAX);
+        let b = RewardDistributionMoment::EpochBasedMoment(1);
+        let r = a + b;
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_add_self_type_mismatch() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let b = RewardDistributionMoment::EpochBasedMoment(1);
+        let r = a + b;
+        assert!(matches!(r, Err(ProtocolError::AddingDifferentTypes(_))));
+    }
+
+    // ----- Div<u64> -----
+
+    #[test]
+    fn test_div_u64_zero_rhs_block() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let r = a / 0u64;
+        assert!(matches!(r, Err(ProtocolError::DivideByZero(_))));
+    }
+
+    #[test]
+    fn test_div_u64_zero_rhs_time() {
+        let a = RewardDistributionMoment::TimeBasedMoment(100);
+        let r = a / 0u64;
+        assert!(matches!(r, Err(ProtocolError::DivideByZero(_))));
+    }
+
+    #[test]
+    fn test_div_u64_zero_rhs_epoch() {
+        let a = RewardDistributionMoment::EpochBasedMoment(100);
+        let r = a / 0u64;
+        assert!(matches!(r, Err(ProtocolError::DivideByZero(_))));
+    }
+
+    #[test]
+    fn test_div_u64_epoch_rhs_over_u16() {
+        let a = RewardDistributionMoment::EpochBasedMoment(100);
+        let r = a / (u16::MAX as u64 + 1);
+        assert!(matches!(r, Err(ProtocolError::Overflow(_))));
+    }
+
+    #[test]
+    fn test_div_u64_block_ok() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let r = (a / 4u64).unwrap();
+        assert_eq!(r, RewardDistributionMoment::BlockBasedMoment(25));
+    }
+
+    #[test]
+    fn test_div_u64_time_ok() {
+        let a = RewardDistributionMoment::TimeBasedMoment(1000);
+        let r = (a / 4u64).unwrap();
+        assert_eq!(r, RewardDistributionMoment::TimeBasedMoment(250));
+    }
+
+    #[test]
+    fn test_div_u64_epoch_ok() {
+        let a = RewardDistributionMoment::EpochBasedMoment(100);
+        let r = (a / 4u64).unwrap();
+        assert_eq!(r, RewardDistributionMoment::EpochBasedMoment(25));
+    }
+
+    // ----- Div<Self> -----
+
+    #[test]
+    fn test_div_self_block_ok() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let b = RewardDistributionMoment::BlockBasedMoment(4);
+        let r = (a / b).unwrap();
+        assert_eq!(r, RewardDistributionMoment::BlockBasedMoment(25));
+    }
+
+    #[test]
+    fn test_div_self_block_zero() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let b = RewardDistributionMoment::BlockBasedMoment(0);
+        let r = a / b;
+        assert!(matches!(r, Err(ProtocolError::DivideByZero(_))));
+    }
+
+    #[test]
+    fn test_div_self_time_zero() {
+        let a = RewardDistributionMoment::TimeBasedMoment(100);
+        let b = RewardDistributionMoment::TimeBasedMoment(0);
+        let r = a / b;
+        assert!(matches!(r, Err(ProtocolError::DivideByZero(_))));
+    }
+
+    #[test]
+    fn test_div_self_epoch_zero() {
+        let a = RewardDistributionMoment::EpochBasedMoment(100);
+        let b = RewardDistributionMoment::EpochBasedMoment(0);
+        let r = a / b;
+        assert!(matches!(r, Err(ProtocolError::DivideByZero(_))));
+    }
+
+    #[test]
+    fn test_div_self_type_mismatch() {
+        let a = RewardDistributionMoment::BlockBasedMoment(100);
+        let b = RewardDistributionMoment::TimeBasedMoment(10);
+        let r = a / b;
+        assert!(matches!(r, Err(ProtocolError::AddingDifferentTypes(_))));
+    }
+
+    // ----- PartialEq against scalar types -----
+
+    #[test]
+    fn test_partial_eq_u64() {
+        let v = RewardDistributionMoment::BlockBasedMoment(42);
+        assert!(v == 42u64);
+        assert!(v == &42u64);
+        assert!(!(v == 99u64));
+
+        let t = RewardDistributionMoment::TimeBasedMoment(42);
+        assert!(t == 42u64);
+
+        let e = RewardDistributionMoment::EpochBasedMoment(42);
+        assert!(e == 42u64);
+        // Out-of-u16 range: should return false
+        assert!(!(e == (u16::MAX as u64 + 1)));
+    }
+
+    #[test]
+    fn test_partial_eq_u32() {
+        let v = RewardDistributionMoment::BlockBasedMoment(42);
+        assert!(v == 42u32);
+        assert!(v == &42u32);
+        assert!(!(v == 99u32));
+
+        let t = RewardDistributionMoment::TimeBasedMoment(42);
+        assert!(t == 42u32);
+
+        let e = RewardDistributionMoment::EpochBasedMoment(42);
+        assert!(e == 42u32);
+    }
+
+    #[test]
+    fn test_partial_eq_u16() {
+        let v = RewardDistributionMoment::BlockBasedMoment(42);
+        assert!(v == 42u16);
+        assert!(v == &42u16);
+
+        let t = RewardDistributionMoment::TimeBasedMoment(42);
+        assert!(t == 42u16);
+
+        let e = RewardDistributionMoment::EpochBasedMoment(42);
+        assert!(e == 42u16);
+        assert!(!(e == 99u16));
+    }
+
+    #[test]
+    fn test_partial_eq_usize() {
+        let v = RewardDistributionMoment::BlockBasedMoment(42);
+        assert!(v == 42usize);
+        assert!(v == &42usize);
+
+        let t = RewardDistributionMoment::TimeBasedMoment(42);
+        assert!(t == 42usize);
+
+        let e = RewardDistributionMoment::EpochBasedMoment(42);
+        assert!(e == 42usize);
+    }
+
+    // ----- to_be_bytes_vec -----
+
+    #[test]
+    fn test_to_be_bytes_vec_block() {
+        let v = RewardDistributionMoment::BlockBasedMoment(0x0102_0304_0506_0708);
+        assert_eq!(
+            v.to_be_bytes_vec(),
+            vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        );
+    }
+
+    #[test]
+    fn test_to_be_bytes_vec_time() {
+        let v = RewardDistributionMoment::TimeBasedMoment(0x0000_0000_0000_FFFF);
+        assert_eq!(
+            v.to_be_bytes_vec(),
+            vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF]
+        );
+    }
+
+    #[test]
+    fn test_to_be_bytes_vec_epoch() {
+        let v = RewardDistributionMoment::EpochBasedMoment(0x0102);
+        assert_eq!(v.to_be_bytes_vec(), vec![0x01, 0x02]);
+    }
+
+    // ----- Display -----
+
+    #[test]
+    fn test_display_impl() {
+        assert_eq!(
+            format!("{}", RewardDistributionMoment::BlockBasedMoment(5)),
+            "BlockBasedMoment(5)"
+        );
+        assert_eq!(
+            format!("{}", RewardDistributionMoment::TimeBasedMoment(99)),
+            "TimeBasedMoment(99)"
+        );
+        assert_eq!(
+            format!("{}", RewardDistributionMoment::EpochBasedMoment(7)),
+            "EpochBasedMoment(7)"
+        );
+    }
+
+    // ----- from_block_info -----
+
+    #[test]
+    fn test_from_block_info_block_based() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+        let block_info = BlockInfo {
+            height: 123,
+            time_ms: 456_000,
+            core_height: 0,
+            epoch: crate::block::epoch::Epoch::new(7).unwrap(),
+        };
+        let dt = RewardDistributionType::BlockBasedDistribution {
+            interval: 100,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert_eq!(
+            RewardDistributionMoment::from_block_info(&block_info, &dt),
+            RewardDistributionMoment::BlockBasedMoment(123)
+        );
+    }
+
+    #[test]
+    fn test_from_block_info_time_based() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+        let block_info = BlockInfo {
+            height: 123,
+            time_ms: 456_000,
+            core_height: 0,
+            epoch: crate::block::epoch::Epoch::new(7).unwrap(),
+        };
+        let dt = RewardDistributionType::TimeBasedDistribution {
+            interval: 60_000,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert_eq!(
+            RewardDistributionMoment::from_block_info(&block_info, &dt),
+            RewardDistributionMoment::TimeBasedMoment(456_000)
+        );
+    }
+
+    #[test]
+    fn test_from_block_info_epoch_based() {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+        let block_info = BlockInfo {
+            height: 123,
+            time_ms: 456_000,
+            core_height: 0,
+            epoch: crate::block::epoch::Epoch::new(7).unwrap(),
+        };
+        let dt = RewardDistributionType::EpochBasedDistribution {
+            interval: 1,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        assert_eq!(
+            RewardDistributionMoment::from_block_info(&block_info, &dt),
+            RewardDistributionMoment::EpochBasedMoment(7)
+        );
+    }
+
+    // ----- steps_till more edge cases -----
+
+    #[test]
+    fn test_steps_till_type_mismatch_time_vs_epoch() {
+        let start = RewardDistributionMoment::TimeBasedMoment(10);
+        let end = RewardDistributionMoment::EpochBasedMoment(50);
+        let step = RewardDistributionMoment::TimeBasedMoment(5);
+
+        let result = start.steps_till(&end, &step, true, true);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::AddingDifferentTypes(_))
+        ));
+    }
+
+    #[test]
+    fn test_steps_till_zero_step_time() {
+        let start = RewardDistributionMoment::TimeBasedMoment(10);
+        let end = RewardDistributionMoment::TimeBasedMoment(50);
+        let step = RewardDistributionMoment::TimeBasedMoment(0);
+
+        let result = start.steps_till(&end, &step, true, true);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::InvalidDistributionStep(_))
+        ));
+    }
+
+    #[test]
+    fn test_steps_till_zero_step_epoch() {
+        let start = RewardDistributionMoment::EpochBasedMoment(1);
+        let end = RewardDistributionMoment::EpochBasedMoment(5);
+        let step = RewardDistributionMoment::EpochBasedMoment(0);
+
+        let result = start.steps_till(&end, &step, true, true);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::InvalidDistributionStep(_))
+        ));
+    }
+
+    #[test]
+    fn test_steps_till_start_equals_end() {
+        let start = RewardDistributionMoment::BlockBasedMoment(50);
+        let end = RewardDistributionMoment::BlockBasedMoment(50);
+        let step = RewardDistributionMoment::BlockBasedMoment(10);
+
+        let result = start.steps_till(&end, &step, true, true).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_steps_till_epoch_start_greater_than_end() {
+        let start = RewardDistributionMoment::EpochBasedMoment(10);
+        let end = RewardDistributionMoment::EpochBasedMoment(5);
+        let step = RewardDistributionMoment::EpochBasedMoment(1);
+
+        let result = start.steps_till(&end, &step, true, true).unwrap();
+        assert_eq!(result, 0);
+    }
 }

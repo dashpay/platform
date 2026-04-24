@@ -248,4 +248,129 @@ mod test {
         let obj = t.to_cleaned_object(false).expect("should work");
         assert!(obj.is_map());
     }
+
+    fn chain_proof() -> AssetLockProof {
+        use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        AssetLockProof::Chain(ChainAssetLockProof::new(42, [3u8; 36]))
+    }
+
+    #[test]
+    fn try_from_inner_populates_identity_id_from_asset_lock_proof() {
+        let proof = chain_proof();
+        let inner = IdentityCreateTransitionV0Inner {
+            public_keys: vec![],
+            asset_lock_proof: proof.clone(),
+            user_fee_increase: 0,
+            signature: BinaryData::new(vec![]),
+        };
+        let t = IdentityCreateTransitionV0::try_from(inner).expect("try_from");
+        let expected = proof.create_identifier().expect("create_identifier");
+        assert_eq!(t.identity_id, expected);
+    }
+
+    #[test]
+    fn asset_lock_proved_sets_identity_id_and_proof() {
+        let mut t = IdentityCreateTransitionV0 {
+            public_keys: vec![],
+            asset_lock_proof: chain_proof(),
+            user_fee_increase: 0,
+            signature: [0u8; 65].to_vec().into(),
+            identity_id: Identifier::random(),
+        };
+        let original_identity_id = t.identity_id;
+        // Use a different chain proof (different outpoint) to produce a new identity_id.
+        use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        let proof = AssetLockProof::Chain(ChainAssetLockProof::new(99, [7u8; 36]));
+        t.set_asset_lock_proof(proof.clone())
+            .expect("set_asset_lock_proof");
+        let expected_id = proof.create_identifier().expect("create_identifier");
+        assert_eq!(t.identity_id, expected_id);
+        assert_ne!(original_identity_id, t.identity_id);
+        assert_eq!(t.asset_lock_proof(), &proof);
+    }
+
+    #[test]
+    fn accessors_manipulate_public_keys() {
+        use crate::identity::{KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+        let mut t = make_create_v0();
+        assert!(t.public_keys().is_empty());
+
+        let key = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        t.set_public_keys(vec![key.clone()]);
+        assert_eq!(t.public_keys().len(), 1);
+
+        // Access mutable
+        let key2 = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        let mut more = vec![key2.clone()];
+        t.add_public_keys(&mut more);
+        assert_eq!(t.public_keys().len(), 2);
+        assert!(more.is_empty(), "add_public_keys drains input Vec");
+    }
+
+    #[test]
+    fn try_from_identity_v0_constructs_from_identity() {
+        use crate::identity::accessors::IdentityGettersV0;
+        use crate::identity::{Identity, IdentityV0};
+        use std::collections::BTreeMap;
+
+        let identity_v0 = IdentityV0 {
+            id: Identifier::random(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let identity: Identity = identity_v0.into();
+        let proof = chain_proof();
+        let t = IdentityCreateTransitionV0::try_from_identity_v0(&identity, proof.clone())
+            .expect("try_from_identity_v0");
+        assert!(t.public_keys.is_empty());
+        assert_eq!(t.asset_lock_proof, proof);
+        // identity_id is from the proof, NOT the identity itself.
+        let expected = proof.create_identifier().expect("create_identifier");
+        assert_eq!(t.identity_id, expected);
+        // Demonstrate: the transition's identity_id may differ from identity.id()
+        let _ = identity.id();
+    }
+
+    #[test]
+    fn try_from_identity_dispatches_v0_version() {
+        use crate::identity::{Identity, IdentityV0};
+        use crate::version::LATEST_PLATFORM_VERSION;
+        use std::collections::BTreeMap;
+
+        let identity_v0 = IdentityV0 {
+            id: Identifier::random(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let identity: Identity = identity_v0.into();
+        let t = IdentityCreateTransitionV0::try_from_identity(
+            &identity,
+            chain_proof(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("try_from_identity");
+        assert!(t.public_keys.is_empty());
+    }
 }

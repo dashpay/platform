@@ -215,4 +215,173 @@ mod tests {
             err
         );
     }
+
+    // --------------------------------------------------------------
+    // Extra coverage — error/overflow branches
+    // --------------------------------------------------------------
+
+    #[test]
+    fn test_shielded_transfer_fee_above_upper_bound() {
+        // Fee > 1000x the minimum fee should be rejected.
+        let platform_version = PlatformVersion::latest();
+        let recipient = test_orchard_address();
+        let change_address = test_orchard_address();
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32])
+            .expect("valid spending key bytes");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        // num_actions is max(spends.len(), 2) = 2.
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
+        let excessive_fee = min_fee.saturating_mul(1000) + 1;
+
+        let result = build_shielded_transfer_transition(
+            spends,
+            &recipient,
+            10,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(excessive_fee),
+            platform_version,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds 1000x the minimum fee"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_shielded_transfer_fee_plus_amount_overflow_errors() {
+        // transfer_amount + fee overflows u64 → dedicated error branch.
+        let platform_version = PlatformVersion::latest();
+        let recipient = test_orchard_address();
+        let change_address = test_orchard_address();
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32])
+            .expect("valid spending key bytes");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        // Compute min fee, then craft a fee that lies in [min_fee, 1000*min_fee]
+        // so we bypass the boundary checks, then pick transfer_amount = u64::MAX
+        // so amount + fee overflows.
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
+
+        let result = build_shielded_transfer_transition(
+            spends,
+            &recipient,
+            u64::MAX,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(min_fee), // within [min, 1000*min]
+            platform_version,
+        );
+
+        assert!(result.is_err(), "overflow case should error");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("fee + transfer_amount overflows u64"),
+            "expected checked_add overflow branch, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_shielded_transfer_zero_spends_total_is_zero_errors() {
+        // Empty spends → total_spent = 0. Any non-zero transfer will fail
+        // with "exceeds total spendable value". This exercises the
+        // `num_actions = max(0, 2) = 2` branch.
+        let platform_version = PlatformVersion::latest();
+        let recipient = test_orchard_address();
+        let change_address = test_orchard_address();
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_shielded_transfer_transition(
+            vec![],
+            &recipient,
+            1,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds total spendable value"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_shielded_transfer_fee_default_is_min_fee() {
+        // When fee is None, the default min fee is computed — verify that a
+        // note *exactly* equal to `transfer_amount + min_fee` on the default
+        // branch does not spuriously fail the "exceeds total" check (it
+        // fails later in add_spend due to anchor mismatch).
+        let platform_version = PlatformVersion::latest();
+        let recipient = test_orchard_address();
+        let change_address = test_orchard_address();
+
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
+        let transfer_amount = 10u64;
+        let note = test_spendable_note(transfer_amount + min_fee);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_shielded_transfer_transition(
+            spends,
+            &recipient,
+            transfer_amount,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+
+        // With a valid fee/amount relationship, the builder proceeds past
+        // the amount checks and hits the add_spend AnchorMismatch.
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("failed to add spend")
+                || err_msg.contains("anchor")
+                || err_msg.contains("AnchorMismatch"),
+            "expected downstream add_spend error, got: {}",
+            err_msg
+        );
+    }
 }

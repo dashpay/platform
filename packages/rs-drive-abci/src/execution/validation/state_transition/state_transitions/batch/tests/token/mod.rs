@@ -7,7 +7,9 @@ mod distribution;
 mod emergency_action;
 mod freeze;
 mod mint;
+mod mint_many;
 mod transfer;
+mod unfreeze;
 
 use super::*;
 use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
