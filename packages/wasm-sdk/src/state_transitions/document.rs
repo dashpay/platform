@@ -782,20 +782,32 @@ impl WasmSdk {
             builder
         };
 
-        let state_transition = builder
+        let state_transition = match builder
             .sign(
                 self.inner_sdk(),
                 &identity_key,
                 &signer,
                 self.inner_sdk().version(),
             )
-            .await?;
+            .await
+        {
+            Ok(st) => st,
+            Err(err) => {
+                self.inner_sdk().refresh_identity_nonce(&owner_id).await;
+                return Err(err.into());
+            }
+        };
 
         // Validate structure before handing the ST back, mirroring rs-sdk's
         // pre-broadcast check. For document Batch transitions this currently
         // ends up as a no-op because DPP returns UnsupportedFeatureError until
         // that structure validation is implemented there.
-        validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
+        if let Err(err) =
+            validate_state_transition_structure(&state_transition, self.inner_sdk().version())
+        {
+            self.inner_sdk().refresh_identity_nonce(&owner_id).await;
+            return Err(err);
+        }
 
         Ok(state_transition.into())
     }
