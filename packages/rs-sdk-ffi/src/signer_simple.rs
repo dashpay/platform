@@ -1,8 +1,9 @@
 //! Simple private key signer for iOS FFI
 
 use crate::signer::{signer_handle_from_single_key, VTableSigner};
-use crate::types::SignerHandle;
+use crate::types::{DashSDKNetwork, SignerHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use simple_signer::SingleKeySigner;
@@ -23,12 +24,15 @@ use dash_async::block_on;
 /// # Safety
 /// - `private_key` must be a valid pointer to at least 32 readable bytes.
 /// - The function reads exactly `private_key_len` bytes; it must be 32.
+/// - `network` selects the network used for WIF encoding / address
+///   derivation; it does not affect signing.
 /// - The returned handle inside DashSDKResult must be freed with
 ///   `dash_sdk_signer_destroy`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     private_key: *const u8,
     private_key_len: usize,
+    network: DashSDKNetwork,
 ) -> DashSDKResult {
     if private_key.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -44,13 +48,22 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
         ));
     }
 
+    // Map the C-ABI network enum to dashcore::Network (mirrors sdk.rs).
+    let network = match network {
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
+        DashSDKNetwork::SDKTestnet => Network::Testnet,
+        DashSDKNetwork::SDKRegtest => Network::Regtest,
+        DashSDKNetwork::SDKDevnet => Network::Devnet,
+        DashSDKNetwork::SDKLocal => Network::Regtest,
+    };
+
     // Copy into a zeroizing buffer so the key material doesn't linger on
     // the stack after we hand it off to SingleKeySigner.
     let key_slice = std::slice::from_raw_parts(private_key, 32);
     let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(key_slice);
 
-    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice()) {
+    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), network) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e));

@@ -84,7 +84,8 @@ final class SimpleTransitionTests: XCTestCase {
       let signerResult = key3Private.withUnsafeBytes { keyBytes in
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key3Private.count)
+          UInt(key3Private.count),
+          DashSDKNetwork(rawValue: 1)
         )
       }
 
