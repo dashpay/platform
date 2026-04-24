@@ -20,6 +20,7 @@ lazy_static = "1.4"
 
 key-wallet = { workspace = true }
 key-wallet-ffi = { workspace = true }
+dash-network = { workspace = true, features = ["ffi"] }
 
 [dev-dependencies]
 tempfile = "3.8"
