@@ -483,8 +483,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn create_dummy_wallet() -> Wallet {
-        // WatchOnly is now a unit variant (rust-dashcore PR #654) — no key
-        // material is embedded in the wallet type.
         Wallet::from_wallet_type(Network::Testnet, key_wallet::wallet::WalletType::WatchOnly)
     }
 
