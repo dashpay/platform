@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use dash_sdk::platform::address_sync::{
     sync_address_balances, AddressFunds, AddressIndex, AddressKey, AddressProvider,
 };
@@ -32,6 +33,7 @@ impl TestAddressProvider {
     }
 }
 
+#[async_trait]
 impl AddressProvider for TestAddressProvider {
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
@@ -44,13 +46,13 @@ impl AddressProvider for TestAddressProvider {
             .collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+    async fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         self.found.insert((index, key.to_vec()), funds);
         self.pending.remove(&index);
         self.highest_found_index = Some(self.highest_found_index.map_or(index, |v| v.max(index)));
     }
 
-    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
+    async fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]) {
         self.absent.insert((index, key.to_vec()));
         self.pending.remove(&index);
     }

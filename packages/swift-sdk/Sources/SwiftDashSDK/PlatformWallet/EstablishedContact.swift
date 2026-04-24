@@ -10,7 +10,7 @@ public class EstablishedContact {
     }
 
     deinit {
-        established_contact_destroy(handle)
+        _ = established_contact_destroy(handle)
     }
 
     /// Get the contact's identity ID

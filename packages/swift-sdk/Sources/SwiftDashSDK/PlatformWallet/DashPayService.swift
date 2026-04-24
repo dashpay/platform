@@ -124,24 +124,31 @@ public final class DashPayService: Sendable {
     ///   - identity: The identity sending the request
     ///   - recipientId: The recipient's identity ID
     ///   - encryptedPublicKey: Encrypted public key for secure communication
+    ///   - coreHeightCreatedAt: Core chain height when the request was created
+    ///   - createdAt: Creation timestamp (ms since epoch)
     /// - Throws: Error if sending fails
     public func sendContactRequest(
         from identity: ManagedIdentity,
         to recipientId: Identifier,
-        encryptedPublicKey: Data
+        encryptedPublicKey: Data,
+        coreHeightCreatedAt: UInt32 = 0,
+        createdAt: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)
     ) throws {
-        // In a real implementation, you would:
-        // 1. Derive the appropriate keys
-        // 2. Encrypt your public key with recipient's key
-        // 3. Create and broadcast the contact request
-
-        try identity.sendContactRequest(
+        // Build the contact request object, then hand it off to the FFI layer.
+        // Real callers should derive key indices from the identity/recipient.
+        let senderId = try identity.getId()
+        let request = try ContactRequest.create(
+            senderId: senderId,
             recipientId: recipientId,
-            senderKeyIndex: 0,  // Should be derived from identity keys
-            recipientKeyIndex: 0,  // Should be looked up from recipient
+            senderKeyIndex: 0,      // Should be derived from identity keys
+            recipientKeyIndex: 0,   // Should be looked up from recipient
             accountReference: 0,
-            encryptedPublicKey: encryptedPublicKey
+            encryptedPublicKey: encryptedPublicKey,
+            coreHeightCreatedAt: coreHeightCreatedAt,
+            createdAt: createdAt
         )
+
+        try identity.sendContactRequest(request)
     }
 
     /// Accept a contact request
@@ -150,7 +157,10 @@ public final class DashPayService: Sendable {
     ///   - senderId: The sender's identity ID
     /// - Throws: Error if acceptance fails
     public func acceptContactRequest(identity: ManagedIdentity, from senderId: Identifier) throws {
-        try identity.acceptContactRequest(senderId: senderId)
+        guard let request = try identity.getIncomingContactRequest(senderId: senderId) else {
+            throw PlatformWalletError.contactNotFound
+        }
+        try identity.acceptContactRequest(request)
     }
 
     /// Reject a contact request

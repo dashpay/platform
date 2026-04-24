@@ -10,7 +10,7 @@ public class ContactRequest {
     }
 
     deinit {
-        contact_request_destroy(handle)
+        _ = contact_request_destroy(handle)
     }
 
     /// Create a new contact request
@@ -21,6 +21,7 @@ public class ContactRequest {
         recipientKeyIndex: UInt32,
         accountReference: UInt32,
         encryptedPublicKey: Data,
+        coreHeightCreatedAt: UInt32,
         createdAt: UInt64
     ) throws -> ContactRequest {
         var handle: Handle = NULL_HANDLE
@@ -36,7 +37,8 @@ public class ContactRequest {
                 recipientKeyIndex,
                 accountReference,
                 keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                encryptedPublicKey.count,
+                UInt(encryptedPublicKey.count),
+                coreHeightCreatedAt,
                 createdAt,
                 &handle,
                 &error
@@ -118,7 +120,7 @@ public class ContactRequest {
     /// Get the encrypted public key
     public func getEncryptedPublicKey() throws -> Data {
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var length: Int = 0
+        var length: UInt = 0
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_encrypted_public_key(handle, &bytesPtr, &length, &error)
@@ -128,7 +130,7 @@ public class ContactRequest {
 
         defer {
             if let ptr = bytesPtr {
-                platform_wallet_bytes_free(ptr)
+                platform_wallet_bytes_free(ptr, length)
             }
         }
 
@@ -136,7 +138,7 @@ public class ContactRequest {
             throw PlatformWalletError.nullPointer
         }
 
-        return Data(bytes: ptr, count: length)
+        return Data(bytes: ptr, count: Int(length))
     }
 
     /// Get the creation timestamp

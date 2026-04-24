@@ -138,7 +138,7 @@ impl TrunkBranchSyncOps for NullifierOps {
         })
     }
 
-    fn process_trunk_result(
+    async fn process_trunk_result(
         trunk_result: &GroveTrunkQueryResult,
         context: &mut Self::Context<'_>,
         tracker: &mut KeyLeafTracker,
@@ -177,7 +177,7 @@ impl TrunkBranchSyncOps for NullifierOps {
         execute_nullifier_branch_query(sdk, config, params, settings, platform_version).await
     }
 
-    fn process_branch_result(
+    async fn process_branch_result(
         branch_result: &GroveBranchQueryResult,
         queried_leaf_key: &[u8],
         context: &mut Self::Context<'_>,

@@ -165,6 +165,100 @@ impl CompactedNullifierChange {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compacted_nullifiers_round_trip_empty() {
+        // Empty list round-trips cleanly.
+        let original = CompactedNullifiers::new(vec![]);
+        let bytes = original.encode().expect("encode empty");
+        let decoded = CompactedNullifiers::decode(&bytes).expect("decode empty");
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn compacted_nullifiers_round_trip_many() {
+        // Non-empty list preserves order and contents.
+        let inputs: Vec<[u8; 32]> = (0u8..10).map(|i| [i; 32]).collect();
+        let original = CompactedNullifiers::new(inputs.clone());
+        let bytes = original.encode().expect("encode");
+        let decoded = CompactedNullifiers::decode(&bytes).expect("decode");
+        assert_eq!(decoded.into_inner(), inputs);
+    }
+
+    #[test]
+    fn compacted_nullifiers_decode_garbage_returns_corrupted_serialization() {
+        // Arbitrary garbage bytes must not produce a valid CompactedNullifiers.
+        match CompactedNullifiers::decode(&[0xFFu8; 3]) {
+            Err(Error::Protocol(b)) => match b.as_ref() {
+                ProtocolError::CorruptedSerialization(_) => {}
+                other => panic!("expected CorruptedSerialization, got: {:?}", other),
+            },
+            Err(other) => panic!("expected ProtocolError, got: {:?}", other),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn expiration_ranges_round_trip() {
+        let ranges = vec![(1u64, 5u64), (6, 10), (100, 200)];
+        let original = NullifierExpirationRanges::new(ranges.clone());
+        let bytes = original.encode().expect("encode");
+        let decoded = NullifierExpirationRanges::decode(&bytes).expect("decode");
+        assert_eq!(decoded.into_inner(), ranges);
+    }
+
+    #[test]
+    fn expiration_ranges_decode_garbage_returns_corrupted_serialization() {
+        match NullifierExpirationRanges::decode(&[0xAB, 0xCD]) {
+            Err(Error::Protocol(b)) => match b.as_ref() {
+                ProtocolError::CorruptedSerialization(_) => {}
+                other => panic!("expected CorruptedSerialization, got: {:?}", other),
+            },
+            Err(other) => panic!("expected ProtocolError, got: {:?}", other),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn parse_key_rejects_wrong_length() {
+        // < 16 bytes
+        let err = CompactedNullifierChange::parse_key(&[0u8; 8])
+            .expect_err("short key should be rejected");
+        assert!(matches!(err, Error::Protocol(_)));
+
+        // > 16 bytes
+        let err = CompactedNullifierChange::parse_key(&[0u8; 24])
+            .expect_err("long key should be rejected");
+        assert!(matches!(err, Error::Protocol(_)));
+
+        // Empty
+        let err =
+            CompactedNullifierChange::parse_key(&[]).expect_err("empty key should be rejected");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[test]
+    fn parse_key_decodes_big_endian_u64_pair() {
+        let mut key = [0u8; 16];
+        key[0..8].copy_from_slice(&100u64.to_be_bytes());
+        key[8..16].copy_from_slice(&200u64.to_be_bytes());
+        let (start, end) = CompactedNullifierChange::parse_key(&key).expect("parse");
+        assert_eq!(start, 100);
+        assert_eq!(end, 200);
+
+        // Max boundary values.
+        let mut key = [0u8; 16];
+        key[0..8].copy_from_slice(&u64::MAX.to_be_bytes());
+        key[8..16].copy_from_slice(&u64::MAX.to_be_bytes());
+        let (start, end) = CompactedNullifierChange::parse_key(&key).expect("parse u64::MAX");
+        assert_eq!(start, u64::MAX);
+        assert_eq!(end, u64::MAX);
+    }
+}
+
 /// A single nullifier change entry for a specific block height.
 pub struct NullifierChangePerBlock {
     /// The block height this entry belongs to.

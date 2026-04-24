@@ -90,4 +90,48 @@ mod tests {
             .expect("value_balance should be safely negatable");
         assert_eq!(abs_balance, amount);
     }
+
+    // -------------------------------------------------------------
+    // Arithmetic edge cases on the value_balance conversion branch
+    // (the `checked_neg().and_then(u64::try_from)` chain).
+    // -------------------------------------------------------------
+
+    #[test]
+    fn test_value_balance_positive_would_fail_conversion() {
+        // This is a regression-guard: if a *positive* value_balance ever
+        // reached the conversion path, `checked_neg` on i64::MIN would
+        // overflow and the `.try_from::<u64>` on a negative value would
+        // fail. We simulate by constructing a hypothetical value_balance
+        // scenario rather than calling the high-level builder (which
+        // requires a real AssetLockProof).
+        let positive: i64 = 123;
+        let converted = positive.checked_neg().and_then(|v| u64::try_from(v).ok());
+        assert!(converted.is_none(), "negative result cannot be u64");
+
+        let zero: i64 = 0;
+        let converted_zero = zero.checked_neg().and_then(|v| u64::try_from(v).ok());
+        assert_eq!(converted_zero, Some(0));
+
+        let negative: i64 = -42;
+        let converted_neg = negative.checked_neg().and_then(|v| u64::try_from(v).ok());
+        assert_eq!(converted_neg, Some(42));
+    }
+
+    #[test]
+    fn test_output_only_various_amounts_negative_balance() {
+        // Try several amounts to ensure the helper consistently produces a
+        // negative value_balance equal in magnitude to the requested amount.
+        for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
+            let recipient = test_orchard_address();
+            let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
+                .expect("bundle should build");
+            let sb = serialize_authorized_bundle(&bundle);
+            assert_eq!(
+                sb.value_balance,
+                -(amount as i64),
+                "value_balance mismatch for amount {}",
+                amount
+            );
+        }
+    }
 }

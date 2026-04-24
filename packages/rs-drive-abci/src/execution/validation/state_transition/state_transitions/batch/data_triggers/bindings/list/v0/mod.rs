@@ -67,24 +67,6 @@ pub(super) fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0
             transition_action_type: DocumentTransitionActionType::Create,
             data_trigger: create_contact_request_data_trigger,
         },
-        // DataTriggerBindingV0 {
-        //     data_contract_id: SystemDataContract::FeatureFlags.id(),
-        //     document_type: update_consensus_params::NAME.to_string(),
-        //     transition_action_type: DocumentTransitionActionType::Create,
-        //     data_trigger: create_feature_flag_data_trigger,
-        // },
-        // DataTriggerBindingV0 {
-        //     data_contract_id: SystemDataContract::FeatureFlags.id(),
-        //     document_type: update_consensus_params::NAME.to_string(),
-        //     transition_action_type: DocumentTransitionActionType::Replace,
-        //     data_trigger: reject_data_trigger,
-        // },
-        // DataTriggerBindingV0 {
-        //     data_contract_id: SystemDataContract::FeatureFlags.id(),
-        //     document_type: update_consensus_params::NAME.to_string(),
-        //     transition_action_type: DocumentTransitionActionType::Delete,
-        //     data_trigger: reject_data_trigger,
-        // },
         // Only masternodes will be able to update it
         DataTriggerBindingV0 {
             data_contract_id: SystemDataContract::MasternodeRewards.id(),

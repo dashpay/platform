@@ -672,6 +672,84 @@ mod tests {
             );
         }
 
+        /// A transition whose owner identity does not exist in state must fail
+        /// with an IdentityNotFoundError surfaced via the identity-signed
+        /// validation branch (not an Err).
+        #[tokio::test]
+        async fn should_return_invalid_when_owner_identity_not_in_state() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Build a transition, then drop the identity from the setup by
+            // using setup_identity_without_adding_it so the signer exists but
+            // the state does not contain the identity.
+            use crate::execution::validation::state_transition::state_transitions::tests::setup_identity_without_adding_it;
+            let (identity, signer, key) =
+                setup_identity_without_adding_it(333, dash_to_credits!(2.0));
+
+            let mut data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to get contract");
+
+            data_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected to create transition");
+
+            let state_transition: StateTransition = data_contract_create_transition.into();
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::FirstTimeCheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an Err");
+            let validation_result = result.unwrap();
+            assert!(
+                !validation_result.is_valid(),
+                "validation should fail: identity missing"
+            );
+            use dpp::consensus::signature::SignatureError;
+            assert!(
+                validation_result.errors.iter().any(|e| matches!(
+                    e,
+                    ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(_))
+                )),
+                "expected IdentityNotFoundError, got: {:?}",
+                validation_result.errors
+            );
+            // Silence unused: platform is mutable only to match existing setup function style.
+            let _ = &mut platform;
+        }
+
         #[tokio::test]
         async fn should_return_invalid_result_for_replayed_nonce() {
             let platform_version = PlatformVersion::latest();

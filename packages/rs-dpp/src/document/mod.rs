@@ -604,4 +604,121 @@ mod tests {
         assert_eq!(hash1, hash2, "hash should be deterministic");
         assert!(!hash1.is_empty(), "hash should not be empty");
     }
+
+    // ================================================================
+    //  increment_revision: overflow from Revision::MAX surfaces an
+    //  Overflow ProtocolError (not a silent saturate — this is the
+    //  Document-enum path which uses checked_add).
+    // ================================================================
+
+    #[test]
+    fn increment_revision_errors_on_overflow() {
+        let mut doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: Some(crate::prelude::Revision::MAX),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+        let err = doc.increment_revision().expect_err("MAX + 1 must overflow");
+        match err {
+            ProtocolError::Overflow(_) => {}
+            other => panic!("expected ProtocolError::Overflow, got {:?}", other),
+        }
+    }
+
+    // ================================================================
+    //  From<DocumentV0> for Document produces a V0 variant.
+    // ================================================================
+
+    #[test]
+    fn from_document_v0_produces_v0_variant() {
+        let v0 = DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: Some(7),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        };
+        let document: Document = v0.clone().into();
+        match document {
+            Document::V0(inner) => assert_eq!(inner, v0),
+        }
+    }
+
+    // ================================================================
+    //  Document Display forwards to DocumentV0 Display with a version
+    //  prefix.
+    // ================================================================
+
+    #[test]
+    fn document_display_has_version_prefix() {
+        let doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+        let s = format!("{}", doc);
+        assert!(
+            s.starts_with("v0 : "),
+            "Display should prefix with version, got: {s}"
+        );
+    }
+
+    // ================================================================
+    //  get_raw_for_document_type dispatches via platform version 0
+    //  to the V0 implementation.
+    // ================================================================
+
+    #[test]
+    fn get_raw_for_document_type_dispatch_path_returns_id() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(11), platform_version)
+            .expect("expected random document");
+
+        let raw = document
+            .get_raw_for_document_type("$id", document_type, None, platform_version)
+            .expect("should succeed");
+        assert_eq!(raw, Some(document.id().to_vec()));
+    }
 }

@@ -1527,9 +1527,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-async"
+version = "3.1.0-dev.1"
+dependencies = [
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "dash-context-provider"
 version = "3.1.0-dev.1"
 dependencies = [
+ "dash-async",
  "dpp",
  "drive",
  "hex",
@@ -1574,6 +1584,7 @@ dependencies = [
  "ciborium",
  "clap",
  "dapi-grpc",
+ "dash-async",
  "dash-context-provider",
  "dash-platform-macros",
  "derive_more 1.0.0",
@@ -1748,7 +1759,6 @@ version = "3.1.0-dev.1"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
- "feature-flags-contract",
  "keyword-search-contract",
  "masternode-reward-shares-contract",
  "platform-value",
@@ -2337,16 +2347,6 @@ name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
-
-[[package]]
-name = "feature-flags-contract"
-version = "3.1.0-dev.1"
-dependencies = [
- "platform-value",
- "platform-version",
- "serde_json",
- "thiserror 2.0.18",
-]
 
 [[package]]
 name = "ff"
@@ -4881,9 +4881,10 @@ dependencies = [
 name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
- "dashcore",
+ "cbindgen 0.27.0",
  "dpp",
  "key-wallet",
+ "key-wallet-ffi",
  "lazy_static",
  "once_cell",
  "parking_lot",
@@ -5876,7 +5877,6 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
- "platform-wallet-ffi",
  "rand 0.8.5",
  "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
@@ -5895,9 +5895,9 @@ name = "rs-sdk-trusted-context-provider"
 version = "3.1.0-dev.1"
 dependencies = [
  "arc-swap",
+ "dash-async",
  "dash-context-provider",
  "dpp",
- "futures",
  "hex",
  "lru",
  "reqwest 0.12.28",
@@ -5915,6 +5915,7 @@ version = "3.1.0-dev.1"
 dependencies = [
  "dash-spv-ffi",
  "key-wallet-ffi",
+ "platform-wallet-ffi",
  "rs-sdk-ffi",
 ]
 

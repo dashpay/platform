@@ -165,3 +165,141 @@ impl Drive {
         Ok((start_block, end_block))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    /// Compacting with no existing recent entries (empty pool) produces a single
+    /// compacted entry whose range is (current_block, current_block).
+    #[test]
+    fn compact_with_empty_pool_uses_current_block_as_range() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nullifiers = vec![[7u8; 32], [8u8; 32]];
+
+        let (start, end) = drive
+            .compact_nullifiers_with_current_block_v0(
+                &nullifiers,
+                42,
+                5_000,
+                None,
+                platform_version,
+            )
+            .expect("compact should succeed");
+
+        assert_eq!(start, 42);
+        assert_eq!(end, 42);
+
+        // Read back via fetch_compacted.
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch compacted");
+        assert_eq!(compacted.len(), 1);
+        assert_eq!(compacted[0].start_block, 42);
+        assert_eq!(compacted[0].end_block, 42);
+        assert_eq!(compacted[0].nullifiers.as_slice(), nullifiers.as_slice());
+    }
+
+    /// Compacting twice with the same current_block_time_ms must merge the two
+    /// ranges under the same expiration key (exercising the
+    /// "existing_ranges is Some" branch). We additionally drive a cleanup past
+    /// the shared expiration time: if the second compaction had *overwritten*
+    /// the expiration index entry instead of appending, cleanup would only
+    /// chase one range and leave the other compacted row dangling.
+    #[test]
+    fn second_compaction_with_same_time_appends_range_to_expiration() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let block_time = 1_000u64;
+
+        drive
+            .compact_nullifiers_with_current_block_v0(
+                &[[1u8; 32]],
+                10,
+                block_time,
+                None,
+                platform_version,
+            )
+            .expect("first compact");
+
+        drive
+            .compact_nullifiers_with_current_block_v0(
+                &[[2u8; 32]],
+                20,
+                block_time, // same block time → same expiration key
+                None,
+                platform_version,
+            )
+            .expect("second compact");
+
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch");
+        assert_eq!(compacted.len(), 2, "both compacted ranges must be present");
+
+        // Cleanup past the shared expiration must remove BOTH ranges. This is
+        // what proves the second compaction appended its range to the
+        // existing expiration-index entry rather than overwriting it — a
+        // single range under that key would leave one compacted row behind
+        // and the count would be 1, not 2.
+        let current =
+            block_time + crate::drive::shielded::nullifiers::compact_nullifiers::ONE_WEEK_IN_MS + 1;
+        let cleaned = drive
+            .cleanup_expired_nullifier_compactions_v0(current, None, platform_version)
+            .expect("cleanup");
+        assert_eq!(
+            cleaned, 2,
+            "cleanup must delete both ranges stored under the shared expiration key"
+        );
+
+        let compacted_after = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch after cleanup");
+        assert!(
+            compacted_after.is_empty(),
+            "no compacted rows should remain after cleanup"
+        );
+    }
+
+    /// Compacting drains entries stored via store_nullifiers_for_block_v0 and the
+    /// final combined list is the concatenation of stored + current in block order.
+    #[test]
+    fn compact_drains_recent_and_concats_in_order() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .store_nullifiers_for_block_v0(&[[1u8; 32]], 1, 100, None, platform_version)
+            .expect("store 1");
+        drive
+            .store_nullifiers_for_block_v0(&[[2u8; 32]], 2, 200, None, platform_version)
+            .expect("store 2");
+
+        let (start, end) = drive
+            .compact_nullifiers_with_current_block_v0(&[[3u8; 32]], 3, 300, None, platform_version)
+            .expect("compact");
+
+        assert_eq!(start, 1);
+        assert_eq!(end, 3);
+
+        // After compaction, recent pool should be drained.
+        let recent = drive
+            .fetch_recent_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch recent");
+        assert_eq!(recent.len(), 0, "recent should be drained after compact");
+
+        let compacted = drive
+            .fetch_compacted_nullifier_changes(0, None, None, platform_version)
+            .expect("fetch compacted");
+        assert_eq!(compacted.len(), 1);
+        // Concatenation in ascending block order: [1][2][3]
+        assert_eq!(
+            compacted[0].nullifiers.as_slice(),
+            &[[1u8; 32], [2u8; 32], [3u8; 32]]
+        );
+    }
+}

@@ -131,6 +131,7 @@ inject_modulemap() {
 // key-wallet-ffi defines FFINetwork used by dash-spv-ffi, so must come first
 #include "key-wallet-ffi/key-wallet-ffi.h"
 #include "dash-spv-ffi/dash-spv-ffi.h"
+#include "platform-wallet-ffi/platform-wallet-ffi.h"
 #include "rs-sdk-ffi/rs-sdk-ffi.h"
 
 #endif

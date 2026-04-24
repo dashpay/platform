@@ -393,6 +393,139 @@ mod tests {
     //  User-defined property serialization
     // ================================================================
 
+    // ================================================================
+    //  None-valued system fields should return None (not panic).
+    // ================================================================
+
+    fn minimal_doc() -> DocumentV0 {
+        DocumentV0 {
+            id: Identifier::new([1u8; 32]),
+            owner_id: Identifier::new([2u8; 32]),
+            properties: BTreeMap::new(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+    }
+
+    #[test]
+    fn get_raw_returns_none_for_unset_optional_system_fields() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected document type");
+
+        let doc = minimal_doc();
+        let keys = [
+            "$createdAt",
+            "$updatedAt",
+            "$transferredAt",
+            "$createdAtBlockHeight",
+            "$updatedAtBlockHeight",
+            "$transferredAtBlockHeight",
+            "$createdAtCoreBlockHeight",
+            "$updatedAtCoreBlockHeight",
+            "$transferredAtCoreBlockHeight",
+            "$creatorId",
+        ];
+        for k in keys {
+            let raw = doc
+                .get_raw_for_document_type_v0(k, document_type, None, platform_version)
+                .expect("should succeed");
+            assert_eq!(raw, None, "{k} should yield None when unset");
+        }
+    }
+
+    // ================================================================
+    //  get_raw_for_document_type_v0: $ownerId with owner_id override
+    //  takes precedence even if the document's owner is different, but
+    //  for $id the override is NOT applied (only $ownerId is gated).
+    // ================================================================
+
+    #[test]
+    fn get_raw_owner_id_override_only_affects_dollar_owner_id_path() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected document type");
+
+        let doc = make_document_with_known_ids();
+        let override_owner = [0xFF; 32];
+
+        // $ownerId path sees the override
+        let raw_owner = doc
+            .get_raw_for_document_type_v0(
+                "$ownerId",
+                document_type,
+                Some(override_owner),
+                platform_version,
+            )
+            .expect("owner should succeed");
+        assert_eq!(raw_owner, Some(Vec::from(override_owner)));
+
+        // $id path ignores the owner override
+        let raw_id = doc
+            .get_raw_for_document_type_v0(
+                "$id",
+                document_type,
+                Some(override_owner),
+                platform_version,
+            )
+            .expect("id should succeed");
+        assert_eq!(
+            raw_id,
+            Some(doc.id.to_vec()),
+            "$id path should not be affected by owner_id override"
+        );
+    }
+
+    // ================================================================
+    //  get_raw_for_contract with unknown document_type_name errors.
+    // ================================================================
+
+    #[test]
+    fn get_raw_for_contract_with_unknown_document_type_errors() {
+        use crate::document::document_methods::DocumentGetRawForContractV0;
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+
+        let doc = make_document_with_known_ids();
+        let err = doc
+            .get_raw_for_contract_v0("$id", "nonExistentType", &contract, None, platform_version)
+            .expect_err("unknown document type should fail");
+        match err {
+            crate::ProtocolError::DataContractError(
+                crate::data_contract::errors::DataContractError::DocumentTypeNotFound(_),
+            ) => {}
+            other => panic!("expected DocumentTypeNotFound, got {:?}", other),
+        }
+    }
+
     #[test]
     fn get_raw_serializes_user_defined_property() {
         let platform_version = PlatformVersion::latest();

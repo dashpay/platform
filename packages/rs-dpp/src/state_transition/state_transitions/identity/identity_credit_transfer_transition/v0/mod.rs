@@ -241,4 +241,54 @@ mod test {
         assert_eq!(transition.nonce, 0);
         assert_eq!(transition.user_fee_increase, 0);
     }
+
+    #[test]
+    fn test_to_cleaned_object_skip_signature_removes_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_transfer_v0();
+        let obj = t.to_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_canonical_cleaned_object_skip_signature_removes_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_transfer_v0();
+        let obj = t.to_canonical_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_modified_data_ids_and_unique_identifiers() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_transfer_v0();
+        let modified = t.modified_data_ids();
+        assert_eq!(modified.len(), 2);
+        assert_eq!(modified[0], t.identity_id);
+        assert_eq!(modified[1], t.recipient_id);
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn test_value_conversion_preserves_fields() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let t = make_transfer_v0();
+        let obj = t.to_object(false).expect("to_object");
+        let map = obj.clone().into_btree_string_map().expect("should be map");
+        assert!(map.contains_key("identityId"));
+        assert!(map.contains_key("recipientId"));
+        assert!(map.contains_key("amount"));
+        let restored =
+            IdentityCreditTransferTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                .expect("from_object");
+        assert_eq!(t.amount, restored.amount);
+        assert_eq!(t.identity_id, restored.identity_id);
+        assert_eq!(t.recipient_id, restored.recipient_id);
+        assert_eq!(t.nonce, restored.nonce);
+        assert_eq!(t.user_fee_increase, restored.user_fee_increase);
+    }
 }
