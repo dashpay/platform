@@ -380,62 +380,8 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         info!("dash_sdk_create_trusted: no DAPI addresses provided, using defaults for network");
         // Use default addresses for the network
         match network {
-            Network::Testnet => {
-                // Use testnet addresses from WASM SDK
-                let default_addresses = [
-                    "https://52.12.176.90:1443",
-                    "https://35.82.197.197:1443",
-                    "https://44.240.98.102:1443",
-                    "https://52.34.144.50:1443",
-                    "https://44.239.39.153:1443",
-                    "https://35.164.23.245:1443",
-                    "https://54.149.33.167:1443",
-                ]
-                .join(",");
-
-                info!(
-                    addresses = default_addresses.as_str(),
-                    "dash_sdk_create_trusted: using default testnet addresses"
-                );
-                let address_list = match AddressList::from_str(&default_addresses) {
-                    Ok(list) => list,
-                    Err(e) => {
-                        error!(error = %e, "dash_sdk_create_trusted: failed to parse default addresses");
-                        return DashSDKResult::error(DashSDKError::new(
-                            DashSDKErrorCode::InternalError,
-                            format!("Failed to parse default addresses: {}", e),
-                        ));
-                    }
-                };
-                SdkBuilder::new(address_list).with_network(network)
-            }
-            Network::Mainnet => {
-                // Use mainnet addresses from WASM SDK
-                let default_addresses = [
-                    "https://149.28.241.190:443",
-                    "https://198.7.115.48:443",
-                    "https://134.255.182.186:443",
-                    "https://93.115.172.39:443",
-                    "https://5.189.164.253:443",
-                    "https://178.215.237.134:443",
-                    "https://157.66.81.162:443",
-                    "https://173.212.232.90:443",
-                ]
-                .join(",");
-
-                info!("dash_sdk_create_trusted: using default mainnet addresses");
-                let address_list = match AddressList::from_str(&default_addresses) {
-                    Ok(list) => list,
-                    Err(e) => {
-                        error!(error = %e, "dash_sdk_create_trusted: failed to parse default addresses");
-                        return DashSDKResult::error(DashSDKError::new(
-                            DashSDKErrorCode::InternalError,
-                            format!("Failed to parse default addresses: {}", e),
-                        ));
-                    }
-                };
-                SdkBuilder::new(address_list).with_network(network)
-            }
+            Network::Testnet => SdkBuilder::new_testnet(),
+            Network::Mainnet => SdkBuilder::new_mainnet(),
             _ => {
                 error!(
                     ?network,
