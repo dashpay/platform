@@ -64,46 +64,39 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     max_decoding_message_size: None,
 };
 
-const DEFAULT_MAINNET_ADDRESSES: &[&str] = &[
-    "https://149.28.241.190:443",
-    "https://198.7.115.48:443",
-    "https://134.255.182.186:443",
-    "https://93.115.172.39:443",
-    "https://5.189.164.253:443",
-    "https://178.215.237.134:443",
-    "https://157.66.81.162:443",
-    "https://173.212.232.90:443",
-];
-
-const DEFAULT_TESTNET_ADDRESSES: &[&str] = &[
-    "https://52.12.176.90:1443",
-    "https://35.82.197.197:1443",
-    "https://44.240.98.102:1443",
-    "https://52.34.144.50:1443",
-    "https://44.239.39.153:1443",
-    "https://34.214.48.68:1443",
-    "https://35.164.23.245:1443",
-    "https://54.149.33.167:1443",
-    "https://52.24.124.162:1443",
-];
-
-fn parse_address_list(addresses: &[&str]) -> AddressList {
-    AddressList::from_iter(addresses.iter().map(|address| {
-        let uri = address
-            .parse::<Uri>()
-            .unwrap_or_else(|_| panic!("default SDK address must be a valid URI: {address}"));
-        Address::try_from(uri).unwrap_or_else(|_| {
-            panic!("default SDK address must be a valid DAPI address: {address}")
-        })
-    }))
-}
-
+/// Build the default DAPI bootstrap address list for `network` from
+/// [`dash_network_seeds`].
+///
+/// The seed lists are single-source-of-truth, weekly-refreshed upstream in
+/// `rust-dashcore`. We filter to Evo (HPMN) masternodes — the only ones that
+/// run Dash Platform — and build `https://<ip>:<platform_http_port>` URIs.
+/// The Core port on `seed.address` is intentionally discarded: DAPI clients
+/// need the platform HTTP port, not the Core P2P port.
+///
+/// Malformed upstream entries are silently skipped rather than panicking;
+/// the DAPI client handles retry/rotation across the remaining addresses.
+///
+/// ## Panics
+///
+/// Panics on networks other than `Mainnet` and `Testnet` — no upstream
+/// seed list exists for devnet/regtest.
 fn default_address_list_for_network(network: Network) -> AddressList {
-    match network {
-        Network::Mainnet => parse_address_list(DEFAULT_MAINNET_ADDRESSES),
-        Network::Testnet => parse_address_list(DEFAULT_TESTNET_ADDRESSES),
-        _ => panic!("default address list is only available for mainnet and testnet"),
+    if !matches!(network, Network::Mainnet | Network::Testnet) {
+        panic!("default address list is only available for mainnet and testnet");
     }
+    let mut list = AddressList::new();
+    for seed in dash_network_seeds::evo_seeds(network) {
+        let Some(port) = seed.platform_http_port else {
+            continue;
+        };
+        let url = format!("https://{}:{}", seed.address.ip(), port);
+        if let Ok(uri) = url.parse::<Uri>() {
+            if let Ok(address) = Address::try_from(uri) {
+                list.add(address);
+            }
+        }
+    }
+    list
 }
 
 /// Dash Platform SDK
@@ -1137,7 +1130,6 @@ pub fn prettify_proof(proof: &Proof) -> String {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeSet;
     use std::sync::Arc;
 
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
@@ -1146,26 +1138,15 @@ mod test {
 
     use crate::SdkBuilder;
 
-    use super::{AddressList, Network, DEFAULT_MAINNET_ADDRESSES, DEFAULT_TESTNET_ADDRESSES};
+    use super::Network;
 
-    fn live_address_set(address_list: &AddressList) -> BTreeSet<String> {
-        address_list
-            .get_live_addresses()
-            .into_iter()
-            .map(|address| address.to_string())
-            .collect()
-    }
-
-    fn expected_address_set(addresses: &[&str]) -> BTreeSet<String> {
-        super::parse_address_list(addresses)
-            .get_live_addresses()
-            .into_iter()
-            .map(|address| address.to_string())
-            .collect()
-    }
+    /// Mainnet Evo masternodes expose the Platform HTTP endpoint on 443.
+    const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
+    /// Testnet Evo masternodes expose the Platform HTTP endpoint on 1443.
+    const TESTNET_PLATFORM_HTTP_PORT: u16 = 1443;
 
     #[test]
-    fn new_testnet_uses_default_testnet_addresses() {
+    fn new_testnet_sources_bootstrap_from_seeds() {
         let builder = SdkBuilder::new_testnet();
         let address_list = builder
             .addresses
@@ -1173,15 +1154,21 @@ mod test {
             .expect("testnet builder should configure default addresses");
 
         assert_eq!(builder.network, Network::Testnet);
-        assert_eq!(address_list.len(), DEFAULT_TESTNET_ADDRESSES.len());
-        assert_eq!(
-            live_address_set(address_list),
-            expected_address_set(DEFAULT_TESTNET_ADDRESSES)
+        assert!(
+            !address_list.is_empty(),
+            "testnet must have at least one bootstrap address"
         );
+        for address in address_list.get_live_addresses() {
+            assert_eq!(
+                address.uri().port_u16(),
+                Some(TESTNET_PLATFORM_HTTP_PORT),
+                "testnet bootstrap address must use the platform HTTP port",
+            );
+        }
     }
 
     #[test]
-    fn new_mainnet_uses_default_mainnet_addresses() {
+    fn new_mainnet_sources_bootstrap_from_seeds() {
         let builder = SdkBuilder::new_mainnet();
         let address_list = builder
             .addresses
@@ -1189,10 +1176,39 @@ mod test {
             .expect("mainnet builder should configure default addresses");
 
         assert_eq!(builder.network, Network::Mainnet);
-        assert_eq!(address_list.len(), DEFAULT_MAINNET_ADDRESSES.len());
-        assert_eq!(
-            live_address_set(address_list),
-            expected_address_set(DEFAULT_MAINNET_ADDRESSES)
+        assert!(
+            !address_list.is_empty(),
+            "mainnet must have at least one bootstrap address"
+        );
+        for address in address_list.get_live_addresses() {
+            assert_eq!(
+                address.uri().port_u16(),
+                Some(MAINNET_PLATFORM_HTTP_PORT),
+                "mainnet bootstrap address must use the platform HTTP port",
+            );
+        }
+    }
+
+    /// Smoke signal: the upstream seed lists are far larger than 10 entries on
+    /// both networks. If parsing drops most of them we want a loud test
+    /// failure rather than silently shipping a near-empty bootstrap list.
+    #[test]
+    fn bootstrap_counts_reasonable() {
+        let mainnet = SdkBuilder::new_mainnet()
+            .addresses
+            .expect("mainnet builder should configure default addresses");
+        let testnet = SdkBuilder::new_testnet()
+            .addresses
+            .expect("testnet builder should configure default addresses");
+        assert!(
+            mainnet.len() >= 10,
+            "expected >=10 mainnet bootstrap addresses, got {}",
+            mainnet.len()
+        );
+        assert!(
+            testnet.len() >= 10,
+            "expected >=10 testnet bootstrap addresses, got {}",
+            testnet.len()
         );
     }
 
