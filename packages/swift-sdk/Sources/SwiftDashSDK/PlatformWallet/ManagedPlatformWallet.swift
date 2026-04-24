@@ -174,7 +174,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     }
 
     /// Result of a successful identity registration.
-    public struct CreatedIdentity {
+    public struct CreatedIdentity: Sendable {
         /// 32-byte identity id.
         public let identityId: Data
         /// Fully-populated `ManagedIdentity` wrapping the new
