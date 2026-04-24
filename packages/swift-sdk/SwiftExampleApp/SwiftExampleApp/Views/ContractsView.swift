@@ -257,20 +257,12 @@ struct FetchContractView: View {
 
         do {
             isLoading = true
+            defer { isLoading = false }
 
-            // In a real app, we would use the SDK's contract fetching functionality
-            if (try await sdk.getDataContract(id: contractIdToFetch)) != nil {
-                // Convert SDK contract to our model
-                // For now, we'll show a success message
-                appState.showError(message: "Contract fetched successfully")
-            } else {
-                appState.showError(message: "Contract not found")
-            }
-
-            isLoading = false
+            _ = try await sdk.dataContractGet(id: contractIdToFetch)
+            appState.showError(message: "Contract fetched successfully")
         } catch {
             appState.showError(message: "Failed to fetch contract: \(error.localizedDescription)")
-            isLoading = false
         }
     }
 }
