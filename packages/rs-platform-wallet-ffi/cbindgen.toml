@@ -14,6 +14,16 @@ cpp_compat = true
 documentation = true
 documentation_style = "c99"
 
+# Forward-declare external Rust types referenced opaquely in this
+# crate's FFI signatures. cbindgen cannot introspect external crates,
+# so without this injection the generated header references `Sdk *`
+# with no type declaration, causing the Swift build to fail with
+# `unknown type name 'Sdk'`. The build_ios.sh post-processor expands
+# these forward declarations into `typedef struct X { uint8_t _opaque; } X;`.
+after_includes = """
+typedef struct Sdk Sdk;
+"""
+
 [defines]
 
 [export]
