@@ -21,6 +21,7 @@ public enum DashModelContainer {
             PersistentSyncState.self,
             PersistentWallet.self,
             PersistentAccount.self,
+            PersistentCoreAddress.self,
             PersistentTransaction.self,
             PersistentUtxo.self,
             PersistentWalletManagerMetadata.self

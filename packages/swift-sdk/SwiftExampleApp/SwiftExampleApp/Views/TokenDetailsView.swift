@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct TokenDetailsView: View {
     let token: PersistentToken

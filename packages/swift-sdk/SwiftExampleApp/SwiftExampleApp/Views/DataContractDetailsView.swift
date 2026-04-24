@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import SwiftDashSDK
 
 struct DataContractDetailsView: View {
     let contract: PersistentDataContract

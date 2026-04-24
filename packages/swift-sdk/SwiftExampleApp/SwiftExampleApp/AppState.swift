@@ -9,14 +9,6 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    // Identity, contract, document, and token state is now read
-    // directly from SwiftData via `@Query` on the
-    // `PersistentIdentity`, `PersistentDataContract`,
-    // `PersistentDocument`, and `PersistentToken` /
-    // `PersistentTokenBalance` models. AppState no longer mirrors
-    // any of them as `@Published` arrays.
-    @Published var dataContracts: [DPPDataContract] = []
-
     @Published var currentNetwork: AppNetwork {
         didSet {
             UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
@@ -38,10 +30,6 @@ class AppState: ObservableObject {
             Task { await switchNetwork(to: currentNetwork) }
         }
     }
-
-    /// Backward-compat computed properties (read-only)
-    var useLocalPlatform: Bool { useDockerSetup }
-    var useLocalCore: Bool { useDockerSetup }
 
     private let testSigner = TestSigner()
     private var dataManager: DataManager?
@@ -92,9 +80,6 @@ class AppState: ObservableObject {
                 // Load known contracts into the SDK's trusted provider
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
-                // Load persisted data first
-                await loadPersistedData()
-
                 isLoading = false
             } catch {
                 sdk = nil
@@ -103,14 +88,6 @@ class AppState: ObservableObject {
                 isLoading = false
             }
         }
-    }
-
-    func loadPersistedData() async {
-        // No-op: identities, contracts, and documents are sourced
-        // directly from SwiftData via @Query in each view. Kept as a
-        // stub for call-site parity until all initializers migrate
-        // to reading from SwiftData directly.
-        _ = dataManager
     }
 
     func showError(message: String) {
@@ -140,9 +117,6 @@ class AppState: ObservableObject {
 
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-            // Reload data for the new network
-            await loadPersistedData()
 
             isLoading = false
         } catch {
