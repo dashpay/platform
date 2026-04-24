@@ -1501,6 +1501,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)]
     fn test_signing_options_clone() {
         let original = StateTransitionSigningOptions {
             allow_signing_with_any_security_level: true,

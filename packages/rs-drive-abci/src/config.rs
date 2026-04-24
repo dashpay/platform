@@ -694,7 +694,6 @@ impl PlatformConfig {
             Network::Testnet => Self::default_testnet(),
             Network::Devnet => Self::default_devnet(),
             Network::Regtest => Self::default_local(),
-            _ => Self::default_testnet(),
         }
     }
 

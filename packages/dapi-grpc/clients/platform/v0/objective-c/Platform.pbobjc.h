@@ -190,6 +190,8 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenIdentityInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfos;
+@class GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0;
+@class GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0;
 @class GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0;
 @class GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0;
 @class GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0;
@@ -8302,6 +8304,7 @@ void GetRecentAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentAddres
 typedef GPB_ENUM(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber) {
   GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeight = 1,
   GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_Prove = 2,
+  GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeightExclusive = 3,
 };
 
 GPB_FINAL @interface GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0 : GPBMessage
@@ -8309,6 +8312,14 @@ GPB_FINAL @interface GetRecentAddressBalanceChangesRequest_GetRecentAddressBalan
 @property(nonatomic, readwrite) uint64_t startHeight;
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/**
+ * When true, use exclusive start (RangeAfter) instead of inclusive start
+ * (RangeFrom). The start_height key becomes a boundary node in the proof
+ * rather than a result element, enabling compaction detection via
+ * key_exists_as_boundary.
+ **/
+@property(nonatomic, readwrite) BOOL startHeightExclusive;
 
 @end
 
@@ -8813,6 +8824,99 @@ GPB_FINAL @interface GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anc
 @property(nonatomic, readonly) NSUInteger anchorsArray_Count;
 
 @end
+
+#pragma mark - GetMostRecentShieldedAnchorRequest
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_FieldNumber) {
+  GetMostRecentShieldedAnchorRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_Version_OneOfCase) {
+  GetMostRecentShieldedAnchorRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMostRecentShieldedAnchorRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorRequest : GPBMessage
+
+@property(nonatomic, readonly) GetMostRecentShieldedAnchorRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetMostRecentShieldedAnchorRequest_ClearVersionOneOfCase(GetMostRecentShieldedAnchorRequest *message);
+
+#pragma mark - GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber) {
+  GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetMostRecentShieldedAnchorResponse
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_FieldNumber) {
+  GetMostRecentShieldedAnchorResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_Version_OneOfCase) {
+  GetMostRecentShieldedAnchorResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMostRecentShieldedAnchorResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorResponse : GPBMessage
+
+@property(nonatomic, readonly) GetMostRecentShieldedAnchorResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetMostRecentShieldedAnchorResponse_ClearVersionOneOfCase(GetMostRecentShieldedAnchorResponse *message);
+
+#pragma mark - GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber) {
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Anchor = 1,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Proof = 2,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase) {
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase_Anchor = 1,
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *anchor;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_ClearResultOneOfCase(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 *message);
 
 #pragma mark - GetShieldedPoolStateRequest
 

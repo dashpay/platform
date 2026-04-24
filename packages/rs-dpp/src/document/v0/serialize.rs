@@ -1653,9 +1653,7 @@ mod tests {
             .random_document(Some(42), platform_version)
             .expect("expected random document");
 
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
@@ -1679,9 +1677,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(seed), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -1717,9 +1713,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(99), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -1730,9 +1724,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(99), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -1759,9 +1751,7 @@ mod tests {
         let document = document_type
             .random_document(Some(7), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
             .expect("serialize should succeed");
@@ -1781,9 +1771,7 @@ mod tests {
         let document = document_type
             .random_document(Some(55), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
             .expect("serialize should succeed");
@@ -1807,9 +1795,7 @@ mod tests {
         let document = document_type
             .random_document(Some(1), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let serialized = doc_v0
             .serialize_specific_version(document_type, &contract, 0)
@@ -1834,9 +1820,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(1), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
 
             let result = doc_v0.serialize_specific_version(document_type, &contract, 1);
             assert!(
@@ -1857,9 +1841,7 @@ mod tests {
         let document = document_type
             .random_document(Some(1), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let result = doc_v0.serialize_specific_version(document_type, &contract, 255);
         assert!(
@@ -1975,9 +1957,7 @@ mod tests {
         let document = document_type
             .random_document(Some(100), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         // serialize_v0 should prefix with varint 0
         let bytes = doc_v0
@@ -2012,9 +1992,7 @@ mod tests {
         let document = document_type
             .random_document(Some(42), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let bytes = doc_v0
             .serialize_v0(document_type)
@@ -2053,9 +2031,7 @@ mod tests {
         let document = document_type
             .random_document(Some(99), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let bytes1 = doc_v0
             .serialize(document_type, &contract, platform_version)
@@ -2082,9 +2058,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(seed), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -2110,9 +2084,7 @@ mod tests {
         let document = document_type
             .random_document(Some(77), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
             .expect("serialize should succeed");

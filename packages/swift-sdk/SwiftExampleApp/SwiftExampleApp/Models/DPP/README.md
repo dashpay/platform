@@ -99,29 +99,20 @@ Comprehensive token settings:
 - Optional signatures with public key references
 - Structured data for each operation
 
-## Integration with Existing Models
+## Integration with Persistence
 
-The existing app models have been enhanced to support DPP:
-
-### IdentityModel
-- Added `dppIdentity` property for full DPP data
-- Added `publicKeys` array for key management
-- Conversion methods between simplified and DPP models
-
-### DocumentModel
-- Added `dppDocument` property
-- Added `revision` tracking
-- Automatic conversion from PlatformValue to simple types
-
-### ContractModel
-- Added `dppDataContract` property
-- Added token configurations
-- Added keywords and description support
+The app no longer carries value-type mirrors (`IdentityModel`,
+`DocumentModel`, `ContractModel`). Persistence lives in SwiftData
+rows (`PersistentIdentity`, `PersistentDocument`,
+`PersistentDataContract`). When a view or service needs the DPP
+projection of an identity's keys, use
+`PersistentIdentity.identityPublicKeys` — each row computes a fresh
+`[IdentityPublicKey]` view on demand.
 
 ## Usage Examples
 
 ```swift
-// Create a DPP Identity
+// Create a DPP Identity for an in-flight state transition
 let identity = DPPIdentity.create(
     id: identifierData,
     publicKeys: [authKey, transferKey],
@@ -136,19 +127,13 @@ let document = DPPDocument.create(
         "value": .integer(42)
     ]
 )
-
-// Convert between models
-let identityModel = IdentityModel(from: dppIdentity)
-let documentModel = DocumentModel(from: dppDocument, 
-                                  contractId: "...", 
-                                  documentType: "profile")
 ```
 
 ## Best Practices
 
 1. **Use DPP models for platform interactions**: When communicating with Dash Platform, use the DPP models for accurate data representation.
 
-2. **Use simplified models for UI**: The existing models (IdentityModel, DocumentModel, etc.) are better suited for UI binding and display.
+2. **Use SwiftData models for UI**: `PersistentIdentity`, `PersistentDocument`, and `PersistentDataContract` are the app-facing sources of truth; bind views to them via `@Query`.
 
 3. **Handle conversions carefully**: When converting between PlatformValue and Swift native types, ensure proper type checking.
 

@@ -35,7 +35,6 @@ mod tests {
     // non-empty blob; a verifier roundtrip would be more meaningful but
     // belongs in a higher-level integration test that already owns the
     // verifier plumbing.
-    use super::*;
     use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;

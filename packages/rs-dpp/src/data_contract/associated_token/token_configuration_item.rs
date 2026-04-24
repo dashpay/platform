@@ -307,35 +307,35 @@ mod tests {
                     crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0::default(),
                 ),
             ),
-            TokenConfigurationChangeItem::ConventionsControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::ConventionsAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::ConventionsControlGroup(aat),
+            TokenConfigurationChangeItem::ConventionsAdminGroup(aat),
             TokenConfigurationChangeItem::MaxSupply(None),
-            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat),
+            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat),
             TokenConfigurationChangeItem::PerpetualDistribution(None),
-            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat),
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(None),
-            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat),
             TokenConfigurationChangeItem::MintingAllowChoosingDestination(false),
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::ManualMinting(aat.clone()),
-            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::ManualBurning(aat.clone()),
-            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::Freeze(aat.clone()),
-            TokenConfigurationChangeItem::FreezeAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::Unfreeze(aat.clone()),
-            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::DestroyFrozenFunds(aat.clone()),
-            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::EmergencyAction(aat.clone()),
-            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualMinting(aat),
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualBurning(aat),
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat),
+            TokenConfigurationChangeItem::Freeze(aat),
+            TokenConfigurationChangeItem::FreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::Unfreeze(aat),
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFunds(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat),
+            TokenConfigurationChangeItem::EmergencyAction(aat),
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat),
             TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::default()),
-            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat),
             TokenConfigurationChangeItem::MainControlGroup(None),
         ]
     }
@@ -482,30 +482,30 @@ mod tests {
         let expected = aat.to_bytes();
 
         let variants = [
-            TokenConfigurationChangeItem::ConventionsControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::ConventionsAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::ManualMinting(aat.clone()),
-            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::ManualBurning(aat.clone()),
-            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::Freeze(aat.clone()),
-            TokenConfigurationChangeItem::FreezeAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::Unfreeze(aat.clone()),
-            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::DestroyFrozenFunds(aat.clone()),
-            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::EmergencyAction(aat.clone()),
-            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat.clone()),
-            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat.clone()),
-            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::ConventionsControlGroup(aat),
+            TokenConfigurationChangeItem::ConventionsAdminGroup(aat),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat),
+            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualMinting(aat),
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualBurning(aat),
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat),
+            TokenConfigurationChangeItem::Freeze(aat),
+            TokenConfigurationChangeItem::FreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::Unfreeze(aat),
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFunds(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat),
+            TokenConfigurationChangeItem::EmergencyAction(aat),
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat),
         ];
         for v in &variants {
             let bytes = v.payload_serialization().unwrap().unwrap();
@@ -633,59 +633,47 @@ mod tests {
         let aat = AuthorizedActionTakers::ContractOwner;
         let cases = vec![
             (
-                format!(
-                    "{}",
-                    TokenConfigurationChangeItem::ManualMinting(aat.clone())
-                ),
+                format!("{}", TokenConfigurationChangeItem::ManualMinting(aat)),
                 "Manual Minting",
             ),
             (
                 format!(
                     "{}",
-                    TokenConfigurationChangeItem::ManualMintingAdminGroup(aat.clone())
+                    TokenConfigurationChangeItem::ManualMintingAdminGroup(aat)
                 ),
                 "Manual Minting Admin Group",
             ),
             (
-                format!(
-                    "{}",
-                    TokenConfigurationChangeItem::ManualBurning(aat.clone())
-                ),
+                format!("{}", TokenConfigurationChangeItem::ManualBurning(aat)),
                 "Manual Burning",
             ),
             (
-                format!("{}", TokenConfigurationChangeItem::Freeze(aat.clone())),
+                format!("{}", TokenConfigurationChangeItem::Freeze(aat)),
                 "Freeze",
             ),
             (
-                format!("{}", TokenConfigurationChangeItem::Unfreeze(aat.clone())),
+                format!("{}", TokenConfigurationChangeItem::Unfreeze(aat)),
                 "Unfreeze",
             ),
             (
-                format!(
-                    "{}",
-                    TokenConfigurationChangeItem::DestroyFrozenFunds(aat.clone())
-                ),
+                format!("{}", TokenConfigurationChangeItem::DestroyFrozenFunds(aat)),
                 "Destroy Frozen Funds",
             ),
             (
-                format!(
-                    "{}",
-                    TokenConfigurationChangeItem::EmergencyAction(aat.clone())
-                ),
+                format!("{}", TokenConfigurationChangeItem::EmergencyAction(aat)),
                 "Emergency Action",
             ),
             (
                 format!(
                     "{}",
-                    TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat.clone())
+                    TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat)
                 ),
                 "Marketplace Trade Mode Control Group",
             ),
             (
                 format!(
                     "{}",
-                    TokenConfigurationChangeItem::ConventionsControlGroup(aat.clone())
+                    TokenConfigurationChangeItem::ConventionsControlGroup(aat)
                 ),
                 "Conventions Control Group",
             ),

@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{

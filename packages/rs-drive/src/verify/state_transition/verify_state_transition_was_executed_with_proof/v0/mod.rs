@@ -2125,7 +2125,7 @@ mod tests {
                     document_type,
                 },
                 false,
-                block_info.clone(),
+                block_info,
                 true,
                 None,
                 platform_version,

@@ -235,6 +235,7 @@ impl TokenConfigUpdateTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     //! Unit tests for the logic fragments of
     //! `try_from_{borrowed_,}token_config_update_transition_with_contract_lookup` that

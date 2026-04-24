@@ -65,6 +65,7 @@ pub(crate) fn encode_slice_len<E: Encoder>(encoder: &mut E, len: usize) -> Resul
 }
 
 #[cfg(test)]
+#[allow(clippy::drop_non_drop)]
 mod tests {
     use super::*;
     use bincode::config;

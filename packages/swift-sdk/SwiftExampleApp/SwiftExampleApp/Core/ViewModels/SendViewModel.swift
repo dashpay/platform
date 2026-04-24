@@ -1,20 +1,18 @@
 import Foundation
-import CommonCrypto
+import SwiftData
 import SwiftDashSDK
 
 /// Available send flow types based on source and destination.
 enum SendFlow: Equatable {
-    case coreToPlatform       // Asset lock / transfer to platform address
-    case coreToCore           // Standard Core transaction
-    case platformToShielded   // Shield credits
-    case shieldedToShielded   // Private transfer
-    case shieldedToPlatform   // Unshield
-    case shieldedToCore       // Withdrawal to L1
+    case coreToCore              // Standard L1 payment
+    case platformToShielded      // Shield credits
+    case shieldedToShielded      // Private transfer
+    case shieldedToPlatform      // Unshield
+    case shieldedToCore          // Withdrawal from shielded to L1
 
     var displayName: String {
         switch self {
-        case .coreToPlatform: return "Transfer to Platform"
-        case .coreToCore: return "Core Transfer"
+        case .coreToCore: return "Core Payment"
         case .platformToShielded: return "Shield Credits"
         case .shieldedToShielded: return "Shielded Transfer"
         case .shieldedToPlatform: return "Unshield"
@@ -24,7 +22,6 @@ enum SendFlow: Equatable {
 
     var iconName: String {
         switch self {
-        case .coreToPlatform: return "arrow.up.to.line"
         case .coreToCore: return "arrow.right"
         case .platformToShielded: return "lock.shield"
         case .shieldedToShielded: return "arrow.left.arrow.right"
@@ -33,11 +30,9 @@ enum SendFlow: Equatable {
         }
     }
 
-    /// Approximate fee in duffs for this flow type.
     var estimatedFee: UInt64 {
         switch self {
-        case .coreToPlatform: return 100_000     // ~0.001 DASH
-        case .coreToCore: return 100_000         // ~0.001 DASH
+        case .coreToCore: return 500_000             // ~0.005 DASH
         case .platformToShielded: return 200_000
         case .shieldedToShielded: return 300_000
         case .shieldedToPlatform: return 300_000
@@ -47,11 +42,31 @@ enum SendFlow: Equatable {
 }
 
 /// Fund source for sending.
-enum FundSource: String, CaseIterable {
+enum FundSource: String, CaseIterable, Identifiable {
+    case core = "Core"
     case shielded = "Shielded"
     case platform = "Platform"
-    case core = "Core"
+
+    var id: String { rawValue }
+
+    var iconName: String {
+        switch self {
+        case .core: return "arrow.right"
+        case .shielded: return "lock.shield"
+        case .platform: return "square.stack.3d.up"
+        }
+    }
+
+    var color: SwiftUI.Color {
+        switch self {
+        case .core: return .green
+        case .shielded: return .purple
+        case .platform: return .blue
+        }
+    }
 }
+
+import SwiftUI
 
 /// ViewModel for the Send Transaction screen.
 @MainActor
@@ -61,14 +76,12 @@ class SendViewModel: ObservableObject {
     }
     @Published var amountString = ""
     @Published var detectedAddressType: DashAddressType = .unknown
+    @Published var selectedSource: FundSource = .core
     @Published var detectedFlow: SendFlow?
     @Published var estimatedFee: UInt64?
     @Published var isSending = false
     @Published var error: String?
     @Published var successMessage: String?
-
-    // Source preference (for demo UI — defaults to Core since shielded requires setup)
-    @Published var preferShieldedSource = false
 
     private let network: AppNetwork
 
@@ -85,6 +98,28 @@ class SendViewModel: ObservableObject {
         detectedFlow != nil && amount != nil && !isSending
     }
 
+    /// Determine which fund sources are available based on destination and balances.
+    func availableSources(
+        coreBalance: UInt64,
+        shieldedBalance: UInt64,
+        platformBalance: UInt64
+    ) -> [FundSource] {
+        var sources: [FundSource] = []
+        switch detectedAddressType {
+        case .core:
+            if coreBalance > 0 { sources.append(.core) }
+            if shieldedBalance > 0 { sources.append(.shielded) }
+        case .orchard:
+            if shieldedBalance > 0 { sources.append(.shielded) }
+            if platformBalance > 0 { sources.append(.platform) }
+        case .platform:
+            if shieldedBalance > 0 { sources.append(.shielded) }
+        case .unknown:
+            break
+        }
+        return sources
+    }
+
     // MARK: - Address Detection
 
     func detectAddressType() {
@@ -98,20 +133,24 @@ class SendViewModel: ObservableObject {
 
         let parsed = DashAddress.parse(trimmed, network: network)
         detectedAddressType = parsed.type
+        updateFlow()
+    }
 
-        // Determine flow based on destination type and source preference
-        switch parsed.type {
-        case .orchard:
-            detectedFlow = preferShieldedSource ? .shieldedToShielded : .platformToShielded
-        case .platform:
-            // If we have shielded balance, unshield; otherwise transfer from Core
-            detectedFlow = preferShieldedSource ? .shieldedToPlatform : .coreToPlatform
-        case .core:
-            detectedFlow = preferShieldedSource ? .shieldedToCore : .coreToCore
-        case .unknown:
+    func updateFlow() {
+        switch (detectedAddressType, selectedSource) {
+        case (.core, .core):
+            detectedFlow = .coreToCore
+        case (.core, .shielded):
+            detectedFlow = .shieldedToCore
+        case (.orchard, .shielded):
+            detectedFlow = .shieldedToShielded
+        case (.orchard, .platform):
+            detectedFlow = .platformToShielded
+        case (.platform, .shielded):
+            detectedFlow = .shieldedToPlatform
+        default:
             detectedFlow = nil
         }
-
         estimatedFee = detectedFlow?.estimatedFee
     }
 
@@ -120,20 +159,12 @@ class SendViewModel: ObservableObject {
     func executeSend(
         sdk: SDK,
         shieldedService: ShieldedService,
-        walletService: WalletService,
         platformState: AppState,
-        wallet: HDWallet
+        wallet: PersistentWallet,
+        coreWallet: ManagedCoreWallet?,
+        modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow, let amount = amount else { return }
-
-        // Shielded flows need pool client; Core flows don't
-        let needsPoolClient = flow != .coreToPlatform && flow != .coreToCore
-        if needsPoolClient {
-            guard shieldedService.poolClient != nil else {
-                error = "Shielded pool not initialized"
-                return
-            }
-        }
 
         isSending = true
         error = nil
@@ -142,23 +173,61 @@ class SendViewModel: ObservableObject {
 
         do {
             switch flow {
+            case .coreToCore:
+                guard let core = coreWallet else {
+                    error = "Core wallet not available"
+                    return
+                }
+                let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                let _ = try core.sendToAddresses(
+                    recipients: [(address: address, amountDuffs: amount)]
+                )
+                successMessage = "Payment sent"
+
             case .platformToShielded:
-                let bundle = try await shieldedService.poolClient!.buildShieldBundle(amount: amount)
-                // Find an identity with sufficient balance to fund the shield
-                guard let identity = platformState.identities.first(where: {
-                    $0.walletId == wallet.walletId &&
-                    $0.network == wallet.network.rawValue &&
-                    $0.balance >= amount
-                }) else {
+                _ = platformState // quiet unused-param warnings
+                guard let poolClient = shieldedService.poolClient else {
+                    error = "Shielded pool not initialized"
+                    return
+                }
+                let bundle = try await poolClient.buildShieldBundle(amount: amount)
+
+                // Fetch a PersistentIdentity on this wallet/network
+                // that has enough platform balance to cover `amount`.
+                // `balance` is stored as Int64 (bit-pattern cast of
+                // the UInt64 DPP credits), so we compare against the
+                // same bit-pattern cast of the requested amount.
+                let walletId = wallet.walletId
+                let networkRaw = wallet.network
+                let amountThreshold = Int64(bitPattern: amount)
+                let descriptor = FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate<PersistentIdentity> { identity in
+                        identity.wallet?.walletId == walletId &&
+                        identity.network == networkRaw &&
+                        identity.balance >= amountThreshold
+                    }
+                )
+                guard let identity = try? modelContext.fetch(descriptor).first else {
                     error = "No identity with sufficient platform balance"
                     return
                 }
-                // Need the identity's private key for the shield input
-                guard let privateKey = identity.privateKeys.first else {
+
+                // Pick the first public key that has an associated
+                // private key in the keychain. Private keys no
+                // longer live on the identity row.
+                guard let privateKey = identity.publicKeys.lazy
+                    .compactMap({ key -> Data? in
+                        KeychainManager.shared.retrievePrivateKey(
+                            identityId: identity.identityId,
+                            keyIndex: key.keyId
+                        )
+                    })
+                    .first else {
                     error = "No private key available for identity"
                     return
                 }
-                let addressBytes = identity.id.prefix(21)
+
+                let addressBytes = identity.identityId.prefix(21)
                 let input = ShieldFundsInput(
                     address: Data(addressBytes),
                     amount: amount,
@@ -173,9 +242,13 @@ class SendViewModel: ObservableObject {
                 successMessage = "Shielding complete"
 
             case .shieldedToShielded:
+                guard let poolClient = shieldedService.poolClient else {
+                    error = "Shielded pool not initialized"
+                    return
+                }
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .orchard(let rawAddress) = parsed.type else { return }
-                let bundle = try await shieldedService.poolClient!.buildTransferBundle(
+                let bundle = try await poolClient.buildTransferBundle(
                     recipientAddress: rawAddress,
                     amount: amount
                 )
@@ -186,9 +259,13 @@ class SendViewModel: ObservableObject {
                 successMessage = "Shielded transfer complete"
 
             case .shieldedToPlatform:
+                guard let poolClient = shieldedService.poolClient else {
+                    error = "Shielded pool not initialized"
+                    return
+                }
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .platform(let addressBytes) = parsed.type else { return }
-                let bundle = try await shieldedService.poolClient!.buildUnshieldBundle(
+                let bundle = try await poolClient.buildUnshieldBundle(
                     outputAddress: addressBytes,
                     amount: amount
                 )
@@ -200,9 +277,13 @@ class SendViewModel: ObservableObject {
                 successMessage = "Unshield complete"
 
             case .shieldedToCore:
+                guard let poolClient = shieldedService.poolClient else {
+                    error = "Shielded pool not initialized"
+                    return
+                }
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .core(let outputScript) = parsed.type else { return }
-                let bundle = try await shieldedService.poolClient!.buildWithdrawalBundle(
+                let bundle = try await poolClient.buildWithdrawalBundle(
                     outputScript: outputScript,
                     amount: amount,
                     coreFeePerByte: 1,
@@ -216,110 +297,13 @@ class SendViewModel: ObservableObject {
                     outputScript: outputScript
                 )
                 successMessage = "Withdrawal submitted"
-
-            case .coreToPlatform:
-                // Core → Platform via asset lock
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .platform(let addressBytes) = parsed.type else {
-                    error = "Invalid platform address"
-                    return
-                }
-
-                // Convert platform address (21 bytes: type + hash) to P2PKH scriptPubKey (25 bytes)
-                // Platform type 0x00 = P2PKH: OP_DUP OP_HASH160 <20-byte-hash> OP_EQUALVERIFY OP_CHECKSIG
-                let creditScript: Data
-                if addressBytes.count == 21 && addressBytes[0] == 0x00 {
-                    let pubkeyHash = addressBytes.dropFirst() // 20-byte hash
-                    var script = Data([0x76, 0xa9, 0x14]) // OP_DUP OP_HASH160 PUSH20
-                    script.append(contentsOf: pubkeyHash)
-                    script.append(contentsOf: [0x88, 0xac]) // OP_EQUALVERIFY OP_CHECKSIG
-                    creditScript = script
-                } else {
-                    // Pass through as-is for other address types
-                    creditScript = addressBytes
-                }
-
-                // 1. Build the asset lock transaction
-                let assetLockResult = try walletService.walletManager.buildAssetLockTransaction(
-                    for: wallet,
-                    creditOutputs: [(scriptPubKey: creditScript, amount: amount)]
-                )
-
-                // 2. Broadcast on Core network
-                try walletService.broadcastTransaction(assetLockResult.transactionBytes)
-
-                // Compute txid from transaction bytes (double SHA256, reversed)
-                let txid = computeTxid(from: assetLockResult.transactionBytes)
-
-                // 3. Wait for InstantSend lock
-                let isLockData = try await walletService.waitForInstantLock(txid: txid, timeout: 30)
-
-                // 4. Submit to Platform
-                let outPoint = buildOutPoint(txid: txid, outputIndex: assetLockResult.outputIndex)
-                _ = try sdk.addresses.topUpAddressFromAssetLock(
-                    proofType: .instant,
-                    instantLockData: isLockData,
-                    transactionData: assetLockResult.transactionBytes,
-                    outputIndex: assetLockResult.outputIndex,
-                    coreChainLockedHeight: 0,
-                    outPoint: outPoint,
-                    assetLockPrivateKey: assetLockResult.privateKey,
-                    outputs: [Addresses.AddressTransferOutput(addressBytes: addressBytes, amount: amount)]
-                )
-
-                successMessage = "Transfer to Platform complete"
-
-            case .coreToCore:
-                let outputs = [
-                    TxOutput(address: recipientAddress, amount: amount)
-                ]
-
-                // TODO: The model is using hardoced estimated fees
-                let (tx, _) = try walletService.walletManager
-                    .buildSignedTransaction(
-                        for: wallet,
-                        accIndex: 0,
-                        outputs: outputs
-                    )
-
-                try walletService.broadcastTransaction(tx)
-                successMessage = "Transfer to Core complete"
             }
 
-            // Refresh shielded balance
+            // Refresh balances
             shieldedService.refreshBalance()
 
         } catch {
             self.error = error.localizedDescription
         }
-    }
-
-    // MARK: - Helpers
-
-    /// Compute txid from raw transaction bytes (double SHA256, reversed).
-    private func computeTxid(from txBytes: Data) -> Data {
-        var hash1 = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
-        var hash2 = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
-        txBytes.withUnsafeBytes { ptr in
-            hash1.withUnsafeMutableBytes { out in
-                _ = CC_SHA256(ptr.baseAddress, CC_LONG(txBytes.count), out.bindMemory(to: UInt8.self).baseAddress)
-            }
-        }
-        hash1.withUnsafeBytes { ptr in
-            hash2.withUnsafeMutableBytes { out in
-                _ = CC_SHA256(ptr.baseAddress, CC_LONG(hash1.count), out.bindMemory(to: UInt8.self).baseAddress)
-            }
-        }
-        // Txid is the reversed double-SHA256
-        return Data(hash2.reversed())
-    }
-
-    /// Build a 36-byte OutPoint (txid + output index as little-endian u32).
-    private func buildOutPoint(txid: Data, outputIndex: UInt32) -> Data {
-        // OutPoint = txid (32 bytes, internal byte order) + index (4 bytes LE)
-        var outPoint = Data(txid.reversed()) // reversed back to internal order
-        var idx = outputIndex.littleEndian
-        outPoint.append(Data(bytes: &idx, count: 4))
-        return outPoint
     }
 }

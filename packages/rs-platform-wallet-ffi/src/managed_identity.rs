@@ -2,8 +2,9 @@ use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::serialization::PlatformDeserializable;
-use platform_wallet::managed_identity::ManagedIdentity;
+use platform_wallet::ManagedIdentity;
 use std::os::raw::c_char;
 
 /// Create a new ManagedIdentity from a DPP Identity serialized bytes
@@ -45,7 +46,7 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     };
 
     // Create ManagedIdentity from the deserialized Identity
-    let managed_identity = ManagedIdentity::new(identity);
+    let managed_identity = ManagedIdentity::new(identity, 0);
 
     // Store in handle storage
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
@@ -345,6 +346,191 @@ pub unsafe extern "C" fn managed_identity_get_last_synced_keys_block_time(
         })
 }
 
+/// Get the identity revision.
+///
+/// Revisions advance on every platform-side state transition
+/// (key add/remove, balance change, etc.). Value 0 indicates the
+/// identity was just created and has not been mutated.
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_revision(
+    identity_handle: Handle,
+    out_revision: *mut u64,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_revision.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "Null pointer provided",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item(identity_handle, |identity| {
+            unsafe { *out_revision = identity.identity.revision() };
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Flat C representation of an `IdentityPublicKey` for the Swift
+/// wrapper. `disabled_at_is_some` / `disabled_at` together encode
+/// the `Option<TimestampMillis>` because C can't express Option
+/// directly. `data_ptr` / `data_len` own a heap-allocated copy of
+/// the public-key payload; the whole array plus the individual data
+/// buffers are released by
+/// [`managed_identity_free_public_keys`].
+#[repr(C)]
+pub struct IdentityPublicKeyFFI {
+    /// DPP `KeyID` — matches `IdentityPublicKeyV0::id`.
+    pub key_id: u32,
+    /// `Purpose` as its `#[repr(u8)]` discriminant.
+    pub purpose: u8,
+    /// `SecurityLevel` as its `#[repr(u8)]` discriminant.
+    pub security_level: u8,
+    /// `KeyType` as its `#[repr(u8)]` discriminant.
+    pub key_type: u8,
+    pub read_only: bool,
+    /// Set iff `disabled_at.is_some()`.
+    pub disabled_at_is_some: bool,
+    /// Milliseconds-since-epoch timestamp; ignore unless
+    /// `disabled_at_is_some` is true.
+    pub disabled_at: u64,
+    /// Heap-owned public-key bytes (compressed secp256k1, BLS,
+    /// hash160, etc. — depends on `key_type`). Freed with the whole
+    /// array by `managed_identity_free_public_keys`.
+    pub data_ptr: *mut u8,
+    pub data_len: usize,
+}
+
+/// Snapshot every `IdentityPublicKey` on the identity into a flat
+/// heap-allocated array. The caller takes ownership of the array
+/// pointer and of the inner `data_ptr` blobs; both are released by
+/// a single call to [`managed_identity_free_public_keys`].
+///
+/// On success `out_keys` / `out_count` are populated. `out_count` is
+/// zero for an identity with no keys and `out_keys` is `null`.
+/// Contract bounds are intentionally omitted — the first-pass use
+/// site (address-funded registration) never sets them, and bridging
+/// the `ContractBounds` enum would expand the FFI surface.
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_public_keys(
+    identity_handle: Handle,
+    out_keys: *mut *mut IdentityPublicKeyFFI,
+    out_count: *mut usize,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_keys.is_null() || out_count.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "Null pointer provided",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item(identity_handle, |identity| {
+            let keys = identity.identity.public_keys();
+            if keys.is_empty() {
+                unsafe {
+                    *out_keys = std::ptr::null_mut();
+                    *out_count = 0;
+                }
+                return PlatformWalletFFIResult::Success;
+            }
+
+            let mut buf: Vec<IdentityPublicKeyFFI> = Vec::with_capacity(keys.len());
+            for (&key_id, pk) in keys {
+                let data_bytes = pk.data().as_slice().to_vec();
+                let data_len = data_bytes.len();
+                let data_boxed = data_bytes.into_boxed_slice();
+                let data_ptr = Box::into_raw(data_boxed) as *mut u8;
+
+                let (disabled_some, disabled_val) = match pk.disabled_at() {
+                    Some(ts) => (true, ts),
+                    None => (false, 0u64),
+                };
+
+                buf.push(IdentityPublicKeyFFI {
+                    key_id,
+                    purpose: pk.purpose() as u8,
+                    security_level: pk.security_level() as u8,
+                    key_type: pk.key_type() as u8,
+                    read_only: pk.read_only(),
+                    disabled_at_is_some: disabled_some,
+                    disabled_at: disabled_val,
+                    data_ptr,
+                    data_len,
+                });
+            }
+
+            let count = buf.len();
+            let boxed = buf.into_boxed_slice();
+            let array_ptr = Box::into_raw(boxed) as *mut IdentityPublicKeyFFI;
+            unsafe {
+                *out_keys = array_ptr;
+                *out_count = count;
+            }
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Release an array previously returned by
+/// [`managed_identity_get_public_keys`]. Walks the array to free
+/// every `data_ptr` blob before releasing the array itself.
+///
+/// Safe to call with `keys = null` / `count = 0` — both are no-ops.
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_free_public_keys(
+    keys: *mut IdentityPublicKeyFFI,
+    count: usize,
+) {
+    if keys.is_null() || count == 0 {
+        return;
+    }
+    // Reconstruct the slice box so we can iterate + free inner data.
+    let slice = unsafe { std::slice::from_raw_parts_mut(keys, count) };
+    for entry in slice.iter_mut() {
+        if !entry.data_ptr.is_null() && entry.data_len > 0 {
+            let data_slice =
+                unsafe { std::slice::from_raw_parts_mut(entry.data_ptr, entry.data_len) };
+            let _ = unsafe { Box::from_raw(data_slice as *mut [u8]) };
+            entry.data_ptr = std::ptr::null_mut();
+            entry.data_len = 0;
+        }
+    }
+    let _ = unsafe { Box::from_raw(slice as *mut [IdentityPublicKeyFFI]) };
+}
+
 // Note: managed_identity_to_json is not currently available because
 // ManagedIdentity does not implement Serialize. This would require
 // significant work to add custom serialization for all internal types.
@@ -402,7 +588,7 @@ mod tests {
     fn test_get_and_set_label() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let label = std::ffi::CString::new("Test Identity").unwrap();
@@ -429,7 +615,7 @@ mod tests {
     fn test_get_balance() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let mut balance: u64 = 0;
@@ -447,7 +633,7 @@ mod tests {
     fn test_block_time_operations() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let block_time = BlockTime {

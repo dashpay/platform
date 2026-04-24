@@ -354,8 +354,8 @@ mod tests {
 
         let result = unsafe {
             dash_sdk_identity_transfer_credits(
-                std::ptr::null_mut(),         // null SDK handle
-                0x1 as *const IdentityHandle, // non-null but unused due to early return
+                std::ptr::null_mut(),                   // null SDK handle
+                std::ptr::dangling::<IdentityHandle>(), // non-null but unused due to early return
                 to_id,
                 1000,
                 0,
@@ -391,7 +391,7 @@ mod tests {
         let result = unsafe {
             dash_sdk_identity_transfer_credits(
                 sdk_handle,
-                0x1 as *const IdentityHandle, // non-null but unused due to early return
+                std::ptr::dangling::<IdentityHandle>(), // non-null but unused due to early return
                 to_id,
                 1000,
                 0,
@@ -428,8 +428,8 @@ mod tests {
         let result = unsafe {
             dash_sdk_identity_transfer_credits(
                 sdk_handle,
-                0x1 as *const IdentityHandle, // non-null but unused due to early return
-                std::ptr::null(),             // null to_identity_id
+                std::ptr::dangling::<IdentityHandle>(), // non-null but unused due to early return
+                std::ptr::null(),                       // null to_identity_id
                 1000,
                 0,
                 signer_ptr,

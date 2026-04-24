@@ -551,6 +551,7 @@ impl SpecializedDocumentFactoryV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::document::DocumentV0Getters;

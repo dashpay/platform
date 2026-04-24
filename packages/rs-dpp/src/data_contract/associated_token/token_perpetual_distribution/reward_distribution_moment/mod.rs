@@ -510,6 +510,7 @@ impl fmt::Display for RewardDistributionMoment {
 }
 
 #[cfg(test)]
+#[allow(clippy::op_ref)]
 mod tests {
     use super::*;
 

@@ -9,8 +9,18 @@ use dpp::identity::identity_public_key::{IdentityPublicKey, Purpose};
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, KeyType, SecurityLevel};
 use dpp::prelude::Identifier;
-use platform_wallet::{ContactRequest, EstablishedContact, ManagedIdentity};
+use platform_wallet::wallet::persister::{NoPlatformPersistence, WalletPersister};
+use platform_wallet::{ContactRequest, ManagedIdentity};
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+/// Build a no-op `WalletPersister` for tests — mutation methods on
+/// `ManagedIdentity` require one but none of these tests exercise the
+/// persistence side, so a backend that drops every changeset on the
+/// floor is sufficient.
+fn noop_persister() -> WalletPersister {
+    WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+}
 
 /// Helper function to create a test identity with encryption key
 fn create_test_identity(id_bytes: [u8; 32]) -> Identity {
@@ -70,19 +80,19 @@ fn test_send_and_accept_contact_request_same_wallet() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
-    let mut managed_b = ManagedIdentity::new(identity_b);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
+    let mut managed_b = ManagedIdentity::new(identity_b, 1);
 
     // Identity A sends friend request to Identity B
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1234567890);
-    managed_a.add_sent_contact_request(request_a_to_b.clone());
+    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister());
 
     // Verify request is pending
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
     assert_eq!(managed_a.established_contacts.len(), 0);
 
     // Identity B receives the request
-    managed_b.add_incoming_contact_request(request_a_to_b);
+    managed_b.add_incoming_contact_request(request_a_to_b, &noop_persister());
 
     // Verify B has incoming request
     assert_eq!(managed_b.incoming_contact_requests.len(), 1);
@@ -90,7 +100,7 @@ fn test_send_and_accept_contact_request_same_wallet() {
 
     // Identity B sends friend request back to Identity A
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1234567891);
-    managed_b.add_sent_contact_request(request_b_to_a.clone());
+    managed_b.add_sent_contact_request(request_b_to_a.clone(), &noop_persister());
 
     // This should auto-establish on B's side
     assert_eq!(managed_b.sent_contact_requests.len(), 0);
@@ -99,7 +109,7 @@ fn test_send_and_accept_contact_request_same_wallet() {
     assert!(managed_b.established_contacts.contains_key(&id_a));
 
     // Identity A receives B's request
-    managed_a.add_incoming_contact_request(request_b_to_a);
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
 
     // This should auto-establish on A's side
     assert_eq!(managed_a.sent_contact_requests.len(), 0);
@@ -126,15 +136,15 @@ fn test_send_and_accept_contact_request_different_wallets() {
     let id_1 = identity_1.id();
     let id_2 = identity_2.id();
 
-    let mut managed_1 = ManagedIdentity::new(identity_1);
-    let mut managed_2 = ManagedIdentity::new(identity_2);
+    let mut managed_1 = ManagedIdentity::new(identity_1, 0);
+    let mut managed_2 = ManagedIdentity::new(identity_2, 1);
 
     // Identity 1 sends friend request to Identity 2
     let request_1_to_2 = create_contact_request(id_1, id_2, 0, 1234567900);
-    managed_1.add_sent_contact_request(request_1_to_2.clone());
+    managed_1.add_sent_contact_request(request_1_to_2.clone(), &noop_persister());
 
     // Identity 2 receives the request
-    managed_2.add_incoming_contact_request(request_1_to_2);
+    managed_2.add_incoming_contact_request(request_1_to_2, &noop_persister());
 
     // Verify states before reciprocation
     assert_eq!(managed_1.sent_contact_requests.len(), 1);
@@ -142,13 +152,13 @@ fn test_send_and_accept_contact_request_different_wallets() {
 
     // Identity 2 sends friend request back
     let request_2_to_1 = create_contact_request(id_2, id_1, 0, 1234567901);
-    managed_2.add_sent_contact_request(request_2_to_1.clone());
+    managed_2.add_sent_contact_request(request_2_to_1.clone(), &noop_persister());
 
     // Should auto-establish on identity 2's side
     assert_eq!(managed_2.established_contacts.len(), 1);
 
     // Identity 1 receives the reciprocal request
-    managed_1.add_incoming_contact_request(request_2_to_1);
+    managed_1.add_incoming_contact_request(request_2_to_1, &noop_persister());
 
     // Should auto-establish on identity 1's side
     assert_eq!(managed_1.established_contacts.len(), 1);
@@ -173,35 +183,48 @@ fn test_multiple_contact_requests_workflow() {
     let id_friend2 = identity_friend2.id();
     let id_friend3 = identity_friend3.id();
 
-    let mut managed_main = ManagedIdentity::new(identity_main);
+    let mut managed_main = ManagedIdentity::new(identity_main, 0);
 
     // Send requests to three different identities
-    managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend1, 0, 1000));
-    managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend2, 0, 2000));
-    managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend3, 0, 3000));
+    managed_main.add_sent_contact_request(
+        create_contact_request(id_main, id_friend1, 0, 1000),
+        &noop_persister(),
+    );
+    managed_main.add_sent_contact_request(
+        create_contact_request(id_main, id_friend2, 0, 2000),
+        &noop_persister(),
+    );
+    managed_main.add_sent_contact_request(
+        create_contact_request(id_main, id_friend3, 0, 3000),
+        &noop_persister(),
+    );
 
     assert_eq!(managed_main.sent_contact_requests.len(), 3);
 
     // Receive incoming request from friend1 (should auto-establish)
-    managed_main.add_incoming_contact_request(create_contact_request(id_friend1, id_main, 0, 1001));
+    managed_main.add_incoming_contact_request(
+        create_contact_request(id_friend1, id_main, 0, 1001),
+        &noop_persister(),
+    );
 
     assert_eq!(managed_main.sent_contact_requests.len(), 2); // friend2 and friend3 left
     assert_eq!(managed_main.established_contacts.len(), 1); // friend1 established
 
     // Receive incoming request from friend2 (should auto-establish)
-    managed_main.add_incoming_contact_request(create_contact_request(id_friend2, id_main, 0, 2001));
+    managed_main.add_incoming_contact_request(
+        create_contact_request(id_friend2, id_main, 0, 2001),
+        &noop_persister(),
+    );
 
     assert_eq!(managed_main.sent_contact_requests.len(), 1); // only friend3 left
     assert_eq!(managed_main.established_contacts.len(), 2); // friend1 and friend2 established
 
     // Receive incoming from unknown identity (should stay in incoming)
     let id_stranger = Identifier::from([99u8; 32]);
-    managed_main.add_incoming_contact_request(create_contact_request(
-        id_stranger,
-        id_main,
-        0,
-        9000,
-    ));
+    managed_main.add_incoming_contact_request(
+        create_contact_request(id_stranger, id_main, 0, 9000),
+        &noop_persister(),
+    );
 
     assert_eq!(managed_main.incoming_contact_requests.len(), 1);
     assert_eq!(managed_main.sent_contact_requests.len(), 1);
@@ -218,14 +241,14 @@ fn test_contact_alias_and_metadata() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Establish contact
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
 
-    managed_a.add_sent_contact_request(request_a_to_b);
-    managed_a.add_incoming_contact_request(request_b_to_a);
+    managed_a.add_sent_contact_request(request_a_to_b, &noop_persister());
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
 
     // Contact should be established
     assert_eq!(managed_a.established_contacts.len(), 1);
@@ -268,15 +291,18 @@ fn test_reject_contact_request() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Receive incoming request
-    managed_a.add_incoming_contact_request(create_contact_request(id_b, id_a, 0, 1000));
+    managed_a.add_incoming_contact_request(
+        create_contact_request(id_b, id_a, 0, 1000),
+        &noop_persister(),
+    );
 
     assert_eq!(managed_a.incoming_contact_requests.len(), 1);
 
     // Reject by removing the request
-    let removed = managed_a.remove_incoming_contact_request(&id_b);
+    let (removed, _cs) = managed_a.remove_incoming_contact_request(&id_b);
     assert!(removed.is_some());
     assert_eq!(managed_a.incoming_contact_requests.len(), 0);
 }
@@ -291,15 +317,18 @@ fn test_cancel_sent_contact_request() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Send request
-    managed_a.add_sent_contact_request(create_contact_request(id_a, id_b, 0, 1000));
+    managed_a.add_sent_contact_request(
+        create_contact_request(id_a, id_b, 0, 1000),
+        &noop_persister(),
+    );
 
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
 
     // Cancel by removing the request
-    let removed = managed_a.remove_sent_contact_request(&id_b);
+    let (removed, _cs) = managed_a.remove_sent_contact_request(&id_b);
     assert!(removed.is_some());
     assert_eq!(managed_a.sent_contact_requests.len(), 0);
 }
@@ -315,17 +344,17 @@ fn test_contact_request_with_different_account_references() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Send request with account reference 0
     let mut request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     request_a_to_b.account_reference = 0;
-    managed_a.add_sent_contact_request(request_a_to_b.clone());
+    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister());
 
     // Receive reciprocal request with account reference 1
     let mut request_b_to_a = create_contact_request(id_b, id_a, 1, 1001);
     request_b_to_a.account_reference = 1;
-    managed_a.add_incoming_contact_request(request_b_to_a);
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
 
     // Should establish contact
     assert_eq!(managed_a.established_contacts.len(), 1);
@@ -340,17 +369,17 @@ fn test_identity_label_management() {
     // Test setting and clearing labels on managed identities
 
     let identity = create_test_identity([1u8; 32]);
-    let mut managed = ManagedIdentity::new(identity);
+    let mut managed = ManagedIdentity::new(identity, 0);
 
     assert_eq!(managed.label, None);
 
-    managed.set_label("Primary Identity".to_string());
+    managed.set_label("Primary Identity".to_string(), &noop_persister());
     assert_eq!(managed.label, Some("Primary Identity".to_string()));
 
-    managed.set_label("Updated Label".to_string());
+    managed.set_label("Updated Label".to_string(), &noop_persister());
     assert_eq!(managed.label, Some("Updated Label".to_string()));
 
-    managed.clear_label();
+    managed.clear_label(&noop_persister());
     assert_eq!(managed.label, None);
 }
 
@@ -365,23 +394,23 @@ fn test_concurrent_bidirectional_requests() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
-    let mut managed_b = ManagedIdentity::new(identity_b);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
+    let mut managed_b = ManagedIdentity::new(identity_b, 1);
 
     // Both send requests "simultaneously"
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
 
-    managed_a.add_sent_contact_request(request_a_to_b.clone());
-    managed_b.add_sent_contact_request(request_b_to_a.clone());
+    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister());
+    managed_b.add_sent_contact_request(request_b_to_a.clone(), &noop_persister());
 
     // Both have sent requests pending
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
     assert_eq!(managed_b.sent_contact_requests.len(), 1);
 
     // Now they receive each other's requests
-    managed_a.add_incoming_contact_request(request_b_to_a);
-    managed_b.add_incoming_contact_request(request_a_to_b);
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
+    managed_b.add_incoming_contact_request(request_a_to_b, &noop_persister());
 
     // Both should have auto-established
     assert_eq!(managed_a.established_contacts.len(), 1);

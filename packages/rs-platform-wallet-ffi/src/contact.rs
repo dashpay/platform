@@ -1,6 +1,7 @@
 use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_manager::ffi_noop_persister;
 use crate::types::*;
 
 /// Get all sent contact request IDs
@@ -204,7 +205,7 @@ pub unsafe extern "C" fn managed_identity_send_contact_request(
 
     MANAGED_IDENTITY_STORAGE
         .with_item_mut(identity_handle, |identity| {
-            identity.add_sent_contact_request(request);
+            identity.add_sent_contact_request(request, &ffi_noop_persister());
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -248,7 +249,7 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
 
     MANAGED_IDENTITY_STORAGE
         .with_item_mut(identity_handle, |identity| {
-            identity.add_incoming_contact_request(request);
+            identity.add_incoming_contact_request(request, &ffi_noop_persister());
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -289,7 +290,7 @@ pub unsafe extern "C" fn managed_identity_reject_contact_request(
 
     MANAGED_IDENTITY_STORAGE
         .with_item_mut(identity_handle, |identity| {
-            if identity.remove_incoming_contact_request(&id).is_some() {
+            if identity.remove_incoming_contact_request(&id).0.is_some() {
                 PlatformWalletFFIResult::Success
             } else {
                 if !out_error.is_null() {
@@ -357,7 +358,7 @@ mod tests {
     fn test_get_sent_contact_request_ids() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let mut array = IdentifierArray {
@@ -381,7 +382,7 @@ mod tests {
     fn test_get_incoming_contact_request_ids() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let mut array = IdentifierArray {
@@ -405,7 +406,7 @@ mod tests {
     fn test_get_established_contact_ids() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let mut array = IdentifierArray {
@@ -429,7 +430,7 @@ mod tests {
     fn test_is_contact_established() {
         unsafe {
             let identity = create_test_identity();
-            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let managed = platform_wallet::ManagedIdentity::new(identity, 0);
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let contact_id = Identifier::random();

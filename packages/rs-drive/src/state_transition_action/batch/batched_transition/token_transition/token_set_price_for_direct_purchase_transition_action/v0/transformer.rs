@@ -238,6 +238,7 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     //! Unit tests for the logic fragments of
     //! `try_from_{borrowed_,}token_set_price_for_direct_purchase_transition_with_contract_lookup`

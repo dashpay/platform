@@ -90,7 +90,13 @@ public final class PersistentDocument {
         parts.append("Type: \(documentType)")
         parts.append("Rev: \(revision)")
 
+        // Pin to Gregorian so the `createdAt` year stays CE even
+        // when the device is configured for a non-Gregorian
+        // calendar (e.g. Thai region → Buddhist era). The SDK
+        // doesn't depend on the app's `AppDate` helper, so we
+        // configure the formatter inline.
         let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateStyle = .short
         parts.append("Created: \(formatter.string(from: createdAt))")
 
@@ -179,46 +185,6 @@ public final class PersistentDocument {
     }
 }
 
-// MARK: - Conversion Methods
-
-extension PersistentDocument {
-    /// Create a PersistentDocument from a DocumentModel
-    public static func from(_ document: DocumentModel) -> PersistentDocument {
-        let dataToStore = (try? JSONSerialization.data(withJSONObject: document.data, options: [])) ?? Data()
-
-        let persistent = PersistentDocument(
-            documentId: document.id,
-            documentType: document.documentType,
-            revision: Int32(document.revision),
-            data: dataToStore,
-            contractId: document.contractId,
-            ownerId: document.ownerId.toBase58String()
-        )
-
-        if let createdAt = document.createdAt {
-            persistent.createdAt = createdAt
-        }
-        if let updatedAt = document.updatedAt {
-            persistent.updatedAt = updatedAt
-        }
-
-        return persistent
-    }
-
-    /// Convert to a DocumentModel
-    public func toDocumentModel() -> DocumentModel {
-        let dataDict: [String: Any] = properties ?? [:]
-
-        return DocumentModel(
-            id: documentId,
-            contractId: contractId,
-            documentType: documentType,
-            ownerId: ownerIdData,
-            data: dataDict,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            dppDocument: nil,
-            revision: Revision(revision)
-        )
-    }
-}
+// The legacy `DocumentModel` value-type bridge has been removed.
+// Callers construct `PersistentDocument` directly and read the JSON
+// payload via `properties`.

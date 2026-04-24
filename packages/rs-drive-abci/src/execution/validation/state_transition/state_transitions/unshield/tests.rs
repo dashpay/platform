@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{

@@ -118,7 +118,7 @@ public class IdentityManager {
 
     /// Get the count of identities
     public func getIdentityCount() throws -> Int {
-        var count: UInt = 0
+        var count: Int = 0
         var error = PlatformWalletFFIError()
 
         let result = identity_manager_get_identity_count(handle, &count, &error)
@@ -126,6 +126,6 @@ public class IdentityManager {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return Int(count)
+        return count
     }
 }

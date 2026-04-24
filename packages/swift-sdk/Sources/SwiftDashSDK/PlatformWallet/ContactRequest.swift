@@ -2,7 +2,12 @@ import Foundation
 import DashSDKFFI
 
 /// Contact Request for DashPay
-public class ContactRequest {
+///
+/// `@unchecked Sendable`: the only instance state is an immutable
+/// `Handle` (UInt64). All mutable state behind the handle lives in
+/// the Rust-side `CONTACT_REQUEST_STORAGE` (parking_lot RwLock).
+/// Same rationale as `ManagedPlatformWallet`.
+public final class ContactRequest: @unchecked Sendable {
     internal let handle: Handle
 
     internal init(handle: Handle) {
@@ -37,7 +42,7 @@ public class ContactRequest {
                 recipientKeyIndex,
                 accountReference,
                 keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(encryptedPublicKey.count),
+                encryptedPublicKey.count,
                 coreHeightCreatedAt,
                 createdAt,
                 &handle,
@@ -120,7 +125,7 @@ public class ContactRequest {
     /// Get the encrypted public key
     public func getEncryptedPublicKey() throws -> Data {
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var length: UInt = 0
+        var length: Int = 0
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_encrypted_public_key(handle, &bytesPtr, &length, &error)

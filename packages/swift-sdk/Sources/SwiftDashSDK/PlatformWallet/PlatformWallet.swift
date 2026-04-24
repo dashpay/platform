@@ -27,7 +27,7 @@ public class PlatformWallet {
             platform_wallet_info_create_from_seed(
                 network.ffiValue,
                 seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(seed.count),
+                seed.count,
                 &handle,
                 &error
             )

@@ -3017,7 +3017,7 @@ mod tests {
         let start_identities = create_state_transitions_for_identities(
             vec![&mut identity1, &mut identity2],
             &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &mut simple_signer,
+            &simple_signer,
             &mut rng,
             platform_version,
         );

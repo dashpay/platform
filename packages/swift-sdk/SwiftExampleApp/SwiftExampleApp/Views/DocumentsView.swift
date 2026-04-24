@@ -1,15 +1,20 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct DocumentsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \PersistentDocument.createdAt, order: .reverse)
+    private var documents: [PersistentDocument]
+
     @State private var showingCreateDocument = false
-    @State private var selectedDocument: DocumentModel?
+    @State private var selectedDocument: PersistentDocument?
 
     var body: some View {
         NavigationView {
             List {
-                if appState.documents.isEmpty {
+                if documents.isEmpty {
                     EmptyStateView(
                         systemImage: "doc.text",
                         title: "No Documents",
@@ -17,7 +22,7 @@ struct DocumentsView: View {
                     )
                     .listRowBackground(Color.clear)
                 } else {
-                    ForEach(appState.documents) { document in
+                    ForEach(documents) { document in
                         DocumentRow(document: document) {
                             selectedDocument = document
                         }
@@ -42,58 +47,20 @@ struct DocumentsView: View {
             .sheet(item: $selectedDocument) { document in
                 DocumentDetailView(document: document)
             }
-            .onAppear {
-                if appState.documents.isEmpty {
-                    loadSampleDocuments()
-                }
-            }
         }
-    }
-
-    private func loadSampleDocuments() {
-        // Add sample documents for demonstration
-        appState.documents = [
-            DocumentModel(
-                id: "doc1",
-                contractId: "dpns-contract",
-                documentType: "domain",
-                ownerId: Data(hexString: "1111111111111111111111111111111111111111111111111111111111111111")!,
-                data: [
-                    "label": "alice",
-                    "normalizedLabel": "alice",
-                    "normalizedParentDomainName": "dash"
-                ],
-                createdAt: Date(),
-                updatedAt: Date()
-            ),
-            DocumentModel(
-                id: "doc2",
-                contractId: "dashpay-contract",
-                documentType: "profile",
-                ownerId: Data(hexString: "2222222222222222222222222222222222222222222222222222222222222222")!,
-                data: [
-                    "displayName": "Bob",
-                    "publicMessage": "Hello from Bob!"
-                ],
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-        ]
     }
 
     private func deleteDocuments(at offsets: IndexSet) {
-        for index in offsets {
-            if index < appState.documents.count {
-                let document = appState.documents[index]
-                // In a real app, we would delete the document
-                appState.documents.removeAll { $0.id == document.id }
-            }
+        for index in offsets where index < documents.count {
+            let document = documents[index]
+            document.markAsDeleted()
         }
+        try? modelContext.save()
     }
 }
 
 struct DocumentRow: View {
-    let document: DocumentModel
+    let document: PersistentDocument
     let onTap: () -> Void
 
     var body: some View {
@@ -104,7 +71,7 @@ struct DocumentRow: View {
                         .font(.headline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text(document.contractId)
+                    Text(document.contractIdBase58)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -112,17 +79,15 @@ struct DocumentRow: View {
                         .frame(maxWidth: 100)
                 }
 
-                Text("Owner: \(document.ownerIdString)")
+                Text("Owner: \(document.ownerIdBase58)")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                if let createdAt = document.createdAt {
-                    Text("Created: \(createdAt, formatter: dateFormatter)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                Text("Created: \(document.createdAt, formatter: dateFormatter)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             .padding(.vertical, 4)
         }
@@ -131,7 +96,7 @@ struct DocumentRow: View {
 }
 
 struct DocumentDetailView: View {
-    let document: DocumentModel
+    let document: PersistentDocument
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -141,17 +106,11 @@ struct DocumentDetailView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             DetailRow(label: "Document Type", value: document.documentType)
-                            DetailRow(label: "Document ID", value: document.id)
-                            DetailRow(label: "Contract ID", value: document.contractId)
-                            DetailRow(label: "Owner ID", value: document.ownerIdString)
-
-                            if let createdAt = document.createdAt {
-                                DetailRow(label: "Created", value: createdAt.formatted())
-                            }
-
-                            if let updatedAt = document.updatedAt {
-                                DetailRow(label: "Updated", value: updatedAt.formatted())
-                            }
+                            DetailRow(label: "Document ID", value: document.documentId)
+                            DetailRow(label: "Contract ID", value: document.contractIdBase58)
+                            DetailRow(label: "Owner ID", value: document.ownerIdBase58)
+                            DetailRow(label: "Created", value: AppDate.formatted(document.createdAt))
+                            DetailRow(label: "Updated", value: AppDate.formatted(document.updatedAt))
                         }
                         .padding()
                         .background(Color.gray.opacity(0.1))
@@ -163,7 +122,7 @@ struct DocumentDetailView: View {
                             Text("Document Data")
                                 .font(.headline)
 
-                            Text(document.formattedData)
+                            Text(formattedProperties(document.properties))
                                 .font(.system(.caption, design: .monospaced))
                                 .padding()
                                 .background(Color.gray.opacity(0.1))
@@ -184,17 +143,33 @@ struct DocumentDetailView: View {
             }
         }
     }
+
+    private func formattedProperties(_ properties: [String: Any]?) -> String {
+        guard let properties = properties else { return "No data" }
+        guard let jsonData = try? JSONSerialization.data(
+            withJSONObject: properties,
+            options: .prettyPrinted
+        ), let text = String(data: jsonData, encoding: .utf8) else {
+            return properties.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
+        }
+        return text
+    }
 }
 
 struct CreateDocumentView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
-    @State private var selectedContract: ContractModel?
+
+    @Query private var contracts: [PersistentDataContract]
+    @Query private var identities: [PersistentIdentity]
+
+    @State private var selectedContract: PersistentDataContract?
     @State private var selectedDocumentType = ""
     @State private var selectedOwnerId: String = ""
     @State private var dataKeyToAdd = ""
     @State private var dataValueToAdd = ""
-    @State private var documentData: [String: Any] = [:]
+    @State private var documentData: [String: String] = [:]
     @State private var isLoading = false
 
     var body: some View {
@@ -202,16 +177,16 @@ struct CreateDocumentView: View {
             Form {
                 Section(header: Text("Document Configuration")) {
                     Picker("Contract", selection: $selectedContract) {
-                        Text("Select a contract").tag(nil as ContractModel?)
-                        ForEach(appState.contracts) { contract in
-                            Text(contract.name).tag(contract as ContractModel?)
+                        Text("Select a contract").tag(nil as PersistentDataContract?)
+                        ForEach(contracts) { contract in
+                            Text(contract.name).tag(contract as PersistentDataContract?)
                         }
                     }
 
                     if let contract = selectedContract {
                         Picker("Document Type", selection: $selectedDocumentType) {
                             Text("Select type").tag("")
-                            ForEach(contract.documentTypes, id: \.self) { type in
+                            ForEach(contract.documentTypesList, id: \.self) { type in
                                 Text(type).tag(type)
                             }
                         }
@@ -219,9 +194,9 @@ struct CreateDocumentView: View {
 
                     Picker("Owner", selection: $selectedOwnerId) {
                         Text("Select owner").tag("")
-                        ForEach(appState.identities) { identity in
-                            Text(identity.alias ?? identity.idString)
-                                .tag(identity.idString)
+                        ForEach(identities) { identity in
+                            Text(identity.alias ?? identity.identityIdBase58)
+                                .tag(identity.identityIdBase58)
                         }
                     }
                 }
@@ -233,7 +208,7 @@ struct CreateDocumentView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text("\(String(describing: documentData[key] ?? ""))")
+                            Text(documentData[key] ?? "")
                                 .font(.subheadline)
                         }
                     }
@@ -269,15 +244,9 @@ struct CreateDocumentView: View {
                         }
                     }
                     .disabled(selectedContract == nil ||
-                             selectedDocumentType.isEmpty ||
-                             selectedOwnerId.isEmpty ||
-                             isLoading)
-                }
-            }
-            .onAppear {
-                if appState.contracts.isEmpty {
-                    // Load sample contracts if needed
-                    loadSampleContracts()
+                              selectedDocumentType.isEmpty ||
+                              selectedOwnerId.isEmpty ||
+                              isLoading)
                 }
             }
         }
@@ -292,61 +261,31 @@ struct CreateDocumentView: View {
         }
 
         isLoading = true
+        defer { isLoading = false }
 
-        // In a real app, we would use the SDK's document creation functionality
-        let document = DocumentModel(
-            id: UUID().uuidString,
-            contractId: contract.id,
+        // Local-only create for demonstration. In the real flow we
+        // would broadcast the document through the SDK and wait for
+        // the platform acknowledgement.
+        let dataBlob = (try? JSONSerialization.data(
+            withJSONObject: documentData,
+            options: []
+        )) ?? Data()
+
+        let document = PersistentDocument(
+            documentId: UUID().uuidString,
             documentType: selectedDocumentType,
-            ownerId: Data(hexString: selectedOwnerId) ?? Data(),
-            data: documentData,
-            createdAt: Date(),
-            updatedAt: Date()
+            revision: 1,
+            data: dataBlob,
+            contractId: contract.idBase58,
+            ownerId: selectedOwnerId,
+            network: appState.currentNetwork.rawValue
         )
+        // Link to the parent contract so cascading cleanup works.
+        document.dataContract = contract
+        modelContext.insert(document)
+        try? modelContext.save()
 
-        appState.documents.append(document)
-        appState.showError(message: "Document created successfully")
-
-        isLoading = false
-    }
-
-    private func loadSampleContracts() {
-        // Add sample contracts for demonstration
-        appState.contracts = [
-            ContractModel(
-                id: "dpns-contract",
-                name: "DPNS",
-                version: 1,
-                ownerId: Data(hexString: "0000000000000000000000000000000000000000000000000000000000000000") ?? Data(),
-                documentTypes: ["domain", "preorder"],
-                schema: [
-                    "domain": [
-                        "type": "object",
-                        "properties": [
-                            "label": ["type": "string"],
-                            "normalizedLabel": ["type": "string"],
-                            "normalizedParentDomainName": ["type": "string"]
-                        ]
-                    ]
-                ]
-            ),
-            ContractModel(
-                id: "dashpay-contract",
-                name: "DashPay",
-                version: 1,
-                ownerId: Data(hexString: "0000000000000000000000000000000000000000000000000000000000000000") ?? Data(),
-                documentTypes: ["profile", "contactRequest"],
-                schema: [
-                    "profile": [
-                        "type": "object",
-                        "properties": [
-                            "displayName": ["type": "string"],
-                            "publicMessage": ["type": "string"]
-                        ]
-                    ]
-                ]
-            )
-        ]
+        appState.showError(message: "Document created locally")
     }
 }
 
@@ -368,7 +307,7 @@ struct DetailRow: View {
 }
 
 private let dateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
+    let formatter = DateFormatter.gregorian()
     formatter.dateStyle = .medium
     formatter.timeStyle = .short
     return formatter

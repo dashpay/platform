@@ -10150,6 +10150,9 @@ export namespace GetRecentAddressBalanceChangesRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    getStartHeightExclusive(): boolean;
+    setStartHeightExclusive(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetRecentAddressBalanceChangesRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetRecentAddressBalanceChangesRequestV0): GetRecentAddressBalanceChangesRequestV0.AsObject;
@@ -10164,6 +10167,7 @@ export namespace GetRecentAddressBalanceChangesRequest {
     export type AsObject = {
       startHeight: string,
       prove: boolean,
+      startHeightExclusive: boolean,
     }
   }
 
@@ -10814,6 +10818,125 @@ export namespace GetShieldedAnchorsResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       ANCHORS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetMostRecentShieldedAnchorRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0 | undefined;
+  setV0(value?: GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0): void;
+
+  getVersionCase(): GetMostRecentShieldedAnchorRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorRequest): GetMostRecentShieldedAnchorRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorRequest;
+  static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorRequest, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorRequest;
+}
+
+export namespace GetMostRecentShieldedAnchorRequest {
+  export type AsObject = {
+    v0?: GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.AsObject,
+  }
+
+  export class GetMostRecentShieldedAnchorRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorRequestV0): GetMostRecentShieldedAnchorRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorRequestV0;
+    static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorRequestV0, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorRequestV0;
+  }
+
+  export namespace GetMostRecentShieldedAnchorRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetMostRecentShieldedAnchorResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0 | undefined;
+  setV0(value?: GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0): void;
+
+  getVersionCase(): GetMostRecentShieldedAnchorResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorResponse): GetMostRecentShieldedAnchorResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorResponse;
+  static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorResponse, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorResponse;
+}
+
+export namespace GetMostRecentShieldedAnchorResponse {
+  export type AsObject = {
+    v0?: GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.AsObject,
+  }
+
+  export class GetMostRecentShieldedAnchorResponseV0 extends jspb.Message {
+    hasAnchor(): boolean;
+    clearAnchor(): void;
+    getAnchor(): Uint8Array | string;
+    getAnchor_asU8(): Uint8Array;
+    getAnchor_asB64(): string;
+    setAnchor(value: Uint8Array | string): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetMostRecentShieldedAnchorResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorResponseV0): GetMostRecentShieldedAnchorResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorResponseV0;
+    static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorResponseV0, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorResponseV0;
+  }
+
+  export namespace GetMostRecentShieldedAnchorResponseV0 {
+    export type AsObject = {
+      anchor: Uint8Array | string,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ANCHOR = 1,
       PROOF = 2,
     }
   }

@@ -305,7 +305,7 @@ mod tests {
         let result = unsafe {
             dash_sdk_identity_withdraw(
                 std::ptr::null_mut(), // null SDK handle
-                0x1 as *const IdentityHandle,
+                std::ptr::dangling::<IdentityHandle>(),
                 address,
                 1000,
                 0,

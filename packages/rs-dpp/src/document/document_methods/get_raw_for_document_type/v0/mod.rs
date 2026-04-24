@@ -543,9 +543,7 @@ mod tests {
             .random_document(Some(42), platform_version)
             .expect("expected random document");
 
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         // "displayName" is a required string property in dashpay profile
         let raw = doc_v0

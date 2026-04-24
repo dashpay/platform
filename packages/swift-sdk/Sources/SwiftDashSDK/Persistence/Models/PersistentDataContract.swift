@@ -283,43 +283,7 @@ extension PersistentDataContract {
     }
 }
 
-// MARK: - Conversion Methods
-
-extension PersistentDataContract {
-    /// Create a PersistentDataContract from a ContractModel
-    public static func from(_ contract: ContractModel) -> PersistentDataContract {
-        let idData = Data.identifier(fromBase58: contract.id) ?? Data()
-        let serializedContract = (try? JSONSerialization.data(withJSONObject: contract.schema)) ?? Data()
-
-        let persistent = PersistentDataContract(
-            id: idData,
-            name: contract.name,
-            serializedContract: serializedContract,
-            version: contract.version,
-            ownerId: contract.ownerId,
-            schema: contract.schema,
-            documentTypesList: contract.documentTypes,
-            keywords: contract.keywords,
-            description: contract.description,
-            hasTokens: !contract.tokens.isEmpty
-        )
-
-        return persistent
-    }
-
-    /// Convert to a ContractModel
-    public func toContractModel() -> ContractModel {
-        return ContractModel(
-            id: idBase58,
-            name: name,
-            version: version ?? 1,
-            ownerId: ownerId ?? Data(),
-            documentTypes: documentTypesList,
-            schema: schema,
-            dppDataContract: nil,
-            tokens: [],  // Tokens would need to be decoded from tokensData if needed
-            keywords: keywords,
-            description: contractDescription
-        )
-    }
-}
+// The legacy `ContractModel` value-type bridge has been removed.
+// Persistent data contracts are read and mutated directly on the
+// SwiftData row; token rows hang off `tokens` via a cascade-delete
+// relationship, and the contract schema is available as `schema`.

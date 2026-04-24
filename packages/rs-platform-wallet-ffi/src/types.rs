@@ -1,5 +1,7 @@
 use std::os::raw::{c_char, c_uchar};
 
+pub use dashcore::Network;
+
 /// Identifier (32 bytes)
 #[repr(C)]
 #[derive(Clone, Copy)]

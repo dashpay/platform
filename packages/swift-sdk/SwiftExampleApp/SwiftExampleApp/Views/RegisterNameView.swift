@@ -2,8 +2,9 @@ import SwiftUI
 import SwiftDashSDK
 
 struct RegisterNameView: View {
-  let identity: IdentityModel
+  let identity: PersistentIdentity
   @EnvironmentObject var appState: AppState
+  @EnvironmentObject var walletManager: PlatformWalletManager
   @Environment(\.dismiss) var dismiss
 
   @State private var username = ""
@@ -366,9 +367,20 @@ struct RegisterNameView: View {
   }
 
   private func registerName() {
-    guard let sdk = appState.sdk,
-          let handle = sdk.handle else {
-      errorMessage = "SDK not initialized"
+    // Route through the platform-wallet `IdentityWallet::register_name`
+    // path instead of `dash_sdk_dpns_register_name`. Benefits:
+    //   - Signing key resolution happens in Rust against the
+    //     identity's `key_storage`, so Swift doesn't have to build
+    //     identity/pubkey/signer FFI handles by hand.
+    //   - On success the Rust side appends the new name to
+    //     `ManagedIdentity.dpns_names` and queues an `IdentityChangeSet`
+    //     so `PersistentIdentity.dpnsName` refreshes automatically via
+    //     the persister callback — no manual SwiftData upsert needed.
+    //   - Removes ~100 lines of FFI plumbing that previously had to
+    //     mirror `KeyManager` + `dash_sdk_identity_create_from_components`.
+    guard let walletId = identity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      errorMessage = "No wallet available for this identity"
       showingError = true
       return
     }
@@ -377,226 +389,22 @@ struct RegisterNameView: View {
 
     Task {
       do {
-        // Use KeyManager to find authentication key with HIGH or CRITICAL security level
-        let dppIdentity = DPPIdentity(
-          id: identity.id,
-          publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-          balance: identity.balance,
-          revision: 0
+        let registeredName = try await wallet.registerDpnsName(
+          identityId: identity.identityId,
+          name: normalizedUsername
         )
 
-        let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-        let keyResult = await MainActor.run {
-          keyManager.findKeyWithPrivateKey(
-            for: dppIdentity,
-            purpose: .authentication,
-            minimumSecurityLevel: .high,
-            preferCritical: true
-          )
-        }
-
-        guard let (publicKey, privateKey) = keyResult else {
-          await MainActor.run {
-            errorMessage = "No HIGH or CRITICAL security authentication key with private key available. DPNS registration requires a HIGH or CRITICAL security level authentication key."
-            showingError = true
-            isRegistering = false
-          }
-          return
-        }
-
-        print("✅ Found private key for authentication key #\(publicKey.id) with security level: \(publicKey.securityLevel)")
-        // Create identity handle from components
-        let identityHandle = identity.id.withUnsafeBytes { idBytes in
-          // Create public keys array
-          var pubKeys: [DashSDKPublicKeyData] = []
-          for key in identity.publicKeys {
-            // Get the raw key data
-            let keyData = key.data
-            keyData.withUnsafeBytes { keyBytes in
-              let keyStruct = DashSDKPublicKeyData(
-                id: UInt8(key.id),
-                purpose: key.purpose.rawValue,
-                security_level: key.securityLevel.rawValue,
-                key_type: key.keyType.rawValue,
-                read_only: key.readOnly,
-                data: keyBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                data_len: UInt(keyBytes.count),
-                disabled_at: key.disabledAt ?? 0
-              )
-              pubKeys.append(keyStruct)
-            }
-          }
-
-          return pubKeys.withUnsafeBufferPointer { keysPtr in
-            dash_sdk_identity_create_from_components(
-              idBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-              keysPtr.baseAddress,
-              UInt(keysPtr.count),
-              identity.balance,
-              0  // revision
-            )
-          }
-        }
-
-        guard identityHandle.error == nil,
-              let identityPtr = identityHandle.data else {
-          if let error = identityHandle.error {
-            let errorMsg = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Failed to create identity"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMsg)
-          }
-          throw SDKError.internalError("Failed to create identity from components")
-        }
-
-        let identityOpaquePtr = OpaquePointer(identityPtr)
-        defer {
-          // Clean up identity - need to find the destroy function
-          // dash_sdk_identity_destroy(identityOpaquePtr)
-        }
-
-        // Create public key handle
-        let publicKeyHandle = publicKey.data.withUnsafeBytes { keyBytes in
-          dash_sdk_identity_public_key_create_from_data(
-            UInt32(publicKey.id),
-            publicKey.keyType.rawValue,
-            publicKey.purpose.rawValue,
-            publicKey.securityLevel.rawValue,
-            keyBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-            UInt(keyBytes.count),
-            publicKey.readOnly,
-            publicKey.disabledAt ?? 0
-          )
-        }
-
-        guard publicKeyHandle.error == nil,
-              let publicKeyPtr = publicKeyHandle.data else {
-          if let error = publicKeyHandle.error {
-            let errorMsg = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Failed to create public key"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMsg)
-          }
-          throw SDKError.internalError("Failed to create public key from data")
-        }
-
-        let publicKeyTypedPtr = publicKeyPtr.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
-        defer {
-          dash_sdk_identity_public_key_destroy(publicKeyTypedPtr)
-        }
-
-        // Create signer from private key using KeyManager
-        let signer = try await MainActor.run {
-          try keyManager.createSigner(from: privateKey)
-        }
-        defer {
-          keyManager.destroySigner(signer)
-        }
-
-        let signerHandle = UnsafeMutablePointer<SignerHandle>(signer)
-
-        // Register the DPNS name
-        let result = normalizedUsername.withCString { namePtr in
-          dash_sdk_dpns_register_name(
-            handle,
-            namePtr,
-            UnsafeRawPointer(identityOpaquePtr),
-            UnsafeRawPointer(publicKeyTypedPtr),
-            UnsafeRawPointer(signerHandle)
-          )
-        }
-
-        // Handle the result
-        if let error = result.error {
-          let errorMsg = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Registration failed"
-          dash_sdk_error_free(error)
-          throw SDKError.internalError(errorMsg)
-        }
-
-        guard let dataPtr = result.data else {
-          throw SDKError.internalError("No registration result returned")
-        }
-
-        // The result contains the registration info
-        let registrationResult = dataPtr.assumingMemoryBound(to: DpnsRegistrationResult.self)
-        defer {
-          dash_sdk_dpns_registration_result_free(registrationResult)
-        }
-
-        // Success! Update the identity with the new DPNS name
-        let registeredName = "\(normalizedUsername).dash"
-
         await MainActor.run {
-          // Calculate contest end time based on network
-          let currentTime = Date()
-          let contestDuration: TimeInterval = appState.currentNetwork == .mainnet ?
-          (14 * 24 * 60 * 60) : // 14 days for mainnet
-          (90 * 60) // 90 minutes for testnet
-          let endTime = currentTime.addingTimeInterval(contestDuration)
-          let endTimeMillis = UInt64(endTime.timeIntervalSince1970 * 1000)
-
-          if isContested {
-            // For contested names, add to contested list
-            if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
-              var updatedIdentity = appState.identities[index]
-
-              // Add to contested names list
-              if !updatedIdentity.contestedDpnsNames.contains(normalizedUsername) {
-                updatedIdentity.contestedDpnsNames.append(normalizedUsername)
-              }
-
-              // Create contest info showing user as only contender
-              // Note: During contender registration period, there are no votes yet
-              let contestInfo: [String: Any] = [
-                "contenders": [[
-                  "identifier": identity.idString,
-                  "votes": "ResourceVote { vote_choice: TowardsIdentity, strength: 0 }"
-                ]],
-                "abstainVotes": 0,
-                "lockVotes": 0,
-                "endTime": endTimeMillis,
-                "hasWinner": false
-              ]
-              updatedIdentity.contestedDpnsInfo[normalizedUsername] = contestInfo
-
-              appState.identities[index] = updatedIdentity
-
-              // Use the new update function to persist
-              appState.updateIdentityDPNSNames(
-                id: identity.id,
-                dpnsNames: updatedIdentity.dpnsNames,
-                contestedNames: updatedIdentity.contestedDpnsNames,
-                contestedInfo: updatedIdentity.contestedDpnsInfo
-              )
-            }
-          } else {
-            // For regular names, add to regular list and set as primary
-            if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
-              var updatedIdentity = appState.identities[index]
-
-              // Add to regular names list
-              if !updatedIdentity.dpnsNames.contains(normalizedUsername) {
-                updatedIdentity.dpnsNames.append(normalizedUsername)
-              }
-
-              // Set as primary name if no primary exists
-              if updatedIdentity.dpnsName == nil {
-                updatedIdentity.dpnsName = normalizedUsername
-              }
-
-              appState.identities[index] = updatedIdentity
-
-              // Use the new update function to persist
-              appState.updateIdentityDPNSNames(
-                id: identity.id,
-                dpnsNames: updatedIdentity.dpnsNames,
-                contestedNames: updatedIdentity.contestedDpnsNames,
-                contestedInfo: updatedIdentity.contestedDpnsInfo
-              )
-            }
-          }
+          // The Rust-side `IdentityWallet::register_name` already
+          // appended the new label to `ManagedIdentity.dpns_names`
+          // and emitted an `IdentityChangeSet` — the Swift persister
+          // callback wrote the update to `PersistentIdentity`, and
+          // every view that uses `@Query` picks up the change
+          // automatically. No in-memory mirror needed.
 
           registrationSuccess = true
           errorMessage = isContested ?
-          "Successfully started contest for \(normalizedUsername)! Voting ends in \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes")." :
+          "Successfully started contest for \(normalizedUsername). Follow \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes") to resolution." :
           "Successfully registered \(registeredName)!"
           showingError = true
           isRegistering = false
@@ -632,14 +440,8 @@ private struct UsernameChangeHandler: ViewModifier {
   }
 }
 
-// Preview
-struct RegisterNameView_Previews: PreviewProvider {
-  static var previews: some View {
-    RegisterNameView(identity: IdentityModel(
-      id: Data(repeating: 0, count: 32),
-      balance: 1000000,
-      isLocal: false
-    ))
-    .environmentObject(AppState())
-  }
-}
+// Preview removed — constructing a sample `PersistentIdentity`
+// requires a mock `ModelContainer`; not worth the scaffolding for
+// this dev example app. Restore via `#Preview { … }` with a
+// `.modelContainer(for: PersistentIdentity.self, inMemory: true)`
+// if/when previews become load-bearing.

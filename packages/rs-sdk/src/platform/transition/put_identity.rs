@@ -1,3 +1,4 @@
+use crate::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
     address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
@@ -62,6 +63,30 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error>;
+
+    /// Creates an identity funded by Platform addresses, fetching the
+    /// current address nonces from Platform automatically.
+    ///
+    /// Mirrors the auto-fetching pattern in `withdraw_address_funds` /
+    /// `transfer_address_funds` — the caller supplies only
+    /// `(address, credits)` pairs and we look up each address's
+    /// on-chain nonce via `AddressInfo::fetch_many`, increment by 1,
+    /// then hand off to [`Self::put_with_address_funding`].
+    ///
+    /// Prefer this variant when the caller doesn't already have a
+    /// trusted nonce source; reaching for
+    /// [`Self::put_with_address_funding`] directly otherwise lets you
+    /// submit with cached / externally-supplied nonces in one round
+    /// trip.
+    async fn put_with_address_funding_fetching_nonces<AS: Signer<PlatformAddress> + Send + Sync>(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &IS,
+        input_address_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identity, AddressInfos), Error>;
 }
 
 #[async_trait::async_trait]
@@ -119,6 +144,31 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             self,
             sdk,
             inputs,
+            output,
+            identity_signer,
+            input_address_signer,
+            settings,
+        )
+        .await
+    }
+
+    async fn put_with_address_funding_fetching_nonces<AS: Signer<PlatformAddress> + Send + Sync>(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &IS,
+        input_address_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identity, AddressInfos), Error> {
+        // Platform's convention: transitions submit `last_used + 1`.
+        // `fetch_inputs_with_nonce` reads the on-chain "last used",
+        // `nonce_inc` bumps by 1 — same helpers used by
+        // `withdraw_address_funds` / `transfer_address_funds`.
+        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
+        self.put_with_address_funding(
+            sdk,
+            inputs_with_nonce,
             output,
             identity_signer,
             input_address_signer,
