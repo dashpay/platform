@@ -124,6 +124,8 @@ impl WasmSdk {
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
+        ensure_document_create_revision(document.revision(), "documentReplace")?;
+
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
         let document_type_name = document_wasm.document_type_name();
@@ -240,6 +242,8 @@ impl WasmSdk {
         // Extract document from options
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
+
+        ensure_document_replace_revision(document.revision(), "documentCreate")?;
 
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
@@ -487,19 +491,7 @@ impl WasmSdk {
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
-        // Guard: reject documents with any explicit revision other than INITIAL_REVISION.
-        // `build_document_create_or_replace_transition` routes any `revision != INITIAL_REVISION`
-        // (including `0`) to the replace branch, so the only explicit values that are safe for
-        // create are `None` and `INITIAL_REVISION` (1). Without this guard, a `revision = 0`
-        // document would silently produce a replace transition, which is not what the caller asked for.
-        if let Some(revision) = document.revision() {
-            if revision != INITIAL_REVISION {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Document revision is {} but create requires revision to be unset or {}. Use prepareDocumentReplace for existing documents.",
-                    revision, INITIAL_REVISION,
-                )));
-            }
-        }
+        ensure_document_create_revision(document.revision(), "prepareDocumentReplace")?;
 
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
@@ -548,9 +540,18 @@ impl WasmSdk {
         )
         .await?;
 
-        // Validate structure before handing the ST back to the caller, matching
-        // the check rs-sdk's `put_to_platform` performs before broadcasting.
-        validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
+        // Validate structure before handing the ST back, mirroring rs-sdk's
+        // pre-broadcast check. For document Batch transitions this currently
+        // ends up as a no-op because DPP returns UnsupportedFeatureError until
+        // that structure validation is implemented there.
+        if let Err(err) =
+            validate_state_transition_structure(&state_transition, self.inner_sdk().version())
+        {
+            self.inner_sdk()
+                .refresh_identity_nonce(&document.owner_id())
+                .await;
+            return Err(err);
+        }
 
         Ok(state_transition.into())
     }
@@ -609,21 +610,7 @@ impl WasmSdk {
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
-        // Guard: replace requires revision > INITIAL_REVISION. Revisions 0 and 1 (and a
-        // missing revision) all indicate the caller really wants create semantics and are
-        // rejected here so we never accidentally produce a create transition from a
-        // replace call.
-        let revision = document.revision().ok_or_else(|| {
-            WasmSdkError::invalid_argument(
-                "Document must have a revision set for replace. Use prepareDocumentCreate for new documents.",
-            )
-        })?;
-        if revision <= INITIAL_REVISION {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "Document revision is {} but replace requires revision > {}. Use prepareDocumentCreate for new documents.",
-                revision, INITIAL_REVISION,
-            )));
-        }
+        ensure_document_replace_revision(document.revision(), "prepareDocumentCreate")?;
 
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
@@ -658,9 +645,18 @@ impl WasmSdk {
         )
         .await?;
 
-        // Validate structure before handing the ST back to the caller, matching
-        // the check rs-sdk's `put_to_platform` performs before broadcasting.
-        validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
+        // Validate structure before handing the ST back, mirroring rs-sdk's
+        // pre-broadcast check. For document Batch transitions this currently
+        // ends up as a no-op because DPP returns UnsupportedFeatureError until
+        // that structure validation is implemented there.
+        if let Err(err) =
+            validate_state_transition_structure(&state_transition, self.inner_sdk().version())
+        {
+            self.inner_sdk()
+                .refresh_identity_nonce(&document.owner_id())
+                .await;
+            return Err(err);
+        }
 
         Ok(state_transition.into())
     }
@@ -795,8 +791,10 @@ impl WasmSdk {
             )
             .await?;
 
-        // Validate structure before handing the ST back to the caller, matching
-        // the check rs-sdk's `put_to_platform` performs before broadcasting.
+        // Validate structure before handing the ST back, mirroring rs-sdk's
+        // pre-broadcast check. For document Batch transitions this currently
+        // ends up as a no-op because DPP returns UnsupportedFeatureError until
+        // that structure validation is implemented there.
         validate_state_transition_structure(&state_transition, self.inner_sdk().version())?;
 
         Ok(state_transition.into())
@@ -1163,6 +1161,9 @@ impl WasmSdk {
 /// Whether this produces a create or replace transition depends on the document's revision:
 /// - If revision is `None` or `INITIAL_REVISION` → create transition
 /// - Otherwise → replace transition
+///
+/// Any error after bumping the identity-contract nonce refreshes the nonce cache,
+/// mirroring rs-sdk's refresh-on-broadcast-failure idea for this prepare-path failure.
 async fn build_document_create_or_replace_transition(
     document: &Document,
     document_type: &DocumentType,
@@ -1180,10 +1181,11 @@ async fn build_document_create_or_replace_transition(
             settings,
         )
         .await?;
+    let owner_id = document.owner_id();
 
     let put_settings = settings.unwrap_or_default();
 
-    let transition = if document
+    let transition_result = if document
         .revision()
         .is_some_and(|rev| rev != INITIAL_REVISION)
     {
@@ -1225,9 +1227,54 @@ async fn build_document_create_or_replace_transition(
             sdk.version(),
             put_settings.state_transition_creation_options,
         )
-    }?;
+    };
+
+    let transition = match transition_result {
+        Ok(transition) => transition,
+        Err(err) => {
+            sdk.refresh_identity_nonce(&owner_id).await;
+            return Err(err.into());
+        }
+    };
 
     Ok(transition)
+}
+
+fn ensure_document_create_revision(
+    revision: Option<u64>,
+    replace_api_name: &str,
+) -> Result<(), WasmSdkError> {
+    if let Some(revision) = revision {
+        if revision != INITIAL_REVISION {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "Document revision is {} but create requires revision to be unset or {}. Use {} for existing documents.",
+                revision, INITIAL_REVISION, replace_api_name,
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_document_replace_revision(
+    revision: Option<u64>,
+    create_api_name: &str,
+) -> Result<(), WasmSdkError> {
+    let revision = revision.ok_or_else(|| {
+        WasmSdkError::invalid_argument(format!(
+            "Document must have a revision set for replace. Use {} for new documents.",
+            create_api_name,
+        ))
+    })?;
+
+    if revision <= INITIAL_REVISION {
+        return Err(WasmSdkError::invalid_argument(format!(
+            "Document revision is {} but replace requires revision > {}. Use {} for new documents.",
+            revision, INITIAL_REVISION, create_api_name,
+        )));
+    }
+
+    Ok(())
 }
 
 /// Get an owned DocumentType from a DataContract
@@ -1245,16 +1292,18 @@ fn get_document_type(
         })
 }
 
-/// Validate the structure of a state transition, matching the check rs-sdk's
-/// `put_to_platform` performs before broadcasting.
+/// Validate the structure of a state transition, mirroring the same
+/// pre-broadcast check rs-sdk performs.
 ///
 /// rs-sdk's equivalent helper (`ensure_valid_state_transition_structure`) is
 /// crate-private, so we reimplement the same logic against the public
 /// `StateTransitionStructureValidation` trait.
 ///
 /// `UnsupportedFeatureError` is allowed through, matching rs-sdk behavior —
-/// DPP does not implement structure validation for identity-based state
-/// transitions, and platform still validates them during execution.
+/// DPP currently returns it for transition kinds whose structure validation is
+/// not implemented yet. That means this helper is currently a no-op for
+/// document Batch transitions used by `prepareDocumentCreate/Replace/Delete`
+/// until DPP adds that validation; platform still validates them during execution.
 fn validate_state_transition_structure(
     state_transition: &dash_sdk::dpp::state_transition::StateTransition,
     platform_version: &dash_sdk::dpp::version::PlatformVersion,
@@ -1292,6 +1341,45 @@ mod tests {
     use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dash_sdk::dpp::state_transition::StateTransition;
     use dash_sdk::dpp::version::PlatformVersion;
+
+    #[test]
+    fn create_revision_guard_accepts_none_and_initial_revision() {
+        assert!(ensure_document_create_revision(None, "prepareDocumentReplace").is_ok());
+        assert!(
+            ensure_document_create_revision(Some(INITIAL_REVISION), "prepareDocumentReplace")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn create_revision_guard_rejects_non_initial_revision() {
+        let err = ensure_document_create_revision(Some(0), "prepareDocumentReplace")
+            .expect_err("revision 0 should fail");
+        assert!(err.to_string().contains("prepareDocumentReplace"));
+        assert!(err.to_string().contains("create requires revision"));
+    }
+
+    #[test]
+    fn replace_revision_guard_accepts_only_greater_than_initial_revision() {
+        assert!(ensure_document_replace_revision(
+            Some(INITIAL_REVISION + 1),
+            "prepareDocumentCreate"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn replace_revision_guard_rejects_missing_or_initial_revision() {
+        let missing = ensure_document_replace_revision(None, "prepareDocumentCreate")
+            .expect_err("missing revision should fail");
+        assert!(missing.to_string().contains("prepareDocumentCreate"));
+
+        let initial =
+            ensure_document_replace_revision(Some(INITIAL_REVISION), "prepareDocumentCreate")
+                .expect_err("initial revision should fail");
+        assert!(initial.to_string().contains("prepareDocumentCreate"));
+        assert!(initial.to_string().contains("replace requires revision"));
+    }
 
     /// Regression test for the UnsupportedFeatureError pass-through path.
     ///

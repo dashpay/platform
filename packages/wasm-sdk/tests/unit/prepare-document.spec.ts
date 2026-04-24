@@ -2,12 +2,12 @@ import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
 /**
- * Unit tests for `prepareDocument*` input validation.
+ * Unit tests for synchronous document transition input validation.
  *
  * These tests only cover the validation branches that fire **synchronously**
- * before any network access (revision guards, entropy guards). The happy-path
- * tests that need a fetched data contract live in
- * `tests/functional/transitions/documents.spec.ts`.
+ * before any network access (revision guards, entropy guards) for the prepare
+ * and one-shot APIs. The happy-path tests that need a fetched data contract
+ * live in `tests/functional/transitions/documents.spec.ts`.
  *
  * The WasmSdk is constructed via `WasmSdkBuilder.testnet().build()`, which
  * does not require a live platform — we expect every call here to reject
@@ -179,6 +179,38 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
         expect(e.name).to.equal('InvalidArgument');
         expect(e.message).to.match(/revision/i);
         expect(e.message).to.match(/prepareDocumentCreate/);
+      }
+    });
+  });
+
+  describe('documentCreate()/documentReplace()', () => {
+    it('documentCreate rejects a document with revision 0', async () => {
+      const { signer, identityKey } = buildSigner();
+      const document = buildDocument({ revision: 0 });
+
+      try {
+        await client.documentCreate({ document, identityKey, signer });
+        expect.fail('expected documentCreate to reject revision 0');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/revision/i);
+        expect(e.message).to.match(/documentReplace/);
+      }
+    });
+
+    it('documentReplace rejects a document with revision 1 (INITIAL_REVISION)', async () => {
+      const { signer, identityKey } = buildSigner();
+      const document = buildDocument({ revision: 1 });
+
+      try {
+        await client.documentReplace({ document, identityKey, signer });
+        expect.fail('expected documentReplace to reject revision 1');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/revision/i);
+        expect(e.message).to.match(/documentCreate/);
       }
     });
   });

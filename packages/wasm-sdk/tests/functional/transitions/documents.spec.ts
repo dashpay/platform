@@ -298,6 +298,16 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       return inner;
     }
 
+    function reloadPreparedBatchStateTransition(st) {
+      const bytes = st.toBytes();
+      const restoredBatch = sdk.BatchTransition.fromBase64(Buffer.from(bytes).toString('base64'));
+      const restoredStateTransition = restoredBatch.toStateTransition();
+
+      expect(Buffer.from(restoredStateTransition.toBytes())).to.deep.equal(Buffer.from(bytes));
+
+      return restoredStateTransition;
+    }
+
     it('prepareDocumentCreate produces a Create batched transition', async () => {
       expect(testContractId).to.exist();
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
@@ -405,6 +415,49 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       const docTransition = firstDocTransition(st);
       expect(docTransition.actionTypeNumber).to.equal(DOC_TRANSITION_DELETE);
+    });
+
+    it('prepareDocumentCreate can be serialized, reloaded, broadcast, and re-broadcast without duplicating the document effect', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      const document = new sdk.Document({
+        properties: { message: 'prepare create rebroadcast' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+
+      const prepared = await client.prepareDocumentCreate({
+        document,
+        identityKey,
+        signer,
+      });
+
+      const restored = reloadPreparedBatchStateTransition(prepared);
+
+      await client.broadcastStateTransition(restored);
+      await client.waitForResponse(restored);
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
+      const created = await client.getDocument(testContractId, 'mutableNote', document.id);
+      expect(created).to.exist();
+
+      try {
+        await client.broadcastStateTransition(restored);
+      } catch (e) {
+        // Re-broadcasting the identical prepared ST is allowed to fail with a
+        // duplicate / already-known style error. The important assertion is
+        // that it does not create a second document effect.
+        expect(String(e?.message ?? e)).to.match(/already|duplicate|exists|known|cache/i);
+      }
+
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
+      const fetchedAgain = await client.getDocument(testContractId, 'mutableNote', document.id);
+      expect(fetchedAgain).to.exist();
+      expect(Buffer.from(fetchedAgain.id.toBytes())).to.deep.equal(Buffer.from(document.id.toBytes()));
     });
   });
 });
