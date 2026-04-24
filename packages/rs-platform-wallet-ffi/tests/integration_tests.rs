@@ -1,4 +1,4 @@
-use dashcore::ffi::FFINetwork;
+use dash_network::ffi::FFINetwork;
 use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet_ffi::*;
 use std::ffi::CString;

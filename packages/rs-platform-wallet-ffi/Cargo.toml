@@ -19,6 +19,7 @@ parking_lot = { version = "0.12", features = ["send_guard"] }
 lazy_static = "1.4"
 
 dashcore = { workspace = true }
+dash-network = { workspace = true, features = ["ffi"] }
 key-wallet = { workspace = true }
 key-wallet-ffi = { workspace = true }
 

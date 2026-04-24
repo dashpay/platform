@@ -1,6 +1,6 @@
 use crate::error::*;
 use crate::handle::*;
-use dashcore::ffi::FFINetwork;
+use dash_network::ffi::FFINetwork;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::platform_wallet_info::PlatformWalletInfo;

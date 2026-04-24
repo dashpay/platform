@@ -50,6 +50,7 @@ members = [
 
 [workspace.dependencies]
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "18b4f2a44997114c953fc36b0918866980724da1" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "18b4f2a44997114c953fc36b0918866980724da1" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "18b4f2a44997114c953fc36b0918866980724da1" }
 dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "18b4f2a44997114c953fc36b0918866980724da1" }
 key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "18b4f2a44997114c953fc36b0918866980724da1" }
