@@ -8,9 +8,8 @@ use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel
 use simple_signer::SingleKeySigner;
 use zeroize::Zeroizing;
 
-// Use the workspace-canonical async-sync bridge from `dash-async` instead of
-// spinning up an ad-hoc tokio runtime. `block_on` handles no-runtime,
-// current-thread, and multi-thread flavors correctly (see PR #3497/#3432).
+// Runtime-aware sync/async bridge (PR #3497/#3432); safer than an inline
+// `Runtime::new().block_on(...)`.
 use dash_async::block_on;
 
 /// Create a signer from a private key.
@@ -97,9 +96,7 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         ));
     }
 
-    // Copy the input data into an owned buffer so the signing future has no
-    // borrowed references and can satisfy `dash_async::block_on`'s
-    // `Send + 'static` bounds.
+    // Own the data so the future satisfies `block_on`'s `Send + 'static`.
     let data_owned: Vec<u8> = std::slice::from_raw_parts(data, data_len).to_vec();
 
     // Create a dummy identity public key for signing. SingleKeySigner
@@ -118,18 +115,10 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         },
     );
 
-    // Bridge the async Signer API into this synchronous FFI entry point via
-    // the workspace's canonical async-sync bridge (`dash_async::block_on`),
-    // which is runtime-aware and safe regardless of whether a tokio runtime
-    // is already active. `block_on` requires `Send + 'static` futures, so
-    // we hand ownership of the key and data buffer into the future and
-    // reconstruct the `&VTableSigner` from a pointer-sized integer inside
-    // the future body.
-    //
-    // SAFETY: `signer_handle` is a valid `*const VTableSigner` for the
-    // duration of this FFI call, and `block_on` blocks the caller until the
-    // future completes, so the underlying allocation cannot be freed by the
-    // C caller while we hold the reference. `VTableSigner` is `Send + Sync`.
+    // SAFETY: `signer_handle` is valid for the call; `block_on` blocks the
+    // caller so the allocation can't be freed mid-sign. `VTableSigner: Send +
+    // Sync`. The usize round-trip gives the `async move` a `Send + 'static`
+    // capture of the !Clone handle.
     let signer_addr = signer_handle as usize;
     let result = block_on(async move {
         let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };

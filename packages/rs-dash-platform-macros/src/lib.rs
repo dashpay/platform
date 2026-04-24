@@ -42,15 +42,9 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
         sig.asyncness = None;
     }
 
-    // TODO(CMT-002, issue #3535): migrate this inline
-    // `Builder::new_current_thread()...block_on(...)` pattern to
-    // `dash_async::block_on(...)` from `packages/rs-dash-async`. The
-    // workspace-canonical bridge is runtime-aware (handles no-runtime,
-    // current-thread, and multi-thread tokio flavors) and avoids the class
-    // of "runtime within runtime" deadlocks that PR #3490/#3497 addressed.
-    // Deferred from PR #3492 (async Signer) because this crate is used only
-    // as a test helper and the migration adds a cross-crate dependency that
-    // is out of scope for the signer-async change.
+    // TODO(issue #3535): migrate to `dash_async::block_on` — the
+    // inline `Builder::new_current_thread().block_on(...)` pattern can
+    // deadlock inside a running runtime.
     let spawned_body = if is_async {
         quote! {
             builder

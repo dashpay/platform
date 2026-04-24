@@ -146,24 +146,10 @@ pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut c_void)>;
 /// back to the awaiting Rust `async fn sign`.
 type SignResult = Result<Vec<u8>, ProtocolError>;
 
-/// Heap-allocated context handed to C as `completion_ctx`.
-///
-/// Holds an `AtomicPtr` to the boxed `oneshot::Sender<SignResult>`. The first
-/// completion call atomically swaps the pointer to null and claims ownership
-/// of the sender; subsequent calls observe null and return without touching
-/// freed memory, making duplicate or racing completion invocations a safe
-/// no-op instead of a use-after-free.
-///
-/// The `CompletionSlot` itself is intentionally never freed — it is leaked
-/// once for the lifetime of the process per `sign_async` call. This is a
-/// small, bounded leak (one `AtomicPtr`, 8 bytes on 64-bit) per sign, and is
-/// the price for ABI-boundary safety: because we cannot enforce that C stops
-/// calling `completion` after the Rust side has returned (or timed out), we
-/// keep the slot alive so late or duplicate completions remain defined
-/// behaviour. The `Sender` inside is freed on first completion or leaked on
-/// timeout, matching the pre-existing `SIGN_ASYNC_COMPLETION_TIMEOUT` trade.
+/// `completion_ctx` payload. First call swaps `sender` to null and sends;
+/// duplicates see null and are no-ops. Slot is leaked per `sign_async` call
+/// (small bounded cost) so late / duplicate FFI completions stay defined.
 struct CompletionSlot {
-    /// Null once the sender has been consumed (or never populated).
     sender: AtomicPtr<oneshot::Sender<SignResult>>,
 }
 
@@ -298,21 +284,13 @@ impl Signer<IdentityPublicKey> for VTableSigner {
                     bincode::encode_to_vec(identity_public_key, bincode::config::standard())
                         .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
-                // Build a oneshot channel so the async fn can await the
-                // completion callback without blocking any thread. The sender
-                // lives inside a leaked `CompletionSlot` whose `AtomicPtr`
-                // enforces single-shot semantics on the C side: the first
-                // completion callback atomically claims the sender, any
-                // subsequent calls (duplicate delivery, retry races,
-                // double-invocation bugs) observe null and become a defined
-                // no-op — no use-after-free, no double drop.
+                // oneshot + leaked `CompletionSlot` — the slot's `AtomicPtr`
+                // makes duplicate C completions a no-op (see `CompletionSlot`).
                 let (tx, rx) = oneshot::channel::<SignResult>();
-                let tx_box: Box<oneshot::Sender<SignResult>> = Box::new(tx);
-                let tx_ptr = Box::into_raw(tx_box);
+                let tx_ptr = Box::into_raw(Box::new(tx));
                 let slot = Box::new(CompletionSlot {
                     sender: AtomicPtr::new(tx_ptr),
                 });
-                // Leaked on purpose — see `CompletionSlot` docs for rationale.
                 let completion_ctx = Box::into_raw(slot) as *mut c_void;
 
                 // SAFETY: vtable is non-null for the Callback variant by
@@ -342,13 +320,8 @@ impl Signer<IdentityPublicKey> for VTableSigner {
                     Ok(Ok(Ok(sig))) => Ok(BinaryData::from(sig)),
                     Ok(Ok(Err(e))) => Err(e),
                     Ok(Err(_recv_err)) => {
-                        // Sender was dropped without sending. With the
-                        // `CompletionSlot` design the slot itself is
-                        // intentionally leaked, so this branch is only
-                        // reachable via exotic contract violations (e.g. a
-                        // bridge that calls completion with a null signature,
-                        // null error, and somehow drops the sender box).
-                        // Surface as a recoverable protocol error.
+                        // Sender dropped without sending — only reachable via
+                        // exotic contract violations; surface as recoverable.
                         Err(ProtocolError::Generic(
                             "Signer completion channel dropped without a result; \
                              the FFI signer did not call its completion callback"
@@ -356,12 +329,8 @@ impl Signer<IdentityPublicKey> for VTableSigner {
                         ))
                     }
                     Err(_elapsed) => {
-                        // Timed out waiting for `completion`. The
-                        // `CompletionSlot` (and the sender it still holds)
-                        // remain alive so that a late or duplicate FFI
-                        // invocation of the completion callback remains
-                        // defined — it will swap the sender out and drop it,
-                        // with the receiver already gone.
+                        // Timeout: slot stays alive so a late duplicate FFI
+                        // completion remains a defined no-op.
                         Err(ProtocolError::Generic(format!(
                             "Signer completion callback not invoked within {:?}; \
                              the FFI signer is unresponsive",
@@ -447,31 +416,19 @@ impl<'a> Signer<IdentityPublicKey> for VTableSignerRef<'a> {
 }
 
 /// Rust-side completion callback. Exported so the iOS side can call it via
-/// the `SignCompletionCallback` function pointer that Rust hands to the C
-/// `sign_async` callback. You do not need to look this symbol up — the
-/// pointer is passed directly.
+/// the `SignCompletionCallback` function pointer handed to `sign_async`.
 ///
-/// # Single-shot guarantee
-///
-/// The single-shot contract ("must be called exactly once") is enforced by a
-/// runtime guard inside the `CompletionSlot`: the first invocation atomically
-/// claims the boxed sender via an `AtomicPtr::swap`; any subsequent
-/// invocations (duplicate delivery, retry races, buggy bridges) observe null
-/// and return without touching freed memory. This makes double / triple /
-/// spurious completion calls a safe no-op instead of a use-after-free.
+/// Single-shot is enforced at runtime by `CompletionSlot`'s `AtomicPtr`:
+/// first call claims the sender, duplicates are a safe no-op.
 ///
 /// # Safety
-/// - `completion_ctx` must be the exact pointer that was passed to
-///   `SignAsyncCallback`. Reusing another pointer, or a pointer from a
-///   different process, is UB — but reusing the same valid pointer more than
-///   once is defined: subsequent calls after the first are no-ops.
-/// - If `error_message` is non-null it must point to a valid null-terminated
-///   UTF-8 (or at least CStr-safe) string. The string is copied into an owned
-///   `String` before this function returns, so the caller may free it
-///   immediately afterwards.
-/// - If `signature` is non-null it must point to at least `signature_len`
-///   readable bytes. The bytes are copied into an owned `Vec<u8>` before this
-///   function returns.
+/// - `completion_ctx` must be the exact pointer passed to `SignAsyncCallback`.
+///   Reusing another pointer is UB; reusing the same valid pointer is defined
+///   (duplicates become no-ops).
+/// - `error_message`, if non-null, must be a valid CStr-safe string; copied
+///   before return.
+/// - `signature`, if non-null, must point to `signature_len` readable bytes;
+///   copied before return.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_sign_async_completion(
     completion_ctx: *mut c_void,
@@ -485,22 +442,14 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
         return;
     }
 
-    // SAFETY: `completion_ctx` came from `Box::into_raw(Box::<CompletionSlot>)`
-    // in `VTableSigner::sign` and the slot is intentionally never freed (see
-    // the `CompletionSlot` doc comment), so this reference is valid for any
-    // number of calls.
+    // SAFETY: slot is leaked per `sign_async` call — always valid.
     let slot = &*(completion_ctx as *const CompletionSlot);
 
-    // Atomically claim the sender. Only the first caller gets a non-null
-    // pointer; duplicate callers observe null and bail out without dropping
-    // the sender twice.
+    // Single-shot: only the first caller wins the sender; duplicates exit.
     let tx_ptr = slot.sender.swap(std::ptr::null_mut(), Ordering::AcqRel);
     if tx_ptr.is_null() {
         return;
     }
-
-    // We are the sole owner of this sender now. Wrap it back into a Box so
-    // that it is dropped exactly once at the end of this call.
     let tx: Box<oneshot::Sender<SignResult>> = Box::from_raw(tx_ptr);
 
     let result: SignResult = if !error_message.is_null() {
@@ -776,9 +725,8 @@ mod tests {
         assert_eq!(sig.as_slice()[0], 0x55);
     }
 
-    /// Test sign callback that invokes the completion callback **twice** to
-    /// exercise the single-shot guard in `CompletionSlot`. The second call
-    /// must be a defined no-op (no use-after-free, no double-drop).
+    /// Calls completion three times to exercise the `CompletionSlot`
+    /// single-shot guard; second and third calls must be no-ops.
     unsafe extern "C" fn test_sign_async_double_complete(
         _signer: *const c_void,
         _key_bytes: *const u8,
@@ -789,22 +737,17 @@ mod tests {
         completion: SignCompletionCallback,
     ) {
         let sig = [0x42u8; 64];
-        // First call: legitimate success.
         completion(completion_ctx, sig.as_ptr(), sig.len(), std::ptr::null());
-        // Second call with an error payload: must be observed as a no-op,
-        // NOT overwrite the first result and NOT crash.
+        // Duplicate error payload — must not overwrite the first result.
         let err_msg = c"duplicate completion — should be ignored";
         completion(completion_ctx, std::ptr::null(), 0, err_msg.as_ptr());
-        // Third call with yet another success: still a no-op.
+        // Duplicate success payload — still a no-op.
         let sig2 = [0x99u8; 64];
         completion(completion_ctx, sig2.as_ptr(), sig2.len(), std::ptr::null());
     }
 
     #[tokio::test]
     async fn completion_callback_duplicate_is_no_op() {
-        // Regression test for the one-shot guard: a buggy FFI signer that
-        // invokes completion more than once must NOT cause UAF, and the
-        // Rust side must observe only the first result.
         let signer = make_signer(test_sign_async_double_complete);
         let key = make_dummy_key();
 
