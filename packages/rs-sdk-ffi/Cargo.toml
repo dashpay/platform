@@ -22,6 +22,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
 ] }
 simple-signer = { path = "../simple-signer" }
 async-trait = { version = "0.1.83" }
+dash-async = { path = "../rs-dash-async" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

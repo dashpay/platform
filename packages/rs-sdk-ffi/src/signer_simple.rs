@@ -9,6 +9,11 @@ use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel
 use simple_signer::SingleKeySigner;
 use zeroize::Zeroizing;
 
+// Use the workspace-canonical async-sync bridge from `dash-async` instead of
+// spinning up an ad-hoc tokio runtime. `block_on` handles no-runtime,
+// current-thread, and multi-thread flavors correctly (see PR #3497/#3432).
+use dash_async::block_on;
+
 /// Create a signer from a private key.
 ///
 /// Internally wraps a `SingleKeySigner` as a native (non-callback) FFI
@@ -94,8 +99,10 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         ));
     }
 
-    let signer = &*(signer_handle as *const VTableSigner);
-    let data_slice = std::slice::from_raw_parts(data, data_len);
+    // Copy the input data into an owned buffer so the signing future has no
+    // borrowed references and can satisfy `dash_async::block_on`'s
+    // `Send + 'static` bounds.
+    let data_owned: Vec<u8> = std::slice::from_raw_parts(data, data_len).to_vec();
 
     // Create a dummy identity public key for signing. SingleKeySigner
     // doesn't actually use the key data, just needs one to satisfy the
@@ -113,39 +120,44 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         },
     );
 
-    // The signer trait is async. This function is a synchronous C entry
-    // point, so we bridge by spinning up a current-thread runtime just
-    // long enough to drive the signing future. This is safe because
-    // SingleKeySigner's async fn is non-blocking (pure CPU work).
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Failed to create runtime for signing: {}", e),
-            ));
-        }
-    };
+    // Bridge the async Signer API into this synchronous FFI entry point via
+    // the workspace's canonical async-sync bridge (`dash_async::block_on`),
+    // which is runtime-aware and safe regardless of whether a tokio runtime
+    // is already active. `block_on` requires `Send + 'static` futures, so
+    // we hand ownership of the key and data buffer into the future and
+    // reconstruct the `&VTableSigner` from a pointer-sized integer inside
+    // the future body.
+    //
+    // SAFETY: `signer_handle` is a valid `*const VTableSigner` for the
+    // duration of this FFI call, and `block_on` blocks the caller until the
+    // future completes, so the underlying allocation cannot be freed by the
+    // C caller while we hold the reference. `VTableSigner` is `Send + Sync`.
+    let signer_addr = signer_handle as usize;
+    let result = block_on(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        signer.sign(&dummy_key, &data_owned).await
+    });
 
-    match runtime.block_on(signer.sign(&dummy_key, data_slice)) {
-        Ok(signature) => {
+    match result {
+        Ok(Ok(signature)) => {
             let sig_vec = signature.to_vec();
             let sig_len = sig_vec.len();
             let sig_ptr = sig_vec.leak().as_mut_ptr();
 
-            let result = Box::new(DashSDKSignature {
+            let boxed = Box::new(DashSDKSignature {
                 signature: sig_ptr,
                 signature_len: sig_len,
             });
 
-            DashSDKResult::success(Box::into_raw(result) as *mut std::os::raw::c_void)
+            DashSDKResult::success(Box::into_raw(boxed) as *mut std::os::raw::c_void)
         }
-        Err(e) => DashSDKResult::error(DashSDKError::new(
+        Ok(Err(e)) => DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::CryptoError,
             format!("Failed to sign: {}", e),
+        )),
+        Err(e) => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InternalError,
+            format!("Async bridge failed during signing: {}", e),
         )),
     }
 }
