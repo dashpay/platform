@@ -380,84 +380,8 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         info!("dash_sdk_create_trusted: no DAPI addresses provided, using defaults for network");
         // Use default addresses for the network
         match network {
-            Network::Testnet => {
-                // Fixed testnet DAPI addresses (hp-masternodes 1-29)
-                let default_addresses = [
-                    "https://68.67.122.1:1443",
-                    "https://68.67.122.2:1443",
-                    "https://68.67.122.3:1443",
-                    "https://68.67.122.4:1443",
-                    "https://68.67.122.5:1443",
-                    "https://68.67.122.6:1443",
-                    "https://68.67.122.7:1443",
-                    "https://68.67.122.8:1443",
-                    "https://68.67.122.9:1443",
-                    "https://68.67.122.10:1443",
-                    "https://68.67.122.11:1443",
-                    "https://68.67.122.12:1443",
-                    "https://68.67.122.13:1443",
-                    "https://68.67.122.14:1443",
-                    "https://68.67.122.15:1443",
-                    "https://68.67.122.16:1443",
-                    "https://68.67.122.17:1443",
-                    "https://68.67.122.18:1443",
-                    "https://68.67.122.19:1443",
-                    "https://68.67.122.20:1443",
-                    "https://68.67.122.21:1443",
-                    "https://68.67.122.22:1443",
-                    "https://68.67.122.23:1443",
-                    "https://68.67.122.24:1443",
-                    "https://68.67.122.25:1443",
-                    "https://68.67.122.26:1443",
-                    "https://68.67.122.27:1443",
-                    "https://68.67.122.28:1443",
-                    "https://68.67.122.29:1443",
-                ]
-                .join(",");
-
-                info!(
-                    addresses = default_addresses.as_str(),
-                    "dash_sdk_create_trusted: using default testnet addresses"
-                );
-                let address_list = match AddressList::from_str(&default_addresses) {
-                    Ok(list) => list,
-                    Err(e) => {
-                        error!(error = %e, "dash_sdk_create_trusted: failed to parse default addresses");
-                        return DashSDKResult::error(DashSDKError::new(
-                            DashSDKErrorCode::InternalError,
-                            format!("Failed to parse default addresses: {}", e),
-                        ));
-                    }
-                };
-                SdkBuilder::new(address_list).with_network(network)
-            }
-            Network::Mainnet => {
-                // Use mainnet addresses from WASM SDK
-                let default_addresses = [
-                    "https://149.28.241.190:443",
-                    "https://198.7.115.48:443",
-                    "https://134.255.182.186:443",
-                    "https://93.115.172.39:443",
-                    "https://5.189.164.253:443",
-                    "https://178.215.237.134:443",
-                    "https://157.66.81.162:443",
-                    "https://173.212.232.90:443",
-                ]
-                .join(",");
-
-                info!("dash_sdk_create_trusted: using default mainnet addresses");
-                let address_list = match AddressList::from_str(&default_addresses) {
-                    Ok(list) => list,
-                    Err(e) => {
-                        error!(error = %e, "dash_sdk_create_trusted: failed to parse default addresses");
-                        return DashSDKResult::error(DashSDKError::new(
-                            DashSDKErrorCode::InternalError,
-                            format!("Failed to parse default addresses: {}", e),
-                        ));
-                    }
-                };
-                SdkBuilder::new(address_list).with_network(network)
-            }
+            Network::Testnet => SdkBuilder::new_testnet(),
+            Network::Mainnet => SdkBuilder::new_mainnet(),
             _ => {
                 error!(
                     ?network,

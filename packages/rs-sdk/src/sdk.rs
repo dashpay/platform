@@ -25,6 +25,7 @@ use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
+use rs_dapi_client::Address;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
@@ -62,6 +63,46 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     connect_timeout: None,
     max_decoding_message_size: None,
 };
+
+const DEFAULT_MAINNET_ADDRESSES: &[&str] = &[
+    "https://149.28.241.190:443",
+    "https://198.7.115.48:443",
+    "https://134.255.182.186:443",
+    "https://93.115.172.39:443",
+    "https://5.189.164.253:443",
+    "https://178.215.237.134:443",
+    "https://157.66.81.162:443",
+    "https://173.212.232.90:443",
+];
+
+const DEFAULT_TESTNET_ADDRESSES: &[&str] = &[
+    "https://52.12.176.90:1443",
+    "https://35.82.197.197:1443",
+    "https://44.240.98.102:1443",
+    "https://52.34.144.50:1443",
+    "https://44.239.39.153:1443",
+    "https://34.214.48.68:1443",
+    "https://35.164.23.245:1443",
+    "https://54.149.33.167:1443",
+    "https://52.24.124.162:1443",
+];
+
+fn parse_address_list(addresses: &[&str]) -> AddressList {
+    AddressList::from_iter(addresses.iter().map(|address| {
+        let uri = address
+            .parse::<Uri>()
+            .expect("default SDK address must be a valid URI");
+        Address::try_from(uri).expect("default SDK address must be a valid DAPI address")
+    }))
+}
+
+fn default_address_list_for_network(network: Network) -> Option<AddressList> {
+    match network {
+        Network::Mainnet => Some(parse_address_list(DEFAULT_MAINNET_ADDRESSES)),
+        Network::Testnet => Some(parse_address_list(DEFAULT_TESTNET_ADDRESSES)),
+        _ => None,
+    }
+}
 
 /// Dash Platform SDK
 ///
@@ -747,18 +788,19 @@ impl SdkBuilder {
         Self::default()
     }
 
-    /// Create a new SdkBuilder instance preconfigured for testnet. NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for testnet.
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for testnet use.
     /// Use this method if you want to connect to Dash Platform testnet during development and testing
     /// of your solution.
     pub fn new_testnet() -> Self {
-        unimplemented!(
-            "Testnet address list not implemented yet. Use new() and provide address list."
-        )
+        let address_list = default_address_list_for_network(Network::Testnet)
+            .expect("testnet default address list must be available");
+
+        Self::new(address_list).with_network(Network::Testnet)
     }
 
-    /// Create a new SdkBuilder instance preconfigured for mainnet (production network). NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for mainnet (production network).
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
@@ -771,9 +813,10 @@ impl SdkBuilder {
     ///
     /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
-        unimplemented!(
-            "Mainnet address list not implemented yet. Use new() and provide address list."
-        )
+        let address_list = default_address_list_for_network(Network::Mainnet)
+            .expect("mainnet default address list must be available");
+
+        Self::new(address_list).with_network(Network::Mainnet)
     }
 
     /// Configure network type.
@@ -1094,6 +1137,7 @@ pub fn prettify_proof(proof: &Proof) -> String {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeSet;
     use std::sync::Arc;
 
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
@@ -1101,6 +1145,56 @@ mod test {
     use test_case::test_matrix;
 
     use crate::SdkBuilder;
+
+    use super::{AddressList, Network, DEFAULT_MAINNET_ADDRESSES, DEFAULT_TESTNET_ADDRESSES};
+
+    fn live_address_set(address_list: &AddressList) -> BTreeSet<String> {
+        address_list
+            .get_live_addresses()
+            .into_iter()
+            .map(|address| address.to_string())
+            .collect()
+    }
+
+    fn expected_address_set(addresses: &[&str]) -> BTreeSet<String> {
+        super::parse_address_list(addresses)
+            .get_live_addresses()
+            .into_iter()
+            .map(|address| address.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn new_testnet_uses_default_testnet_addresses() {
+        let builder = SdkBuilder::new_testnet();
+        let address_list = builder
+            .addresses
+            .as_ref()
+            .expect("testnet builder should configure default addresses");
+
+        assert_eq!(builder.network, Network::Testnet);
+        assert_eq!(address_list.len(), DEFAULT_TESTNET_ADDRESSES.len());
+        assert_eq!(
+            live_address_set(address_list),
+            expected_address_set(DEFAULT_TESTNET_ADDRESSES)
+        );
+    }
+
+    #[test]
+    fn new_mainnet_uses_default_mainnet_addresses() {
+        let builder = SdkBuilder::new_mainnet();
+        let address_list = builder
+            .addresses
+            .as_ref()
+            .expect("mainnet builder should configure default addresses");
+
+        assert_eq!(builder.network, Network::Mainnet);
+        assert_eq!(address_list.len(), DEFAULT_MAINNET_ADDRESSES.len());
+        assert_eq!(
+            live_address_set(address_list),
+            expected_address_set(DEFAULT_MAINNET_ADDRESSES)
+        );
+    }
 
     #[test_matrix(97..102, 100, 2, false; "valid height")]
     #[test_case(103, 100, 2, true; "invalid height")]
