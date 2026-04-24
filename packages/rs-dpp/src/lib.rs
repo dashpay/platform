@@ -4,6 +4,8 @@
 //#![deny(missing_docs)]
 #![allow(dead_code)]
 #![allow(clippy::result_large_err)]
+// Allowed for traits used via static dispatch only; dyn-safe async traits
+// (e.g. `Signer`, stored as `Arc<dyn Signer<_>>`) still require `#[async_trait]`.
 #![allow(async_fn_in_trait)]
 
 extern crate core;

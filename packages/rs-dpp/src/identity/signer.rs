@@ -5,6 +5,9 @@ use platform_value::BinaryData;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+// `#[async_trait]` is required here (not native `async fn` in trait) because
+// `Signer` is object-safe and stored as `Arc<dyn Signer<IdentityPublicKey>>`
+// (see `VTableSigner::Inner::Native` in `packages/rs-sdk-ffi/src/signer.rs`).
 #[async_trait]
 pub trait Signer<K>: Send + Sync + Debug {
     /// the public key bytes are only used to look up the private key
