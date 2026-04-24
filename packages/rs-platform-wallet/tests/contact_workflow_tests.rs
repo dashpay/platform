@@ -10,7 +10,7 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, KeyType, SecurityLevel};
 use dpp::prelude::Identifier;
 use platform_wallet::wallet::persister::{NoPlatformPersistence, WalletPersister};
-use platform_wallet::{ContactRequest, EstablishedContact, ManagedIdentity};
+use platform_wallet::{ContactRequest, ManagedIdentity};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

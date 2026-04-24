@@ -21,6 +21,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///
     /// Non-blocking: returns `Err(())` if the wallet-manager lock is
     /// contended. Safe to call from any thread.
+    #[allow(clippy::result_unit_err)]
     pub fn try_record_incoming_payment(
         &self,
         address: &dashcore::Address,

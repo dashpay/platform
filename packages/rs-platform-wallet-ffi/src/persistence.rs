@@ -46,6 +46,7 @@ use dpp::address_funds::PlatformAddress;
 /// typed callbacks that send incremental data across FFI for the caller
 /// to persist in their preferred storage backend.
 #[repr(C)]
+#[allow(clippy::type_complexity)]
 pub struct PersistenceCallbacks {
     /// Opaque context pointer passed to all callbacks.
     pub context: *mut c_void,
@@ -643,9 +644,6 @@ fn network_tag_for(network: Network) -> u8 {
         Network::Testnet => 1,
         Network::Devnet => 2,
         Network::Regtest => 3,
-        // Future variants: fall through to Testnet as the least-bad
-        // default. Adding a variant here is trivial.
-        _ => 1,
     }
 }
 

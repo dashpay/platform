@@ -396,6 +396,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
 /// two operation paths on `IdentityWallet`. On success the caller owns
 /// strings inside `out_profile` and must free them with
 /// [`dashpay_profile_ffi_free`].
+#[allow(clippy::too_many_arguments)]
 unsafe fn create_or_update_profile(
     wallet_handle: Handle,
     identity_id: IdentifierBytes,

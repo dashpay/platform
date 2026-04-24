@@ -60,6 +60,7 @@ impl IdentityWallet {
     ///   whatever — the wallet struct carries no key material.
     /// * `input_address_signer` — produces ECDSA signatures for the
     ///   input [`PlatformAddress`]es. Same rationale as above.
+    #[allow(clippy::too_many_arguments)]
     pub async fn register_from_addresses<
         IS: Signer<IdentityPublicKey>,
         AS: Signer<PlatformAddress> + Send + Sync,

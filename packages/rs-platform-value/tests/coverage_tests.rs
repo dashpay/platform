@@ -1,3 +1,6 @@
+#![allow(clippy::approx_constant)]
+#![allow(clippy::op_ref)]
+
 // Comprehensive coverage tests for platform-value crate.
 //
 // These tests target previously uncovered code paths across multiple modules:

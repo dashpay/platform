@@ -218,7 +218,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
             let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
             let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
-                .map_err(|e| PlatformWalletError::InvalidIdentityData(e))?;
+                .map_err(PlatformWalletError::InvalidIdentityData)?;
             (Some(hash), Some(fingerprint))
         } else {
             (None, None)
@@ -412,7 +412,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
             let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
             let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
-                .map_err(|e| PlatformWalletError::InvalidIdentityData(e))?;
+                .map_err(PlatformWalletError::InvalidIdentityData)?;
             (Some(hash), Some(fingerprint))
         } else {
             // Preserve existing avatar fields from the local cache.

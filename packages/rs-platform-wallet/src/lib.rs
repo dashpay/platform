@@ -1,5 +1,17 @@
 //! Platform wallet with identity management
 
+// The crate's error enum wraps several large variants (SDK errors, DPP
+// consensus errors, etc.). Shrinking it (e.g. boxing variants) would be a
+// broader refactor; allow the lints for now.
+#![allow(clippy::result_large_err)]
+#![allow(clippy::large_enum_variant)]
+// Test-code-heavy lints used intentionally across this crate's unit tests.
+#![cfg_attr(test, allow(clippy::bool_assert_comparison))]
+#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
+// Doc list formatting nits from our Markdown-style bullet lists in rustdoc.
+#![allow(clippy::doc_lazy_continuation)]
+#![allow(clippy::doc_overindented_list_items)]
+
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;

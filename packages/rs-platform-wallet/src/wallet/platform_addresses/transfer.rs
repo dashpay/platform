@@ -161,7 +161,7 @@ impl PlatformAddressWallet {
         let mut selected = BTreeMap::new();
         let mut accumulated: Credits = 0;
 
-        for (_, addr_info) in &account.addresses.addresses {
+        for addr_info in account.addresses.addresses.values() {
             if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
                 let balance = account.address_credit_balance(&p2pkh);
                 if balance == 0 {

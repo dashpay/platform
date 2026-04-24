@@ -19,11 +19,11 @@ use dpp::version::PlatformVersion;
 ///
 /// Returns `PlatformWalletError::ShieldedInsufficientBalance` if the total
 /// unspent value is less than the required amount.
-pub fn select_notes<'a>(
-    unspent: &'a [ShieldedNote],
+pub fn select_notes(
+    unspent: &[ShieldedNote],
     amount: u64,
     fee: u64,
-) -> Result<Vec<&'a ShieldedNote>, PlatformWalletError> {
+) -> Result<Vec<&ShieldedNote>, PlatformWalletError> {
     // Filter out any spent notes defensively (caller should pass unspent only,
     // but this prevents double-spend if called with get_all_notes()).
     let unspent_only: Vec<&ShieldedNote> = unspent.iter().filter(|n| !n.is_spent).collect();

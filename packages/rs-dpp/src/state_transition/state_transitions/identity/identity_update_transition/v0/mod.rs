@@ -87,6 +87,7 @@ fn get_list<T: TryFrom<Value, Error = platform_value::Error>>(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod test {
     use super::*;
     use crate::state_transition::{

@@ -253,13 +253,16 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         let pending: Vec<(P::Tag, P::Address)> = context.provider.pending_addresses().collect();
         for (tag, address) in pending {
             let key_bytes = address.to_bytes();
-            if !context.key_to_tag.contains_key(&key_bytes) {
+            let traced = trunk_result.trace_key_to_leaf(&key_bytes);
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                context.key_to_tag.entry(key_bytes.clone())
+            {
                 // New key needs to be traced — it will be picked up in
                 // next iteration.
-                if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_bytes) {
-                    tracker.add_key(key_bytes.clone(), leaf_key, info);
+                if let Some((leaf_key, info)) = traced {
+                    tracker.add_key(key_bytes, leaf_key, info);
                 }
-                context.key_to_tag.insert(key_bytes, (tag, address));
+                entry.insert((tag, address));
             }
         }
     }

@@ -1764,7 +1764,7 @@ mod tests {
         drive
             .apply_contract(
                 &contract,
-                block_info.clone(),
+                block_info,
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
@@ -2453,7 +2453,7 @@ mod tests {
 
     #[test]
     fn test_update_contract_description() {
-        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
         use dpp::tests::fixtures::get_data_contract_fixture;
 
         let drive = setup_drive_with_keyword_search_contract();
@@ -2552,7 +2552,7 @@ mod tests {
 
     #[test]
     fn test_update_contract_keywords_add_and_remove() {
-        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
         use dpp::tests::fixtures::get_data_contract_fixture;
 
         let drive = setup_drive_with_keyword_search_contract();

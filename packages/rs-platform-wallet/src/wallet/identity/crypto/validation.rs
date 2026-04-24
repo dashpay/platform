@@ -305,9 +305,8 @@ mod tests {
     #[test]
     fn test_disabled_sender_key() {
         let mut key = make_key(0, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION);
-        if let IdentityPublicKey::V0(ref mut k) = key {
-            k.disabled_at = Some(12345);
-        }
+        let IdentityPublicKey::V0(ref mut k) = key;
+        k.disabled_at = Some(12345);
         let sender = make_identity(vec![key]);
         let recipient = make_identity(vec![make_key(
             0,

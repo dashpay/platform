@@ -763,9 +763,6 @@ impl ContextProvider for TrustedHttpContextProvider {
             Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
             Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
-            _ => Err(ContextProviderError::Generic(
-                "Unsupported network".to_string(),
-            )),
         }
     }
 }

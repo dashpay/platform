@@ -162,7 +162,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     "Transaction {} not yet chain-locked, waiting for ChainLock...",
                     txid
                 );
-                self.wait_for_chain_lock(account_index, &out_point, timeout)
+                self.wait_for_chain_lock(account_index, out_point, timeout)
                     .await?
             }
         };

@@ -187,6 +187,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// if the address does not belong to any DashPay receiving
     /// account. Safe to call from any thread, including tokio runtime
     /// threads, where the blocking variant would panic.
+    #[allow(clippy::result_unit_err)]
     pub fn try_match_incoming_dashpay_address(
         &self,
         address: &dashcore::Address,

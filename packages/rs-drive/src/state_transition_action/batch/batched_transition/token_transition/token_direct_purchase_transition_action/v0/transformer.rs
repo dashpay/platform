@@ -297,6 +297,7 @@ impl TokenDirectPurchaseTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::nonminimal_bool)]
 mod tests {
     use dpp::balances::credits::TokenAmount;
     use dpp::fee::Credits;

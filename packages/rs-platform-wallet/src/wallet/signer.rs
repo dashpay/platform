@@ -94,7 +94,7 @@ impl Signer<IdentityPublicKey> for IdentitySigner {
                 use dashcore::blsful::{Bls12381G2Impl, SignatureSchemes};
 
                 let secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-                    &*private_key_bytes,
+                    &private_key_bytes,
                 )
                 .into_option()
                 .ok_or_else(|| {
@@ -116,7 +116,7 @@ impl Signer<IdentityPublicKey> for IdentitySigner {
                 use dashcore::ed25519_dalek::Signer as _;
 
                 let signing_key =
-                    dashcore::ed25519_dalek::SigningKey::from_bytes(&*private_key_bytes);
+                    dashcore::ed25519_dalek::SigningKey::from_bytes(&private_key_bytes);
                 let signature = signing_key.sign(data);
                 Ok(BinaryData::new(signature.to_vec()))
             }
@@ -270,7 +270,7 @@ impl Signer<IdentityPublicKey> for ManagedIdentitySigner {
                 use dashcore::blsful::{Bls12381G2Impl, SignatureSchemes};
 
                 let secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-                    &*private_key_bytes,
+                    &private_key_bytes,
                 )
                 .into_option()
                 .ok_or_else(|| {
@@ -292,7 +292,7 @@ impl Signer<IdentityPublicKey> for ManagedIdentitySigner {
                 use dashcore::ed25519_dalek::Signer as _;
 
                 let signing_key =
-                    dashcore::ed25519_dalek::SigningKey::from_bytes(&*private_key_bytes);
+                    dashcore::ed25519_dalek::SigningKey::from_bytes(&private_key_bytes);
                 let signature = signing_key.sign(data);
                 Ok(BinaryData::new(signature.to_vec()))
             }

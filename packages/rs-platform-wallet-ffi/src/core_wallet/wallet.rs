@@ -65,7 +65,6 @@ pub unsafe extern "C" fn core_wallet_get_network(
                 key_wallet::Network::Testnet => 1,
                 key_wallet::Network::Devnet => 2,
                 key_wallet::Network::Regtest => 3,
-                _ => 1, // fallback to testnet
             };
             PlatformWalletFFIResult::Success
         })

@@ -581,6 +581,7 @@ impl TokenClaimTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     //! Unit tests for the logic fragments of `try_from_borrowed_token_claim_transition_with_contract_lookup`
     //! that can be exercised in isolation (without wiring up a full `Drive` instance).

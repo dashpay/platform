@@ -332,7 +332,6 @@ impl TryInto<Value> for &AssetLockProof {
 mod tests {
     use super::*;
     use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-    use dashcore::{OutPoint, Txid};
 
     mod asset_lock_proof_type_try_from {
         use super::*;
@@ -499,7 +498,7 @@ mod tests {
             let value: Value = (&proof).try_into().expect("should convert to Value");
 
             // Now try to read type from value
-            let type_from_value = AssetLockProof::type_from_raw_value(&value);
+            let _type_from_value = AssetLockProof::type_from_raw_value(&value);
             // Chain proofs serialized via serde may or may not have "type" field depending
             // on the serialization format. The untagged format may not include it.
             // What matters is that the conversion itself works.

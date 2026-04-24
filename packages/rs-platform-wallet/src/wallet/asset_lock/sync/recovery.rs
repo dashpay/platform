@@ -32,6 +32,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// on-chain context from `ManagedWalletInfo` to determine the correct
     /// status (and constructs a `ChainAssetLockProof` if the TX is in a
     /// chain-locked block).
+    #[allow(clippy::too_many_arguments)]
     pub fn recover_asset_lock_blocking(
         &self,
         tx: dashcore::Transaction,

@@ -122,7 +122,7 @@ mod tests {
     fn validate_structure_output_is_input_address() {
         let mut t = make_valid_v0();
         let (addr, _) = t.inputs.iter().next().unwrap();
-        t.output = Some((addr.clone(), 500_000));
+        t.output = Some((*addr, 500_000));
         let result = t.validate_structure(pv());
         assert!(matches!(
             result.errors.as_slice(),

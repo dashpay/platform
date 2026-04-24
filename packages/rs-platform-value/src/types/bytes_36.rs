@@ -201,6 +201,9 @@ impl From<&Bytes36> for String {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
+#[allow(clippy::clone_on_copy)]
+#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
     use std::collections::hash_map::DefaultHasher;

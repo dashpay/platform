@@ -54,9 +54,5 @@ pub fn get_quorum_base_url(
         Network::Regtest => Err(TrustedContextProviderError::UnsupportedNetwork(
             "Regtest network is not supported by trusted context provider".to_string(),
         )),
-        _ => Err(TrustedContextProviderError::UnsupportedNetwork(format!(
-            "Unknown network type: {:?}",
-            network
-        ))),
     }
 }

@@ -234,6 +234,7 @@ impl TokenEmergencyActionTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     use crate::drive::contract::DataContractFetchInfo;
     use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{

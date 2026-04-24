@@ -179,6 +179,13 @@ pub mod identities {
 pub mod scenarios {
     use super::*;
     use dpp::identity::accessors::IdentityGettersV0;
+    use platform_wallet::wallet::persister::NoPlatformPersistence;
+    use platform_wallet::WalletPersister;
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
 
     /// Alice sends contact request to Bob
     pub fn alice_to_bob_contact_request() -> ContactRequest {
@@ -221,9 +228,9 @@ pub mod scenarios {
         let req2 = create_contact_request(alice_id, carol_id, 0, 1, 1, 1_700_000_050);
         let req3 = create_contact_request(alice_id, dave_id, 0, 1, 2, 1_700_000_100);
 
-        alice.add_sent_contact_request(req1.clone());
-        alice.add_sent_contact_request(req2.clone());
-        alice.add_sent_contact_request(req3.clone());
+        alice.add_sent_contact_request(req1.clone(), &noop_persister());
+        alice.add_sent_contact_request(req2.clone(), &noop_persister());
+        alice.add_sent_contact_request(req3.clone(), &noop_persister());
 
         (alice, vec![req1, req2, req3])
     }
@@ -241,9 +248,9 @@ pub mod scenarios {
         let req2 = create_contact_request(carol_id, alice_id, 1, 0, 0, 1_700_000_050);
         let req3 = create_contact_request(dave_id, alice_id, 1, 0, 0, 1_700_000_100);
 
-        alice.add_incoming_contact_request(req1.clone());
-        alice.add_incoming_contact_request(req2.clone());
-        alice.add_incoming_contact_request(req3.clone());
+        alice.add_incoming_contact_request(req1.clone(), &noop_persister());
+        alice.add_incoming_contact_request(req2.clone(), &noop_persister());
+        alice.add_incoming_contact_request(req3.clone(), &noop_persister());
 
         (alice, vec![req1, req2, req3])
     }
@@ -284,15 +291,15 @@ pub mod scenarios {
 
         // Pending sent request to Carol (not reciprocated yet)
         let carol_request = create_contact_request(alice_id, carol_id, 0, 1, 0, 1_700_000_200);
-        alice.add_sent_contact_request(carol_request);
+        alice.add_sent_contact_request(carol_request, &noop_persister());
 
         // Pending incoming request from Dave (we haven't sent back yet)
         let dave_request = create_contact_request(dave_id, alice_id, 1, 0, 0, 1_700_000_300);
-        alice.add_incoming_contact_request(dave_request);
+        alice.add_incoming_contact_request(dave_request, &noop_persister());
 
         // Pending incoming request from Eve
         let eve_request = create_contact_request(eve_id, alice_id, 1, 0, 0, 1_700_000_400);
-        alice.add_incoming_contact_request(eve_request);
+        alice.add_incoming_contact_request(eve_request, &noop_persister());
 
         alice
     }

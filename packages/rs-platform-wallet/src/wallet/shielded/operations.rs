@@ -403,6 +403,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     /// fn witness(&self, position: u64) -> Result<MerklePath, Self::Error>;
     /// ```
     /// Until that method is added, this will not compile.
+    #[allow(clippy::never_loop, unused_mut)]
     async fn extract_spends_and_anchor(
         &self,
         notes: &[ShieldedNote],

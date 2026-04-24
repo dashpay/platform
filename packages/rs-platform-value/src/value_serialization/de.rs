@@ -658,6 +658,7 @@ impl<'de> de::VariantAccess<'de> for Deserializer<Value> {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
     use crate::{from_value, to_value};

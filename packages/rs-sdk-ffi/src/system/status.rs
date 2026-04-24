@@ -34,7 +34,6 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
         dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
         dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
         dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
-        _ => "unknown",
     };
 
     // Determine mode based on whether we have a trusted provider

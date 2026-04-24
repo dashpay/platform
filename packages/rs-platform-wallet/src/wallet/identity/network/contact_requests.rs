@@ -40,6 +40,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// * `recipient_identity_id` - Identity the request is sent to.
     /// * `account_label`         - Optional account label (plaintext; encrypted by SDK).
     /// * `auto_accept_proof`     - Optional auto-accept proof bytes (38-102 bytes).
+    #[allow(clippy::type_complexity)]
     pub async fn send_contact_request(
         &self,
         sender_identity_id: &Identifier,

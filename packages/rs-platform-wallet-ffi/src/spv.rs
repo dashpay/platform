@@ -105,6 +105,7 @@ fn state_to_u32(s: SyncState) -> u32 {
     }
 }
 
+#[allow(clippy::field_reassign_with_default)]
 fn progress_to_ffi(p: &SyncProgress) -> FFISpvSyncProgress {
     let mut out = FFISpvSyncProgress::default();
     out.overall_state = state_to_u32(p.state());
@@ -217,6 +218,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
 /// `handle` must be a valid manager handle. String pointers must be valid
 /// null-terminated UTF-8 for the duration of this call.
 #[no_mangle]
+#[allow(clippy::field_reassign_with_default)]
 pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     handle: Handle,
     data_dir: *const c_char,

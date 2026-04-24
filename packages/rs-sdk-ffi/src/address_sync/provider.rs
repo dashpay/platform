@@ -275,6 +275,6 @@ mod tests {
         };
 
         let provider = CallbackAddressProvider::new(&mut ffi);
-        assert!(provider.pending_addresses().is_empty());
+        assert_eq!(provider.pending_addresses().count(), 0);
     }
 }

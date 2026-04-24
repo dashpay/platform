@@ -2466,6 +2466,7 @@ fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPrope
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
     use platform_version::version::PlatformVersion;
@@ -5821,7 +5822,7 @@ mod tests {
         for _ in 0..5 {
             match prop.random_value(&mut rng) {
                 Value::Bytes(b) => {
-                    assert!(b.len() >= 1 && b.len() <= 10);
+                    assert!(!b.is_empty() && b.len() <= 10);
                 }
                 v => panic!("expected Bytes, got {:?}", v),
             }
@@ -6109,7 +6110,7 @@ mod tests {
         });
         for _ in 0..10 {
             let sz = prop.random_size(&mut rng);
-            assert!(sz >= 3 && sz <= 6);
+            assert!((3..=6).contains(&sz));
         }
     }
 

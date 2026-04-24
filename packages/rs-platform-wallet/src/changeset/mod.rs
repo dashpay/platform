@@ -8,6 +8,7 @@
 //!   [`PlatformWalletPersistence::load`] so the platform wallet can boot without re-syncing.
 //! - [`PlatformWalletPersistence`] — storage backend trait.
 
+#[allow(clippy::module_inception)]
 pub mod changeset;
 pub mod client_start_state;
 pub mod client_wallet_start_state;

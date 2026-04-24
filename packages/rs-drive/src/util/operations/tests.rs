@@ -369,7 +369,8 @@ fn drop_cache_v0_resets_genesis_time_and_protocol_versions() {
     // protocol_versions_counter cache should have been replaced by a new
     // empty cache — we don't make assumptions about its internals beyond
     // that it's readable.
-    let _ = drive.cache.protocol_versions_counter.read();
+    let _guard = drive.cache.protocol_versions_counter.read();
+    drop(_guard);
 }
 
 // ---------------------------------------------------------------------------

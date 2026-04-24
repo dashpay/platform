@@ -359,7 +359,7 @@ mod tests {
                 .expect("should not error");
 
             assert_eq!(result.len(), 2);
-            for (_, id) in &result {
+            for id in result.values() {
                 assert!(id.is_none());
             }
         }

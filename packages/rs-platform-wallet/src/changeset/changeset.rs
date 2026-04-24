@@ -787,14 +787,11 @@ impl Merge for PlatformWalletChangeSet {
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()
             && self.token_balances.is_empty()
-            && self
-                .dashpay_profiles
-                .as_ref()
-                .map_or(true, |m| m.is_empty())
+            && self.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty())
             && self
                 .dashpay_payments_overlay
                 .as_ref()
-                .map_or(true, |m| m.is_empty())
+                .is_none_or(|m| m.is_empty())
     }
 }
 

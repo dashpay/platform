@@ -58,6 +58,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Register a pre-built `Wallet` with the manager: insert into the
     /// `WalletManager`, build a `PlatformWallet` handle, load persisted
     /// state, and return an `Arc` to the managed wallet.
+    #[allow(clippy::type_complexity)]
     async fn register_wallet(
         &self,
         wallet: Wallet,
@@ -78,7 +79,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .accounts
             .all_accounts()
             .iter()
-            .map(|a| (a.account_type.clone(), a.account_xpub))
+            .map(|a| (a.account_type, a.account_xpub))
             .collect();
         // Snapshot core (BIP44/CoinJoin/identity/provider/DashPay)
         // address pools. PlatformPayment accounts live in a separate

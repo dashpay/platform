@@ -3,6 +3,11 @@
 
 #![allow(non_camel_case_types)]
 #![allow(clippy::missing_safety_doc)]
+// Doc list formatting nits from our Markdown-style bullet lists in rustdoc.
+#![allow(clippy::doc_overindented_list_items)]
+// The FFI layer wraps a large crate error enum.
+#![allow(clippy::result_large_err)]
+#![allow(clippy::large_enum_variant)]
 
 pub mod asset_lock;
 pub mod contact;

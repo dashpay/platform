@@ -701,7 +701,6 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashS
         Network::Testnet => DashSDKNetwork::SDKTestnet,
         Network::Regtest => DashSDKNetwork::SDKRegtest,
         Network::Devnet => DashSDKNetwork::SDKDevnet,
-        _ => DashSDKNetwork::SDKLocal, // Fallback for any other network types
     }
 }
 

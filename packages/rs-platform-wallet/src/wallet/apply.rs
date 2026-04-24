@@ -349,7 +349,6 @@ mod tests {
     use std::sync::Arc;
 
     use dashcore::OutPoint;
-    use dpp::address_funds::PlatformAddress;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
     use dpp::prelude::Identifier;

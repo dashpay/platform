@@ -383,11 +383,7 @@ mod tests {
             .max_asset_lock_usage_attempts;
 
         // Create one fewer than the max -- should NOT burn
-        let num_hashes = if max_attempts > 1 {
-            max_attempts - 1
-        } else {
-            0
-        };
+        let num_hashes = max_attempts.saturating_sub(1);
         let previous_hashes: Vec<Bytes32> =
             (0..num_hashes).map(|i| Bytes32([i as u8; 32])).collect();
 

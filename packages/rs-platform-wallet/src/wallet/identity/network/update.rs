@@ -173,7 +173,7 @@ impl IdentityWallet {
             self.sdk.version(),
             None,
         )
-        .map_err(|e| dash_sdk::Error::Protocol(e))?;
+        .map_err(dash_sdk::Error::Protocol)?;
 
         // Broadcast and wait for confirmation.
         let result = state_transition

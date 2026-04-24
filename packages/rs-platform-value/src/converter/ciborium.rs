@@ -145,6 +145,7 @@ impl TryInto<Box<CborValue>> for Box<Value> {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use crate::{Error, Value};
     use ciborium::value::Integer;

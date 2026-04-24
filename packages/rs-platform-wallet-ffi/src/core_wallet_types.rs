@@ -208,24 +208,21 @@ impl WalletChangeSetFFI {
                 .collect();
 
             // UTXOs spent
-            let utxos_spent: Vec<OutPointFFI> = account_cs
-                .utxos_spent
-                .iter()
-                .map(|op| outpoint_to_ffi(op))
-                .collect();
+            let utxos_spent: Vec<OutPointFFI> =
+                account_cs.utxos_spent.iter().map(outpoint_to_ffi).collect();
 
             // UTXOs instant-locked
             let utxos_il: Vec<OutPointFFI> = account_cs
                 .utxos_instant_locked
                 .iter()
-                .map(|op| outpoint_to_ffi(op))
+                .map(outpoint_to_ffi)
                 .collect();
 
             // Transactions
             let transactions: Vec<TransactionRecordFFI> = account_cs
                 .transactions
                 .values()
-                .map(|tr| tx_record_to_ffi(tr))
+                .map(tx_record_to_ffi)
                 .collect();
 
             let ext_hu = account_cs.highest_used.get(&AddressPoolType::External);

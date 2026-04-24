@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::check_tx::CheckTxLevel;
