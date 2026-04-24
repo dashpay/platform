@@ -4973,7 +4973,6 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "platform-wallet",
- "serde_json",
  "tempfile",
  "tokio",
  "zeroize",

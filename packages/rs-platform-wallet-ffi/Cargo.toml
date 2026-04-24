@@ -19,7 +19,6 @@ once_cell = "1.19"
 parking_lot = { version = "0.12", features = ["send_guard"] }
 lazy_static = "1.4"
 tokio = { version = "1", features = ["rt-multi-thread"] }
-serde_json = "1"
 
 # Core dependencies (for Network type)
 dashcore = { workspace = true }
