@@ -29,7 +29,7 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
-pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
+pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
     recipient: &OrchardAddress,
     shield_amount: u64,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -61,6 +61,7 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
         user_fee_increase,
         platform_version,
     )
+    .await
 }
 
 #[cfg(test)]
@@ -76,12 +77,17 @@ mod tests {
     #[derive(Debug)]
     struct DummySigner;
 
+    #[async_trait::async_trait]
     impl Signer<PlatformAddress> for DummySigner {
-        fn sign(&self, _key: &PlatformAddress, _data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
             Ok(BinaryData::new(vec![0u8; 65]))
         }
 
-        fn sign_create_witness(
+        async fn sign_create_witness(
             &self,
             _key: &PlatformAddress,
             _data: &[u8],
@@ -96,8 +102,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_build_shield_empty_fee_strategy() {
+    #[tokio::test]
+    async fn test_build_shield_empty_fee_strategy() {
         let recipient = test_orchard_address();
         let platform_version = PlatformVersion::latest();
         let result = build_shield_transition(
@@ -110,7 +116,8 @@ mod tests {
             &TestProver,
             [0u8; 36],
             platform_version,
-        );
+        )
+        .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -121,8 +128,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_build_shield_transition_valid() {
+    #[tokio::test]
+    async fn test_build_shield_transition_valid() {
         let recipient = test_orchard_address();
         let platform_version = PlatformVersion::latest();
         // Create a P2PKH address as input
@@ -142,7 +149,8 @@ mod tests {
             &TestProver,
             [0u8; 36],
             platform_version,
-        );
+        )
+        .await;
 
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
         match result.unwrap() {
@@ -155,8 +163,8 @@ mod tests {
     // Extra coverage: error/edge paths not exercised above.
     // ------------------------------------------------------------
 
-    #[test]
-    fn test_build_shield_multiple_inputs_all_plumbed() {
+    #[tokio::test]
+    async fn test_build_shield_multiple_inputs_all_plumbed() {
         // Multiple input addresses should each produce their own witness
         // signature and flow through the downstream Shield transition.
         let recipient = test_orchard_address();
@@ -179,7 +187,8 @@ mod tests {
             &TestProver,
             [0u8; 36],
             platform_version,
-        );
+        )
+        .await;
         assert!(
             result.is_ok(),
             "multi-input shield should succeed: {:?}",
@@ -187,8 +196,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_build_shield_user_fee_increase_non_zero_succeeds() {
+    #[tokio::test]
+    async fn test_build_shield_user_fee_increase_non_zero_succeeds() {
         // The user_fee_increase param just flows through as metadata.
         // A non-zero value should not fail the bundle build.
         let recipient = test_orchard_address();
@@ -209,7 +218,8 @@ mod tests {
             &TestProver,
             [9u8; 36],
             platform_version,
-        );
+        )
+        .await;
         assert!(
             result.is_ok(),
             "non-zero user_fee_increase should succeed: {:?}",
@@ -217,8 +227,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_build_shield_memo_is_fully_plumbed() {
+    #[tokio::test]
+    async fn test_build_shield_memo_is_fully_plumbed() {
         // Any 36-byte memo should be accepted — this test is a guard
         // against accidental panics/regressions in memo handling.
         let recipient = test_orchard_address();
@@ -243,7 +253,8 @@ mod tests {
             &TestProver,
             memo,
             platform_version,
-        );
+        )
+        .await;
         assert!(
             result.is_ok(),
             "varied memo should succeed: {:?}",

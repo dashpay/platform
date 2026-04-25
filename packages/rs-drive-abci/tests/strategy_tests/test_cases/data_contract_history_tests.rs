@@ -37,8 +37,8 @@ mod tests {
     /// Root cause: In `prove_state_transition_v0`, the code always used
     /// `contract_ids_to_non_historical_path_query` regardless of whether
     /// the contract had `keeps_history=true`.
-    #[test]
-    fn run_chain_create_contract_with_keeps_history_true() {
+    #[tokio::test]
+    async fn run_chain_create_contract_with_keeps_history_true() {
         let platform_version = PlatformVersion::latest();
 
         // Load a base contract and modify it to enable keeps_history
@@ -107,7 +107,8 @@ mod tests {
         // Run the chain - this will create identities and the contract with keeps_history=true
         // The verify_state_transition_results flag ensures proofs are verified
         let outcome =
-            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         // Verify all state transitions succeeded (including contract creation)
         for (block_height, tx_results) in outcome.state_transition_results_per_block.iter() {
@@ -162,8 +163,8 @@ mod tests {
 
     /// Test both historical and non-historical contract creation in the same chain
     /// to ensure both paths work correctly.
-    #[test]
-    fn run_chain_create_contracts_with_and_without_history() {
+    #[tokio::test]
+    async fn run_chain_create_contracts_with_and_without_history() {
         let platform_version = PlatformVersion::latest();
 
         // Contract 1: keeps_history = true
@@ -239,7 +240,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 3, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 3, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         // Verify all state transitions succeeded
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {

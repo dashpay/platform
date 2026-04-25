@@ -19,7 +19,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
-    fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
+    async fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         mut data_contract: DataContract,
         identity_nonce: IdentityNonce,
         identity: &PartialIdentity,
@@ -84,7 +84,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         }
 
         // There was an error here where the public key supplied was not one belonging to the signer.
-        match signer.sign(public_key, &value) {
+        match signer.sign(public_key, &value).await {
             Ok(signature) => {
                 state_transition.set_signature(signature);
             }

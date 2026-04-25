@@ -186,12 +186,14 @@ async fn put_identity_with_asset_lock<S: Signer<IdentityPublicKey>>(
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
-    let (state_transition, _) = identity.broadcast_request_for_new_identity(
-        asset_lock_proof,
-        asset_lock_proof_private_key,
-        signer,
-        sdk.version(),
-    )?;
+    let (state_transition, _) = identity
+        .broadcast_request_for_new_identity(
+            asset_lock_proof,
+            asset_lock_proof_private_key,
+            signer,
+            sdk.version(),
+        )
+        .await?;
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     state_transition.broadcast(sdk, settings).await?;
     Ok(state_transition)
@@ -235,7 +237,8 @@ async fn put_identity_with_address_funding<
         input_signer,
         user_fee_increase,
         sdk.version(),
-    )?;
+    )
+    .await?;
 
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 

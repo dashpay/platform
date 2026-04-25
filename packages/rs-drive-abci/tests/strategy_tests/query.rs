@@ -349,8 +349,8 @@ mod tests {
         };
     }
 
-    #[test]
-    fn run_chain_query_epoch_info() {
+    #[tokio::test]
+    async fn run_chain_query_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -403,7 +403,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let nodes_with_no_balance = outcome
             .masternode_identity_balances
@@ -459,8 +460,8 @@ mod tests {
         assert_eq!(epoch_infos.epoch_infos.len(), 5)
     }
 
-    #[test]
-    fn run_chain_query_epoch_info_latest() {
+    #[tokio::test]
+    async fn run_chain_query_epoch_info_latest() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -513,7 +514,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -565,8 +567,8 @@ mod tests {
         assert_eq!(epoch_infos.epoch_infos.first().unwrap().number, 4);
     }
 
-    #[test]
-    fn run_chain_prove_epoch_info() {
+    #[tokio::test]
+    async fn run_chain_prove_epoch_info() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -619,7 +621,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -727,8 +730,8 @@ mod tests {
         assert_eq!(epoch_infos.first().unwrap().index(), 4);
     }
 
-    #[test]
-    fn run_chain_prove_finalized_epoch_infos() {
+    #[tokio::test]
+    async fn run_chain_prove_finalized_epoch_infos() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -781,7 +784,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances

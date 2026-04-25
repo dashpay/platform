@@ -236,11 +236,17 @@ public final class KeyManager: Sendable {
   // MARK: - Signer Creation
 
   /// Create a signer from private key data
-  /// - Parameter privateKeyData: The private key data (32 bytes)
+  /// - Parameters:
+  ///   - privateKeyData: The private key data (32 bytes)
+  ///   - network: The network to associate with the key (affects WIF / address
+  ///     derivation only; does not affect signing). Defaults to testnet.
   /// - Returns: An OpaquePointer to the signer handle
   /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
-  public func createSigner(from privateKeyData: Data) throws -> OpaquePointer {
+  public func createSigner(
+    from privateKeyData: Data,
+    network: Network = DashSDKNetwork(rawValue: 1)
+  ) throws -> OpaquePointer {
     // Validate private key length
     guard privateKeyData.count == 32 else {
       throw KeyManagerError.invalidKeyFormat("Private key must be 32 bytes, got \(privateKeyData.count)")
@@ -249,7 +255,8 @@ public final class KeyManager: Sendable {
     let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-        UInt(privateKeyData.count)
+        UInt(privateKeyData.count),
+        network
       )
     }
 
@@ -271,48 +278,63 @@ public final class KeyManager: Sendable {
   /// - Parameters:
   ///   - identity: The identity
   ///   - keyIndex: The key index to create a signer for
+  ///   - network: The network to associate with the key (default: testnet)
   /// - Returns: An OpaquePointer to the signer handle
   /// - Throws: `KeyManagerError.privateKeyNotFound` if private key is not available
   /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
   /// - Note: This method must be called from a MainActor context
   @MainActor
-  public func createSigner(for identity: DPPIdentity, keyIndex: KeyID) throws -> OpaquePointer {
+  public func createSigner(
+    for identity: DPPIdentity,
+    keyIndex: KeyID,
+    network: Network = DashSDKNetwork(rawValue: 1)
+  ) throws -> OpaquePointer {
     let privateKeyData = try getPrivateKey(for: identity, keyIndex: keyIndex)
-    return try createSigner(from: privateKeyData)
+    return try createSigner(from: privateKeyData, network: network)
   }
 
   /// Create a transfer signer for an identity (convenience method)
-  /// - Parameter identity: The identity to create a transfer signer for
+  /// - Parameters:
+  ///   - identity: The identity to create a transfer signer for
+  ///   - network: The network to associate with the key (default: testnet)
   /// - Returns: A tuple containing the transfer key and signer handle
   /// - Throws: `KeyManagerError.noSuitableKey` if no transfer key with private key is found
   /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
   /// - Note: This method must be called from a MainActor context
   @MainActor
-  public func createTransferSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
+  public func createTransferSigner(
+    for identity: DPPIdentity,
+    network: Network = DashSDKNetwork(rawValue: 1)
+  ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
     guard let transferKey = getTransferKey(for: identity) else {
       throw KeyManagerError.noSuitableKey("No transfer key found for identity")
     }
 
-    let signer = try createSigner(for: identity, keyIndex: transferKey.id)
+    let signer = try createSigner(for: identity, keyIndex: transferKey.id, network: network)
     return (transferKey, signer)
   }
 
   /// Create an authentication signer for an identity (convenience method)
-  /// - Parameter identity: The identity to create an authentication signer for
+  /// - Parameters:
+  ///   - identity: The identity to create an authentication signer for
+  ///   - network: The network to associate with the key (default: testnet)
   /// - Returns: A tuple containing the authentication key and signer handle
   /// - Throws: `KeyManagerError.noSuitableKey` if no authentication key with private key is found
   /// - Throws: `KeyManagerError.signerCreationFailed` if signer creation fails
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
   /// - Note: This method must be called from a MainActor context
   @MainActor
-  public func createAuthenticationSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
+  public func createAuthenticationSigner(
+    for identity: DPPIdentity,
+    network: Network = DashSDKNetwork(rawValue: 1)
+  ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
     guard let authKey = getAuthenticationKey(for: identity) else {
       throw KeyManagerError.noSuitableKey("No authentication key found for identity")
     }
 
-    let signer = try createSigner(for: identity, keyIndex: authKey.id)
+    let signer = try createSigner(for: identity, keyIndex: authKey.id, network: network)
     return (authKey, signer)
   }
 
@@ -332,7 +354,8 @@ public final class KeyManager: Sendable {
     for identity: DPPIdentity,
     purpose: KeyPurpose? = nil,
     minimumSecurityLevel: SecurityLevel? = nil,
-    preferCritical: Bool = true
+    preferCritical: Bool = true,
+    network: Network = DashSDKNetwork(rawValue: 1)
   ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
     guard let (key, privateKey) = findKeyWithPrivateKey(
       for: identity,
@@ -345,7 +368,7 @@ public final class KeyManager: Sendable {
       throw KeyManagerError.noSuitableKey("No suitable key\(purposeDesc)\(securityDesc) with available private key found")
     }
 
-    let signer = try createSigner(from: privateKey)
+    let signer = try createSigner(from: privateKey, network: network)
     return (key, signer)
   }
 
@@ -431,29 +454,37 @@ extension KeyManager {
   @MainActor
   public func createDocumentSigner(
     for identity: DPPIdentity,
-    minimumSecurityLevel: SecurityLevel = .high
+    minimumSecurityLevel: SecurityLevel = .high,
+    network: Network = DashSDKNetwork(rawValue: 1)
   ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
     return try createSignerForKey(
       for: identity,
       purpose: .authentication,
       minimumSecurityLevel: minimumSecurityLevel,
-      preferCritical: true
+      preferCritical: true,
+      network: network
     )
   }
 
   /// Create a signer for contract operations (requires CRITICAL + AUTHENTICATION)
-  /// - Parameter identity: The identity to create a signer for
+  /// - Parameters:
+  ///   - identity: The identity to create a signer for
+  ///   - network: The network to associate with the key (default: testnet)
   /// - Returns: A tuple containing the selected key and signer handle
   /// - Throws: `KeyManagerError.noSuitableKey` if no suitable key with private key is found
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
   /// - Note: This method must be called from a MainActor context
   @MainActor
-  public func createContractSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
+  public func createContractSigner(
+    for identity: DPPIdentity,
+    network: Network = DashSDKNetwork(rawValue: 1)
+  ) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
     return try createSignerForKey(
       for: identity,
       purpose: .authentication,
       minimumSecurityLevel: .critical,
-      preferCritical: true
+      preferCritical: true,
+      network: network
     )
   }
 }

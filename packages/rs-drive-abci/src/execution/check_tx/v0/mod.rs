@@ -2252,8 +2252,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn document_update_check_tx() {
+    #[tokio::test]
+    async fn document_update_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2327,6 +2327,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2384,6 +2385,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2402,6 +2404,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -2448,8 +2451,8 @@ mod tests {
         assert_eq!(validation_result.errors.as_slice(), &[]);
     }
 
-    #[test]
-    fn identity_top_up_check_tx() {
+    #[tokio::test]
+    async fn identity_top_up_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2522,6 +2525,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2597,8 +2601,8 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    #[test]
-    fn identity_cant_double_top_up() {
+    #[tokio::test]
+    async fn identity_cant_double_top_up() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2671,6 +2675,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -2882,8 +2887,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn identity_cant_create_with_used_outpoint() {
+    #[tokio::test]
+    async fn identity_cant_create_with_used_outpoint() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2956,6 +2961,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -3071,6 +3077,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -3110,8 +3117,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn identity_can_create_with_semi_used_outpoint() {
+    #[tokio::test]
+    async fn identity_can_create_with_semi_used_outpoint() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3184,6 +3191,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let valid_identity_create_transition = identity_create_transition.clone();
@@ -3261,6 +3269,7 @@ mod tests {
                 1,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let valid_identity_create_serialized_transition = valid_identity_create_transition
@@ -3373,6 +3382,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -3412,8 +3422,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn identity_update_with_non_master_key_check_tx() {
+    #[tokio::test]
+    async fn identity_update_with_non_master_key_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3479,6 +3489,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -3512,8 +3523,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn identity_update_with_encryption_key_check_tx() {
+    #[tokio::test]
+    async fn identity_update_with_encryption_key_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3578,6 +3589,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -3606,8 +3618,8 @@ mod tests {
         assert_eq!(validation_result.errors.len(), 0);
     }
 
-    #[test]
-    fn token_mint_confirmation_check_tx() {
+    #[tokio::test]
+    async fn token_mint_confirmation_check_tx() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -3679,6 +3691,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_mint_serialized_transition = token_mint_transition
@@ -3743,6 +3756,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirmation transition");
 
         let confirm_serialized = confirm_transition

@@ -9,8 +9,8 @@ mod token_unfreeze_tests {
         // ──────────────────────────────────────────────────────────
         //  Successfully unfreeze a previously-frozen identity's balance.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_previously_frozen_identity() {
+        #[tokio::test]
+        async fn test_token_unfreeze_previously_frozen_identity() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -72,6 +72,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
 
             let freeze_serialized = freeze_transition
@@ -134,6 +135,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -184,8 +186,8 @@ mod token_unfreeze_tests {
         //  Unfreeze when the identity was never frozen  →  Error.
         //  The validator returns IdentityTokenAccountNotFrozenError.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_never_frozen_identity_fails() {
+        #[tokio::test]
+        async fn test_token_unfreeze_never_frozen_identity_fails() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -237,6 +239,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -293,8 +296,8 @@ mod token_unfreeze_tests {
         //  Unfreezing an already-unfrozen identity  →  Error
         //  (no-op not allowed by the spec).
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_already_unfrozen_fails() {
+        #[tokio::test]
+        async fn test_token_unfreeze_already_unfrozen_fails() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -356,6 +359,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
 
             let freeze_serialized = freeze_transition
@@ -401,6 +405,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -447,6 +452,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let second_unfreeze_serialized = second_unfreeze
@@ -490,8 +496,8 @@ mod token_unfreeze_tests {
         //  Unfreeze is restricted to the contract owner, and a second
         //  identity tries to unfreeze → UnauthorizedTokenActionError.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_non_authorized_identity_fails() {
+        #[tokio::test]
+        async fn test_token_unfreeze_non_authorized_identity_fails() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -556,6 +562,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
 
             let freeze_serialized = freeze_transition
@@ -602,6 +609,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -655,8 +663,8 @@ mod token_unfreeze_tests {
         //  After unfreezing, a previously-frozen account can send tokens
         //  (verifying unfrozen state is truly effective).
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_allows_subsequent_transfer() {
+        #[tokio::test]
+        async fn test_token_unfreeze_allows_subsequent_transfer() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -720,6 +728,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create transfer transition");
 
             let transfer_serialized = transfer_in
@@ -766,6 +775,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
 
             let freeze_serialized = freeze_transition
@@ -814,6 +824,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create transfer transition");
 
             let blocked_send_serialized = blocked_send
@@ -865,6 +876,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -913,6 +925,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create transfer transition");
 
             let allowed_send_serialized = allowed_send
@@ -973,8 +986,8 @@ mod token_unfreeze_tests {
         //  unfreeze. This exercises the Identity(...) branch of
         //  AuthorizedActionTakers during unfreeze.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_authorized_identity() {
+        #[tokio::test]
+        async fn test_token_unfreeze_authorized_identity() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1037,6 +1050,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
             let freeze_serialized = freeze_transition.serialize_to_bytes().unwrap();
             let transaction = platform.drive.grove.start_transaction();
@@ -1079,6 +1093,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
             let owner_unfreeze_serialized = owner_unfreeze.serialize_to_bytes().unwrap();
             let transaction = platform.drive.grove.start_transaction();
@@ -1124,6 +1139,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
             let unfreeze_serialized = unfreeze_transition.serialize_to_bytes().unwrap();
             let transaction = platform.drive.grove.start_transaction();
@@ -1166,8 +1182,8 @@ mod token_unfreeze_tests {
         // ──────────────────────────────────────────────────────────
         //  Unfreeze with an attached public note.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_with_public_note() {
+        #[tokio::test]
+        async fn test_token_unfreeze_with_public_note() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1220,6 +1236,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
             let freeze_serialized = freeze_transition.serialize_to_bytes().unwrap();
             let transaction = platform.drive.grove.start_transaction();
@@ -1262,6 +1279,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition.serialize_to_bytes().unwrap();
@@ -1307,8 +1325,8 @@ mod token_unfreeze_tests {
         //  This confirms the contract lookup path rejects unknown contracts
         //  before hitting unfreeze logic.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_nonexistent_contract_fails() {
+        #[tokio::test]
+        async fn test_token_unfreeze_nonexistent_contract_fails() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1343,6 +1361,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -1394,8 +1413,8 @@ mod token_unfreeze_tests {
         //  Owner alone does NOT have enough group power  →  unfreeze fails
         //  with UnauthorizedTokenActionError.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_unfreeze_owner_not_authorized_group_required() {
+        #[tokio::test]
+        async fn test_token_unfreeze_owner_not_authorized_group_required() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1458,6 +1477,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("create freeze");
 
             let freeze_ser = freeze.serialize_to_bytes().unwrap();
@@ -1501,6 +1521,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("create unfreeze");
 
             let unfreeze_ser = unfreeze.serialize_to_bytes().unwrap();
@@ -1547,21 +1568,23 @@ mod token_unfreeze_tests {
             assert_eq!(frozen, Some(true));
         }
 
-        #[test]
-        fn test_token_unfreeze_two_member_group_no_keeping_history() {
-            test_token_unfreeze_two_member_group_with_keeps_history(false);
+        #[tokio::test]
+        async fn test_token_unfreeze_two_member_group_no_keeping_history() {
+            test_token_unfreeze_two_member_group_with_keeps_history(false).await;
         }
 
-        #[test]
-        fn test_token_unfreeze_two_member_group_keeping_history() {
-            test_token_unfreeze_two_member_group_with_keeps_history(true);
+        #[tokio::test]
+        async fn test_token_unfreeze_two_member_group_keeping_history() {
+            test_token_unfreeze_two_member_group_with_keeps_history(true).await;
         }
 
         // ──────────────────────────────────────────────────────────
         //  Two‑signer scenario: proposer + second member complete unfreeze.
         //  Verifies GroupStateTransitionInfo flow for unfreeze.
         // ──────────────────────────────────────────────────────────
-        fn test_token_unfreeze_two_member_group_with_keeps_history(keeps_freezing_history: bool) {
+        async fn test_token_unfreeze_two_member_group_with_keeps_history(
+            keeps_freezing_history: bool,
+        ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1626,6 +1649,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("create freeze");
             let freeze_ser = freeze.serialize_to_bytes().unwrap();
             let tx = platform.drive.grove.start_transaction();
@@ -1668,6 +1692,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create batch transition");
 
             let unfreeze_propose_ser = unfreeze_propose
@@ -1770,6 +1795,7 @@ mod token_unfreeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
             let unfreeze_confirm_ser = unfreeze_confirm

@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl IdentityPublicKeyInCreation {
-    pub fn from_public_key_signed_external<S: Signer<IdentityPublicKey>>(
+    pub async fn from_public_key_signed_external<S: Signer<IdentityPublicKey>>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,
@@ -22,6 +22,7 @@ impl IdentityPublicKeyInCreation {
         {
             0 => {
                 Self::from_public_key_signed_external_v0(public_key, state_transition_bytes, signer)
+                    .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityPublicKeyInCreation::from_public_key_signed_external".to_string(),

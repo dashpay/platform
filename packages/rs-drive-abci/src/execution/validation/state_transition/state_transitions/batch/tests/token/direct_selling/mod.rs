@@ -15,8 +15,8 @@ mod token_selling_tests {
     use drive::verify::RootHash;
     use simple_signer::signer::SimpleSigner;
 
-    #[test]
-    fn test_successful_direct_purchase_single_price() {
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -40,7 +40,8 @@ mod token_selling_tests {
             &seller_key,
             Some(single_price.clone()),
             &mut identity_contract_nonce,
-        );
+        )
+        .await;
 
         // Seller sets single price
         let set_price_transition =
@@ -59,6 +60,7 @@ mod token_selling_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
         let platform_state = platform.state.load();
@@ -123,6 +125,7 @@ mod token_selling_tests {
             platform_version,
             None,
         )
+        .await
         .unwrap();
 
         let processing_result = process_test_state_transition(
@@ -155,8 +158,8 @@ mod token_selling_tests {
         assert_eq!(buyer_credit_balance, Some(699_868_130_120)); // 10.0 - 3.0 spent - fees =~ 7 dash left
     }
 
-    #[test]
-    fn test_direct_purchase_change_using_group_without_needing_group() {
+    #[tokio::test]
+    async fn test_direct_purchase_change_using_group_without_needing_group() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -219,6 +222,7 @@ mod token_selling_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
         let platform_state = platform.state.load();
@@ -238,8 +242,8 @@ mod token_selling_tests {
         );
     }
 
-    #[test]
-    fn test_direct_purchase_single_price_not_paying_full_price() {
+    #[tokio::test]
+    async fn test_direct_purchase_single_price_not_paying_full_price() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -293,6 +297,7 @@ mod token_selling_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
         let processing_result = process_test_state_transition(
@@ -322,6 +327,7 @@ mod token_selling_tests {
             platform_version,
             None,
         )
+        .await
         .unwrap();
 
         let processing_result = process_test_state_transition(
@@ -359,8 +365,8 @@ mod token_selling_tests {
         assert_eq!(buyer_credit_balance, Some(999_987_872_760)); // 10.0 - bump action fees
     }
 
-    #[test]
-    fn test_direct_purchase_insufficient_credits() {
+    #[tokio::test]
+    async fn test_direct_purchase_insufficient_credits() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -414,6 +420,7 @@ mod token_selling_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
         let processing_result = process_test_state_transition(
@@ -442,6 +449,7 @@ mod token_selling_tests {
             platform_version,
             None,
         )
+        .await
         .unwrap();
 
         let processing_result = process_test_state_transition(
@@ -474,8 +482,8 @@ mod token_selling_tests {
     /// When I create them and set their prices,
     /// Then I should get the correct price for each of them
     /// And the price should be the same as the one set by the seller.
-    #[test]
-    fn test_successful_direct_purchase_multiple_tokens() {
+    #[tokio::test]
+    async fn test_successful_direct_purchase_multiple_tokens() {
         //  Given 3 tokens
         let pricing_schedules = vec![
             TokenPricingSchedule::SinglePrice(dash_to_credits!(1)),
@@ -499,22 +507,21 @@ mod token_selling_tests {
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
 
         let mut identity_contract_nonce = 2;
-        let tokens = pricing_schedules
-            .into_iter()
-            .map(|pricing| {
-                let (contract, token_id) = create_token_with_pricing(
-                    platform_version,
-                    &mut platform,
-                    &seller,
-                    &seller_signer,
-                    &seller_key,
-                    Some(pricing.clone()),
-                    &mut identity_contract_nonce,
-                );
+        let mut tokens: BTreeMap<[u8; 32], _> = BTreeMap::new();
+        for pricing in pricing_schedules.into_iter() {
+            let (contract, token_id) = create_token_with_pricing(
+                platform_version,
+                &mut platform,
+                &seller,
+                &seller_signer,
+                &seller_key,
+                Some(pricing.clone()),
+                &mut identity_contract_nonce,
+            )
+            .await;
 
-                (token_id.to_buffer(), (pricing, contract))
-            })
-            .collect::<BTreeMap<_, _>>();
+            tokens.insert(token_id.to_buffer(), (pricing, contract));
+        }
 
         //
         // When I fetch tokens, with or without proofs
@@ -574,8 +581,8 @@ mod token_selling_tests {
         }
     }
 
-    #[test]
-    fn test_direct_purchase_from_yourself() {
+    #[tokio::test]
+    async fn test_direct_purchase_from_yourself() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -598,7 +605,8 @@ mod token_selling_tests {
             &self_trader_key,
             Some(single_price.clone()),
             &mut identity_contract_nonce,
-        );
+        )
+        .await;
 
         // Set the price
         let set_price_transition =
@@ -617,6 +625,7 @@ mod token_selling_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
         let platform_state = platform.state.load();
@@ -658,6 +667,7 @@ mod token_selling_tests {
             platform_version,
             None,
         )
+        .await
         .unwrap();
 
         let initial_credit_balance = platform
@@ -757,7 +767,7 @@ mod token_selling_tests {
     }
 
     /// Creates a token contract with the given owner identity and configuration, and sets the price.
-    fn create_token_with_pricing(
+    async fn create_token_with_pricing(
         platform_version: &PlatformVersion,
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seller: &Identity,
@@ -807,6 +817,7 @@ mod token_selling_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
         *identity_contract_nonce += 1;
 

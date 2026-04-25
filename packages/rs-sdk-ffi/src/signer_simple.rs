@@ -1,6 +1,7 @@
 //! Simple private key signer for iOS FFI
 
-use crate::types::SignerHandle;
+use crate::signer::{signer_handle_from_single_key, VTableSigner};
+use crate::types::{DashSDKNetwork, SignerHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::signer::Signer;
@@ -8,16 +9,30 @@ use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel
 use simple_signer::SingleKeySigner;
 use zeroize::Zeroizing;
 
-/// Create a signer from a private key
+// Runtime-aware sync/async bridge (PR #3497/#3432); safer than an inline
+// `Runtime::new().block_on(...)`.
+use dash_async::block_on;
+
+/// Create a signer from a private key.
+///
+/// Internally wraps a `SingleKeySigner` as a native (non-callback) FFI
+/// signer — there is no C-callback bounce on this path. The returned
+/// handle still conforms to `Signer<IdentityPublicKey>` via the unified
+/// `VTableSigner` wrapper so it can be passed to every other FFI entry
+/// point that takes a `SignerHandle`.
 ///
 /// # Safety
 /// - `private_key` must be a valid pointer to at least 32 readable bytes.
 /// - The function reads exactly `private_key_len` bytes; it must be 32.
-/// - The returned handle inside DashSDKResult must be freed using the appropriate SDK destroy function.
+/// - `network` selects the network used for WIF encoding / address
+///   derivation; it does not affect signing.
+/// - The returned handle inside DashSDKResult must be freed with
+///   `dash_sdk_signer_destroy`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     private_key: *const u8,
     private_key_len: usize,
+    network: DashSDKNetwork,
 ) -> DashSDKResult {
     if private_key.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -33,42 +48,47 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
         ));
     }
 
-    // Convert the pointer to an array (zeroized on drop to avoid key material lingering on stack)
+    // Map the C-ABI network enum to dashcore::Network (mirrors sdk.rs).
+    let network = match network {
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
+        DashSDKNetwork::SDKTestnet => Network::Testnet,
+        DashSDKNetwork::SDKRegtest => Network::Regtest,
+        DashSDKNetwork::SDKDevnet => Network::Devnet,
+        DashSDKNetwork::SDKLocal => Network::Regtest,
+    };
+
+    // Copy into a zeroizing buffer so the key material doesn't linger on
+    // the stack after we hand it off to SingleKeySigner.
     let key_slice = std::slice::from_raw_parts(private_key, 32);
     let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(key_slice);
 
-    // network won't matter here
-    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), Network::Mainnet) {
+    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), network) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e));
         }
     };
 
-    // Create a VTableSigner that wraps the SingleKeySigner
-    let vtable_signer = crate::signer::VTableSigner {
-        signer_ptr: Box::into_raw(Box::new(signer)) as *mut std::os::raw::c_void,
-        vtable: &crate::signer::SINGLE_KEY_SIGNER_VTABLE,
-    };
-
-    let handle = Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle;
+    let handle = signer_handle_from_single_key(signer);
     DashSDKResult::success(handle as *mut std::os::raw::c_void)
 }
 
-/// Signature result structure
+/// Signature result structure.
 #[repr(C)]
 pub struct DashSDKSignature {
     pub signature: *mut u8,
     pub signature_len: usize,
 }
 
-/// Sign data with a signer
+/// Sign data with a signer.
 ///
 /// # Safety
-/// - `signer_handle` must be a valid pointer obtained from this SDK and not previously destroyed.
+/// - `signer_handle` must be a valid pointer obtained from this SDK and not
+///   previously destroyed.
 /// - `data` must be a valid pointer to `data_len` readable bytes.
-/// - The returned signature pointer inside DashSDKResult must be freed with `dash_sdk_signature_free`.
+/// - The returned signature pointer inside DashSDKResult must be freed with
+///   `dash_sdk_signature_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_sign(
     signer_handle: *mut SignerHandle,
@@ -89,12 +109,12 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         ));
     }
 
-    // Treat the handle as a VTableSigner and use its Signer impl
-    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
-    let data_slice = std::slice::from_raw_parts(data, data_len);
+    // Own the data so the future satisfies `block_on`'s `Send + 'static`.
+    let data_owned: Vec<u8> = std::slice::from_raw_parts(data, data_len).to_vec();
 
-    // Create a dummy identity public key for signing
-    // The SingleKeySigner doesn't actually use the key data, just needs one to satisfy the trait
+    // Create a dummy identity public key for signing. SingleKeySigner
+    // doesn't actually use the key data, just needs one to satisfy the
+    // trait contract.
     let dummy_key = IdentityPublicKey::V0(
         dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
             id: 0,
@@ -108,37 +128,52 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         },
     );
 
-    match signer.sign(&dummy_key, data_slice) {
-        Ok(signature) => {
+    // SAFETY: `signer_handle` is valid for the call; `block_on` blocks the
+    // caller so the allocation can't be freed mid-sign. `VTableSigner: Send +
+    // Sync`. The usize round-trip gives the `async move` a `Send + 'static`
+    // capture of the !Clone handle.
+    let signer_addr = signer_handle as usize;
+    let result = block_on(async move {
+        let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        signer.sign(&dummy_key, &data_owned).await
+    });
+
+    match result {
+        Ok(Ok(signature)) => {
             let sig_vec = signature.to_vec();
             let sig_len = sig_vec.len();
             let sig_ptr = sig_vec.leak().as_mut_ptr();
 
-            let result = Box::new(DashSDKSignature {
+            let boxed = Box::new(DashSDKSignature {
                 signature: sig_ptr,
                 signature_len: sig_len,
             });
 
-            DashSDKResult::success(Box::into_raw(result) as *mut std::os::raw::c_void)
+            DashSDKResult::success(Box::into_raw(boxed) as *mut std::os::raw::c_void)
         }
-        Err(e) => DashSDKResult::error(DashSDKError::new(
+        Ok(Err(e)) => DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::CryptoError,
             format!("Failed to sign: {}", e),
+        )),
+        Err(e) => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InternalError,
+            format!("Async bridge failed during signing: {}", e),
         )),
     }
 }
 
-/// Free a signature
+/// Free a signature.
 ///
 /// # Safety
-/// - `signature` must be a valid pointer returned by this SDK, or null for no-op.
+/// - `signature` must be a valid pointer returned by this SDK, or null for
+///   no-op.
 /// - After this call the pointer must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signature_free(signature: *mut DashSDKSignature) {
     if !signature.is_null() {
         let sig = Box::from_raw(signature);
         if !sig.signature.is_null() {
-            // Reconstruct the Vec to properly deallocate
+            // Reconstruct the Vec to properly deallocate.
             let _ = Vec::from_raw_parts(sig.signature, sig.signature_len, sig.signature_len);
         }
     }
