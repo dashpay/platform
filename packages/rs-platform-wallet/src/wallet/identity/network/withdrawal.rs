@@ -49,7 +49,7 @@ impl IdentityWallet {
             let manager = &info.identity_manager;
             let identity = manager
                 .identity(identity_id)
-                .cloned()
+                .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let index = manager
                 .identity_index(identity_id)
@@ -85,8 +85,8 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            if let Some(identity) = info_guard.identity_manager.identity_mut(identity_id) {
-                identity.set_balance(new_balance);
+            if let Some(managed) = info_guard.identity_manager.identity_mut(identity_id) {
+                managed.identity.set_balance(new_balance);
             }
         }
 

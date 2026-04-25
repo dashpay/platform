@@ -404,7 +404,7 @@ struct CreateIdentityView: View {
 
         isCreating = true
 
-        let networkRaw: String = platformState.currentNetwork.rawValue
+        let network: AppNetwork = platformState.currentNetwork
 
         Task {
             do {
@@ -420,7 +420,7 @@ struct CreateIdentityView: View {
                 try await MainActor.run {
                     try persistCreatedIdentity(
                         created,
-                        networkRaw: networkRaw
+                        network: network
                     )
                     markIdentitySlotUsed(
                         walletId: walletId,
@@ -489,9 +489,9 @@ struct CreateIdentityView: View {
     /// `persistIdentityKeys`). What the Rust callback can't know:
     ///
     /// - `network` — the persister is wallet-id-keyed; the wallet's
-    ///   network string isn't threaded through the callback today.
-    ///   Defaults to "testnet" on `PersistentIdentity.init`, so we
-    ///   overwrite here to the caller-supplied value.
+    ///   network isn't threaded through the callback today, so the
+    ///   row inherits whatever default the persister wrote. We stamp
+    ///   the caller-supplied value here.
     /// - `identityType` — fresh identities from
     ///   `register_from_addresses` are always user identities, but
     ///   the Rust-side type system doesn't carry the enum; stamp
@@ -510,7 +510,7 @@ struct CreateIdentityView: View {
     /// `"derived:<path>"` identifiers — no Keychain write needed.
     private func persistCreatedIdentity(
         _ created: ManagedPlatformWallet.CreatedIdentity,
-        networkRaw: String
+        network: AppNetwork
     ) throws {
         let identityId = created.identityId
         let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -526,7 +526,7 @@ struct CreateIdentityView: View {
             print("⚠️ persistCreatedIdentity: no PersistentIdentity row for \(identityId.toHexString()) — persister callback likely not wired")
             return
         }
-        row.network = networkRaw
+        row.network = network
         row.identityType = SwiftDashSDK.IdentityType.user.rawValue
         row.lastUpdated = Date()
     }
@@ -607,7 +607,7 @@ struct CreateIdentityView: View {
     private func walletLabel(for wallet: PersistentWallet) -> String {
         let trimmed = wallet.label.trimmingCharacters(in: .whitespaces)
         let base = trimmed.isEmpty ? shortWalletId(wallet.walletId) : trimmed
-        return "\(base) (\(wallet.network))"
+        return "\(base) (\(wallet.network?.displayName ?? "Unknown"))"
     }
 
     private func shortWalletId(_ walletId: Data) -> String {

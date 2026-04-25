@@ -21,7 +21,9 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::state::managed_identity::PrivateKeyData;
+// PrivateKeyData no longer needed at the registration call sites —
+// `add_key` takes a flat `Option<(wallet_id, identity_index, key_index)>`
+// breadcrumb directly.
 
 use crate::wallet::identity::types::funding::IdentityFunding;
 
@@ -271,15 +273,11 @@ impl IdentityWallet {
         // index) and record each key's DIP-9 derivation breadcrumb so
         // the client (iOS keychain, etc.) can re-derive + stash the
         // private key on its own side. No key bytes cross this boundary
-        // — `add_key` carries `PrivateKeyData::AtWalletDerivationPath`
+        // — `add_key` carries `Some((wallet_id, identity_index, key_index))`
         // which projects into `(wallet_id, derivation_indices)` on the
         // emitted changeset.
         {
             use dpp::identity::accessors::IdentityGettersV0;
-            use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
-            use key_wallet::dip9::{
-                IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-            };
 
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
@@ -290,18 +288,9 @@ impl IdentityWallet {
             info.identity_manager.add_identity(
                 identity.clone(),
                 identity_index,
+                self.wallet_id,
                 &self.persister,
             )?;
-
-            // Rebuild the DIP-9 auth path once per key (cheap — all
-            // hardened ChildNumbers, same logic as step 2 above).
-            let network = self.sdk.network;
-            let base_path: DerivationPath = match network {
-                key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-                _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-            }
-            .into();
-            let key_type_index: u32 = KeyDerivationType::ECDSA.into();
 
             let wallet_id = self.wallet_id;
             let identity_id = identity.id();
@@ -320,35 +309,9 @@ impl IdentityWallet {
                     // registers (registration loop uses `key_index` as
                     // both the DIP-9 suffix and the DPP KeyID).
                     let key_index = key_id;
-                    let full_path = base_path.extend([
-                        ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Invalid key type index: {}",
-                                e
-                            ))
-                        })?,
-                        ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Invalid identity index: {}",
-                                e
-                            ))
-                        })?,
-                        ChildNumber::from_hardened_idx(key_index).map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Invalid key index: {}",
-                                e
-                            ))
-                        })?,
-                    ]);
                     managed.add_key(
-                        key_id,
                         pub_key,
-                        PrivateKeyData::AtWalletDerivationPath {
-                            wallet_id,
-                            derivation_path: full_path,
-                            identity_index,
-                            key_index,
-                        },
+                        Some((wallet_id, identity_index, key_index)),
                         &self.persister,
                     );
                 }

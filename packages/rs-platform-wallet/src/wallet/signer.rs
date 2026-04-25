@@ -166,17 +166,16 @@ impl std::fmt::Debug for IdentitySigner {
 // ManagedIdentitySigner
 // ---------------------------------------------------------------------------
 
-use crate::wallet::identity::state::managed_identity::key_storage::{KeyStorage, PrivateKeyData};
-
-/// Signer that resolves keys from a [`ManagedIdentity`]'s `key_storage`.
+/// Signer for a managed identity that derives private keys on demand
+/// from the wallet at the DIP-9 identity authentication path.
 ///
-/// For [`PrivateKeyData::AtWalletDerivationPath`] keys the wallet is used to
-/// derive the private key on demand. For [`PrivateKeyData::Clear`] keys the
-/// stored bytes are used directly. If a key is not found in `key_storage`
-/// the signer falls back to the standard DIP-9 identity authentication path
-/// derivation (same logic as [`IdentitySigner`]).
+/// `ManagedIdentity` no longer carries a `KeyStorage` field — private
+/// keys live in the iOS Keychain on the client side, and the Rust side
+/// derives them on demand via the wallet seed using the DIP-9 path
+/// `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`. This is
+/// effectively the same shape as [`IdentitySigner`]; kept as a separate
+/// type for the existing call sites that take it as the signer impl.
 pub struct ManagedIdentitySigner {
-    key_storage: KeyStorage,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: WalletId,
     identity_index: u32,
@@ -186,14 +185,12 @@ pub struct ManagedIdentitySigner {
 impl ManagedIdentitySigner {
     /// Create a new `ManagedIdentitySigner`.
     pub fn new(
-        key_storage: KeyStorage,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         identity_index: u32,
         network: Network,
     ) -> Self {
         Self {
-            key_storage,
             wallet_manager,
             wallet_id,
             identity_index,
@@ -201,42 +198,12 @@ impl ManagedIdentitySigner {
         }
     }
 
-    /// Derive private key bytes for a given identity public key.
-    ///
-    /// 1. If the key is in `key_storage` with `Clear` data, return those bytes.
-    /// 2. If the key is in `key_storage` with `AtWalletDerivationPath`, derive
-    ///    from the wallet at that path.
-    /// 3. Otherwise fall back to the standard DIP-9 identity authentication
-    ///    path derivation via [`IdentityWallet::derive_identity_key_bytes`].
+    /// Derive private key bytes for a given identity public key by
+    /// re-deriving from the wallet seed at the DIP-9 path.
     fn derive_private_key_bytes(
         &self,
         identity_public_key: &IdentityPublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
-        let key_id = identity_public_key.id();
-
-        // Check key_storage first.
-        if let Some((_pub_key, private_key_data)) = self.key_storage.get(&key_id) {
-            return match private_key_data {
-                PrivateKeyData::Clear(bytes) => Ok(bytes.clone()),
-                PrivateKeyData::AtWalletDerivationPath {
-                    derivation_path, ..
-                } => {
-                    let wm = self.wallet_manager.blocking_read();
-                    let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                        ProtocolError::Generic("Wallet not found in wallet manager".to_string())
-                    })?;
-                    let secret_key = wallet.derive_private_key(derivation_path).map_err(|e| {
-                        ProtocolError::Generic(format!(
-                            "Failed to derive private key for identity key {}: {}",
-                            key_id, e
-                        ))
-                    })?;
-                    Ok(Zeroizing::new(secret_key.secret_bytes()))
-                }
-            };
-        }
-
-        // Fallback: standard DIP-9 derivation from identity_index + key_id.
         let wm = self.wallet_manager.blocking_read();
         let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
             ProtocolError::Generic("Wallet not found in wallet manager".to_string())
@@ -334,10 +301,6 @@ impl std::fmt::Debug for ManagedIdentitySigner {
         f.debug_struct("ManagedIdentitySigner")
             .field("network", &self.network)
             .field("identity_index", &self.identity_index)
-            .field(
-                "key_storage_keys",
-                &self.key_storage.keys().collect::<Vec<_>>(),
-            )
             .finish()
     }
 }

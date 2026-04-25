@@ -457,7 +457,7 @@ var body: some View {
             let dataDirURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
                 .first!
                 .appendingPathComponent("SPV")
-                .appendingPathComponent(platformState.currentNetwork.rawValue)
+                .appendingPathComponent(platformState.currentNetwork.networkName)
             try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
 
             let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
@@ -758,7 +758,7 @@ struct WalletRowView: View {
             WalletInfoRow(
                 icon: "network",
                 iconColor: .blue,
-                text: "\(wallet.network.capitalized) • Created "
+                text: "\(wallet.network?.displayName ?? "Unknown") • Created "
                     + Self.dateFormatter.string(from: wallet.createdAt)
             )
 

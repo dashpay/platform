@@ -7,16 +7,37 @@ import DashSDKFFI
 typealias Handle = UInt64
 let NULL_HANDLE: Handle = 0
 
-struct IdentifierBytes {
-    var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)
+/// Flat-array view of `[u8; 32]` rows on the Rust side. Mirrors
+/// `IdentifierArray` from `rs-platform-wallet-ffi/src/types.rs`.
+///
+/// Each element is a contiguous 32-byte buffer (no per-row struct
+/// wrapper). The struct itself is 16 bytes (pointer + count); we
+/// always return it via an out-pointer + free with `&mut array`.
+/// See the EXC_BAD_ACCESS sweep for the ABI rationale.
+struct IdentifierArray {
+    /// Pointer to a contiguous `[[u8; 32]; count]` buffer.
+    var items: UnsafeMutablePointer<UInt8>?
+    var count: Int
 }
 
-struct IdentifierArray {
-    var items: UnsafeMutablePointer<IdentifierBytes>?
-    var count: Int
+extension Identifier {
+    /// Run `body` with a `*const u8` to this identifier's 32-byte
+    /// payload. Pointer-passing is the ABI-safe replacement for the
+    /// old `IdentifierBytes`-by-value pattern (see EXC_BAD_ACCESS
+    /// sweep — Swift's struct ABI ≠ AAPCS64 for >16-byte aggregates
+    /// across `@_silgen_name`).
+    ///
+    /// Preconditions: `count == 32`. Identifiers on Platform are
+    /// always exactly 32 bytes; a precondition here surfaces the
+    /// drift loudly rather than letting Rust read garbage on
+    /// dereference.
+    @inline(__always)
+    func withFFIBytes<R>(_ body: (UnsafePointer<UInt8>) throws -> R) rethrows -> R {
+        precondition(count == 32, "identifier must be 32 bytes, got \(count)")
+        return try withUnsafeBytes { raw in
+            try body(raw.bindMemory(to: UInt8.self).baseAddress!)
+        }
+    }
 }
 
 typealias NetworkType = UInt32
@@ -169,38 +190,64 @@ public struct BlockTime {
     }
 }
 
-// MARK: - Identifier FFI Conversion Helpers
+/// Identity lifecycle status as carried on the Rust-side
+/// `ManagedIdentity.status`. Mirrors `IdentityStatusFFI` /
+/// `platform_wallet::wallet::identity::state::managed_identity::IdentityStatus`.
+public enum IdentityStatus: UInt8, Sendable {
+    case unknown = 0
+    case pendingCreation = 1
+    case active = 2
+    case failedCreation = 3
+    case notFound = 4
 
-/// Convert Identifier (Data) to FFI IdentifierBytes
-func identifierToFFI(_ identifier: Identifier) -> IdentifierBytes {
-    var ffiBytes = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
-    identifier.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
-        withUnsafeMutableBytes(of: &ffiBytes.bytes) { ffiPtr in
-            for i in 0..<min(32, identifier.count) {
-                ffiPtr[i] = ptr[i]
-            }
+    /// Short human-readable label for the explorer UI.
+    public var displayName: String {
+        switch self {
+        case .unknown: return "Unknown"
+        case .pendingCreation: return "Pending Creation"
+        case .active: return "Active"
+        case .failedCreation: return "Failed Creation"
+        case .notFound: return "Not Found"
         }
     }
-    return ffiBytes
 }
 
-/// Convert FFI IdentifierBytes to Identifier (Data)
-func identifierFromFFI(_ ffiIdentifier: IdentifierBytes) -> Identifier {
-    var bytesArray = ffiIdentifier.bytes
-    return withUnsafeBytes(of: &bytesArray) { Data($0) }
+// MARK: - Identifier FFI Conversion Helpers
+
+/// Read 32 bytes from `ptr` into an `Identifier` (a `Data` of length 32).
+///
+/// Replaces the old `identifierFromFFI(_: IdentifierBytes)` helper.
+/// `ptr` must point at exactly 32 readable bytes.
+@inline(__always)
+func identifierFromFFI(_ ptr: UnsafePointer<UInt8>) -> Identifier {
+    Data(bytes: ptr, count: 32)
 }
 
-/// Generate a random identifier
+/// Read a row from an `IdentifierArray` returned by Rust.
+///
+/// `array.items` points at a contiguous `[[u8; 32]; count]` buffer;
+/// take a `Data` snapshot of the i-th 32-byte row.
+@inline(__always)
+func identifierFromFFIArray(_ array: IdentifierArray, at index: Int) -> Identifier {
+    precondition(index >= 0 && index < array.count, "index out of range")
+    let base = array.items!
+    let row = base.advanced(by: index * 32)
+    return Data(bytes: row, count: 32)
+}
+
+/// Generate a random identifier via the FFI.
 public func generateRandomIdentifier() throws -> Identifier {
-    var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+    var buf = [UInt8](repeating: 0, count: 32)
     var error = PlatformWalletFFIError()
 
-    let result = platform_wallet_generate_random_identifier(&ffiId, &error)
+    let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+        platform_wallet_generate_random_identifier(bp.baseAddress!, &error)
+    }
     guard result == Success else {
         throw PlatformWalletError(result: result, error: error)
     }
 
-    return identifierFromFFI(ffiId)
+    return Data(buf)
 }
 
 extension Data {

@@ -198,12 +198,17 @@ class SendViewModel: ObservableObject {
                 // the UInt64 DPP credits), so we compare against the
                 // same bit-pattern cast of the requested amount.
                 let walletId = wallet.walletId
-                let networkRaw = wallet.network
+                // Identities are scoped to a network; match the
+                // wallet's resolved network directly. The `?? .testnet`
+                // keeps the predicate well-formed when the wallet row
+                // hasn't had its network stamped yet — a wallet in
+                // that state has no identities to find anyway.
+                let walletNetwork = wallet.network ?? .testnet
                 let amountThreshold = Int64(bitPattern: amount)
                 let descriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate<PersistentIdentity> { identity in
                         identity.wallet?.walletId == walletId &&
-                        identity.network == networkRaw &&
+                        identity.network == walletNetwork &&
                         identity.balance >= amountThreshold
                     }
                 )

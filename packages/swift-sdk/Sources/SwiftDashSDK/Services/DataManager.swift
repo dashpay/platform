@@ -54,7 +54,8 @@ public final class DataManager: ObservableObject {
                 frozen: frozen,
                 tokenName: tokenInfo?.name,
                 tokenSymbol: tokenInfo?.symbol,
-                tokenDecimals: tokenInfo?.decimals
+                tokenDecimals: tokenInfo?.decimals,
+                network: currentNetwork
             )
             modelContext.insert(persistentBalance)
         }

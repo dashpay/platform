@@ -39,10 +39,12 @@ mod profile;
 
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
-pub use identity_handle::IdentityWallet;
+pub use identity_handle::{
+    derive_identity_auth_keypair, IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
 
 // Helpers declared on `identity_handle.rs` that siblings reach
-// through `use super::*;`. All are `pub(super)` so they stay
-// module-private — re-exporting here just avoids each sibling
-// having to spell out `identity_handle::` on every call site.
-pub(super) use identity_handle::{derive_identity_auth_key_hash, IDENTITY_GAP_LIMIT};
+// through `use super::*;`. Sibling-only — re-exporting here just
+// avoids each sibling having to spell out `identity_handle::` on
+// every call site.
+pub(super) use identity_handle::derive_identity_auth_key_hash;

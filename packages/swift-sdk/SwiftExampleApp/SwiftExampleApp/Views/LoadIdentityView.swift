@@ -423,7 +423,7 @@ struct LoadIdentityView: View {
                         existing.alias = trimmedAlias
                         existing.isLocal = false
                         existing.identityType = identityType.rawValue
-                        existing.network = network.rawValue
+                        existing.network = network
                         existing.lastUpdated = Date()
                         // Replace public keys wholesale with the
                         // freshly fetched set.
@@ -439,7 +439,7 @@ struct LoadIdentityView: View {
                             dpnsName: nil,
                             mainDpnsName: nil,
                             identityType: identityType,
-                            network: network.rawValue
+                            network: network
                         )
                         modelContext.insert(row)
                     }

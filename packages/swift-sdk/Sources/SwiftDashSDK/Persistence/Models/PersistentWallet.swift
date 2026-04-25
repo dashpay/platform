@@ -10,8 +10,10 @@ import SwiftData
 public final class PersistentWallet {
     /// 32-byte wallet ID (SHA256 of root public key).
     @Attribute(.unique) public var walletId: Data
-    /// Network name (mainnet, testnet, devnet).
-    public var network: String
+    /// Network this wallet belongs to. `nil` means "not yet known" —
+    /// the row was created by a changeset before `persistWalletMetadata`
+    /// filled the network in. Views treat `nil` as unknown.
+    public var network: AppNetwork?
     /// Optional wallet name.
     public var name: String?
     /// Birth height — block height when the wallet was created.
@@ -61,7 +63,7 @@ public final class PersistentWallet {
 
     public init(
         walletId: Data,
-        network: String,
+        network: AppNetwork? = nil,
         name: String? = nil,
         birthHeight: UInt32 = 0,
         syncedHeight: UInt32 = 0,
@@ -105,14 +107,6 @@ extension PersistentWallet {
         return hex.isEmpty ? "Wallet" : "Wallet \(hex)…"
     }
 
-    /// Parse the stored `network` raw string back into the app
-    /// enum. Falls back to `.testnet` when the string doesn't
-    /// match a known case — shouldn't happen in practice because
-    /// we write via `AppNetwork.rawValue`, but the fallback keeps
-    /// view code from having to handle the failure path.
-    public var networkEnum: AppNetwork {
-        AppNetwork(rawValue: network) ?? .testnet
-    }
 }
 
 // MARK: - Queries

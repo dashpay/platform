@@ -58,14 +58,14 @@ func identity_manager_add_identity(
 @_silgen_name("identity_manager_remove_identity")
 func identity_manager_remove_identity(
     _ manager_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("identity_manager_get_identity")
 func identity_manager_get_identity(
     _ manager_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_identity_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -77,19 +77,10 @@ func identity_manager_get_all_identity_ids(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
-@_silgen_name("identity_manager_get_primary_identity_id")
-func identity_manager_get_primary_identity_id(
-    _ manager_handle: Handle,
-    _ out_id: UnsafeMutablePointer<IdentifierBytes>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("identity_manager_set_primary_identity")
-func identity_manager_set_primary_identity(
-    _ manager_handle: Handle,
-    _ identity_id: IdentifierBytes,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
+// Note: `identity_manager_get_primary_identity_id` /
+// `identity_manager_set_primary_identity` were removed alongside the
+// underlying Rust field. Primary-identity selection moved to the UI
+// layer (e.g. `WalletDataModel.selectedIdentityId` on the Swift side).
 
 @_silgen_name("identity_manager_get_identity_count")
 func identity_manager_get_identity_count(
@@ -114,7 +105,7 @@ func managed_identity_create_from_identity_bytes(
 @_silgen_name("managed_identity_get_id")
 func managed_identity_get_id(
     _ identity_handle: Handle,
-    _ out_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_id: UnsafeMutablePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -149,7 +140,7 @@ func managed_identity_get_last_updated_balance_block_time(
 @_silgen_name("managed_identity_set_last_updated_balance_block_time")
 func managed_identity_set_last_updated_balance_block_time(
     _ identity_handle: Handle,
-    _ block_time: FFIBlockTime,
+    _ block_time: UnsafePointer<FFIBlockTime>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -222,7 +213,7 @@ func managed_identity_get_established_contact_ids(
 @_silgen_name("managed_identity_get_sent_contact_request")
 func managed_identity_get_sent_contact_request(
     _ identity_handle: Handle,
-    _ recipient_id: IdentifierBytes,
+    _ recipient_id: UnsafePointer<UInt8>,
     _ out_request_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -230,7 +221,7 @@ func managed_identity_get_sent_contact_request(
 @_silgen_name("managed_identity_get_incoming_contact_request")
 func managed_identity_get_incoming_contact_request(
     _ identity_handle: Handle,
-    _ sender_id: IdentifierBytes,
+    _ sender_id: UnsafePointer<UInt8>,
     _ out_request_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -238,7 +229,7 @@ func managed_identity_get_incoming_contact_request(
 @_silgen_name("managed_identity_get_established_contact")
 func managed_identity_get_established_contact(
     _ identity_handle: Handle,
-    _ contact_id: IdentifierBytes,
+    _ contact_id: UnsafePointer<UInt8>,
     _ out_contact_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -246,7 +237,7 @@ func managed_identity_get_established_contact(
 @_silgen_name("managed_identity_is_contact_established")
 func managed_identity_is_contact_established(
     _ identity_handle: Handle,
-    _ contact_id: IdentifierBytes,
+    _ contact_id: UnsafePointer<UInt8>,
     _ out_is_established: UnsafeMutablePointer<Bool>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -268,7 +259,7 @@ func managed_identity_accept_contact_request(
 @_silgen_name("managed_identity_reject_contact_request")
 func managed_identity_reject_contact_request(
     _ identity_handle: Handle,
-    _ sender_id: IdentifierBytes,
+    _ sender_id: UnsafePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -334,14 +325,14 @@ func managed_identity_get_dashpay_profile(
 @_silgen_name("platform_wallet_get_dashpay_profile")
 func platform_wallet_get_dashpay_profile(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
     _ out_has_profile: UnsafeMutablePointer<Bool>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("dashpay_profile_ffi_free")
-func dashpay_profile_ffi_free(_ profile: DashPayProfileFFI)
+func dashpay_profile_ffi_free(_ profile: UnsafeMutablePointer<DashPayProfileFFI>)
 
 @_silgen_name("platform_wallet_sync_dashpay_profiles")
 func platform_wallet_sync_dashpay_profiles(
@@ -353,7 +344,7 @@ func platform_wallet_sync_dashpay_profiles(
 @_silgen_name("platform_wallet_create_dashpay_profile")
 func platform_wallet_create_dashpay_profile(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ display_name: UnsafePointer<CChar>?,
     _ public_message: UnsafePointer<CChar>?,
     _ avatar_url: UnsafePointer<CChar>?,
@@ -366,7 +357,7 @@ func platform_wallet_create_dashpay_profile(
 @_silgen_name("platform_wallet_update_dashpay_profile")
 func platform_wallet_update_dashpay_profile(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ display_name: UnsafePointer<CChar>?,
     _ public_message: UnsafePointer<CChar>?,
     _ avatar_url: UnsafePointer<CChar>?,
@@ -380,8 +371,8 @@ func platform_wallet_update_dashpay_profile(
 
 @_silgen_name("contact_request_create")
 func contact_request_create(
-    _ sender_id: IdentifierBytes,
-    _ recipient_id: IdentifierBytes,
+    _ sender_id: UnsafePointer<UInt8>,
+    _ recipient_id: UnsafePointer<UInt8>,
     _ sender_key_index: UInt32,
     _ recipient_key_index: UInt32,
     _ account_reference: UInt32,
@@ -396,14 +387,14 @@ func contact_request_create(
 @_silgen_name("contact_request_get_sender_id")
 func contact_request_get_sender_id(
     _ request_handle: Handle,
-    _ out_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_id: UnsafeMutablePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("contact_request_get_recipient_id")
 func contact_request_get_recipient_id(
     _ request_handle: Handle,
-    _ out_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_id: UnsafeMutablePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -451,7 +442,7 @@ func contact_request_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 @_silgen_name("established_contact_get_contact_identity_id")
 func established_contact_get_contact_identity_id(
     _ contact_handle: Handle,
-    _ out_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_id: UnsafeMutablePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -521,12 +512,12 @@ func established_contact_destroy(_ handle: Handle) -> PlatformWalletFFIResult
 
 @_silgen_name("platform_wallet_generate_random_identifier")
 func platform_wallet_generate_random_identifier(
-    _ out_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_id: UnsafeMutablePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("platform_wallet_identifier_array_free")
-func platform_wallet_identifier_array_free(_ array: IdentifierArray)
+func platform_wallet_identifier_array_free(_ array: UnsafeMutablePointer<IdentifierArray>)
 
 @_silgen_name("platform_wallet_string_free")
 func platform_wallet_string_free(_ string: UnsafeMutablePointer<CChar>)
@@ -535,7 +526,7 @@ func platform_wallet_string_free(_ string: UnsafeMutablePointer<CChar>)
 func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>, _ len: Int)
 
 @_silgen_name("platform_wallet_ffi_error_free")
-func platform_wallet_ffi_error_free(_ error: PlatformWalletFFIError)
+func platform_wallet_ffi_error_free(_ error: UnsafeMutablePointer<PlatformWalletFFIError>)
 
 // MARK: - DPNS name FFI
 
@@ -556,7 +547,7 @@ struct DpnsSearchResultFFI {
 @_silgen_name("platform_wallet_register_dpns_name")
 func platform_wallet_register_dpns_name(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ name: UnsafePointer<CChar>?,
     _ out_full_domain_name: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
@@ -566,7 +557,7 @@ func platform_wallet_register_dpns_name(
 func platform_wallet_resolve_dpns_name(
     _ wallet_handle: Handle,
     _ name: UnsafePointer<CChar>?,
-    _ out_identity_id: UnsafeMutablePointer<IdentifierBytes>,
+    _ out_identity_id: UnsafeMutablePointer<UInt8>,
     _ out_found: UnsafeMutablePointer<Bool>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -599,7 +590,7 @@ struct DpnsNameArray {
 @_silgen_name("platform_wallet_sync_dpns_names")
 func platform_wallet_sync_dpns_names(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_added: UnsafeMutablePointer<UInt32>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -612,12 +603,12 @@ func managed_identity_get_dpns_names(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("dpns_name_array_free")
-func dpns_name_array_free(_ array: DpnsNameArray)
+func dpns_name_array_free(_ array: UnsafeMutablePointer<DpnsNameArray>)
 
 @_silgen_name("platform_wallet_sync_contested_dpns_names")
 func platform_wallet_sync_contested_dpns_names(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_count: UnsafeMutablePointer<UInt32>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -626,6 +617,72 @@ func platform_wallet_sync_contested_dpns_names(
 func managed_identity_get_contested_dpns_names(
     _ identity_handle: Handle,
     _ out_array: UnsafeMutablePointer<DpnsNameArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+// MARK: - Wallet Memory Explorer FFI
+
+/// Mirrors `PlatformWalletMemorySummaryFFI` from
+/// `rs-platform-wallet-ffi/src/memory_explorer.rs`.
+///
+/// Caller-owned struct — Rust populates the slot the caller already
+/// allocates, no `_free` is required.
+struct PlatformWalletMemorySummaryFFI {
+    var identities_count: Int
+    var watched_count: Int
+    /// One past the wallet's highest already-registered identity
+    /// index — the resume position the gap-limit scanner uses next.
+    /// `0` when nothing has been registered yet.
+    var last_scanned_index: UInt32
+    var tracked_asset_locks_count: Int
+    var token_balances_count: Int
+}
+
+/// All-zero initial value — passed in before the FFI call so that
+/// any early-exit path leaves a well-defined struct.
+func platformWalletMemorySummaryFFIEmpty() -> PlatformWalletMemorySummaryFFI {
+    PlatformWalletMemorySummaryFFI(
+        identities_count: 0,
+        watched_count: 0,
+        last_scanned_index: 0,
+        tracked_asset_locks_count: 0,
+        token_balances_count: 0
+    )
+}
+
+@_silgen_name("platform_wallet_list_in_memory_identity_ids")
+func platform_wallet_list_in_memory_identity_ids(
+    _ wallet_handle: Handle,
+    _ out_array: UnsafeMutablePointer<IdentifierArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_list_in_memory_watched_identity_ids")
+func platform_wallet_list_in_memory_watched_identity_ids(
+    _ wallet_handle: Handle,
+    _ out_array: UnsafeMutablePointer<IdentifierArray>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_get_in_memory_summary")
+func platform_wallet_get_in_memory_summary(
+    _ wallet_handle: Handle,
+    _ out: UnsafeMutablePointer<PlatformWalletMemorySummaryFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("managed_identity_get_identity_index")
+func managed_identity_get_identity_index(
+    _ identity_handle: Handle,
+    _ out_has_index: UnsafeMutablePointer<Bool>,
+    _ out_index: UnsafeMutablePointer<UInt32>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("managed_identity_get_status")
+func managed_identity_get_status(
+    _ identity_handle: Handle,
+    _ out_status: UnsafeMutablePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -677,7 +734,7 @@ func contestVoteStateFFIEmpty() -> ContestVoteStateFFI {
 @_silgen_name("platform_wallet_fetch_contest_vote_state")
 func platform_wallet_fetch_contest_vote_state(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ label: UnsafePointer<CChar>?,
     _ out_state: UnsafeMutablePointer<ContestVoteStateFFI>,
     _ out_found: UnsafeMutablePointer<Bool>,
@@ -685,7 +742,7 @@ func platform_wallet_fetch_contest_vote_state(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("contest_vote_state_ffi_free")
-func contest_vote_state_ffi_free(_ state: ContestVoteStateFFI)
+func contest_vote_state_ffi_free(_ state: UnsafeMutablePointer<ContestVoteStateFFI>)
 
 // MARK: - DashPay contact requests + payments FFI
 
@@ -700,12 +757,14 @@ struct ContactRequestHandleArray {
 }
 
 @_silgen_name("platform_wallet_contact_request_handle_array_free")
-func platform_wallet_contact_request_handle_array_free(_ array: ContactRequestHandleArray)
+func platform_wallet_contact_request_handle_array_free(
+    _ array: UnsafeMutablePointer<ContactRequestHandleArray>
+)
 
 @_silgen_name("platform_wallet_get_managed_identity")
 func platform_wallet_get_managed_identity(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_managed_identity_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -713,8 +772,8 @@ func platform_wallet_get_managed_identity(
 @_silgen_name("platform_wallet_send_contact_request")
 func platform_wallet_send_contact_request(
     _ wallet_handle: Handle,
-    _ sender_identity_id: IdentifierBytes,
-    _ recipient_identity_id: IdentifierBytes,
+    _ sender_identity_id: UnsafePointer<UInt8>,
+    _ recipient_identity_id: UnsafePointer<UInt8>,
     _ account_label: UnsafePointer<CChar>?,
     _ auto_accept_proof: UnsafePointer<UInt8>?,
     _ auto_accept_proof_len: Int,
@@ -740,15 +799,15 @@ func platform_wallet_accept_contact_request(
 @_silgen_name("platform_wallet_reject_contact_request")
 func platform_wallet_reject_contact_request(
     _ wallet_handle: Handle,
-    _ our_identity_id: IdentifierBytes,
-    _ contact_identity_id: IdentifierBytes,
+    _ our_identity_id: UnsafePointer<UInt8>,
+    _ contact_identity_id: UnsafePointer<UInt8>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("platform_wallet_fetch_sent_contact_requests")
 func platform_wallet_fetch_sent_contact_requests(
     _ wallet_handle: Handle,
-    _ identity_id: IdentifierBytes,
+    _ identity_id: UnsafePointer<UInt8>,
     _ out_array: UnsafeMutablePointer<ContactRequestHandleArray>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -756,8 +815,8 @@ func platform_wallet_fetch_sent_contact_requests(
 @_silgen_name("platform_wallet_send_dashpay_payment")
 func platform_wallet_send_dashpay_payment(
     _ wallet_handle: Handle,
-    _ from_identity_id: IdentifierBytes,
-    _ to_contact_identity_id: IdentifierBytes,
+    _ from_identity_id: UnsafePointer<UInt8>,
+    _ to_contact_identity_id: UnsafePointer<UInt8>,
     _ amount_duffs: UInt64,
     _ memo: UnsafePointer<CChar>?,
     _ out_txid: UnsafeMutablePointer<(
@@ -784,16 +843,20 @@ typealias FFIByteTuple32 = (
 
 /// Mirrors `IdentityEntryFFI` from
 /// `rs-platform-wallet-ffi/src/identity_persistence.rs`. See that
-/// file for the field-by-field semantics. Heap allocations (the
-/// `label` C-string) are released by the Rust side after the
-/// callback returns — Swift must finish reading any strings before
-/// yielding.
+/// file for the field-by-field semantics. No heap allocations cross
+/// the boundary on this struct anymore — every field is a scalar or
+/// inline byte tuple.
+///
+/// `identity_index_is_some` mirrors the new `Option<u32>` shape on
+/// `ManagedIdentity.identity_index`: false means the source identity
+/// is out-of-wallet (observed) and the `identity_index` field should
+/// be ignored.
 struct IdentityEntryFFI {
     var identity_id: FFIByteTuple32
     var balance: UInt64
     var revision: UInt64
+    var identity_index_is_some: Bool
     var identity_index: UInt32
-    var label: UnsafeMutablePointer<CChar>?
     var status: UInt8
     var wallet_id_is_some: Bool
     var wallet_id: FFIByteTuple32
@@ -910,4 +973,61 @@ func platform_wallet_discover_identities(
 ) -> PlatformWalletFFIResult
 
 @_silgen_name("platform_wallet_discover_identities_free")
-func platform_wallet_discover_identities_free(_ found: DiscoveredIdentityIdsFFI)
+func platform_wallet_discover_identities_free(
+    _ found: UnsafeMutablePointer<DiscoveredIdentityIdsFFI>
+)
+
+// MARK: - Identity-registration-key preview FFI
+
+/// Mirrors `IdentityKeyPreviewFFI` from
+/// `rs-platform-wallet-ffi/src/identity_key_preview.rs`.
+///
+/// All heap allocations (`derivation_path`, `public_key`,
+/// `private_key_wif`) are owned by Rust; reclaim each row by
+/// handing the enclosing `IdentityKeyPreviewsFFI` back to
+/// `platform_wallet_preview_identity_registration_keys_free`. Never
+/// free these fields individually.
+struct IdentityKeyPreviewFFI {
+    var identity_index: UInt32
+    var derivation_path: UnsafeMutablePointer<CChar>?
+    var public_key: UnsafeMutablePointer<UInt8>?
+    var public_key_len: Int
+    var private_key_wif: UnsafeMutablePointer<CChar>?
+}
+
+/// Mirrors `IdentityKeyPreviewsFFI`. `items` points at a contiguous
+/// `[IdentityKeyPreviewFFI; count]` buffer. Release the whole
+/// struct (rows + their owned strings + pubkey buffers) via
+/// `platform_wallet_preview_identity_registration_keys_free`. Safe
+/// to free on a zero / null struct (no-op).
+struct IdentityKeyPreviewsFFI {
+    var items: UnsafeMutablePointer<IdentityKeyPreviewFFI>?
+    var count: Int
+}
+
+/// Initial all-zero value — lets us pass a well-defined struct into
+/// the FFI call and into `_free` on the cleanup path regardless of
+/// whether the call succeeded.
+func identityKeyPreviewsFFIEmpty() -> IdentityKeyPreviewsFFI {
+    IdentityKeyPreviewsFFI(items: nil, count: 0)
+}
+
+/// Derive the first N MASTER identity-authentication keypairs this
+/// wallet would probe during a discovery scan. `count_or_neg1< 0`
+/// picks the Rust-side default (`IDENTITY_GAP_LIMIT`, currently 5).
+/// On success, `out_previews` receives a heap-allocated row array
+/// the caller frees via
+/// `platform_wallet_preview_identity_registration_keys_free`.
+@_silgen_name("platform_wallet_preview_identity_registration_keys")
+func platform_wallet_preview_identity_registration_keys(
+    _ wallet_handle: Handle,
+    _ start_index: UInt32,
+    _ count_or_neg1: Int32,
+    _ out_previews: UnsafeMutablePointer<IdentityKeyPreviewsFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_preview_identity_registration_keys_free")
+func platform_wallet_preview_identity_registration_keys_free(
+    _ previews: UnsafeMutablePointer<IdentityKeyPreviewsFFI>
+)

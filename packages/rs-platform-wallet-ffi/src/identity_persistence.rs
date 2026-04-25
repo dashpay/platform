@@ -18,8 +18,6 @@
 //! helper for every entry before returning — Swift must consume
 //! whatever it needs to persist before returning from the callback.
 
-use std::ffi::CString;
-use std::os::raw::c_char;
 use std::ptr;
 
 use platform_wallet::changeset::{IdentityEntry, IdentityKeyEntry};
@@ -32,23 +30,29 @@ use platform_wallet::IdentityStatus;
 /// Flat C mirror of [`IdentityEntry`]'s persistable scalars.
 ///
 /// Public keys are NOT included here — they travel in
-/// [`IdentityKeyEntryFFI`] alongside their private-key material via a
-/// separate callback. Fields that don't map onto the Swift schema
+/// [`IdentityKeyEntryFFI`] alongside their derivation breadcrumb via
+/// a separate callback. Fields that don't map onto the Swift schema
 /// (block times, DPNS names, DashPay profile/payments) are skipped;
 /// DashPay overlays already ride on the dedicated
 /// `dashpay_profiles` / `dashpay_payments_overlay` surfaces on the
 /// parent changeset.
+///
+/// User-visible label is no longer carried — `ManagedIdentity` doesn't
+/// have one, and Swift owns the `PersistentIdentity.alias` column
+/// directly. Removed entirely so the FFI layout stays minimal.
 #[repr(C)]
 pub struct IdentityEntryFFI {
     pub identity_id: [u8; 32],
     pub balance: u64,
     pub revision: u64,
+    /// Set iff the underlying `IdentityEntry.identity_index` is
+    /// `Some(_)`. Out-of-wallet identities have no derivation context
+    /// and surface here with `identity_index_is_some == false`.
+    pub identity_index_is_some: bool,
     /// BIP-9 HD identity index. Included so Swift can reconstruct the
-    /// derivation path on watch-only restore.
+    /// derivation path on watch-only restore. Ignore unless
+    /// `identity_index_is_some` is `true`.
     pub identity_index: u32,
-    /// User-visible label. Heap-owned, NUL-terminated UTF-8, or
-    /// `null` when absent.
-    pub label: *mut c_char,
     /// `IdentityStatus` discriminant (see DPP enum).
     pub status: u8,
     /// Set iff the identity carries a wallet id. Swift uses this to
@@ -152,35 +156,27 @@ const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 // ---------------------------------------------------------------------------
 
 impl IdentityEntryFFI {
-    /// Copy an [`IdentityEntry`] into a fresh FFI struct. The caller
-    /// owns the allocated label C-string and must release it via
-    /// [`free_identity_entry_ffi`].
+    /// Copy an [`IdentityEntry`] into a fresh FFI struct.
+    ///
+    /// Pure scalar layout now — no heap allocations to track. The
+    /// `free_identity_entry_ffi` helper survives only to keep the
+    /// callback shape symmetric with [`IdentityKeyEntryFFI`].
     pub fn from_entry(entry: &IdentityEntry) -> Self {
-        let label = entry
-            .label
-            .as_deref()
-            .map(|s| {
-                // Strings with interior NUL bytes become `null`;
-                // profile / label fields should never contain NUL in
-                // practice, and silently dropping is safer than
-                // aborting the persist round.
-                CString::new(s)
-                    .map(|c| c.into_raw())
-                    .unwrap_or(ptr::null_mut())
-            })
-            .unwrap_or(ptr::null_mut());
-
         let (wallet_id_is_some, wallet_id) = match entry.wallet_id {
             Some(id) => (true, id),
             None => (false, [0u8; 32]),
+        };
+        let (identity_index_is_some, identity_index) = match entry.identity_index {
+            Some(idx) => (true, idx),
+            None => (false, 0),
         };
 
         Self {
             identity_id: entry.id.to_buffer(),
             balance: entry.balance,
             revision: entry.revision,
-            identity_index: entry.identity_index,
-            label,
+            identity_index_is_some,
+            identity_index,
             status: status_discriminant(entry.status),
             wallet_id_is_some,
             wallet_id,
@@ -255,20 +251,13 @@ fn status_discriminant(status: IdentityStatus) -> u8 {
 // Destructors
 // ---------------------------------------------------------------------------
 
-/// Release heap allocations owned by an [`IdentityEntryFFI`] — the
-/// label string. Safe to call on an entry with `label = null`.
+/// Release heap allocations owned by an [`IdentityEntryFFI`].
 ///
-/// # Safety
-///
-/// `entry` must have been produced by [`IdentityEntryFFI::from_entry`]
-/// and not previously freed.
-pub unsafe fn free_identity_entry_ffi(entry: &mut IdentityEntryFFI) {
-    if !entry.label.is_null() {
-        // Reclaim + drop the CString allocated by `CString::into_raw`.
-        let _ = unsafe { CString::from_raw(entry.label) };
-        entry.label = ptr::null_mut();
-    }
-}
+/// Currently a no-op — `IdentityEntryFFI` no longer carries any
+/// owned heap allocations after the label field was dropped. Kept
+/// for callsite symmetry with [`free_identity_key_entry_ffi`] and
+/// to leave the door open for future heap-owned fields.
+pub unsafe fn free_identity_entry_ffi(_entry: &mut IdentityEntryFFI) {}
 
 /// Release heap allocations owned by an [`IdentityKeyEntryFFI`] —
 /// the public-key data buffer and, when present, the derivation-path
@@ -313,8 +302,7 @@ mod tests {
             id: Identifier::from([7u8; 32]),
             balance: 1_234_567,
             revision: 3,
-            identity_index: 42,
-            label: Some("Alice".to_string()),
+            identity_index: Some(42),
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
             dpns_names: Vec::new(),
@@ -328,25 +316,21 @@ mod tests {
         assert_eq!(ffi.identity_id, [7u8; 32]);
         assert_eq!(ffi.balance, 1_234_567);
         assert_eq!(ffi.revision, 3);
+        assert!(ffi.identity_index_is_some);
         assert_eq!(ffi.identity_index, 42);
         assert_eq!(ffi.status, 2); // Active
         assert!(ffi.wallet_id_is_some);
         assert_eq!(ffi.wallet_id, [9u8; 32]);
-        assert!(!ffi.label.is_null());
-        let label_str = unsafe { std::ffi::CStr::from_ptr(ffi.label).to_str().unwrap() };
-        assert_eq!(label_str, "Alice");
         unsafe { free_identity_entry_ffi(&mut ffi) };
-        assert!(ffi.label.is_null());
     }
 
     #[test]
-    fn test_identity_entry_ffi_no_label_no_wallet() {
+    fn test_identity_entry_ffi_no_wallet() {
         let entry = IdentityEntry {
             id: Identifier::from([1u8; 32]),
             balance: 0,
             revision: 0,
-            identity_index: 0,
-            label: None,
+            identity_index: None,
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
             dpns_names: Vec::new(),
@@ -357,9 +341,10 @@ mod tests {
             dashpay_payments: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
-        assert!(ffi.label.is_null());
         assert!(!ffi.wallet_id_is_some);
         assert_eq!(ffi.wallet_id, [0u8; 32]);
+        assert!(!ffi.identity_index_is_some);
+        assert_eq!(ffi.identity_index, 0);
         assert_eq!(ffi.status, 0); // Unknown
         unsafe { free_identity_entry_ffi(&mut ffi) };
     }

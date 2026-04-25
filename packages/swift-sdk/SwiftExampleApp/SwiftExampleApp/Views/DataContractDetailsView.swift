@@ -401,7 +401,8 @@ struct ShareSheet: UIViewControllerRepresentable {
         contract: PersistentDataContract(
             id: Data(),
             name: "Sample Contract",
-            serializedContract: Data()
+            serializedContract: Data(),
+            network: .testnet
         )
     )
 }

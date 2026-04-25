@@ -170,7 +170,7 @@ struct LoadDataContractView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(footer: Text("Connected to: \(platformState.currentNetwork.rawValue)")) {
+                Section(footer: Text("Connected to: \(platformState.currentNetwork.displayName)")) {
                     EmptyView()
                 }
 
@@ -193,7 +193,7 @@ struct LoadDataContractView: View {
                         .disabled(isLoading)
 
                     if showExampleContracts {
-                        Section(header: Text("Common System Contracts (\(platformState.currentNetwork.rawValue))")) {
+                        Section(header: Text("Common System Contracts (\(platformState.currentNetwork.displayName))")) {
                             ForEach(exampleContracts, id: \.1) { example in
                                 Button(action: {
                                     contractId = example.1
@@ -451,7 +451,8 @@ struct LoadDataContractView: View {
             let persistentContract = PersistentDataContract(
                 id: contractIdData,
                 name: finalName,
-                serializedContract: serializedContract
+                serializedContract: serializedContract,
+                network: platformState.currentNetwork
             )
 
             // Add the binary serialization if available
@@ -480,7 +481,7 @@ struct LoadDataContractView: View {
             await MainActor.run {
                 // Provide more helpful error messages
                 if error.localizedDescription.contains("Data contract not found") {
-                    errorMessage = "Contract not found on \(platformState.currentNetwork.rawValue). This contract may exist on a different network or the ID may be incorrect."
+                    errorMessage = "Contract not found on \(platformState.currentNetwork.displayName). This contract may exist on a different network or the ID may be incorrect."
                 } else {
                     errorMessage = "Failed to load contract: \(error.localizedDescription)"
                 }

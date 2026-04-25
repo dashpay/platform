@@ -18,15 +18,17 @@ public final class EstablishedContact: @unchecked Sendable {
 
     /// Get the contact's identity ID
     public func getContactIdentityId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = established_contact_get_contact_identity_id(handle, &ffiId, &error)
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            established_contact_get_contact_identity_id(handle, bp.baseAddress!, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI( ffiId)
+        return Data(buf)
     }
 
     /// Get the contact's alias

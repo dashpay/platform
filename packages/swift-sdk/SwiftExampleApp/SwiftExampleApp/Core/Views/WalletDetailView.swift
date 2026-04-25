@@ -476,7 +476,7 @@ struct WalletInfoView: View {
     }
 
     private func loadNetworkStates() {
-        switch wallet.networkEnum {
+        switch wallet.network ?? .testnet {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
@@ -567,12 +567,16 @@ struct BalanceCardView: View {
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        let networkName = wallet.network
+        // `PersistentSyncState.network` is a required AppNetwork;
+        // `.testnet` is a harmless sentinel for wallets that haven't
+        // had their network stamped yet — they won't have a matching
+        // sync state row either, so the query naturally returns empty.
+        let walletNetwork = wallet.network ?? .testnet
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
         )
         _syncStates = Query(
-            filter: #Predicate<PersistentSyncState> { $0.network == networkName }
+            filter: #Predicate<PersistentSyncState> { $0.network == walletNetwork }
         )
     }
 

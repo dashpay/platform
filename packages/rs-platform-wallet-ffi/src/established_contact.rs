@@ -12,11 +12,12 @@ lazy_static::lazy_static! {
     pub static ref ESTABLISHED_CONTACT_STORAGE: HandleStorage<EstablishedContact> = HandleStorage::new();
 }
 
-/// Get an established contact by ID from a managed identity
+/// Get an established contact by ID from a managed identity.
+/// `contact_id` is a `*const u8` to a 32-byte identifier buffer.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_get_established_contact(
     identity_handle: Handle,
-    contact_id: IdentifierBytes,
+    contact_id: *const u8,
     out_contact_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -32,7 +33,7 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let contact_identifier = match contact_id.to_identifier() {
+    let contact_identifier = match unsafe { read_identifier(contact_id) } {
         Ok(id) => id,
         Err(e) => {
             if !out_error.is_null() {
@@ -81,11 +82,12 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
         })
 }
 
-/// Get the contact identity ID from an established contact
+/// Get the contact identity ID from an established contact into a
+/// 32-byte out-buffer.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_get_contact_id(
     contact_handle: Handle,
-    out_id: *mut IdentifierBytes,
+    out_id: *mut u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if out_id.is_null() {
@@ -102,7 +104,7 @@ pub unsafe extern "C" fn established_contact_get_contact_id(
 
     ESTABLISHED_CONTACT_STORAGE
         .with_item(contact_handle, |contact| {
-            unsafe { *out_id = contact.contact_identity_id.into() };
+            unsafe { write_identifier(out_id, &contact.contact_identity_id) };
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -196,14 +198,16 @@ pub unsafe extern "C" fn established_contact_get_incoming_request(
         })
 }
 
-/// Get the contact identity ID from an established contact (alias for established_contact_get_contact_id)
+/// Get the contact identity ID from an established contact (alias
+/// for [`established_contact_get_contact_id`]). `out_id` must point
+/// at writable storage of at least 32 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_get_contact_identity_id(
     contact_handle: Handle,
-    out_id: *mut IdentifierBytes,
+    out_id: *mut u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    established_contact_get_contact_id(contact_handle, out_id, out_error)
+    unsafe { established_contact_get_contact_id(contact_handle, out_id, out_error) }
 }
 
 /// Get the alias for an established contact

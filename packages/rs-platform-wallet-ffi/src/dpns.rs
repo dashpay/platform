@@ -60,7 +60,7 @@ pub struct DpnsSearchResultFFI {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_register_dpns_name(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     name: *const c_char,
     out_full_domain_name: *mut *mut c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name(
 pub unsafe extern "C" fn platform_wallet_resolve_dpns_name(
     wallet_handle: Handle,
     name: *const c_char,
-    out_identity_id: *mut IdentifierBytes,
+    out_identity_id: *mut u8,
     out_found: *mut bool,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -204,14 +204,16 @@ pub unsafe extern "C" fn platform_wallet_resolve_dpns_name(
             match result {
                 Ok(Some(id)) => {
                     unsafe {
-                        *out_identity_id = id.into();
+                        write_identifier(out_identity_id, &id);
                         *out_found = true;
                     }
                     PlatformWalletFFIResult::Success
                 }
                 Ok(None) => {
                     unsafe {
-                        *out_identity_id = IdentifierBytes { bytes: [0u8; 32] };
+                        // Zero out the 32-byte buffer for a clean
+                        // "not found" return value.
+                        std::ptr::write_bytes(out_identity_id, 0u8, 32);
                         *out_found = false;
                     }
                     PlatformWalletFFIResult::Success
@@ -400,11 +402,11 @@ pub unsafe extern "C" fn dpns_search_results_free(results: *mut DpnsSearchResult
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_sync_dpns_names(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_added: *mut u32,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -545,9 +547,19 @@ pub unsafe extern "C" fn managed_identity_get_dpns_names(
 /// Release an array previously returned by
 /// [`managed_identity_get_dpns_names`]. Walks the array to free every
 /// label C-string before releasing the array itself. Safe to call
-/// with `labels = null` / `count = 0`.
+/// with `labels = null` / `count = 0`, and with a null outer pointer
+/// (no-op).
+///
+/// Pointer-only signature: `DpnsNameArray` is a 16-byte aggregate at
+/// the AAPCS64 / Swift-ABI cliff, so by-value isn't safe across
+/// `@_silgen_name`. Caller passes `&mut array`; on return the
+/// pointer + count are reset so a double-free no-ops.
 #[no_mangle]
-pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
+pub unsafe extern "C" fn dpns_name_array_free(array: *mut DpnsNameArray) {
+    if array.is_null() {
+        return;
+    }
+    let array = unsafe { &mut *array };
     if array.labels.is_null() || array.count == 0 {
         return;
     }
@@ -559,6 +571,8 @@ pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
         }
     }
     let _ = unsafe { Box::from_raw(slice as *mut [*mut c_char]) };
+    array.labels = std::ptr::null_mut();
+    array.count = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +655,7 @@ impl ContestVoteStateFFI {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     label: *const c_char,
     out_state: *mut ContestVoteStateFFI,
     out_found: *mut bool,
@@ -659,7 +673,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -783,17 +797,29 @@ pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
 
 /// Release heap allocations owned by a [`ContestVoteStateFFI`] —
 /// the `label` C-string and the `contenders_ptr` array. Safe on an
-/// `empty()` snapshot (every owned pointer is null-checked).
+/// `empty()` snapshot (every owned pointer is null-checked) and on
+/// a null outer pointer (no-op).
+///
+/// Pointer-only signature: `ContestVoteStateFFI` is a heavyweight
+/// aggregate well over the 16-byte AAPCS64 / Swift cliff. After the
+/// call the owned pointers are reset so a double-free no-ops.
 #[no_mangle]
-pub unsafe extern "C" fn contest_vote_state_ffi_free(state: ContestVoteStateFFI) {
+pub unsafe extern "C" fn contest_vote_state_ffi_free(state: *mut ContestVoteStateFFI) {
+    if state.is_null() {
+        return;
+    }
+    let state = unsafe { &mut *state };
     if !state.label.is_null() {
         let _ = unsafe { CString::from_raw(state.label) };
+        state.label = std::ptr::null_mut();
     }
     if !state.contenders_ptr.is_null() && state.contenders_count > 0 {
         let slice =
             unsafe { std::slice::from_raw_parts_mut(state.contenders_ptr, state.contenders_count) };
         let _ = unsafe { Box::from_raw(slice as *mut [ContestContenderFFI]) };
     }
+    state.contenders_ptr = std::ptr::null_mut();
+    state.contenders_count = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -810,11 +836,11 @@ pub unsafe extern "C" fn contest_vote_state_ffi_free(state: ContestVoteStateFFI)
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_sync_contested_dpns_names(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_count: *mut u32,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {

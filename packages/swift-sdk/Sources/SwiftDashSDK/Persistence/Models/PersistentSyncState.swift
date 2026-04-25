@@ -15,7 +15,7 @@ public final class PersistentSyncState {
     /// than a concrete wallet id.
     @Attribute(.unique) public var walletId: Data
     /// Network this sync checkpoint belongs to.
-    public var network: String
+    public var network: AppNetwork
     /// Highest block height covered by the last sync.
     public var syncHeight: UInt64
     /// Latest timestamp covered by the last sync (Unix seconds).
@@ -27,7 +27,7 @@ public final class PersistentSyncState {
 
     public init(
         walletId: Data,
-        network: String,
+        network: AppNetwork,
         syncHeight: UInt64,
         syncTimestamp: UInt64,
         lastKnownRecentBlock: UInt64

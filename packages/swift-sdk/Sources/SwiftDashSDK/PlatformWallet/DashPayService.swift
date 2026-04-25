@@ -91,31 +91,11 @@ public final class DashPayService: Sendable {
         return try manager.getAllIdentityIds()
     }
 
-    /// Set an identity as the primary identity
-    /// - Parameter identityId: The identity ID to set as primary
-    /// - Throws: Error if operation fails
-    public func setPrimaryIdentity(_ identityId: Identifier) throws {
-        guard let manager = identityManager.value else {
-            throw DashPayError.noIdentityManager
-        }
-
-        try manager.setPrimaryIdentity(identityId)
-    }
-
-    /// Get the primary identity
-    /// - Returns: The primary identity, or nil if none set
-    /// - Throws: Error if operation fails
-    public func getPrimaryIdentity() throws -> ManagedIdentity? {
-        guard let manager = identityManager.value else {
-            throw DashPayError.noIdentityManager
-        }
-
-        guard let primaryId = try manager.getPrimaryIdentityId() else {
-            return nil
-        }
-
-        return try manager.getIdentity(primaryId)
-    }
+    // `setPrimaryIdentity` / `getPrimaryIdentity` were dropped along
+    // with the underlying Rust field. Callers that previously relied
+    // on them should track the selection in their own state (UI layer)
+    // and look up the matching `ManagedIdentity` via
+    // `IdentityManager.getIdentity(_:)`.
 
     // MARK: - Contact Requests
 

@@ -13,11 +13,11 @@ use super::*;
 
 /// Configuration knobs for [`IdentityWallet::discover`].
 ///
-/// The defaults match `sync()`'s historical behavior: resume from the
-/// wallet's cached `last_scanned_index` and stop after
-/// [`IDENTITY_GAP_LIMIT`] consecutive empty slots. Callers who want a
-/// full rescan pass `start_index: Some(0)`; callers who want a deeper
-/// gap tolerance bump `gap_limit`.
+/// The defaults match `sync()`'s historical behavior: resume one past
+/// the wallet's highest already-registered identity index and stop
+/// after [`IDENTITY_GAP_LIMIT`] consecutive empty slots. Callers who
+/// want a full rescan pass `start_index: Some(0)`; callers who want a
+/// deeper gap tolerance bump `gap_limit`.
 ///
 /// The scan only looks at key index 0 within each identity index. That
 /// covers every identity this crate registers (see `registration.rs`:
@@ -29,8 +29,9 @@ use super::*;
 /// encountered wallets that need it.
 #[derive(Debug, Clone, Copy)]
 pub struct IdentityDiscoveryOptions {
-    /// Identity index to start scanning from. `None` means "resume
-    /// from the wallet's cached `last_scanned_index`" (default).
+    /// Identity index to start scanning from. `None` means "resume one
+    /// past the wallet's highest already-registered identity index"
+    /// (default).
     pub start_index: Option<u32>,
     /// How many consecutive empty identity indices to tolerate before
     /// stopping. Defaults to [`IDENTITY_GAP_LIMIT`].
@@ -56,46 +57,42 @@ impl IdentityWallet {
 
     /// Discover identities owned by this wallet via gap-limit scanning.
     ///
-    /// For each identity index starting at `opts.start_index` (or the
-    /// wallet's cached `last_scanned_index` when `None`), derives the
-    /// ECDSA authentication public key at key index 0 from the
-    /// BIP-32 tree and queries Platform for a registered identity
-    /// bound to that key hash (the unique-key lookup). Stops after
-    /// `opts.gap_limit` consecutive misses.
+    /// For each identity index starting at `opts.start_index` (or one
+    /// past the wallet's highest already-registered identity index
+    /// when `None`), derives the ECDSA authentication public key at
+    /// key index 0 from the BIP-32 tree and queries Platform for a
+    /// registered identity bound to that key hash (the unique-key
+    /// lookup). Stops after `opts.gap_limit` consecutive misses.
     ///
     /// For every discovered identity this method also:
     /// - queries DPNS for associated usernames,
-    /// - stores the matched derivation path in the identity's key storage,
-    /// - records the wallet id, and
+    /// - emits an `IdentityKeysChangeSet` upsert with the
+    ///   `(wallet_id, identity_index, key_index)` derivation breadcrumb
+    ///   so the client (iOS Keychain) can re-derive the private key,
+    /// - records the wallet id on the managed identity, and
     /// - sets the identity status to `Active`.
     ///
     /// Newly-discovered identities are added to the local identity
-    /// manager and returned. The cached `last_scanned_index` is
-    /// advanced past the scanned range so subsequent resume-mode
-    /// calls pick up where this one left off (never decremented —
-    /// callers with a `start_index` behind the cache won't rewind it).
+    /// manager and returned. Resume position is derived from
+    /// [`IdentityManager::highest_registration_index`] — no separate
+    /// watermark to maintain.
     pub async fn discover(
         &self,
         opts: IdentityDiscoveryOptions,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
+        use super::identity_handle::{identity_auth_derivation_path, MASTER_KEY_INDEX};
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
-        use crate::wallet::identity::state::managed_identity::key_storage::PrivateKeyData;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::util::hash::ripemd160_sha256;
-        use key_wallet::bip32::ChildNumber;
-        use key_wallet::bip32::DerivationPath;
-        use key_wallet::bip32::KeyDerivationType;
-        use key_wallet::dip9::{
-            IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        };
 
-        // Only key_index 0 is ever registered as the MASTER auth key;
-        // scanning higher indices is redundant since the same identity
-        // would be returned by any of its authentication pubkey hashes.
-        const MASTER_KEY_INDEX: u32 = 0;
+        // `MASTER_KEY_INDEX = 0` pulled in from `identity_handle` —
+        // only key_index 0 is ever registered as the MASTER auth
+        // key; scanning higher indices is redundant since the same
+        // identity would be returned by any of its authentication
+        // pubkey hashes.
 
         let (network, cached_start_index, wallet_id) = {
             let wm = self.wallet_manager.read().await;
@@ -109,11 +106,12 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            (
-                wallet.network,
-                info.identity_manager.last_scanned_index(),
-                self.wallet_id,
-            )
+            // Resume one past the highest already-registered slot.
+            let resume_from = info
+                .identity_manager
+                .highest_registration_index(&self.wallet_id)
+                .map_or(0, |i| i + 1);
+            (wallet.network, resume_from, self.wallet_id)
         };
 
         let start_index = opts.start_index.unwrap_or(cached_start_index);
@@ -142,33 +140,11 @@ impl IdentityWallet {
                 Ok(Some(identity)) => {
                     let identity_id = identity.id();
 
-                    // Build the full derivation path for the matched key.
-                    let base_path: DerivationPath = match network {
-                        key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-                        _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-                    }
-                    .into();
-                    let key_type_index: u32 = KeyDerivationType::ECDSA.into();
-                    let full_path = base_path.extend([
-                        ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Invalid key type index: {}",
-                                e
-                            ))
-                        })?,
-                        ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Invalid identity index: {}",
-                                e
-                            ))
-                        })?,
-                        ChildNumber::from_hardened_idx(MASTER_KEY_INDEX).map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Invalid key index: {}",
-                                e
-                            ))
-                        })?,
-                    ]);
+                    // Same helper the FFI-side preview uses —
+                    // keeps the scan and the preview on a single
+                    // path-building code path.
+                    let full_path =
+                        identity_auth_derivation_path(network, identity_index, MASTER_KEY_INDEX)?;
 
                     // Find the KeyID in the on-chain identity whose
                     // hash matches our derived key so the derivation
@@ -197,6 +173,7 @@ impl IdentityWallet {
                         info_guard.identity_manager.add_identity(
                             identity.clone(),
                             identity_index,
+                            wallet_id,
                             &self.persister,
                         )?;
                     }
@@ -208,20 +185,21 @@ impl IdentityWallet {
                         managed.set_status(IdentityStatus::Active, &self.persister);
                         managed.wallet_id = Some(wallet_id);
 
-                        if let Some((kid, pub_key)) = matched_key_id_and_pub {
+                        if let Some((_kid, pub_key)) = matched_key_id_and_pub {
+                            // Pass the DIP-9 breadcrumb so the client can
+                            // re-derive the private key from its wallet
+                            // mnemonic via the iOS Keychain path.
                             managed.add_key(
-                                kid,
                                 pub_key,
-                                PrivateKeyData::AtWalletDerivationPath {
-                                    wallet_id,
-                                    derivation_path: full_path,
-                                    identity_index,
-                                    key_index: MASTER_KEY_INDEX,
-                                },
+                                Some((wallet_id, identity_index, MASTER_KEY_INDEX)),
                                 &self.persister,
                             );
                         }
                     }
+                    // `full_path` is no longer needed once `add_key`
+                    // takes the breadcrumb instead of the materialized
+                    // DerivationPath.
+                    let _ = full_path;
                     drop(wm_guard);
 
                     if is_new {
@@ -291,21 +269,11 @@ impl IdentityWallet {
             }
         }
 
-        // Advance the cached scan index, but never rewind it. A caller
-        // that explicitly asked to rescan from a lower start_index
-        // shouldn't lose the wallet's prior progress marker.
-        let mut wm_guard = self.wallet_manager.write().await;
-        let info_guard = wm_guard
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-        let new_scan_index = identity_index.max(cached_start_index);
-        info_guard
-            .identity_manager
-            .set_last_scanned_index(new_scan_index, &self.persister);
+        // No standalone scan watermark to advance — resume position is
+        // derived next call from `IdentityManager::highest_registration_index`,
+        // which the inserted identities above already bumped.
+        let _ = cached_start_index;
+        let _ = identity_index;
 
         Ok(discovered)
     }

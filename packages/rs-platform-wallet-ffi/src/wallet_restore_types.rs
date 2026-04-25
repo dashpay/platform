@@ -19,7 +19,7 @@
 //! variant of `key_wallet::account::AccountType` might need. Fields
 //! irrelevant to a given `type_tag` are ignored.
 
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 
 use crate::platform_address_types::AddressBalanceEntryFFI;
 
@@ -99,6 +99,68 @@ pub struct AccountSpecFFI {
     pub account_xpub_bytes_len: usize,
 }
 
+/// Per-identity entry attached to a [`WalletRestoreEntryFFI`].
+///
+/// Carries the scalar fields needed to rebuild a `ManagedIdentity`
+/// inside the wallet's `IdentityManager` on startup. Bucket placement
+/// is implicit: every identity carried on a `WalletRestoreEntryFFI`
+/// belongs to the wallet that owns the entry (lands in
+/// `wallet_identities[wallet_id][identity_index]`). Out-of-wallet /
+/// observed identities don't ride on the wallet entry restore path —
+/// they have no associated wallet, so there's no bucket to attach
+/// them to (see report).
+///
+/// The DPP `Identity` is reconstructed from the scalars via the
+/// `IdentityV0` shape on the Rust side — matching what
+/// `IdentityManager::apply_identity_entry` does on the changeset
+/// replay path — so no full `Identity` blob crosses the FFI.
+///
+/// Public keys are NOT carried here; they live in the per-identity
+/// `PersistentPublicKey` rows on the Swift side and arrive separately
+/// via the existing `on_persist_identity_keys_fn` callback during the
+/// next sync round. Identities load with empty `public_keys` —
+/// sufficient to surface them in the explorer and
+/// `IdentityManager::managed_identity()` lookups.
+///
+/// All pointer fields (`dpns_names`, `contested_dpns_names`) are
+/// Swift-owned and valid only for the duration of the load callback.
+/// The matching free callback releases them.
+#[repr(C)]
+pub struct IdentityRestoreEntryFFI {
+    /// 32-byte identifier.
+    pub identity_id: [u8; 32],
+    /// Identity balance (credits).
+    pub balance: u64,
+    /// On-chain identity revision.
+    pub revision: u64,
+    /// HD identity index (`m/9'/coin'/5'/0'/ECDSA'/N'/...`).
+    ///
+    /// Always meaningful on this struct: every identity carried on a
+    /// `WalletRestoreEntryFFI` is wallet-owned (lands in
+    /// `wallet_identities[wallet_id][identity_index]`), so the
+    /// derivation index is always known. Out-of-wallet identities don't
+    /// ride on the wallet-restore path today (no SwiftData rows for
+    /// them), so the optionality that exists on
+    /// `ManagedIdentity.identity_index` doesn't surface here. If/when
+    /// out-of-wallet identities start being persisted, they need their
+    /// own restore array on the load callback rather than reusing this
+    /// field with a sentinel.
+    pub identity_index: u32,
+    /// `IdentityStatus` discriminant — same encoding as
+    /// `IdentityEntryFFI::status` (0 = Unknown, 1 = PendingCreation,
+    /// 2 = Active, 3 = FailedCreation, 4 = NotFound).
+    pub status: u8,
+    /// Optional DPNS name labels owned by this identity, as a flat
+    /// `*const *const c_char` array of UTF-8 c-strings. `null` when
+    /// no names are cached.
+    pub dpns_names: *const *const c_char,
+    pub dpns_names_count: usize,
+    /// Optional contested DPNS labels currently in voting period.
+    /// Same array shape as `dpns_names`. `null` when none.
+    pub contested_dpns_names: *const *const c_char,
+    pub contested_dpns_names_count: usize,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -122,6 +184,11 @@ pub struct WalletRestoreEntryFFI {
     pub platform_sync_height: u64,
     pub platform_sync_timestamp: u64,
     pub platform_last_known_recent_block: u64,
+    /// Per-wallet identities to rehydrate into the wallet's
+    /// `IdentityManager` (the `wallet_identities[wallet_id]` bucket).
+    /// `null` / `0` when the wallet has no persisted identities.
+    pub identities: *const IdentityRestoreEntryFFI,
+    pub identities_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
@@ -129,6 +196,8 @@ pub struct WalletRestoreEntryFFI {
 // use must happen within the callback window.
 unsafe impl Send for AccountSpecFFI {}
 unsafe impl Sync for AccountSpecFFI {}
+unsafe impl Send for IdentityRestoreEntryFFI {}
+unsafe impl Sync for IdentityRestoreEntryFFI {}
 unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
 
@@ -150,8 +219,10 @@ pub type LoadWalletListFn = unsafe extern "C" fn(
 /// Paired free callback for `LoadWalletListFn`. Releases any memory
 /// Swift allocated for the entries array, the per-wallet accounts
 /// arrays, the optional per-wallet platform-address balance arrays,
-/// and every xpub byte buffer. Called exactly once after a successful
-/// `LoadWalletListFn` invocation.
+/// every xpub byte buffer, the per-wallet identity arrays, and every
+/// nested c-string + c-string pointer array carried by the identity
+/// entries. Called exactly once after a successful `LoadWalletListFn`
+/// invocation.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);
 

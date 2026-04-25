@@ -80,12 +80,14 @@ pub fn create_test_identity(id_bytes: [u8; 32], balance: u64) -> Identity {
     Identity::V0(identity_v0)
 }
 
-/// Create a managed identity with a label
-pub fn create_managed_identity(id_bytes: [u8; 32], balance: u64, label: &str) -> ManagedIdentity {
+/// Create a managed identity. The `label` argument is retained for
+/// signature compatibility with the existing fixture call sites but is
+/// dropped — `ManagedIdentity` no longer carries a label field. Tests
+/// that need to assert on a user-facing label should look at
+/// `PersistentIdentity.alias` (Swift side) instead.
+pub fn create_managed_identity(id_bytes: [u8; 32], balance: u64, _label: &str) -> ManagedIdentity {
     let identity = create_test_identity(id_bytes, balance);
-    let mut managed = ManagedIdentity::new(identity, 0);
-    managed.label = Some(label.to_string());
-    managed
+    ManagedIdentity::new(identity, 0)
 }
 
 /// Create a contact request from sender to recipient
@@ -323,7 +325,6 @@ mod tests {
         let managed = create_managed_identity([2u8; 32], 500_000, "Test User");
         assert_eq!(managed.identity.id(), Identifier::from([2u8; 32]));
         assert_eq!(managed.identity.balance(), 500_000);
-        assert_eq!(managed.label, Some("Test User".to_string()));
     }
 
     #[test]
@@ -348,10 +349,9 @@ mod tests {
         let bob = identities::bob();
         let carol = identities::carol();
 
-        assert_eq!(alice.label, Some("Alice".to_string()));
-        assert_eq!(bob.label, Some("Bob".to_string()));
-        assert_eq!(carol.label, Some("Carol".to_string()));
-
+        // `ManagedIdentity.label` is gone — labels are a UI concern
+        // (Swift `PersistentIdentity.alias`). Just exercise the
+        // non-label fixture invariants.
         assert_eq!(alice.identity.balance(), 10_000_000);
         assert_eq!(bob.identity.balance(), 5_000_000);
         assert_eq!(carol.identity.balance(), 8_000_000);

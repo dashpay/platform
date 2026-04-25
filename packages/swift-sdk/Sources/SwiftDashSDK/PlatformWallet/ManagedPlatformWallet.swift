@@ -363,6 +363,127 @@ private func hashTupleInit() -> (
 // MARK: - Identity discovery (HD gap-limit scan)
 
 extension ManagedPlatformWallet {
+    /// One MASTER identity-authentication keypair preview, derived
+    /// at the DIP-9 identity-authentication path for a given
+    /// identity index. Returned by
+    /// `previewIdentityRegistrationKeys()` so the UI can surface
+    /// which (public, private) keys the discovery scan is walking
+    /// when it finds nothing — useful when debugging "why can't my
+    /// wallet see this identity?" cases.
+    ///
+    /// Matches the key material `discoverIdentities` actually
+    /// probes: ECDSA key at
+    /// `m/9'/coin'/5'/0'/ECDSA'/identity_index'/0'`. Derivation is
+    /// performed entirely on the Rust side against the already-
+    /// loaded wallet seed; Swift only marshals the result.
+    public struct IdentityRegistrationKeyPreview: Sendable, Identifiable {
+        /// Identity index (BIP-9 position under the identity branch).
+        public let identityIndex: UInt32
+        /// Full derivation path string, e.g.
+        /// `m/9'/1'/5'/0'/0'/0'/0'`.
+        public let derivationPath: String
+        /// Compressed public key bytes as lowercase hex (33 bytes →
+        /// 66 hex chars).
+        public let publicKeyHex: String
+        /// Private key in WIF (Wallet Import Format) — network-aware,
+        /// compressed. Matches how other views in the example app
+        /// accept / display private keys.
+        public let privateKeyWIF: String
+
+        public var id: UInt32 { identityIndex }
+    }
+
+    /// Derive the first `count` MASTER identity-authentication
+    /// keypairs this wallet would probe during a discovery scan,
+    /// starting at `startIndex`.
+    ///
+    /// This is a read-only preview — nothing is persisted, nothing
+    /// is registered on Platform, the wallet's cached
+    /// `last_scanned_index` is untouched. The keys are exactly what
+    /// `discoverIdentities` internally derives and hashes to query
+    /// Platform's unique-pubkey-hash index, so the UI can show the
+    /// user "here are the keys we scanned for" when a scan comes
+    /// back empty.
+    ///
+    /// All derivation policy (ECDSA key type, DIP-9 path shape,
+    /// MASTER-slot key index, network-aware WIF version byte) lives
+    /// on the Rust side; Swift is a thin marshaller. Nothing on the
+    /// caller needs to know the mnemonic — the wallet's loaded seed
+    /// is reused.
+    ///
+    /// - Parameters:
+    ///   - startIndex: First identity index to derive. Default `0`.
+    ///   - count: How many consecutive identity indices to derive.
+    ///     Pass `nil` to defer to the Rust default
+    ///     (`IDENTITY_GAP_LIMIT`, currently 5) so the preview
+    ///     aligns with the scan window `discoverIdentities` walks.
+    ///
+    /// - Throws: `PlatformWalletError` if the wallet handle is
+    ///   invalid or Rust-side derivation fails.
+    public func previewIdentityRegistrationKeys(
+        startIndex: UInt32 = 0,
+        count: UInt32? = nil
+    ) throws -> [IdentityRegistrationKeyPreview] {
+        // `-1` tells Rust to pick the crate-level IDENTITY_GAP_LIMIT
+        // default. Any supplied value passes through as-is, clamped
+        // to `Int32.max` defensively — the preview scan caps well
+        // below that in practice.
+        let countOrNeg1: Int32
+        if let count {
+            countOrNeg1 = count > UInt32(Int32.max) ? Int32.max : Int32(count)
+        } else {
+            countOrNeg1 = -1
+        }
+
+        var out = identityKeyPreviewsFFIEmpty()
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_preview_identity_registration_keys(
+            handle,
+            startIndex,
+            countOrNeg1,
+            &out,
+            &error
+        )
+        // Free the Rust-owned array whether we succeeded or bailed
+        // out — the free function is a no-op on the zero struct.
+        defer { platform_wallet_preview_identity_registration_keys_free(&out) }
+
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        guard let base = out.items, out.count > 0 else {
+            return []
+        }
+
+        var previews: [IdentityRegistrationKeyPreview] = []
+        previews.reserveCapacity(out.count)
+        for i in 0..<out.count {
+            let row = base[i]
+
+            let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
+            let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
+
+            let pubHex: String
+            if let pubPtr = row.public_key, row.public_key_len > 0 {
+                let buf = UnsafeBufferPointer(start: pubPtr, count: row.public_key_len)
+                pubHex = buf.map { String(format: "%02x", $0) }.joined()
+            } else {
+                pubHex = ""
+            }
+
+            previews.append(
+                IdentityRegistrationKeyPreview(
+                    identityIndex: row.identity_index,
+                    derivationPath: path,
+                    publicKeyHex: pubHex,
+                    privateKeyWIF: wif
+                )
+            )
+        }
+        return previews
+    }
+
     /// Scan the wallet's DIP-9 identity authentication derivation
     /// tree for registered identities and fold any matches into the
     /// local identity manager.
@@ -405,7 +526,7 @@ extension ManagedPlatformWallet {
                 &found,
                 &error
             )
-            defer { platform_wallet_discover_identities_free(found) }
+            defer { platform_wallet_discover_identities_free(&found) }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
@@ -451,18 +572,26 @@ extension ManagedPlatformWallet {
         name: String
     ) async throws -> String {
         let handle = self.handle
-        let ffiId = identifierToFFI(identityId)
+        // Capture the 32-byte payload by value into a Sendable
+        // `[UInt8]` so the detached Task can hand a fresh pointer
+        // back to the FFI (the source `Identifier`/`Data` is itself
+        // not Sendable across the suspension point).
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) { () -> String in
             var outPtr: UnsafeMutablePointer<CChar>? = nil
             var error = PlatformWalletFFIError()
-            let result = name.withCString { namePtr in
-                platform_wallet_register_dpns_name(
-                    handle,
-                    ffiId,
-                    namePtr,
-                    &outPtr,
-                    &error
-                )
+            let result = idBytes.withUnsafeBufferPointer { idBp in
+                name.withCString { namePtr in
+                    platform_wallet_register_dpns_name(
+                        handle,
+                        idBp.baseAddress!,
+                        namePtr,
+                        &outPtr,
+                        &error
+                    )
+                }
             }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
@@ -482,26 +611,25 @@ extension ManagedPlatformWallet {
     public func resolveDpnsName(_ name: String) async throws -> Identifier? {
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> Identifier? in
-            var outId = IdentifierBytes(
-                bytes: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-            )
+            var buf = [UInt8](repeating: 0, count: 32)
             var found = false
             var error = PlatformWalletFFIError()
-            let result = name.withCString { namePtr in
-                platform_wallet_resolve_dpns_name(
-                    handle,
-                    namePtr,
-                    &outId,
-                    &found,
-                    &error
-                )
+            let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+                name.withCString { namePtr in
+                    platform_wallet_resolve_dpns_name(
+                        handle,
+                        namePtr,
+                        bp.baseAddress!,
+                        &found,
+                        &error
+                    )
+                }
             }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
             guard found else { return nil }
-            return identifierFromFFI(outId)
+            return Data(buf)
         }.value
     }
 
@@ -564,11 +692,15 @@ extension ManagedPlatformWallet {
     @discardableResult
     public func syncDpnsNames(identityId: Identifier) async throws -> UInt32 {
         let handle = self.handle
-        let ffiId = identifierToFFI(identityId)
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var added: UInt32 = 0
             var error = PlatformWalletFFIError()
-            let result = platform_wallet_sync_dpns_names(handle, ffiId, &added, &error)
+            let result = idBytes.withUnsafeBufferPointer { bp in
+                platform_wallet_sync_dpns_names(handle, bp.baseAddress!, &added, &error)
+            }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
@@ -592,23 +724,27 @@ extension ManagedPlatformWallet {
         label: String
     ) async throws -> ContestVoteState? {
         let handle = self.handle
-        let ffiId = identifierToFFI(identityId)
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) {
             () -> ContestVoteState? in
             var state = contestVoteStateFFIEmpty()
             var found = false
             var error = PlatformWalletFFIError()
-            let result = label.withCString { labelPtr in
-                platform_wallet_fetch_contest_vote_state(
-                    handle,
-                    ffiId,
-                    labelPtr,
-                    &state,
-                    &found,
-                    &error
-                )
+            let result = idBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
+                label.withCString { labelPtr in
+                    platform_wallet_fetch_contest_vote_state(
+                        handle,
+                        idBp.baseAddress!,
+                        labelPtr,
+                        &state,
+                        &found,
+                        &error
+                    )
+                }
             }
-            defer { contest_vote_state_ffi_free(state) }
+            defer { contest_vote_state_ffi_free(&state) }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
@@ -631,16 +767,20 @@ extension ManagedPlatformWallet {
     @discardableResult
     public func syncContestedDpnsNames(identityId: Identifier) async throws -> UInt32 {
         let handle = self.handle
-        let ffiId = identifierToFFI(identityId)
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var count: UInt32 = 0
             var error = PlatformWalletFFIError()
-            let result = platform_wallet_sync_contested_dpns_names(
-                handle,
-                ffiId,
-                &count,
-                &error
-            )
+            let result = idBytes.withUnsafeBufferPointer { bp in
+                platform_wallet_sync_contested_dpns_names(
+                    handle,
+                    bp.baseAddress!,
+                    &count,
+                    &error
+                )
+            }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
@@ -663,13 +803,14 @@ extension ManagedPlatformWallet {
     public func managedIdentity(identityId: Identifier) throws -> ManagedIdentity {
         var outHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(identityId)
-        let result = platform_wallet_get_managed_identity(
-            handle,
-            ffiId,
-            &outHandle,
-            &error
-        )
+        let result = identityId.withFFIBytes { idPtr in
+            platform_wallet_get_managed_identity(
+                handle,
+                idPtr,
+                &outHandle,
+                &error
+            )
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
@@ -695,8 +836,15 @@ extension ManagedPlatformWallet {
         autoAcceptProof: Data? = nil
     ) async throws -> ContactRequest {
         let handle = self.handle
-        let senderFFI = identifierToFFI(senderIdentityId)
-        let recipientFFI = identifierToFFI(recipientIdentityId)
+        // Snapshot identifiers as Sendable byte arrays before the
+        // Task.detached suspension point — Identifier (= Data) is
+        // not Sendable across boundaries by itself.
+        let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let recipientBytes: [UInt8] = recipientIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         let accountLabel = accountLabel
         let autoAcceptProof = autoAcceptProof
 
@@ -705,44 +853,49 @@ extension ManagedPlatformWallet {
             var outHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
 
-            // `withCString` is closure-scoped — nest optional proof
-            // access inside so both string + byte buffer are live
-            // across the FFI call window.
-            let result: PlatformWalletFFIResult = {
-                let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { labelPtr in
-                    if let autoAcceptProof, !autoAcceptProof.isEmpty {
-                        return autoAcceptProof.withUnsafeBytes { rawBuf in
-                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            // Nest the buffer pointers + optional CString + optional
+            // proof bytes so every FFI argument stays live across
+            // the call window.
+            let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
+                senderBp -> PlatformWalletFFIResult in
+                recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
+                    let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
+                        labelPtr in
+                        if let autoAcceptProof, !autoAcceptProof.isEmpty {
+                            return autoAcceptProof.withUnsafeBytes { rawBuf in
+                                let bytesPtr = rawBuf.baseAddress?
+                                    .assumingMemoryBound(to: UInt8.self)
+                                return platform_wallet_send_contact_request(
+                                    handle,
+                                    senderBp.baseAddress!,
+                                    recipientBp.baseAddress!,
+                                    labelPtr,
+                                    bytesPtr,
+                                    autoAcceptProof.count,
+                                    &outHandle,
+                                    &error
+                                )
+                            }
+                        } else {
                             return platform_wallet_send_contact_request(
                                 handle,
-                                senderFFI,
-                                recipientFFI,
+                                senderBp.baseAddress!,
+                                recipientBp.baseAddress!,
                                 labelPtr,
-                                bytesPtr,
-                                autoAcceptProof.count,
+                                nil,
+                                0,
                                 &outHandle,
                                 &error
                             )
                         }
+                    }
+                    if let accountLabel {
+                        return accountLabel.withCString { callWithLabel($0) }
                     } else {
-                        return platform_wallet_send_contact_request(
-                            handle,
-                            senderFFI,
-                            recipientFFI,
-                            labelPtr,
-                            nil,
-                            0,
-                            &outHandle,
-                            &error
-                        )
+                        return callWithLabel(nil)
                     }
                 }
-                if let accountLabel {
-                    return accountLabel.withCString { callWithLabel($0) }
-                } else {
-                    return callWithLabel(nil)
-                }
-            }()
+            }
 
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
@@ -767,7 +920,7 @@ extension ManagedPlatformWallet {
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
-            defer { platform_wallet_contact_request_handle_array_free(array) }
+            defer { platform_wallet_contact_request_handle_array_free(&array) }
             guard let handles = array.handles, array.count > 0 else {
                 return []
             }
@@ -816,16 +969,25 @@ extension ManagedPlatformWallet {
         contactIdentityId: Identifier
     ) async throws {
         let handle = self.handle
-        let ourFFI = identifierToFFI(ourIdentityId)
-        let contactFFI = identifierToFFI(contactIdentityId)
+        let ourBytes: [UInt8] = ourIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contactBytes: [UInt8] = contactIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         try await Task.detached(priority: .userInitiated) {
             var error = PlatformWalletFFIError()
-            let result = platform_wallet_reject_contact_request(
-                handle,
-                ourFFI,
-                contactFFI,
-                &error
-            )
+            let result = ourBytes.withUnsafeBufferPointer {
+                ourBp -> PlatformWalletFFIResult in
+                contactBytes.withUnsafeBufferPointer { contactBp in
+                    platform_wallet_reject_contact_request(
+                        handle,
+                        ourBp.baseAddress!,
+                        contactBp.baseAddress!,
+                        &error
+                    )
+                }
+            }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
@@ -837,20 +999,24 @@ extension ManagedPlatformWallet {
         identityId: Identifier
     ) async throws -> [ContactRequest] {
         let handle = self.handle
-        let idFFI = identifierToFFI(identityId)
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
             var array = ContactRequestHandleArray(handles: nil, count: 0)
             var error = PlatformWalletFFIError()
-            let result = platform_wallet_fetch_sent_contact_requests(
-                handle,
-                idFFI,
-                &array,
-                &error
-            )
+            let result = idBytes.withUnsafeBufferPointer { idBp in
+                platform_wallet_fetch_sent_contact_requests(
+                    handle,
+                    idBp.baseAddress!,
+                    &array,
+                    &error
+                )
+            }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
-            defer { platform_wallet_contact_request_handle_array_free(array) }
+            defer { platform_wallet_contact_request_handle_array_free(&array) }
             guard let handles = array.handles, array.count > 0 else {
                 return []
             }
@@ -879,8 +1045,12 @@ extension ManagedPlatformWallet {
         memo: String? = nil
     ) async throws -> Data {
         let handle = self.handle
-        let fromFFI = identifierToFFI(fromIdentityId)
-        let toFFI = identifierToFFI(toContactIdentityId)
+        let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let toBytes: [UInt8] = toContactIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         let memoCopy = memo
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             var txidTuple: (
@@ -893,24 +1063,27 @@ extension ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             )
             var error = PlatformWalletFFIError()
-            let result: PlatformWalletFFIResult = {
-                let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
-                    platform_wallet_send_dashpay_payment(
-                        handle,
-                        fromFFI,
-                        toFFI,
-                        amountDuffs,
-                        memoPtr,
-                        &txidTuple,
-                        &error
-                    )
+            let result: PlatformWalletFFIResult = fromBytes.withUnsafeBufferPointer {
+                fromBp -> PlatformWalletFFIResult in
+                toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
+                    let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
+                        platform_wallet_send_dashpay_payment(
+                            handle,
+                            fromBp.baseAddress!,
+                            toBp.baseAddress!,
+                            amountDuffs,
+                            memoPtr,
+                            &txidTuple,
+                            &error
+                        )
+                    }
+                    if let memoCopy {
+                        return memoCopy.withCString { call($0) }
+                    } else {
+                        return call(nil)
+                    }
                 }
-                if let memoCopy {
-                    return memoCopy.withCString { call($0) }
-                } else {
-                    return call(nil)
-                }
-            }()
+            }
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
@@ -936,16 +1109,17 @@ extension ManagedPlatformWallet {
         var ffiProfile = dashPayProfileFFIEmpty()
         var hasProfile: Bool = false
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(identityId)
 
-        let result = platform_wallet_get_dashpay_profile(
-            handle,
-            ffiId,
-            &ffiProfile,
-            &hasProfile,
-            &error
-        )
-        defer { dashpay_profile_ffi_free(ffiProfile) }
+        let result = identityId.withFFIBytes { idPtr in
+            platform_wallet_get_dashpay_profile(
+                handle,
+                idPtr,
+                &ffiProfile,
+                &hasProfile,
+                &error
+            )
+        }
+        defer { dashpay_profile_ffi_free(&ffiProfile) }
 
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
@@ -1029,7 +1203,9 @@ extension ManagedPlatformWallet {
         doCreate: Bool
     ) async throws -> DashPayProfile {
         let handle = self.handle
-        let ffiId = identifierToFFI(identityId)
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         let displayName = update.displayName
         let publicMessage = update.publicMessage
         let avatarUrl = update.avatarUrl
@@ -1039,85 +1215,210 @@ extension ManagedPlatformWallet {
             var outProfile = dashPayProfileFFIEmpty()
             var error = PlatformWalletFFIError()
 
-            // Each optional CString gets its own `withCString` scope —
-            // nested closures keep all three string buffers alive
-            // across the FFI call (their lifetime is bounded by the
-            // closure, not by the `let` binding). Absent fields pass
-            // `nil` directly.
-            let result = invokeWithOptionalCStrings(
-                displayName,
-                publicMessage,
-                avatarUrl
-            ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
-                let bytes = avatarBytes ?? Data()
-                if let avatarBytes, !avatarBytes.isEmpty {
-                    return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
-                        let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            // Hold the identifier buffer pointer live across the
+            // entire optional-CString / optional-avatar-bytes call
+            // tree by sinking the FFI invocation inside
+            // `withUnsafeBufferPointer`.
+            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                let idPtr = idBp.baseAddress!
+                return invokeWithOptionalCStrings(
+                    displayName,
+                    publicMessage,
+                    avatarUrl
+                ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
+                    let bytes = avatarBytes ?? Data()
+                    if let avatarBytes, !avatarBytes.isEmpty {
+                        return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
+                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                            if doCreate {
+                                return platform_wallet_create_dashpay_profile(
+                                    handle,
+                                    idPtr,
+                                    namePtr,
+                                    msgPtr,
+                                    urlPtr,
+                                    bytesPtr,
+                                    avatarBytes.count,
+                                    &outProfile,
+                                    &error
+                                )
+                            } else {
+                                return platform_wallet_update_dashpay_profile(
+                                    handle,
+                                    idPtr,
+                                    namePtr,
+                                    msgPtr,
+                                    urlPtr,
+                                    bytesPtr,
+                                    avatarBytes.count,
+                                    &outProfile,
+                                    &error
+                                )
+                            }
+                        }
+                    } else {
+                        // Referenced only so the compiler keeps the
+                        // enclosing `bytes` scope in a consistent type.
+                        _ = bytes
                         if doCreate {
                             return platform_wallet_create_dashpay_profile(
                                 handle,
-                                ffiId,
+                                idPtr,
                                 namePtr,
                                 msgPtr,
                                 urlPtr,
-                                bytesPtr,
-                                avatarBytes.count,
+                                nil,
+                                0,
                                 &outProfile,
                                 &error
                             )
                         } else {
                             return platform_wallet_update_dashpay_profile(
                                 handle,
-                                ffiId,
+                                idPtr,
                                 namePtr,
                                 msgPtr,
                                 urlPtr,
-                                bytesPtr,
-                                avatarBytes.count,
+                                nil,
+                                0,
                                 &outProfile,
                                 &error
                             )
                         }
                     }
-                } else {
-                    // Referenced only so the compiler keeps the
-                    // enclosing `bytes` scope in a consistent type.
-                    _ = bytes
-                    if doCreate {
-                        return platform_wallet_create_dashpay_profile(
-                            handle,
-                            ffiId,
-                            namePtr,
-                            msgPtr,
-                            urlPtr,
-                            nil,
-                            0,
-                            &outProfile,
-                            &error
-                        )
-                    } else {
-                        return platform_wallet_update_dashpay_profile(
-                            handle,
-                            ffiId,
-                            namePtr,
-                            msgPtr,
-                            urlPtr,
-                            nil,
-                            0,
-                            &outProfile,
-                            &error
-                        )
-                    }
                 }
             }
 
-            defer { dashpay_profile_ffi_free(outProfile) }
+            defer { dashpay_profile_ffi_free(&outProfile) }
 
             guard result == Success else {
                 throw PlatformWalletError(result: result, error: error)
             }
             return DashPayProfile(ffi: outProfile)
         }.value
+    }
+}
+
+// MARK: - In-memory state (Wallet Memory Explorer)
+
+/// Snapshot of the in-memory state a `ManagedPlatformWallet` holds
+/// for diagnostic display. Returned by
+/// `ManagedPlatformWallet.inMemorySummary()`. Mirrors
+/// `PlatformWalletMemorySummaryFFI` on the Rust side.
+public struct InMemoryWalletSummary: Sendable {
+    /// Number of signing-capable identities the wallet manages
+    /// (i.e. lives in `wallet_identities[wallet_id]`).
+    public let identitiesCount: Int
+    /// Number of read-only / observed identities
+    /// (`out_of_wallet_identities`).
+    public let watchedCount: Int
+    /// One past the wallet's highest already-registered identity
+    /// index — the resume position the gap-limit scanner uses next.
+    /// `0` when the wallet has no managed identities yet.
+    public let lastScannedIndex: UInt32
+    /// 32-byte primary identity id, or `nil` when no primary is set.
+    ///
+    /// Always `nil` from the Rust side now — primary-identity
+    /// selection moved to the UI layer. The field is retained on
+    /// this snapshot struct so existing call sites keep compiling;
+    /// the Wallet Memory Explorer view should source the user's
+    /// pick from app state rather than from this struct.
+    public let primaryIdentityId: Identifier?
+    /// Number of asset locks tracked in
+    /// `PlatformWalletInfo.tracked_asset_locks`.
+    public let trackedAssetLocksCount: Int
+    /// Number of `(identity_id, token_id) -> amount` rows on
+    /// `PlatformWalletInfo.token_balances`.
+    public let tokenBalancesCount: Int
+
+    public init(
+        identitiesCount: Int,
+        watchedCount: Int,
+        lastScannedIndex: UInt32,
+        primaryIdentityId: Identifier?,
+        trackedAssetLocksCount: Int,
+        tokenBalancesCount: Int
+    ) {
+        self.identitiesCount = identitiesCount
+        self.watchedCount = watchedCount
+        self.lastScannedIndex = lastScannedIndex
+        self.primaryIdentityId = primaryIdentityId
+        self.trackedAssetLocksCount = trackedAssetLocksCount
+        self.tokenBalancesCount = tokenBalancesCount
+    }
+}
+
+extension ManagedPlatformWallet {
+    /// List the ids of every identity the wallet currently manages
+    /// (signing-capable identities — not watched ones).
+    ///
+    /// Reads `info.identity_manager.identities` directly. This is
+    /// what the in-memory state holds *right now*; differs from
+    /// SwiftData's `PersistentIdentity` query when the wallet hasn't
+    /// rehydrated all of its persisted identities into memory.
+    public func inMemoryIdentityIds() throws -> [Identifier] {
+        try readIdentifierArray { array, error in
+            platform_wallet_list_in_memory_identity_ids(handle, &array, &error)
+        }
+    }
+
+    /// List the ids of every watched (read-only / observed) identity
+    /// the wallet currently knows about. Reads
+    /// `info.identity_manager.watched_identities` directly.
+    public func inMemoryWatchedIdentityIds() throws -> [Identifier] {
+        try readIdentifierArray { array, error in
+            platform_wallet_list_in_memory_watched_identity_ids(handle, &array, &error)
+        }
+    }
+
+    /// Read a one-shot summary of the wallet's in-memory state — the
+    /// counts and watermarks the Wallet Memory Explorer view surfaces
+    /// at the top of the per-wallet detail screen.
+    public func inMemorySummary() throws -> InMemoryWalletSummary {
+        var ffi = platformWalletMemorySummaryFFIEmpty()
+        var error = PlatformWalletFFIError()
+
+        let result = platform_wallet_get_in_memory_summary(handle, &ffi, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        return InMemoryWalletSummary(
+            identitiesCount: ffi.identities_count,
+            watchedCount: ffi.watched_count,
+            lastScannedIndex: ffi.last_scanned_index,
+            // Primary-identity selection no longer lives on the Rust
+            // side; UI layer owns it now.
+            primaryIdentityId: nil,
+            trackedAssetLocksCount: ffi.tracked_asset_locks_count,
+            tokenBalancesCount: ffi.token_balances_count
+        )
+    }
+
+    /// Shared array-marshalling body for the two id-list explorer
+    /// readers above. Both wrap the same `IdentifierArray` FFI shape +
+    /// free helper, so the per-method variance is just the FFI call
+    /// itself.
+    private func readIdentifierArray(
+        _ fetch: (inout IdentifierArray, inout PlatformWalletFFIError) -> PlatformWalletFFIResult
+    ) throws -> [Identifier] {
+        var array = IdentifierArray(items: nil, count: 0)
+        var error = PlatformWalletFFIError()
+        let result = fetch(&array, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        defer { platform_wallet_identifier_array_free(&array) }
+        guard array.items != nil, array.count > 0 else {
+            return []
+        }
+        var ids: [Identifier] = []
+        ids.reserveCapacity(array.count)
+        for i in 0..<array.count {
+            ids.append(identifierFromFFIArray(array, at: i))
+        }
+        return ids
     }
 }
 

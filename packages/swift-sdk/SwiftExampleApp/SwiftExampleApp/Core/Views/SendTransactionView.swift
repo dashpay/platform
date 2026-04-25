@@ -15,7 +15,7 @@ struct SendTransactionView: View {
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
-        _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.networkEnum))
+        _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
     }
 
     var body: some View {

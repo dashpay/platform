@@ -227,7 +227,7 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_profile: *mut DashPayProfileFFI,
     out_has_profile: *mut bool,
     out_error: *mut PlatformWalletFFIError,
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -329,13 +329,25 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
 /// Release strings owned by a [`DashPayProfileFFI`] previously populated
 /// by this FFI. Safe to call on `empty()` profiles — each string pointer
 /// is checked for `null` before freeing.
+///
+/// Pointer-only signature: `DashPayProfileFFI` is well over the
+/// 16-byte AAPCS64 / Swift register-pass cliff, so by-value cannot
+/// be trusted across the `@_silgen_name` boundary. After free the
+/// three nullable string pointers are reset so a double-free no-ops.
 #[no_mangle]
-pub unsafe extern "C" fn dashpay_profile_ffi_free(profile: DashPayProfileFFI) {
+pub unsafe extern "C" fn dashpay_profile_ffi_free(profile: *mut DashPayProfileFFI) {
+    if profile.is_null() {
+        return;
+    }
+    let profile = unsafe { &mut *profile };
     // Each field is independently heap-owned. `platform_wallet_string_free`
     // is a no-op on null.
     crate::platform_wallet_string_free(profile.display_name);
     crate::platform_wallet_string_free(profile.public_message);
     crate::platform_wallet_string_free(profile.avatar_url);
+    profile.display_name = std::ptr::null_mut();
+    profile.public_message = std::ptr::null_mut();
+    profile.avatar_url = std::ptr::null_mut();
 }
 
 /// Fetch DashPay profile documents for every managed identity on the
@@ -399,7 +411,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
 #[allow(clippy::too_many_arguments)]
 unsafe fn create_or_update_profile(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     display_name: *const c_char,
     public_message: *const c_char,
     avatar_url: *const c_char,
@@ -421,7 +433,7 @@ unsafe fn create_or_update_profile(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -552,7 +564,7 @@ unsafe fn create_or_update_profile(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_create_dashpay_profile(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     display_name: *const c_char,
     public_message: *const c_char,
     avatar_url: *const c_char,
@@ -584,7 +596,7 @@ pub unsafe extern "C" fn platform_wallet_create_dashpay_profile(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_update_dashpay_profile(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     display_name: *const c_char,
     public_message: *const c_char,
     avatar_url: *const c_char,
@@ -650,7 +662,7 @@ mod tests {
             assert!(!out.avatar_hash_is_some);
             assert!(!out.avatar_fingerprint_is_some);
 
-            dashpay_profile_ffi_free(out);
+            dashpay_profile_ffi_free(&mut out);
             crate::managed_identity_destroy(handle);
         }
     }
@@ -697,7 +709,7 @@ mod tests {
             assert!(out.avatar_fingerprint_is_some);
             assert_eq!(out.avatar_fingerprint, [1, 2, 3, 4, 5, 6, 7, 8]);
 
-            dashpay_profile_ffi_free(out);
+            dashpay_profile_ffi_free(&mut out);
             crate::managed_identity_destroy(handle);
         }
     }
@@ -717,8 +729,8 @@ mod tests {
             );
             assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
 
-            dashpay_profile_ffi_free(out);
-            platform_wallet_ffi_error_free(error);
+            dashpay_profile_ffi_free(&mut out);
+            platform_wallet_ffi_error_free(&mut error);
         }
     }
 }

@@ -59,9 +59,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
-            let index = Some(managed.identity_index).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*sender_identity_id),
-            )?;
+            let index = managed
+                .identity_index
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(
+                    *sender_identity_id,
+                ))?;
             (managed.identity.clone(), index)
         };
 
@@ -275,7 +277,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            info.identity_manager.identities().keys().copied().collect()
+            info.identity_manager
+                .all_identities()
+                .into_iter()
+                .map(|i| i.id())
+                .collect()
         };
 
         let mut all_requests = Vec::new();
