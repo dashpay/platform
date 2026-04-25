@@ -644,6 +644,21 @@ struct WalletRowView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var platformState: AppState
 
+    /// Per-wallet BLAST-synced platform-address balances. Mirrors
+    /// `BalanceCardView` so the summary row sees the same balance as
+    /// the detail view — previously the row only summed identity
+    /// credits, so a wallet funded purely via Platform Payment
+    /// addresses (no identities) showed "Empty".
+    @Query private var addressBalances: [PersistentPlatformAddress]
+
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _addressBalances = Query(
+            filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+    }
+
     /// Identities on this wallet — via the SwiftData relationship.
     /// The wallet↔identity relationship is the canonical source
     /// now; no need to filter `appState.identities` by walletId.
@@ -651,13 +666,31 @@ struct WalletRowView: View {
         wallet.identities
     }
 
+    /// Platform balance in credits: prefer BLAST address sync, fall
+    /// back to summing identity credits when no addresses have been
+    /// synced yet.
     private var platformBalance: UInt64 {
-        identitiesForWallet.reduce(0) { $0 + UInt64(bitPattern: $1.balance) }
+        let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
+        if blastBalance > 0 { return blastBalance }
+        return identitiesForWallet.reduce(UInt64(0)) {
+            $0 + UInt64(bitPattern: $1.balance)
+        }
     }
 
     private var totalCoreBalance: UInt64 {
         wallet.balanceConfirmed + wallet.balanceUnconfirmed
             + wallet.balanceImmature + wallet.balanceLocked
+    }
+
+    /// Combined wallet balance expressed in DASH. Core uses 1e8
+    /// duffs/DASH; Platform uses 1e11 credits/DASH.
+    private var combinedDashAmount: Double {
+        Double(totalCoreBalance) / 100_000_000.0
+            + Double(platformBalance) / 100_000_000_000.0
+    }
+
+    private var hasAnyBalance: Bool {
+        totalCoreBalance > 0 || platformBalance > 0
     }
 
     private var walletIdShort: String {
@@ -680,7 +713,10 @@ struct WalletRowView: View {
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
+        formatDash(Double(amount) / 100_000_000.0)
+    }
+
+    private func formatDash(_ dash: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 0
@@ -748,10 +784,10 @@ struct WalletRowView: View {
                     }
                 }
                 Spacer()
-                Text(totalCoreBalance == 0 ? "Empty" : formatBalance(totalCoreBalance))
+                Text(hasAnyBalance ? formatDash(combinedDashAmount) : "Empty")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(totalCoreBalance == 0 ? .secondary : .primary)
+                    .foregroundColor(hasAnyBalance ? .primary : .secondary)
             }
 
             // Row 1: network + created date.
