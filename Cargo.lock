@@ -4968,6 +4968,7 @@ dependencies = [
  "dashcore",
  "dpp",
  "hex",
+ "indexmap 2.13.1",
  "key-wallet",
  "lazy_static",
  "once_cell",

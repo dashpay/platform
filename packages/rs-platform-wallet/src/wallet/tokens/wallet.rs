@@ -295,7 +295,7 @@ impl TokenWallet {
         let identity = info
             .identity_manager
             .identity(identity_id)
-            .cloned()
+            .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
         let identity_index = info

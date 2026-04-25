@@ -36,7 +36,7 @@ public final class PersistentDocument {
     public var transferredAtCoreBlockHeight: Int64?
 
     // Network
-    public var network: String
+    public var network: AppNetwork
 
     // Deletion flag
     public var isDeleted: Bool = false
@@ -110,7 +110,7 @@ public final class PersistentDocument {
         data: Data,
         contractId: String,
         ownerId: String,
-        network: String = "testnet"
+        network: AppNetwork
     ) {
         self.documentId = documentId
         self.documentType = documentType
@@ -150,7 +150,7 @@ public final class PersistentDocument {
         }
     }
 
-    public static func predicate(contractId: String, network: String) -> Predicate<PersistentDocument> {
+    public static func predicate(contractId: String, network: AppNetwork) -> Predicate<PersistentDocument> {
         #Predicate<PersistentDocument> { doc in
             doc.contractId == contractId && doc.network == network && doc.isDeleted == false
         }

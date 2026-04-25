@@ -1,56 +1,20 @@
 //! Core identity operations for ManagedIdentity
 
-use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
+use super::key_storage::{DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
-use crate::changeset::{
-    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
-    IdentityKeysChangeSet, PlatformWalletChangeSet,
-};
+use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
 use crate::wallet::persister::WalletPersister;
-use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use dpp::util::hash::ripemd160_sha256;
-use key_wallet::Network;
-use key_wallet_manager::WalletManager;
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-/// Project a `PrivateKeyData` into the `(wallet_id, derivation_indices)`
-/// pair carried by [`IdentityKeyEntry`]. `Clear` keys produce no
-/// derivation breadcrumb (client can't reproduce them). `None` on
-/// either side means the client should treat the key as view-only.
-fn project_derivation(
-    pkd: Option<&PrivateKeyData>,
-) -> (Option<[u8; 32]>, Option<IdentityKeyDerivationIndices>) {
-    match pkd {
-        Some(PrivateKeyData::AtWalletDerivationPath {
-            wallet_id,
-            identity_index,
-            key_index,
-            ..
-        }) => (
-            Some(*wallet_id),
-            Some(IdentityKeyDerivationIndices {
-                identity_index: *identity_index,
-                key_index: *key_index,
-            }),
-        ),
-        // Clear-key entries are never produced by this codebase for
-        // identity keys; handle the variant so the match is
-        // exhaustive but emit no derivation breadcrumb.
-        Some(PrivateKeyData::Clear(_)) | None => (None, None),
-    }
-}
 
 /// Compute the 20-byte RIPEMD160(SHA256) hash of the DPP public-key
-/// bytes. Shared between `keys_snapshot_changeset` and `add_key` so
-/// the FFI surface always carries a consistent pre-hashed form.
-fn pubkey_hash_of(pub_key: &IdentityPublicKey) -> [u8; 20] {
+/// bytes. Shared between `keys_snapshot_changeset` so the FFI surface
+/// always carries a consistent pre-hashed form.
+fn pubkey_hash_of(pub_key: &dpp::identity::IdentityPublicKey) -> [u8; 20] {
     let mut out = [0u8; 20];
     out.copy_from_slice(ripemd160_sha256(pub_key.data().as_slice()).as_slice());
     out
@@ -75,17 +39,19 @@ impl ManagedIdentity {
 
     /// Helper: produce an [`IdentityKeysChangeSet`] containing one
     /// [`IdentityKeyEntry`] upsert per registered public key on this
-    /// identity. Private-key bytes never cross this boundary — when
-    /// `key_storage` has an `AtWalletDerivationPath` entry the
-    /// matching `(wallet_id, derivation_indices)` pair rides along
-    /// so the client can re-derive locally. Unregistered watched
-    /// keys emit both as `None`.
+    /// identity.
+    ///
+    /// Private-key bytes / derivation breadcrumbs no longer ride along
+    /// here — `ManagedIdentity` doesn't carry `key_storage` anymore,
+    /// so every emitted entry has `wallet_id == None` and
+    /// `derivation_indices == None`. Callers that need the
+    /// breadcrumb (e.g. registration / discovery) emit a dedicated
+    /// `IdentityKeysChangeSet` themselves with the right
+    /// `(wallet_id, identity_index, key_index)` pair.
     pub(crate) fn keys_snapshot_changeset(&self) -> IdentityKeysChangeSet {
         let identity_id = self.id();
         let mut upserts = BTreeMap::new();
         for (key_id, pub_key) in self.identity.public_keys() {
-            let stored = self.key_storage.get(key_id).map(|(_, pk)| pk);
-            let (wallet_id, derivation_indices) = project_derivation(stored);
             upserts.insert(
                 (identity_id, *key_id),
                 IdentityKeyEntry {
@@ -93,8 +59,8 @@ impl ManagedIdentity {
                     key_id: *key_id,
                     public_key: pub_key.clone(),
                     public_key_hash: pubkey_hash_of(pub_key),
-                    wallet_id,
-                    derivation_indices,
+                    wallet_id: None,
+                    derivation_indices: None,
                 },
             );
         }
@@ -104,18 +70,43 @@ impl ManagedIdentity {
         }
     }
 
-    /// Create a new managed identity with its BIP-9 HD identity index.
+    /// Create a new wallet-owned managed identity with its BIP-9 HD
+    /// identity index. The resulting `identity_index` field is
+    /// `Some(identity_index)` — use [`Self::new_out_of_wallet`] for
+    /// observed identities that have no derivation context.
     pub fn new(identity: Identity, identity_index: u32) -> Self {
         Self {
             identity,
-            identity_index,
+            identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
-            label: None,
             established_contacts: Default::default(),
             sent_contact_requests: Default::default(),
             incoming_contact_requests: Default::default(),
-            key_storage: Default::default(),
+            status: Default::default(),
+            dpns_names: Vec::new(),
+            contested_dpns_names: Vec::new(),
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: BTreeMap::new(),
+        }
+    }
+
+    /// Create a new out-of-wallet managed identity (observed read-only).
+    ///
+    /// Out-of-wallet identities don't belong to any local wallet, so
+    /// `identity_index` is `None` and `wallet_id` is left as `None` —
+    /// signing / derivation paths must guard on these and reject the
+    /// out-of-wallet case explicitly.
+    pub fn new_out_of_wallet(identity: Identity) -> Self {
+        Self {
+            identity,
+            identity_index: None,
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            established_contacts: Default::default(),
+            sent_contact_requests: Default::default(),
+            incoming_contact_requests: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
@@ -245,26 +236,43 @@ impl ManagedIdentity {
         }
     }
 
-    /// Store a private key entry in the key storage.
+    /// Layer an `IdentityPublicKey` onto this identity's
+    /// `public_keys` map and emit a single-key
+    /// [`IdentityKeysChangeSet`] upsert carrying the full derivation
+    /// breadcrumb.
     ///
-    /// Persists both the scalar identity snapshot (so any concurrent
-    /// scalar changes observed by this call are captured) and a
-    /// single-key [`IdentityKeysChangeSet`] upsert for the just-added
-    /// key.
+    /// `wallet_id` and `(identity_index, key_index)` together let the
+    /// client (iOS Keychain) re-derive the matching private key from
+    /// the wallet seed at the DIP-9 identity authentication path.
+    /// Pass `None` for a watch-only key the wallet didn't derive.
     pub fn add_key(
         &mut self,
-        key_id: KeyID,
-        public_key: IdentityPublicKey,
-        private_key_data: PrivateKeyData,
+        public_key: dpp::identity::IdentityPublicKey,
+        derivation_breadcrumb: Option<([u8; 32], u32, u32)>,
         persister: &WalletPersister,
     ) {
-        let (wallet_id, derivation_indices) = project_derivation(Some(&private_key_data));
+        use dpp::identity::accessors::IdentitySettersV0;
+
+        let key_id = public_key.id();
         let public_key_hash = pubkey_hash_of(&public_key);
 
-        self.key_storage
-            .insert(key_id, (public_key.clone(), private_key_data));
+        // Layer onto the DPP `Identity` itself — that's what every
+        // signing / introspection path reads.
+        let mut keys = self.identity.public_keys().clone();
+        keys.insert(key_id, public_key.clone());
+        self.identity.set_public_keys(keys);
 
         let identity_id = self.id();
+        let (wallet_id, derivation_indices) = match derivation_breadcrumb {
+            Some((wallet_id, identity_index, key_index)) => (
+                Some(wallet_id),
+                Some(crate::changeset::IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index,
+                }),
+            ),
+            None => (None, None),
+        };
         let mut keys_cs = IdentityKeysChangeSet::default();
         keys_cs.upserts.insert(
             (identity_id, key_id),
@@ -277,7 +285,7 @@ impl ManagedIdentity {
                 derivation_indices,
             },
         );
-        let cs = PlatformWalletChangeSet {
+        let cs = crate::changeset::PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
             ..Default::default()
@@ -285,32 +293,5 @@ impl ManagedIdentity {
         if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
-    }
-
-    /// Look up private key data by key ID.
-    pub fn private_key_data(&self, key_id: &KeyID) -> Option<&PrivateKeyData> {
-        self.key_storage.get(key_id).map(|(_, pk)| pk)
-    }
-
-    /// Create a [`ManagedIdentitySigner`] for this identity.
-    ///
-    /// The signer resolves keys from this identity's `key_storage`. For keys
-    /// stored with [`PrivateKeyData::AtWalletDerivationPath`] the wallet is
-    /// used to derive the private key on demand. For keys not in the storage
-    /// the signer falls back to the standard DIP-9 identity authentication
-    /// path derivation.
-    pub fn signer(
-        &self,
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-        wallet_id: WalletId,
-        network: Network,
-    ) -> ManagedIdentitySigner {
-        ManagedIdentitySigner::new(
-            self.key_storage.clone(),
-            wallet_manager,
-            wallet_id,
-            self.identity_index,
-            network,
-        )
     }
 }

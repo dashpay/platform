@@ -21,7 +21,7 @@ public final class PersistentTokenBalance {
     public var tokenDecimals: Int32?
 
     // MARK: - Network
-    public var network: String
+    public var network: AppNetwork
 
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify) public var identity: PersistentIdentity?
@@ -36,7 +36,7 @@ public final class PersistentTokenBalance {
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
         tokenDecimals: Int32? = nil,
-        network: String = "testnet"
+        network: AppNetwork
     ) {
         self.tokenId = tokenId
         self.identityId = identityId

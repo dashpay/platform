@@ -35,10 +35,16 @@ use crate::identity_persistence::{
 };
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::wallet_restore_types::{
-    AccountSpecFFI, AccountTypeTagFFI, LoadWalletListFn, LoadWalletListFreeFn, PersistAccountFn,
-    PersistWalletMetadataFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
+    AccountSpecFFI, AccountTypeTagFFI, IdentityRestoreEntryFFI, LoadWalletListFn,
+    LoadWalletListFreeFn, PersistAccountFn, PersistWalletMetadataFn, StandardAccountTypeTagFFI,
+    WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
+use dpp::identity::v0::IdentityV0;
+use dpp::identity::Identity;
+use dpp::prelude::Identifier;
+use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
+use std::ffi::CStr;
 
 /// C callback vtable for wallet persistence.
 ///
@@ -126,13 +132,10 @@ pub struct PersistenceCallbacks {
     /// [`PersistAccountAddressesFn`].
     pub on_persist_account_addresses_fn: Option<PersistAccountAddressesFn>,
     /// Called with an `IdentityChangeSet` slice — scalar-only
-    /// identity upserts (id / balance / revision / label / status /
+    /// identity upserts (id / balance / revision / status /
     /// wallet_id / identity_index) and identity-id removals. Swift
     /// handlers map upserts onto `PersistentIdentity` rows and
-    /// removals onto tombstones. `primary_identity_ptr` is `null`
-    /// when the changeset doesn't touch primary selection;
-    /// `has_last_scanned_index` gates `last_scanned_index` the same
-    /// way.
+    /// removals onto tombstones.
     pub on_persist_identities_fn: Option<
         unsafe extern "C" fn(
             context: *mut c_void,
@@ -141,9 +144,6 @@ pub struct PersistenceCallbacks {
             upserts_count: usize,
             removed_ptr: *const [u8; 32],
             removed_count: usize,
-            primary_identity_ptr: *const [u8; 32],
-            has_last_scanned_index: bool,
-            last_scanned_index: u32,
         ) -> i32,
     >,
     /// Called with an `IdentityKeysChangeSet` slice — per-key
@@ -254,9 +254,9 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Send identity scalar changeset — upserts, removals, primary
-        // selection, and the gap-limit watermark. Swift handler maps
-        // these onto `PersistentIdentity` row upserts / tombstones.
+        // Send identity scalar changeset — upserts and removals.
+        // Swift handler maps these onto `PersistentIdentity` row
+        // upserts / tombstones.
         if let Some(ref id_cs) = changeset.identities {
             if let Some(cb) = self.callbacks.on_persist_identities_fn {
                 // Build heap-allocated mirrors. Scoped so the Vec
@@ -269,15 +269,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     .collect();
                 let removed: Vec<[u8; 32]> =
                     id_cs.removed.iter().map(|id| id.to_buffer()).collect();
-                let primary_buf = id_cs.primary_identity.map(|id| id.to_buffer());
-                let primary_ptr: *const [u8; 32] = primary_buf
-                    .as_ref()
-                    .map(|b| b as *const [u8; 32])
-                    .unwrap_or(std::ptr::null());
-                let (has_scan, scan_idx) = match id_cs.last_scanned_index {
-                    Some(v) => (true, v),
-                    None => (false, 0),
-                };
                 let result = unsafe {
                     cb(
                         self.callbacks.context,
@@ -290,9 +281,6 @@ impl PlatformWalletPersistence for FFIPersister {
                             removed.as_ptr()
                         },
                         removed.len(),
-                        primary_ptr,
-                        has_scan,
-                        scan_idx,
                     )
                 };
                 // Release every heap-allocated field on the FFI
@@ -865,10 +853,26 @@ fn build_wallet_start_state(
         );
     }
 
+    // Per-wallet identities go straight into the wallet_identities
+    // sub-map keyed by registration index. Out-of-wallet identities
+    // are not surfaced here — there's no SwiftData path for them
+    // today (PersistentIdentity always links to a wallet) — so the
+    // out-of-wallet bucket starts empty and is populated only via
+    // runtime DPNS resolution / observation.
+    let bucket = build_wallet_identity_bucket(entry)?;
+    let mut wallet_identities = BTreeMap::new();
+    if !bucket.is_empty() {
+        wallet_identities.insert(entry.wallet_id, bucket);
+    }
+    let identity_manager = IdentityManagerStartState {
+        out_of_wallet_identities: BTreeMap::new(),
+        wallet_identities,
+    };
+
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
-        identity_manager: Default::default(),
+        identity_manager,
         unused_asset_locks: BTreeMap::new(),
     };
 
@@ -888,6 +892,119 @@ fn build_wallet_start_state(
     };
 
     Ok((wallet_state, platform_address_state))
+}
+
+/// Translate the `IdentityRestoreEntryFFI` slice carried on a wallet
+/// entry into the wallet-bucket portion of an
+/// [`IdentityManagerStartState`].
+///
+/// Every entry on a `WalletRestoreEntryFFI` is wallet-owned by
+/// definition, so the returned map is shaped for direct insertion
+/// into `wallet_identities[entry.wallet_id]`. Out-of-wallet identities
+/// (no associated wallet) come from a separate path that today simply
+/// doesn't exist in SwiftData — see the report observation.
+///
+/// The DPP `Identity` is reconstructed from the persisted scalars via
+/// the `IdentityV0` shape — same approach
+/// [`apply_identity_entry`](platform_wallet::IdentityManager::apply_identity_entry)
+/// uses on the changeset replay path. Public keys are NOT pulled in
+/// here; they live in `PersistentPublicKey` rows on the Swift side
+/// and arrive separately via the next `on_persist_identity_keys_fn`
+/// round during sync. Consequence: identities load with empty
+/// `public_keys` until the first sync repopulates them — fine for
+/// surfacing them in `inMemorySummary().identitiesCount` and
+/// `managed_identity()` lookups, signing requires keys to refresh.
+fn build_wallet_identity_bucket(
+    entry: &WalletRestoreEntryFFI,
+) -> Result<BTreeMap<u32, ManagedIdentity>, PersistenceError> {
+    let identity_specs: &[IdentityRestoreEntryFFI] =
+        if entry.identities.is_null() || entry.identities_count == 0 {
+            &[]
+        } else {
+            unsafe { slice::from_raw_parts(entry.identities, entry.identities_count) }
+        };
+
+    let mut bucket: BTreeMap<u32, ManagedIdentity> = BTreeMap::new();
+
+    for spec in identity_specs {
+        let identifier = Identifier::from(spec.identity_id);
+        let identity = Identity::V0(IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::new(),
+            balance: spec.balance,
+            revision: spec.revision,
+        });
+        let status = identity_status_from_tag(spec.status);
+        let dpns_names = unsafe {
+            c_string_array_to_vec(spec.dpns_names, spec.dpns_names_count)
+                .into_iter()
+                .map(|label| DpnsNameInfo {
+                    label,
+                    acquired_at: None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let contested_dpns_names = unsafe {
+            c_string_array_to_vec(spec.contested_dpns_names, spec.contested_dpns_names_count)
+        };
+
+        let mut managed = ManagedIdentity::new(identity, spec.identity_index);
+        managed.status = status;
+        managed.wallet_id = Some(entry.wallet_id);
+        managed.dpns_names = dpns_names;
+        managed.contested_dpns_names = contested_dpns_names;
+        bucket.insert(spec.identity_index, managed);
+    }
+
+    Ok(bucket)
+}
+
+/// Decode a flat `*const *const c_char` array into a `Vec<String>`.
+///
+/// Used for the per-identity DPNS / contested-DPNS label arrays. The
+/// outer pointer + count come from Swift; each inner pointer is a
+/// NUL-terminated UTF-8 c-string. Inner entries that are null or
+/// invalid UTF-8 are skipped (same forgiveness as
+/// [`c_string_to_option`]).
+///
+/// # Safety
+///
+/// `ptr` must be either null or point at `count` valid `*const c_char`
+/// pointers Swift owns for the duration of the load callback. Each
+/// non-null inner pointer must reference NUL-terminated UTF-8 bytes.
+unsafe fn c_string_array_to_vec(
+    ptr: *const *const std::os::raw::c_char,
+    count: usize,
+) -> Vec<String> {
+    if ptr.is_null() || count == 0 {
+        return Vec::new();
+    }
+    let raw = slice::from_raw_parts(ptr, count);
+    raw.iter()
+        .filter_map(|inner| {
+            if inner.is_null() {
+                None
+            } else {
+                CStr::from_ptr(*inner).to_str().ok().map(str::to_owned)
+            }
+        })
+        .collect()
+}
+
+/// Map the [`IdentityRestoreEntryFFI::status`] discriminant onto
+/// `IdentityStatus`. Mirrors the encoding in
+/// [`crate::identity_persistence::status_discriminant`]; unknown
+/// discriminants degrade to `IdentityStatus::Unknown` rather than
+/// erroring, so a forward-compatible Swift writer doesn't lock
+/// rollback.
+fn identity_status_from_tag(tag: u8) -> IdentityStatus {
+    match tag {
+        1 => IdentityStatus::PendingCreation,
+        2 => IdentityStatus::Active,
+        3 => IdentityStatus::FailedCreation,
+        4 => IdentityStatus::NotFound,
+        _ => IdentityStatus::Unknown,
+    }
 }
 
 fn network_from_tag(tag: u8) -> Result<Network, PersistenceError> {

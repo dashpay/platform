@@ -1,7 +1,12 @@
 import Foundation
 import DashSDKFFI
 
-/// Identity Manager for managing Platform identities
+/// Identity Manager for managing Platform identities.
+///
+/// All FFI calls go through pointer-passing for identifiers — see the
+/// `Identifier.withFFIBytes` extension. Out-buffer reads use a local
+/// `[UInt8](repeating:count:32)` and copy into a `Data` value at
+/// return time.
 public class IdentityManager {
     internal let handle: Handle
 
@@ -39,9 +44,9 @@ public class IdentityManager {
     /// Remove an identity from the manager
     public func removeIdentity(_ identityId: Identifier) throws {
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(identityId)
-
-        let result = identity_manager_remove_identity(handle, ffiId, &error)
+        let result = identityId.withFFIBytes { idPtr in
+            identity_manager_remove_identity(handle, idPtr, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
@@ -51,9 +56,10 @@ public class IdentityManager {
     public func getIdentity(_ identityId: Identifier) throws -> ManagedIdentity {
         var identityHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(identityId)
 
-        let result = identity_manager_get_identity(handle, ffiId, &identityHandle, &error)
+        let result = identityId.withFFIBytes { idPtr in
+            identity_manager_get_identity(handle, idPtr, &identityHandle, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
@@ -72,49 +78,27 @@ public class IdentityManager {
         }
 
         defer {
-            platform_wallet_identifier_array_free(array)
+            platform_wallet_identifier_array_free(&array)
         }
 
-        guard let items = array.items else {
+        guard array.items != nil, array.count > 0 else {
             return []
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<Int(array.count) {
-            identifiers.append(identifierFromFFI(items[i]))
+        identifiers.reserveCapacity(array.count)
+        for i in 0..<array.count {
+            identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
         return identifiers
     }
 
-    /// Get the primary identity ID
-    public func getPrimaryIdentityId() throws -> Identifier? {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
-        var error = PlatformWalletFFIError()
-
-        let result = identity_manager_get_primary_identity_id(handle, &ffiId, &error)
-
-        if result == ErrorIdentityNotFound {
-            return nil
-        }
-
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
-        return identifierFromFFI(ffiId)
-    }
-
-    /// Set the primary identity
-    public func setPrimaryIdentity(_ identityId: Identifier) throws {
-        var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(identityId)
-
-        let result = identity_manager_set_primary_identity(handle, ffiId, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-    }
+    // Primary-identity selection lives on the Swift UI layer now —
+    // the Rust `IdentityManager` no longer carries the field. Callers
+    // should track the user's pick in their own state (e.g. an
+    // `@AppStorage` or `WalletDataModel.selectedIdentityId`) and look
+    // up the matching `ManagedIdentity` via `getIdentity(_:)`.
 
     /// Get the count of identities
     public func getIdentityCount() throws -> Int {

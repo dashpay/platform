@@ -30,7 +30,7 @@ public final class PersistentDataContract {
     public var groupsData: Data?
 
     // Network
-    public var network: String
+    public var network: AppNetwork
 
     // Timestamps
     public var lastUpdated: Date
@@ -161,7 +161,7 @@ public final class PersistentDataContract {
         keywords: [String] = [],
         description: String? = nil,
         hasTokens: Bool = false,
-        network: String = "testnet"
+        network: AppNetwork
     ) {
         self.id = id
         self.name = name
@@ -270,13 +270,13 @@ extension PersistentDataContract {
         }
     }
 
-    public static func predicate(network: String) -> Predicate<PersistentDataContract> {
+    public static func predicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
         #Predicate<PersistentDataContract> { contract in
             contract.network == network
         }
     }
 
-    public static func contractsWithTokensPredicate(network: String) -> Predicate<PersistentDataContract> {
+    public static func contractsWithTokensPredicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
         #Predicate<PersistentDataContract> { contract in
             contract.hasTokens == true && contract.network == network
         }

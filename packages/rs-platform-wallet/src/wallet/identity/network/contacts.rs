@@ -27,11 +27,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
             return Vec::new();
         };
-        info.identity_manager
-            .identities
+        // Flatten contacts across both buckets — observed identities
+        // can hold contact requests too (received from a stranger we
+        // haven't onboarded as wallet-owned yet). Touching the bucket
+        // boundary explicitly keeps the iteration honest about what
+        // it's reading.
+        let mut out: Vec<EstablishedContact> = info
+            .identity_manager
+            .out_of_wallet_identities
             .values()
             .flat_map(|managed| managed.established_contacts.values().cloned())
-            .collect()
+            .collect();
+        for inner in info.identity_manager.wallet_identities.values() {
+            for managed in inner.values() {
+                out.extend(managed.established_contacts.values().cloned());
+            }
+        }
+        out
     }
 }
 
@@ -342,7 +354,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity(our_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?;
-            let identity_index = managed.identity_index;
+            // ECDH key derivation needs the wallet HD slot — only valid
+            // for wallet-owned identities. Reject the out-of-wallet case
+            // explicitly rather than letting derivation produce a
+            // misleading error downstream.
+            let identity_index = managed
+                .identity_index
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))?;
 
             // Find our decryption key by its key ID.
             let our_encryption_key = managed

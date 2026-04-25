@@ -22,10 +22,11 @@
 
 use std::sync::Arc;
 
+use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::{AssetLockProof, Identifier};
-use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
@@ -42,35 +43,39 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
 /// Default gap limit for identity discovery scanning.
-pub(crate) const IDENTITY_GAP_LIMIT: u32 = 5;
-
-/// Derive the 20-byte RIPEMD160(SHA256) hash of the public key at the given
-/// identity authentication path.
 ///
-/// Path format: `base_path / key_type' / identity_index' / key_index'`
-/// where `base_path` is `m/9'/COIN_TYPE'/5'/0'` (mainnet or testnet).
-pub(crate) fn derive_identity_auth_key_hash(
-    wallet: &Wallet,
+/// Promoted to `pub` so external consumers (in particular the FFI
+/// crate's identity-registration-key preview path) can align their
+/// preview slot count with the scan window `discover()` walks. Keep
+/// this and [`MASTER_KEY_INDEX`] as the single source of truth for
+/// the discovery-scan policy.
+pub const IDENTITY_GAP_LIMIT: u32 = 5;
+
+/// Identity-authentication key index that the discovery scan probes
+/// and that every identity this crate registers uses as its MASTER
+/// auth key. Public so preview helpers can align on the same slot.
+pub const MASTER_KEY_INDEX: u32 = 0;
+
+/// Build the DIP-9 identity-authentication derivation path for the
+/// given `(identity_index, key_index)` on `network`.
+///
+/// Path format: `m/9'/COIN_TYPE'/5'/0'/ECDSA'/identity_index'/key_index'`
+/// where `COIN_TYPE'` picks mainnet vs testnet. ECDSA is hardcoded —
+/// this is the only derivation type the discovery scan probes today.
+pub(crate) fn identity_auth_derivation_path(
     network: key_wallet::Network,
     identity_index: u32,
     key_index: u32,
-) -> Result<[u8; 20], PlatformWalletError> {
-    use dashcore::secp256k1::Secp256k1;
-    use dpp::util::hash::ripemd160_sha256;
-    use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey, KeyDerivationType};
-    use key_wallet::dip9::{
-        IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-    };
-
-    let base_path = match network {
+) -> Result<DerivationPath, PlatformWalletError> {
+    let base_path: DerivationPath = match network {
         key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
         _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-    };
+    }
+    .into();
 
     let key_type_index: u32 = KeyDerivationType::ECDSA.into();
 
-    let mut full_path = DerivationPath::from(base_path);
-    full_path = full_path.extend([
+    Ok(base_path.extend([
         ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("Invalid key type index: {}", e))
         })?,
@@ -80,8 +85,28 @@ pub(crate) fn derive_identity_auth_key_hash(
         ChildNumber::from_hardened_idx(key_index).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
         })?,
-    ]);
+    ]))
+}
 
+/// Derive the DIP-9 identity-authentication keypair at
+/// `(identity_index, key_index)` on `network`.
+///
+/// Returns the full derivation path, the extended private key (the
+/// caller can wrap it in [`Zeroizing`] if the raw scalar will escape
+/// the crate), and the compressed `secp256k1::PublicKey` matching
+/// that private key. Kept in sync with the discovery scan and the
+/// FFI-exposed preview so both code paths probe / surface identical
+/// key material.
+pub fn derive_identity_auth_keypair(
+    wallet: &Wallet,
+    network: key_wallet::Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<(DerivationPath, ExtendedPrivKey, PublicKey), PlatformWalletError> {
+    use dashcore::secp256k1::Secp256k1;
+    use key_wallet::bip32::ExtendedPubKey;
+
+    let full_path = identity_auth_derivation_path(network, identity_index, key_index)?;
     let auth_key = wallet
         .derive_extended_private_key(&full_path)
         .map_err(|e| {
@@ -92,8 +117,30 @@ pub(crate) fn derive_identity_auth_key_hash(
         })?;
 
     let secp = Secp256k1::new();
-    let public_key = ExtendedPubKey::from_priv(&secp, &auth_key);
-    let public_key_bytes = public_key.public_key.serialize();
+    let extended_pub = ExtendedPubKey::from_priv(&secp, &auth_key);
+    Ok((full_path, auth_key, extended_pub.public_key))
+}
+
+/// Derive the 20-byte RIPEMD160(SHA256) hash of the public key at the given
+/// identity authentication path.
+///
+/// Path format: `base_path / key_type' / identity_index' / key_index'`
+/// where `base_path` is `m/9'/COIN_TYPE'/5'/0'` (mainnet or testnet).
+///
+/// Thin wrapper over [`derive_identity_auth_keypair`] — shares the
+/// path-building + derivation so the FFI-side preview and the live
+/// scan can never drift from one another.
+pub(crate) fn derive_identity_auth_key_hash(
+    wallet: &Wallet,
+    network: key_wallet::Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<[u8; 20], PlatformWalletError> {
+    use dpp::util::hash::ripemd160_sha256;
+
+    let (_path, _priv, public_key) =
+        derive_identity_auth_keypair(wallet, network, identity_index, key_index)?;
+    let public_key_bytes = public_key.serialize();
     let key_hash = ripemd160_sha256(&public_key_bytes);
 
     let mut key_hash_array = [0u8; 20];
@@ -253,8 +300,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
     /// Create a [`ManagedIdentitySigner`] for a managed identity by its ID.
     ///
-    /// The signer resolves keys from the identity's `key_storage`, falling
-    /// back to the standard DIP-9 derivation when a key is not in storage.
+    /// Looks up the identity's BIP-9 HD index in the manager and binds
+    /// the signer to it. Private keys are derived on demand from the
+    /// wallet seed at the DIP-9 identity authentication path —
+    /// `ManagedIdentity` no longer carries a `KeyStorage`.
     pub async fn signer_for(
         &self,
         identity_id: &Identifier,
@@ -265,13 +314,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 "Wallet info not found in wallet manager".to_string(),
             )
         })?;
-        let managed = info
+        let identity_index = info
             .identity_manager
-            .managed_identity(identity_id)
+            .identity_index(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(managed.signer(
+        Ok(ManagedIdentitySigner::new(
             self.wallet_manager.clone(),
             self.wallet_id,
+            identity_index,
             self.sdk.network,
         ))
     }

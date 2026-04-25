@@ -114,6 +114,10 @@ struct OptionsView: View {
                         Label("Keychain Explorer", systemImage: "key.viewfinder")
                     }
 
+                    NavigationLink(destination: WalletMemoryExplorerView()) {
+                        Label("Wallet Memory Explorer", systemImage: "memorychip")
+                    }
+
                     NavigationLink(destination: ContractsView()) {
                         Label("Browse Contracts", systemImage: "doc.plaintext")
                     }

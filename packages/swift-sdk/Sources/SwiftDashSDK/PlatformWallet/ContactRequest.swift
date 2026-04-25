@@ -31,23 +31,27 @@ public final class ContactRequest: @unchecked Sendable {
     ) throws -> ContactRequest {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiSenderId = identifierToFFI(senderId)
-        let ffiRecipientId = identifierToFFI(recipientId)
 
-        let result = encryptedPublicKey.withUnsafeBytes { keyPtr in
-            contact_request_create(
-                ffiSenderId,
-                ffiRecipientId,
-                senderKeyIndex,
-                recipientKeyIndex,
-                accountReference,
-                keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                encryptedPublicKey.count,
-                coreHeightCreatedAt,
-                createdAt,
-                &handle,
-                &error
-            )
+        // Nest the two `withFFIBytes` closures + `withUnsafeBytes`
+        // so all three buffers stay live for the FFI call window.
+        let result = senderId.withFFIBytes { senderPtr -> PlatformWalletFFIResult in
+            recipientId.withFFIBytes { recipientPtr -> PlatformWalletFFIResult in
+                encryptedPublicKey.withUnsafeBytes { keyPtr -> PlatformWalletFFIResult in
+                    contact_request_create(
+                        senderPtr,
+                        recipientPtr,
+                        senderKeyIndex,
+                        recipientKeyIndex,
+                        accountReference,
+                        keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        encryptedPublicKey.count,
+                        coreHeightCreatedAt,
+                        createdAt,
+                        &handle,
+                        &error
+                    )
+                }
+            }
         }
 
         guard result == Success else {
@@ -59,28 +63,32 @@ public final class ContactRequest: @unchecked Sendable {
 
     /// Get the sender identity ID
     public func getSenderId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = contact_request_get_sender_id(handle, &ffiId, &error)
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            contact_request_get_sender_id(handle, bp.baseAddress!, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI(ffiId)
+        return Data(buf)
     }
 
     /// Get the recipient identity ID
     public func getRecipientId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = contact_request_get_recipient_id(handle, &ffiId, &error)
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            contact_request_get_recipient_id(handle, bp.baseAddress!, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI(ffiId)
+        return Data(buf)
     }
 
     /// Get the sender key index

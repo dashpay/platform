@@ -46,13 +46,23 @@ impl PlatformWalletFFIError {
     }
 }
 
-/// Free error message
+/// Free error message.
+///
+/// Pointer-only signature: callers pass `&mut error` instead of the
+/// struct by value. The previous by-value form straddled the
+/// 16-byte AAPCS64 / Swift-ABI cliff for `@_silgen_name` calls and
+/// was the kind of code we removed in the EXC_BAD_ACCESS sweep.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_ffi_error_free(error: PlatformWalletFFIError) {
+pub unsafe extern "C" fn platform_wallet_ffi_error_free(error: *mut PlatformWalletFFIError) {
+    if error.is_null() {
+        return;
+    }
+    let error = unsafe { &mut *error };
     if !error.message.is_null() {
         unsafe {
             let _ = CString::from_raw(error.message);
         }
+        error.message = std::ptr::null_mut();
     }
 }
 
@@ -74,7 +84,7 @@ mod tests {
     #[test]
     fn test_error_creation() {
         unsafe {
-            let error = PlatformWalletFFIError::new(
+            let mut error = PlatformWalletFFIError::new(
                 PlatformWalletFFIResult::ErrorInvalidHandle,
                 "Test error",
             );
@@ -82,7 +92,8 @@ mod tests {
             assert!(!error.message.is_null());
 
             // Clean up
-            platform_wallet_ffi_error_free(error);
+            platform_wallet_ffi_error_free(&mut error);
+            assert!(error.message.is_null());
         }
     }
 
@@ -96,9 +107,13 @@ mod tests {
     #[test]
     fn test_error_free() {
         unsafe {
-            let error = PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUnknown, "Test");
-            platform_wallet_ffi_error_free(error);
-            // Should not crash
+            let mut error =
+                PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUnknown, "Test");
+            platform_wallet_ffi_error_free(&mut error);
+            // Should not crash; message reset to null.
+            assert!(error.message.is_null());
+            // Calling again is a no-op.
+            platform_wallet_ffi_error_free(&mut error);
         }
     }
 }

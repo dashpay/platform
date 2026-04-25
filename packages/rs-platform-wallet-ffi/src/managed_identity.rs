@@ -55,11 +55,11 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     PlatformWalletFFIResult::Success
 }
 
-/// Get the identity ID
+/// Get the identity ID into a 32-byte out-buffer.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_get_id(
     identity_handle: Handle,
-    out_id: *mut IdentifierBytes,
+    out_id: *mut u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if out_id.is_null() {
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn managed_identity_get_id(
 
     MANAGED_IDENTITY_STORAGE
         .with_item(identity_handle, |identity| {
-            unsafe { *out_id = identity.identity.id().into() };
+            unsafe { write_identifier(out_id, &identity.identity.id()) };
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -129,7 +129,13 @@ pub unsafe extern "C" fn managed_identity_get_balance(
         })
 }
 
-/// Get the label
+/// Get the label.
+///
+/// `ManagedIdentity` no longer carries a `label` field — labels live
+/// on Swift `PersistentIdentity.alias` instead. This entry point is
+/// retained as a stub returning `null` so the existing Swift wrapper
+/// keeps linking; callers should read `PersistentIdentity.alias`
+/// directly via SwiftData.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_get_label(
     identity_handle: Handle,
@@ -149,22 +155,9 @@ pub unsafe extern "C" fn managed_identity_get_label(
     }
 
     MANAGED_IDENTITY_STORAGE
-        .with_item(identity_handle, |identity| {
-            if let Some(label) = &identity.label {
-                match std::ffi::CString::new(label.clone()) {
-                    Ok(c_str) => {
-                        unsafe { *out_label = c_str.into_raw() };
-                        PlatformWalletFFIResult::Success
-                    }
-                    Err(_) => {
-                        unsafe { *out_label = std::ptr::null_mut() };
-                        PlatformWalletFFIResult::ErrorUtf8Conversion
-                    }
-                }
-            } else {
-                unsafe { *out_label = std::ptr::null_mut() };
-                PlatformWalletFFIResult::Success
-            }
+        .with_item(identity_handle, |_identity| {
+            unsafe { *out_label = std::ptr::null_mut() };
+            PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
             if !out_error.is_null() {
@@ -179,35 +172,20 @@ pub unsafe extern "C" fn managed_identity_get_label(
         })
 }
 
-/// Set the label
+/// Set the label — no-op stub.
+///
+/// `ManagedIdentity` no longer carries a `label` field — Swift writes
+/// labels directly to `PersistentIdentity.alias`. Existing call sites
+/// see a `Success` return so they don't error; the Swift handler
+/// updates SwiftData itself.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_set_label(
     identity_handle: Handle,
-    label: *const c_char,
+    _label: *const c_char,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let label_str = if label.is_null() {
-        None
-    } else {
-        unsafe {
-            match std::ffi::CStr::from_ptr(label).to_str() {
-                Ok(s) => Some(s.to_string()),
-                Err(_) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            "Invalid UTF-8 in label",
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                }
-            }
-        }
-    };
-
     MANAGED_IDENTITY_STORAGE
-        .with_item_mut(identity_handle, |identity| {
-            identity.label = label_str;
+        .with_item_mut(identity_handle, |_identity| {
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -272,16 +250,37 @@ pub unsafe extern "C" fn managed_identity_get_last_updated_balance_block_time(
         })
 }
 
-/// Set last updated balance block time
+/// Set last updated balance block time.
+///
+/// `block_time` is a pointer to a `BlockTime` struct (24 bytes on
+/// 64-bit), passed by reference to dodge the Swift / AAPCS64 ABI
+/// mismatch that bites every >16-byte by-value struct.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_set_last_updated_balance_block_time(
     identity_handle: Handle,
-    block_time: BlockTime,
+    block_time: *const BlockTime,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
+    if block_time.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "block_time is null",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    let bt = unsafe { &*block_time };
+    let owned: platform_wallet::BlockTime = platform_wallet::BlockTime {
+        height: bt.height,
+        core_height: bt.core_height,
+        timestamp: bt.timestamp,
+    };
     MANAGED_IDENTITY_STORAGE
         .with_item_mut(identity_handle, |identity| {
-            identity.last_updated_balance_block_time = Some(block_time.into());
+            identity.last_updated_balance_block_time = Some(owned);
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -585,7 +584,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_and_set_label() {
+    fn test_get_and_set_label_stub_returns_null() {
+        // `ManagedIdentity` no longer has a label field — both
+        // entry points are no-op stubs (set succeeds without touching
+        // anything; get always returns null). Verify the stubs link
+        // and behave consistently.
         unsafe {
             let identity = create_test_identity();
             let managed = platform_wallet::ManagedIdentity::new(identity, 0);
@@ -600,13 +603,9 @@ mod tests {
             let mut label_ptr: *mut c_char = std::ptr::null_mut();
             let result = managed_identity_get_label(handle, &mut label_ptr, &mut error);
             assert_eq!(result, PlatformWalletFFIResult::Success);
-            assert!(!label_ptr.is_null());
-
-            let retrieved_label = std::ffi::CStr::from_ptr(label_ptr).to_str().unwrap();
-            assert_eq!(retrieved_label, "Test Identity");
+            assert!(label_ptr.is_null());
 
             // Cleanup
-            platform_wallet_string_free(label_ptr);
             managed_identity_destroy(handle);
         }
     }
@@ -646,7 +645,9 @@ mod tests {
 
             // Set block time
             let result = managed_identity_set_last_updated_balance_block_time(
-                handle, block_time, &mut error,
+                handle,
+                &block_time,
+                &mut error,
             );
             assert_eq!(result, PlatformWalletFFIResult::Success);
 

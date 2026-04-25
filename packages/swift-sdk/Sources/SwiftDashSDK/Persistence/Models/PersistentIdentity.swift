@@ -28,7 +28,7 @@ public final class PersistentIdentity {
     public var lastSyncedAt: Date?
 
     // MARK: - Network
-    public var network: String
+    public var network: AppNetwork
 
     // MARK: - Wallet Association
     //
@@ -69,7 +69,7 @@ public final class PersistentIdentity {
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
-        network: String = "testnet",
+        network: AppNetwork,
         identityIndex: UInt32 = 0
     ) {
         self.identityId = identityId
@@ -197,13 +197,13 @@ extension PersistentIdentity {
         }
     }
 
-    public static func predicate(network: String) -> Predicate<PersistentIdentity> {
+    public static func predicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
             identity.network == network
         }
     }
 
-    public static func localIdentitiesPredicate(network: String) -> Predicate<PersistentIdentity> {
+    public static func localIdentitiesPredicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
             identity.isLocal == true && identity.network == network
         }

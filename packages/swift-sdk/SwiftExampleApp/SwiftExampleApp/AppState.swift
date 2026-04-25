@@ -48,9 +48,11 @@ class AppState: ObservableObject {
     private var modelContext: ModelContext?
 
     init() {
-        // Load saved network preference or use default
-        if let savedNetwork = UserDefaults.standard.string(forKey: "currentNetwork"),
-           let network = AppNetwork(rawValue: savedNetwork) {
+        // Load saved network preference or use default. Read via
+        // `object(forKey:)` and cast — `integer(forKey:)` returns 0
+        // for missing keys, which would silently pin to mainnet.
+        if let rawInt = UserDefaults.standard.object(forKey: "currentNetwork") as? Int,
+           let network = AppNetwork(rawValue: rawInt) {
             self.currentNetwork = network
         } else {
             self.currentNetwork = .testnet

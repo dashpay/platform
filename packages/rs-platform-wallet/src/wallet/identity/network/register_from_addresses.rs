@@ -112,6 +112,7 @@ impl IdentityWallet {
             info.identity_manager.add_identity(
                 identity.clone(),
                 identity_index,
+                self.wallet_id,
                 &self.persister,
             )?;
         }

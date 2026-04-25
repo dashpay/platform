@@ -15,8 +15,8 @@ lazy_static::lazy_static! {
 /// Create a new contact request
 #[no_mangle]
 pub unsafe extern "C" fn contact_request_create(
-    sender_id: IdentifierBytes,
-    recipient_id: IdentifierBytes,
+    sender_id: *const u8,
+    recipient_id: *const u8,
     sender_key_index: u32,
     recipient_key_index: u32,
     account_reference: u32,
@@ -39,7 +39,7 @@ pub unsafe extern "C" fn contact_request_create(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let sender = match sender_id.to_identifier() {
+    let sender = match unsafe { read_identifier(sender_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn contact_request_create(
         }
     };
 
-    let recipient = match recipient_id.to_identifier() {
+    let recipient = match unsafe { read_identifier(recipient_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn contact_request_create(
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
     identity_handle: Handle,
-    recipient_id: IdentifierBytes,
+    recipient_id: *const u8,
     out_request_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match recipient_id.to_identifier() {
+    let id = match unsafe { read_identifier(recipient_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -160,7 +160,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
     identity_handle: Handle,
-    sender_id: IdentifierBytes,
+    sender_id: *const u8,
     out_request_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match sender_id.to_identifier() {
+    let id = match unsafe { read_identifier(sender_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -222,11 +222,11 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
         })
 }
 
-/// Get sender ID from contact request
+/// Get sender ID from contact request into a 32-byte out-buffer.
 #[no_mangle]
 pub unsafe extern "C" fn contact_request_get_sender_id(
     request_handle: Handle,
-    out_id: *mut IdentifierBytes,
+    out_id: *mut u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if out_id.is_null() {
@@ -243,7 +243,7 @@ pub unsafe extern "C" fn contact_request_get_sender_id(
 
     CONTACT_REQUEST_STORAGE
         .with_item(request_handle, |request| {
-            unsafe { *out_id = request.sender_id.into() };
+            unsafe { write_identifier(out_id, &request.sender_id) };
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -259,11 +259,11 @@ pub unsafe extern "C" fn contact_request_get_sender_id(
         })
 }
 
-/// Get recipient ID from contact request
+/// Get recipient ID from contact request into a 32-byte out-buffer.
 #[no_mangle]
 pub unsafe extern "C" fn contact_request_get_recipient_id(
     request_handle: Handle,
-    out_id: *mut IdentifierBytes,
+    out_id: *mut u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if out_id.is_null() {
@@ -280,7 +280,7 @@ pub unsafe extern "C" fn contact_request_get_recipient_id(
 
     CONTACT_REQUEST_STORAGE
         .with_item(request_handle, |request| {
-            unsafe { *out_id = request.recipient_id.into() };
+            unsafe { write_identifier(out_id, &request.recipient_id) };
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -526,15 +526,15 @@ mod tests {
             let mut error = PlatformWalletFFIError::success();
 
             // Test sender ID
-            let mut out_id = IdentifierBytes { bytes: [0u8; 32] };
-            let result = contact_request_get_sender_id(handle, &mut out_id, &mut error);
+            let mut out_id = [0u8; 32];
+            let result = contact_request_get_sender_id(handle, out_id.as_mut_ptr(), &mut error);
             assert_eq!(result, PlatformWalletFFIResult::Success);
-            assert_eq!(out_id.bytes, [1u8; 32]);
+            assert_eq!(out_id, [1u8; 32]);
 
             // Test recipient ID
-            let result = contact_request_get_recipient_id(handle, &mut out_id, &mut error);
+            let result = contact_request_get_recipient_id(handle, out_id.as_mut_ptr(), &mut error);
             assert_eq!(result, PlatformWalletFFIResult::Success);
-            assert_eq!(out_id.bytes, [2u8; 32]);
+            assert_eq!(out_id, [2u8; 32]);
 
             // Test sender key index
             let mut sender_key_idx = 0u32;

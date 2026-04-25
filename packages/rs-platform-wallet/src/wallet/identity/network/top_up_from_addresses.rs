@@ -48,7 +48,7 @@ impl IdentityWallet {
             let manager = &info.identity_manager;
             manager
                 .identity(identity_id)
-                .cloned()
+                .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 

@@ -31,6 +31,10 @@ bincode = { version = "=2.0.1" }
 # Hex used for error diagnostics that include a wallet_id.
 hex = "0.4"
 
+# Used for `IdentityManagerStartState.{identities, watched_identities}`
+# IndexMaps when reconstructing the identity manager during load.
+indexmap = "2.0"
+
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }
 

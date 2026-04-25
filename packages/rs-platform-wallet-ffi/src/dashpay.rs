@@ -64,7 +64,7 @@ use crate::types::*;
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_get_managed_identity(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_managed_identity_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
         }
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -198,15 +198,26 @@ impl ContactRequestHandleArray {
 /// fields off them via the existing `contact_request_get_*` FFI.
 /// Use [`crate::contact_request_destroy`] to release a handle when
 /// done with it.
+///
+/// Pointer-only signature: by-value `ContactRequestHandleArray`
+/// (a 16-byte aggregate) sat at the AAPCS64 / Swift-ABI cliff.
+/// Pass `&mut array`; on return the buffer is freed and the
+/// fields are reset to a safe empty state so a double-free no-ops.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_contact_request_handle_array_free(
-    array: ContactRequestHandleArray,
+    array: *mut ContactRequestHandleArray,
 ) {
+    if array.is_null() {
+        return;
+    }
+    let array = unsafe { &mut *array };
     if array.handles.is_null() || array.count == 0 {
         return;
     }
     let slice = unsafe { std::slice::from_raw_parts_mut(array.handles, array.count) };
     let _ = unsafe { Box::from_raw(slice as *mut [Handle]) };
+    array.handles = std::ptr::null_mut();
+    array.count = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,8 +240,8 @@ pub unsafe extern "C" fn platform_wallet_contact_request_handle_array_free(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_send_contact_request(
     wallet_handle: Handle,
-    sender_identity_id: IdentifierBytes,
-    recipient_identity_id: IdentifierBytes,
+    sender_identity_id: *const u8,
+    recipient_identity_id: *const u8,
     account_label: *const c_char,
     auto_accept_proof: *const u8,
     auto_accept_proof_len: usize,
@@ -249,7 +260,7 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let sender = match sender_identity_id.to_identifier() {
+    let sender = match unsafe { read_identifier(sender_identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -263,7 +274,7 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request(
             return PlatformWalletFFIResult::ErrorInvalidIdentifier;
         }
     };
-    let recipient = match recipient_identity_id.to_identifier() {
+    let recipient = match unsafe { read_identifier(recipient_identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -507,11 +518,11 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_reject_contact_request(
     wallet_handle: Handle,
-    our_identity_id: IdentifierBytes,
-    contact_identity_id: IdentifierBytes,
+    our_identity_id: *const u8,
+    contact_identity_id: *const u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let our_id = match our_identity_id.to_identifier() {
+    let our_id = match unsafe { read_identifier(our_identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -525,7 +536,7 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
             return PlatformWalletFFIResult::ErrorInvalidIdentifier;
         }
     };
-    let contact_id = match contact_identity_id.to_identifier() {
+    let contact_id = match unsafe { read_identifier(contact_identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -585,7 +596,7 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_array: *mut ContactRequestHandleArray,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -600,7 +611,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
         }
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -672,8 +683,8 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     wallet_handle: Handle,
-    from_identity_id: IdentifierBytes,
-    to_contact_identity_id: IdentifierBytes,
+    from_identity_id: *const u8,
+    to_contact_identity_id: *const u8,
     amount_duffs: u64,
     memo: *const c_char,
     out_txid: *mut [u8; 32],
@@ -691,7 +702,7 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let from_id = match from_identity_id.to_identifier() {
+    let from_id = match unsafe { read_identifier(from_identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -705,7 +716,7 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
             return PlatformWalletFFIResult::ErrorInvalidIdentifier;
         }
     };
-    let to_id = match to_contact_identity_id.to_identifier() {
+    let to_id = match unsafe { read_identifier(to_contact_identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {

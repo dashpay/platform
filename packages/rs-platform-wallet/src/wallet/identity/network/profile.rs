@@ -30,7 +30,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            info.identity_manager.identities().keys().copied().collect()
+            info.identity_manager
+                .all_identities()
+                .into_iter()
+                .map(|i| i.id())
+                .collect()
         };
 
         if identity_ids.is_empty() {
@@ -252,7 +256,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let idx = managed.identity_index;
+            // Profile creation derives a signing key from the identity's
+            // HD slot — only meaningful for wallet-owned identities. The
+            // out-of-wallet case has no derivation context, so reject it
+            // here rather than letting the signer fail later with a
+            // confusing error.
+            let idx = managed
+                .identity_index
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
             let key = managed
                 .identity
                 .public_keys()
@@ -465,7 +476,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         "Identity has no authentication key for signing".to_string(),
                     )
                 })?;
-            (managed.identity_index, key)
+            // Profile update path is wallet-owned-only — same guard as
+            // profile creation above; surface the absent index rather
+            // than silently coercing.
+            let idx = managed
+                .identity_index
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
+            (idx, key)
         };
 
         // 6. Build the document with the existing ID and bumped revision.

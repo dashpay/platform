@@ -172,14 +172,26 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
 
 /// Release a [`DiscoveredIdentityIdsFFI`] previously populated by
 /// [`platform_wallet_discover_identities`]. Safe to call on a
-/// zero/null struct (no-op).
+/// zero/null struct or a null outer pointer (no-op).
+///
+/// Pointer-only signature: `DiscoveredIdentityIdsFFI` is a 16-byte
+/// aggregate at the AAPCS64 / Swift cliff, so by-value isn't safe
+/// across `@_silgen_name`. Caller hands ownership back via
+/// `&mut found`; on return the buffer is freed and the fields are
+/// reset so a double-free no-ops.
 ///
 /// # Safety
 /// `ids` must have been handed out by
 /// [`platform_wallet_discover_identities`] and must not be freed
 /// twice.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_discover_identities_free(found: DiscoveredIdentityIdsFFI) {
+pub unsafe extern "C" fn platform_wallet_discover_identities_free(
+    found: *mut DiscoveredIdentityIdsFFI,
+) {
+    if found.is_null() {
+        return;
+    }
+    let found = unsafe { &mut *found };
     if found.ids.is_null() || found.count == 0 {
         return;
     }
@@ -187,4 +199,6 @@ pub unsafe extern "C" fn platform_wallet_discover_identities_free(found: Discove
         let slice = std::slice::from_raw_parts_mut(found.ids, found.count);
         drop(Box::from_raw(slice as *mut [[u8; 32]]));
     }
+    found.ids = std::ptr::null_mut();
+    found.count = 0;
 }
