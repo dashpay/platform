@@ -330,7 +330,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         if keyType == Self.platformAddressHashKeyType {
             // Resolve the address row first (synchronous lookup);
             // mnemonic check is gated on having the wallet id.
-            guard let resolved = resolvePlatformAddressContext(addressHash: publicKey) else {
+            // For `canSign` purposes, both "no row" and "corrupt
+            // row with empty path" mean the same thing: we can't
+            // sign for this address. The richer signing path
+            // (`signPlatformAddressOnDemand`) distinguishes them
+            // for diagnostic reasons.
+            guard case .found(let resolved) =
+                resolvePlatformAddressContext(addressHash: publicKey)
+            else {
                 return false
             }
             // `WalletStorage.retrieveMnemonic` throws on miss;
@@ -372,21 +379,26 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         let derivationPath: String
     }
 
+    /// Result of a `resolvePlatformAddressContext` lookup.
+    /// Distinguishes "no row matched" (the caller surfaces this as
+    /// `.platformAddressNotFound` — e.g. address pool not yet
+    /// synced) from "row exists but its `derivationPath` is empty"
+    /// (a corrupt persister write — surfaced as
+    /// `.derivationPathMissing` so the failure is diagnosable).
+    fileprivate enum PlatformAddressResolution {
+        case found(PlatformAddressContext)
+        case noMatch
+        case rowMatchedButPathEmpty
+    }
+
     /// SwiftData lookup: 20-byte address hash →
     /// `(walletId, derivationPath)`. Pinned to the signer's serial
     /// queue + a per-call private `ModelContext` so the fetch is safe
     /// off the main actor.
-    ///
-    /// Returns `nil` for two distinct reasons (collapsed for the
-    /// caller's convenience, since both end the request the same
-    /// way): no row matched the hash, OR the matched row had an
-    /// empty derivation path (which would indicate a corrupt
-    /// persister write — `PersistentPlatformAddress.derivationPath`
-    /// is non-optional and should always carry a DIP-17 path).
     fileprivate func resolvePlatformAddressContext(
         addressHash: Data
-    ) -> PlatformAddressContext? {
-        var resolved: PlatformAddressContext? = nil
+    ) -> PlatformAddressResolution {
+        var resolved: PlatformAddressResolution = .noMatch
         queue.sync {
             let context = ModelContext(self.modelContainer)
             let descriptor = FetchDescriptor<PersistentPlatformAddress>(
@@ -395,18 +407,23 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 }
             )
             guard let row = try? context.fetch(descriptor).first else {
+                resolved = .noMatch
                 return
             }
-            // Empty path = corrupt write; treat as unresolvable so
-            // the caller surfaces a precise error rather than handing
-            // an empty path to the FFI.
+            // Empty path = corrupt persister write
+            // (`PersistentPlatformAddress.derivationPath` is
+            // non-optional and should always carry a DIP-17 path).
+            // Surface as a distinct case so the caller can map to
+            // `.derivationPathMissing` rather than a misleading
+            // `.platformAddressNotFound`.
             guard !row.derivationPath.isEmpty else {
+                resolved = .rowMatchedButPathEmpty
                 return
             }
-            resolved = PlatformAddressContext(
+            resolved = .found(PlatformAddressContext(
                 walletId: row.walletId,
                 derivationPath: row.derivationPath
-            )
+            ))
         }
         return resolved
     }
@@ -435,9 +452,19 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // 1. Look up `(walletId, derivationPath)` on a private
         //    background ModelContext (off the main actor). Mnemonic
         //    fetch is now Rust's job (via the resolver callback),
-        //    not Swift's.
-        guard let ctx = resolvePlatformAddressContext(addressHash: addressHash) else {
+        //    not Swift's. The two failure modes — "no row matched"
+        //    and "row exists but path is empty" — surface as
+        //    distinct typed errors so a corrupt persister write is
+        //    diagnosable rather than masquerading as an unsynced
+        //    address pool.
+        let ctx: PlatformAddressContext
+        switch resolvePlatformAddressContext(addressHash: addressHash) {
+        case .found(let resolved):
+            ctx = resolved
+        case .noMatch:
             return .failure(.platformAddressNotFound(addressHashHex: hashHex))
+        case .rowMatchedButPathEmpty:
+            return .failure(.derivationPathMissing(addressHashHex: hashHex))
         }
 
         // Validate the wallet-id length BEFORE shipping the

@@ -772,12 +772,20 @@ extension ManagedPlatformWallet {
         pubkeys.reserveCapacity(out.count)
         for i in 0..<out.count {
             let row = base[i]
-            let pubData: Data
-            if let pubPtr = row.public_key, row.public_key_len > 0 {
-                pubData = Data(bytes: pubPtr, count: row.public_key_len)
-            } else {
-                pubData = Data()
+            // Empty pubkey rows are an FFI contract violation —
+            // the persist callback already accepted a real pubkey
+            // for this row, so the parallel out_pubkeys array
+            // having `nil` / zero-length here means something
+            // dropped between the persister fire and the row
+            // serialization. Fail fast with the offending row
+            // index rather than silently constructing an
+            // unusable `IdentityPubkey` with empty bytes.
+            guard let pubPtr = row.public_key, row.public_key_len > 0 else {
+                throw PlatformWalletError.walletOperation(
+                    "derive_and_persist_identity_keys returned an empty public key for row \(i)"
+                )
             }
+            let pubData = Data(bytes: pubPtr, count: row.public_key_len)
             let meta = captured[i]
             guard
                 let keyType = KeyType(rawValue: meta.keyType),
