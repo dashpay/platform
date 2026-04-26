@@ -1,7 +1,64 @@
 import DashSDKFFI
 import Foundation
+import Security
 
 // MARK: - MnemonicResolver
+
+private func scrubBytes(_ bytes: inout [UInt8]) {
+    bytes.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        memset_s(base, buffer.count, 0, buffer.count)
+    }
+}
+
+/// Best-effort in-memory obfuscation for mnemonic UTF-8 bytes while
+/// they sit on the Swift heap between the Keychain read and the final
+/// copy into Rust's `Zeroizing` buffer.
+private final class MaskedMnemonicUTF8 {
+    private var maskedBytes: [UInt8]
+    private var maskBytes: [UInt8]
+
+    init(plaintextUTF8Bytes: Data) throws {
+        var plaintext = [UInt8](plaintextUTF8Bytes)
+        guard !plaintext.isEmpty else {
+            throw WalletStorageError.mnemonicNotFound
+        }
+
+        var localMask = [UInt8](repeating: 0, count: plaintext.count)
+        let randomStatus = localMask.withUnsafeMutableBufferPointer { buffer -> Int32 in
+            guard let base = buffer.baseAddress else { return errSecSuccess }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, base)
+        }
+        guard randomStatus == errSecSuccess else {
+            scrubBytes(&plaintext)
+            scrubBytes(&localMask)
+            throw WalletStorageError.keychainError(randomStatus)
+        }
+
+        var localMasked = [UInt8](repeating: 0, count: plaintext.count)
+        for i in plaintext.indices {
+            localMasked[i] = plaintext[i] ^ localMask[i]
+        }
+
+        scrubBytes(&plaintext)
+        self.maskedBytes = localMasked
+        self.maskBytes = localMask
+    }
+
+    deinit {
+        scrubBytes(&maskedBytes)
+        scrubBytes(&maskBytes)
+    }
+
+    func withDeobfuscatedBytes<R>(_ body: (UnsafeBufferPointer<UInt8>) -> R) -> R {
+        var plaintext = [UInt8](repeating: 0, count: maskedBytes.count)
+        for i in maskedBytes.indices {
+            plaintext[i] = maskedBytes[i] ^ maskBytes[i]
+        }
+        defer { scrubBytes(&plaintext) }
+        return plaintext.withUnsafeBufferPointer(body)
+    }
+}
 
 /// Swift bridge backing the Rust-side `MnemonicResolverHandle`.
 ///
@@ -12,9 +69,9 @@ import Foundation
 /// into Swift via this resolver to fetch the BIP-39 mnemonic for
 /// the wallet whose identity keys it's deriving. The mnemonic is
 /// copied directly into a Rust-owned `Zeroizing` stack buffer; it
-/// never round-trips back to Swift after this single read, and
-/// the Swift `String` from `WalletStorage.retrieveMnemonic` falls
-/// out of scope at the end of the trampoline.
+/// never round-trips back to Swift after this single read. On the
+/// Swift side the bytes are masked while idle, then deobfuscated only
+/// long enough to copy into the FFI output buffer.
 ///
 /// # Lifetime contract
 ///
@@ -85,9 +142,9 @@ public final class MnemonicResolver: @unchecked Sendable {
         outCapacity: Int,
         outLen: UnsafeMutablePointer<Int>
     ) -> MnemonicResolverResult {
-        let mnemonic: String
+        let mnemonicUTF8Bytes: Data
         do {
-            mnemonic = try storage.retrieveMnemonic(for: walletId)
+            mnemonicUTF8Bytes = try storage.retrieveMnemonicUTF8Bytes(for: walletId)
         } catch WalletStorageError.mnemonicNotFound {
             // Distinct "this wallet has no stored mnemonic" case
             // — Rust surfaces this as the recoverable
@@ -105,18 +162,28 @@ public final class MnemonicResolver: @unchecked Sendable {
             return .other
         }
 
-        // `withCString` materializes a null-terminated UTF-8 byte
-        // sequence whose lifetime ends with the closure. We copy
-        // (excluding the trailing NUL) into the Rust-owned
-        // buffer; the source bytes drop with the Swift `String`
-        // at the end of `resolve`.
-        return mnemonic.withCString { srcPtr -> MnemonicResolverResult in
-            let mnemonicLen = strlen(srcPtr)
+        let maskedMnemonic: MaskedMnemonicUTF8
+        do {
+            maskedMnemonic = try MaskedMnemonicUTF8(plaintextUTF8Bytes: mnemonicUTF8Bytes)
+        } catch {
+            return .other
+        }
+
+        return maskedMnemonic.withDeobfuscatedBytes { bytes -> MnemonicResolverResult in
+            let mnemonicLen = bytes.count
             // Need room for the data plus a trailing NUL byte.
             guard mnemonicLen + 1 <= outCapacity else {
                 return .bufferTooSmall
             }
-            outBuffer.update(from: srcPtr, count: mnemonicLen)
+            guard let srcBase = bytes.baseAddress else {
+                return .other
+            }
+            if bytes.contains(0) {
+                return .other
+            }
+            srcBase.withMemoryRebound(to: CChar.self, capacity: mnemonicLen) { srcPtr in
+                outBuffer.update(from: srcPtr, count: mnemonicLen)
+            }
             // Explicit NUL terminator — defensive, the Rust side
             // works off `out_len` not strlen but matching the
             // wire contract is cheap insurance.
@@ -263,14 +330,13 @@ public final class IdentityKeyPersister: @unchecked Sendable {
         let publicKeyHashHex = publicKeyHashData
             .map { String(format: "%02x", $0) }
             .joined()
-        // The 32 raw private bytes have to enter Swift `Data` to
-        // hand to `KeychainManager.storeIdentityPrivateKey`, which
-        // takes `Data` (Keychain APIs are iOS-only and Rust can't
-        // call SecItemAdd directly). Swift `Data` cannot be
-        // securely zeroed, so we keep this allocation as the only
-        // place the secret bytes touch the Swift heap and let it
-        // drop with the function frame as soon as Keychain has
-        // taken its copy.
+        // The 32 raw private bytes have to enter Swift `Data` to hand
+        // to `KeychainManager.storeIdentityPrivateKey`, which takes
+        // `Data` (Keychain APIs are iOS-only and Rust can't call
+        // `SecItemAdd` directly). Swift `Data` cannot be securely
+        // zeroed, so we keep this allocation as the only place the
+        // secret bytes touch the Swift heap and let it drop with the
+        // function frame as soon as Keychain has taken its copy.
         //
         // Earlier revisions also hex-encoded the private bytes
         // into a `String` to call

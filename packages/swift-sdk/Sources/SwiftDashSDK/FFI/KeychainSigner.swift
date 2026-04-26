@@ -351,9 +351,9 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             else {
                 return false
             }
-            // `WalletStorage.retrieveMnemonic` throws on miss;
-            // a successful return is sufficient to confirm presence.
-            return (try? WalletStorage().retrieveMnemonic(for: resolved.walletId)) != nil
+            // Existence check only — do NOT materialize the mnemonic
+            // bytes on the preflight path.
+            return WalletStorage().hasMnemonic(for: resolved.walletId)
         }
 
         var found = false
