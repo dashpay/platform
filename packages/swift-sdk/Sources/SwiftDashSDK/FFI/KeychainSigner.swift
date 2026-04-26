@@ -139,6 +139,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// constructed there.
     private let queue: DispatchQueue
 
+    /// Resolver handle the platform-address signing path uses to
+    /// fetch the wallet's mnemonic out of Keychain. The mnemonic
+    /// flows IN to a Rust-owned `Zeroizing` buffer through the
+    /// resolver's `resolve` callback; it never lives in a Swift
+    /// `String` outside the trampoline's stack frame. Per
+    /// swift-sdk/CLAUDE.md "no mnemonic round-tripping".
+    private let mnemonicResolver: MnemonicResolver
+
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
     private var handlePtr: UnsafeMutablePointer<SignerHandle>!
@@ -162,6 +170,10 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         self.network = network
         self.keychain = keychain
         self.queue = DispatchQueue(label: "org.dashfoundation.swiftdashsdk.KeychainSigner")
+        // One resolver per signer instance. Cheap to keep around —
+        // it's just an opaque handle + a Swift-side `WalletStorage`
+        // reference. Used by the platform-address signing branch.
+        self.mnemonicResolver = MnemonicResolver()
 
         // Hand Rust an opaque `+1`-retained pointer to self. The
         // matching release happens in `keychainSignerDestroyTrampoline`
@@ -376,12 +388,19 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     }
 
     /// One-shot derive-and-sign for the `key_type == 0xFF` branch.
-    /// Pulls mnemonic from Keychain + derivation path from SwiftData,
-    /// then calls `dash_sdk_sign_with_mnemonic_and_path` which
-    /// derives the ECDSA key inside Rust, signs `data` with it, and
-    /// zeroes both the seed and the derived key buffer before
-    /// returning. The derived bytes never cross the FFI back to
-    /// Swift — only the signature does.
+    /// Resolves the SwiftData `(walletId, derivationPath)` row and
+    /// hands the Rust `dash_sdk_sign_with_mnemonic_resolver_and_path`
+    /// FFI the wallet id + the resolver handle. The Rust side
+    /// fires the resolver callback at the moment the mnemonic is
+    /// needed — the mnemonic is copied into a Rust-owned
+    /// `Zeroizing` buffer and the derived ECDSA key bytes never
+    /// cross the FFI back to Swift. Only the signature does.
+    ///
+    /// Per swift-sdk/CLAUDE.md "no mnemonic round-tripping": the
+    /// Swift caller does NOT pull the mnemonic into a `String`
+    /// and hand it to a stateless FFI; the resolver callback is
+    /// the only place the mnemonic crosses any boundary, and its
+    /// lifetime is bounded by the trampoline's stack frame.
     fileprivate func signPlatformAddressOnDemand(
         addressHash: Data,
         keyType: UInt8,
@@ -390,35 +409,20 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         let hashHex = addressHash.map { String(format: "%02x", $0) }.joined()
 
         // 1. Look up `(walletId, derivationPath)` on a private
-        //    background ModelContext (off the main actor).
+        //    background ModelContext (off the main actor). Mnemonic
+        //    fetch is now Rust's job (via the resolver callback),
+        //    not Swift's.
         guard let ctx = resolvePlatformAddressContext(addressHash: addressHash) else {
             return .failure(.platformAddressNotFound(addressHashHex: hashHex))
         }
 
-        // 2. Pull mnemonic from Keychain. `WalletStorage` throws on
-        //    miss; map to our typed error so the trampoline can
-        //    surface a precise message.
-        let mnemonic: String
-        do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: ctx.walletId)
-        } catch {
-            let walletHex = ctx.walletId.map { String(format: "%02x", $0) }.joined()
-            return .failure(.mnemonicMissing(walletIdHex: walletHex))
-        }
-
-        // 3. One-shot FFI: derive → sign → zeroize.
-        //    Buffer is sized generously (128B) — ECDSA compact
-        //    recoverable signatures are 65 bytes; the cap leaves
-        //    room for any future signature-shape additions through
-        //    this entry point without an ABI change.
+        // Buffer sized generously (128B) — ECDSA compact-recoverable
+        // signatures are 65 bytes; the cap leaves room for future
+        // signature-shape additions without an ABI change. Defer-
+        // scrubbed below regardless of success/failure.
         var sigBuf = [UInt8](repeating: 0, count: 128)
         var sigLen: Int = 0
         var errTag: UInt8 = 0
-
-        // Defensive scrub of the local `sigBuf` regardless of
-        // success/failure. Swift can't truly zero a `String`, but
-        // `mnemonic` falls out of scope at function exit which is
-        // the best we can do without a native-Swift mnemonic type.
         defer {
             sigBuf.withUnsafeMutableBufferPointer { ptr in
                 if let base = ptr.baseAddress {
@@ -431,25 +435,24 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // `0xFF` value the trampoline received is the dispatch tag
         // (`platformAddressHashKeyType`), used only to route to this
         // branch — it is NOT a `KeyType` discriminant. Hardcode the
-        // real key type here; passing the dispatch tag through to
-        // `dash_sdk_sign_with_mnemonic_and_path` (which is ECDSA-only)
-        // would fail with `SIGN_WITH_MNEMONIC_ERR_UNSUPPORTED_KEY_TYPE`.
+        // real key type here.
         let ecdsaSecp256k1KeyType: UInt8 = 0
-        let rc = mnemonic.withCString { mPtr -> Int32 in
-            ctx.derivationPath.withCString { pPtr -> Int32 in
-                data.withUnsafeBytes { dataRaw -> Int32 in
-                    sigBuf.withUnsafeMutableBufferPointer { bufPtr -> Int32 in
+        let rc = ctx.walletId.withUnsafeBytes { walletBytes -> Int32 in
+            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress
+            return ctx.derivationPath.withCString { pPtr -> Int32 in
+                return data.withUnsafeBytes { dataRaw -> Int32 in
+                    return sigBuf.withUnsafeMutableBufferPointer { bufPtr -> Int32 in
                         let dataBase = dataRaw.bindMemory(to: UInt8.self).baseAddress
-                        return dash_sdk_sign_with_mnemonic_and_path(
-                            mPtr,
-                            nil, // no BIP-39 passphrase yet (matches the rest of the SDK)
+                        return dash_sdk_sign_with_mnemonic_resolver_and_path(
+                            self.mnemonicResolver.handle,
+                            walletPtr,
                             pPtr,
                             dataBase,
-                            UInt(dataRaw.count),
+                            dataRaw.count,
                             ecdsaSecp256k1KeyType,
                             self.network,
                             bufPtr.baseAddress,
-                            UInt(bufPtr.count),
+                            bufPtr.count,
                             &sigLen,
                             &errTag
                         )
@@ -459,6 +462,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         }
 
         guard rc == 0 else {
+            // `RESOLVER_NOT_FOUND` (9) is the recoverable
+            // user-visible case — surface it through the existing
+            // typed `mnemonicMissing` error so the UI message
+            // stays specific.
+            if errTag == SignWithMnemonicResolverError.resolverNotFound.rawValue {
+                let walletHex = ctx.walletId.map { String(format: "%02x", $0) }.joined()
+                return .failure(.mnemonicMissing(walletIdHex: walletHex))
+            }
             return .failure(.signWithMnemonicFailed(tag: errTag))
         }
 

@@ -60,7 +60,7 @@ use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivations
 /// helper. BIP-39 wordlists are mutually exclusive within a single
 /// phrase, so the first language that yields a valid mnemonic is the
 /// right one.
-fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
+pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
     const LANGUAGES: [Language; 10] = [
         Language::English,
         Language::Spanish,
@@ -85,7 +85,7 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
 ///
 /// `Local` collapses to `Regtest` to match the rest of the FFI surface
 /// (`dash_sdk_signer_create_from_private_key`, `dash_sdk_sign_with_mnemonic_and_path`).
-fn map_network(network: DashSDKNetwork) -> key_wallet::Network {
+pub(crate) fn map_network(network: DashSDKNetwork) -> key_wallet::Network {
     match network {
         DashSDKNetwork::SDKMainnet => key_wallet::Network::Mainnet,
         DashSDKNetwork::SDKTestnet => key_wallet::Network::Testnet,
@@ -108,7 +108,7 @@ fn map_network(network: DashSDKNetwork) -> key_wallet::Network {
 /// Re-derived locally instead of borrowed from `platform-wallet` because
 /// `platform_wallet::identity_auth_derivation_path` is `pub(crate)` and
 /// this entry point sits outside that crate.
-fn identity_auth_derivation_path(
+pub(crate) fn identity_auth_derivation_path(
     network: key_wallet::Network,
     identity_index: u32,
     key_index: u32,
