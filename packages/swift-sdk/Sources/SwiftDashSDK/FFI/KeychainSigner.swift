@@ -53,16 +53,36 @@ import SwiftData
 /// SwiftData `ModelContext` is not `Sendable` but we serialise access
 /// to it through a single internal queue.
 ///
-/// # Lifetime
+/// # Lifetime contract
 ///
 /// `init` allocates a `*mut SignerHandle` via
-/// `dash_sdk_signer_create_with_ctx`. The Rust side captures the
-/// vtable + the opaque `ctx` (which is
-/// `Unmanaged.passRetained(self).toOpaque()` — a +1 retain on `self`).
-/// `deinit` calls `dash_sdk_signer_destroy`, which fires our
-/// destructor trampoline, which drops the +1 retain. The handle is
-/// safe to pass to FFI calls for the entire lifetime of the
-/// `KeychainSigner` instance.
+/// `dash_sdk_signer_create_with_ctx` and registers `self` as the
+/// opaque ctx via `Unmanaged.passUnretained(self).toOpaque()` —
+/// a non-owning pointer. ARC alone controls when this object
+/// deallocates; the destroy trampoline is a no-op (no extra
+/// retain to balance) and `deinit` calls
+/// `dash_sdk_signer_destroy` to free the Rust handle/vtable.
+///
+/// **Caller responsibility:** the `KeychainSigner` instance
+/// MUST stay alive for the duration of any in-flight FFI call
+/// that captured the handle. Async wallet APIs that take
+/// `signer: KeychainSigner` perform the FFI work inside
+/// `Task.detached`; the function parameter holds a strong
+/// reference for the whole `await`, but each `Task.detached`
+/// closure must additionally do `_ = signer` so the strong
+/// reference is captured into the task and survives every
+/// possible Swift compiler optimization of "unused after this
+/// point". See the `_ = signer` keepalive lines in
+/// `ManagedPlatformWallet.swift` call sites for examples.
+///
+/// Earlier revisions of this file used `passRetained`, which
+/// created a circular ownership: Rust held a +1 retain on `self`,
+/// the destroy trampoline only released it when the destroy FFI
+/// fired, and the destroy FFI was only invoked from `deinit` —
+/// which ARC could never enter while the +1 retain was alive.
+/// Result: every `KeychainSigner` instance leaked forever. The
+/// current `passUnretained` shape removes the leak at the cost
+/// of the explicit keepalive contract above.
 public final class KeychainSigner: Signer, @unchecked Sendable {
     // MARK: Public surface
 
@@ -94,6 +114,12 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         /// `key_type == 0xFF` branch: the wallet-mnemonic Keychain
         /// item is missing for the wallet that owns this address.
         case mnemonicMissing(walletIdHex: String)
+        /// `key_type == 0xFF` branch: the resolved
+        /// `PersistentPlatformAddress.walletId` was not the
+        /// expected 32-byte length. Indicates a corrupt persister
+        /// write — every row should carry a wallet id matching
+        /// the wallet's `walletId` field exactly.
+        case walletIdInvalidLength(actual: Int, expected: Int)
         /// `dash_sdk_sign_with_mnemonic_and_path` returned a
         /// non-zero error tag. The tag is the byte written to
         /// `out_error` (see `SIGN_WITH_MNEMONIC_ERR_*` constants in
@@ -118,6 +144,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 return "PersistentPlatformAddress row for \(hashHex) has no derivation path."
             case .mnemonicMissing(let walletIdHex):
                 return "No Keychain mnemonic stored for wallet \(walletIdHex)."
+            case .walletIdInvalidLength(let actual, let expected):
+                return "PersistentPlatformAddress.walletId is \(actual) bytes; expected \(expected)."
             case .signWithMnemonicFailed(let tag):
                 return "dash_sdk_sign_with_mnemonic_and_path failed with error tag \(tag)."
             }
@@ -138,6 +166,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// `@MainActor` even though the parent `ModelContainer` was
     /// constructed there.
     private let queue: DispatchQueue
+
+    /// Resolver handle the platform-address signing path uses to
+    /// fetch the wallet's mnemonic out of Keychain. The mnemonic
+    /// flows IN to a Rust-owned `Zeroizing` buffer through the
+    /// resolver's `resolve` callback; it never lives in a Swift
+    /// `String` outside the trampoline's stack frame. Per
+    /// swift-sdk/CLAUDE.md "no mnemonic round-tripping".
+    private let mnemonicResolver: MnemonicResolver
 
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
@@ -162,12 +198,21 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         self.network = network
         self.keychain = keychain
         self.queue = DispatchQueue(label: "org.dashfoundation.swiftdashsdk.KeychainSigner")
+        // One resolver per signer instance. Cheap to keep around —
+        // it's just an opaque handle + a Swift-side `WalletStorage`
+        // reference. Used by the platform-address signing branch.
+        self.mnemonicResolver = MnemonicResolver()
 
-        // Hand Rust an opaque `+1`-retained pointer to self. The
-        // matching release happens in `keychainSignerDestroyTrampoline`
-        // when the FFI handle is destroyed. Until then `self` cannot
-        // be deallocated even if Swift drops every other reference.
-        let ctx = Unmanaged.passRetained(self).toOpaque()
+        // Hand Rust an opaque NON-owning pointer to self. The
+        // Swift owner is responsible for keeping `self` alive
+        // for the duration of any in-flight FFI call that
+        // captured the handle (the natural pattern: `let signer
+        // = KeychainSigner(...)` followed by an `await
+        // ...registerIdentity(...signer:)` keeps the local
+        // `signer` alive until the await completes). See the
+        // type-level "Lifetime" note for why `passRetained`
+        // would leak.
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
 
         let handlePtr = dash_sdk_signer_create_with_ctx(
             ctx,
@@ -183,10 +228,12 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     }
 
     deinit {
-        // `dash_sdk_signer_destroy` drops the box, which fires the
-        // vtable destructor trampoline. The trampoline performs the
-        // matching `Unmanaged.fromOpaque(...).release()`, balancing
-        // the `passRetained` from `init`.
+        // `dash_sdk_signer_destroy` drops the Rust handle box +
+        // vtable allocation. The destroy trampoline is a no-op
+        // (init used `passUnretained`, so there's nothing to
+        // release). Caller must ensure no in-flight FFI calls
+        // still reference `handlePtr` at the moment ARC fires
+        // this `deinit`.
         if let handlePtr {
             dash_sdk_signer_destroy(handlePtr)
         }
@@ -294,7 +341,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         if keyType == Self.platformAddressHashKeyType {
             // Resolve the address row first (synchronous lookup);
             // mnemonic check is gated on having the wallet id.
-            guard let resolved = resolvePlatformAddressContext(addressHash: publicKey) else {
+            // For `canSign` purposes, both "no row" and "corrupt
+            // row with empty path" mean the same thing: we can't
+            // sign for this address. The richer signing path
+            // (`signPlatformAddressOnDemand`) distinguishes them
+            // for diagnostic reasons.
+            guard case .found(let resolved) =
+                resolvePlatformAddressContext(addressHash: publicKey)
+            else {
                 return false
             }
             // `WalletStorage.retrieveMnemonic` throws on miss;
@@ -336,21 +390,26 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         let derivationPath: String
     }
 
+    /// Result of a `resolvePlatformAddressContext` lookup.
+    /// Distinguishes "no row matched" (the caller surfaces this as
+    /// `.platformAddressNotFound` — e.g. address pool not yet
+    /// synced) from "row exists but its `derivationPath` is empty"
+    /// (a corrupt persister write — surfaced as
+    /// `.derivationPathMissing` so the failure is diagnosable).
+    fileprivate enum PlatformAddressResolution {
+        case found(PlatformAddressContext)
+        case noMatch
+        case rowMatchedButPathEmpty
+    }
+
     /// SwiftData lookup: 20-byte address hash →
     /// `(walletId, derivationPath)`. Pinned to the signer's serial
     /// queue + a per-call private `ModelContext` so the fetch is safe
     /// off the main actor.
-    ///
-    /// Returns `nil` for two distinct reasons (collapsed for the
-    /// caller's convenience, since both end the request the same
-    /// way): no row matched the hash, OR the matched row had an
-    /// empty derivation path (which would indicate a corrupt
-    /// persister write — `PersistentPlatformAddress.derivationPath`
-    /// is non-optional and should always carry a DIP-17 path).
     fileprivate func resolvePlatformAddressContext(
         addressHash: Data
-    ) -> PlatformAddressContext? {
-        var resolved: PlatformAddressContext? = nil
+    ) -> PlatformAddressResolution {
+        var resolved: PlatformAddressResolution = .noMatch
         queue.sync {
             let context = ModelContext(self.modelContainer)
             let descriptor = FetchDescriptor<PersistentPlatformAddress>(
@@ -359,29 +418,41 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 }
             )
             guard let row = try? context.fetch(descriptor).first else {
+                resolved = .noMatch
                 return
             }
-            // Empty path = corrupt write; treat as unresolvable so
-            // the caller surfaces a precise error rather than handing
-            // an empty path to the FFI.
+            // Empty path = corrupt persister write
+            // (`PersistentPlatformAddress.derivationPath` is
+            // non-optional and should always carry a DIP-17 path).
+            // Surface as a distinct case so the caller can map to
+            // `.derivationPathMissing` rather than a misleading
+            // `.platformAddressNotFound`.
             guard !row.derivationPath.isEmpty else {
+                resolved = .rowMatchedButPathEmpty
                 return
             }
-            resolved = PlatformAddressContext(
+            resolved = .found(PlatformAddressContext(
                 walletId: row.walletId,
                 derivationPath: row.derivationPath
-            )
+            ))
         }
         return resolved
     }
 
     /// One-shot derive-and-sign for the `key_type == 0xFF` branch.
-    /// Pulls mnemonic from Keychain + derivation path from SwiftData,
-    /// then calls `dash_sdk_sign_with_mnemonic_and_path` which
-    /// derives the ECDSA key inside Rust, signs `data` with it, and
-    /// zeroes both the seed and the derived key buffer before
-    /// returning. The derived bytes never cross the FFI back to
-    /// Swift — only the signature does.
+    /// Resolves the SwiftData `(walletId, derivationPath)` row and
+    /// hands the Rust `dash_sdk_sign_with_mnemonic_resolver_and_path`
+    /// FFI the wallet id + the resolver handle. The Rust side
+    /// fires the resolver callback at the moment the mnemonic is
+    /// needed — the mnemonic is copied into a Rust-owned
+    /// `Zeroizing` buffer and the derived ECDSA key bytes never
+    /// cross the FFI back to Swift. Only the signature does.
+    ///
+    /// Per swift-sdk/CLAUDE.md "no mnemonic round-tripping": the
+    /// Swift caller does NOT pull the mnemonic into a `String`
+    /// and hand it to a stateless FFI; the resolver callback is
+    /// the only place the mnemonic crosses any boundary, and its
+    /// lifetime is bounded by the trampoline's stack frame.
     fileprivate func signPlatformAddressOnDemand(
         addressHash: Data,
         keyType: UInt8,
@@ -390,35 +461,46 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         let hashHex = addressHash.map { String(format: "%02x", $0) }.joined()
 
         // 1. Look up `(walletId, derivationPath)` on a private
-        //    background ModelContext (off the main actor).
-        guard let ctx = resolvePlatformAddressContext(addressHash: addressHash) else {
+        //    background ModelContext (off the main actor). Mnemonic
+        //    fetch is now Rust's job (via the resolver callback),
+        //    not Swift's. The two failure modes — "no row matched"
+        //    and "row exists but path is empty" — surface as
+        //    distinct typed errors so a corrupt persister write is
+        //    diagnosable rather than masquerading as an unsynced
+        //    address pool.
+        let ctx: PlatformAddressContext
+        switch resolvePlatformAddressContext(addressHash: addressHash) {
+        case .found(let resolved):
+            ctx = resolved
+        case .noMatch:
             return .failure(.platformAddressNotFound(addressHashHex: hashHex))
+        case .rowMatchedButPathEmpty:
+            return .failure(.derivationPathMissing(addressHashHex: hashHex))
         }
 
-        // 2. Pull mnemonic from Keychain. `WalletStorage` throws on
-        //    miss; map to our typed error so the trampoline can
-        //    surface a precise message.
-        let mnemonic: String
-        do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: ctx.walletId)
-        } catch {
-            let walletHex = ctx.walletId.map { String(format: "%02x", $0) }.joined()
-            return .failure(.mnemonicMissing(walletIdHex: walletHex))
+        // Validate the wallet-id length BEFORE shipping the
+        // pointer across the FFI. Rust's
+        // `dash_sdk_sign_with_mnemonic_resolver_and_path` reads
+        // exactly 32 bytes from `wallet_id_bytes`; a truncated /
+        // corrupt `PersistentPlatformAddress.walletId` row would
+        // cause a read past the buffer rather than a clean
+        // failure. Surface the precise reason here so the
+        // explorer / log makes the corruption obvious.
+        let expectedWalletIdLen = 32
+        guard ctx.walletId.count == expectedWalletIdLen else {
+            return .failure(.walletIdInvalidLength(
+                actual: ctx.walletId.count,
+                expected: expectedWalletIdLen
+            ))
         }
 
-        // 3. One-shot FFI: derive → sign → zeroize.
-        //    Buffer is sized generously (128B) — ECDSA compact
-        //    recoverable signatures are 65 bytes; the cap leaves
-        //    room for any future signature-shape additions through
-        //    this entry point without an ABI change.
+        // Buffer sized generously (128B) — ECDSA compact-recoverable
+        // signatures are 65 bytes; the cap leaves room for future
+        // signature-shape additions without an ABI change. Defer-
+        // scrubbed below regardless of success/failure.
         var sigBuf = [UInt8](repeating: 0, count: 128)
         var sigLen: Int = 0
         var errTag: UInt8 = 0
-
-        // Defensive scrub of the local `sigBuf` regardless of
-        // success/failure. Swift can't truly zero a `String`, but
-        // `mnemonic` falls out of scope at function exit which is
-        // the best we can do without a native-Swift mnemonic type.
         defer {
             sigBuf.withUnsafeMutableBufferPointer { ptr in
                 if let base = ptr.baseAddress {
@@ -431,25 +513,24 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // `0xFF` value the trampoline received is the dispatch tag
         // (`platformAddressHashKeyType`), used only to route to this
         // branch — it is NOT a `KeyType` discriminant. Hardcode the
-        // real key type here; passing the dispatch tag through to
-        // `dash_sdk_sign_with_mnemonic_and_path` (which is ECDSA-only)
-        // would fail with `SIGN_WITH_MNEMONIC_ERR_UNSUPPORTED_KEY_TYPE`.
+        // real key type here.
         let ecdsaSecp256k1KeyType: UInt8 = 0
-        let rc = mnemonic.withCString { mPtr -> Int32 in
-            ctx.derivationPath.withCString { pPtr -> Int32 in
-                data.withUnsafeBytes { dataRaw -> Int32 in
-                    sigBuf.withUnsafeMutableBufferPointer { bufPtr -> Int32 in
+        let rc = ctx.walletId.withUnsafeBytes { walletBytes -> Int32 in
+            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress
+            return ctx.derivationPath.withCString { pPtr -> Int32 in
+                return data.withUnsafeBytes { dataRaw -> Int32 in
+                    return sigBuf.withUnsafeMutableBufferPointer { bufPtr -> Int32 in
                         let dataBase = dataRaw.bindMemory(to: UInt8.self).baseAddress
-                        return dash_sdk_sign_with_mnemonic_and_path(
-                            mPtr,
-                            nil, // no BIP-39 passphrase yet (matches the rest of the SDK)
+                        return dash_sdk_sign_with_mnemonic_resolver_and_path(
+                            self.mnemonicResolver.handle,
+                            walletPtr,
                             pPtr,
                             dataBase,
-                            UInt(dataRaw.count),
+                            dataRaw.count,
                             ecdsaSecp256k1KeyType,
                             self.network,
                             bufPtr.baseAddress,
-                            UInt(bufPtr.count),
+                            bufPtr.count,
                             &sigLen,
                             &errTag
                         )
@@ -459,6 +540,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         }
 
         guard rc == 0 else {
+            // `RESOLVER_NOT_FOUND` (9) is the recoverable
+            // user-visible case — surface it through the existing
+            // typed `mnemonicMissing` error so the UI message
+            // stays specific.
+            if errTag == SignWithMnemonicResolverError.resolverNotFound.rawValue {
+                let walletHex = ctx.walletId.map { String(format: "%02x", $0) }.joined()
+                return .failure(.mnemonicMissing(walletIdHex: walletHex))
+            }
             return .failure(.signWithMnemonicFailed(tag: errTag))
         }
 
@@ -672,8 +761,9 @@ private func keychainSignerCanSignTrampoline(
 }
 
 /// Vtable destructor — invoked exactly once when the FFI handle is
-/// destroyed. Drops the `+1` retain captured by `init`.
-private func keychainSignerDestroyTrampoline(ctx: UnsafeMutableRawPointer?) {
-    guard let ctx else { return }
-    Unmanaged<KeychainSigner>.fromOpaque(ctx).release()
-}
+/// destroyed. No-op now that init uses `passUnretained`: there is
+/// no extra retain to balance, and ARC has already deallocated
+/// (or is in the process of deallocating) `self` by the time
+/// `dash_sdk_signer_destroy` runs from `deinit`. Kept around so
+/// the Rust vtable's `destroy` slot is always non-null.
+private func keychainSignerDestroyTrampoline(_: UnsafeMutableRawPointer?) {}

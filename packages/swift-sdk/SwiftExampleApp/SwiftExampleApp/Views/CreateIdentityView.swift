@@ -429,39 +429,21 @@ struct CreateIdentityView: View {
         // buffers immediately. The mnemonic stays in Keychain; the
         // derivation path lives on `PersistentPlatformAddress`.
         let signer = KeychainSigner(modelContainer: modelContext.container)
-        let walletIdHex = walletId.map { String(format: "%02x", $0) }.joined()
         let identityPubkeys: [ManagedPlatformWallet.IdentityPubkey]
         do {
-            // `prePersistIdentityKeysForRegistration` derives every key
-            // via the watch-only-safe mnemonic FFI and writes the
-            // private key bytes into Keychain. The returned previews
-            // already carry the public-key bytes — capture them here
-            // and thread them through to
-            // `registerIdentityFromAddresses` so the Rust side does
-            // NOT re-derive (which would fail for watch-only wallets
-            // restored from SwiftData state).
-            //
-            // Convention for identity-registration auth keys (matches
-            // the prior Rust-side derivation that lived inside
-            // `platform_wallet_register_identity_with_signer`):
-            // - keyId 0 → MASTER, AUTHENTICATION, ECDSA_SECP256K1, !readOnly
-            // - keyId > 0 → HIGH,   AUTHENTICATION, ECDSA_SECP256K1, !readOnly
-            let previews = try managedWallet.prePersistIdentityKeysForRegistration(
+            // Single-FFI derive + persist. The Rust side owns the
+            // per-key MASTER-vs-HIGH policy and ships back the
+            // ready-to-use `IdentityPubkey` rows; the Swift caller
+            // does not recreate the policy. See
+            // swift-sdk/CLAUDE.md "no mnemonic round-tripping" —
+            // both the mnemonic fetch and the per-key Keychain
+            // write are now Rust → Swift callbacks orchestrated by
+            // the Rust loop, not Swift-side glue.
+            identityPubkeys = try managedWallet.prePersistIdentityKeysForRegistration(
                 identityIndex: identityIndex,
                 keyCount: Self.defaultKeyCount,
-                network: platformState.currentNetwork.sdkNetwork,
-                walletIdHex: walletIdHex
+                network: platformState.currentNetwork.sdkNetwork
             )
-            identityPubkeys = previews.enumerated().map { (i, preview) in
-                ManagedPlatformWallet.IdentityPubkey(
-                    keyId: UInt32(i),
-                    keyType: .ecdsaSecp256k1,
-                    purpose: .authentication,
-                    securityLevel: i == 0 ? .master : .high,
-                    pubkeyBytes: preview.publicKeyData,
-                    readOnly: false
-                )
-            }
         } catch {
             submitError = .init(
                 message: "Could not pre-derive identity keys: \(error.localizedDescription)"

@@ -281,6 +281,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
         ) { () -> (Data, Handle) in
+            // Keepalive — KeychainSigner now uses
+            // `passUnretained`, so the Rust ctx pointer dangles
+            // unless we keep the Swift owners alive across this
+            // detached work. Implicit-capturing `identitySigner`
+            // and `addressSigner` here forces strong references
+            // for the duration of the task; the trampoline can
+            // safely deref the ctx until this closure returns.
+            _ = identitySigner
+            _ = addressSigner
             let ffiInputs = inputs.map { input -> IdentityFundingInputFFI in
                 var hashTuple = hashTupleInit()
                 withUnsafeMutableBytes(of: &hashTuple) { raw in
@@ -650,25 +659,30 @@ extension ManagedPlatformWallet {
     /// fallback path. The matching SwiftData rows are written by
     /// the persister callback once registration succeeds.
     ///
-    /// All derivation happens entirely on the Rust side via
-    /// `dash_sdk_derive_identity_keys_from_mnemonic`. Swift's role is
-    /// purely (a) pulling the mnemonic out of Keychain and (b) writing
-    /// the resulting private keys back into Keychain — the only
-    /// operations Rust cannot perform from its side, per
-    /// `swift-sdk/CLAUDE.md`.
+    /// # Architecture: derivation loop lives in Rust
     ///
-    /// # Why this routes through the mnemonic-driven FFI
+    /// All derivation, the per-key MASTER-vs-HIGH policy, and the
+    /// DPP discriminant bytes (`KeyType`, `Purpose`,
+    /// `SecurityLevel`) live on the Rust side. Swift hands the
+    /// derivation FFI two callback handles — a
+    /// [`MnemonicResolver`] (Rust → Swift "fetch the BIP-39
+    /// mnemonic for `walletId`") and an
+    /// [`IdentityKeyPersister`] (Rust → Swift "save this derived
+    /// key, here's its metadata") — and Rust runs the loop
+    /// without Swift orchestrating it. Closes the swift-sdk/CLAUDE.md
+    /// "no mnemonic round-tripping" rule that the prior shape
+    /// (Swift pulls mnemonic, calls a stateless derivation FFI,
+    /// loops over the rows writing each to Keychain) violated.
     ///
-    /// The previous implementation called the wallet-handle variant
-    /// (`platform_wallet_derive_identity_keys_for_index`), which
-    /// required Rust to have an in-process xpriv for this wallet. That
-    /// works for wallets created in the current process but fails with
-    /// `"Cannot derive private keys from watch-only wallet"` for
-    /// wallets restored from SwiftData persistence (their seed lives
-    /// in Keychain, not in the `WalletManager`). Pulling the mnemonic
-    /// from Keychain per call and handing it to a stateless derivation
-    /// FFI works for every wallet shape regardless of how it was
-    /// loaded into the process.
+    /// # Why this works for watch-only wallets
+    ///
+    /// The previous implementation that routed through the
+    /// wallet-handle variant
+    /// (`platform_wallet_derive_identity_keys_for_index`) failed
+    /// for restored watch-only wallets because Rust had no
+    /// in-process xpriv loaded for them. Routing through the
+    /// resolver callback works regardless of wallet shape — the
+    /// resolver pulls the mnemonic from iOS Keychain on demand.
     ///
     /// - Parameters:
     ///   - identityIndex: The identity index that will be passed to
@@ -681,50 +695,53 @@ extension ManagedPlatformWallet {
     ///     on. Selects the DIP-9 coin-type slot in the derivation
     ///     paths AND the WIF version byte. Must match the network of
     ///     the SDK / `KeychainSigner` used at registration time.
-    ///   - walletIdHex: Hex-encoded wallet id used in the keychain
-    ///     metadata blob — surfaced by the keychain-explorer view
-    ///     and by `PersistentPublicKey` later. Should match the
-    ///     wallet's `walletId` (same value the Rust persister
-    ///     callback would write).
     ///   - keychain: Defaults to `KeychainManager.shared`.
     ///   - storage: `WalletStorage` instance used to read the BIP-39
     ///     mnemonic from Keychain. Defaults to a fresh
     ///     `WalletStorage()` — overridable for tests.
-    /// - Returns: The previews that were just persisted (in the same
-    ///   order as `keyCount`), so callers can hold on to the pubkey
-    ///   data if they need to render anything else.
+    /// - Returns: One [`IdentityPubkey`] per derived/persisted key,
+    ///   ready to thread directly into
+    ///   `registerIdentityFromAddresses(...identityPubkeys:...)`.
+    ///   The `(keyType, purpose, securityLevel)` triple on each row
+    ///   is whatever Rust decided — the caller does NOT recreate
+    ///   the MASTER-vs-HIGH policy.
     @discardableResult
     public func prePersistIdentityKeysForRegistration(
         identityIndex: UInt32,
         keyCount: UInt32,
         network: DashSDKNetwork,
-        walletIdHex: String,
         keychain: KeychainManager = .shared,
         storage: WalletStorage = WalletStorage()
-    ) throws -> [IdentityRegistrationKeyPreview] {
+    ) throws -> [IdentityPubkey] {
         guard keyCount > 0 else { return [] }
 
-        // Pull the BIP-39 mnemonic out of Keychain. `String` can't be
-        // truly zeroed in Swift, but we keep the local lifetime as
-        // narrow as possible — only this function holds a reference,
-        // and the FFI call inside copies the bytes onto the Rust side
-        // (where they ARE held in `Zeroizing` and scrubbed at function
-        // exit).
-        let mnemonic = try storage.retrieveMnemonic(for: self.walletId)
+        // Single-FFI derivation + persist. The mnemonic is pulled
+        // from Keychain by the resolver callback (Rust → Swift),
+        // each derived key is written by the persister callback
+        // (Rust → Swift), and only pubkeys + paths flow back as
+        // the function's return value. Per swift-sdk/CLAUDE.md no
+        // pipeline orchestration crosses the FFI boundary; the
+        // mnemonic never lives in a Swift `String` outside the
+        // resolver trampoline's stack frame, and the 32-byte
+        // private scalars never leave the Rust loop.
+        let resolver = MnemonicResolver(storage: storage)
+        let persister = IdentityKeyPersister(keychain: keychain)
 
         var out = identityRegistrationKeyDerivationsFFIEmpty()
         var error = PlatformWalletFFIError()
-        let result = mnemonic.withCString { mPtr -> PlatformWalletFFIResult in
-            // No BIP-39 passphrase is supported by the rest of the
-            // SDK yet (mirrors `KeychainSigner.swift`'s own
-            // `dash_sdk_sign_with_mnemonic_and_path` call site).
-            // Pass `nil` to mean "empty passphrase".
-            dash_sdk_derive_identity_keys_from_mnemonic(
-                mPtr,
-                nil,
+
+        // `walletId` is `Data`; bind into a 32-byte UInt8 pointer
+        // so Rust receives a stable address for the duration of
+        // the FFI call.
+        let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress
+            return dash_sdk_derive_and_persist_identity_keys(
                 network,
+                walletPtr,
                 identityIndex,
                 keyCount,
+                resolver.handle,
+                persister.handle,
                 &out,
                 &error
             )
@@ -737,81 +754,71 @@ extension ManagedPlatformWallet {
 
         guard let base = out.items, out.count > 0 else { return [] }
 
-        var persisted: [IdentityRegistrationKeyPreview] = []
-        persisted.reserveCapacity(out.count)
-
-        for i in 0..<out.count {
-            let row = base[i]
-            let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
-            let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
-
-            let pubData: Data
-            let pubHex: String
-            if let pubPtr = row.public_key, row.public_key_len > 0 {
-                pubData = Data(bytes: pubPtr, count: row.public_key_len)
-                pubHex = pubData.map { String(format: "%02x", $0) }.joined()
-            } else {
-                pubData = Data()
-                pubHex = ""
-            }
-
-            var pkTuple = row.private_key_bytes
-            let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
-
-            // Identity-id is unknown pre-registration (Rust
-            // recomputes it from the input addresses). Use the
-            // marker `pending` so the keychain explorer makes it
-            // obvious which rows are pre-registered slots.
-            //
-            // Discriminant convention matches `CreateIdentityView`'s
-            // `IdentityPubkey` mapping (and the upstream Rust-side
-            // policy that lived inside `register_identity` before it
-            // moved to Swift):
-            // - keyId 0 → MASTER, AUTHENTICATION, ECDSA_SECP256K1
-            // - keyId > 0 → HIGH, AUTHENTICATION, ECDSA_SECP256K1
-            // The bytes used here (`0` / `1` / `0`) are the
-            // canonical DPP `repr(u8)` discriminants, the same ones
-            // every other FFI surface in this SDK speaks.
-            let pubHashHex = KeychainManager.computePublicKeyHashHex(pubData)
-            // CreateIdentityView's enum mapping uses .high for
-            // non-master rows; the DPP `SecurityLevel` discriminant
-            // for HIGH is 2 (0=MASTER, 1=CRITICAL, 2=HIGH, 3=MEDIUM).
-            // Mirror that here so the Keychain row stamps the same
-            // security level the pubkey row actually submitted to
-            // the network carries.
-            let secLevelByte: UInt8 = i == 0 ? 0 /* MASTER */ : 2 /* HIGH */
-            let metadata = KeychainManager.IdentityPrivateKeyMetadata(
-                identityId: "pending",
-                keyId: UInt32(i),
-                walletId: walletIdHex,
-                identityIndex: identityIndex,
-                keyIndex: UInt32(i),
-                derivationPath: path,
-                publicKey: pubHex,
-                publicKeyHash: pubHashHex,
-                keyType: 0,        // ECDSA_SECP256K1
-                purpose: 0,        // AUTHENTICATION
-                securityLevel: secLevelByte
-            )
-            _ = keychain.storeIdentityPrivateKey(
-                pkData,
-                derivationPath: path,
-                metadata: metadata
-            )
-
-            persisted.append(
-                IdentityRegistrationKeyPreview(
-                    identityIndex: identityIndex,
-                    derivationPath: path,
-                    publicKeyData: pubData,
-                    publicKeyHex: pubHex,
-                    privateKeyWIF: wif,
-                    privateKeyData: pkData
-                )
+        // Build `IdentityPubkey` rows from (a) the FFI's pubkey
+        // bytes and (b) the persister's captured per-key metadata
+        // — both indexed in derivation order. Rust decided
+        // (keyType, purpose, securityLevel); Swift just maps each
+        // discriminant byte back into its strongly-typed enum.
+        //
+        // Both an FFI/Swift count drift AND any unknown enum
+        // discriminant byte are surfaced as a recoverable
+        // `PlatformWalletError.walletOperation` rather than a
+        // process abort or a silently-defaulted enum value.
+        // Defaulting `securityLevel` etc. to a known constant
+        // (the prior shape) would silently change key semantics
+        // if Rust's enum discriminants ever drifted; better to
+        // fail loudly so the caller learns about the ABI break
+        // immediately.
+        let captured = persister.persistedKeys
+        guard captured.count == out.count, out.count == Int(keyCount) else {
+            throw PlatformWalletError.walletOperation(
+                "derive_and_persist_identity_keys returned \(out.count) pubkeys for "
+                + "\(keyCount) requested keys; persister captured \(captured.count)"
             )
         }
 
-        return persisted
+        var pubkeys: [IdentityPubkey] = []
+        pubkeys.reserveCapacity(out.count)
+        for i in 0..<out.count {
+            let row = base[i]
+            // Empty pubkey rows are an FFI contract violation —
+            // the persist callback already accepted a real pubkey
+            // for this row, so the parallel out_pubkeys array
+            // having `nil` / zero-length here means something
+            // dropped between the persister fire and the row
+            // serialization. Fail fast with the offending row
+            // index rather than silently constructing an
+            // unusable `IdentityPubkey` with empty bytes.
+            guard let pubPtr = row.public_key, row.public_key_len > 0 else {
+                throw PlatformWalletError.walletOperation(
+                    "derive_and_persist_identity_keys returned an empty public key for row \(i)"
+                )
+            }
+            let pubData = Data(bytes: pubPtr, count: row.public_key_len)
+            let meta = captured[i]
+            guard
+                let keyType = KeyType(rawValue: meta.keyType),
+                let purpose = KeyPurpose(rawValue: meta.purpose),
+                let securityLevel = SecurityLevel(rawValue: meta.securityLevel)
+            else {
+                throw PlatformWalletError.walletOperation(
+                    "derive_and_persist_identity_keys returned unknown enum bytes "
+                    + "(keyType=\(meta.keyType), purpose=\(meta.purpose), "
+                    + "securityLevel=\(meta.securityLevel)) for keyId=\(meta.keyId)"
+                )
+            }
+            pubkeys.append(
+                IdentityPubkey(
+                    keyId: meta.keyId,
+                    keyType: keyType,
+                    purpose: purpose,
+                    securityLevel: securityLevel,
+                    pubkeyBytes: pubData,
+                    readOnly: false
+                )
+            )
+        }
+        return pubkeys
     }
 
     // ----------------------------------------------------------------
@@ -999,10 +1006,12 @@ extension ManagedPlatformWallet {
         signer: KeychainSigner
     ) async throws -> String {
         let handle = self.handle
-        // Take the raw signer handle outside the Task — `KeychainSigner`
-        // owns its handle for its full lifetime (released in `deinit`),
-        // so the pointer is safe to capture into the detached Task as
-        // long as the caller keeps `signer` alive across the await.
+        // Take the raw signer handle outside the Task. `KeychainSigner`
+        // uses `passUnretained` for its FFI ctx, so the pointer is
+        // only safe while the Swift `signer` object is alive. The
+        // explicit `_ = signer` inside the Task keeps it alive for
+        // the duration of the detached work — see the "Lifetime
+        // contract" note on `KeychainSigner`.
         let signerHandle = signer.handle
         // Capture the 32-byte payload by value into a Sendable
         // `[UInt8]` so the detached Task can hand a fresh pointer
@@ -1011,6 +1020,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         return try await Task.detached(priority: .userInitiated) { () -> String in
+            _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
             var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { idBp in
@@ -1424,6 +1434,7 @@ extension ManagedPlatformWallet {
 
         let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
+            _ = signer
             var outHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
             let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
@@ -1490,6 +1501,7 @@ extension ManagedPlatformWallet {
         let establishedHandle: Handle = try await Task.detached(
             priority: .userInitiated
         ) { () -> Handle in
+            _ = signer
             var outHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
             let result = platform_wallet_accept_contact_request_with_signer(
@@ -1794,6 +1806,7 @@ extension ManagedPlatformWallet {
         let avatarBytes = update.avatarBytes
 
         return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
+            _ = signer
             var outProfile = dashPayProfileFFIEmpty()
             var error = PlatformWalletFFIError()
 
@@ -2163,6 +2176,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         try await Task.detached(priority: .userInitiated) {
+            _ = signer
             var error = PlatformWalletFFIError()
             let result = fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
                 toBytes.withUnsafeBufferPointer { toBp in
@@ -2230,6 +2244,7 @@ extension ManagedPlatformWallet {
         }
         let rows = ffiRows
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            _ = signer
             var newBalance: UInt64 = 0
             var error = PlatformWalletFFIError()
             let result = fromBytes.withUnsafeBufferPointer {
@@ -2268,6 +2283,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         try await Task.detached(priority: .userInitiated) {
+            _ = signer
             var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
@@ -2312,6 +2328,7 @@ extension ManagedPlatformWallet {
         let addPubkeys = addPublicKeys
         let disableIds = disablePublicKeyIds
         try await Task.detached(priority: .userInitiated) {
+            _ = signer
             var error = PlatformWalletFFIError()
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
@@ -2381,6 +2398,7 @@ extension ManagedPlatformWallet {
         let pubkeys = identityPubkeys
         return try await Task.detached(priority: .userInitiated) {
             () -> (Identifier, ManagedIdentity) in
+            _ = signer
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
