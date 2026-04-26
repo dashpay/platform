@@ -437,6 +437,9 @@ impl AddressesWithBalance {
 
             // Remaining room we are allowed to take
             let remaining_max = global_max - taken_total;
+            if taken_total >= range_min && remaining_max < min_per_input {
+                break;
+            }
 
             // While we haven't reached the minimum yet, we must ensure we don't
             // choose too tiny amounts. Once we hit range_min, we can be looser.

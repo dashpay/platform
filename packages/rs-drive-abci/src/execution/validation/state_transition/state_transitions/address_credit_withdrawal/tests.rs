@@ -32,6 +32,9 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use std::future::Future;
+    use std::sync::Arc;
+    use std::task::{Context, Poll, Wake, Waker};
 
     use crate::execution::check_tx::CheckTxLevel;
     use crate::platform_types::platform::PlatformRef;
@@ -39,6 +42,21 @@ mod tests {
     // ==========================================
     // Check TX Helper
     // ==========================================
+
+    fn run_immediate<F: Future>(future: F) -> F::Output {
+        struct NoopWake;
+
+        impl Wake for NoopWake {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        let waker = Waker::from(Arc::new(NoopWake));
+        let mut future = std::pin::pin!(future);
+        match future.as_mut().poll(&mut Context::from_waker(&waker)) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("expected signer future to complete immediately"),
+        }
+    }
 
     /// Perform check_tx on a raw transaction and return whether it's valid
     /// This simulates what happens when a transaction is submitted to the mempool.
@@ -202,8 +220,7 @@ mod tests {
         transition.input_witnesses = inputs
             .keys()
             .map(|address| {
-                signer
-                    .sign_create_witness(address, &signable_bytes)
+                run_immediate(signer.sign_create_witness(address, &signable_bytes))
                     .expect("should create witness")
             })
             .collect();

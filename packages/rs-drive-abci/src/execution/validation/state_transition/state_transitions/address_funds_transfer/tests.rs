@@ -29,10 +29,28 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
+    use std::future::Future;
+    use std::sync::Arc;
+    use std::task::{Context, Poll, Wake, Waker};
 
     // ==========================================
     // Helper Functions
     // ==========================================
+
+    fn run_immediate<F: Future>(future: F) -> F::Output {
+        struct NoopWake;
+
+        impl Wake for NoopWake {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        let waker = Waker::from(Arc::new(NoopWake));
+        let mut future = std::pin::pin!(future);
+        match future.as_mut().poll(&mut Context::from_waker(&waker)) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("expected signer future to complete immediately"),
+        }
+    }
 
     /// Perform check_tx on a raw transaction and return whether it's valid
     /// - valid transactions should return true (accepted to mempool)
@@ -127,9 +145,10 @@ mod tests {
                     .get(idx)
                     .and_then(|address| {
                         if deterministic_signer.can_sign_with(address) {
-                            deterministic_signer
-                                .sign_create_witness(address, &signable_bytes)
-                                .ok()
+                            run_immediate(
+                                deterministic_signer.sign_create_witness(address, &signable_bytes),
+                            )
+                            .ok()
                         } else {
                             None
                         }

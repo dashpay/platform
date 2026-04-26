@@ -5000,6 +5000,7 @@ mod tests {
                 .expect("transfer key should exist");
             transition_v0.signature = signer
                 .sign(transfer_key, &signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = StateTransition::from(
@@ -5166,6 +5167,7 @@ mod tests {
                 .expect("transfer key should exist");
             transition_v0.signature = signer
                 .sign(transfer_key, &signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition_bytes = StateTransition::from(
@@ -5316,6 +5318,7 @@ mod tests {
                 .expect("transfer key should exist");
             transition_v0.signature = signer
                 .sign(transfer_key, &signable_bytes)
+                .await
                 .expect("should sign");
             let transition_bytes = StateTransition::from(
                 IdentityCreditTransferToAddressesTransition::V0(transition_v0),

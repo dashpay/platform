@@ -5138,6 +5138,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
             let witness = signer
                 .sign_create_witness(&address, &signable_bytes)
+                .await
                 .expect("should create witness");
 
             let state_transition = create_transition_with_custom_witnesses(

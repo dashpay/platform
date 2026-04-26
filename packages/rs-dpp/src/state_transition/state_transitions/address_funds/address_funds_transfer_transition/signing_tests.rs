@@ -10,6 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use async_trait::async_trait;
 use dashcore::blockdata::opcodes::all::*;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::Hash;
@@ -130,8 +131,9 @@ impl TestAddressSigner {
     }
 }
 
+#[async_trait]
 impl Signer<PlatformAddress> for TestAddressSigner {
-    fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         match key {
             PlatformAddress::P2pkh(hash) => {
                 let entry = self.p2pkh_keys.get(hash).ok_or_else(|| {
@@ -160,7 +162,7 @@ impl Signer<PlatformAddress> for TestAddressSigner {
         }
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &PlatformAddress,
         data: &[u8],
@@ -1093,7 +1095,8 @@ async fn test_signer_cannot_sign_unknown_address() {
         &signer,
         0,
         get_platform_version(),
-    );
+    )
+    .await;
 
     assert!(
         result.is_err(),
