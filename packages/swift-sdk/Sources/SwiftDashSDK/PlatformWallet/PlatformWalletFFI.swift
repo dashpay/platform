@@ -1330,3 +1330,216 @@ func dash_sdk_derive_identity_keys_from_mnemonic(
 func dash_sdk_derive_identity_keys_from_mnemonic_free(
     _ rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>
 )
+
+// MARK: - Derive-and-persist callback handles
+//
+// Used by `dash_sdk_derive_and_persist_identity_keys` (below). The
+// Swift side hands the Rust derivation loop two opaque callback
+// handles — one for fetching the BIP-39 mnemonic out of Keychain,
+// one for writing each derived key back into Keychain — and the
+// Rust loop owns the orchestration. Closes the
+// "no mnemonic round-tripping" rule that ManagedPlatformWallet's
+// `prePersistIdentityKeysForRegistration` previously violated.
+
+/// Opaque Rust-side handle to a Swift-owned mnemonic resolver.
+/// Allocated via `dash_sdk_mnemonic_resolver_create`, freed via
+/// `dash_sdk_mnemonic_resolver_destroy`. The Rust struct itself
+/// is private; Swift only ever holds the pointer.
+public struct MnemonicResolverHandle {}
+
+/// Opaque Rust-side handle to a Swift-owned identity-key persister.
+public struct IdentityKeyPersisterHandle {}
+
+/// Mirrors the Rust `mnemonic_resolver_result` constants in
+/// `derive_and_persist_callbacks.rs`. Used as the return value of
+/// the resolver callback so the Rust derivation loop can
+/// distinguish "buffer too small" (a programmer error) from
+/// "wallet has no mnemonic stored" (a recoverable user-visible
+/// error).
+enum MnemonicResolverResult: Int32 {
+    case success = 0
+    case notFound = 1
+    case bufferTooSmall = 2
+    case other = 3
+}
+
+/// Buffer capacity (bytes, excluding trailing NUL) the resolver
+/// callback is given to write the mnemonic into. Mirrors the Rust
+/// `MNEMONIC_RESOLVER_BUFFER_CAPACITY` constant.
+let MNEMONIC_RESOLVER_BUFFER_CAPACITY: Int = 1024
+
+/// Function pointer type for the mnemonic-resolve callback.
+/// Returns one of [`MnemonicResolverResult`]'s raw values.
+typealias MnemonicResolveCallback = @convention(c) (
+    _ ctx: UnsafeRawPointer?,
+    _ wallet_id_bytes: UnsafePointer<UInt8>?,
+    _ out_mnemonic_utf8: UnsafeMutablePointer<CChar>?,
+    _ out_capacity: Int,
+    _ out_len: UnsafeMutablePointer<Int>?
+) -> Int32
+
+/// Mirrors the Rust `PersistKeyArgs` `#[repr(C)]` struct. Pointer-
+/// based per-call payload for the identity-key persister callback.
+/// Field order, sizes, and trailing-byte alignment match the Rust
+/// definition.
+struct PersistKeyArgs {
+    var wallet_id_bytes: UnsafePointer<UInt8>?
+    var identity_index: UInt32
+    var key_id: UInt32
+    var key_index: UInt32
+    var derivation_path_cstr: UnsafePointer<CChar>?
+    var public_key_bytes: UnsafePointer<UInt8>?
+    var public_key_len: Int
+    var public_key_hash_bytes: UnsafePointer<UInt8>?
+    var private_key_bytes: UnsafePointer<UInt8>?
+    var key_type: UInt8
+    var purpose: UInt8
+    var security_level: UInt8
+}
+
+/// Expected size of `PersistKeyArgs` as laid out by Rust's
+/// `#[repr(C)]` on 64-bit targets. Mirrors the compile-time
+/// assertion in `rs-platform-wallet-ffi/src/
+/// derive_and_persist_callbacks.rs`. Tested at trampoline entry
+/// via `assertPersistKeyArgsLayout()`.
+let EXPECTED_PERSIST_KEY_ARGS_SIZE: Int = 72
+
+/// Verify the Swift `PersistKeyArgs` mirror lays out to the same
+/// 72-byte shape Rust's `#[repr(C)]` produces. Called once per
+/// process from the persister-callback hot path so a drift
+/// between the two sides surfaces as a clean assertion failure
+/// rather than an EXC_BAD_ACCESS in `assumingMemoryBound`.
+func assertPersistKeyArgsLayout() {
+    let actual = MemoryLayout<PersistKeyArgs>.size
+    let actualStride = MemoryLayout<PersistKeyArgs>.stride
+    precondition(
+        actual == EXPECTED_PERSIST_KEY_ARGS_SIZE
+            && actualStride == EXPECTED_PERSIST_KEY_ARGS_SIZE,
+        "PersistKeyArgs layout mismatch: size=\(actual) stride=\(actualStride), "
+            + "expected \(EXPECTED_PERSIST_KEY_ARGS_SIZE). Rust-side "
+            + "#[repr(C)] and Swift-side struct have diverged; fix one side."
+    )
+}
+
+/// Function pointer type for the per-key persist callback.
+/// Returns [`PERSIST_KEY_SUCCESS`] on a successful Keychain write,
+/// [`PERSIST_KEY_FAILURE`] to abort the rest of the Rust derivation
+/// loop with an `ErrorWalletOperation`.
+///
+/// The args parameter is `UnsafeRawPointer?` rather than the more
+/// natural `UnsafePointer<PersistKeyArgs>?` because Swift's
+/// `@convention(c)` typealiases can only carry types representable
+/// in Objective-C, and a pointer to a non-`@objc` Swift struct
+/// fails that check. The Rust side ships a `*const PersistKeyArgs`
+/// regardless; the Swift trampoline unwraps via
+/// `assumingMemoryBound(to: PersistKeyArgs.self)`. Same ABI shape
+/// as the Rust `extern "C" fn(_, *const PersistKeyArgs) -> u8`
+/// declaration.
+typealias PersistKeyCallback = @convention(c) (
+    _ ctx: UnsafeRawPointer?,
+    _ args: UnsafeRawPointer?
+) -> UInt8
+
+/// Persister-callback success/failure tags. Mirror the
+/// `PERSIST_KEY_SUCCESS` / `PERSIST_KEY_FAILURE` constants in
+/// `derive_and_persist_callbacks.rs`. Trampoline implementations
+/// return one of these to keep the wire shape consistent.
+let PERSIST_KEY_SUCCESS: UInt8 = 1
+let PERSIST_KEY_FAILURE: UInt8 = 0
+
+/// Generic Rust-callable destructor for any Swift-owned `ctx`
+/// pointer (typically `Unmanaged.passRetained(self).toOpaque()`).
+typealias DeriveAndPersistCtxDestroy = @convention(c) (
+    _ ctx: UnsafeMutableRawPointer?
+) -> Void
+
+@_silgen_name("dash_sdk_mnemonic_resolver_create")
+func dash_sdk_mnemonic_resolver_create(
+    _ ctx: UnsafeMutableRawPointer?,
+    _ resolve_callback: MnemonicResolveCallback,
+    _ destroy_callback: DeriveAndPersistCtxDestroy
+) -> UnsafeMutablePointer<MnemonicResolverHandle>?
+
+@_silgen_name("dash_sdk_mnemonic_resolver_destroy")
+func dash_sdk_mnemonic_resolver_destroy(
+    _ handle: UnsafeMutablePointer<MnemonicResolverHandle>?
+)
+
+@_silgen_name("dash_sdk_identity_key_persister_create")
+func dash_sdk_identity_key_persister_create(
+    _ ctx: UnsafeMutableRawPointer?,
+    _ persist_callback: PersistKeyCallback,
+    _ destroy_callback: DeriveAndPersistCtxDestroy
+) -> UnsafeMutablePointer<IdentityKeyPersisterHandle>?
+
+@_silgen_name("dash_sdk_identity_key_persister_destroy")
+func dash_sdk_identity_key_persister_destroy(
+    _ handle: UnsafeMutablePointer<IdentityKeyPersisterHandle>?
+)
+
+/// Single-FFI identity-key derivation + persistence pipeline.
+///
+/// Companion to the lower-level
+/// `dash_sdk_derive_identity_keys_from_mnemonic` (which leaves
+/// orchestration to the caller). This entry point owns the
+/// per-key loop on the Rust side and calls back into Swift only
+/// for the iOS-only Keychain primitives.
+///
+/// On success `out_pubkeys` is populated with the derived
+/// pubkeys (and their paths) for the caller to build
+/// `IdentityPubkey` rows for the subsequent registration call;
+/// the 32-byte ECDSA private scalars are NOT included — they
+/// were already handed to the persister callback per iteration.
+/// Release `out_pubkeys` with
+/// `dash_sdk_derive_identity_keys_from_mnemonic_free` (same
+/// memory layout, intentionally shares the free function).
+@_silgen_name("dash_sdk_derive_and_persist_identity_keys")
+func dash_sdk_derive_and_persist_identity_keys(
+    _ network: DashSDKNetwork,
+    _ wallet_id_bytes: UnsafePointer<UInt8>?,
+    _ identity_index: UInt32,
+    _ key_count: UInt32,
+    _ mnemonic_resolver_handle: UnsafeMutablePointer<MnemonicResolverHandle>?,
+    _ persister_handle: UnsafeMutablePointer<IdentityKeyPersisterHandle>?,
+    _ out_pubkeys: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+// MARK: - Resolver-driven one-shot sign
+//
+// Sibling of the lower-level `dash_sdk_sign_with_mnemonic_and_path`
+// in rs-sdk-ffi. Routes the mnemonic fetch through a Swift-owned
+// `MnemonicResolverHandle` instead of taking it as a raw C-string,
+// closing the same swift-sdk/CLAUDE.md "no mnemonic round-tripping"
+// rule for the platform-address signing path.
+
+/// Mirrors the Rust `SIGN_WITH_RESOLVER_*` byte tags. Returned via
+/// the `out_error` byte parameter on a non-zero rc.
+enum SignWithMnemonicResolverError: UInt8 {
+    case ok = 0
+    case nullPointer = 1
+    case invalidUtf8 = 2
+    case invalidMnemonic = 3
+    case invalidPath = 4
+    case derivationFailed = 5
+    case signFailed = 6
+    case bufferTooSmall = 7
+    case unsupportedKeyType = 8
+    case resolverNotFound = 9
+    case resolverFailed = 10
+}
+
+@_silgen_name("dash_sdk_sign_with_mnemonic_resolver_and_path")
+func dash_sdk_sign_with_mnemonic_resolver_and_path(
+    _ mnemonic_resolver_handle: UnsafeMutablePointer<MnemonicResolverHandle>?,
+    _ wallet_id_bytes: UnsafePointer<UInt8>?,
+    _ derivation_path_cstr: UnsafePointer<CChar>?,
+    _ data: UnsafePointer<UInt8>?,
+    _ data_len: Int,
+    _ key_type: UInt8,
+    _ network: DashSDKNetwork,
+    _ out_signature: UnsafeMutablePointer<UInt8>?,
+    _ out_signature_capacity: Int,
+    _ out_signature_len: UnsafeMutablePointer<Int>?,
+    _ out_error: UnsafeMutablePointer<UInt8>?
+) -> Int32
