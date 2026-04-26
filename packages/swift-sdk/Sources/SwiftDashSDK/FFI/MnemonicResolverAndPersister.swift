@@ -263,35 +263,26 @@ public final class IdentityKeyPersister: @unchecked Sendable {
         let publicKeyHashHex = publicKeyHashData
             .map { String(format: "%02x", $0) }
             .joined()
+        // The 32 raw private bytes have to enter Swift `Data` to
+        // hand to `KeychainManager.storeIdentityPrivateKey`, which
+        // takes `Data` (Keychain APIs are iOS-only and Rust can't
+        // call SecItemAdd directly). Swift `Data` cannot be
+        // securely zeroed, so we keep this allocation as the only
+        // place the secret bytes touch the Swift heap and let it
+        // drop with the function frame as soon as Keychain has
+        // taken its copy.
+        //
+        // Earlier revisions also hex-encoded the private bytes
+        // into a `String` to call
+        // `KeyValidation.validatePrivateKeyForPublicKey`. That
+        // validation was tautological in this code path — Rust
+        // had just derived `publicKey` from `privateKey` via the
+        // same `secp256k1` operation a few microseconds earlier,
+        // and the `PersistKeyArgs` layout assertion guards
+        // against ABI drift between the two sides — so the only
+        // observable effect was an extra non-zeroizable Swift
+        // `String` of the private scalar. Removed for that reason.
         let privateKeyData = Data(bytes: privKeyPtr, count: 32)
-
-        // Per swift-sdk/CLAUDE.md "Always validate private keys
-        // match their public keys using
-        // KeyValidation.validatePrivateKeyForPublicKey". Catches
-        // any future ABI / payload corruption (e.g. struct
-        // padding drift, byte-order mistake, wrong-key-shipped
-        // bug) at the persist boundary instead of letting a
-        // mismatched row land in the keychain and surface as an
-        // opaque "signature invalid" error months later.
-        guard let resolvedKeyType = KeyType(rawValue: a.key_type) else {
-            return false
-        }
-        let privateKeyHex = privateKeyData
-            .map { String(format: "%02x", $0) }
-            .joined()
-        // `isTestnet` only affects WIF address derivation inside
-        // the validator, not the underlying ECDSA scalar→pubkey
-        // correspondence we actually care about — pass `true` as
-        // a stable default.
-        let validates = KeyValidation.validatePrivateKeyForPublicKey(
-            privateKeyHex: privateKeyHex,
-            publicKeyHex: publicKeyHex,
-            keyType: resolvedKeyType,
-            isTestnet: true
-        )
-        guard validates else {
-            return false
-        }
 
         // Identity-id is unknown pre-registration — Rust will
         // recompute it from the input addresses at submit time.

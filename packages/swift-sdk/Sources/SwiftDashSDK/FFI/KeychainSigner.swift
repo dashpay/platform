@@ -53,25 +53,36 @@ import SwiftData
 /// SwiftData `ModelContext` is not `Sendable` but we serialise access
 /// to it through a single internal queue.
 ///
-/// # Lifetime
+/// # Lifetime contract
 ///
 /// `init` allocates a `*mut SignerHandle` via
 /// `dash_sdk_signer_create_with_ctx` and registers `self` as the
 /// opaque ctx via `Unmanaged.passUnretained(self).toOpaque()` —
 /// a non-owning pointer. ARC alone controls when this object
-/// deallocates; the caller must keep the `KeychainSigner`
-/// instance alive for the duration of any FFI call that
-/// captured `handle`. `deinit` calls
-/// `dash_sdk_signer_destroy` to free the Rust-side handle/vtable
-/// allocations; the destroy trampoline is a no-op (no extra
-/// retain to balance).
+/// deallocates; the destroy trampoline is a no-op (no extra
+/// retain to balance) and `deinit` calls
+/// `dash_sdk_signer_destroy` to free the Rust handle/vtable.
+///
+/// **Caller responsibility:** the `KeychainSigner` instance
+/// MUST stay alive for the duration of any in-flight FFI call
+/// that captured the handle. Async wallet APIs that take
+/// `signer: KeychainSigner` perform the FFI work inside
+/// `Task.detached`; the function parameter holds a strong
+/// reference for the whole `await`, but each `Task.detached`
+/// closure must additionally do `_ = signer` so the strong
+/// reference is captured into the task and survives every
+/// possible Swift compiler optimization of "unused after this
+/// point". See the `_ = signer` keepalive lines in
+/// `ManagedPlatformWallet.swift` call sites for examples.
 ///
 /// Earlier revisions of this file used `passRetained`, which
 /// created a circular ownership: Rust held a +1 retain on `self`,
 /// the destroy trampoline only released it when the destroy FFI
 /// fired, and the destroy FFI was only invoked from `deinit` —
 /// which ARC could never enter while the +1 retain was alive.
-/// Result: every `KeychainSigner` instance leaked forever.
+/// Result: every `KeychainSigner` instance leaked forever. The
+/// current `passUnretained` shape removes the leak at the cost
+/// of the explicit keepalive contract above.
 public final class KeychainSigner: Signer, @unchecked Sendable {
     // MARK: Public surface
 

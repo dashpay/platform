@@ -281,6 +281,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
         ) { () -> (Data, Handle) in
+            // Keepalive — KeychainSigner now uses
+            // `passUnretained`, so the Rust ctx pointer dangles
+            // unless we keep the Swift owners alive across this
+            // detached work. Implicit-capturing `identitySigner`
+            // and `addressSigner` here forces strong references
+            // for the duration of the task; the trampoline can
+            // safely deref the ctx until this closure returns.
+            _ = identitySigner
+            _ = addressSigner
             let ffiInputs = inputs.map { input -> IdentityFundingInputFFI in
                 var hashTuple = hashTupleInit()
                 withUnsafeMutableBytes(of: &hashTuple) { raw in
@@ -997,10 +1006,12 @@ extension ManagedPlatformWallet {
         signer: KeychainSigner
     ) async throws -> String {
         let handle = self.handle
-        // Take the raw signer handle outside the Task — `KeychainSigner`
-        // owns its handle for its full lifetime (released in `deinit`),
-        // so the pointer is safe to capture into the detached Task as
-        // long as the caller keeps `signer` alive across the await.
+        // Take the raw signer handle outside the Task. `KeychainSigner`
+        // uses `passUnretained` for its FFI ctx, so the pointer is
+        // only safe while the Swift `signer` object is alive. The
+        // explicit `_ = signer` inside the Task keeps it alive for
+        // the duration of the detached work — see the "Lifetime
+        // contract" note on `KeychainSigner`.
         let signerHandle = signer.handle
         // Capture the 32-byte payload by value into a Sendable
         // `[UInt8]` so the detached Task can hand a fresh pointer
@@ -1009,6 +1020,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         return try await Task.detached(priority: .userInitiated) { () -> String in
+            _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
             var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { idBp in
@@ -1422,6 +1434,7 @@ extension ManagedPlatformWallet {
 
         let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
+            _ = signer
             var outHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
             let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
@@ -1488,6 +1501,7 @@ extension ManagedPlatformWallet {
         let establishedHandle: Handle = try await Task.detached(
             priority: .userInitiated
         ) { () -> Handle in
+            _ = signer
             var outHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
             let result = platform_wallet_accept_contact_request_with_signer(
@@ -1792,6 +1806,7 @@ extension ManagedPlatformWallet {
         let avatarBytes = update.avatarBytes
 
         return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
+            _ = signer
             var outProfile = dashPayProfileFFIEmpty()
             var error = PlatformWalletFFIError()
 
@@ -2161,6 +2176,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         try await Task.detached(priority: .userInitiated) {
+            _ = signer
             var error = PlatformWalletFFIError()
             let result = fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
                 toBytes.withUnsafeBufferPointer { toBp in
@@ -2228,6 +2244,7 @@ extension ManagedPlatformWallet {
         }
         let rows = ffiRows
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            _ = signer
             var newBalance: UInt64 = 0
             var error = PlatformWalletFFIError()
             let result = fromBytes.withUnsafeBufferPointer {
@@ -2266,6 +2283,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         try await Task.detached(priority: .userInitiated) {
+            _ = signer
             var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
@@ -2310,6 +2328,7 @@ extension ManagedPlatformWallet {
         let addPubkeys = addPublicKeys
         let disableIds = disablePublicKeyIds
         try await Task.detached(priority: .userInitiated) {
+            _ = signer
             var error = PlatformWalletFFIError()
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
@@ -2379,6 +2398,7 @@ extension ManagedPlatformWallet {
         let pubkeys = identityPubkeys
         return try await Task.detached(priority: .userInitiated) {
             () -> (Identifier, ManagedIdentity) in
+            _ = signer
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
