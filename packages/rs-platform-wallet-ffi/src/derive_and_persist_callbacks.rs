@@ -255,6 +255,35 @@ pub struct PersistKeyArgs {
     pub security_level: u8,
 }
 
+// Compile-time layout assertions. Mirrors the runtime
+// `assertPersistKeyArgsLayout` check on the Swift side. If any
+// field is added / reordered / resized below, BOTH sides need
+// to be updated; the constants here turn drift into a build
+// failure rather than an EXC_BAD_ACCESS at trampoline time.
+//
+// Layout on 64-bit ABI:
+//
+// | offset | field                  | size |
+// |--------|------------------------|------|
+// | 0      | wallet_id_bytes        | 8    |
+// | 8      | identity_index         | 4    |
+// | 12     | key_id                 | 4    |
+// | 16     | key_index              | 4    |
+// | 20     | (padding)              | 4    |
+// | 24     | derivation_path_cstr   | 8    |
+// | 32     | public_key_bytes       | 8    |
+// | 40     | public_key_len         | 8    |
+// | 48     | public_key_hash_bytes  | 8    |
+// | 56     | private_key_bytes      | 8    |
+// | 64     | key_type               | 1    |
+// | 65     | purpose                | 1    |
+// | 66     | security_level         | 1    |
+// | 67     | (padding)              | 5    |
+//
+// Total = 72 bytes, alignment = 8 (pointer / usize).
+const _: [u8; 72] = [0u8; std::mem::size_of::<PersistKeyArgs>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<PersistKeyArgs>()];
+
 /// Function pointer type for the per-key persist callback.
 ///
 /// Returns a non-zero `u8` on a successful persist, `0` on

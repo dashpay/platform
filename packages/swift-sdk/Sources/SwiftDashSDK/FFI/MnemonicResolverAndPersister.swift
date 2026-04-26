@@ -6,26 +6,47 @@ import Foundation
 /// Swift bridge backing the Rust-side `MnemonicResolverHandle`.
 ///
 /// The Rust derivation loop in
-/// `dash_sdk_derive_and_persist_identity_keys` calls back into
-/// Swift via this resolver to fetch the BIP-39 mnemonic for the
-/// wallet whose identity keys it's deriving. The mnemonic is
+/// `dash_sdk_derive_and_persist_identity_keys` (and the
+/// platform-address signing path in
+/// `dash_sdk_sign_with_mnemonic_resolver_and_path`) calls back
+/// into Swift via this resolver to fetch the BIP-39 mnemonic for
+/// the wallet whose identity keys it's deriving. The mnemonic is
 /// copied directly into a Rust-owned `Zeroizing` stack buffer; it
 /// never round-trips back to Swift after this single read, and
 /// the Swift `String` from `WalletStorage.retrieveMnemonic` falls
 /// out of scope at the end of the trampoline.
 ///
-/// # Lifetime
+/// # Lifetime contract
 ///
-/// Init allocates a `MnemonicResolverHandle*` via
-/// `dash_sdk_mnemonic_resolver_create`, handing Rust an
-/// `Unmanaged.passRetained(self)` pointer. `deinit` calls
-/// `dash_sdk_mnemonic_resolver_destroy`, which fires the
-/// destructor trampoline that releases the +1 retain. The handle
-/// is safe to pass to FFI calls for the entire lifetime of this
-/// instance.
+/// Init does NOT retain `self` through the Rust handle —
+/// `Unmanaged.passUnretained` is used so that ARC alone controls
+/// when this object deallocates. The Swift owner is responsible
+/// for keeping the instance alive for the duration of any FFI
+/// call that captured `handle`. In practice that's automatic for
+/// the synchronous `dash_sdk_derive_and_persist_identity_keys` /
+/// `dash_sdk_sign_with_mnemonic_resolver_and_path` paths, where
+/// a local `let resolver = MnemonicResolver(...)` variable
+/// outlives the call by construction.
+///
+/// `deinit` calls `dash_sdk_mnemonic_resolver_destroy` to free
+/// the Rust-side handle/vtable allocations.
+///
+/// # Why not `passRetained`?
+///
+/// Using `passRetained` here would create a circular ownership:
+/// Rust holds a +1 retain on `self`, the destroy trampoline only
+/// releases that retain when the destroy FFI is invoked, and the
+/// destroy FFI is only invoked from `deinit`. ARC won't run
+/// `deinit` while the +1 retain is alive → the handle leaks
+/// every instance forever. Per-call usage in
+/// `prePersistIdentityKeysForRegistration` would leak two of
+/// these per registration.
 public final class MnemonicResolver: @unchecked Sendable {
     /// Owned for the lifetime of this object. Pass this to
-    /// `dash_sdk_derive_and_persist_identity_keys`.
+    /// `dash_sdk_derive_and_persist_identity_keys` (or the
+    /// resolver-based sign FFI). Caller must keep `self` alive
+    /// for the duration of any FFI call that captured the
+    /// handle — see the type-level "Lifetime contract" note.
     public var handle: UnsafeMutablePointer<MnemonicResolverHandle>? {
         handlePtr
     }
@@ -39,7 +60,7 @@ public final class MnemonicResolver: @unchecked Sendable {
     public init(storage: WalletStorage = WalletStorage()) {
         self.storage = storage
 
-        let ctx = Unmanaged.passRetained(self).toOpaque()
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
         self.handlePtr = dash_sdk_mnemonic_resolver_create(
             ctx,
             mnemonicResolverResolveTrampoline,
@@ -67,8 +88,21 @@ public final class MnemonicResolver: @unchecked Sendable {
         let mnemonic: String
         do {
             mnemonic = try storage.retrieveMnemonic(for: walletId)
-        } catch {
+        } catch WalletStorageError.mnemonicNotFound {
+            // Distinct "this wallet has no stored mnemonic" case
+            // — Rust surfaces this as the recoverable
+            // `mnemonicMissing(walletIdHex:)` error in the Swift
+            // signing path, which UI uses to direct the user
+            // toward "import this wallet's mnemonic".
             return .notFound
+        } catch {
+            // Anything else (Keychain access denied, biometric
+            // auth failed, OSStatus failure...) is a real
+            // operational error. Map to `.other` so the
+            // distinction survives across the FFI boundary —
+            // collapsing into `.notFound` would point the user
+            // toward the wrong remediation.
+            return .other
         }
 
         // `withCString` materializes a null-terminated UTF-8 byte
@@ -94,11 +128,6 @@ public final class MnemonicResolver: @unchecked Sendable {
 }
 
 // MARK: - MnemonicResolver C trampolines
-//
-// These run on whatever thread the Rust derivation loop is
-// executing on (typically a background queue from the iOS
-// caller). `WalletStorage.retrieveMnemonic` is thread-safe; no
-// further synchronization is required.
 
 private func mnemonicResolverResolveTrampoline(
     ctx: UnsafeRawPointer?,
@@ -121,10 +150,11 @@ private func mnemonicResolverResolveTrampoline(
     return result.rawValue
 }
 
-private func mnemonicResolverDestroyTrampoline(ctx: UnsafeMutableRawPointer?) {
-    guard let ctx else { return }
-    Unmanaged<MnemonicResolver>.fromOpaque(ctx).release()
-}
+/// No-op destructor. The Swift `self` is held by ARC alone — the
+/// `passUnretained` ctx pointer carries no refcount to balance.
+/// Keeping the trampoline so the Rust vtable's `destroy` slot is
+/// always non-null (simplifies the Rust safety contract).
+private func mnemonicResolverDestroyTrampoline(_: UnsafeMutableRawPointer?) {}
 
 // MARK: - IdentityKeyPersister
 
@@ -139,6 +169,9 @@ private func mnemonicResolverDestroyTrampoline(ctx: UnsafeMutableRawPointer?) {
 /// whatever bytes it's told into Keychain. This is the inverse of
 /// the prior shape, where Swift hardcoded `keyId 0 -> MASTER,
 /// else HIGH` plus the DPP discriminant bytes.
+///
+/// Same `passUnretained` lifetime contract as
+/// [`MnemonicResolver`] — see that type's docs.
 public final class IdentityKeyPersister: @unchecked Sendable {
     /// Per-key metadata captured as a side effect of each persist
     /// callback firing during a `dash_sdk_derive_and_persist_identity_keys`
@@ -181,9 +214,14 @@ public final class IdentityKeyPersister: @unchecked Sendable {
     private var handlePtr: UnsafeMutablePointer<IdentityKeyPersisterHandle>?
 
     public init(keychain: KeychainManager = .shared) {
+        // Layout sanity check before the trampoline starts firing.
+        // Catches Rust `#[repr(C)]` drift at construction rather
+        // than letting `assumingMemoryBound` blow up mid-derive.
+        assertPersistKeyArgsLayout()
+
         self.keychain = keychain
 
-        let ctx = Unmanaged.passRetained(self).toOpaque()
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
         self.handlePtr = dash_sdk_identity_key_persister_create(
             ctx,
             identityKeyPersisterPersistTrampoline,
@@ -226,6 +264,34 @@ public final class IdentityKeyPersister: @unchecked Sendable {
             .map { String(format: "%02x", $0) }
             .joined()
         let privateKeyData = Data(bytes: privKeyPtr, count: 32)
+
+        // Per swift-sdk/CLAUDE.md "Always validate private keys
+        // match their public keys using
+        // KeyValidation.validatePrivateKeyForPublicKey". Catches
+        // any future ABI / payload corruption (e.g. struct
+        // padding drift, byte-order mistake, wrong-key-shipped
+        // bug) at the persist boundary instead of letting a
+        // mismatched row land in the keychain and surface as an
+        // opaque "signature invalid" error months later.
+        guard let resolvedKeyType = KeyType(rawValue: a.key_type) else {
+            return false
+        }
+        let privateKeyHex = privateKeyData
+            .map { String(format: "%02x", $0) }
+            .joined()
+        // `isTestnet` only affects WIF address derivation inside
+        // the validator, not the underlying ECDSA scalar→pubkey
+        // correspondence we actually care about — pass `true` as
+        // a stable default.
+        let validates = KeyValidation.validatePrivateKeyForPublicKey(
+            privateKeyHex: privateKeyHex,
+            publicKeyHex: publicKeyHex,
+            keyType: resolvedKeyType,
+            isTestnet: true
+        )
+        guard validates else {
+            return false
+        }
 
         // Identity-id is unknown pre-registration — Rust will
         // recompute it from the input addresses at submit time.
@@ -282,7 +348,5 @@ private func identityKeyPersisterPersistTrampoline(
     return persister.persist(args: typedArgs) ? PERSIST_KEY_SUCCESS : PERSIST_KEY_FAILURE
 }
 
-private func identityKeyPersisterDestroyTrampoline(ctx: UnsafeMutableRawPointer?) {
-    guard let ctx else { return }
-    Unmanaged<IdentityKeyPersister>.fromOpaque(ctx).release()
-}
+/// No-op destructor — see `mnemonicResolverDestroyTrampoline`.
+private func identityKeyPersisterDestroyTrampoline(_: UnsafeMutableRawPointer?) {}

@@ -750,11 +750,23 @@ extension ManagedPlatformWallet {
         // — both indexed in derivation order. Rust decided
         // (keyType, purpose, securityLevel); Swift just maps each
         // discriminant byte back into its strongly-typed enum.
+        //
+        // Both an FFI/Swift count drift AND any unknown enum
+        // discriminant byte are surfaced as a recoverable
+        // `PlatformWalletError.walletOperation` rather than a
+        // process abort or a silently-defaulted enum value.
+        // Defaulting `securityLevel` etc. to a known constant
+        // (the prior shape) would silently change key semantics
+        // if Rust's enum discriminants ever drifted; better to
+        // fail loudly so the caller learns about the ABI break
+        // immediately.
         let captured = persister.persistedKeys
-        precondition(
-            captured.count == out.count,
-            "persister callback fired \(captured.count) times but FFI returned \(out.count) pubkey rows"
-        )
+        guard captured.count == out.count, out.count == Int(keyCount) else {
+            throw PlatformWalletError.walletOperation(
+                "derive_and_persist_identity_keys returned \(out.count) pubkeys for "
+                + "\(keyCount) requested keys; persister captured \(captured.count)"
+            )
+        }
 
         var pubkeys: [IdentityPubkey] = []
         pubkeys.reserveCapacity(out.count)
@@ -767,12 +779,23 @@ extension ManagedPlatformWallet {
                 pubData = Data()
             }
             let meta = captured[i]
+            guard
+                let keyType = KeyType(rawValue: meta.keyType),
+                let purpose = KeyPurpose(rawValue: meta.purpose),
+                let securityLevel = SecurityLevel(rawValue: meta.securityLevel)
+            else {
+                throw PlatformWalletError.walletOperation(
+                    "derive_and_persist_identity_keys returned unknown enum bytes "
+                    + "(keyType=\(meta.keyType), purpose=\(meta.purpose), "
+                    + "securityLevel=\(meta.securityLevel)) for keyId=\(meta.keyId)"
+                )
+            }
             pubkeys.append(
                 IdentityPubkey(
                     keyId: meta.keyId,
-                    keyType: KeyType(rawValue: meta.keyType) ?? .ecdsaSecp256k1,
-                    purpose: KeyPurpose(rawValue: meta.purpose) ?? .authentication,
-                    securityLevel: SecurityLevel(rawValue: meta.securityLevel) ?? .high,
+                    keyType: keyType,
+                    purpose: purpose,
+                    securityLevel: securityLevel,
                     pubkeyBytes: pubData,
                     readOnly: false
                 )

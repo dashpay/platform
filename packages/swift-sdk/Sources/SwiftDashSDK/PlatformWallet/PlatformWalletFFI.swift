@@ -1397,6 +1397,30 @@ struct PersistKeyArgs {
     var security_level: UInt8
 }
 
+/// Expected size of `PersistKeyArgs` as laid out by Rust's
+/// `#[repr(C)]` on 64-bit targets. Mirrors the compile-time
+/// assertion in `rs-platform-wallet-ffi/src/
+/// derive_and_persist_callbacks.rs`. Tested at trampoline entry
+/// via `assertPersistKeyArgsLayout()`.
+let EXPECTED_PERSIST_KEY_ARGS_SIZE: Int = 72
+
+/// Verify the Swift `PersistKeyArgs` mirror lays out to the same
+/// 72-byte shape Rust's `#[repr(C)]` produces. Called once per
+/// process from the persister-callback hot path so a drift
+/// between the two sides surfaces as a clean assertion failure
+/// rather than an EXC_BAD_ACCESS in `assumingMemoryBound`.
+func assertPersistKeyArgsLayout() {
+    let actual = MemoryLayout<PersistKeyArgs>.size
+    let actualStride = MemoryLayout<PersistKeyArgs>.stride
+    precondition(
+        actual == EXPECTED_PERSIST_KEY_ARGS_SIZE
+            && actualStride == EXPECTED_PERSIST_KEY_ARGS_SIZE,
+        "PersistKeyArgs layout mismatch: size=\(actual) stride=\(actualStride), "
+            + "expected \(EXPECTED_PERSIST_KEY_ARGS_SIZE). Rust-side "
+            + "#[repr(C)] and Swift-side struct have diverged; fix one side."
+    )
+}
+
 /// Function pointer type for the per-key persist callback.
 /// Returns [`PERSIST_KEY_SUCCESS`] on a successful Keychain write,
 /// [`PERSIST_KEY_FAILURE`] to abort the rest of the Rust derivation

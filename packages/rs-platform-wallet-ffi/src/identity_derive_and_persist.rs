@@ -473,11 +473,6 @@ mod tests {
     const ENGLISH_PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
-    /// Capture for what the persister callback received. Behind a
-    /// Mutex because the FFI callback is `extern "C"` and can't
-    /// hold a `&mut`.
-    static CAPTURED: Mutex<Vec<CapturedPersist>> = Mutex::new(Vec::new());
-
     #[derive(Debug, Clone)]
     struct CapturedPersist {
         identity_index: u32,
@@ -491,6 +486,15 @@ mod tests {
         purpose: u8,
         security_level: u8,
         wallet_id: [u8; 32],
+    }
+
+    /// Per-test capture buffer the persister callback writes
+    /// into. Each test allocates its own `Box<CaptureCtx>` and
+    /// passes the raw pointer as the persister `ctx`, so tests
+    /// running in parallel cannot stomp each other (cargo runs
+    /// tests in the same module concurrently by default).
+    struct CaptureCtx {
+        rows: Mutex<Vec<CapturedPersist>>,
     }
 
     unsafe extern "C" fn capturing_resolve(
@@ -512,7 +516,14 @@ mod tests {
 
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
-    unsafe extern "C" fn capturing_persist(_ctx: *const c_void, args: *const PersistKeyArgs) -> u8 {
+    /// Persister that writes to the per-test [`CaptureCtx`]. The
+    /// `ctx` pointer is the `Box::into_raw` of a `CaptureCtx`
+    /// allocated by the test.
+    unsafe extern "C" fn capturing_persist(ctx: *const c_void, args: *const PersistKeyArgs) -> u8 {
+        if ctx.is_null() {
+            return crate::derive_and_persist_callbacks::PERSIST_KEY_FAILURE;
+        }
+        let capture = &*(ctx as *const CaptureCtx);
         let a = &*args;
         let path = CStr::from_ptr(a.derivation_path_cstr)
             .to_string_lossy()
@@ -522,7 +533,7 @@ mod tests {
         let private_key = std::slice::from_raw_parts(a.private_key_bytes, 32).to_vec();
         let mut wallet_id = [0u8; 32];
         std::ptr::copy_nonoverlapping(a.wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
-        CAPTURED.lock().unwrap().push(CapturedPersist {
+        capture.rows.lock().unwrap().push(CapturedPersist {
             identity_index: a.identity_index,
             key_id: a.key_id,
             key_index: a.key_index,
@@ -542,9 +553,18 @@ mod tests {
         crate::derive_and_persist_callbacks::PERSIST_KEY_FAILURE
     }
 
-    fn make_handles(
-        persist: crate::derive_and_persist_callbacks::PersistKeyCallback,
-    ) -> (*mut MnemonicResolverHandle, *mut IdentityKeyPersisterHandle) {
+    /// Allocate a fresh capture context + paired handles.
+    /// Returns `(resolver, persister, capture_box_ptr)` — the
+    /// capture pointer must be freed (via `Box::from_raw`) after
+    /// the test's assertions have run.
+    fn make_capturing_handles() -> (
+        *mut MnemonicResolverHandle,
+        *mut IdentityKeyPersisterHandle,
+        *mut CaptureCtx,
+    ) {
+        let capture = Box::into_raw(Box::new(CaptureCtx {
+            rows: Mutex::new(Vec::new()),
+        }));
         unsafe {
             (
                 dash_sdk_mnemonic_resolver_create(
@@ -552,15 +572,38 @@ mod tests {
                     capturing_resolve,
                     noop_destroy,
                 ),
-                dash_sdk_identity_key_persister_create(std::ptr::null_mut(), persist, noop_destroy),
+                dash_sdk_identity_key_persister_create(
+                    capture as *mut c_void,
+                    capturing_persist,
+                    noop_destroy,
+                ),
+                capture,
+            )
+        }
+    }
+
+    /// Allocate handles where the persister always returns
+    /// failure. No capture buffer is needed.
+    fn make_failing_handles() -> (*mut MnemonicResolverHandle, *mut IdentityKeyPersisterHandle) {
+        unsafe {
+            (
+                dash_sdk_mnemonic_resolver_create(
+                    std::ptr::null_mut(),
+                    capturing_resolve,
+                    noop_destroy,
+                ),
+                dash_sdk_identity_key_persister_create(
+                    std::ptr::null_mut(),
+                    failing_persist,
+                    noop_destroy,
+                ),
             )
         }
     }
 
     #[test]
     fn happy_path_persists_three_keys_and_returns_pubkeys() {
-        CAPTURED.lock().unwrap().clear();
-        let (resolver, persister) = make_handles(capturing_persist);
+        let (resolver, persister, capture) = make_capturing_handles();
         let wallet_id = [42u8; 32];
         let mut out = IdentityRegistrationKeyDerivationsFFI {
             items: std::ptr::null_mut(),
@@ -582,7 +625,10 @@ mod tests {
         assert_eq!(rc, PlatformWalletFFIResult::Success);
         assert_eq!(out.count, 3);
 
-        let captured = CAPTURED.lock().unwrap().clone();
+        // SAFETY: `capture` is alive (we're about to free it
+        // below) and the persister can no longer fire — the FFI
+        // call has already returned synchronously.
+        let captured = unsafe { (*capture).rows.lock().unwrap().clone() };
         assert_eq!(captured.len(), 3);
 
         // key_id, key_index sequence
@@ -616,13 +662,14 @@ mod tests {
             crate::dash_sdk_derive_identity_keys_from_mnemonic_free(&mut out);
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);
+            // Reclaim the per-test capture box.
+            let _ = Box::from_raw(capture);
         }
     }
 
     #[test]
     fn returning_false_from_persister_aborts_with_wallet_op_error() {
-        CAPTURED.lock().unwrap().clear();
-        let (resolver, persister) = make_handles(failing_persist);
+        let (resolver, persister) = make_failing_handles();
         let wallet_id = [1u8; 32];
         let mut out = IdentityRegistrationKeyDerivationsFFI {
             items: std::ptr::null_mut(),
@@ -652,7 +699,7 @@ mod tests {
 
     #[test]
     fn rejects_null_inputs() {
-        let (resolver, persister) = make_handles(capturing_persist);
+        let (resolver, persister, capture) = make_capturing_handles();
         let wallet_id = [0u8; 32];
         let mut err = PlatformWalletFFIError::success();
         // Null out_pubkeys.
@@ -691,13 +738,13 @@ mod tests {
         unsafe {
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);
+            let _ = Box::from_raw(capture);
         }
     }
 
     #[test]
     fn key_count_zero_is_success_no_calls() {
-        CAPTURED.lock().unwrap().clear();
-        let (resolver, persister) = make_handles(capturing_persist);
+        let (resolver, persister, capture) = make_capturing_handles();
         let wallet_id = [0u8; 32];
         let mut out = IdentityRegistrationKeyDerivationsFFI {
             items: std::ptr::null_mut(),
@@ -718,10 +765,11 @@ mod tests {
         };
         assert_eq!(rc, PlatformWalletFFIResult::Success);
         assert_eq!(out.count, 0);
-        assert_eq!(CAPTURED.lock().unwrap().len(), 0);
+        assert_eq!(unsafe { (*capture).rows.lock().unwrap().len() }, 0);
         unsafe {
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);
+            let _ = Box::from_raw(capture);
         }
     }
 }

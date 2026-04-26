@@ -56,13 +56,22 @@ import SwiftData
 /// # Lifetime
 ///
 /// `init` allocates a `*mut SignerHandle` via
-/// `dash_sdk_signer_create_with_ctx`. The Rust side captures the
-/// vtable + the opaque `ctx` (which is
-/// `Unmanaged.passRetained(self).toOpaque()` — a +1 retain on `self`).
-/// `deinit` calls `dash_sdk_signer_destroy`, which fires our
-/// destructor trampoline, which drops the +1 retain. The handle is
-/// safe to pass to FFI calls for the entire lifetime of the
-/// `KeychainSigner` instance.
+/// `dash_sdk_signer_create_with_ctx` and registers `self` as the
+/// opaque ctx via `Unmanaged.passUnretained(self).toOpaque()` —
+/// a non-owning pointer. ARC alone controls when this object
+/// deallocates; the caller must keep the `KeychainSigner`
+/// instance alive for the duration of any FFI call that
+/// captured `handle`. `deinit` calls
+/// `dash_sdk_signer_destroy` to free the Rust-side handle/vtable
+/// allocations; the destroy trampoline is a no-op (no extra
+/// retain to balance).
+///
+/// Earlier revisions of this file used `passRetained`, which
+/// created a circular ownership: Rust held a +1 retain on `self`,
+/// the destroy trampoline only released it when the destroy FFI
+/// fired, and the destroy FFI was only invoked from `deinit` —
+/// which ARC could never enter while the +1 retain was alive.
+/// Result: every `KeychainSigner` instance leaked forever.
 public final class KeychainSigner: Signer, @unchecked Sendable {
     // MARK: Public surface
 
@@ -94,6 +103,12 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         /// `key_type == 0xFF` branch: the wallet-mnemonic Keychain
         /// item is missing for the wallet that owns this address.
         case mnemonicMissing(walletIdHex: String)
+        /// `key_type == 0xFF` branch: the resolved
+        /// `PersistentPlatformAddress.walletId` was not the
+        /// expected 32-byte length. Indicates a corrupt persister
+        /// write — every row should carry a wallet id matching
+        /// the wallet's `walletId` field exactly.
+        case walletIdInvalidLength(actual: Int, expected: Int)
         /// `dash_sdk_sign_with_mnemonic_and_path` returned a
         /// non-zero error tag. The tag is the byte written to
         /// `out_error` (see `SIGN_WITH_MNEMONIC_ERR_*` constants in
@@ -118,6 +133,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 return "PersistentPlatformAddress row for \(hashHex) has no derivation path."
             case .mnemonicMissing(let walletIdHex):
                 return "No Keychain mnemonic stored for wallet \(walletIdHex)."
+            case .walletIdInvalidLength(let actual, let expected):
+                return "PersistentPlatformAddress.walletId is \(actual) bytes; expected \(expected)."
             case .signWithMnemonicFailed(let tag):
                 return "dash_sdk_sign_with_mnemonic_and_path failed with error tag \(tag)."
             }
@@ -175,11 +192,16 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // reference. Used by the platform-address signing branch.
         self.mnemonicResolver = MnemonicResolver()
 
-        // Hand Rust an opaque `+1`-retained pointer to self. The
-        // matching release happens in `keychainSignerDestroyTrampoline`
-        // when the FFI handle is destroyed. Until then `self` cannot
-        // be deallocated even if Swift drops every other reference.
-        let ctx = Unmanaged.passRetained(self).toOpaque()
+        // Hand Rust an opaque NON-owning pointer to self. The
+        // Swift owner is responsible for keeping `self` alive
+        // for the duration of any in-flight FFI call that
+        // captured the handle (the natural pattern: `let signer
+        // = KeychainSigner(...)` followed by an `await
+        // ...registerIdentity(...signer:)` keeps the local
+        // `signer` alive until the await completes). See the
+        // type-level "Lifetime" note for why `passRetained`
+        // would leak.
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
 
         let handlePtr = dash_sdk_signer_create_with_ctx(
             ctx,
@@ -195,10 +217,12 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     }
 
     deinit {
-        // `dash_sdk_signer_destroy` drops the box, which fires the
-        // vtable destructor trampoline. The trampoline performs the
-        // matching `Unmanaged.fromOpaque(...).release()`, balancing
-        // the `passRetained` from `init`.
+        // `dash_sdk_signer_destroy` drops the Rust handle box +
+        // vtable allocation. The destroy trampoline is a no-op
+        // (init used `passUnretained`, so there's nothing to
+        // release). Caller must ensure no in-flight FFI calls
+        // still reference `handlePtr` at the moment ARC fires
+        // this `deinit`.
         if let handlePtr {
             dash_sdk_signer_destroy(handlePtr)
         }
@@ -414,6 +438,22 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         //    not Swift's.
         guard let ctx = resolvePlatformAddressContext(addressHash: addressHash) else {
             return .failure(.platformAddressNotFound(addressHashHex: hashHex))
+        }
+
+        // Validate the wallet-id length BEFORE shipping the
+        // pointer across the FFI. Rust's
+        // `dash_sdk_sign_with_mnemonic_resolver_and_path` reads
+        // exactly 32 bytes from `wallet_id_bytes`; a truncated /
+        // corrupt `PersistentPlatformAddress.walletId` row would
+        // cause a read past the buffer rather than a clean
+        // failure. Surface the precise reason here so the
+        // explorer / log makes the corruption obvious.
+        let expectedWalletIdLen = 32
+        guard ctx.walletId.count == expectedWalletIdLen else {
+            return .failure(.walletIdInvalidLength(
+                actual: ctx.walletId.count,
+                expected: expectedWalletIdLen
+            ))
         }
 
         // Buffer sized generously (128B) — ECDSA compact-recoverable
@@ -683,8 +723,9 @@ private func keychainSignerCanSignTrampoline(
 }
 
 /// Vtable destructor — invoked exactly once when the FFI handle is
-/// destroyed. Drops the `+1` retain captured by `init`.
-private func keychainSignerDestroyTrampoline(ctx: UnsafeMutableRawPointer?) {
-    guard let ctx else { return }
-    Unmanaged<KeychainSigner>.fromOpaque(ctx).release()
-}
+/// destroyed. No-op now that init uses `passUnretained`: there is
+/// no extra retain to balance, and ARC has already deallocated
+/// (or is in the process of deallocating) `self` by the time
+/// `dash_sdk_signer_destroy` runs from `deinit`. Kept around so
+/// the Rust vtable's `destroy` slot is always non-null.
+private func keychainSignerDestroyTrampoline(_: UnsafeMutableRawPointer?) {}
