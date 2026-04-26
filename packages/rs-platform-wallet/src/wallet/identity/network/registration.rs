@@ -354,9 +354,13 @@ impl IdentityWallet {
     ///   with. Caller must derive these from the wallet seed (or from
     ///   iOS Keychain via `dash_sdk_derive_identity_keys_from_mnemonic`)
     ///   and persist the matching private keys to whatever store the
-    ///   `signer` reads from. The first key (id=0) MUST be MASTER —
-    ///   the asset-lock-spend signature on the IdentityCreate
-    ///   transition is keyed off it.
+    ///   `signer` reads from. The first key (id=0) MUST be a MASTER /
+    ///   AUTHENTICATION key — DPP's IdentityCreate state transition
+    ///   itself must be signed by a MASTER-level identity key, and we
+    ///   pin that role on id=0 by convention so callers don't need
+    ///   protocol knowledge to assemble the map. The asset-lock-spend
+    ///   signature on the same transition is a separate signature
+    ///   keyed off `asset_lock_private_key`, supplied via `funding`.
     /// - `signer`: external signer for the IdentityCreate transition's
     ///   per-key signatures.
     ///
@@ -379,6 +383,30 @@ impl IdentityWallet {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "keys_map must contain at least one identity public key".to_string(),
             ));
+        }
+        // Defensive: pin id=0 to MASTER+AUTHENTICATION at the FFI
+        // boundary so a malformed map fails fast here instead of
+        // surfacing as an opaque protocol-side rejection from
+        // `put_to_platform_and_wait_for_response`.
+        {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            match keys_map.get(&0) {
+                Some(k)
+                    if k.security_level() == SecurityLevel::MASTER
+                        && k.purpose() == Purpose::AUTHENTICATION => {}
+                Some(_) => {
+                    return Err(PlatformWalletError::InvalidIdentityData(
+                        "keys_map[0] must be a MASTER-level AUTHENTICATION key \
+                         (required to sign the IdentityCreate transition)"
+                            .to_string(),
+                    ));
+                }
+                None => {
+                    return Err(PlatformWalletError::InvalidIdentityData(
+                        "keys_map must include key id=0 with MASTER security level".to_string(),
+                    ));
+                }
+            }
         }
 
         // Step 1: obtain asset lock proof + private key.

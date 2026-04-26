@@ -82,10 +82,10 @@ pub unsafe extern "C" fn platform_wallet_withdraw_credits_with_signer(
             return PlatformWalletFFIResult::ErrorUtf8Conversion;
         }
     };
-    // Network-aware parse; `Address::from_str` returns an unchecked
-    // address. `assume_checked` is correct here because Platform
-    // accepts the address as-is and the Rust SDK pickle serializes it
-    // back out the same way.
+    // `Address::from_str` returns an unchecked address; cross-check
+    // it against the wallet's active network before `assume_checked`
+    // so a mainnet-vs-testnet mismatch fails fast at the FFI boundary
+    // rather than as an opaque protocol-side error.
     let to_address_unchecked = match DashAddress::from_str(&to_address_str) {
         Ok(a) => a,
         Err(e) => {
@@ -98,12 +98,27 @@ pub unsafe extern "C" fn platform_wallet_withdraw_credits_with_signer(
             return PlatformWalletFFIResult::ErrorInvalidParameter;
         }
     };
-    let to_address_parsed = to_address_unchecked.assume_checked();
 
     let signer_addr = signer_handle as usize;
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
+            let wallet_network = wallet.platform().network();
+            let to_address_parsed =
+                match to_address_unchecked.clone().require_network(wallet_network) {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        if !out_error.is_null() {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorInvalidParameter,
+                                format!(
+                                "Address network mismatch (wallet network {wallet_network:?}): {e}"
+                            ),
+                            );
+                        }
+                        return PlatformWalletFFIResult::ErrorInvalidParameter;
+                    }
+                };
             let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);

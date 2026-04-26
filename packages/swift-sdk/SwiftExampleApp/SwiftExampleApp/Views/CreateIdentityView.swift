@@ -750,10 +750,16 @@ struct CreateIdentityView: View {
     /// Identity-registration keys aren't gap-limited — any `N` is
     /// derivable from the mnemonic at `m/9'/coin'/5'/0'/0'/N'/0'` —
     /// so "next unused" is just `max + 1`.
+    ///
+    /// Uses checked addition: at `UInt32.max` we leave the picker at
+    /// `UInt32.max` rather than wrapping to `0` (which would silently
+    /// pre-fill a colliding slot). The user can still adjust the
+    /// stepper, and `canSubmit` keeps the button disabled until the
+    /// chosen index isn't already taken.
     private func nextUnusedIdentityIndex(for walletId: Data) -> UInt32 {
         let used = usedIdentityIndices(for: walletId)
         guard let highest = used.max() else { return 0 }
-        return highest &+ 1
+        return highest == UInt32.max ? UInt32.max : highest + 1
     }
 
     private func identityRegistrationAccount(for walletId: Data) -> PersistentAccount? {

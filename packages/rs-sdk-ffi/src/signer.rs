@@ -539,12 +539,20 @@ impl Signer<PlatformAddress> for VTableSigner {
         platform_address: &PlatformAddress,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        // Mirror the existing `Signer<IdentityPublicKey>` behaviour:
-        // wrap the raw signature in a P2PKH witness. P2SH addresses
-        // are not yet supported across the FFI signer path — the
-        // Swift `KeychainSigner` only stores P2PKH key material.
-        let signature = self.sign(platform_address, data).await?;
-        Ok(AddressWitness::P2pkh { signature })
+        // P2SH addresses are not yet supported across the FFI signer
+        // path — the Swift `KeychainSigner` only stores P2PKH key
+        // material. Reject P2SH explicitly so a future caller that
+        // unintentionally feeds a P2SH input gets a clear error
+        // rather than a structurally invalid `P2pkh` witness.
+        match platform_address {
+            PlatformAddress::P2pkh(_) => {
+                let signature = self.sign(platform_address, data).await?;
+                Ok(AddressWitness::P2pkh { signature })
+            }
+            PlatformAddress::P2sh(_) => Err(ProtocolError::Generic(
+                "FFI signer does not yet support P2SH platform-address witnesses".to_string(),
+            )),
+        }
     }
 
     fn can_sign_with(&self, platform_address: &PlatformAddress) -> bool {

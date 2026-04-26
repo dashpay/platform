@@ -68,6 +68,7 @@ use std::convert::TryFrom;
 use std::ffi::CString;
 use std::ptr;
 use std::slice;
+use zeroize::Zeroize;
 
 use crate::error::*;
 use crate::handle::*;
@@ -655,8 +656,17 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index_free(
             let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
         }
         if !row.private_key_wif.is_null() {
-            let _ = CString::from_raw(row.private_key_wif);
+            // The WIF string encodes the same 32-byte secret as
+            // `private_key_bytes`; scrub the buffer in place before
+            // dropping so the heap allocation isn't released with
+            // recoverable key material.
+            let mut wif = CString::from_raw(row.private_key_wif).into_bytes_with_nul();
+            wif.zeroize();
+            row.private_key_wif = ptr::null_mut();
         }
+        // Final inline secret scalar — wipe before the row slab is
+        // returned to the allocator.
+        row.private_key_bytes.zeroize();
     }
     // Reclaim the row array itself.
     let _ = Box::from_raw(slice as *mut [IdentityKeyPreviewFFI]);

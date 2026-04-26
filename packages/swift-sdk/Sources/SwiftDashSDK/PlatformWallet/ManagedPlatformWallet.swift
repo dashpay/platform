@@ -2192,7 +2192,9 @@ extension ManagedPlatformWallet {
         recipients: [PlatformAddressCreditOutput],
         signer: KeychainSigner
     ) async throws -> UInt64 {
-        precondition(!recipients.isEmpty, "recipients must contain at least one entry")
+        guard !recipients.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
         let handle = self.handle
         let signerHandle = signer.handle
         let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
@@ -2371,7 +2373,9 @@ extension ManagedPlatformWallet {
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner
     ) async throws -> (Identifier, ManagedIdentity) {
-        precondition(!identityPubkeys.isEmpty, "identityPubkeys must not be empty")
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
         let handle = self.handle
         let signerHandle = signer.handle
         let pubkeys = identityPubkeys

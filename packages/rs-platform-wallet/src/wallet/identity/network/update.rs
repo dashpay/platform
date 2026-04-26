@@ -188,6 +188,18 @@ impl IdentityWallet {
     /// to whatever store the supplied signer reads from (iOS Keychain
     /// in the typical case). The signer here only signs the update
     /// transition itself; it does not derive the new keys.
+    ///
+    /// CACHE INVARIANT: this function does NOT refresh the in-process
+    /// `IdentityManager` after a successful broadcast. The local
+    /// cached `Identity` keeps the pre-update revision and key set
+    /// until the caller invokes [`Self::refresh_identity`] (or the
+    /// next sync round). A subsequent call to this function for the
+    /// same identity without an intervening refresh will reuse the
+    /// stale revision and Platform will reject the duplicate. This
+    /// matches the behaviour of the legacy [`Self::update_identity`]
+    /// path; it is documented here rather than fixed because the
+    /// refresh requires a wallet-manager write lock that may already
+    /// be held higher in the call stack.
     pub async fn update_identity_with_external_signer<S>(
         &self,
         identity_id: &Identifier,

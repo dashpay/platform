@@ -23,10 +23,13 @@
 //! rest of this crate carefully preserves), the Swift caller hands
 //! us the mnemonic for the duration of one call. The mnemonic is
 //! parsed, converted to a 64-byte seed inside a [`Zeroizing`] buffer,
-//! used to build the master xpriv, walked through `key_count`
-//! derivation paths, and then dropped — all within this function's
-//! lifetime. Only the final 32-byte secret scalars cross the FFI for
-//! the caller to persist into Keychain.
+//! used to build the master xpriv, and walked through `key_count`
+//! derivation paths — all within this function's lifetime. The seed
+//! is wrapped; the intermediate `ExtendedPrivKey`s aren't and rely on
+//! the underlying `secp256k1::SecretKey` drop path to clear the
+//! secret. Only the final 32-byte secret scalars cross the FFI; the
+//! `_free` path additionally zeroizes the inline `private_key_bytes`
+//! and the WIF buffer in place before the row slab is released.
 //!
 //! The output rows reuse [`IdentityKeyPreviewFFI`] and the wrapper
 //! reuses [`crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI`]
@@ -140,9 +143,15 @@ fn identity_auth_derivation_path(
 /// [`platform_wallet_derive_identity_keys_for_index`](crate::platform_wallet_derive_identity_keys_for_index)
 /// so the Swift marshalling and free path are identical.
 ///
-/// Both the seed and intermediate xprivs are wrapped in [`Zeroizing`]
-/// inside Rust; only the final 32-byte secret scalars cross the FFI
-/// boundary for the caller to persist into Keychain.
+/// The 64-byte mnemonic seed is wrapped in [`Zeroizing`] for the
+/// duration of the call. Intermediate `ExtendedPrivKey` values
+/// (`master`, `derived`) are *not* wrapped — they currently rely on
+/// the underlying `secp256k1::SecretKey`'s drop path to scrub itself
+/// rather than an explicit `Zeroizing` wrapper. Only the final
+/// 32-byte secret scalars cross the FFI boundary for the caller to
+/// persist into Keychain; on the `_free` path both the inline
+/// `private_key_bytes` and the WIF buffer are zeroized in place
+/// before the row slab is released.
 ///
 /// # Why this exists
 /// Identity-key derivation that previously routed through the wallet
@@ -462,8 +471,17 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic_free(
             let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
         }
         if !row.private_key_wif.is_null() {
-            let _ = CString::from_raw(row.private_key_wif);
+            // The WIF string encodes the same 32-byte secret as
+            // `private_key_bytes`; scrub the buffer in place before
+            // dropping so the heap allocation isn't released with
+            // recoverable key material.
+            let mut wif = CString::from_raw(row.private_key_wif).into_bytes_with_nul();
+            zeroize::Zeroize::zeroize(&mut wif);
+            row.private_key_wif = std::ptr::null_mut();
         }
+        // Final inline secret scalar — wipe before the row slab is
+        // returned to the allocator.
+        zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
     }
     let _ = Box::from_raw(slice as *mut [IdentityKeyPreviewFFI]);
 }
