@@ -73,6 +73,16 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) public var tokenBalances: [PersistentTokenBalance]
 
+    // Contracts in the local store that name this identity as their
+    // owner. `.nullify` so deleting the identity leaves the contract
+    // rows alive (with `ownerIdentity` nulled) — matches the user's
+    // intent that contracts persist independently of whether the owner
+    // identity happens to be loaded.
+    // The `@Relationship` macro is declared on the contract side
+    // (`PersistentDataContract.ownerIdentity`) so this is a plain
+    // stored property — see `wallet` above for the same pattern.
+    public var ownedDataContracts: [PersistentDataContract]
+
     // MARK: - Initialization
     public init(
         identityId: Data,
@@ -105,6 +115,7 @@ public final class PersistentIdentity {
         self.publicKeys = []
         self.documents = []
         self.tokenBalances = []
+        self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.lastSyncedAt = nil

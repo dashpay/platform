@@ -531,6 +531,16 @@ public class PlatformWalletPersistenceHandler {
                     network: network
                 )
                 backgroundContext.insert(row)
+                // Back-fill any contracts in the local store that
+                // already name this identity as their owner. Runs on
+                // the background context — `ContractIdentityLinker`
+                // is context-agnostic and isolation-free for exactly
+                // this reason. The atomic save at `endChangeset`
+                // persists the relationship.
+                ContractIdentityLinker.linkIdentityToOwnedContracts(
+                    identity: row,
+                    modelContext: backgroundContext
+                )
             }
             // Scalars that ride every upsert — Rust guarantees
             // monotonic revision + paired balance/revision updates

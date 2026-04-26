@@ -554,6 +554,13 @@ struct TransitionDetailView: View {
         network: appState.currentNetwork
       )
       modelContext.insert(row)
+      // Back-fill any locally-cached contracts that already name
+      // this identity as their owner. The save below persists
+      // the relationship.
+      ContractIdentityLinker.linkIdentityToOwnedContracts(
+        identity: row,
+        modelContext: modelContext
+      )
       try? modelContext.save()
     }
 

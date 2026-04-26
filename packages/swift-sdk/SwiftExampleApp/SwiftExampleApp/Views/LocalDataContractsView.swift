@@ -142,6 +142,21 @@ struct DataContractRow: View {
 }
 
 struct LoadDataContractView: View {
+    /// Two ways to identify the contract the user wants to download:
+    ///   - `.contractId` — paste the contract id directly.
+    ///   - `.tokenId`    — paste a token id; the view resolves the
+    ///     owning contract id (and token contract position) via
+    ///     `sdk.getTokenContractInfo(tokenId:)` and then runs the
+    ///     same contract-fetch path. Tokens are extracted by
+    ///     `DataContractParser` as part of the contract ingest, so a
+    ///     successful contract download persists the token too — no
+    ///     separate "Add Token" model is needed.
+    enum LoadMode: String, CaseIterable, Identifiable {
+        case contractId = "Contract ID"
+        case tokenId = "Token ID"
+        var id: String { rawValue }
+    }
+
     @EnvironmentObject var platformState: AppState
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -149,13 +164,25 @@ struct LoadDataContractView: View {
 
     @Query private var existingContracts: [PersistentDataContract]
 
-    @State private var contractId = ""
+    @State private var loadMode: LoadMode = .contractId
+    /// Free-form input; semantics depend on `loadMode`. Either a
+    /// base58 contract id (contractId mode) or a base58 token id
+    /// (tokenId mode).
+    @State private var inputId = ""
     @State private var contractName = ""
     @State private var errorMessage: String?
     @State private var showError = false
     @State private var fetchedContract: [String: Any]?
     @State private var showExampleContracts = false
     @State private var currentNetwork: String = "Unknown"
+
+    /// In tokenId mode, the resolved owning contract id (base58)
+    /// after `getTokenContractInfo`. Surfaced to the user before the
+    /// contract download kicks off.
+    @State private var resolvedContractId: String?
+    /// In tokenId mode, the resolved token-contract-position (the
+    /// slot inside the owning contract that holds this token).
+    @State private var resolvedTokenPosition: Int?
 
     // Known testnet contracts - these are the common system contracts
     let exampleContracts = [
@@ -171,32 +198,50 @@ struct LoadDataContractView: View {
         NavigationView {
             Form {
                 Section(footer: Text("Connected to: \(platformState.currentNetwork.displayName)")) {
-                    EmptyView()
+                    Picker("Add by", selection: $loadMode) {
+                        ForEach(LoadMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(isLoading)
                 }
 
-                Section("Contract Details") {
+                Section(loadMode == .contractId ? "Contract Details" : "Token Details") {
                     HStack {
-                        TextField("Contract ID (Base58)", text: $contractId)
-                            .textContentType(.none)
-                            .autocapitalization(.none)
-                            .disabled(isLoading)
-
-                        Button(action: { showExampleContracts.toggle() }) {
-                            Image(systemName: "list.bullet")
-                                .foregroundColor(.blue)
-                        }
+                        TextField(
+                            loadMode == .contractId
+                                ? "Contract ID (Base58)"
+                                : "Token ID (Base58)",
+                            text: $inputId
+                        )
+                        .textContentType(.none)
+                        .autocapitalization(.none)
                         .disabled(isLoading)
+
+                        // Examples list only makes sense for the
+                        // contract-id flow — the seeded list is well-known
+                        // contract ids, not token ids.
+                        if loadMode == .contractId {
+                            Button(action: { showExampleContracts.toggle() }) {
+                                Image(systemName: "list.bullet")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isLoading)
+                        }
                     }
 
-                    TextField("Name (Optional)", text: $contractName)
-                        .textContentType(.none)
-                        .disabled(isLoading)
+                    if loadMode == .contractId {
+                        TextField("Name (Optional)", text: $contractName)
+                            .textContentType(.none)
+                            .disabled(isLoading)
+                    }
 
-                    if showExampleContracts {
+                    if showExampleContracts && loadMode == .contractId {
                         Section(header: Text("Common System Contracts (\(platformState.currentNetwork.displayName))")) {
                             ForEach(exampleContracts, id: \.1) { example in
                                 Button(action: {
-                                    contractId = example.1
+                                    inputId = example.1
                                     contractName = example.0
                                     showExampleContracts = false
                                 }) {
@@ -221,13 +266,44 @@ struct LoadDataContractView: View {
                     }
                 }
 
+                // In token-id mode, surface the resolved
+                // contract id + token position before the contract
+                // download fires. Lets the user verify they pasted
+                // the right token id.
+                if loadMode == .tokenId,
+                   let resolvedContractId,
+                   let resolvedTokenPosition {
+                    Section("Resolved Token") {
+                        HStack {
+                            Text("Contract ID")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(resolvedContractId)
+                                .font(.caption)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        HStack {
+                            Text("Token Position")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(resolvedTokenPosition)")
+                                .font(.caption)
+                        }
+                    }
+                }
+
                 if isLoading {
                     Section {
                         HStack {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle())
-                            Text("Loading contract from network...")
-                                .foregroundColor(.secondary)
+                            Text(
+                                loadMode == .tokenId && resolvedContractId == nil
+                                    ? "Resolving token contract info..."
+                                    : "Loading contract from network..."
+                            )
+                            .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -258,7 +334,7 @@ struct LoadDataContractView: View {
                     }
                 }
             }
-            .navigationTitle("Load Data Contract")
+            .navigationTitle(loadMode == .contractId ? "Add Contract" : "Add Token")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -271,10 +347,17 @@ struct LoadDataContractView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Load") {
                         Task {
-                            await loadContract()
+                            // Reset the resolved-token banner across
+                            // attempts so a stale one doesn't carry
+                            // over from the previous load.
+                            await MainActor.run {
+                                resolvedContractId = nil
+                                resolvedTokenPosition = nil
+                            }
+                            await runLoadFlow()
                         }
                     }
-                    .disabled(contractId.isEmpty || isLoading)
+                    .disabled(inputId.isEmpty || isLoading)
                 }
             }
             .alert("Error", isPresented: $showError) {
@@ -285,121 +368,137 @@ struct LoadDataContractView: View {
         }
     }
 
-    private func loadContract() async {
+    /// Top-level entry point for the Load button. Handles whichever
+    /// of the two flows the user picked:
+    ///   - `.contractId` → load the contract directly using whatever
+    ///     they pasted as the contract id.
+    ///   - `.tokenId`    → resolve the owning contract id via
+    ///     `getTokenContractInfo`, then load that contract.
+    private func runLoadFlow() async {
+        switch loadMode {
+        case .contractId:
+            await loadContract(contractIdString: inputId)
+        case .tokenId:
+            await loadFromTokenId()
+        }
+    }
+
+    /// Token-id flow: resolve the owning contract id (and remember
+    /// the token contract position for display), then call into the
+    /// shared contract-fetch path. The downloaded contract carries
+    /// the token's full configuration as part of its `tokens` map,
+    /// so persisting the contract auto-persists the token via
+    /// `DataContractParser.parseDataContract`.
+    private func loadFromTokenId() async {
+        guard let sdk = platformState.sdk else {
+            await MainActor.run {
+                errorMessage = "SDK not initialized"
+                showError = true
+            }
+            return
+        }
+        let trimmedTokenId = inputId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTokenId.isEmpty else { return }
+
+        await MainActor.run { isLoading = true }
+
+        do {
+            let info = try await sdk.getTokenContractInfo(tokenId: trimmedTokenId)
+            // Empty / missing contract_id is the "token not found"
+            // case — surface a clear message rather than crashing on
+            // a force-unwrap of a nil dictionary value.
+            guard let resolvedId = info["contract_id"] as? String,
+                  !resolvedId.isEmpty else {
+                await MainActor.run {
+                    errorMessage = "Token not found on \(platformState.currentNetwork.displayName). Double-check the Token ID."
+                    showError = true
+                    isLoading = false
+                }
+                return
+            }
+            // Token contract position can come back as Int or
+            // NSNumber depending on JSONSerialization's number
+            // bridging. Both round-trip through `intValue`.
+            let position: Int
+            if let intVal = info["token_contract_position"] as? Int {
+                position = intVal
+            } else if let numVal = info["token_contract_position"] as? NSNumber {
+                position = numVal.intValue
+            } else {
+                position = 0
+            }
+
+            await MainActor.run {
+                resolvedContractId = resolvedId
+                resolvedTokenPosition = position
+            }
+
+            // Hand off to the shared contract-fetch path. It manages
+            // `isLoading` itself.
+            await loadContract(contractIdString: resolvedId)
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to resolve token: \(error.localizedDescription)"
+                showError = true
+                isLoading = false
+            }
+        }
+    }
+
+    /// Shared contract-fetch + persist path. The caller supplies the
+    /// contract id string (either from the user's direct paste in
+    /// `.contractId` mode or the `getTokenContractInfo`-resolved id
+    /// in `.tokenId` mode). Sets `isLoading` to true on entry and
+    /// flips it back to false on every exit path; downstream logic
+    /// is identical regardless of how we obtained `contractIdString`.
+    ///
+    /// The actual fetch / parse / persist work lives in
+    /// `ContractDownloader.downloadAndPersistContract` so the
+    /// search-bar tap-to-add path in `ContractsTabView` can reuse the
+    /// exact same pipeline. This wrapper is the modal-sheet-specific
+    /// glue: input validation, `isLoading` + `errorMessage` UI state,
+    /// the "already saved" toast, and `fetchedContract` preview.
+    private func loadContract(contractIdString: String) async {
         guard let sdk = platformState.sdk else {
             errorMessage = "SDK not initialized"
             showError = true
             return
         }
 
-        await MainActor.run {
-            isLoading = true
+        let trimmedId = contractIdString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else {
+            await MainActor.run {
+                errorMessage = "Please enter a contract ID"
+                showError = true
+                isLoading = false
+            }
+            return
         }
 
+        await MainActor.run { isLoading = true }
+        print("🔵 Attempting to load contract with ID: \(trimmedId)")
+
         do {
-            // Validate contract ID
-            let trimmedId = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
+            let result = try await ContractDownloader.downloadAndPersistContract(
+                contractId: trimmedId,
+                suggestedName: contractName,
+                sdk: sdk,
+                modelContext: modelContext,
+                network: platformState.currentNetwork,
+                existingContracts: existingContracts
+            )
 
-            print("🔵 Attempting to load contract with ID: \(trimmedId)")
-
-            // Basic validation - just check it's not empty
-            guard !trimmedId.isEmpty else {
-                await MainActor.run {
-                    errorMessage = "Please enter a contract ID"
-                    showError = true
-                    isLoading = false
-                }
-                return
-            }
-
-            // Fetch the contract with both JSON and binary serialization
-            guard let handle = sdk.handle else {
-                throw SDKError.invalidState("SDK not initialized")
-            }
-
-            let result = trimmedId.withCString { idCStr in
-                dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
-            }
-
-            // Check for error
-            if let error = result.error {
-                let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-                dash_sdk_error_free(error)
-                throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
-            }
-
-            // Get the JSON string
-            guard result.json_string != nil else {
-                throw SDKError.internalError("No JSON data returned from contract fetch")
-            }
-
-            let jsonString = String(cString: result.json_string!)
-
-            // Get the binary serialization
-            var binaryData: Data? = nil
-            if result.serialized_data != nil && result.serialized_data_len > 0 {
-                binaryData = Data(bytes: result.serialized_data, count: Int(result.serialized_data_len))
-            }
-
-            // Clean up the contract handle if it was returned
-            defer {
-                if result.contract_handle != nil {
-                    dash_sdk_data_contract_destroy(result.contract_handle)
-                }
-            }
-
-            // Parse the JSON
-            guard let jsonData = jsonString.data(using: String.Encoding.utf8),
-                  let contractData = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
-                throw SDKError.serializationError("Failed to parse contract JSON")
-            }
-
-            print("✅ Contract fetched successfully")
-            if let binaryData = binaryData {
-                print("📦 Binary serialization size: \(binaryData.count) bytes")
-            }
-
-            // Add the contract to the trusted context if we have binary data
-            if let binaryData = binaryData,
-               let contractId = contractData["id"] as? String {
-                do {
-                    try sdk.addContractToContext(contractId: contractId, binaryData: binaryData)
-                    print("✅ Added contract to trusted context provider")
-                } catch {
-                    print("⚠️ Failed to add contract to trusted context: \(error)")
-                    // Continue even if adding to context fails
-                }
-            } else {
-                print("⚠️ No binary data available to add contract to trusted context")
-            }
-
+            // Best-effort preview of the parsed contract for the
+            // sheet's "Fetched Contract" section. The persistent row
+            // already carries this data, but the existing UI binds to
+            // the raw JSON dictionary.
             await MainActor.run {
-                fetchedContract = contractData
+                fetchedContract = (try? JSONSerialization.jsonObject(
+                    with: result.contract.serializedContract
+                )) as? [String: Any]
             }
 
-            // Store the JSON for the contract
-            let serializedContract = jsonData
-
-            // Get the contract ID from the response or convert from the input
-            let contractIdData: Data
-            if let idString = contractData["id"] as? String,
-               let idData = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
-                contractIdData = idData
-            } else {
-                // Fall back to converting the input ID
-                guard let idData = Data.identifier(fromBase58: trimmedId) else {
-                    await MainActor.run {
-                        errorMessage = "Could not extract contract ID from response"
-                        showError = true
-                        isLoading = false
-                    }
-                    return
-                }
-                contractIdData = idData
-            }
-
-            // Check if contract already exists
-            if existingContracts.contains(where: { $0.id == contractIdData }) {
+            if result.alreadyExisted {
                 await MainActor.run {
                     errorMessage = "This contract is already saved locally"
                     showError = true
@@ -408,83 +507,28 @@ struct LoadDataContractView: View {
                 return
             }
 
-            // Determine name
-            var finalName = contractName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if finalName.isEmpty {
-                // Check if it's a token-only contract
-                let documents = contractData["documents"] as? [String: Any] ?? contractData["documentSchemas"] as? [String: Any] ?? [:]
-                let tokens = contractData["tokens"] as? [String: Any] ?? [:]
-
-                if documents.isEmpty && tokens.count == 1,
-                   let tokenData = tokens.values.first as? [String: Any] {
-                    // Extract token name
-                    var tokenName: String? = nil
-
-                    // Try to get localized name first
-                    if let conventions = tokenData["conventions"] as? [String: Any],
-                       let localizations = conventions["localizations"] as? [String: Any],
-                       let enLocalization = localizations["en"] as? [String: Any],
-                       let singularForm = enLocalization["singularForm"] as? String {
-                        tokenName = singularForm
-                    }
-
-                    // Fallback to description or generic name
-                    if tokenName == nil {
-                        tokenName = tokenData["description"] as? String ?? tokenData["name"] as? String
-                    }
-
-                    if let tokenName = tokenName {
-                        finalName = "\(tokenName) Token Contract"
-                    } else {
-                        finalName = "Token Contract"
-                    }
-                } else if let firstDocType = documents.keys.first {
-                    // Has documents
-                    finalName = "Contract with \(firstDocType)"
-                } else {
-                    // Fallback
-                    finalName = "Contract \(trimmedId.prefix(8))..."
-                }
-            }
-
-            // Save to persistent storage
-            let persistentContract = PersistentDataContract(
-                id: contractIdData,
-                name: finalName,
-                serializedContract: serializedContract,
-                network: platformState.currentNetwork
-            )
-
-            // Add the binary serialization if available
-            persistentContract.binarySerialization = binaryData
-
-            modelContext.insert(persistentContract)
-            try modelContext.save()
-
-            // Parse tokens and document types from the contract
-            try DataContractParser.parseDataContract(
-                contractData: contractData,
-                contractId: contractIdData,
-                modelContext: modelContext
-            )
-
-            // Save again to persist relationships
-            try modelContext.save()
-
+            print("✅ Contract fetched and persisted successfully")
             await MainActor.run {
                 isLoading = false
                 dismiss()
             }
-
+        } catch let downloadError as ContractDownloadError {
+            await MainActor.run {
+                switch downloadError {
+                case .notFound:
+                    errorMessage = "Contract not found on \(platformState.currentNetwork.displayName). This contract may exist on a different network or the ID may be incorrect."
+                case .invalidContractId:
+                    errorMessage = "Please enter a valid contract ID"
+                case .fetchFailed(let msg):
+                    errorMessage = "Failed to load contract: \(msg)"
+                }
+                showError = true
+                isLoading = false
+            }
         } catch {
             print("❌ Failed to load contract: \(error)")
             await MainActor.run {
-                // Provide more helpful error messages
-                if error.localizedDescription.contains("Data contract not found") {
-                    errorMessage = "Contract not found on \(platformState.currentNetwork.displayName). This contract may exist on a different network or the ID may be incorrect."
-                } else {
-                    errorMessage = "Failed to load contract: \(error.localizedDescription)"
-                }
+                errorMessage = "Failed to load contract: \(error.localizedDescription)"
                 showError = true
                 isLoading = false
             }

@@ -66,6 +66,15 @@ public final class PersistentDataContract {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.dataContract)
     public var documents: [PersistentDocument]
 
+    // Owner identity — populated when the owner happens to also live in
+    // the local store. May be nil even when `ownerId` is set, because
+    // most contracts in the local cache will be owned by identities the
+    // user doesn't hold. Back-filled lazily by
+    // `ContractIdentityLinker.linkContractToOwner` when either side is
+    // inserted.
+    @Relationship(deleteRule: .nullify, inverse: \PersistentIdentity.ownedDataContracts)
+    public var ownerIdentity: PersistentIdentity?
+
     // Token support tracking
     public var hasTokens: Bool
     public var tokensData: Data?
@@ -197,6 +206,13 @@ public final class PersistentDataContract {
 
         // Documents
         self.documents = []
+
+        // Owner identity link is back-filled later by
+        // `ContractIdentityLinker`. Initialise explicitly because
+        // SwiftData's auto-init of optional relationships has
+        // historically been flaky enough in this codebase to be
+        // worth the line.
+        self.ownerIdentity = nil
 
         // Network and timestamps
         self.networkRaw = network.rawValue

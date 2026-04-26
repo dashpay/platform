@@ -1,5 +1,6 @@
 // Token information operations
 mod balances;
+mod calculate_token_id;
 mod contract_info;
 mod direct_purchase_prices;
 mod identities_balances;
@@ -14,6 +15,7 @@ mod total_supply;
 
 // Re-export main functions for convenient access
 pub use balances::dash_sdk_token_get_identity_balances;
+pub use calculate_token_id::dash_sdk_calculate_token_id;
 pub use contract_info::dash_sdk_token_get_contract_info;
 pub use direct_purchase_prices::dash_sdk_token_get_direct_purchase_prices;
 pub use identities_balances::dash_sdk_identities_fetch_token_balances;

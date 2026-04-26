@@ -4,7 +4,7 @@ import SwiftData
 import LocalAuthentication
 
 enum RootTab: Hashable {
-    case sync, wallets, identities, friends, settings
+    case sync, wallets, identities, contracts, settings
 }
 
 struct ContentView: View {
@@ -89,12 +89,14 @@ struct ContentView: View {
                     }
                     .tag(RootTab.identities)
 
-                // Tab 4: Friends
-                FriendsView()
+                // Tab 4: Contracts (locally-persisted data contracts +
+                // their tokens). Friends moved to a per-identity drill-in
+                // under the DashPay section of IdentityDetailView.
+                ContractsTabView()
                     .tabItem {
-                        Label("Friends", systemImage: "person.2")
+                        Label("Contracts", systemImage: "doc.text")
                     }
-                    .tag(RootTab.friends)
+                    .tag(RootTab.contracts)
 
                 // Tab 5: Settings (includes Platform section)
                 SettingsView()
