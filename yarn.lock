@@ -2,7 +2,7 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 9
+  version: 8
   cacheKey: 10
 
 "@aashutoshrathi/word-wrap@npm:^1.2.3":
@@ -1926,8 +1926,6 @@ __metadata:
     typescript: "npm:^5.7.3"
     ultra-runner: "npm:^3.10.5"
   dependenciesMeta:
-    "@dashevo/protobufjs@6.10.5":
-      unplugged: true
     ssh2@1.11.0:
       built: false
     ssh2@1.16.0:

@@ -4,7 +4,10 @@ pub use traversal_validator::*;
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
+    use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
     use crate::consensus::basic::BasicError;
+    use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::ConsensusError;
     use platform_value::{platform_value, Value};
     use platform_version::version::PlatformVersion;
@@ -15,14 +18,100 @@ mod test {
             .try_init();
     }
 
-    // NOTE: `traversal_validator` called with an empty slice of sub-validators only
-    // walks the schema tree — it does not itself reject any structural pattern. The
-    // tests below (previously named as if they asserted invalid/error results) verify
-    // that traversal completes successfully over schemas that would only fail once a
-    // real sub-validator is supplied. Rejection of these shapes lives in the callers
-    // that supply sub-validators, not in `traversal_validator` itself.
+    // ----------------------------------------------------------------
+    // Test-only sub-validator callbacks.
+    //
+    // IMPORTANT: The helpers below are NOT production validators and
+    // are NOT wired into document-type validation. Production
+    // document-type schema validation does not use `traversal_validator`
+    // at all — it relies on `validate_max_depth`, JSON Schema meta-schema
+    // validation, and `json_schema_validator.compile()`.
+    //
+    // These callbacks exist solely as fixtures to exercise the
+    // `traversal_validator` mechanism: they prove that traversal walks
+    // every map/array node, invokes each provided sub-validator with the
+    // expected `(path, key, parent, value)` arguments, and that any
+    // `ConsensusError`s a callback adds (or `ProtocolError`s it returns)
+    // are propagated correctly. They happen to be shaped after legacy
+    // validators (byteArray-with-items, regex compatibility) only because
+    // those produce well-known consensus error variants that are
+    // convenient to assert on; do not read the assertions below as
+    // coverage of the corresponding production validation rules.
+    // ----------------------------------------------------------------
+
+    /// Test callback fixture: when traversal visits a map that contains
+    /// `"byteArray"` alongside `"items"` or `"prefixItems"`, emit a
+    /// `JsonSchemaCompilationError`. Used purely to verify the traversal
+    /// mechanism propagates consensus errors added by callbacks; this is
+    /// not the production byteArray-vs-items rule.
+    fn test_callback_flag_byte_array_with_items(
+        path: &str,
+        key: &str,
+        parent: &Value,
+        _value: &Value,
+        result: &mut crate::validation::SimpleConsensusValidationResult,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), crate::ProtocolError> {
+        if key != "byteArray" {
+            return Ok(());
+        }
+        let Value::Map(parent_map) = parent else {
+            return Ok(());
+        };
+        let has_items = parent_map.iter().any(
+            |(k, _)| matches!(k.to_str(), Ok(name) if name == "items" || name == "prefixItems"),
+        );
+        if has_items {
+            let message = format!(
+                "invalid path: '{}': byteArray cannot be used with `items` or `prefixItems`",
+                path
+            );
+            result.add_error(ConsensusError::BasicError(
+                BasicError::JsonSchemaCompilationError(JsonSchemaCompilationError::new(message)),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Test callback fixture: when traversal visits a `"pattern"` string
+    /// that fails to compile under Rust's `regex` crate (which, like
+    /// Re2, rejects lookarounds), emit an `IncompatibleRe2PatternError`.
+    /// Used purely to verify the traversal mechanism propagates
+    /// consensus errors added by callbacks; this is not the production
+    /// pattern-validation rule.
+    fn test_callback_flag_invalid_regex_pattern(
+        path: &str,
+        key: &str,
+        _parent: &Value,
+        value: &Value,
+        result: &mut crate::validation::SimpleConsensusValidationResult,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), crate::ProtocolError> {
+        if key != "pattern" {
+            return Ok(());
+        }
+        let Value::Text(pattern) = value else {
+            return Ok(());
+        };
+        if let Err(err) = regex::Regex::new(pattern) {
+            result.add_error(ConsensusError::BasicError(
+                BasicError::IncompatibleRe2PatternError(IncompatibleRe2PatternError::new(
+                    pattern.clone(),
+                    path.to_string(),
+                    err.to_string(),
+                )),
+            ));
+        }
+        Ok(())
+    }
+
     #[test]
-    fn traversal_validator_with_no_sub_validators_accepts_byte_array_parent_with_items() {
+    fn traversal_propagates_byte_array_callback_errors_for_each_offending_parent() {
+        // Verifies traversal-mechanism behavior only: that the test
+        // callback is invoked at every map node and that each
+        // ConsensusError it adds reaches the result. Does not assert
+        // anything about production document-type byteArray validation,
+        // which does not run through traversal_validator.
         let schema: Value = platform_value!(
              {
                 "type": "object",
@@ -39,13 +128,31 @@ mod test {
                 "additionalProperties": false,
               }
         );
-        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to succeed")
-            .is_valid());
+        let mut result = traversal_validator(
+            &schema,
+            &[test_callback_flag_byte_array_with_items],
+            PlatformVersion::first(),
+        )
+        .expect("expected traversal validator to succeed");
+        assert_eq!(2, result.errors.len());
+        let first_error = get_basic_error(result.errors.pop().unwrap());
+        let second_error = get_basic_error(result.errors.pop().unwrap());
+
+        assert!(matches!(
+            first_error,
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties/bar': byteArray cannot"),
+        ));
+        assert!(matches!(
+            second_error,
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties': byteArray cannot"),
+        ));
     }
 
     #[test]
-    fn should_return_valid_result() {
+    fn traversal_pattern_callback_adds_no_errors_for_compilable_regex() {
+        // Traversal-mechanism check only: verifies the test callback
+        // returns no errors when every visited "pattern" compiles.
+        // Not a production pattern-validation assertion.
         let schema: Value = platform_value!(
              {
                 "type": "object",
@@ -60,33 +167,55 @@ mod test {
                 "additionalProperties": false,
               }
         );
-        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to succeed")
-            .is_valid());
+        assert!(traversal_validator(
+            &schema,
+            &[test_callback_flag_invalid_regex_pattern],
+            PlatformVersion::first()
+        )
+        .expect("expected traversal validator to succeed")
+        .is_valid());
     }
 
     #[test]
-    fn traversal_validator_with_no_sub_validators_accepts_schema_with_unsafe_pattern() {
+    fn traversal_propagates_pattern_callback_error_for_top_level_uncompilable_regex() {
+        // Traversal-mechanism check only: confirms the IncompatibleRe2
+        // ConsensusError that the test callback emits propagates with
+        // the correct path/pattern. Production document-type schema
+        // validation does not invoke traversal_validator.
+        let unsafe_pattern = "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$";
         let schema: Value = platform_value!({
             "type": "object",
             "properties": {
               "foo": { "type": "integer" },
               "bar": {
                 "type": "string",
-                "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$",
+                "pattern": unsafe_pattern,
               },
             },
             "required": ["foo"],
             "additionalProperties": false,
 
         });
-        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to succeed")
-            .is_valid());
+        let result = traversal_validator(
+            &schema,
+            &[test_callback_flag_invalid_regex_pattern],
+            PlatformVersion::first(),
+        )
+        .expect("expected traversal validator to succeed");
+        let consensus_error = result.errors.first().expect("the error should be returned");
+
+        match consensus_error {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
+                assert_eq!(err.path(), "/properties/bar".to_string());
+                assert_eq!(err.pattern(), unsafe_pattern.to_string());
+                assert_eq!(consensus_error.code(), 10202);
+            }
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
+        }
     }
 
     #[test]
-    fn should_be_valid_complex_for_complex_schema() {
+    fn traversal_with_no_validators_visits_complex_schema_without_errors() {
         let schema = get_document_schema();
 
         assert!(traversal_validator(&schema, &[], PlatformVersion::first())
@@ -95,25 +224,74 @@ mod test {
     }
 
     #[test]
-    fn traversal_validator_with_no_sub_validators_accepts_array_of_object_with_unsafe_pattern() {
+    fn traversal_propagates_pattern_callback_error_inside_array_items_object() {
+        // Traversal-mechanism check only: confirms traversal descends
+        // into `items` of an array-of-object schema and that the test
+        // callback's ConsensusError carries the expected path.
+        // Not a production pattern-validation assertion.
+        let unsafe_pattern = "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$";
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
-            platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
+            platform_value!(unsafe_pattern);
 
-        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to exist for first protocol version")
-            .is_valid());
+        let result = traversal_validator(
+            &schema,
+            &[test_callback_flag_invalid_regex_pattern],
+            PlatformVersion::first(),
+        )
+        .expect("expected traversal validator to exist for first protocol version");
+        let consensus_error = result.errors.first().expect("the error should be returned");
+
+        match consensus_error {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
+                assert_eq!(
+                    err.path(),
+                    "/properties/arrayOfObject/items/properties/simple".to_string()
+                );
+                assert_eq!(err.pattern(), unsafe_pattern.to_string());
+                assert_eq!(consensus_error.code(), 10202);
+            }
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
+        }
     }
 
     #[test]
-    fn traversal_validator_with_no_sub_validators_accepts_array_of_objects_with_unsafe_pattern() {
+    fn traversal_propagates_pattern_callback_error_inside_array_items_tuple() {
+        // Traversal-mechanism check only: confirms traversal descends
+        // into the indexed entries of a tuple-form `items` array and
+        // that the path passed to the test callback includes the
+        // numeric index. Not a production pattern-validation assertion.
+        let unsafe_pattern = "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$";
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
-            platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
+            platform_value!(unsafe_pattern);
 
-        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to exist for first protocol version")
-            .is_valid());
+        let result = traversal_validator(
+            &schema,
+            &[test_callback_flag_invalid_regex_pattern],
+            PlatformVersion::first(),
+        )
+        .expect("expected traversal validator to exist for first protocol version");
+        let consensus_error = result.errors.first().expect("the error should be returned");
+
+        match consensus_error {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
+                assert_eq!(
+                    err.path(),
+                    "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
+                );
+                assert_eq!(err.pattern(), unsafe_pattern.to_string());
+                assert_eq!(consensus_error.code(), 10202);
+            }
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
+        }
+    }
+
+    fn get_basic_error(error: ConsensusError) -> BasicError {
+        if let ConsensusError::BasicError(err) = error {
+            return err;
+        }
+        panic!("the error: {:?} isn't a BasicError", error)
     }
 
     fn get_document_schema() -> Value {

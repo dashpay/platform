@@ -724,7 +724,6 @@ impl DocumentTypeV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::DocumentTypeV0;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 

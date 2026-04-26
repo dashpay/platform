@@ -1,0 +1,31 @@
+{
+  "$formatVersion": "0",
+  "id": "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p",
+  "ownerId": "HtQNfXBZJu3WnvjvCFJKgbvfgWYJxWxaFWy23TKoFjg9",
+  "version": 1,
+  "config": {
+    "$formatVersion": "0",
+    "canBeDeleted": false,
+    "readonly": false,
+    "keepsHistory": false,
+    "documentsKeepHistoryContractDefault": false,
+    "documentsMutableContractDefault": true,
+    "documentsCanBeDeletedContractDefault": false,
+    "requiresIdentityEncryptionBoundedKey": null,
+    "requiresIdentityDecryptionBoundedKey": null
+  },
+  "schemaDefs": null,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "position": 0
+        }
+      },
+      "required": ["message", "$createdAt", "$updatedAt"],
+      "additionalProperties": false
+    }
+  }
+}

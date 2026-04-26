@@ -451,4 +451,258 @@ mod test {
 
         assert_eq!(first, second);
     }
+
+    // -----------------------------------------------------------------------
+    // Real sign / verify integration coverage.
+    //
+    // The tests above only exercise the trait's helper predicates against a
+    // local `MockSignedTransition`. The tests below drive the actual
+    // `StateTransition::sign_with_options` and
+    // `StateTransition::verify_identity_signed_signature` code paths against
+    // a `BatchTransition::V0` (the lightest real identity-signed transition)
+    // so that the ECDSA-hash160 / BLS / mismatch / not-signed branches are
+    // covered.
+    // -----------------------------------------------------------------------
+
+    #[cfg(all(
+        feature = "state-transition-signing",
+        feature = "state-transition-validation"
+    ))]
+    mod sign_verify {
+        use super::*;
+        use crate::util::hash::ripemd160_sha256;
+        use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
+
+        // A no-op `BlsModule` for tests that exclusively exercise ECDSA paths.
+        // sign_with_options/verify_identity_signed_signature take a
+        // `&impl BlsModule` even when the key type is ECDSA, so we need
+        // something concrete to pass in.
+        struct NoopBls;
+        impl BlsModule for NoopBls {
+            fn validate_public_key(&self, _: &[u8]) -> Result<(), PublicKeyValidationError> {
+                Ok(())
+            }
+            fn verify_signature(
+                &self,
+                _: &[u8],
+                _: &[u8],
+                _: &[u8],
+            ) -> Result<bool, ProtocolError> {
+                Ok(false)
+            }
+            fn private_key_to_public_key(&self, _: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+                Ok(vec![])
+            }
+            fn sign(&self, _: &[u8], _: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+                Ok(vec![])
+            }
+        }
+
+        fn batch_state_transition() -> StateTransition {
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()))
+        }
+
+        fn ecdsa_secp256k1_keypair(id: KeyID, seed: u8) -> ([u8; 32], IdentityPublicKey) {
+            let private_key = [seed; 32];
+            let compressed =
+                get_compressed_public_ec_key(&private_key).expect("expected valid ecdsa key");
+            let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(compressed.to_vec()),
+                disabled_at: None,
+            });
+            (private_key, key)
+        }
+
+        fn ecdsa_hash160_keypair(id: KeyID, seed: u8) -> ([u8; 32], IdentityPublicKey) {
+            let private_key = [seed; 32];
+            let compressed =
+                get_compressed_public_ec_key(&private_key).expect("expected valid ecdsa key");
+            let pub_key_hash = ripemd160_sha256(&compressed);
+            let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_HASH160,
+                read_only: false,
+                data: BinaryData::new(pub_key_hash.to_vec()),
+                disabled_at: None,
+            });
+            (private_key, key)
+        }
+
+        #[test]
+        fn ecdsa_hash160_sign_then_verify_succeeds() {
+            let (private_key, public_key) = ecdsa_hash160_keypair(7, 3);
+            let mut st = batch_state_transition();
+
+            st.sign_with_options(
+                &public_key,
+                &private_key,
+                &NoopBls,
+                StateTransitionSigningOptions::default(),
+            )
+            .expect("ECDSA_HASH160 signing should succeed for a matching pubkey hash");
+
+            // After signing, signature is populated and the signing key id is set.
+            assert!(
+                !st.signature()
+                    .expect("signature present")
+                    .as_slice()
+                    .is_empty(),
+                "signing must populate the signature"
+            );
+            assert_eq!(st.signature_public_key_id(), Some(public_key.id()));
+
+            st.verify_identity_signed_signature(&public_key, &NoopBls)
+                .expect("verification must succeed for the same public key hash");
+        }
+
+        #[cfg(feature = "bls-signatures")]
+        #[test]
+        fn bls_sign_then_verify_succeeds() {
+            use crate::bls::native_bls::NativeBlsModule;
+
+            // BLS private key must be a valid scalar; [1u8; 32] is fine.
+            let private_key: [u8; 32] = [1u8; 32];
+            let bls = NativeBlsModule;
+            let bls_public_key = bls
+                .private_key_to_public_key(&private_key)
+                .expect("BLS pubkey derivation should succeed");
+            let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 11,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::BLS12_381,
+                read_only: false,
+                data: BinaryData::new(bls_public_key),
+                disabled_at: None,
+            });
+
+            let mut st = batch_state_transition();
+            st.sign_with_options(
+                &public_key,
+                &private_key,
+                &bls,
+                StateTransitionSigningOptions::default(),
+            )
+            .expect("BLS signing should succeed for a matching pubkey");
+
+            assert!(
+                !st.signature()
+                    .expect("signature present")
+                    .as_slice()
+                    .is_empty(),
+                "BLS signing must populate the signature"
+            );
+            assert_eq!(st.signature_public_key_id(), Some(public_key.id()));
+
+            st.verify_identity_signed_signature(&public_key, &bls)
+                .expect("BLS verification must succeed for the original key");
+        }
+
+        #[test]
+        fn invalid_signature_public_key_error_when_pubkey_mismatches_private_key() {
+            // Build the public key from one private key, then attempt to
+            // sign using a *different* private key — sign_with_options must
+            // detect the mismatch and refuse to sign.
+            let (_real_private_key, public_key) = ecdsa_secp256k1_keypair(3, 1);
+            let wrong_private_key = [9u8; 32];
+
+            let mut st = batch_state_transition();
+            let err = st
+                .sign_with_options(
+                    &public_key,
+                    &wrong_private_key,
+                    &NoopBls,
+                    StateTransitionSigningOptions::default(),
+                )
+                .expect_err("mismatched private key must be rejected");
+
+            assert!(
+                matches!(err, ProtocolError::InvalidSignaturePublicKeyError(_)),
+                "expected InvalidSignaturePublicKeyError, got {err:?}"
+            );
+
+            // The same check applies for ECDSA_HASH160.
+            let (_real_private_key, hash160_pubkey) = ecdsa_hash160_keypair(4, 2);
+            let mut st = batch_state_transition();
+            let err = st
+                .sign_with_options(
+                    &hash160_pubkey,
+                    &wrong_private_key,
+                    &NoopBls,
+                    StateTransitionSigningOptions::default(),
+                )
+                .expect_err("mismatched private key must be rejected for HASH160");
+
+            assert!(
+                matches!(err, ProtocolError::InvalidSignaturePublicKeyError(_)),
+                "expected InvalidSignaturePublicKeyError for HASH160, got {err:?}"
+            );
+        }
+
+        #[test]
+        fn public_key_mismatch_error_when_verify_uses_different_key_id() {
+            // Sign with key id = 5, then attempt to verify with a public key
+            // bearing a different id. verify_identity_signed_signature must
+            // return PublicKeyMismatchError before touching the cryptography.
+            let (private_key, signing_pubkey) = ecdsa_secp256k1_keypair(5, 1);
+            let mut st = batch_state_transition();
+            st.sign_with_options(
+                &signing_pubkey,
+                &private_key,
+                &NoopBls,
+                StateTransitionSigningOptions::default(),
+            )
+            .expect("signing should succeed");
+
+            // Build a second public key with a different id but otherwise valid.
+            let (_other_private_key, other_pubkey) = ecdsa_secp256k1_keypair(99, 2);
+
+            let err = st
+                .verify_identity_signed_signature(&other_pubkey, &NoopBls)
+                .expect_err("verifying with a different key id must fail");
+
+            assert!(
+                matches!(err, ProtocolError::PublicKeyMismatchError(_)),
+                "expected PublicKeyMismatchError, got {err:?}"
+            );
+        }
+
+        #[test]
+        fn state_transition_is_not_signed_error_when_signature_empty() {
+            // An unsigned BatchTransitionV0 has an empty signature.
+            // verify_identity_signed_signature must reject it with
+            // StateTransitionIsNotSignedError, regardless of the supplied key.
+            let st = batch_state_transition();
+            assert!(
+                st.signature()
+                    .expect("Batch always has a signature field")
+                    .as_slice()
+                    .is_empty(),
+                "default Batch should start out unsigned"
+            );
+
+            // Use a key whose id matches the default (0) so we *don't* trip
+            // the PublicKeyMismatchError branch first.
+            let (_private_key, public_key) = ecdsa_secp256k1_keypair(0, 4);
+
+            let err = st
+                .verify_identity_signed_signature(&public_key, &NoopBls)
+                .expect_err("unsigned transition must be rejected");
+
+            assert!(
+                matches!(err, ProtocolError::StateTransitionIsNotSignedError(_)),
+                "expected StateTransitionIsNotSignedError, got {err:?}"
+            );
+        }
+    }
 }
