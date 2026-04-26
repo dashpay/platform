@@ -34,6 +34,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use platform_wallet::ContactRequest;
+use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
@@ -500,6 +501,217 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request(
                         "Invalid platform-wallet handle",
                     );
                 }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+// ---------------------------------------------------------------------------
+// Send / accept contact request — external-signer variants
+// ---------------------------------------------------------------------------
+
+/// Send a contact request to `recipient_id` using an
+/// externally-supplied signer for the document state-transition.
+///
+/// Mirrors [`platform_wallet_send_contact_request`] but signing is
+/// routed through `signer_handle` instead of an internal
+/// `IdentitySigner`.
+///
+/// CAVEAT — ECDH derivation: the Rust side still derives the
+/// sender's ECDH private key from the wallet seed for the contact
+/// request encryption step. Watch-only wallets (no seed Rust-side)
+/// will fail at that step. See the docstring on
+/// [`IdentityWallet::send_contact_request_with_external_signer`](platform_wallet::IdentityWallet::send_contact_request_with_external_signer)
+/// for the planned follow-up to push ECDH across the FFI as well.
+///
+/// # Safety
+/// Same null/lifetime rules as [`platform_wallet_send_contact_request`].
+/// Additionally `signer_handle` must be a valid, non-destroyed handle
+/// produced by `dash_sdk_signer_create_with_ctx`. Caller retains
+/// ownership.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
+    wallet_handle: Handle,
+    sender_identity_id: *const u8,
+    recipient_identity_id: *const u8,
+    account_label: *const c_char,
+    auto_accept_proof: *const u8,
+    auto_accept_proof_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_request_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_request_handle.is_null() || signer_handle.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "out_request_handle or signer_handle is null",
+            );
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let sender = match read_identifier(sender_identity_id) {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                    format!("Invalid sender identifier: {e}"),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+    let recipient = match read_identifier(recipient_identity_id) {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                    format!("Invalid recipient identifier: {e}"),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+    let label = if account_label.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(account_label).to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorUtf8Conversion,
+                        "account_label is not valid UTF-8",
+                    );
+                }
+                return PlatformWalletFFIResult::ErrorUtf8Conversion;
+            }
+        }
+    };
+    let proof: Option<Vec<u8>> = if auto_accept_proof.is_null() || auto_accept_proof_len == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(auto_accept_proof, auto_accept_proof_len).to_vec())
+    };
+
+    let signer_addr = signer_handle as usize;
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            let identity = wallet.identity().clone();
+            let result = block_on_worker(async move {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                identity
+                    .send_contact_request_with_external_signer(
+                        &sender, &recipient, label, proof, signer,
+                    )
+                    .await
+            });
+            match result {
+                Ok(request) => {
+                    let handle = CONTACT_REQUEST_STORAGE.insert(request);
+                    *out_request_handle = handle;
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!("send_contact_request_with_signer failed: {e}"),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidHandle,
+                    "Invalid platform-wallet handle",
+                );
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Accept an incoming contact request using an externally-supplied
+/// signer for the reciprocal request's document state-transition.
+///
+/// Mirrors [`platform_wallet_accept_contact_request`] but the
+/// reciprocal `send_contact_request` path uses the supplied
+/// `signer_handle` instead of an internal `IdentitySigner`. Same
+/// ECDH caveat applies — see
+/// [`platform_wallet_send_contact_request_with_signer`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
+    wallet_handle: Handle,
+    request_handle: Handle,
+    signer_handle: *mut SignerHandle,
+    out_established_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_established_handle.is_null() || signer_handle.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "out_established_handle or signer_handle is null",
+            );
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let request = match CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone()) {
+        Some(r) => r,
+        None => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidHandle,
+                    "Invalid contact request handle",
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidHandle;
+        }
+    };
+
+    let signer_addr = signer_handle as usize;
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            let identity = wallet.identity().clone();
+            let result = block_on_worker(async move {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                identity
+                    .accept_contact_request_with_external_signer(&request, signer)
+                    .await
+            });
+            match result {
+                Ok(contact) => {
+                    let handle = ESTABLISHED_CONTACT_STORAGE.insert(contact);
+                    *out_established_handle = handle;
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!("accept_contact_request_with_signer failed: {e}"),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidHandle,
+                    "Invalid platform-wallet handle",
+                );
             }
             PlatformWalletFFIResult::ErrorInvalidHandle
         })

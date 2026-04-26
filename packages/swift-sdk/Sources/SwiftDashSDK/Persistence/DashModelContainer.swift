@@ -49,8 +49,13 @@ public enum DashModelContainer {
             cloudKitDatabase: cloudKit ? .automatic : .none
         )
 
+        // Wire the migration plan even though V1 is the only shipped
+        // schema — future schema bumps just have to add a stage to
+        // `DashMigrationPlan.stages` without also having to remember
+        // to thread the plan into the container construction call.
         return try ModelContainer(
             for: schema,
+            migrationPlan: DashMigrationPlan.self,
             configurations: [modelConfiguration]
         )
     }
@@ -65,6 +70,7 @@ public enum DashModelContainer {
 
         return try ModelContainer(
             for: schema,
+            migrationPlan: DashMigrationPlan.self,
             configurations: [modelConfiguration]
         )
     }

@@ -87,7 +87,10 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
 
         info!("Shield credits: {} credits, building proof...", amount,);
 
-        // Build the state transition using the DPP builder
+        // Build the state transition using the DPP builder.
+        // `build_shield_transition` is async (cascade from the dpp
+        // `Signer` trait being made async upstream); await before
+        // mapping the error.
         let state_transition = build_shield_transition(
             &recipient_addr,
             amount,
@@ -99,6 +102,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             [0u8; 36], // empty memo
             self.sdk.version(),
         )
+        .await
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         // Broadcast

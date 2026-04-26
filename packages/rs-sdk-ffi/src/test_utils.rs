@@ -51,8 +51,9 @@ pub mod test_utils {
     // enough to drive FFI entry points that only care that "a signer ran".
     pub unsafe extern "C" fn mock_sign_async_callback(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
         completion_ctx: *mut c_void,
@@ -70,8 +71,9 @@ pub mod test_utils {
     // Mock can sign callback for vtable
     pub unsafe extern "C" fn mock_can_sign_callback(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
     ) -> bool {
         true
     }

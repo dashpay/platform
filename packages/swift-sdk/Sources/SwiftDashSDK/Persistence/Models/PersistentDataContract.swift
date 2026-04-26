@@ -30,7 +30,16 @@ public final class PersistentDataContract {
     public var groupsData: Data?
 
     // Network
-    public var network: AppNetwork
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // Timestamps
     public var lastUpdated: Date
@@ -190,7 +199,7 @@ public final class PersistentDataContract {
         self.documents = []
 
         // Network and timestamps
-        self.network = network
+        self.networkRaw = network.rawValue
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
 
@@ -271,14 +280,19 @@ extension PersistentDataContract {
     }
 
     public static func predicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
-        #Predicate<PersistentDataContract> { contract in
-            contract.network == network
+        // See `PersistentIdentity.predicate(network:)` — Foundation's
+        // predicate engine can't capture `AppNetwork`, so we filter on
+        // the Int-backed `networkRaw` shadow field.
+        let target = network.rawValue
+        return #Predicate<PersistentDataContract> { contract in
+            contract.networkRaw == target
         }
     }
 
     public static func contractsWithTokensPredicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
-        #Predicate<PersistentDataContract> { contract in
-            contract.hasTokens == true && contract.network == network
+        let target = network.rawValue
+        return #Predicate<PersistentDataContract> { contract in
+            contract.hasTokens == true && contract.networkRaw == target
         }
     }
 }

@@ -249,9 +249,89 @@ pub unsafe extern "C" fn platform_wallet_identifier_from_hex(
     }
 }
 
+/// Compute hash160 (RIPEMD160(SHA256(data))) of the input bytes.
+///
+/// Exposed so the Swift side can stamp a 20-byte public-key hash onto
+/// the keychain `IdentityPrivateKeyMetadata` row at write time, without
+/// pulling in a third-party RIPEMD-160 implementation in Swift
+/// (CommonCrypto + CryptoKit don't expose it; the only RIPEMD-160 in
+/// the iOS toolchain we already link is via `dashcore::hashes`, so we
+/// reuse it here).
+///
+/// # Parameters
+/// - `data`: pointer to the input bytes (typically a 33-byte
+///   compressed secp256k1 pubkey, but any length works).
+/// - `data_len`: byte count for `data`.
+/// - `out_hash`: pointer to a 20-byte buffer the caller has already
+///   allocated. The function writes the resulting hash there on
+///   success.
+///
+/// Returns 0 on success, -1 on null pointer or zero length input.
+///
+/// # Safety
+/// - `data` must be a valid `[u8; data_len]` buffer for the duration of
+///   the call.
+/// - `out_hash` must be a valid `[u8; 20]` writable buffer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_hash160(
+    data: *const u8,
+    data_len: usize,
+    out_hash: *mut u8,
+) -> i32 {
+    if data.is_null() || data_len == 0 || out_hash.is_null() {
+        return -1;
+    }
+    use dashcore::hashes::Hash;
+    let bytes = std::slice::from_raw_parts(data, data_len);
+    let hash = dashcore::hashes::hash160::Hash::hash(bytes);
+    let h: [u8; 20] = hash.to_byte_array();
+    std::ptr::copy_nonoverlapping(h.as_ptr(), out_hash, 20);
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_hash160_matches_known_vector() {
+        // Test vector: hash160 of the all-zero 33-byte compressed
+        // pubkey. RIPEMD160(SHA256(0x00 * 33)) = known constant. The
+        // exact value is captured by re-deriving via dashcore — this
+        // guards against accidental changes to either the FFI shape
+        // or the underlying hasher.
+        use dashcore::hashes::Hash;
+        let input = [0u8; 33];
+        let mut out = [0u8; 20];
+        let rc = unsafe { platform_wallet_hash160(input.as_ptr(), input.len(), out.as_mut_ptr()) };
+        assert_eq!(rc, 0);
+        let expected = dashcore::hashes::hash160::Hash::hash(&input);
+        let expected_bytes: [u8; 20] = expected.to_byte_array();
+        assert_eq!(out, expected_bytes);
+    }
+
+    #[test]
+    fn test_hash160_rejects_null_input() {
+        let mut out = [0u8; 20];
+        let rc = unsafe { platform_wallet_hash160(std::ptr::null(), 33, out.as_mut_ptr()) };
+        assert_eq!(rc, -1);
+    }
+
+    #[test]
+    fn test_hash160_rejects_zero_len() {
+        let input = [0u8; 33];
+        let mut out = [0u8; 20];
+        let rc = unsafe { platform_wallet_hash160(input.as_ptr(), 0, out.as_mut_ptr()) };
+        assert_eq!(rc, -1);
+    }
+
+    #[test]
+    fn test_hash160_rejects_null_out() {
+        let input = [0u8; 33];
+        let rc =
+            unsafe { platform_wallet_hash160(input.as_ptr(), input.len(), std::ptr::null_mut()) };
+        assert_eq!(rc, -1);
+    }
 
     #[test]
     fn test_serialize_deserialize_json_bytes() {

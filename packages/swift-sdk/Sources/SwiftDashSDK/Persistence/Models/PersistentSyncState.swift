@@ -15,7 +15,17 @@ public final class PersistentSyncState {
     /// than a concrete wallet id.
     @Attribute(.unique) public var walletId: Data
     /// Network this sync checkpoint belongs to.
-    public var network: AppNetwork
+    ///
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
     /// Highest block height covered by the last sync.
     public var syncHeight: UInt64
     /// Latest timestamp covered by the last sync (Unix seconds).
@@ -33,7 +43,7 @@ public final class PersistentSyncState {
         lastKnownRecentBlock: UInt64
     ) {
         self.walletId = walletId
-        self.network = network
+        self.networkRaw = network.rawValue
         self.syncHeight = syncHeight
         self.syncTimestamp = syncTimestamp
         self.lastKnownRecentBlock = lastKnownRecentBlock

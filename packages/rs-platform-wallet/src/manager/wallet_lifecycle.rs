@@ -16,18 +16,50 @@ use crate::wallet::PlatformWallet;
 
 use super::PlatformWalletManager;
 
+/// Parse a BIP-39 mnemonic against every supported wordlist in turn,
+/// returning the first language that yields a valid mnemonic.
+///
+/// `key_wallet::Mnemonic` only exposes language-tagged constructors,
+/// so callers that take a user-supplied mnemonic must walk the
+/// language list themselves to avoid rejecting non-English phrases as
+/// "invalid English". BIP-39 wordlists are mutually exclusive per
+/// phrase, so the first match is unambiguous.
+fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
+    const LANGUAGES: [Language; 10] = [
+        Language::English,
+        Language::Spanish,
+        Language::French,
+        Language::Italian,
+        Language::Japanese,
+        Language::Korean,
+        Language::ChineseSimplified,
+        Language::ChineseTraditional,
+        Language::Czech,
+        Language::Portuguese,
+    ];
+    for lang in LANGUAGES {
+        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
+            return Ok(m);
+        }
+    }
+    Err("phrase does not match any supported BIP-39 wordlist")
+}
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a PlatformWallet from a BIP39 mnemonic phrase.
     ///
-    /// The mnemonic is parsed as English. For other languages or passphrases,
-    /// derive the seed externally and use [`create_wallet_from_seed_bytes`].
+    /// The mnemonic's language is auto-detected by trying each
+    /// supported BIP-39 wordlist in turn (see
+    /// [`parse_mnemonic_any_language`]). For passphrase-only flows or
+    /// out-of-band seed material, derive the seed externally and use
+    /// [`Self::create_wallet_from_seed_bytes`].
     pub async fn create_wallet_from_mnemonic(
         &self,
         mnemonic_phrase: &str,
         network: Network,
         accounts: WalletAccountCreationOptions,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let mnemonic = Mnemonic::from_phrase(mnemonic_phrase, Language::English)
+        let mnemonic = parse_mnemonic_any_language(mnemonic_phrase)
             .map_err(|e| PlatformWalletError::WalletCreation(format!("Invalid mnemonic: {}", e)))?;
         let wallet = Wallet::from_mnemonic(mnemonic, network, accounts).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(

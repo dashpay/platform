@@ -821,7 +821,10 @@ public class PlatformWalletPersistenceHandler {
             keyIndex: indices.keyIndex,
             derivationPath: derivationPath,
             publicKey: publicKeyHex,
-            publicKeyHash: publicKeyHashHex
+            publicKeyHash: publicKeyHashHex,
+            keyType: entry.keyType,
+            purpose: entry.purpose,
+            securityLevel: entry.securityLevel
         )
         let account = KeychainManager.shared.storeIdentityPrivateKey(
             privateKey,
@@ -1384,10 +1387,6 @@ public class PlatformWalletPersistenceHandler {
         identities: [PersistentIdentity],
         allocation: LoadAllocation
     ) -> UnsafeMutablePointer<IdentityRestoreEntryFFI>? {
-        // `allocation` is no longer needed for label C-strings (the
-        // label field is gone) — kept for signature stability so the
-        // calling code site still compiles unchanged.
-        _ = allocation
         if identities.isEmpty {
             return nil
         }
@@ -1417,6 +1416,57 @@ public class PlatformWalletPersistenceHandler {
             entry.dpns_names_count = 0
             entry.contested_dpns_names = nil
             entry.contested_dpns_names_count = 0
+
+            // Public keys — read the per-identity `PersistentPublicKey`
+            // rows (relationship navigated directly; the rows are
+            // fetched lazily by SwiftData but live in the same
+            // background context as the identity row so the access is
+            // synchronous). Sort by `keyId` so the BTreeMap that gets
+            // built on the Rust side keeps a deterministic order.
+            let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
+            if sortedKeys.isEmpty {
+                entry.keys = nil
+                entry.keys_count = 0
+            } else {
+                let keyBuf = UnsafeMutablePointer<IdentityKeyRestoreFFI>.allocate(
+                    capacity: sortedKeys.count
+                )
+                for (k, pk) in sortedKeys.enumerated() {
+                    var row = IdentityKeyRestoreFFI()
+                    row.key_id = UInt32(bitPattern: pk.keyId)
+                    // PersistentPublicKey stores the discriminants as
+                    // `String(rawValue)` of the original `UInt8` — same
+                    // shape as the `purposeEnum` / `securityLevelEnum` /
+                    // `keyTypeEnum` accessors on the model. Decode
+                    // back to `UInt8`; fall back to 0 (the safest DPP
+                    // default for each enum) on parse failure so we
+                    // don't drop the row entirely.
+                    row.key_type = UInt8(pk.keyType) ?? 0
+                    row.purpose = UInt8(pk.purpose) ?? 0
+                    row.security_level = UInt8(pk.securityLevel) ?? 0
+                    row.read_only = pk.readOnly
+
+                    // Allocate a dedicated byte buffer for the public
+                    // key data. Same lifetime convention as xpub
+                    // bytes — released by `LoadAllocation.release`
+                    // via the `scalarBuffers` list.
+                    let len = pk.publicKeyData.count
+                    if len > 0 {
+                        let dataBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: len)
+                        pk.publicKeyData.copyBytes(to: dataBuf, count: len)
+                        row.data = UnsafePointer(dataBuf)
+                        row.data_len = len
+                        allocation.scalarBuffers.append((dataBuf, len))
+                    } else {
+                        row.data = nil
+                        row.data_len = 0
+                    }
+                    keyBuf[k] = row
+                }
+                entry.keys = UnsafePointer(keyBuf)
+                entry.keys_count = sortedKeys.count
+                allocation.identityKeyArrays.append((keyBuf, sortedKeys.count))
+            }
 
             buf[j] = entry
         }
@@ -1558,6 +1608,12 @@ private final class LoadAllocation {
     var addressBalanceArrays: [(UnsafeMutablePointer<AddressBalanceEntryFFI>, Int)] = []
     /// `IdentityRestoreEntryFFI` arrays per wallet.
     var identityArrays: [(UnsafeMutablePointer<IdentityRestoreEntryFFI>, Int)] = []
+    /// Per-identity `IdentityKeyRestoreFFI` arrays. One entry per
+    /// identity that has at least one persisted public key. The byte
+    /// buffers each row's `data` pointer references live in
+    /// `scalarBuffers` (same `UnsafeMutablePointer<UInt8>.allocate`
+    /// shape as xpub bytes).
+    var identityKeyArrays: [(UnsafeMutablePointer<IdentityKeyRestoreFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
     /// NUL-terminated c-string buffers carried by identity entries
@@ -1584,6 +1640,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in identityArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in identityKeyArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }

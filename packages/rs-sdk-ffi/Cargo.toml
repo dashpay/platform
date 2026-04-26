@@ -19,10 +19,21 @@ dash-sdk = { path = "../rs-sdk", features = [
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = [
     "dpns-contract",
+    "dashpay-contract",
+    "withdrawals-contract",
+    "wallet-utils-contract",
+    "token-history-contract",
+    "keywords-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
 async-trait = { version = "0.1.83" }
 dash-async = { path = "../rs-dash-async" }
+
+# Used by `dash_sdk_sign_with_mnemonic_and_path` to derive an
+# ECDSA key from `(mnemonic, path)` for one-shot signing without
+# any FFI key export. `Mnemonic`, `bip32::*`, `Network` come from
+# this crate.
+key-wallet = { workspace = true }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }

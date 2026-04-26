@@ -30,6 +30,7 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use platform_wallet::{DashPayProfile, ProfileUpdate};
+use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::error::*;
 use crate::handle::*;
@@ -367,8 +368,9 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
 ) -> PlatformWalletFFIResult {
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            // Cheap Arc clone — same generic specialization as
-            // `platform_wallet_register_identity_from_addresses`.
+            // Cheap Arc clone — same generic specialization other
+            // identity-side FFI entry points use to hand the work to a
+            // tokio worker without dragging the wallet handle along.
             let identity = wallet.identity().clone();
             let result = block_on_worker(async move { identity.sync_profiles().await });
             match result {
@@ -587,6 +589,164 @@ pub unsafe extern "C" fn platform_wallet_create_dashpay_profile(
             out_error,
         )
     }
+}
+
+/// Create or update a DashPay profile using an externally-supplied
+/// signer.
+///
+/// Mirrors [`platform_wallet_create_dashpay_profile`] /
+/// [`platform_wallet_update_dashpay_profile`] but the document
+/// state-transition signature crosses the FFI through the supplied
+/// `signer_handle` (typically `KeychainSigner.handle`) instead of
+/// through a wallet-derived `IdentitySigner`. Required for
+/// external-signable wallets and the architecturally correct path
+/// per `swift-sdk/CLAUDE.md`.
+///
+/// `do_create` picks between the two operation paths on the Rust
+/// side: `true` calls `create_profile_with_external_signer` (errors
+/// when a profile already exists for the identity); `false` calls
+/// `update_profile_with_external_signer` (errors when no profile
+/// is on Platform yet).
+///
+/// # Safety
+/// Same null/lifetime rules as the legacy variants. Additionally
+/// `signer_handle` must be a valid, non-destroyed handle produced by
+/// `dash_sdk_signer_create_with_ctx`. Caller retains ownership.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    display_name: *const c_char,
+    public_message: *const c_char,
+    avatar_url: *const c_char,
+    avatar_bytes: *const u8,
+    avatar_bytes_len: usize,
+    do_create: bool,
+    signer_handle: *mut SignerHandle,
+    out_profile: *mut DashPayProfileFFI,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_profile.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "out_profile is null",
+            );
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    if signer_handle.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "signer_handle is null",
+            );
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let id = match read_identifier(identity_id) {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                    format!("Invalid identity identifier: {e}"),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    let display_name = match decode_opt_c_str(display_name, "display_name") {
+        Ok(v) => v,
+        Err(msg) => {
+            if !out_error.is_null() {
+                *out_error =
+                    PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUtf8Conversion, msg);
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+    let public_message = match decode_opt_c_str(public_message, "public_message") {
+        Ok(v) => v,
+        Err(msg) => {
+            if !out_error.is_null() {
+                *out_error =
+                    PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUtf8Conversion, msg);
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+    let avatar_url = match decode_opt_c_str(avatar_url, "avatar_url") {
+        Ok(v) => v,
+        Err(msg) => {
+            if !out_error.is_null() {
+                *out_error =
+                    PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUtf8Conversion, msg);
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+
+    let avatar_bytes_vec: Option<Vec<u8>> = if avatar_bytes.is_null() || avatar_bytes_len == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts(avatar_bytes, avatar_bytes_len).to_vec())
+    };
+
+    let signer_addr = signer_handle as usize;
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, move |wallet| {
+            let identity = wallet.identity().clone();
+            let input = ProfileUpdate {
+                display_name,
+                public_message,
+                avatar_url,
+                avatar_bytes: avatar_bytes_vec,
+            };
+
+            let result = block_on_worker(async move {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                if do_create {
+                    identity
+                        .create_profile_with_external_signer(&id, input, signer)
+                        .await
+                } else {
+                    identity
+                        .update_profile_with_external_signer(&id, input, signer)
+                        .await
+                }
+            });
+
+            match result {
+                Ok(profile) => {
+                    *out_profile = DashPayProfileFFI::from_profile(&profile);
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        let tag = if do_create { "create" } else { "update" };
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!("{tag}_dashpay_profile_with_signer failed: {e}"),
+                        );
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidHandle,
+                    "Invalid platform-wallet handle",
+                );
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
 }
 
 /// Update an existing DashPay profile document. Returns

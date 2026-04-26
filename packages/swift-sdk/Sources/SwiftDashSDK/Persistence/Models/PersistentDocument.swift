@@ -36,7 +36,16 @@ public final class PersistentDocument {
     public var transferredAtCoreBlockHeight: Int64?
 
     // Network
-    public var network: AppNetwork
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // Deletion flag
     public var isDeleted: Bool = false
@@ -120,7 +129,7 @@ public final class PersistentDocument {
         self.ownerId = ownerId
         self.contractIdData = Data.identifier(fromBase58: contractId) ?? Data()
         self.ownerIdData = Data.identifier(fromBase58: ownerId) ?? Data()
-        self.network = network
+        self.networkRaw = network.rawValue
         self.createdAt = Date()
         self.updatedAt = Date()
         self.localCreatedAt = Date()
@@ -151,8 +160,12 @@ public final class PersistentDocument {
     }
 
     public static func predicate(contractId: String, network: AppNetwork) -> Predicate<PersistentDocument> {
-        #Predicate<PersistentDocument> { doc in
-            doc.contractId == contractId && doc.network == network && doc.isDeleted == false
+        // See `PersistentIdentity.predicate(network:)` — Foundation's
+        // predicate engine can't capture `AppNetwork`, so we filter on
+        // the Int-backed `networkRaw` shadow field.
+        let target = network.rawValue
+        return #Predicate<PersistentDocument> { doc in
+            doc.contractId == contractId && doc.networkRaw == target && doc.isDeleted == false
         }
     }
 

@@ -167,6 +167,34 @@ struct AccountSpecFFI {
     var account_xpub_bytes_len: Int = 0
 }
 
+/// Mirrors `IdentityKeyRestoreFFI` from
+/// `rs-platform-wallet-ffi/src/wallet_restore_types.rs`. One entry per
+/// public key carried on the load path so the reconstructed
+/// `Identity.public_keys` map is populated immediately at cold-start
+/// (instead of waiting for the next sync round to refresh it from
+/// chain). Field order and types must match bit-for-bit — Rust reads
+/// each row as a `#[repr(C)]` struct via `slice::from_raw_parts`.
+///
+/// Discriminant conventions match the DPP `repr(u8)` enum layouts and
+/// are shared with `IdentityPubkeyFFI` on the registration path:
+/// - `key_type`: 0 = ECDSA_SECP256K1, etc.
+/// - `purpose`: 0 = AUTHENTICATION, etc.
+/// - `security_level`: 0 = MASTER, 1 = CRITICAL, 2 = HIGH, 3 = MEDIUM.
+///
+/// `data` is Swift-owned for the duration of the load callback (carries
+/// the compressed public-key bytes; 33 for ECDSA_SECP256K1). The
+/// matching free callback releases the per-identity arrays plus every
+/// `data` byte buffer.
+struct IdentityKeyRestoreFFI {
+    var key_id: UInt32 = 0
+    var key_type: UInt8 = 0
+    var purpose: UInt8 = 0
+    var security_level: UInt8 = 0
+    var read_only: Bool = false
+    var data: UnsafePointer<UInt8>? = nil
+    var data_len: Int = 0
+}
+
 /// Mirrors `IdentityRestoreEntryFFI` from
 /// `rs-platform-wallet-ffi/src/wallet_restore_types.rs`. Field order
 /// and types must match bit-for-bit — Rust reads each entry as a
@@ -177,11 +205,12 @@ struct AccountSpecFFI {
 /// previous `is_watched` discriminant is gone — out-of-wallet
 /// identities don't ride on this path (no associated wallet).
 ///
-/// All pointer fields (`dpns_names`, `contested_dpns_names`) are
-/// Swift-owned during the load-callback window and released by
+/// All pointer fields (`dpns_names`, `contested_dpns_names`, `keys`)
+/// are Swift-owned during the load-callback window and released by
 /// `on_load_wallet_list_free_fn`. `dpns_names` /
 /// `contested_dpns_names` are flat `*const *const c_char` arrays of
-/// NUL-terminated UTF-8 strings.
+/// NUL-terminated UTF-8 strings; `keys` is a contiguous
+/// `[IdentityKeyRestoreFFI]` carrying the per-identity public keys.
 struct IdentityRestoreEntryFFI {
     var identity_id: (
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -197,6 +226,8 @@ struct IdentityRestoreEntryFFI {
     var dpns_names_count: Int = 0
     var contested_dpns_names: UnsafePointer<UnsafePointer<CChar>?>? = nil
     var contested_dpns_names_count: Int = 0
+    var keys: UnsafePointer<IdentityKeyRestoreFFI>? = nil
+    var keys_count: Int = 0
 }
 
 struct WalletRestoreEntryFFI {

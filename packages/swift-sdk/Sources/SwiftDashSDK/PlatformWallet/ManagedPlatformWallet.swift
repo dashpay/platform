@@ -173,6 +173,43 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         }
     }
 
+    /// One already-derived authentication public key the caller wants
+    /// the new identity to register. Marshalled into `IdentityPubkeyFFI`
+    /// at the FFI boundary by `registerIdentityFromAddresses`.
+    ///
+    /// Pre-derived in Swift via `prePersistIdentityKeysForRegistration`
+    /// (which routes through `dash_sdk_derive_identity_keys_from_mnemonic`,
+    /// the watch-only-safe derivation FFI). Threading these through to
+    /// Rust avoids the prior pubkey-derivation pass inside
+    /// `platform_wallet_register_identity_with_signer` that fails on
+    /// watch-only wallets where Rust has no in-process xpriv loaded.
+    public struct IdentityPubkey: Sendable {
+        public let keyId: UInt32
+        public let keyType: KeyType
+        public let purpose: KeyPurpose
+        public let securityLevel: SecurityLevel
+        /// Serialized public key bytes (33 bytes for compressed
+        /// secp256k1; 48 for BLS; etc.).
+        public let pubkeyBytes: Data
+        public let readOnly: Bool
+
+        public init(
+            keyId: UInt32,
+            keyType: KeyType,
+            purpose: KeyPurpose,
+            securityLevel: SecurityLevel,
+            pubkeyBytes: Data,
+            readOnly: Bool = false
+        ) {
+            self.keyId = keyId
+            self.keyType = keyType
+            self.purpose = purpose
+            self.securityLevel = securityLevel
+            self.pubkeyBytes = pubkeyBytes
+            self.readOnly = readOnly
+        }
+    }
+
     /// Result of a successful identity registration.
     public struct CreatedIdentity: Sendable {
         /// 32-byte identity id.
@@ -187,62 +224,64 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         public let identity: ManagedIdentity
     }
 
-    /// Register a new identity funded by Platform-address balances.
+    /// Register a new identity funded by Platform-address balances,
+    /// using TWO external `SignerHandle`s — one for the new identity's
+    /// state-transition keys, one for the input platform addresses'
+    /// funding-contribution signatures.
     ///
-    /// The Rust side runs `IdentityWallet::register_from_addresses`
-    /// which derives DIP-9 authentication keys under
-    /// `m/9'/…/identityIndex'/key_index'`, builds an identity, and
-    /// submits via `IdentityCreateFromAddressesTransition`. The
-    /// call blocks until Platform confirms the transition, which can
-    /// take several seconds — it's expected to be driven from an
-    /// `async` context.
+    /// This is the preferred path: the wallet's mnemonic stays in
+    /// Keychain throughout, and every signature crosses the FFI
+    /// through one of the supplied signers (typically two views of
+    /// the same `KeychainSigner` — see the convenience overload
+    /// below). Per `swift-sdk/CLAUDE.md`, the seed must not cross
+    /// the FFI boundary just so Rust can finish an operation.
+    ///
+    /// The two-handle FFI shape unblocks watch-only wallets and
+    /// future Keychain-backed platform-address keys (each role can
+    /// route to its own backing store) without an ABI change later.
     ///
     /// - Parameters:
-    ///   - inputs: Contributing addresses with the credit amount to
-    ///     spend from each. Nonces are resolved by the SDK at submit
-    ///     time — the caller does not track them.
-    ///   - output: Optional refund address + credits. `nil` when any
-    ///     residual should go into the new identity.
+    ///   - inputs: contributing address rows describing each input
+    ///     platform address + the credit amount to spend from it.
+    ///   - output: optional refund output.
     ///   - identityIndex: BIP-9 identity index in the HD tree.
-    ///   - keyCount: Number of authentication keys to register
-    ///     (must be ≥ 1). First key is MASTER, the rest HIGH.
-    ///   - mnemonic: BIP-39 mnemonic phrase (English). The Rust
-    ///     side uses it to derive DIP-9 auth keys + sign both the
-    ///     new identity and each spent platform address. Not
-    ///     retained beyond this call.
-    ///   - passphrase: Optional BIP-39 passphrase. `nil` encodes
-    ///     the empty passphrase.
+    ///   - identityPubkeys: Already-derived authentication pubkeys
+    ///     for the new identity (typically produced by
+    ///     `prePersistIdentityKeysForRegistration`). The first row
+    ///     should be the MASTER key; the remainder are HIGH-security
+    ///     authentication keys. Threading the pubkeys in unblocks
+    ///     watch-only wallets — Rust no longer needs the seed to
+    ///     build the placeholder identity.
+    ///   - identitySigner: signer whose `.handle` produces signatures
+    ///     for the new identity's authentication keys. Borrowed for
+    ///     the duration of the call.
+    ///   - addressSigner: signer whose `.handle` produces signatures
+    ///     for each input platform address. Borrowed for the
+    ///     duration of the call. May be the same instance as
+    ///     `identitySigner`.
     public func registerIdentityFromAddresses(
         inputs: [IdentityAddressInput],
         output: IdentityAddressOutput?,
         identityIndex: UInt32,
-        keyCount: UInt32,
-        mnemonic: String,
-        passphrase: String? = nil
+        identityPubkeys: [IdentityPubkey],
+        identitySigner: KeychainSigner,
+        addressSigner: KeychainSigner
     ) async throws -> CreatedIdentity {
         guard !inputs.isEmpty else {
             throw PlatformWalletError.invalidParameter
         }
-        guard !mnemonic.isEmpty else {
+        guard !identityPubkeys.isEmpty else {
             throw PlatformWalletError.invalidParameter
         }
 
-        // Copy inputs into the flat FFI shape. Do it off the main
-        // actor via `Task.detached` because `platform_wallet_register_
-        // identity_from_addresses` internally drives a tokio runtime
-        // via `block_on`; calling from the main thread would park
-        // user-interactive QoS on default-QoS workers (same pattern
-        // we use for BLAST sync).
-        //
-        // The detached task returns primitive `(Data, Handle)` which
-        // are `Sendable`. The `ManagedIdentity` wrapper is constructed
-        // back in the calling isolation domain so we don't need to
-        // add a Sendable bound on the non-sendable FFI wrapper type.
         let handle = self.handle
+        let identitySignerHandle = identitySigner.handle
+        let addressSignerHandle = addressSigner.handle
+
         let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
         ) { () -> (Data, Handle) in
-            let ffiInputs = inputs.map { input -> IdentityInputAddressFFI in
+            let ffiInputs = inputs.map { input -> IdentityFundingInputFFI in
                 var hashTuple = hashTupleInit()
                 withUnsafeMutableBytes(of: &hashTuple) { raw in
                     let src = input.hash.prefix(20)
@@ -250,17 +289,14 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                         raw[i] = byte
                     }
                 }
-                return IdentityInputAddressFFI(
+                return IdentityFundingInputFFI(
                     address_type: input.addressType,
                     hash: hashTuple,
                     credits: input.credits
                 )
             }
 
-            // Build a single FFI output struct; we pass it by
-            // pointer (`&outputFFI`) below. `has_output=false`
-            // tells Rust to ignore the rest of the fields.
-            var outputFFI: IdentityOutputAddressFFI = {
+            var outputFFI: IdentityFundingOutputFFI = {
                 if let output {
                     var hashTuple = hashTupleInit()
                     withUnsafeMutableBytes(of: &hashTuple) { raw in
@@ -269,14 +305,14 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                             raw[i] = byte
                         }
                     }
-                    return IdentityOutputAddressFFI(
+                    return IdentityFundingOutputFFI(
                         has_output: true,
                         address_type: output.addressType,
                         hash: hashTuple,
                         credits: output.credits
                     )
                 } else {
-                    return IdentityOutputAddressFFI(
+                    return IdentityFundingOutputFFI(
                         has_output: false,
                         address_type: 0,
                         hash: hashTupleInit(),
@@ -299,20 +335,36 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             var outIdentityHandle: Handle = NULL_HANDLE
             var error = PlatformWalletFFIError()
 
-            // `withCString` guarantees a null-terminated UTF-8
-            // buffer valid for the closure's lifetime. The Rust
-            // side copies what it needs and does not retain the
-            // pointer.
-            let result = mnemonic.withCString { mnemonicPtr -> PlatformWalletFFIResult in
-                let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { passphrasePtr in
-                    ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                        withUnsafePointer(to: &outputFFI) { outputPtr in
-                            platform_wallet_register_identity_from_addresses(
+            // Stage each pubkey into a contiguous, owning buffer so
+            // the `pubkey_bytes` pointers we hand to Rust stay valid
+            // for the full duration of the FFI call. Building two
+            // parallel arrays — one of `Data` keeping the bytes
+            // alive, one of `IdentityPubkeyFFI` rows pointing into
+            // them — and pinning both via nested
+            // `withUnsafeBufferPointer` is the simplest shape that
+            // matches the Rust side's borrow-for-the-call contract.
+            let pubkeyBuffers: [Data] = identityPubkeys.map { $0.pubkeyBytes }
+
+            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                withUnsafePointer(to: &outputFFI) { outputPtr in
+                    pubkeyBuffers.withUnsafeBufferPointer { _ -> PlatformWalletFFIResult in
+                        // For each row, withUnsafeBytes pins ONE Data
+                        // at a time, so we have to assemble the FFI
+                        // row array under nested pinning. We use a
+                        // recursive helper-via-fold by building the
+                        // array of FFI rows lazily through nested
+                        // `withUnsafeBytes` calls.
+                        return Self.withPubkeyFFIArray(
+                            identityPubkeys,
+                            buffers: pubkeyBuffers
+                        ) { ffiRowsPtr, ffiRowsCount in
+                            platform_wallet_register_identity_with_signer(
                                 handle,
                                 identityIndex,
-                                keyCount,
-                                mnemonicPtr,
-                                passphrasePtr,
+                                ffiRowsPtr,
+                                ffiRowsCount,
+                                identitySignerHandle,
+                                addressSignerHandle,
                                 inputsBuf.baseAddress,
                                 inputsBuf.count,
                                 outputPtr,
@@ -322,11 +374,6 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                             )
                         }
                     }
-                }
-                if let passphrase {
-                    return passphrase.withCString { passphrasePtr in call(passphrasePtr) }
-                } else {
-                    return call(nil)
                 }
             }
 
@@ -346,10 +393,92 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             identity: ManagedIdentity(handle: identityHandle)
         )
     }
+
+    /// Convenience overload — uses the same `KeychainSigner` for both
+    /// the identity-key role and the platform-address role. The
+    /// trampoline dispatches by `key_type` byte (KeyType discriminants
+    /// 0–4 → `PersistentPublicKey` lookup; `0xFF` → 20-byte address
+    /// hash lookup), so a single Swift signer can serve both. This
+    /// matches today's iOS wallet shape; the two-signer overload
+    /// above is the building block for future watch-only / hardware
+    /// flows.
+    public func registerIdentityFromAddresses(
+        inputs: [IdentityAddressInput],
+        output: IdentityAddressOutput?,
+        identityIndex: UInt32,
+        identityPubkeys: [IdentityPubkey],
+        signer: KeychainSigner
+    ) async throws -> CreatedIdentity {
+        try await registerIdentityFromAddresses(
+            inputs: inputs,
+            output: output,
+            identityIndex: identityIndex,
+            identityPubkeys: identityPubkeys,
+            identitySigner: signer,
+            addressSigner: signer
+        )
+    }
+
+    /// Pin every pubkey buffer simultaneously and call `body` with a
+    /// freshly-built `[IdentityPubkeyFFI]` whose `pubkey_bytes`
+    /// pointers all reference the pinned bytes. Recursive shape
+    /// because Swift's `withUnsafeBytes` only pins one `Data` at a
+    /// time — recursing pins them in order, then runs `body` once at
+    /// the deepest frame where every buffer is alive simultaneously.
+    ///
+    /// `pubkeys[i]` must align with `buffers[i]` (the latter is a
+    /// pre-extracted `[Data]` of the same `pubkeyBytes` values, kept
+    /// separately so the recursive helper doesn't need to see the
+    /// full Swift wrapper struct).
+    fileprivate static func withPubkeyFFIArray<R>(
+        _ pubkeys: [IdentityPubkey],
+        buffers: [Data],
+        _ body: (UnsafePointer<IdentityPubkeyFFI>?, Int) -> R
+    ) -> R {
+        precondition(pubkeys.count == buffers.count, "pubkeys / buffers length mismatch")
+        var rows: [IdentityPubkeyFFI] = []
+        rows.reserveCapacity(pubkeys.count)
+        return pinNext(0, &rows, pubkeys, buffers, body)
+    }
+
+    /// Inner recursion for `withPubkeyFFIArray`. `index` advances
+    /// through `pubkeys`; on each step we pin the next `Data` via
+    /// `withUnsafeBytes`, append a matching FFI row, and recurse.
+    /// At index == count we hand the assembled row array off to
+    /// `body` under one combined pinning frame.
+    private static func pinNext<R>(
+        _ index: Int,
+        _ rows: inout [IdentityPubkeyFFI],
+        _ pubkeys: [IdentityPubkey],
+        _ buffers: [Data],
+        _ body: (UnsafePointer<IdentityPubkeyFFI>?, Int) -> R
+    ) -> R {
+        if index == pubkeys.count {
+            return rows.withUnsafeBufferPointer { rowsBuf in
+                body(rowsBuf.baseAddress, rowsBuf.count)
+            }
+        }
+        let pk = pubkeys[index]
+        return buffers[index].withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> R in
+            let basePtr = raw.bindMemory(to: UInt8.self).baseAddress
+            rows.append(
+                IdentityPubkeyFFI(
+                    key_id: pk.keyId,
+                    key_type: pk.keyType.ffiValue,
+                    purpose: pk.purpose.ffiValue,
+                    security_level: pk.securityLevel.ffiValue,
+                    pubkey_bytes: basePtr,
+                    pubkey_len: raw.count,
+                    read_only: pk.readOnly
+                )
+            )
+            return pinNext(index + 1, &rows, pubkeys, buffers, body)
+        }
+    }
 }
 
 /// All-zero 20-byte tuple — used as the `hash` field default when
-/// building `IdentityInputAddressFFI` / `IdentityOutputAddressFFI`.
+/// building `IdentityFundingInputFFI` / `IdentityFundingOutputFFI`.
 private func hashTupleInit() -> (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
@@ -382,13 +511,26 @@ extension ManagedPlatformWallet {
         /// Full derivation path string, e.g.
         /// `m/9'/1'/5'/0'/0'/0'/0'`.
         public let derivationPath: String
+        /// Compressed public key bytes (raw — 33 bytes for ECDSA
+        /// secp256k1). Use `publicKeyHex` for display, `publicKeyData`
+        /// for keychain metadata / SwiftData rows.
+        public let publicKeyData: Data
         /// Compressed public key bytes as lowercase hex (33 bytes →
-        /// 66 hex chars).
+        /// 66 hex chars). Convenience over `publicKeyData`.
         public let publicKeyHex: String
         /// Private key in WIF (Wallet Import Format) — network-aware,
         /// compressed. Matches how other views in the example app
         /// accept / display private keys.
         public let privateKeyWIF: String
+        /// Raw 32-byte ECDSA private-key scalar. Sensitive material —
+        /// the intended use is to immediately persist into the iOS
+        /// Keychain via
+        /// `KeychainManager.storeIdentityPrivateKey(_:derivationPath:metadata:)`
+        /// and drop the local reference. The pre-registration helper
+        /// `prePersistIdentityKeysForRegistration` does this for the
+        /// caller; surface it here too so other diagnostic views can
+        /// inspect / re-stash a key without a second derivation pass.
+        public let privateKeyData: Data
 
         public var id: UInt32 { identityIndex }
     }
@@ -464,25 +606,228 @@ extension ManagedPlatformWallet {
             let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
             let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
 
+            let pubData: Data
             let pubHex: String
             if let pubPtr = row.public_key, row.public_key_len > 0 {
-                let buf = UnsafeBufferPointer(start: pubPtr, count: row.public_key_len)
-                pubHex = buf.map { String(format: "%02x", $0) }.joined()
+                pubData = Data(bytes: pubPtr, count: row.public_key_len)
+                pubHex = pubData.map { String(format: "%02x", $0) }.joined()
             } else {
+                pubData = Data()
                 pubHex = ""
             }
+
+            // Inline 32-byte tuple → owned `Data`. We copy because
+            // the underlying tuple is freed when the FFI struct is
+            // released by the deferred free call.
+            var pkTuple = row.private_key_bytes
+            let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
 
             previews.append(
                 IdentityRegistrationKeyPreview(
                     identityIndex: row.identity_index,
                     derivationPath: path,
+                    publicKeyData: pubData,
                     publicKeyHex: pubHex,
-                    privateKeyWIF: wif
+                    privateKeyWIF: wif,
+                    privateKeyData: pkData
                 )
             )
         }
         return previews
     }
+
+    /// Pre-derive + pre-persist the authentication keys an upcoming
+    /// `registerIdentityFromAddresses(...signer:)` call will use.
+    ///
+    /// Required because the FFI `KeychainSigner` looks up private
+    /// keys by public-key bytes, but the `PersistentPublicKey`
+    /// SwiftData rows + their keychain entries are normally only
+    /// inserted by the Rust persister callback **after** registration
+    /// completes. Calling this method before registration writes the
+    /// keychain entries up front so the signer trampoline can find
+    /// them mid-registration via the
+    /// `KeychainManager.retrieveIdentityPrivateKey(publicKeyHex:)`
+    /// fallback path. The matching SwiftData rows are written by
+    /// the persister callback once registration succeeds.
+    ///
+    /// All derivation happens entirely on the Rust side via
+    /// `dash_sdk_derive_identity_keys_from_mnemonic`. Swift's role is
+    /// purely (a) pulling the mnemonic out of Keychain and (b) writing
+    /// the resulting private keys back into Keychain — the only
+    /// operations Rust cannot perform from its side, per
+    /// `swift-sdk/CLAUDE.md`.
+    ///
+    /// # Why this routes through the mnemonic-driven FFI
+    ///
+    /// The previous implementation called the wallet-handle variant
+    /// (`platform_wallet_derive_identity_keys_for_index`), which
+    /// required Rust to have an in-process xpriv for this wallet. That
+    /// works for wallets created in the current process but fails with
+    /// `"Cannot derive private keys from watch-only wallet"` for
+    /// wallets restored from SwiftData persistence (their seed lives
+    /// in Keychain, not in the `WalletManager`). Pulling the mnemonic
+    /// from Keychain per call and handing it to a stateless derivation
+    /// FFI works for every wallet shape regardless of how it was
+    /// loaded into the process.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: The identity index that will be passed to
+    ///     `registerIdentityFromAddresses`.
+    ///   - keyCount: The number of authentication keys to pre-derive.
+    ///     Must match the `keyCount` argument used at registration
+    ///     time so the `(identityIndex, keyId)` slots line up with
+    ///     the eventual persister-callback rows.
+    ///   - network: The network the upcoming registration will run
+    ///     on. Selects the DIP-9 coin-type slot in the derivation
+    ///     paths AND the WIF version byte. Must match the network of
+    ///     the SDK / `KeychainSigner` used at registration time.
+    ///   - walletIdHex: Hex-encoded wallet id used in the keychain
+    ///     metadata blob — surfaced by the keychain-explorer view
+    ///     and by `PersistentPublicKey` later. Should match the
+    ///     wallet's `walletId` (same value the Rust persister
+    ///     callback would write).
+    ///   - keychain: Defaults to `KeychainManager.shared`.
+    ///   - storage: `WalletStorage` instance used to read the BIP-39
+    ///     mnemonic from Keychain. Defaults to a fresh
+    ///     `WalletStorage()` — overridable for tests.
+    /// - Returns: The previews that were just persisted (in the same
+    ///   order as `keyCount`), so callers can hold on to the pubkey
+    ///   data if they need to render anything else.
+    @discardableResult
+    public func prePersistIdentityKeysForRegistration(
+        identityIndex: UInt32,
+        keyCount: UInt32,
+        network: DashSDKNetwork,
+        walletIdHex: String,
+        keychain: KeychainManager = .shared,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> [IdentityRegistrationKeyPreview] {
+        guard keyCount > 0 else { return [] }
+
+        // Pull the BIP-39 mnemonic out of Keychain. `String` can't be
+        // truly zeroed in Swift, but we keep the local lifetime as
+        // narrow as possible — only this function holds a reference,
+        // and the FFI call inside copies the bytes onto the Rust side
+        // (where they ARE held in `Zeroizing` and scrubbed at function
+        // exit).
+        let mnemonic = try storage.retrieveMnemonic(for: self.walletId)
+
+        var out = identityRegistrationKeyDerivationsFFIEmpty()
+        var error = PlatformWalletFFIError()
+        let result = mnemonic.withCString { mPtr -> PlatformWalletFFIResult in
+            // No BIP-39 passphrase is supported by the rest of the
+            // SDK yet (mirrors `KeychainSigner.swift`'s own
+            // `dash_sdk_sign_with_mnemonic_and_path` call site).
+            // Pass `nil` to mean "empty passphrase".
+            dash_sdk_derive_identity_keys_from_mnemonic(
+                mPtr,
+                nil,
+                network,
+                identityIndex,
+                keyCount,
+                &out,
+                &error
+            )
+        }
+        defer { dash_sdk_derive_identity_keys_from_mnemonic_free(&out) }
+
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        guard let base = out.items, out.count > 0 else { return [] }
+
+        var persisted: [IdentityRegistrationKeyPreview] = []
+        persisted.reserveCapacity(out.count)
+
+        for i in 0..<out.count {
+            let row = base[i]
+            let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
+            let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
+
+            let pubData: Data
+            let pubHex: String
+            if let pubPtr = row.public_key, row.public_key_len > 0 {
+                pubData = Data(bytes: pubPtr, count: row.public_key_len)
+                pubHex = pubData.map { String(format: "%02x", $0) }.joined()
+            } else {
+                pubData = Data()
+                pubHex = ""
+            }
+
+            var pkTuple = row.private_key_bytes
+            let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
+
+            // Identity-id is unknown pre-registration (Rust
+            // recomputes it from the input addresses). Use the
+            // marker `pending` so the keychain explorer makes it
+            // obvious which rows are pre-registered slots.
+            //
+            // Discriminant convention matches `CreateIdentityView`'s
+            // `IdentityPubkey` mapping (and the upstream Rust-side
+            // policy that lived inside `register_identity` before it
+            // moved to Swift):
+            // - keyId 0 → MASTER, AUTHENTICATION, ECDSA_SECP256K1
+            // - keyId > 0 → HIGH, AUTHENTICATION, ECDSA_SECP256K1
+            // The bytes used here (`0` / `1` / `0`) are the
+            // canonical DPP `repr(u8)` discriminants, the same ones
+            // every other FFI surface in this SDK speaks.
+            let pubHashHex = KeychainManager.computePublicKeyHashHex(pubData)
+            // CreateIdentityView's enum mapping uses .high for
+            // non-master rows; the DPP `SecurityLevel` discriminant
+            // for HIGH is 2 (0=MASTER, 1=CRITICAL, 2=HIGH, 3=MEDIUM).
+            // Mirror that here so the Keychain row stamps the same
+            // security level the pubkey row actually submitted to
+            // the network carries.
+            let secLevelByte: UInt8 = i == 0 ? 0 /* MASTER */ : 2 /* HIGH */
+            let metadata = KeychainManager.IdentityPrivateKeyMetadata(
+                identityId: "pending",
+                keyId: UInt32(i),
+                walletId: walletIdHex,
+                identityIndex: identityIndex,
+                keyIndex: UInt32(i),
+                derivationPath: path,
+                publicKey: pubHex,
+                publicKeyHash: pubHashHex,
+                keyType: 0,        // ECDSA_SECP256K1
+                purpose: 0,        // AUTHENTICATION
+                securityLevel: secLevelByte
+            )
+            _ = keychain.storeIdentityPrivateKey(
+                pkData,
+                derivationPath: path,
+                metadata: metadata
+            )
+
+            persisted.append(
+                IdentityRegistrationKeyPreview(
+                    identityIndex: identityIndex,
+                    derivationPath: path,
+                    publicKeyData: pubData,
+                    publicKeyHex: pubHex,
+                    privateKeyWIF: wif,
+                    privateKeyData: pkData
+                )
+            )
+        }
+
+        return persisted
+    }
+
+    // ----------------------------------------------------------------
+    // prePersistPlatformAddressPrivateKeysForRegistration — REMOVED
+    // ----------------------------------------------------------------
+    //
+    // Platform-address private keys are NEVER persisted. The FFI
+    // signer trampoline derives them on demand per signing call from
+    // `(mnemonic-in-Keychain, derivation-path-in-SwiftData)` via
+    // `dash_sdk_sign_with_mnemonic_and_path` and zeroes the buffers
+    // immediately. See `KeychainSigner.swift`'s `key_type == 0xFF`
+    // branch.
+    //
+    // Identity keys still go through `prePersistIdentityKeysForRegistration`
+    // above — those ARE intended to live in Keychain as primary
+    // storage.
 
     /// Scan the wallet's DIP-9 identity authentication derivation
     /// tree for registered identities and fold any matches into the
@@ -557,6 +902,18 @@ public struct DpnsSearchResult: Sendable, Equatable {
 extension ManagedPlatformWallet {
     /// Register a DPNS name for `identityId` on Platform.
     ///
+    /// # Superseded — prefer the `signer:`-taking overload
+    ///
+    /// This variant routes through the legacy
+    /// `platform_wallet_register_dpns_name` FFI which constructs an
+    /// internal `IdentitySigner` from the wallet manager. That path
+    /// dies on watch-only wallets (no seed Rust-side) and can also
+    /// deadlock the Tokio worker when its derivation tries to
+    /// `blocking_read` the wallet-manager lock from inside a signing
+    /// future. New call sites should use the
+    /// `registerDpnsName(identityId:name:signer:)` overload below
+    /// and pass a `KeychainSigner`.
+    ///
     /// Goes through `IdentityWallet::register_name`, which on success:
     ///   1. broadcasts the DPNS preorder + domain documents
     ///   2. appends the new `DpnsNameInfo` to
@@ -600,6 +957,81 @@ extension ManagedPlatformWallet {
             guard let p = outPtr else {
                 throw PlatformWalletError.walletOperation(
                     "register_dpns_name returned a null full-domain-name pointer"
+                )
+            }
+            return String(cString: p)
+        }.value
+    }
+
+    /// Register a DPNS name for `identityId` on Platform using an
+    /// externally-supplied `KeychainSigner`.
+    ///
+    /// Architecturally aligned with
+    /// `registerIdentityFromAddresses(...identitySigner:addressSigner:)`:
+    /// every signature on this path crosses the FFI boundary via the
+    /// Swift-side signer's vtable, so the wallet's own seed never
+    /// participates. Required for watch-only wallets restored from
+    /// SwiftData state (where the seed lives in iOS Keychain rather
+    /// than the in-process `WalletManager`) and avoids the deadlock
+    /// the legacy `IdentitySigner`-based variant hit on the Tokio
+    /// worker.
+    ///
+    /// Goes through `IdentityWallet::register_name_with_external_signer`,
+    /// which on success:
+    ///   1. broadcasts the DPNS preorder + domain documents (signing
+    ///      via the supplied `signer.handle`),
+    ///   2. appends the new `DpnsNameInfo` to
+    ///      `ManagedIdentity.dpns_names`,
+    ///   3. queues the updated identity in the persister so the
+    ///      SwiftData `PersistentIdentity` row refreshes via the
+    ///      `on_persist_identities_fn` callback.
+    ///
+    /// The Rust side picks the HIGH/CRITICAL authentication key the
+    /// document state transition requires from the identity's own
+    /// `public_keys` map; the signer's role is to sign with whatever
+    /// key was picked.
+    ///
+    /// Returns the full domain name (e.g. `"alice.dash"`).
+    @discardableResult
+    public func registerDpnsName(
+        identityId: Identifier,
+        name: String,
+        signer: KeychainSigner
+    ) async throws -> String {
+        let handle = self.handle
+        // Take the raw signer handle outside the Task — `KeychainSigner`
+        // owns its handle for its full lifetime (released in `deinit`),
+        // so the pointer is safe to capture into the detached Task as
+        // long as the caller keeps `signer` alive across the await.
+        let signerHandle = signer.handle
+        // Capture the 32-byte payload by value into a Sendable
+        // `[UInt8]` so the detached Task can hand a fresh pointer
+        // back to the FFI.
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var outPtr: UnsafeMutablePointer<CChar>? = nil
+            var error = PlatformWalletFFIError()
+            let result = idBytes.withUnsafeBufferPointer { idBp in
+                name.withCString { namePtr in
+                    platform_wallet_register_dpns_name_with_signer(
+                        handle,
+                        idBp.baseAddress!,
+                        namePtr,
+                        signerHandle,
+                        &outPtr,
+                        &error
+                    )
+                }
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            defer { if let p = outPtr { platform_wallet_string_free(p) } }
+            guard let p = outPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "register_dpns_name_with_signer returned a null full-domain-name pointer"
                 )
             }
             return String(cString: p)
@@ -959,6 +1391,122 @@ extension ManagedPlatformWallet {
         return EstablishedContact(handle: establishedHandle)
     }
 
+    /// Send a contact request using an externally-supplied
+    /// `KeychainSigner` for the document state-transition.
+    ///
+    /// Architecturally aligned with the other `_with_signer` flows
+    /// (DPNS register, identity register, ...). Required for
+    /// watch-only wallets and the architecturally correct path per
+    /// `swift-sdk/CLAUDE.md` — no signing happens via the wallet's
+    /// own seed on this path.
+    ///
+    /// CAVEAT — ECDH derivation: the contact-request encryption step
+    /// still derives the sender's ECDH private key from the wallet
+    /// seed Rust-side. Watch-only wallets will fail at that step
+    /// until a follow-up FFI pushes ECDH across as well.
+    public func sendContactRequest(
+        senderIdentityId: Identifier,
+        recipientIdentityId: Identifier,
+        accountLabel: String? = nil,
+        autoAcceptProof: Data? = nil,
+        signer: KeychainSigner
+    ) async throws -> ContactRequest {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let recipientBytes: [UInt8] = recipientIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let accountLabel = accountLabel
+        let autoAcceptProof = autoAcceptProof
+
+        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
+            () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            var error = PlatformWalletFFIError()
+            let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
+                senderBp -> PlatformWalletFFIResult in
+                recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
+                    let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
+                        labelPtr in
+                        if let autoAcceptProof, !autoAcceptProof.isEmpty {
+                            return autoAcceptProof.withUnsafeBytes { rawBuf in
+                                let bytesPtr = rawBuf.baseAddress?
+                                    .assumingMemoryBound(to: UInt8.self)
+                                return platform_wallet_send_contact_request_with_signer(
+                                    handle,
+                                    senderBp.baseAddress!,
+                                    recipientBp.baseAddress!,
+                                    labelPtr,
+                                    bytesPtr,
+                                    autoAcceptProof.count,
+                                    signerHandle,
+                                    &outHandle,
+                                    &error
+                                )
+                            }
+                        } else {
+                            return platform_wallet_send_contact_request_with_signer(
+                                handle,
+                                senderBp.baseAddress!,
+                                recipientBp.baseAddress!,
+                                labelPtr,
+                                nil,
+                                0,
+                                signerHandle,
+                                &outHandle,
+                                &error
+                            )
+                        }
+                    }
+                    if let accountLabel {
+                        return accountLabel.withCString { callWithLabel($0) }
+                    } else {
+                        return callWithLabel(nil)
+                    }
+                }
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return outHandle
+        }.value
+
+        return ContactRequest(handle: requestHandle)
+    }
+
+    /// Accept an incoming contact request using an externally-supplied
+    /// `KeychainSigner` for the reciprocal request's document
+    /// state-transition.
+    public func acceptContactRequest(
+        _ request: ContactRequest,
+        signer: KeychainSigner
+    ) async throws -> EstablishedContact {
+        let walletHandle = self.handle
+        let requestHandle = request.handle
+        let signerHandle = signer.handle
+        let establishedHandle: Handle = try await Task.detached(
+            priority: .userInitiated
+        ) { () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_accept_contact_request_with_signer(
+                walletHandle,
+                requestHandle,
+                signerHandle,
+                &outHandle,
+                &error
+            )
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return outHandle
+        }.value
+        return EstablishedContact(handle: establishedHandle)
+    }
+
     /// Reject an incoming contact request. Today the effect is
     /// local — drops it from `ManagedIdentity.incoming_contact_requests`.
     /// A future follow-up (TODO in the Rust `reject_contact_request`)
@@ -1189,6 +1737,118 @@ extension ManagedPlatformWallet {
             update: update,
             doCreate: false
         )
+    }
+
+    /// Create a new DashPay profile using an externally-supplied
+    /// `KeychainSigner` for the document state-transition.
+    ///
+    /// Architecturally aligned with `registerDpnsName(...signer:)` —
+    /// the wallet's own seed never participates Rust-side.
+    @discardableResult
+    public func createDashPayProfile(
+        identityId: Identifier,
+        update: DashPayProfileUpdate,
+        signer: KeychainSigner
+    ) async throws -> DashPayProfile {
+        try await submitDashPayProfileWithSigner(
+            identityId: identityId,
+            update: update,
+            doCreate: true,
+            signer: signer
+        )
+    }
+
+    /// Update an existing DashPay profile using an
+    /// externally-supplied `KeychainSigner`.
+    @discardableResult
+    public func updateDashPayProfile(
+        identityId: Identifier,
+        update: DashPayProfileUpdate,
+        signer: KeychainSigner
+    ) async throws -> DashPayProfile {
+        try await submitDashPayProfileWithSigner(
+            identityId: identityId,
+            update: update,
+            doCreate: false,
+            signer: signer
+        )
+    }
+
+    /// Shared submit path for the signer-driven profile flows. Mirrors
+    /// `submitDashPayProfile` but routes through
+    /// `platform_wallet_create_or_update_dashpay_profile_with_signer`.
+    private func submitDashPayProfileWithSigner(
+        identityId: Identifier,
+        update: DashPayProfileUpdate,
+        doCreate: Bool,
+        signer: KeychainSigner
+    ) async throws -> DashPayProfile {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let displayName = update.displayName
+        let publicMessage = update.publicMessage
+        let avatarUrl = update.avatarUrl
+        let avatarBytes = update.avatarBytes
+
+        return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
+            var outProfile = dashPayProfileFFIEmpty()
+            var error = PlatformWalletFFIError()
+
+            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                let idPtr = idBp.baseAddress!
+                return invokeWithOptionalCStrings(
+                    displayName,
+                    publicMessage,
+                    avatarUrl
+                ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
+                    let bytes = avatarBytes ?? Data()
+                    if let avatarBytes, !avatarBytes.isEmpty {
+                        return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
+                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                            return platform_wallet_create_or_update_dashpay_profile_with_signer(
+                                handle,
+                                idPtr,
+                                namePtr,
+                                msgPtr,
+                                urlPtr,
+                                bytesPtr,
+                                avatarBytes.count,
+                                doCreate,
+                                signerHandle,
+                                &outProfile,
+                                &error
+                            )
+                        }
+                    } else {
+                        _ = bytes
+                        return platform_wallet_create_or_update_dashpay_profile_with_signer(
+                            handle,
+                            idPtr,
+                            namePtr,
+                            msgPtr,
+                            urlPtr,
+                            nil,
+                            0,
+                            doCreate,
+                            signerHandle,
+                            &outProfile,
+                            &error
+                        )
+                    }
+                }
+            }
+
+            defer { dashpay_profile_ffi_free(&outProfile) }
+
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return DashPayProfile(ffi: outProfile)
+        }.value
     }
 
     /// Shared submit path for create / update — same inputs, same
@@ -1458,5 +2118,305 @@ private func invokeWithOptionalCStrings<R>(
         return a.withCString { aPtr in step1(aPtr) }
     } else {
         return step1(nil)
+    }
+}
+
+// MARK: - Identity transfer / withdraw / update — external-signer wrappers
+
+/// One recipient row for `transferCreditsToAddresses(...)`.
+public struct PlatformAddressCreditOutput: Sendable {
+    /// Discriminant: `0 = P2PKH`, `1 = P2SH`. Mirrors the Rust-side
+    /// `PlatformAddress` enum variant tag.
+    public let addressType: UInt8
+    /// 20-byte address hash.
+    public let hash: Data
+    /// Credits to transfer to this address.
+    public let credits: UInt64
+
+    public init(addressType: UInt8, hash: Data, credits: UInt64) {
+        self.addressType = addressType
+        self.hash = hash
+        self.credits = credits
+    }
+}
+
+extension ManagedPlatformWallet {
+    /// Transfer `amount` credits from `fromIdentityId` to
+    /// `toIdentityId` using the supplied `KeychainSigner` for the
+    /// identity-state-transition signature.
+    ///
+    /// Architecturally aligned with `registerDpnsName(...signer:)` —
+    /// no signing happens via the wallet's own seed Rust-side, so
+    /// watch-only wallets work end-to-end on this path.
+    public func transferCredits(
+        fromIdentityId: Identifier,
+        toIdentityId: Identifier,
+        amount: UInt64,
+        signer: KeychainSigner
+    ) async throws {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let toBytes: [UInt8] = toIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        try await Task.detached(priority: .userInitiated) {
+            var error = PlatformWalletFFIError()
+            let result = fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
+                toBytes.withUnsafeBufferPointer { toBp in
+                    platform_wallet_transfer_credits_with_signer(
+                        handle,
+                        fromBp.baseAddress!,
+                        toBp.baseAddress!,
+                        amount,
+                        signerHandle,
+                        &error
+                    )
+                }
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+        }.value
+    }
+
+    /// Transfer credits from `fromIdentityId` to one or more platform
+    /// addresses using the supplied `KeychainSigner`.
+    ///
+    /// Returns the sender's remaining balance after the transfer.
+    @discardableResult
+    public func transferCreditsToAddresses(
+        fromIdentityId: Identifier,
+        recipients: [PlatformAddressCreditOutput],
+        signer: KeychainSigner
+    ) async throws -> UInt64 {
+        guard !recipients.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+
+        // Materialize recipients into FFI rows. Each `hash` Data must
+        // contribute a 20-byte tuple to the FFI struct; pad/truncate
+        // would silently corrupt addresses, so reject on mismatch.
+        var ffiRows: [PlatformAddressCreditOutputFFI] = []
+        ffiRows.reserveCapacity(recipients.count)
+        for r in recipients {
+            guard r.hash.count == 20 else {
+                throw PlatformWalletError.walletOperation(
+                    "PlatformAddressCreditOutput.hash must be exactly 20 bytes (got \(r.hash.count))"
+                )
+            }
+            // Build a 20-byte tuple from the hash data.
+            let bytes = [UInt8](r.hash)
+            let tuple = (
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4],
+                bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
+                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
+                bytes[15], bytes[16], bytes[17], bytes[18], bytes[19]
+            )
+            ffiRows.append(
+                PlatformAddressCreditOutputFFI(
+                    address_type: r.addressType,
+                    hash: tuple,
+                    credits: r.credits
+                )
+            )
+        }
+        let rows = ffiRows
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var newBalance: UInt64 = 0
+            var error = PlatformWalletFFIError()
+            let result = fromBytes.withUnsafeBufferPointer {
+                fromBp -> PlatformWalletFFIResult in
+                rows.withUnsafeBufferPointer { rowsBp in
+                    platform_wallet_transfer_credits_to_addresses_with_signer(
+                        handle,
+                        fromBp.baseAddress!,
+                        rowsBp.baseAddress,
+                        rowsBp.count,
+                        signerHandle,
+                        &newBalance,
+                        &error
+                    )
+                }
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return newBalance
+        }.value
+    }
+
+    /// Withdraw `amount` credits from `identityId` to `toAddress` (a
+    /// network-aware Dash P2PKH address string) using the supplied
+    /// `KeychainSigner` for the identity-state-transition signature.
+    public func withdrawCredits(
+        identityId: Identifier,
+        amount: UInt64,
+        toAddress: String,
+        signer: KeychainSigner
+    ) async throws {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        try await Task.detached(priority: .userInitiated) {
+            var error = PlatformWalletFFIError()
+            let result = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                toAddress.withCString { addrPtr in
+                    platform_wallet_withdraw_credits_with_signer(
+                        handle,
+                        idBp.baseAddress!,
+                        amount,
+                        addrPtr,
+                        signerHandle,
+                        &error
+                    )
+                }
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+        }.value
+    }
+
+    /// Update an identity by adding new public keys and/or disabling
+    /// existing key IDs, signing the resulting
+    /// `IdentityUpdateTransition` with the identity's MASTER auth key
+    /// via the supplied `KeychainSigner`.
+    ///
+    /// `addPublicKeys` rows MUST already have their matching private
+    /// material persisted to the signer's store BEFORE calling this —
+    /// otherwise subsequent operations that try to sign with the
+    /// newly-added keys will fail. The signer here only signs the
+    /// update transition itself with an existing MASTER key.
+    public func updateIdentity(
+        identityId: Identifier,
+        addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],
+        disablePublicKeyIds: [UInt32] = [],
+        signer: KeychainSigner
+    ) async throws {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let addPubkeys = addPublicKeys
+        let disableIds = disablePublicKeyIds
+        try await Task.detached(priority: .userInitiated) {
+            var error = PlatformWalletFFIError()
+            // Mirror the registration FFI's pubkey-pinning pattern via
+            // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
+            // FFI sees stays valid for the call duration.
+            let pubkeyBuffers: [Data] = addPubkeys.map { $0.pubkeyBytes }
+            let result = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                disableIds.withUnsafeBufferPointer { disableBp in
+                    if addPubkeys.isEmpty {
+                        return platform_wallet_update_identity_with_signer(
+                            handle,
+                            idBp.baseAddress!,
+                            nil,
+                            0,
+                            disableIds.isEmpty ? nil : disableBp.baseAddress,
+                            disableIds.count,
+                            signerHandle,
+                            &error
+                        )
+                    }
+                    return ManagedPlatformWallet.withPubkeyFFIArray(
+                        addPubkeys,
+                        buffers: pubkeyBuffers
+                    ) { ffiRowsPtr, ffiRowsCount in
+                        platform_wallet_update_identity_with_signer(
+                            handle,
+                            idBp.baseAddress!,
+                            ffiRowsPtr,
+                            ffiRowsCount,
+                            disableIds.isEmpty ? nil : disableBp.baseAddress,
+                            disableIds.count,
+                            signerHandle,
+                            &error
+                        )
+                    }
+                }
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+        }.value
+    }
+
+    /// Register a new asset-lock-funded identity using an external
+    /// `KeychainSigner`. Asset-lock proof is built Rust-side from
+    /// `amountDuffs` (wallet must have spendable Core UTXOs).
+    ///
+    /// Caller MUST pre-derive `identityPubkeys` (typically via
+    /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
+    /// each key's private material to the Keychain using
+    /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
+    /// otherwise the IdentityCreate signature can't complete.
+    ///
+    /// Returns `(identityId, ManagedIdentity)` for the freshly
+    /// registered identity.
+    public func registerIdentityWithFunding(
+        amountDuffs: UInt64,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner
+    ) async throws -> (Identifier, ManagedIdentity) {
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let pubkeys = identityPubkeys
+        return try await Task.detached(priority: .userInitiated) {
+            () -> (Identifier, ManagedIdentity) in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            var outManagedHandle: Handle = NULL_HANDLE
+            var error = PlatformWalletFFIError()
+            // Pin each pubkey buffer simultaneously via the existing
+            // helper, then hand the assembled row array to the FFI.
+            let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
+            let result = ManagedPlatformWallet.withPubkeyFFIArray(
+                pubkeys,
+                buffers: pubkeyBuffers
+            ) { ffiRowsPtr, ffiRowsCount in
+                platform_wallet_register_identity_with_funding_signer(
+                    handle,
+                    amountDuffs,
+                    identityIndex,
+                    ffiRowsPtr,
+                    ffiRowsCount,
+                    signerHandle,
+                    &idTuple,
+                    &outManagedHandle,
+                    &error
+                )
+            }
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            // Copy the 32-byte tuple into a Data via withUnsafeBytes.
+            let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
+            return (identityId, ManagedIdentity(handle: outManagedHandle))
+        }.value
     }
 }

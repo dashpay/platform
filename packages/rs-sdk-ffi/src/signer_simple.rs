@@ -13,6 +13,44 @@ use zeroize::Zeroizing;
 // `Runtime::new().block_on(...)`.
 use dash_async::block_on;
 
+/// Parse a BIP-39 mnemonic phrase against every supported wordlist
+/// in turn, returning the first language that yields a valid mnemonic.
+///
+/// `key_wallet::Mnemonic` only exposes language-tagged constructors
+/// (`Mnemonic::from_phrase(phrase, lang)`); the upstream `bip39` crate
+/// has a `Mnemonic::parse(phrase)` that auto-detects, but it is not
+/// re-exported through the `key_wallet` wrapper. Until that helper is
+/// surfaced upstream, callers who accept user-supplied mnemonics need
+/// to walk the language list themselves so a French / Japanese / etc.
+/// phrase is not rejected as "invalid English".
+///
+/// BIP-39 wordlists are designed to be mutually exclusive within a
+/// single phrase, so the first match is unambiguous.
+pub(crate) fn parse_mnemonic_any_language(
+    phrase: &str,
+) -> Result<key_wallet::mnemonic::Mnemonic, &'static str> {
+    use key_wallet::mnemonic::{Language, Mnemonic};
+
+    const LANGUAGES: [Language; 10] = [
+        Language::English,
+        Language::Spanish,
+        Language::French,
+        Language::Italian,
+        Language::Japanese,
+        Language::Korean,
+        Language::ChineseSimplified,
+        Language::ChineseTraditional,
+        Language::Czech,
+        Language::Portuguese,
+    ];
+    for lang in LANGUAGES {
+        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
+            return Ok(m);
+        }
+    }
+    Err("phrase does not match any supported BIP-39 wordlist")
+}
+
 /// Create a signer from a private key.
 ///
 /// Internally wraps a `SingleKeySigner` as a native (non-callback) FFI
@@ -176,5 +214,267 @@ pub unsafe extern "C" fn dash_sdk_signature_free(signature: *mut DashSDKSignatur
             // Reconstruct the Vec to properly deallocate.
             let _ = Vec::from_raw_parts(sig.signature, sig.signature_len, sig.signature_len);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One-shot derive-then-sign FFI for platform-address keys
+// ---------------------------------------------------------------------------
+//
+// The KeychainSigner trampoline calls this on the `key_type == 0xFF`
+// branch (platform-address signing). The derived key never crosses
+// the FFI as bytes — Swift hands in the mnemonic + a derivation path,
+// gets back just a signature. Both the seed and the derived key are
+// held inside `Zeroizing` buffers and dropped at the end of the call.
+//
+// This is intentionally narrow: ECDSA secp256k1 only, single derivation
+// path, no metadata. The Swift caller is responsible for pulling the
+// path off `PersistentPlatformAddress.derivationPath` and the mnemonic
+// off Keychain (`WalletStorage.retrieveMnemonic(for:)`) per signing
+// call.
+
+/// Error categories returned via `out_error` from
+/// [`dash_sdk_sign_with_mnemonic_and_path`]. Kept as bytes (rather
+/// than a `c_char*` or `DashSDKError*`) so the Swift trampoline can
+/// branch on a single value without parsing strings — the failure
+/// modes here are few enough that a one-byte tag is more useful than
+/// a freeform message.
+pub const SIGN_WITH_MNEMONIC_OK: u8 = 0;
+pub const SIGN_WITH_MNEMONIC_ERR_NULL_POINTER: u8 = 1;
+pub const SIGN_WITH_MNEMONIC_ERR_INVALID_UTF8: u8 = 2;
+pub const SIGN_WITH_MNEMONIC_ERR_INVALID_MNEMONIC: u8 = 3;
+pub const SIGN_WITH_MNEMONIC_ERR_INVALID_PATH: u8 = 4;
+pub const SIGN_WITH_MNEMONIC_ERR_DERIVATION: u8 = 5;
+pub const SIGN_WITH_MNEMONIC_ERR_SIGN: u8 = 6;
+pub const SIGN_WITH_MNEMONIC_ERR_BUFFER_TOO_SMALL: u8 = 7;
+pub const SIGN_WITH_MNEMONIC_ERR_UNSUPPORTED_KEY_TYPE: u8 = 8;
+
+/// Derive an ECDSA secp256k1 private key from
+/// `(mnemonic, passphrase, derivation_path)`, sign `data` with it,
+/// write the signature to `out_signature`. The derived key is held
+/// only for the duration of this call; both the seed and the key
+/// buffers are zeroed before return via [`zeroize::Zeroizing`].
+///
+/// `out_signature` must point at a writable buffer of
+/// `out_signature_capacity` bytes. On success `*out_signature_len` is
+/// set to the actual signature length (65 bytes for compact recoverable
+/// ECDSA signatures produced by `dashcore::signer::sign`).
+///
+/// `key_type` is the standard `KeyType` discriminant byte. For
+/// platform-address signing it's always `KeyType::ECDSA_SECP256K1 = 0`;
+/// the parameter exists for parity with the trampoline shape and to
+/// fail loudly with [`SIGN_WITH_MNEMONIC_ERR_UNSUPPORTED_KEY_TYPE`]
+/// if a non-ECDSA key_type is ever requested through this path. Other
+/// key types can be added when the `Signer<PlatformAddress>` protocol
+/// grows beyond identity keys.
+///
+/// `network` selects the network passed to
+/// `ExtendedPrivKey::new_master`. The derived secret bytes are
+/// network-independent (BIP-32 derivation only uses `network` as a
+/// tag on the `ExtendedPrivKey`), but we thread it through so the
+/// type matches every other key-derivation entry point in this crate.
+/// Mirrors [`DashSDKNetwork`] used elsewhere in `signer_simple.rs`.
+///
+/// On any failure the function writes a non-zero tag into `*out_error`,
+/// zeroes the first `out_signature_capacity` bytes of `out_signature`,
+/// sets `*out_signature_len = 0`, and returns a non-zero `i32`.
+///
+/// Return value:
+/// - `0`  → success.
+/// - `-1` → error (see `*out_error` for the category).
+///
+/// # Safety
+/// - `mnemonic_cstr` and `derivation_path_cstr` must be valid,
+///   null-terminated UTF-8 C strings for the duration of the call.
+/// - `passphrase_cstr` may be null (empty passphrase).
+/// - `data` must point at `data_len` readable bytes (may be zero only
+///   if `data_len == 0`).
+/// - `out_signature` must point at `out_signature_capacity` writable
+///   bytes; `out_signature_len` and `out_error` must be writable.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
+    mnemonic_cstr: *const std::os::raw::c_char,
+    passphrase_cstr: *const std::os::raw::c_char,
+    derivation_path_cstr: *const std::os::raw::c_char,
+    data: *const u8,
+    data_len: usize,
+    key_type: u8,
+    network: DashSDKNetwork,
+    out_signature: *mut u8,
+    out_signature_capacity: usize,
+    out_signature_len: *mut usize,
+    out_error: *mut u8,
+) -> i32 {
+    use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
+    use dash_sdk::dpp::identity::KeyType;
+    use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+    use std::ffi::CStr;
+    use std::str::FromStr;
+
+    // Internal helper that scrubs `out_signature` + `*out_signature_len`
+    // and returns the failure tag. Branchless to the eye, single exit
+    // point for every error path.
+    let fail = |tag: u8| -> i32 {
+        if !out_error.is_null() {
+            *out_error = tag;
+        }
+        if !out_signature_len.is_null() {
+            *out_signature_len = 0;
+        }
+        if !out_signature.is_null() && out_signature_capacity > 0 {
+            std::ptr::write_bytes(out_signature, 0, out_signature_capacity);
+        }
+        -1
+    };
+
+    // ---- Argument validation -------------------------------------------------
+    if mnemonic_cstr.is_null()
+        || derivation_path_cstr.is_null()
+        || out_signature.is_null()
+        || out_signature_len.is_null()
+        || (data.is_null() && data_len > 0)
+    {
+        return fail(SIGN_WITH_MNEMONIC_ERR_NULL_POINTER);
+    }
+
+    // ECDSA-only entry point. Any other key_type is a contract
+    // violation by the caller — surface it instead of pretending to
+    // succeed.
+    if key_type != KeyType::ECDSA_SECP256K1 as u8 {
+        return fail(SIGN_WITH_MNEMONIC_ERR_UNSUPPORTED_KEY_TYPE);
+    }
+
+    // ---- UTF-8 inputs --------------------------------------------------------
+    let mnemonic_str = match CStr::from_ptr(mnemonic_cstr).to_str() {
+        Ok(s) => s,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_UTF8),
+    };
+    let passphrase_str: &str = if passphrase_cstr.is_null() {
+        ""
+    } else {
+        match CStr::from_ptr(passphrase_cstr).to_str() {
+            Ok(s) => s,
+            Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_UTF8),
+        }
+    };
+    let path_str = match CStr::from_ptr(derivation_path_cstr).to_str() {
+        Ok(s) => s,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_UTF8),
+    };
+
+    // ---- Mnemonic + seed -----------------------------------------------------
+    // Walk every supported BIP-39 wordlist (English, Spanish, French,
+    // Italian, Japanese, Korean, both Chinese, Czech, Portuguese) so a
+    // non-English mnemonic is not falsely rejected. The wordlists are
+    // disjoint per the BIP-39 spec, so the first match is the right
+    // language.
+    let mnemonic = match parse_mnemonic_any_language(mnemonic_str) {
+        Ok(m) => m,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_MNEMONIC),
+    };
+    // `to_seed` returns `[u8; 64]` by value; wrap immediately so the
+    // 64 bytes get zeroed when this function returns (success or fail).
+    let seed: zeroize::Zeroizing<[u8; 64]> =
+        zeroize::Zeroizing::new(mnemonic.to_seed(passphrase_str));
+
+    // ---- Derivation path -----------------------------------------------------
+    let path = match DerivationPath::from_str(path_str) {
+        Ok(p) => p,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_PATH),
+    };
+
+    // Map the C-ABI network enum to dashcore::Network. Mirrors the
+    // mapping used in `dash_sdk_signer_create_from_private_key` above.
+    let dashcore_network = match network {
+        DashSDKNetwork::SDKMainnet => dash_sdk::dpp::dashcore::Network::Mainnet,
+        DashSDKNetwork::SDKTestnet => dash_sdk::dpp::dashcore::Network::Testnet,
+        DashSDKNetwork::SDKRegtest => dash_sdk::dpp::dashcore::Network::Regtest,
+        DashSDKNetwork::SDKDevnet => dash_sdk::dpp::dashcore::Network::Devnet,
+        DashSDKNetwork::SDKLocal => dash_sdk::dpp::dashcore::Network::Regtest,
+    };
+
+    // ---- Derive ECDSA private key at path -----------------------------------
+    let master = match ExtendedPrivKey::new_master(dashcore_network, seed.as_ref()) {
+        Ok(m) => m,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
+    };
+    let secp = Secp256k1::new();
+    let derived = match master.derive_priv(&secp, &path) {
+        Ok(d) => d,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
+    };
+    // Pull the 32 secret bytes into a `Zeroizing` so they're scrubbed
+    // when this function returns (the `ExtendedPrivKey` itself doesn't
+    // zeroize — `derived` falls out of scope intact).
+    let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
+        zeroize::Zeroizing::new(derived.private_key.secret_bytes());
+
+    // ---- Sign ---------------------------------------------------------------
+    // `dashcore::signer::sign` returns a 65-byte compact recoverable
+    // ECDSA signature — the same shape used by the existing
+    // `Signer<PlatformAddress>` impls in `rs-platform-wallet`.
+    let data_slice: &[u8] = if data_len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(data, data_len)
+    };
+    let sig_array = match dash_sdk::dpp::dashcore::signer::sign(data_slice, secret_bytes.as_ref()) {
+        Ok(s) => s,
+        Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_SIGN),
+    };
+
+    if sig_array.len() > out_signature_capacity {
+        return fail(SIGN_WITH_MNEMONIC_ERR_BUFFER_TOO_SMALL);
+    }
+
+    // ---- Copy signature out --------------------------------------------------
+    std::ptr::copy_nonoverlapping(sig_array.as_ptr(), out_signature, sig_array.len());
+    *out_signature_len = sig_array.len();
+    if !out_error.is_null() {
+        *out_error = SIGN_WITH_MNEMONIC_OK;
+    }
+
+    // `seed` and `secret_bytes` are zeroed via `Zeroizing` on Drop here.
+    0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// English BIP-39 test vector (all-zero entropy).
+    const ENGLISH_PHRASE: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// Japanese BIP-39 test vector (all-zero entropy). Uses the
+    /// ideographic-space-separated form per the Japanese wordlist
+    /// convention; the upstream `bip39` crate normalizes both forms.
+    const JAPANESE_PHRASE: &str = "あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あおぞら";
+
+    #[test]
+    fn parse_mnemonic_any_language_accepts_english() {
+        let m = parse_mnemonic_any_language(ENGLISH_PHRASE)
+            .expect("English phrase must parse via auto-detection");
+        assert_eq!(m.word_count(), 12);
+    }
+
+    #[test]
+    fn parse_mnemonic_any_language_accepts_japanese() {
+        // Distinct wordlist from English — exercises the
+        // "first-language-doesn't-match, fall through" branch of the
+        // detection loop. Ensures non-English phrases are not rejected
+        // as `ERR_INVALID_MNEMONIC`.
+        let m = parse_mnemonic_any_language(JAPANESE_PHRASE)
+            .expect("Japanese phrase must parse via auto-detection");
+        assert_eq!(m.word_count(), 12);
+    }
+
+    #[test]
+    fn parse_mnemonic_any_language_rejects_garbage() {
+        // No supported wordlist contains these tokens, so every
+        // attempt in the loop must fail and the helper must surface
+        // the catch-all error.
+        assert!(parse_mnemonic_any_language("not a real bip39 phrase at all here").is_err());
     }
 }

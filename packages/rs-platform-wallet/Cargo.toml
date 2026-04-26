@@ -26,7 +26,6 @@ async-trait = "0.1"
 arc-swap = "1"
 
 # Collections
-indexmap = "2.0"
 bimap = "0.6"
 
 # Async runtime

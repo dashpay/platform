@@ -43,7 +43,12 @@ class AppState: ObservableObject {
     var useLocalPlatform: Bool { useDockerSetup }
     var useLocalCore: Bool { useDockerSetup }
 
-    private let testSigner = TestSigner()
+    // Identity-key signing is performed per-flow via a fresh
+    // `KeychainSigner` constructed from the active `ModelContainer`
+    // (see `CreateIdentityView.submit()`). `AppState` no longer holds
+    // a long-lived signer field — there is no shared signing state to
+    // amortize across flows, and the keychain-backed lookup makes
+    // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 

@@ -571,12 +571,14 @@ struct BalanceCardView: View {
         // `.testnet` is a harmless sentinel for wallets that haven't
         // had their network stamped yet — they won't have a matching
         // sync state row either, so the query naturally returns empty.
-        let walletNetwork = wallet.network ?? .testnet
+        // Filter against `networkRaw` (the Int-backed shadow field) —
+        // Foundation's predicate engine can't capture `AppNetwork`.
+        let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
         )
         _syncStates = Query(
-            filter: #Predicate<PersistentSyncState> { $0.network == walletNetwork }
+            filter: #Predicate<PersistentSyncState> { $0.networkRaw == walletNetworkRaw }
         )
     }
 
