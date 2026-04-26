@@ -697,8 +697,7 @@ mod tests {
                 }
             }
 
-            let new_key: IdentityPublicKeyInCreation =
-                IdentityPublicKey::from(sample_public_key(1)).into();
+            let new_key: IdentityPublicKeyInCreation = sample_public_key(1).into();
             let update = factory
                 .create_identity_update_transition(identity, 33, Some(vec![new_key.clone()]), None)
                 .unwrap();

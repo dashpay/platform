@@ -3818,4 +3818,2032 @@ mod tests {
             "expected ProtocolError from StateTransition decode, got: {err:?}"
         );
     }
+
+    // ---------------------------------------------------------------------
+    // Additional coverage: numeric helpers
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn u32_to_u16_opt_zero_maps_to_none() {
+        // zero -> None (not Some(0)): guards against accidentally treating
+        // "unset" as "limit 0".
+        let parsed = u32_to_u16_opt(0).unwrap();
+        assert!(parsed.is_none(), "value 0 must decode to None");
+    }
+
+    #[test]
+    fn u32_to_u16_opt_at_boundary() {
+        let parsed = u32_to_u16_opt(u16::MAX as u32).unwrap();
+        assert_eq!(parsed, Some(u16::MAX));
+    }
+
+    #[test]
+    fn u32_to_u16_opt_error_just_above_boundary() {
+        // u16::MAX + 1 is the minimal out-of-range value.
+        let err = u32_to_u16_opt((u16::MAX as u32) + 1).unwrap_err();
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("out of range"), "got: {error}");
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_u32_to_u16_at_boundary_plus_one() {
+        // u16::MAX is ok; u16::MAX+1 is not.
+        assert!(try_u32_to_u16(u16::MAX as u32).is_ok());
+        assert!(try_u32_to_u16((u16::MAX as u32) + 1).is_err());
+    }
+
+    // ---------------------------------------------------------------------
+    // Additional coverage: Length / IntoOption edge cases
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn length_option_of_length_none_counts_zero() {
+        let none_opt: Option<Vec<Option<u32>>> = None;
+        assert_eq!(none_opt.count(), 0);
+        assert_eq!(none_opt.count_some(), 0);
+    }
+
+    #[test]
+    fn length_vec_of_key_option_pair_only_none_values() {
+        let v: Vec<(u8, Option<u32>)> = vec![(1, None), (2, None)];
+        assert_eq!(v.count(), 2);
+        assert_eq!(
+            v.count_some(),
+            0,
+            "count_some must only count entries whose value is Some"
+        );
+    }
+
+    #[test]
+    fn length_btreemap_only_none_values() {
+        let mut m: BTreeMap<u8, Option<u32>> = BTreeMap::new();
+        m.insert(1, None);
+        m.insert(2, None);
+        assert_eq!(m.count(), 2);
+        assert_eq!(m.count_some(), 0);
+    }
+
+    #[test]
+    fn into_option_for_vec_of_key_option_pair_empty_and_nonempty() {
+        let empty: Vec<(u8, Option<u32>)> = vec![];
+        assert!(
+            empty.into_option().is_none(),
+            "empty vec must decode to None"
+        );
+
+        let single: Vec<(u8, Option<u32>)> = vec![(1, None)];
+        assert!(
+            single.into_option().is_some(),
+            "non-empty vec with only None values must still be Some"
+        );
+    }
+
+    #[test]
+    fn into_option_for_btreemap_empty_and_nonempty() {
+        let empty: BTreeMap<u8, Option<u32>> = BTreeMap::new();
+        assert!(empty.into_option().is_none());
+
+        let mut m: BTreeMap<u8, Option<u32>> = BTreeMap::new();
+        m.insert(1, None);
+        assert!(m.into_option().is_some());
+    }
+
+    // ---------------------------------------------------------------------
+    // Additional coverage: parse_key_request_type
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn parse_key_request_type_specific_keys_empty_ids() {
+        // Exercises the SpecificKeys branch when the id list is empty.
+        use dapi_grpc::platform::v0::SpecificKeys;
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::SpecificKeys(SpecificKeys {
+                key_ids: vec![],
+            })),
+        });
+        let parsed = parse_key_request_type(&outer).unwrap();
+        match parsed {
+            KeyRequestType::SpecificKeys(ids) => {
+                assert!(ids.is_empty(), "empty ids must round-trip as empty");
+            }
+            _ => panic!("expected SpecificKeys variant"),
+        }
+    }
+
+    #[test]
+    fn parse_key_request_type_search_key_empty_purpose_map() {
+        // Exercises the SearchKey branch when the purpose map is empty.
+        use dapi_grpc::platform::v0::SearchKey;
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::SearchKey(SearchKey {
+                purpose_map: std::collections::HashMap::new(),
+            })),
+        });
+        let parsed = parse_key_request_type(&outer).unwrap();
+        match parsed {
+            KeyRequestType::SearchKey(m) => {
+                assert!(m.is_empty(), "empty map must round-trip as empty");
+            }
+            _ => panic!("expected SearchKey variant"),
+        }
+    }
+
+    #[test]
+    fn parse_key_request_type_search_key_negative_kind_rejected() {
+        // Negative i32 values are not valid GrpcKeyKind values -> RequestError.
+        use dapi_grpc::platform::v0::{SearchKey, SecurityLevelMap};
+        let mut sec_map: std::collections::HashMap<u32, i32> = std::collections::HashMap::new();
+        sec_map.insert(0, -1);
+        let mut purpose_map = std::collections::HashMap::new();
+        purpose_map.insert(
+            0u32,
+            SecurityLevelMap {
+                security_level_map: sec_map,
+            },
+        );
+        let outer = Some(GrpcKeyType {
+            request: Some(key_request_type::Request::SearchKey(SearchKey {
+                purpose_map,
+            })),
+        });
+        // KeyRequestType does not implement Debug, so use `.err().expect(...)`
+        // rather than `.unwrap_err()`.
+        let err = parse_key_request_type(&outer)
+            .err()
+            .expect("negative kind must error");
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("missing requested key type"), "got: {error}");
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Additional coverage: FromProof wrapper methods
+    // ---------------------------------------------------------------------
+
+    /// FromProof impl that always succeeds with a Some value; used for
+    /// exercising the `from_proof*` wrappers' happy paths.
+    #[derive(Debug, PartialEq)]
+    struct PresentFromProof(u32);
+
+    impl FromProof<()> for PresentFromProof {
+        type Request = ();
+        type Response = ();
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _request: I,
+            _response: O,
+            _network: Network,
+            _platform_version: &PlatformVersion,
+            _provider: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+        where
+            Self: Sized + 'a,
+        {
+            Ok((
+                Some(PresentFromProof(7)),
+                ResponseMetadata {
+                    height: 123,
+                    ..Default::default()
+                },
+                Proof::default(),
+            ))
+        }
+    }
+
+    #[test]
+    fn from_proof_with_metadata_returns_value_and_metadata() {
+        // Ensures the `from_proof_with_metadata` wrapper unwraps Some correctly.
+        let provider = unreachable_provider();
+        let (value, mtd) = <PresentFromProof as FromProof<()>>::from_proof_with_metadata(
+            (),
+            (),
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap();
+        assert_eq!(value, PresentFromProof(7));
+        assert_eq!(mtd.height, 123);
+    }
+
+    #[test]
+    fn from_proof_with_metadata_and_proof_returns_all_three() {
+        let provider = unreachable_provider();
+        let (value, mtd, _proof) =
+            <PresentFromProof as FromProof<()>>::from_proof_with_metadata_and_proof(
+                (),
+                (),
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap();
+        assert_eq!(value, PresentFromProof(7));
+        assert_eq!(mtd.height, 123);
+    }
+
+    #[test]
+    fn from_proof_on_missing_returns_not_found_via_wrapper() {
+        // `from_proof` forwards to `maybe_from_proof` then maps None -> NotFound.
+        let provider = unreachable_provider();
+        let err = <MissingFromProof as FromProof<()>>::from_proof_with_metadata(
+            (),
+            (),
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NotFound), "got: {err:?}");
+    }
+
+    #[test]
+    fn from_proof_with_metadata_and_proof_missing_returns_not_found() {
+        let provider = unreachable_provider();
+        let err = <MissingFromProof as FromProof<()>>::from_proof_with_metadata_and_proof(
+            (),
+            (),
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NotFound), "got: {err:?}");
+    }
+
+    #[test]
+    fn maybe_from_proof_delegates_to_with_metadata_and_forwards_none() {
+        // `maybe_from_proof` discards metadata/proof when forwarding the
+        // underlying `(None, _, _)` shape.
+        let provider = unreachable_provider();
+        let result = <MissingFromProof as FromProof<()>>::maybe_from_proof(
+            (),
+            (),
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap();
+        assert!(result.is_none(), "MissingFromProof must bubble None");
+    }
+
+    // ---------------------------------------------------------------------
+    // Additional coverage: more FromProof impls' decode-error paths
+    // ---------------------------------------------------------------------
+
+    fn default_metadata_with_epoch(epoch: u32) -> ResponseMetadata {
+        ResponseMetadata {
+            epoch,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn identity_keys_rejects_bad_identity_id_length() {
+        use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
+        use platform::get_identity_keys_response::{
+            get_identity_keys_response_v0::Result as V0Result, GetIdentityKeysResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityKeysResponse {
+            version: Some(Version::V0(GetIdentityKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityKeysRequest = GetIdentityKeysRequestV0 {
+            identity_id: vec![0u8; 5], // must be 32
+            request_type: None,
+            limit: None,
+            offset: None,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <IdentityPublicKeys as FromProof<platform::GetIdentityKeysRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_keys_rejects_overflowing_limit() {
+        use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
+        use platform::get_identity_keys_response::{
+            get_identity_keys_response_v0::Result as V0Result, GetIdentityKeysResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityKeysResponse {
+            version: Some(Version::V0(GetIdentityKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityKeysRequest = GetIdentityKeysRequestV0 {
+            identity_id: vec![0u8; 32], // valid
+            request_type: None,
+            limit: Some(100_000),
+            offset: None,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <IdentityPublicKeys as FromProof<platform::GetIdentityKeysRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_keys_rejects_overflowing_offset() {
+        use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
+        use platform::get_identity_keys_response::{
+            get_identity_keys_response_v0::Result as V0Result, GetIdentityKeysResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityKeysResponse {
+            version: Some(Version::V0(GetIdentityKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityKeysRequest = GetIdentityKeysRequestV0 {
+            identity_id: vec![0u8; 32],
+            request_type: None,
+            limit: None,
+            offset: Some(100_000),
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <IdentityPublicKeys as FromProof<platform::GetIdentityKeysRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_keys_rejects_missing_key_request_type() {
+        // limit/offset are valid and identity_id is valid, so execution
+        // reaches parse_key_request_type which errors on None.
+        use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
+        use platform::get_identity_keys_response::{
+            get_identity_keys_response_v0::Result as V0Result, GetIdentityKeysResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityKeysResponse {
+            version: Some(Version::V0(GetIdentityKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityKeysRequest = GetIdentityKeysRequestV0 {
+            identity_id: vec![0u8; 32],
+            request_type: None,
+            limit: None,
+            offset: None,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <IdentityPublicKeys as FromProof<platform::GetIdentityKeysRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("missing key request type"), "got: {error}");
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn identity_keys_no_proof_when_response_empty() {
+        let request = platform::GetIdentityKeysRequest::default();
+        let response = platform::GetIdentityKeysResponse::default();
+        let provider = unreachable_provider();
+        let err =
+            <IdentityPublicKeys as FromProof<platform::GetIdentityKeysRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_nonce_rejects_bad_identity_id_length() {
+        use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
+        use platform::get_identity_nonce_response::{
+            get_identity_nonce_response_v0::Result as V0Result, GetIdentityNonceResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityNonceResponse {
+            version: Some(Version::V0(GetIdentityNonceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityNonceRequest = GetIdentityNonceRequestV0 {
+            identity_id: vec![0u8; 1], // must be 32
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <IdentityNonceFetcher as FromProof<
+            platform::GetIdentityNonceRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_nonce_no_proof_when_response_empty() {
+        let request = platform::GetIdentityNonceRequest::default();
+        let response = platform::GetIdentityNonceResponse::default();
+        let provider = unreachable_provider();
+        let err = <IdentityNonceFetcher as FromProof<
+            platform::GetIdentityNonceRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_contract_nonce_rejects_bad_identity_id_length() {
+        use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
+        use platform::get_identity_contract_nonce_response::{
+            get_identity_contract_nonce_response_v0::Result as V0Result,
+            GetIdentityContractNonceResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityContractNonceResponse {
+            version: Some(Version::V0(GetIdentityContractNonceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityContractNonceRequest =
+            GetIdentityContractNonceRequestV0 {
+                identity_id: vec![0u8; 10], // must be 32
+                contract_id: vec![0u8; 32],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <IdentityContractNonceFetcher as FromProof<
+            platform::GetIdentityContractNonceRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_contract_nonce_rejects_bad_contract_id_length() {
+        use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
+        use platform::get_identity_contract_nonce_response::{
+            get_identity_contract_nonce_response_v0::Result as V0Result,
+            GetIdentityContractNonceResponseV0, Version,
+        };
+
+        let response = platform::GetIdentityContractNonceResponse {
+            version: Some(Version::V0(GetIdentityContractNonceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityContractNonceRequest =
+            GetIdentityContractNonceRequestV0 {
+                identity_id: vec![0u8; 32],
+                contract_id: vec![0u8; 10], // must be 32
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <IdentityContractNonceFetcher as FromProof<
+            platform::GetIdentityContractNonceRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_balance_rejects_bad_id_length() {
+        use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
+        use platform::get_identity_balance_response::{
+            get_identity_balance_response_v0::Result as V0Result, GetIdentityBalanceResponseV0,
+            Version,
+        };
+
+        let response = platform::GetIdentityBalanceResponse {
+            version: Some(Version::V0(GetIdentityBalanceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityBalanceRequest = GetIdentityBalanceRequestV0 {
+            id: vec![0u8; 5],
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <IdentityBalance as FromProof<platform::GetIdentityBalanceRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_balance_empty_version_on_request_version_none() {
+        // response OK; request.version None -> EmptyVersion.
+        use platform::get_identity_balance_response::{
+            get_identity_balance_response_v0::Result as V0Result, GetIdentityBalanceResponseV0,
+            Version,
+        };
+        let response = platform::GetIdentityBalanceResponse {
+            version: Some(Version::V0(GetIdentityBalanceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetIdentityBalanceRequest { version: None };
+        let provider = unreachable_provider();
+        let err =
+            <IdentityBalance as FromProof<platform::GetIdentityBalanceRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn identity_balance_and_revision_rejects_bad_id_length() {
+        use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
+        use platform::get_identity_balance_and_revision_response::{
+            get_identity_balance_and_revision_response_v0::Result as V0Result,
+            GetIdentityBalanceAndRevisionResponseV0, Version,
+        };
+        let response = platform::GetIdentityBalanceAndRevisionResponse {
+            version: Some(Version::V0(GetIdentityBalanceAndRevisionResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentityBalanceAndRevisionRequest =
+            GetIdentityBalanceAndRevisionRequestV0 {
+                id: vec![0u8; 5],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <IdentityBalanceAndRevision as FromProof<
+            platform::GetIdentityBalanceAndRevisionRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identities_balances_empty_version_none() {
+        use platform::get_identities_balances_response::{
+            get_identities_balances_response_v0::Result as V0Result,
+            GetIdentitiesBalancesResponseV0, Version,
+        };
+        let response = platform::GetIdentitiesBalancesResponse {
+            version: Some(Version::V0(GetIdentitiesBalancesResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetIdentitiesBalancesRequest { version: None };
+        let provider = unreachable_provider();
+        let err =
+            <IdentityBalances as FromProof<platform::GetIdentitiesBalancesRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn data_contract_rejects_bad_id_length() {
+        use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
+        use platform::get_data_contract_response::{
+            get_data_contract_response_v0::Result as V0Result, GetDataContractResponseV0, Version,
+        };
+        let response = platform::GetDataContractResponse {
+            version: Some(Version::V0(GetDataContractResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetDataContractRequest = GetDataContractRequestV0 {
+            id: vec![0u8; 5],
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <DataContract as FromProof<platform::GetDataContractRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn data_contract_no_proof_when_response_empty() {
+        let request = platform::GetDataContractRequest::default();
+        let response = platform::GetDataContractResponse::default();
+        let provider = unreachable_provider();
+        let err = <DataContract as FromProof<platform::GetDataContractRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn data_contract_with_serialization_rejects_bad_id_length() {
+        // This hits the second `FromProof for (DataContract, Vec<u8>)` impl.
+        use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
+        use platform::get_data_contract_response::{
+            get_data_contract_response_v0::Result as V0Result, GetDataContractResponseV0, Version,
+        };
+        let response = platform::GetDataContractResponse {
+            version: Some(Version::V0(GetDataContractResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetDataContractRequest = GetDataContractRequestV0 {
+            id: vec![0u8; 5],
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <(DataContract, Vec<u8>) as FromProof<platform::GetDataContractRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn data_contract_history_rejects_bad_id_length() {
+        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+        use platform::get_data_contract_history_response::{
+            get_data_contract_history_response_v0::Result as V0Result,
+            GetDataContractHistoryResponseV0, Version,
+        };
+        let response = platform::GetDataContractHistoryResponse {
+            version: Some(Version::V0(GetDataContractHistoryResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetDataContractHistoryRequest = GetDataContractHistoryRequestV0 {
+            id: vec![0u8; 5],
+            limit: None,
+            offset: None,
+            start_at_ms: 0,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <DataContractHistory as FromProof<
+            platform::GetDataContractHistoryRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn data_contract_history_rejects_overflowing_limit() {
+        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+        use platform::get_data_contract_history_response::{
+            get_data_contract_history_response_v0::Result as V0Result,
+            GetDataContractHistoryResponseV0, Version,
+        };
+        let response = platform::GetDataContractHistoryResponse {
+            version: Some(Version::V0(GetDataContractHistoryResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetDataContractHistoryRequest = GetDataContractHistoryRequestV0 {
+            id: vec![0u8; 32],
+            limit: Some(100_000),
+            offset: None,
+            start_at_ms: 0,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <DataContractHistory as FromProof<
+            platform::GetDataContractHistoryRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn address_info_rejects_bad_address_bytes() {
+        // PlatformAddress::from_bytes fails for invalid lengths.
+        use dapi_grpc::platform::v0::get_address_info_request::GetAddressInfoRequestV0;
+        use platform::get_address_info_response::{
+            get_address_info_response_v0::Result as V0Result, GetAddressInfoResponseV0, Version,
+        };
+        let response = platform::GetAddressInfoResponse {
+            version: Some(Version::V0(GetAddressInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetAddressInfoRequest = GetAddressInfoRequestV0 {
+            address: vec![0u8; 3], // not a valid address length
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <AddressInfo as FromProof<platform::GetAddressInfoRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn addresses_infos_rejects_bad_address_bytes() {
+        use dapi_grpc::platform::v0::get_addresses_infos_request::GetAddressesInfosRequestV0;
+        use platform::get_addresses_infos_response::{
+            get_addresses_infos_response_v0::Result as V0Result, GetAddressesInfosResponseV0,
+            Version,
+        };
+        let response = platform::GetAddressesInfosResponse {
+            version: Some(Version::V0(GetAddressesInfosResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetAddressesInfosRequest = GetAddressesInfosRequestV0 {
+            addresses: vec![vec![0u8; 3]],
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err =
+            <AddressInfos as FromProof<platform::GetAddressesInfosRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn addresses_trunk_state_grove_no_proof() {
+        // GroveTrunkQueryResult impl ignores the request entirely, so the
+        // first failure possible is NoProofInResult when the response is empty.
+        let response = platform::GetAddressesTrunkStateResponse::default();
+        let request = platform::GetAddressesTrunkStateRequest::default();
+        let provider = unreachable_provider();
+        let err = <GroveTrunkQueryResult as FromProof<
+            platform::GetAddressesTrunkStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn platform_address_trunk_state_no_proof() {
+        // PlatformAddressTrunkState wraps the GroveTrunkQueryResult impl; same error.
+        let response = platform::GetAddressesTrunkStateResponse::default();
+        let request = platform::GetAddressesTrunkStateRequest::default();
+        let provider = unreachable_provider();
+        let err = <PlatformAddressTrunkState as FromProof<
+            platform::GetAddressesTrunkStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn nullifiers_trunk_state_empty_version_returns_empty_version_err() {
+        // The explicit `None => EmptyVersion` arm.
+        use platform::get_nullifiers_trunk_state_response::{
+            GetNullifiersTrunkStateResponseV0, Version,
+        };
+        let response = platform::GetNullifiersTrunkStateResponse {
+            version: Some(Version::V0(GetNullifiersTrunkStateResponseV0 {
+                proof: Some(Proof::default()),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetNullifiersTrunkStateRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <GroveTrunkQueryResult as FromProof<
+            platform::GetNullifiersTrunkStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn nullifiers_trunk_state_no_proof_when_response_empty() {
+        let response = platform::GetNullifiersTrunkStateResponse::default();
+        let request = platform::GetNullifiersTrunkStateRequest::default();
+        let provider = unreachable_provider();
+        let err = <GroveTrunkQueryResult as FromProof<
+            platform::GetNullifiersTrunkStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn epochs_info_empty_version_none() {
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest { version: None };
+        let provider = unreachable_provider();
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn epochs_info_rejects_overflowing_count() {
+        // start_epoch valid, but count > u16::MAX -> try_u32_to_u16 errors.
+        use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(10)),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest {
+            version: Some(platform::get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    start_epoch: Some(0),
+                    count: 100_000,
+                    ascending: true,
+                    prove: true,
+                },
+            )),
+        };
+        let provider = unreachable_provider();
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn epochs_info_rejects_overflowing_metadata_epoch() {
+        // mtd.epoch > u16::MAX triggers `try_u32_to_u16(mtd.epoch)` error
+        // *before* the start_epoch check.
+        use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(70_000)),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest {
+            version: Some(platform::get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    start_epoch: None,
+                    count: 1,
+                    ascending: true,
+                    prove: true,
+                },
+            )),
+        };
+        let provider = unreachable_provider();
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn extended_epoch_info_single_bubbles_empty_version() {
+        // Ensures the wrapper passes through error from inner impl.
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest { version: None };
+        let provider = unreachable_provider();
+        let err =
+            <ExtendedEpochInfo as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn finalized_epoch_infos_rejects_overflowing_start_index() {
+        use dapi_grpc::platform::v0::get_finalized_epoch_infos_request::GetFinalizedEpochInfosRequestV0;
+        use platform::get_finalized_epoch_infos_response::{
+            get_finalized_epoch_infos_response_v0::Result as V0Result,
+            GetFinalizedEpochInfosResponseV0, Version,
+        };
+        let response = platform::GetFinalizedEpochInfosResponse {
+            version: Some(Version::V0(GetFinalizedEpochInfosResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetFinalizedEpochInfosRequest = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 100_000,
+            start_epoch_index_included: true,
+            end_epoch_index: 1,
+            end_epoch_index_included: true,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <FinalizedEpochInfos as FromProof<
+            platform::GetFinalizedEpochInfosRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn finalized_epoch_infos_rejects_overflowing_end_index() {
+        use dapi_grpc::platform::v0::get_finalized_epoch_infos_request::GetFinalizedEpochInfosRequestV0;
+        use platform::get_finalized_epoch_infos_response::{
+            get_finalized_epoch_infos_response_v0::Result as V0Result,
+            GetFinalizedEpochInfosResponseV0, Version,
+        };
+        let response = platform::GetFinalizedEpochInfosResponse {
+            version: Some(Version::V0(GetFinalizedEpochInfosResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetFinalizedEpochInfosRequest = GetFinalizedEpochInfosRequestV0 {
+            start_epoch_index: 1,
+            start_epoch_index_included: true,
+            end_epoch_index: 100_000,
+            end_epoch_index_included: true,
+            prove: true,
+        }
+        .into();
+        let provider = unreachable_provider();
+        let err = <FinalizedEpochInfos as FromProof<
+            platform::GetFinalizedEpochInfosRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn upgrade_state_no_proof_when_response_empty() {
+        // No request dependency, so the first error must come from the response.
+        let response = GetProtocolVersionUpgradeStateResponse::default();
+        let request = GetProtocolVersionUpgradeStateRequest::default();
+        let provider = unreachable_provider();
+        let err = <ProtocolVersionUpgrades as FromProof<
+            GetProtocolVersionUpgradeStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn upgrade_vote_status_no_proof_when_response_empty() {
+        let response = GetProtocolVersionUpgradeVoteStatusResponse::default();
+        let request = GetProtocolVersionUpgradeVoteStatusRequest::default();
+        let provider = unreachable_provider();
+        let err = <MasternodeProtocolVotes as FromProof<
+            GetProtocolVersionUpgradeVoteStatusRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn upgrade_vote_status_rejects_overflowing_count() {
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::{
+            get_protocol_version_upgrade_vote_status_response_v0::Result as V0Result,
+            GetProtocolVersionUpgradeVoteStatusResponseV0, Version,
+        };
+
+        let response = GetProtocolVersionUpgradeVoteStatusResponse {
+            version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        // empty start_pro_tx_hash (None branch), but count overflow
+        let request: GetProtocolVersionUpgradeVoteStatusRequest =
+            GetProtocolVersionUpgradeVoteStatusRequestV0 {
+                start_pro_tx_hash: vec![],
+                count: 100_000,
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <MasternodeProtocolVotes as FromProof<
+            GetProtocolVersionUpgradeVoteStatusRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn path_elements_empty_version_when_no_version() {
+        // Response has full v0 shell, request has None -> EmptyVersion.
+        use platform::get_path_elements_response::{
+            get_path_elements_response_v0::Result as V0Result, GetPathElementsResponseV0, Version,
+        };
+        let response = GetPathElementsResponse {
+            version: Some(Version::V0(GetPathElementsResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = GetPathElementsRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <Elements as FromProof<GetPathElementsRequest>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn identities_contract_keys_rejects_bad_identity_id() {
+        use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+        use platform::get_identities_contract_keys_response::{
+            get_identities_contract_keys_response_v0::Result as V0Result,
+            GetIdentitiesContractKeysResponseV0, Version,
+        };
+        let response = platform::GetIdentitiesContractKeysResponse {
+            version: Some(Version::V0(GetIdentitiesContractKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentitiesContractKeysRequest =
+            GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![vec![0u8; 5]], // bad
+                contract_id: vec![0u8; 32],
+                document_type_name: None,
+                purposes: vec![0],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <IdentitiesContractKeys as FromProof<
+            platform::GetIdentitiesContractKeysRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identities_contract_keys_rejects_bad_contract_id() {
+        use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+        use platform::get_identities_contract_keys_response::{
+            get_identities_contract_keys_response_v0::Result as V0Result,
+            GetIdentitiesContractKeysResponseV0, Version,
+        };
+        let response = platform::GetIdentitiesContractKeysResponse {
+            version: Some(Version::V0(GetIdentitiesContractKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request: platform::GetIdentitiesContractKeysRequest =
+            GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![vec![0u8; 32]],
+                contract_id: vec![0u8; 5], // bad
+                document_type_name: None,
+                purposes: vec![0],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <IdentitiesContractKeys as FromProof<
+            platform::GetIdentitiesContractKeysRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn identities_contract_keys_rejects_bad_purpose() {
+        use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+        use platform::get_identities_contract_keys_response::{
+            get_identities_contract_keys_response_v0::Result as V0Result,
+            GetIdentitiesContractKeysResponseV0, Version,
+        };
+        let response = platform::GetIdentitiesContractKeysResponse {
+            version: Some(Version::V0(GetIdentitiesContractKeysResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        // purpose 250 is not a valid Purpose value.
+        let request: platform::GetIdentitiesContractKeysRequest =
+            GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![vec![0u8; 32]],
+                contract_id: vec![0u8; 32],
+                document_type_name: None,
+                purposes: vec![250],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <IdentitiesContractKeys as FromProof<
+            platform::GetIdentitiesContractKeysRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn prefunded_balance_empty_version_on_request_version_none() {
+        // response has proof; request.version = None -> EmptyVersion
+        use platform::get_prefunded_specialized_balance_response::{
+            get_prefunded_specialized_balance_response_v0::Result as V0Result,
+            GetPrefundedSpecializedBalanceResponseV0, Version,
+        };
+        let response = platform::GetPrefundedSpecializedBalanceResponse {
+            version: Some(Version::V0(GetPrefundedSpecializedBalanceResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetPrefundedSpecializedBalanceRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <PrefundedSpecializedBalance as FromProof<
+            platform::GetPrefundedSpecializedBalanceRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_ids_empty_version() {
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetEvonodesProposedEpochBlocksByIdsRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByIdsRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_ids_rejects_overflowing_epoch() {
+        // Request sets epoch > u16::MAX -> try_u32_to_u16 error.
+        use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::GetEvonodesProposedEpochBlocksByIdsRequestV0;
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(1)),
+            })),
+        };
+        let request: platform::GetEvonodesProposedEpochBlocksByIdsRequest =
+            GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+                epoch: Some(100_000),
+                ids: vec![],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByIdsRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_ids_falls_back_to_metadata_epoch_overflow() {
+        // epoch None -> fall back to mtd.epoch which is overflowing.
+        use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::GetEvonodesProposedEpochBlocksByIdsRequestV0;
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(99_999)),
+            })),
+        };
+        let request: platform::GetEvonodesProposedEpochBlocksByIdsRequest =
+            GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+                epoch: None,
+                ids: vec![],
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByIdsRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_range_empty_version() {
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetEvonodesProposedEpochBlocksByRangeRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByRangeRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_range_rejects_bad_start_after() {
+        // Start::StartAfter with wrong length must fail.
+        use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::{
+            get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start,
+            GetEvonodesProposedEpochBlocksByRangeRequestV0,
+        };
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(1)),
+            })),
+        };
+        let request: platform::GetEvonodesProposedEpochBlocksByRangeRequest =
+            GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: Some(1),
+                limit: None,
+                start: Some(Start::StartAfter(vec![0u8; 5])),
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByRangeRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::DriveError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_range_rejects_bad_start_at() {
+        // Start::StartAt with wrong length must fail.
+        use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::{
+            get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start,
+            GetEvonodesProposedEpochBlocksByRangeRequestV0,
+        };
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(1)),
+            })),
+        };
+        let request: platform::GetEvonodesProposedEpochBlocksByRangeRequest =
+            GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: Some(1),
+                limit: None,
+                start: Some(Start::StartAt(vec![0u8; 4])),
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByRangeRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::DriveError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_range_rejects_overflow_limit() {
+        use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0;
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(1)),
+            })),
+        };
+        let request: platform::GetEvonodesProposedEpochBlocksByRangeRequest =
+            GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: Some(1),
+                limit: Some(100_000),
+                start: None,
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByRangeRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_pool_state_no_proof_when_response_empty() {
+        let response = platform::GetShieldedPoolStateResponse::default();
+        let request = platform::GetShieldedPoolStateRequest::default();
+        let provider = unreachable_provider();
+        let err = <ShieldedPoolState as FromProof<
+            platform::GetShieldedPoolStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_anchors_no_proof_when_response_empty() {
+        let response = platform::GetShieldedAnchorsResponse::default();
+        let request = platform::GetShieldedAnchorsRequest::default();
+        let provider = unreachable_provider();
+        let err =
+            <ShieldedAnchors as FromProof<platform::GetShieldedAnchorsRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn most_recent_shielded_anchor_no_proof_when_response_empty() {
+        let response = platform::GetMostRecentShieldedAnchorResponse::default();
+        let request = platform::GetMostRecentShieldedAnchorRequest::default();
+        let provider = unreachable_provider();
+        let err = <MostRecentShieldedAnchor as FromProof<
+            platform::GetMostRecentShieldedAnchorRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_encrypted_notes_empty_version_on_request_version_none() {
+        use platform::get_shielded_encrypted_notes_response::{
+            get_shielded_encrypted_notes_response_v0::Result as V0Result,
+            GetShieldedEncryptedNotesResponseV0, Version,
+        };
+        let response = platform::GetShieldedEncryptedNotesResponse {
+            version: Some(Version::V0(GetShieldedEncryptedNotesResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetShieldedEncryptedNotesRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <ShieldedEncryptedNotes as FromProof<
+            platform::GetShieldedEncryptedNotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_encrypted_notes_no_proof_when_response_empty() {
+        let response = platform::GetShieldedEncryptedNotesResponse::default();
+        let request = platform::GetShieldedEncryptedNotesRequest::default();
+        let provider = unreachable_provider();
+        let err = <ShieldedEncryptedNotes as FromProof<
+            platform::GetShieldedEncryptedNotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_nullifiers_empty_version_on_request_version_none() {
+        use platform::get_shielded_nullifiers_response::{
+            get_shielded_nullifiers_response_v0::Result as V0Result,
+            GetShieldedNullifiersResponseV0, Version,
+        };
+        let response = platform::GetShieldedNullifiersResponse {
+            version: Some(Version::V0(GetShieldedNullifiersResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetShieldedNullifiersRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <ShieldedNullifierStatuses as FromProof<
+            platform::GetShieldedNullifiersRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn recent_address_balance_changes_empty_version() {
+        use platform::get_recent_address_balance_changes_response::{
+            get_recent_address_balance_changes_response_v0::Result as V0Result,
+            GetRecentAddressBalanceChangesResponseV0, Version,
+        };
+        let response = platform::GetRecentAddressBalanceChangesResponse {
+            version: Some(Version::V0(GetRecentAddressBalanceChangesResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetRecentAddressBalanceChangesRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <RecentAddressBalanceChanges as FromProof<
+            platform::GetRecentAddressBalanceChangesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn recent_compacted_address_balance_changes_empty_version() {
+        use platform::get_recent_compacted_address_balance_changes_response::{
+            get_recent_compacted_address_balance_changes_response_v0::Result as V0Result,
+            GetRecentCompactedAddressBalanceChangesResponseV0, Version,
+        };
+        let response = platform::GetRecentCompactedAddressBalanceChangesResponse {
+            version: Some(Version::V0(
+                GetRecentCompactedAddressBalanceChangesResponseV0 {
+                    result: Some(V0Result::Proof(Proof::default())),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        let request = platform::GetRecentCompactedAddressBalanceChangesRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <RecentCompactedAddressBalanceChanges as FromProof<
+            platform::GetRecentCompactedAddressBalanceChangesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn recent_nullifier_changes_empty_version() {
+        use platform::get_recent_nullifier_changes_response::{
+            get_recent_nullifier_changes_response_v0::Result as V0Result,
+            GetRecentNullifierChangesResponseV0, Version,
+        };
+        let response = platform::GetRecentNullifierChangesResponse {
+            version: Some(Version::V0(GetRecentNullifierChangesResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetRecentNullifierChangesRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <RecentNullifierChanges as FromProof<
+            platform::GetRecentNullifierChangesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn recent_compacted_nullifier_changes_empty_version() {
+        use platform::get_recent_compacted_nullifier_changes_response::{
+            get_recent_compacted_nullifier_changes_response_v0::Result as V0Result,
+            GetRecentCompactedNullifierChangesResponseV0, Version,
+        };
+        let response = platform::GetRecentCompactedNullifierChangesResponse {
+            version: Some(Version::V0(GetRecentCompactedNullifierChangesResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        let request = platform::GetRecentCompactedNullifierChangesRequest { version: None };
+        let provider = unreachable_provider();
+        let err = <RecentCompactedNullifierChanges as FromProof<
+            platform::GetRecentCompactedNullifierChangesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn vote_identity_vote_rejects_bad_identity_id_length() {
+        // The Vote impl validates id_in_request length before delegating.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request: platform::GetContestedResourceIdentityVotesRequest =
+            GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![0u8; 5], // bad
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove: true,
+            }
+            .into();
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <Vote as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn vote_identity_vote_empty_version_on_request_none() {
+        let request = platform::GetContestedResourceIdentityVotesRequest { version: None };
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <Vote as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn resource_votes_by_identity_empty_version_via_try_from_request() {
+        // Delegates to ContestedResourceVotesGivenByIdentityQuery::try_from_request,
+        // which returns Error::EmptyVersion when the request version is missing.
+        let request = platform::GetContestedResourceIdentityVotesRequest { version: None };
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    // ---------------------------------------------------------------------
+    // IntoOption for more types
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn into_option_indexmap_empty_vs_with_entry_only_none() {
+        use dpp::prelude::Identifier;
+        let empty: RetrievedObjects<Identifier, u32> = RetrievedObjects::new();
+        assert!(empty.into_option().is_none());
+
+        let mut map: RetrievedObjects<Identifier, u32> = RetrievedObjects::new();
+        map.insert(Identifier::new([7u8; 32]), None);
+        let mapped = map.into_option();
+        assert!(
+            mapped.is_some(),
+            "absence markers must be preserved in into_option"
+        );
+        assert_eq!(mapped.unwrap().len(), 1);
+    }
+
+    // ---------------------------------------------------------------------
+    // Additional: extend existing malformed request tests to all StateTransitions
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn broadcast_state_transition_no_proof_when_response_empty() {
+        let request = platform::BroadcastStateTransitionRequest {
+            state_transition: vec![],
+        };
+        let response = platform::WaitForStateTransitionResultResponse::default();
+        let provider = unreachable_provider();
+        let err = <StateTransitionProofResult as FromProof<
+            platform::BroadcastStateTransitionRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn broadcast_state_transition_protocol_error_fires_before_metadata_check() {
+        // This test pins the ORDERING of validation in
+        // `StateTransitionProofResult::maybe_from_proof` for broadcast
+        // state transitions: proof extraction -> state_transition decode ->
+        // metadata check. An invalid state_transition payload triggers
+        // `ProtocolError` on decode BEFORE the missing-metadata branch is
+        // reached, so even though `metadata: None` here, the assertion
+        // targets `ProtocolError`, not `EmptyResponseMetadata`.
+        //
+        // (For the happy-path `EmptyResponseMetadata` branch, a valid
+        // serialized state transition would be needed; that is covered
+        // elsewhere. This test deliberately documents the decode-first
+        // ordering.)
+        use platform::wait_for_state_transition_result_response::{
+            wait_for_state_transition_result_response_v0::Result as V0Result, Version,
+            WaitForStateTransitionResultResponseV0,
+        };
+        let request = platform::BroadcastStateTransitionRequest {
+            state_transition: vec![0xFFu8; 4],
+        };
+        let response = platform::WaitForStateTransitionResultResponse {
+            version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: None, // missing — would trigger EmptyResponseMetadata if reached
+            })),
+        };
+        let provider = unreachable_provider();
+        let err = <StateTransitionProofResult as FromProof<
+            platform::BroadcastStateTransitionRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
 }

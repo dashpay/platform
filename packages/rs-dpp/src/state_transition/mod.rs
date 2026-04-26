@@ -940,7 +940,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external<S: Signer<IdentityPublicKey>>(
+    pub async fn sign_external<S: Signer<IdentityPublicKey>>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -954,10 +954,11 @@ impl StateTransition {
             get_data_contract_security_level_requirement,
             StateTransitionSigningOptions::default(),
         )
+        .await
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external_with_options<S: Signer<IdentityPublicKey>>(
+    pub async fn sign_external_with_options<S: Signer<IdentityPublicKey>>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -1107,7 +1108,7 @@ impl StateTransition {
             }
         }
         let data = self.signable_bytes()?;
-        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        self.set_signature(signer.sign(identity_public_key, data.as_slice()).await?);
         self.set_signature_public_key_id(identity_public_key.id());
         Ok(())
     }
@@ -1501,6 +1502,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)]
     fn test_signing_options_clone() {
         let original = StateTransitionSigningOptions {
             allow_signing_with_any_security_level: true,
@@ -2699,5 +2701,423 @@ mod tests {
             }
             other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: variants not yet exercised.
+    //
+    // The tests below target:
+    //   * IdentityCreditWithdrawal::V1 (previously only V0 was covered).
+    //   * IdentityCreditTransferToAddresses (its own top-level arm).
+    //   * AddressFundingFromAssetLock (identity-signed + asset-lock arm).
+    //   * AddressCreditWithdrawal (not identity-signed, address-funds arm).
+    //   * ShieldFromAssetLock (asset-lock, non-identity-signed).
+    //   * Batch with a token transition (nested enum, previously only Delete).
+    // -----------------------------------------------------------------------
+
+    use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+    use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+    use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+    use crate::withdrawal::Pooling as WithdrawalPooling;
+
+    fn sample_withdrawal_v1_st() -> StateTransition {
+        let v1 = IdentityCreditWithdrawalTransitionV1 {
+            identity_id: Identifier::from([12u8; 32]),
+            amount: 777,
+            core_fee_per_byte: 2,
+            pooling: WithdrawalPooling::Standard,
+            output_script: None,
+            nonce: 9,
+            user_fee_increase: 4,
+            signature_public_key_id: 21,
+            signature: BinaryData::new(vec![0x12; 65]),
+        };
+        StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V1(v1))
+    }
+
+    fn sample_credit_transfer_to_addresses_st() -> StateTransition {
+        let v0 = IdentityCreditTransferToAddressesTransitionV0 {
+            identity_id: Identifier::from([13u8; 32]),
+            ..Default::default()
+        };
+        StateTransition::IdentityCreditTransferToAddresses(
+            IdentityCreditTransferToAddressesTransition::V0(v0),
+        )
+    }
+
+    fn sample_address_credit_withdrawal_st() -> StateTransition {
+        use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
+        StateTransition::AddressCreditWithdrawal(AddressCreditWithdrawalTransition::V0(
+            AddressCreditWithdrawalTransitionV0::default(),
+        ))
+    }
+
+    fn sample_shield_from_asset_lock_st() -> StateTransition {
+        use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(
+            ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: Default::default(),
+                actions: vec![],
+                value_balance: 100,
+                anchor: [0u8; 32],
+                proof: vec![],
+                binding_signature: [0u8; 64],
+                signature: BinaryData::new(vec![0x55; 65]),
+            },
+        ))
+    }
+
+    // ---------- IdentityCreditWithdrawal V1 accessors ----------
+
+    #[test]
+    fn test_withdrawal_v1_name_and_type() {
+        let st = sample_withdrawal_v1_st();
+        assert_eq!(st.name(), "IdentityCreditWithdrawal");
+        assert_eq!(
+            st.state_transition_type(),
+            StateTransitionType::IdentityCreditWithdrawal
+        );
+    }
+
+    #[test]
+    fn test_withdrawal_v1_is_identity_signed_true() {
+        assert!(sample_withdrawal_v1_st().is_identity_signed());
+    }
+
+    #[test]
+    fn test_withdrawal_v1_signature_and_owner_and_key_id() {
+        let st = sample_withdrawal_v1_st();
+        // signature accessor -> Some
+        let sig = st.signature().expect("V1 withdrawal has a signature");
+        assert_eq!(sig.as_slice(), &[0x12; 65]);
+        // owner_id delegates to identity_id
+        assert_eq!(st.owner_id(), Some(Identifier::from([12u8; 32])));
+        assert_eq!(st.signature_public_key_id(), Some(21));
+        assert_eq!(st.user_fee_increase(), 4);
+    }
+
+    #[test]
+    fn test_withdrawal_v1_set_signature_and_fee_and_key_id() {
+        let mut st = sample_withdrawal_v1_st();
+        assert!(st.set_signature(BinaryData::new(vec![0x99; 65])));
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x99; 65]);
+
+        st.set_user_fee_increase(33);
+        assert_eq!(st.user_fee_increase(), 33);
+
+        st.set_signature_public_key_id(64);
+        assert_eq!(st.signature_public_key_id(), Some(64));
+    }
+
+    #[test]
+    fn test_withdrawal_v1_serialize_roundtrip_via_state_transition() {
+        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        let original = sample_withdrawal_v1_st();
+        let bytes = PlatformSerializable::serialize_to_bytes(&original).expect("serialize ok");
+        let restored = StateTransition::deserialize_from_bytes(&bytes).expect("deserialize ok");
+        assert_eq!(original, restored);
+        // The restored variant must still be V1, not V0 — exercises the
+        // feature-version dispatch in deserialize.
+        match restored {
+            StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V1(
+                _,
+            )) => {}
+            other => panic!("expected V1 inner variant, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_withdrawal_v1_transaction_id_differs_from_v0() {
+        // V0 and V1 carry different serialized forms → distinct transaction ids.
+        let v0 = sample_withdrawal_st();
+        let v1 = sample_withdrawal_v1_st();
+        let id_v0 = v0.transaction_id().expect("v0 hash");
+        let id_v1 = v1.transaction_id().expect("v1 hash");
+        assert_ne!(id_v0, id_v1);
+    }
+
+    #[test]
+    fn test_withdrawal_v1_required_asset_lock_balance_errors() {
+        let err = sample_withdrawal_v1_st()
+            .required_asset_lock_balance_for_processing_start(PlatformVersion::latest())
+            .expect_err("withdrawal is not an asset lock ST");
+        matches!(err, ProtocolError::CorruptedCodeExecution(_));
+    }
+
+    // ---------- IdentityCreditTransferToAddresses ----------
+
+    #[test]
+    fn test_credit_transfer_to_addresses_name_and_type() {
+        let st = sample_credit_transfer_to_addresses_st();
+        assert_eq!(st.name(), "IdentityCreditTransferToAddresses");
+        assert_eq!(
+            st.state_transition_type(),
+            StateTransitionType::IdentityCreditTransferToAddresses
+        );
+    }
+
+    #[test]
+    fn test_credit_transfer_to_addresses_signature_some_and_owner_some() {
+        let st = sample_credit_transfer_to_addresses_st();
+        assert!(st.signature().is_some(), "has a signature field");
+        assert_eq!(st.owner_id(), Some(Identifier::from([13u8; 32])));
+    }
+
+    #[test]
+    fn test_credit_transfer_to_addresses_is_identity_signed_true() {
+        // Not in the "not identity signed" list → should be true.
+        assert!(sample_credit_transfer_to_addresses_st().is_identity_signed());
+    }
+
+    #[test]
+    fn test_credit_transfer_to_addresses_inputs_none_active_range_11_latest() {
+        let st = sample_credit_transfer_to_addresses_st();
+        assert!(st.inputs().is_none());
+        // Per mod.rs table: this variant is in the 11..=LATEST_VERSION group.
+        let range = st.active_version_range();
+        assert_eq!(*range.start(), 11);
+        assert_eq!(*range.end(), LATEST_VERSION);
+    }
+
+    #[test]
+    fn test_credit_transfer_to_addresses_set_signature_returns_true() {
+        let mut st = sample_credit_transfer_to_addresses_st();
+        let ok = st.set_signature(BinaryData::new(vec![0x77; 65]));
+        assert!(ok);
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x77; 65]);
+    }
+
+    #[test]
+    fn test_credit_transfer_to_addresses_from_outer_enum() {
+        let outer = IdentityCreditTransferToAddressesTransition::V0(
+            IdentityCreditTransferToAddressesTransitionV0::default(),
+        );
+        let st: StateTransition = outer.into();
+        assert!(matches!(
+            st,
+            StateTransition::IdentityCreditTransferToAddresses(_)
+        ));
+    }
+
+    #[test]
+    fn test_credit_transfer_to_addresses_user_fee_increase_setter() {
+        let mut st = sample_credit_transfer_to_addresses_st();
+        st.set_user_fee_increase(55);
+        assert_eq!(st.user_fee_increase(), 55);
+    }
+
+    // ---------- AddressCreditWithdrawal ----------
+
+    #[test]
+    fn test_address_credit_withdrawal_name_type_and_accessors() {
+        let st = sample_address_credit_withdrawal_st();
+        assert_eq!(st.name(), "AddressCreditWithdrawal");
+        assert_eq!(
+            st.state_transition_type(),
+            StateTransitionType::AddressCreditWithdrawal
+        );
+        // signature is None for AddressCreditWithdrawal (see mod.rs arm).
+        assert!(st.signature().is_none());
+        // owner_id is None for every address-* variant.
+        assert!(st.owner_id().is_none());
+        // inputs → Some (delegated to inner struct's inputs map, may be empty).
+        assert!(st.inputs().is_some());
+    }
+
+    #[test]
+    fn test_address_credit_withdrawal_set_signature_returns_false() {
+        let mut st = sample_address_credit_withdrawal_st();
+        assert!(!st.set_signature(BinaryData::new(vec![0xAB; 65])));
+    }
+
+    #[test]
+    fn test_address_credit_withdrawal_is_identity_signed_true() {
+        // Per mod.rs: `is_identity_signed` is !matches!(identity_create/topup/shield*/unshield/shielded*)
+        // so address-* variants return true — even though signature() returns None.
+        assert!(sample_address_credit_withdrawal_st().is_identity_signed());
+    }
+
+    #[test]
+    fn test_address_credit_withdrawal_active_range_is_11_latest() {
+        let range = sample_address_credit_withdrawal_st().active_version_range();
+        assert_eq!(*range.start(), 11);
+        assert_eq!(*range.end(), LATEST_VERSION);
+    }
+
+    // ---------- ShieldFromAssetLock ----------
+
+    #[test]
+    fn test_shield_from_asset_lock_name_type_and_accessors() {
+        let st = sample_shield_from_asset_lock_st();
+        assert_eq!(st.name(), "ShieldFromAssetLock");
+        assert_eq!(
+            st.state_transition_type(),
+            StateTransitionType::ShieldFromAssetLock
+        );
+        // signature IS present on ShieldFromAssetLock — Some arm.
+        let sig = st
+            .signature()
+            .expect("shield-from-asset-lock has signature");
+        assert_eq!(sig.as_slice(), &[0x55; 65]);
+        // owner_id is always None for shielded-* arms.
+        assert!(st.owner_id().is_none());
+    }
+
+    #[test]
+    fn test_shield_from_asset_lock_is_not_identity_signed() {
+        assert!(!sample_shield_from_asset_lock_st().is_identity_signed());
+    }
+
+    #[test]
+    fn test_shield_from_asset_lock_optional_asset_lock_proof_some() {
+        // Critical: this is one of the THREE arms where optional_asset_lock_proof
+        // actually forwards to Some(_). Other Some arms are covered by
+        // IdentityCreate and IdentityTopUp which have default asset lock proof.
+        let st = sample_shield_from_asset_lock_st();
+        assert!(st.optional_asset_lock_proof().is_some());
+    }
+
+    #[test]
+    fn test_shield_from_asset_lock_user_fee_increase_is_zero_and_setter_noop() {
+        let mut st = sample_shield_from_asset_lock_st();
+        assert_eq!(st.user_fee_increase(), 0);
+        st.set_user_fee_increase(123);
+        // Set is a no-op per mod.rs table.
+        assert_eq!(st.user_fee_increase(), 0);
+    }
+
+    #[test]
+    fn test_shield_from_asset_lock_set_signature_returns_true() {
+        let mut st = sample_shield_from_asset_lock_st();
+        assert!(st.set_signature(BinaryData::new(vec![0x44; 65])));
+        assert_eq!(st.signature().unwrap().as_slice(), &[0x44; 65]);
+    }
+
+    #[test]
+    fn test_shield_from_asset_lock_required_asset_lock_balance_succeeds() {
+        // This is the only arm besides IdentityCreate/TopUp/AddressFundingFromAssetLock
+        // that returns Ok from required_asset_lock_balance_for_processing_start.
+        let st = sample_shield_from_asset_lock_st();
+        let result = st.required_asset_lock_balance_for_processing_start(PlatformVersion::latest());
+        assert!(
+            result.is_ok(),
+            "ShieldFromAssetLock should return Ok, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_shield_from_asset_lock_active_range_12_latest() {
+        let range = sample_shield_from_asset_lock_st().active_version_range();
+        assert_eq!(*range.start(), 12);
+        assert_eq!(*range.end(), LATEST_VERSION);
+    }
+
+    // ---------- Batch with Token transition exercises TokenTransfer arm
+    //            in the name() nested match. ----------
+
+    #[test]
+    fn test_batch_with_token_transfer_name_contains_token_transfer() {
+        use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransition as TT;
+        use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+        use crate::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+        use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransition;
+        use crate::state_transition::batch_transition::BatchTransitionV1;
+
+        let base = TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: Identifier::from([1u8; 32]),
+            token_id: Identifier::from([2u8; 32]),
+            using_group_info: None,
+        });
+        let token_transfer = TokenTransferTransition::V0(TokenTransferTransitionV0 {
+            base,
+            amount: 100,
+            recipient_id: Identifier::from([3u8; 32]),
+            public_note: None,
+            shared_encrypted_note: None,
+            private_encrypted_note: None,
+        });
+
+        // BatchTransitionV1 is used for tokens. Build a single-token batch.
+        let batch = BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([9u8; 32]),
+            transitions: vec![BatchedTransition::Token(TT::Transfer(token_transfer))],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![0u8; 65]),
+        });
+        let st = StateTransition::Batch(batch);
+
+        assert_eq!(st.name(), "DocumentsBatch([TokenTransfer])");
+    }
+
+    // -----------------------------------------------------------------------
+    // Cross-variant consistency: transaction_id is a 32-byte blake3/sha256 hash
+    // of the serialized form. Make sure it's stable across clones for the newly
+    // covered variants too.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_transaction_id_length_32_for_new_variants() {
+        for st in [
+            sample_withdrawal_v1_st(),
+            sample_credit_transfer_to_addresses_st(),
+            sample_shield_from_asset_lock_st(),
+        ] {
+            let id = st.transaction_id().expect("hash");
+            assert_eq!(id.len(), 32);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Clone-and-equality coverage for newly added variants (PartialEq via
+    // derived impl, exercises the top-level enum's PartialEq arms).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_clone_eq_for_new_variants() {
+        let cases = [
+            sample_withdrawal_v1_st(),
+            sample_credit_transfer_to_addresses_st(),
+            sample_address_credit_withdrawal_st(),
+            sample_shield_from_asset_lock_st(),
+        ];
+        for st in cases {
+            let cloned = st.clone();
+            assert_eq!(st, cloned, "clone must be equal for {}", st.name());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // unique_identifiers() for address-* variants: the implementation
+    // dispatches via call_method! and each variant returns a non-empty Vec.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_unique_identifiers_for_address_and_shielded_variants() {
+        // The address variants compute identifiers from their `inputs` map.
+        // With a default (empty inputs) transition, unique_identifiers is empty
+        // — that's fine, but we still want to exercise the call_method!
+        // dispatch for these arms without panicking.
+        for st in [
+            sample_address_credit_withdrawal_st(),
+            sample_shield_from_asset_lock_st(),
+            sample_credit_transfer_to_addresses_st(),
+            sample_withdrawal_v1_st(),
+        ] {
+            // Just calling unique_identifiers exercises the match arm; the
+            // result may be empty for default-constructed inputs-based
+            // variants, non-empty for identity-based ones.
+            let _ids = st.unique_identifiers();
+        }
+        // For the identity-based variants the result IS non-empty.
+        assert!(!sample_withdrawal_v1_st().unique_identifiers().is_empty());
+        assert!(!sample_credit_transfer_to_addresses_st()
+            .unique_identifiers()
+            .is_empty());
     }
 }

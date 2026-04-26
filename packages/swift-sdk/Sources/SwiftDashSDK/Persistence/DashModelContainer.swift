@@ -16,7 +16,14 @@ public enum DashModelContainer {
             PersistentDocumentType.self,
             PersistentIndex.self,
             PersistentProperty.self,
-            PersistentTokenHistoryEvent.self
+            PersistentTokenHistoryEvent.self,
+            PersistentPlatformAddress.self,
+            PersistentSyncState.self,
+            PersistentWallet.self,
+            PersistentAccount.self,
+            PersistentTransaction.self,
+            PersistentUtxo.self,
+            PersistentWalletManagerMetadata.self
         ]
     }
 

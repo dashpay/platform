@@ -391,6 +391,72 @@ mod tests {
     }
 
     #[test]
+    fn should_create_independent_trees_for_different_token_ids() {
+        // Multi-token creation under different positions / ids coexists.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let contract_id = Identifier::from([200u8; 32]);
+
+        for (i, tid) in [[201u8; 32], [202u8; 32], [203u8; 32]].iter().enumerate() {
+            drive
+                .create_token_trees_v0(
+                    contract_id,
+                    i as u16,
+                    *tid,
+                    false,
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to create token trees");
+        }
+
+        // Each token has independent supply counters initialized to 0
+        for tid in [[201u8; 32], [202u8; 32], [203u8; 32]] {
+            let supply = drive
+                .fetch_token_total_supply(tid, None, platform_version)
+                .expect("expected to fetch supply");
+            assert_eq!(supply, Some(0));
+        }
+
+        // Mutating one token's supply must not affect the others
+        drive
+            .add_to_token_total_supply(
+                [201u8; 32],
+                500,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to seed supply for first token");
+
+        assert_eq!(
+            drive
+                .fetch_token_total_supply([201u8; 32], None, platform_version)
+                .unwrap(),
+            Some(500)
+        );
+        assert_eq!(
+            drive
+                .fetch_token_total_supply([202u8; 32], None, platform_version)
+                .unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            drive
+                .fetch_token_total_supply([203u8; 32], None, platform_version)
+                .unwrap(),
+            Some(0)
+        );
+    }
+
+    #[test]
     fn should_respect_start_as_paused_flag() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();

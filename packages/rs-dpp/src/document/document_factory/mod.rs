@@ -153,6 +153,7 @@ impl DocumentFactory {
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;

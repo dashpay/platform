@@ -3,14 +3,25 @@ import SwiftDashSDK
 
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var showingContracts = false
     @State private var isSwitchingNetwork = false
+    @State private var sdkStatus: SDKStatus?
+    @State private var isLoadingStatus = false
 
     var body: some View {
-        NavigationView {
+        // `NavigationStack` (iOS 16+) instead of the deprecated
+        // `NavigationView`. With `NavigationView`, `NavigationLink`s
+        // embedded in a `List` (e.g. under Settings → Storage /
+        // Keychain Explorer, whose detail views themselves list
+        // NavigationLinks) push-then-immediately-pop on iOS 16+ —
+        // visible to users as "I tap a row and it bounces me out."
+        // `NavigationStack` has reliable push semantics.
+        NavigationStack {
             Form {
                 Section("Network") {
                     Picker("Current Network", selection: Binding(
@@ -27,8 +38,12 @@ struct OptionsView: View {
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
 
-                                    // Also update wallet service
-                                    await unifiedAppState.handleNetworkSwitch(to: newNetwork)
+                                    // Reset per-network services. TODO(platform-wallet):
+                                    // Once PlatformWalletManager supports network
+                                    // switching cleanly, call into it here.
+                                    try? walletManager.stopSpv()
+                                    platformBalanceSyncService.reset()
+                                    shieldedService.reset()
 
                                     await MainActor.run {
                                         isSwitchingNetwork = false
@@ -91,6 +106,18 @@ struct OptionsView: View {
                 }
 
                 Section("Data") {
+                    NavigationLink(destination: StorageExplorerView()) {
+                        Label("Storage Explorer", systemImage: "cylinder.split.1x2")
+                    }
+
+                    NavigationLink(destination: KeychainExplorerView()) {
+                        Label("Keychain Explorer", systemImage: "key.viewfinder")
+                    }
+
+                    NavigationLink(destination: WalletMemoryExplorerView()) {
+                        Label("Wallet Memory Explorer", systemImage: "memorychip")
+                    }
+
                     NavigationLink(destination: ContractsView()) {
                         Label("Browse Contracts", systemImage: "doc.plaintext")
                     }
@@ -133,20 +160,63 @@ struct OptionsView: View {
                     }
                 }
 
-                Section("Developer") {
-                    Toggle("Show Test Data", isOn: .constant(false))
-                        .disabled(true)
-
-                    Toggle("Enable Debug Logging", isOn: .constant(false))
-                        .disabled(true)
-
-                    Button(action: {
-                        Task {
-                            await appState.loadSampleIdentities()
-                        }
-                    }) {
-                        Label("Load Sample Identities", systemImage: "person.badge.plus")
+                Section(header: Text("Platform")) {
+                    NavigationLink(destination: PlatformQueriesView()) {
+                        Label("Queries", systemImage: "magnifyingglass")
                     }
+
+                    NavigationLink(destination: PlatformStateTransitionsView()) {
+                        Label("State Transitions", systemImage: "arrow.up.arrow.down")
+                    }
+
+                    HStack {
+                        Text("SDK Initialized")
+                        Spacer()
+                        Image(systemName: appState.sdk != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(appState.sdk != nil ? .green : .red)
+                    }
+
+                    if let status = sdkStatus {
+                        HStack {
+                            Text("Version")
+                            Spacer()
+                            Text(status.version)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Network")
+                            Spacer()
+                            Text(status.network.capitalized)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Mode")
+                            Spacer()
+                            Text(status.mode.uppercased())
+                                .foregroundColor(status.mode == "trusted" ? .blue : .orange)
+                        }
+
+                        HStack {
+                            Text("Quorums in Memory")
+                            Spacer()
+                            Text("\(status.quorumCount)")
+                                .foregroundColor(status.quorumCount > 0 ? .green : .red)
+                        }
+                    }
+
+                    Button(action: loadSDKStatus) {
+                        HStack {
+                            Label("Refresh SDK Status", systemImage: "arrow.clockwise")
+                            Spacer()
+                            if isLoadingStatus {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                        }
+                    }
+                    .disabled(isLoadingStatus)
                 }
 
                 Section("About") {
@@ -178,6 +248,7 @@ struct OptionsView: View {
             .navigationTitle("Options")
             .task {
                 await loadDataStatistics()
+                loadSDKStatus()
             }
             .sheet(isPresented: $showingDataManagement) {
                 DataManagementView()
@@ -196,6 +267,30 @@ struct OptionsView: View {
             }
         }
     }
+
+    /// Fetch the SDK version / network / mode / quorum count for
+    /// display in the Platform section. Called once on appear and
+    /// on demand via the refresh button.
+    private func loadSDKStatus() {
+        guard let sdk = appState.sdk else { return }
+
+        isLoadingStatus = true
+
+        Task {
+            do {
+                let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
+                await MainActor.run {
+                    self.sdkStatus = status
+                    self.isLoadingStatus = false
+                }
+            } catch {
+                print("Failed to get SDK status: \(error)")
+                await MainActor.run {
+                    self.isLoadingStatus = false
+                }
+            }
+        }
+    }
 }
 
 struct DataManagementView: View {
@@ -204,7 +299,7 @@ struct DataManagementView: View {
     @State private var showingClearConfirmation = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Clear Data by Type") {
                     Button(role: .destructive, action: {
@@ -266,7 +361,7 @@ struct AboutView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     Image(systemName: "app.fill")

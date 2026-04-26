@@ -43,8 +43,9 @@ impl AddressSigner {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<PlatformAddress> for AddressSigner {
-    fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         let hash = match key {
             PlatformAddress::P2pkh(hash) => hash,
             PlatformAddress::P2sh(hash) => hash,
@@ -64,7 +65,7 @@ impl Signer<PlatformAddress> for AddressSigner {
         Ok(BinaryData::new(signature.to_vec()))
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &PlatformAddress,
         data: &[u8],

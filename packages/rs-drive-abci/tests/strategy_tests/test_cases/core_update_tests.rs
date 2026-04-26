@@ -14,8 +14,8 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
-    #[test]
-    fn run_chain_random_bans() {
+    #[tokio::test]
+    async fn run_chain_random_bans() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -90,7 +90,8 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // we expect to see quorums with banned members
 
@@ -122,8 +123,8 @@ mod tests {
         assert!(has_smaller_validator_sets);
     }
 
-    #[test]
-    fn run_chain_random_removals() {
+    #[tokio::test]
+    async fn run_chain_random_removals() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -198,7 +199,8 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // we expect to see quorums with banned members
 
@@ -216,8 +218,8 @@ mod tests {
         assert!(has_smaller_validator_sets);
     }
 
-    #[test]
-    fn run_chain_random_bans_and_unbans() {
+    #[tokio::test]
+    async fn run_chain_random_bans_and_unbans() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -297,7 +299,8 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // We should also see validator sets with less than the quorum size
 

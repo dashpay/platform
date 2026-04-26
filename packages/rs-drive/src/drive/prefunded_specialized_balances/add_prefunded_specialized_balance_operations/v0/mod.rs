@@ -84,7 +84,6 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::identity::IdentityError;
     use crate::error::Error;
-    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::balances::credits::MAX_CREDITS;
     use dpp::identifier::Identifier;

@@ -56,8 +56,14 @@ public enum KeychainError: LocalizedError, Sendable {
 @MainActor
 public final class KeychainManager: Sendable {
 
-    /// Shared singleton instance with default service name
-    public static let shared = KeychainManager()
+    /// Shared singleton instance with default service name.
+    ///
+    /// `nonisolated` so the singleton can be reached from off-actor
+    /// contexts — e.g. the Rust persister callback path that writes
+    /// via `storePrivateKeyNonisolated`. Safe because
+    /// `KeychainManager` is `Sendable` (all state is `let` +
+    /// thread-safe Security-framework calls).
+    public nonisolated static let shared = KeychainManager()
 
     /// The service name used for keychain entries
     public let serviceName: String
@@ -65,9 +71,19 @@ public final class KeychainManager: Sendable {
     /// Optional access group for sharing keys between apps
     public let accessGroup: String?
 
-    /// Initialize with default service name "com.dash.sdk.keys"
-    public init() {
-        self.serviceName = "com.dash.sdk.keys"
+    /// Initialize with the unified keychain service name shared
+    /// with `WalletStorage` (`org.dashfoundation.wallet`). All app
+    /// key material — identity private keys, special masternode
+    /// keys, per-wallet mnemonics — ends up under this single
+    /// service so the keychain explorer and any cross-item queries
+    /// see one namespace.
+    ///
+    /// `nonisolated` so the `shared` singleton — also `nonisolated` —
+    /// can be constructed lazily from any isolation domain. The
+    /// initializer only writes the two `let` fields; no actor-isolated
+    /// state is touched.
+    public nonisolated init() {
+        self.serviceName = WalletStorage.keychainService
         self.accessGroup = nil
     }
 
@@ -75,7 +91,7 @@ public final class KeychainManager: Sendable {
     /// - Parameters:
     ///   - serviceName: The service name for keychain entries (e.g., "com.myapp.keys")
     ///   - accessGroup: Optional access group for sharing keys between apps
-    public init(serviceName: String, accessGroup: String? = nil) {
+    public nonisolated init(serviceName: String, accessGroup: String? = nil) {
         self.serviceName = serviceName
         self.accessGroup = accessGroup
     }
@@ -90,6 +106,33 @@ public final class KeychainManager: Sendable {
     /// - Returns: A unique identifier for the stored key, or nil if storage failed
     @discardableResult
     public func storePrivateKey(_ keyData: Data, identityId: Data, keyIndex: Int32) -> String? {
+        // Delegate to the nonisolated implementation so both the
+        // main-actor path and off-actor callers (e.g. Rust-side
+        // persister callbacks) share identical Keychain semantics.
+        return storePrivateKeyNonisolated(keyData, identityId: identityId, keyIndex: keyIndex)
+    }
+
+    /// Off-actor variant of [`storePrivateKey`].
+    ///
+    /// The underlying Security-framework APIs (`SecItemAdd`,
+    /// `SecItemDelete`) are thread-safe, and this class's state
+    /// (`serviceName` + `accessGroup`) is immutable (`let`), so the
+    /// write can run from any isolation domain. This is the entry
+    /// point the FFI persister callback (`persistIdentityKeys`
+    /// in `PlatformWalletPersistenceHandler`) calls when Rust
+    /// forwards a `Clear` private key — the callback runs on the
+    /// Rust persister thread, not on the main actor, so the
+    /// `@MainActor`-pinned `storePrivateKey` isn't reachable.
+    ///
+    /// Prefer the `@MainActor` wrapper when you're already in a
+    /// main-actor context; call this directly from nonisolated
+    /// contexts (background queues, detached tasks, C callbacks).
+    @discardableResult
+    public nonisolated func storePrivateKeyNonisolated(
+        _ keyData: Data,
+        identityId: Data,
+        keyIndex: Int32
+    ) -> String? {
         let keyIdentifier = generateKeyIdentifier(identityId: identityId, keyIndex: keyIndex)
 
         // Create the query
@@ -384,7 +427,11 @@ public final class KeychainManager: Sendable {
 
     // MARK: - Private Helpers
 
-    private func generateKeyIdentifier(identityId: Data, keyIndex: Int32) -> String {
+    /// Nonisolated because the result only depends on the arguments
+    /// — no access to actor-isolated state — and the function is
+    /// shared between the `@MainActor` wrapper methods and the
+    /// off-actor `storePrivateKeyNonisolated` path.
+    private nonisolated func generateKeyIdentifier(identityId: Data, keyIndex: Int32) -> String {
         let identityHex = identityId.map { String(format: "%02x", $0) }.joined()
         return "privkey_\(identityHex)_\(keyIndex)"
     }
@@ -392,5 +439,113 @@ public final class KeychainManager: Sendable {
     private func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
         let identityHex = identityId.map { String(format: "%02x", $0) }.joined()
         return "specialkey_\(identityHex)_\(keyType.rawValue)"
+    }
+}
+
+// MARK: - Identity-key storage (derivation-path keyed)
+
+extension KeychainManager {
+    /// Metadata stamped into each identity-private-key keychain item
+    /// as a JSON blob on `kSecAttrGeneric`. Everything here is
+    /// non-secret — pub-key bytes + hash + derivation breadcrumbs —
+    /// so the diagnostic keychain explorer can pretty-print it.
+    public struct IdentityPrivateKeyMetadata: Encodable, Sendable {
+        public let identityId: String     // base58
+        public let keyId: UInt32
+        public let walletId: String       // hex
+        public let identityIndex: UInt32
+        public let keyIndex: UInt32
+        public let derivationPath: String
+        public let publicKey: String      // hex (compressed, 33 bytes typically)
+        public let publicKeyHash: String  // hex (20 bytes, RIPEMD160(SHA256))
+
+        public init(
+            identityId: String,
+            keyId: UInt32,
+            walletId: String,
+            identityIndex: UInt32,
+            keyIndex: UInt32,
+            derivationPath: String,
+            publicKey: String,
+            publicKeyHash: String
+        ) {
+            self.identityId = identityId
+            self.keyId = keyId
+            self.walletId = walletId
+            self.identityIndex = identityIndex
+            self.keyIndex = keyIndex
+            self.derivationPath = derivationPath
+            self.publicKey = publicKey
+            self.publicKeyHash = publicKeyHash
+        }
+    }
+
+    /// Store a 32-byte ECDSA private key derived from a wallet
+    /// mnemonic at `derivationPath`. The keychain item's account is
+    /// namespaced as `identity_privkey.<derivationPath>` so the
+    /// explorer can categorise it under "Identity Private Keys"
+    /// without scanning metadata, and the `metadata` encodes into
+    /// `kSecAttrGeneric` as JSON so every ancillary field — identity
+    /// id, key id, owning wallet id, pubkey + hash, indices — is
+    /// discoverable from a single keychain read.
+    ///
+    /// Returns the stored account string (or `nil` on Security-
+    /// framework failure). Idempotent per derivation path: an
+    /// existing row is deleted + replaced.
+    ///
+    /// `nonisolated` because this is called from the Rust persister
+    /// callback which runs off the main actor; the underlying
+    /// SecItem APIs are thread-safe and this type's state is `let`.
+    @discardableResult
+    public nonisolated func storeIdentityPrivateKey(
+        _ privateKey: Data,
+        derivationPath: String,
+        metadata: IdentityPrivateKeyMetadata
+    ) -> String? {
+        let account = "identity_privkey.\(derivationPath)"
+
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: privateKey,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrSynchronizable as String: false,
+        ]
+
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        // Encode metadata as JSON. `kSecAttrGeneric` accepts
+        // arbitrary bytes; the keychain explorer already pretty-
+        // prints JSON payloads on the detail view.
+        if let metadataData = try? JSONEncoder().encode(metadata) {
+            query[kSecAttrGeneric as String] = metadataData
+        }
+
+        // Delete-then-add pattern lets the row settle into the new
+        // `kSecValueData` + `kSecAttrGeneric` without fighting
+        // SecItemUpdate's attribute-preservation quirks.
+        SecItemDelete(query as CFDictionary)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess ? account : nil
+    }
+
+    /// Delete the identity private-key row for `derivationPath`.
+    /// Idempotent; returns true on success or "not found".
+    @discardableResult
+    public nonisolated func deleteIdentityPrivateKey(derivationPath: String) -> Bool {
+        let account = "identity_privkey.\(derivationPath)"
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: account,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 }

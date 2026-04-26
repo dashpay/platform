@@ -55,7 +55,8 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
-    IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+    IdentityAssetLockTransactionTooManyInputsError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
@@ -677,6 +678,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ShieldedEncryptedNoteSizeMismatchError(ShieldedEncryptedNoteSizeMismatchError),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionTooManyInputsError(IdentityAssetLockTransactionTooManyInputsError),
 }
 
 impl From<BasicError> for ConsensusError {

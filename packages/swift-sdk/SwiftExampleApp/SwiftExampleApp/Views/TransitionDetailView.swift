@@ -7,7 +7,10 @@ struct TransitionDetailView: View {
   let transitionKey: String
   let transitionLabel: String
 
-  @EnvironmentObject var appState: UnifiedAppState
+  @EnvironmentObject var appState: AppState
+  @Environment(\.modelContext) private var modelContext
+  @Query private var identities: [PersistentIdentity]
+  @EnvironmentObject var transitionState: TransitionState
   @State private var selectedIdentityId: String = ""
   @State private var isExecuting = false
   @State private var showResult = false
@@ -35,7 +38,7 @@ struct TransitionDetailView: View {
       let hasContractId = !formInputs["contractId", default: ""].isEmpty
       let hasDocumentType = !formInputs["documentType", default: ""].isEmpty
       let hasDocumentId = !formInputs["documentId", default: ""].isEmpty
-      let canPurchase = appState.transitionState.canPurchaseDocument
+      let canPurchase = transitionState.canPurchaseDocument
 
       print("DEBUG: Button enabled check - contract: \(hasContractId), type: \(hasDocumentType), id: \(hasDocumentId), canPurchase: \(canPurchase), executing: \(isExecuting)")
 
@@ -114,7 +117,7 @@ struct TransitionDetailView: View {
       Text("Select Identity")
         .font(.headline)
 
-      if appState.platformState.identities.isEmpty {
+      if identities.isEmpty {
         Text("No identities available. Create one first.")
           .font(.caption)
           .foregroundColor(.secondary)
@@ -124,9 +127,15 @@ struct TransitionDetailView: View {
           .cornerRadius(8)
       } else {
         Picker("Identity", selection: $selectedIdentityId) {
-          ForEach(appState.platformState.identities, id: \.idString) { identity in
+          // Placeholder option matching the `@State` initial
+          // empty-string value. Without this SwiftUI emits
+          // "Picker: the selection '' is invalid and does not
+          // have an associated tag" until the user picks a real
+          // identity.
+          Text("Select an identity").tag("")
+          ForEach(identities, id: \.identityIdBase58) { identity in
             Text(identity.displayName)
-              .tag(identity.idString)
+              .tag(identity.identityIdBase58)
           }
         }
         .pickerStyle(MenuPickerStyle())
@@ -285,7 +294,7 @@ struct TransitionDetailView: View {
     checkboxInputs.removeAll()
 
     // Reset transition state
-    appState.transitionState.reset()
+    transitionState.reset()
 
     // Set default values
     if let transition = getTransitionDefinition(transitionKey) {
@@ -297,8 +306,8 @@ struct TransitionDetailView: View {
     }
 
     // Set the first identity as default if we need identity selection
-    if needsIdentitySelection && !appState.platformState.identities.isEmpty {
-      selectedIdentityId = appState.platformState.identities.first?.idString ?? ""
+    if needsIdentitySelection && !identities.isEmpty {
+      selectedIdentityId = identities.first?.identityIdBase58 ?? ""
     }
 
     showResult = false
@@ -343,8 +352,8 @@ struct TransitionDetailView: View {
       }
       // Also check if the document can be purchased
       // Force re-evaluation of the published property
-      let canPurchase = appState.transitionState.canPurchaseDocument
-      print("DEBUG: Document purchase form validation - canPurchase: \(canPurchase), price: \(String(describing: appState.transitionState.documentPrice))")
+      let canPurchase = transitionState.canPurchaseDocument
+      print("DEBUG: Document purchase form validation - canPurchase: \(canPurchase), price: \(String(describing: transitionState.documentPrice))")
       return canPurchase
     }
 
@@ -531,17 +540,21 @@ struct TransitionDetailView: View {
       }
     }
 
-    // Add the new identity to our list
-    let identityModel = IdentityModel(
-      id: idData,
-      balance: balance,
-      isLocal: false,
-      alias: formInputs["alias"],
-      dpnsName: nil
-    )
-
+    // Persist the newly-created identity directly to SwiftData.
+    // This path is the legacy SDK-level create; wallet-backed
+    // creates go through the Rust persister callback which writes
+    // the same row as a side-effect of `IdentityChangeSet`.
     await MainActor.run {
-      appState.platformState.addIdentity(identityModel)
+      let row = PersistentIdentity(
+        identityId: idData,
+        balance: Int64(bitPattern: balance),
+        revision: 0,
+        isLocal: false,
+        alias: formInputs["alias"],
+        network: appState.currentNetwork
+      )
+      modelContext.insert(row)
+      try? modelContext.save()
     }
 
     return [
@@ -553,7 +566,7 @@ struct TransitionDetailView: View {
 
   private func executeIdentityTopUp(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          appState.platformState.identities.contains(where: { $0.idString == selectedIdentityId }) else {
+          identities.contains(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -562,7 +575,7 @@ struct TransitionDetailView: View {
 
   private func executeIdentityCreditTransfer(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let fromIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let fromIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -580,17 +593,19 @@ struct TransitionDetailView: View {
 
     // Use the convenience method with DPPIdentity
     let dppIdentity = DPPIdentity(
-      id: fromIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: fromIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: fromIdentity.balance,
+      id: fromIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: fromIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: fromIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to create transfer signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (transferKey, signer) = try await MainActor.run {
-      try keyManager.createTransferSigner(for: dppIdentity)
+    let (transferKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createTransferSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -606,11 +621,11 @@ struct TransitionDetailView: View {
 
     // Update sender's balance in our local state
     await MainActor.run {
-      appState.platformState.updateIdentityBalance(id: fromIdentity.id, newBalance: senderBalance)
+      PersistentIdentity.updateBalance(in: modelContext, identityId: fromIdentity.identityId, balance: senderBalance); try? modelContext.save()
     }
 
     return [
-      "senderIdentityId": fromIdentity.idString,
+      "senderIdentityId": fromIdentity.identityIdBase58,
       "senderBalance": senderBalance,
       "receiverIdentityId": normalizedToIdentityId,
       "receiverBalance": receiverBalance,
@@ -621,7 +636,7 @@ struct TransitionDetailView: View {
 
   private func executeIdentityCreditWithdrawal(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -639,17 +654,19 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for withdrawal
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
     // Use KeyManager to create transfer signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createTransferSigner(for: dppIdentity)
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createTransferSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -664,11 +681,11 @@ struct TransitionDetailView: View {
 
     // Update identity's balance in our local state
     await MainActor.run {
-      appState.platformState.updateIdentityBalance(id: identity.id, newBalance: newBalance)
+      PersistentIdentity.updateBalance(in: modelContext, identityId: identity.identityId, balance: newBalance); try? modelContext.save()
     }
 
     return [
-      "identityId": identity.idString,
+      "identityId": identity.identityIdBase58,
       "withdrawnAmount": amount,
       "toAddress": toAddress,
       "coreFeePerByte": coreFeePerByte,
@@ -679,7 +696,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentCreate(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -710,7 +727,7 @@ struct TransitionDetailView: View {
     let descriptor = FetchDescriptor<PersistentDataContract>(
       predicate: #Predicate { $0.id == contractIdData }
     )
-    if let persistentContract = try? appState.modelContainer.mainContext.fetch(descriptor).first,
+    if let persistentContract = try? modelContext.fetch(descriptor).first,
        let documentTypes = persistentContract.documentTypes,
        let docType = documentTypes.first(where: { $0.name == documentType }) {
       // Security level in storage: 0=MASTER, 1=CRITICAL, 2=HIGH, 3=MEDIUM
@@ -722,20 +739,22 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for document creation
     let dppIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to find authentication key with required security level and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
-      try keyManager.createDocumentSigner(
+    let (selectedKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createDocumentSigner(
         for: dppIdentity,
         minimumSecurityLevel: requiredSecurityLevel
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -755,7 +774,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentDelete(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -773,22 +792,24 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity
     let dppIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .authentication,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -832,28 +853,30 @@ struct TransitionDetailView: View {
     }
 
     // Get the owner identity from persistent storage
-    guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+    guard let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("Selected identity not found")
     }
 
     // Use the DPPIdentity
     let fromIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: fromIdentity,
         purpose: .authentication,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -897,28 +920,30 @@ struct TransitionDetailView: View {
     }
 
     // Get the owner identity from persistent storage
-    guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+    guard let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("Selected identity not found")
     }
 
     // Use the DPPIdentity
     let ownerDPPIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: ownerDPPIdentity,
         purpose: .authentication,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -938,7 +963,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentPurchase(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let purchaserIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let purchaserIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -955,12 +980,12 @@ struct TransitionDetailView: View {
     }
 
     // Check if we can purchase (this should already be validated by the button state)
-    if let error = appState.transitionState.documentPurchaseError {
+    if let error = transitionState.documentPurchaseError {
       throw SDKError.invalidParameter(error)
     }
 
     // Get the price that was fetched by DocumentWithPriceView
-    guard let price = appState.transitionState.documentPrice else {
+    guard let price = transitionState.documentPrice else {
       throw SDKError.invalidParameter("Document price not available. Please enter a valid document ID to fetch its price.")
     }
 
@@ -971,22 +996,24 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity
     let fromIdentity = DPPIdentity(
-      id: purchaserIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: purchaserIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: purchaserIdentity.balance,
+      id: purchaserIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: purchaserIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: purchaserIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to find any key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createSignerForKey(
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: fromIdentity,
         purpose: nil,
         minimumSecurityLevel: nil,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1006,7 +1033,7 @@ struct TransitionDetailView: View {
 
   private func executeDocumentReplace(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1040,7 +1067,7 @@ struct TransitionDetailView: View {
     let descriptor = FetchDescriptor<PersistentDataContract>(
       predicate: #Predicate { $0.id == contractIdData }
     )
-    if let persistentContract = try? appState.modelContainer.mainContext.fetch(descriptor).first,
+    if let persistentContract = try? modelContext.fetch(descriptor).first,
        let documentTypes = persistentContract.documentTypes,
        let docType = documentTypes.first(where: { $0.name == documentType }) {
       requiredSecurityLevel = SecurityLevel(rawValue: UInt8(docType.securityLevel)) ?? .high
@@ -1051,26 +1078,28 @@ struct TransitionDetailView: View {
 
     // Find a key for signing - must meet security requirements
     print("🔑 Available keys for identity:")
-    for key in ownerIdentity.publicKeys {
+    for key in ownerIdentity.identityPublicKeys {
       print("  - ID: \(key.id), Purpose: \(key.purpose.name), Security: \(key.securityLevel.name), Disabled: \(key.isDisabled)")
     }
 
     // Use the DPPIdentity for document replacement
     let dppIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to find authentication key with required security level and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
-      try keyManager.createDocumentSigner(
+    let (selectedKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createDocumentSigner(
         for: dppIdentity,
         minimumSecurityLevel: requiredSecurityLevel
       )
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1091,7 +1120,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenMint(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1134,9 +1163,9 @@ struct TransitionDetailView: View {
     // Find the minting key - for tokens, we need a critical security level key
     // Use the DPPIdentity for minting
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1146,30 +1175,32 @@ struct TransitionDetailView: View {
     let signer: OpaquePointer
 
     // Try owner purpose first
-    let ownerResult = try? await MainActor.run {
-      try keyManager.createSignerForKey(
+    let ownerResult: (IdentityPublicKey, SendableOpaquePointer)? = try? await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .owner,
         minimumSecurityLevel: .critical,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
 
-    if let (key, sig) = ownerResult {
+    if let (key, sigBox) = ownerResult {
       mintingKey = key
-      signer = sig
+      signer = sigBox.pointer
     } else {
       // Fall back to authentication
-      let (key, sig) = try await MainActor.run {
-        try keyManager.createSignerForKey(
+      let (key, sigBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+        let (k, s) = try keyManager.createSignerForKey(
           for: dppIdentity,
           purpose: .authentication,
           minimumSecurityLevel: .critical,
           preferCritical: true
         )
+        return (k, SendableOpaquePointer(s))
       }
       mintingKey = key
-      signer = sig
+      signer = sigBox.pointer
     }
     defer {
       keyManager.destroySigner(signer)
@@ -1194,7 +1225,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenBurn(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1233,9 +1264,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for burning
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1245,30 +1276,32 @@ struct TransitionDetailView: View {
     let signer: OpaquePointer
 
     // Try owner purpose first
-    let ownerResult = try? await MainActor.run {
-      try keyManager.createSignerForKey(
+    let ownerResult: (IdentityPublicKey, SendableOpaquePointer)? = try? await MainActor.run {
+      let (k, s) = try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .owner,
         minimumSecurityLevel: .critical,
         preferCritical: true
       )
+      return (k, SendableOpaquePointer(s))
     }
 
-    if let (key, sig) = ownerResult {
+    if let (key, sigBox) = ownerResult {
       burningKey = key
-      signer = sig
+      signer = sigBox.pointer
     } else {
       // Fall back to authentication
-      let (key, sig) = try await MainActor.run {
-        try keyManager.createSignerForKey(
+      let (key, sigBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+        let (k, s) = try keyManager.createSignerForKey(
           for: dppIdentity,
           purpose: .authentication,
           minimumSecurityLevel: .critical,
           preferCritical: true
         )
+        return (k, SendableOpaquePointer(s))
       }
       burningKey = key
-      signer = sig
+      signer = sigBox.pointer
     }
     defer {
       keyManager.destroySigner(signer)
@@ -1290,7 +1323,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenFreeze(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1312,9 +1345,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for freezing
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1341,7 +1374,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenUnfreeze(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1363,9 +1396,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for unfreezing
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1390,7 +1423,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenDestroyFrozenFunds(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1412,9 +1445,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for destroying frozen funds
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1439,7 +1472,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenClaim(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1461,9 +1494,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for claiming
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1490,7 +1523,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenTransfer(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1533,9 +1566,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for transfer
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1563,7 +1596,7 @@ struct TransitionDetailView: View {
 
   private func executeTokenSetPrice(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1588,9 +1621,9 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for setting price
     let dppIdentity = DPPIdentity(
-      id: identity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
-      balance: identity.balance,
+      id: identity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: identity.balance),
       revision: 0
     )
 
@@ -1618,7 +1651,7 @@ struct TransitionDetailView: View {
 
   private func executeDataContractCreate(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1696,17 +1729,19 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for contract creation
     let dppIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createContractSigner(for: dppIdentity)
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createContractSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1729,7 +1764,7 @@ struct TransitionDetailView: View {
     }
 
     guard !selectedIdentityId.isEmpty,
-          let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
       throw SDKError.invalidParameter("No identity selected")
     }
 
@@ -1770,17 +1805,19 @@ struct TransitionDetailView: View {
 
     // Use the DPPIdentity for contract update
     let dppIdentity = DPPIdentity(
-      id: ownerIdentity.id,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
-      balance: ownerIdentity.balance,
+      id: ownerIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: ownerIdentity.balance),
       revision: 0
     )
 
     // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signer) = try await MainActor.run {
-      try keyManager.createContractSigner(for: dppIdentity)
+    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
+      let (k, s) = try keyManager.createContractSigner(for: dppIdentity)
+      return (k, SendableOpaquePointer(s))
     }
+    let signer = signerBox.pointer
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1940,17 +1977,6 @@ struct TransitionDetailView: View {
   }
 }
 
-// Extension for IdentityModel display name
-extension IdentityModel {
-  var displayName: String {
-    if let alias = alias, !alias.isEmpty {
-      return alias
-    } else if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
-      return mainDpnsName
-    } else if let dpnsName = dpnsName, !dpnsName.isEmpty {
-      return dpnsName
-    } else {
-      return String(idHexString.prefix(12)) + "..."
-    }
-  }
-}
+// IdentityModel's `displayName` extension is gone — the same
+// helper now lives on `PersistentIdentity` (see
+// `Sources/SwiftDashSDK/Persistence/Models/PersistentIdentity.swift`).

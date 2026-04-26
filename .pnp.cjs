@@ -43,10 +43,6 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/dpns-contract"\
     },\
     {\
-      "name": "@dashevo/feature-flags-contract",\
-      "reference": "workspace:packages/feature-flags-contract"\
-    },\
-    {\
       "name": "@dashevo/dapi-client",\
       "reference": "workspace:packages/js-dapi-client"\
     },\
@@ -119,7 +115,6 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/dashpay-contract", ["workspace:packages/dashpay-contract"]],\
     ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],\
     ["@dashevo/evo-sdk", ["workspace:packages/js-evo-sdk"]],\
-    ["@dashevo/feature-flags-contract", ["workspace:packages/feature-flags-contract"]],\
     ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],\
     ["@dashevo/keyword-search-contract", ["workspace:packages/keyword-search-contract"]],\
     ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],\
@@ -2826,22 +2821,6 @@ const RAW_RUNTIME_STATE =
         "linkType": "SOFT"\
       }]\
     ]],\
-    ["@dashevo/feature-flags-contract", [\
-      ["workspace:packages/feature-flags-contract", {\
-        "packageLocation": "./packages/feature-flags-contract/",\
-        "packageDependencies": [\
-          ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
-          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
-          ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
-          ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
-          ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
-        ],\
-        "linkType": "SOFT"\
-      }]\
-    ]],\
     ["@dashevo/grpc-common", [\
       ["workspace:packages/js-grpc-common", {\
         "packageLocation": "./packages/js-grpc-common/",\
@@ -2931,7 +2910,6 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-          ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\

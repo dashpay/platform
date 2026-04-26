@@ -128,7 +128,6 @@ impl From<Network> for NetworkWasm {
             Network::Testnet => NetworkWasm::Testnet,
             Network::Devnet => NetworkWasm::Devnet,
             Network::Regtest => NetworkWasm::Regtest,
-            _ => unreachable!("Unknown network variant"),
         }
     }
 }

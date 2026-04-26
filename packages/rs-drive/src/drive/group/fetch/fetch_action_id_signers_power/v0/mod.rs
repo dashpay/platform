@@ -132,3 +132,75 @@ impl Drive {
         Ok(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn fetch_action_id_signers_power_v0_nonexistent_contract_returns_none() {
+        // Without a contract inserted, the optional sum-tree lookup returns None.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let power = drive
+            .fetch_action_id_signers_power_v0(
+                Identifier::random(),
+                0,
+                Identifier::random(),
+                None,
+                platform_version,
+            )
+            .expect("fetch on nonexistent contract should return Ok(None)");
+
+        assert!(power.is_none());
+    }
+
+    #[test]
+    fn fetch_action_id_signers_power_and_add_operations_v0_stateless_branch() {
+        // estimate_costs_only=true exercises the StatelessDirectQuery branch.
+        // In stateless mode grove may synthesise a default sum value — we just
+        // confirm the call does not panic and does populate drive_operations.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let _ = drive.fetch_action_id_signers_power_and_add_operations_v0(
+            Identifier::random(),
+            0,
+            Identifier::random(),
+            true,
+            None,
+            &mut ops,
+            platform_version,
+        );
+        assert!(
+            !ops.is_empty(),
+            "stateless branch should record a cost operation"
+        );
+    }
+
+    #[test]
+    fn fetch_action_id_signers_power_and_add_operations_v0_stateful_branch() {
+        // estimate_costs_only=false -> stateful branch; no data present so None.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let power = drive
+            .fetch_action_id_signers_power_and_add_operations_v0(
+                Identifier::random(),
+                0,
+                Identifier::random(),
+                false,
+                None,
+                &mut ops,
+                platform_version,
+            )
+            .expect("stateful fetch must succeed");
+
+        assert!(power.is_none());
+    }
+}

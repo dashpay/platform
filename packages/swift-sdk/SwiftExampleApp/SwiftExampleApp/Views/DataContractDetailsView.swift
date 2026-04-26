@@ -245,9 +245,9 @@ struct InfoRow: View {
     init(label: String, value: Date, style: Text.DateStyle) {
         self.label = label
         if style == .date {
-            self.value = value.formatted(date: .abbreviated, time: .omitted)
+            self.value = AppDate.formatted(value, dateStyle: .abbreviated, timeStyle: .omitted)
         } else {
-            self.value = value.formatted(.relative(presentation: .named))
+            self.value = AppDate.relative(value)
         }
         self.font = .body
         self.truncate = false
@@ -401,7 +401,8 @@ struct ShareSheet: UIViewControllerRepresentable {
         contract: PersistentDataContract(
             id: Data(),
             name: "Sample Contract",
-            serializedContract: Data()
+            serializedContract: Data(),
+            network: .testnet
         )
     )
 }

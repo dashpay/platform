@@ -394,6 +394,124 @@ mod tests {
         );
     }
 
+    /// ContextProvider that reports a failure from get_quorum_public_key.
+    struct ErroringProvider;
+
+    impl ContextProvider for ErroringProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _pv: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+        fn get_token_configuration(
+            &self,
+            _id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+        fn get_quorum_public_key(
+            &self,
+            _qt: u32,
+            _qh: [u8; 32],
+            _h: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "simulated provider failure".to_string(),
+            ))
+        }
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// When the provider fails to return a quorum public key, the error must
+    /// propagate (wrapped into Error::ContextProviderError) rather than panic.
+    #[test]
+    fn test_verify_tenderdash_proof_provider_error_propagates() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32],
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+
+        let metadata = test_metadata();
+        let provider = ErroringProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected provider error to propagate");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("simulated provider failure"),
+            "error should contain provider message, got: {err_msg}"
+        );
+    }
+
+    /// A provider that returns 48 zero-bytes as the "public key" causes the
+    /// `PublicKey::try_from` step to fail, producing `InvalidPublicKey`.
+    #[test]
+    fn test_verify_tenderdash_proof_invalid_public_key() {
+        // Define a short-lived provider that returns an all-zeros 48-byte key
+        // (not a valid BLS point).
+        struct BadKeyProvider;
+        impl ContextProvider for BadKeyProvider {
+            fn get_data_contract(
+                &self,
+                _id: &Identifier,
+                _pv: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_token_configuration(
+                &self,
+                _id: &Identifier,
+            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_quorum_public_key(
+                &self,
+                _qt: u32,
+                _qh: [u8; 32],
+                _h: u32,
+            ) -> Result<[u8; 48], ContextProviderError> {
+                Ok([0u8; 48])
+            }
+            fn get_platform_activation_height(
+                &self,
+            ) -> Result<CoreBlockHeight, ContextProviderError> {
+                Ok(1)
+            }
+        }
+
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32],
+            signature: vec![1u8; 96], // non-zero to skip empty check
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+        let metadata = test_metadata();
+        let provider = BadKeyProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected InvalidPublicKey");
+        // `PublicKey::try_from([0u8; 48])` deterministically fails in the
+        // BLS12-381 library (the infinity/identity encoding is a `0xC0` prefix,
+        // not all-zeros), so this must map to `Error::InvalidPublicKey` and
+        // cannot fall through to signature verification. The signature here is
+        // `vec![1u8; 96]` (non-zero), so the "empty signature" branch is also
+        // unreachable.
+        assert!(
+            matches!(&err, Error::InvalidPublicKey { .. }),
+            "expected InvalidPublicKey, got: {err}"
+        );
+    }
+
     /// A `Proof` with 96 zero-byte signature that reaches
     /// `verify_signature_digest` through `verify_tenderdash_proof` must
     /// trigger the "empty signature" early-return error.

@@ -137,6 +137,7 @@ dash-sdk-features = [
   "client",
   "platform-value-cbor",
   "core_rpc_client",
+  "core_key_wallet",
 ]
 all_features_without_client = [
   "json-conversion",

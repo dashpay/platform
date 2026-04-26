@@ -1308,4 +1308,149 @@ mod tests {
             Error::Drive(DriveError::InvalidDeletionOfDocumentThatKeepsHistory(_))
         ));
     }
+
+    // ---------- Error-path tests (added for coverage) ----------
+
+    #[test]
+    fn test_delete_document_for_contract_id_nonexistent_contract_returns_error() {
+        // `delete_document_for_contract_id` resolves the contract by id. A random
+        // id that does not exist in the drive must surface as
+        // DocumentError::DataContractNotFound.
+        use crate::error::document::DocumentError;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nonexistent_contract_id = Identifier::from(rand::thread_rng().gen::<[u8; 32]>());
+        let random_document_id = Identifier::random();
+
+        let err = drive
+            .delete_document_for_contract_id(
+                random_document_id,
+                nonexistent_contract_id,
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected delete_document_for_contract_id with bad contract id to fail");
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_nonexistent_document_type_returns_error() {
+        // `delete_document_for_contract` must surface an error if the document
+        // type name is not present on the contract (hits
+        // DataContract::document_type_for_name `?` error branch).
+        let (drive, contract) = setup_dashpay("delete-bad-doc-type", true);
+        let platform_version = PlatformVersion::latest();
+
+        let random_document_id = Identifier::random();
+
+        let err = drive
+            .delete_document_for_contract(
+                random_document_id,
+                &contract,
+                "not_a_real_document_type",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected delete_document_for_contract with bad type to fail");
+
+        // Should NOT be a "contract not found" error — the contract exists.
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a document-type error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_id_with_named_type_operations_bad_contract() {
+        // Exercises the pub-facing
+        // `delete_document_for_contract_id_with_named_type_operations` variant
+        // which has its own DataContractNotFound error branch (via the
+        // `let Some(...) = ... else { return Err(...); }` pattern).
+        use crate::error::document::DocumentError;
+        use grovedb::batch::KeyInfoPath;
+        use grovedb::EstimatedLayerInformation;
+        use std::collections::HashMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).unwrap();
+
+        let nonexistent_contract_id = Identifier::from(rand::thread_rng().gen::<[u8; 32]>());
+        let random_document_id = Identifier::random();
+
+        let mut estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        > = None;
+
+        let err = drive
+            .delete_document_for_contract_id_with_named_type_operations(
+                random_document_id,
+                nonexistent_contract_id,
+                "profile",
+                &epoch,
+                None,
+                &mut estimated_costs_only_with_layer_info,
+                None,
+                platform_version,
+            )
+            .expect_err(
+                "expected delete_document_for_contract_id_with_named_type_operations to fail",
+            );
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_delete_nonexistent_document_without_apply_estimation_costs() {
+        // Delete a nonexistent document with apply=false to exercise the
+        // estimation-costs branch (different control flow than the apply=true
+        // branch already covered).
+        let (drive, contract) = setup_dashpay("delete-nonexist-estimate", true);
+        let platform_version = PlatformVersion::latest();
+
+        let document_id = Identifier::random();
+
+        // With apply=false the code takes the estimated_costs_only_with_layer_info
+        // = Some(HashMap::new()) branch. The document does not exist, so we
+        // expect an error, but a different one than the stateful path.
+        let result = drive.delete_document_for_contract(
+            document_id,
+            &contract,
+            "profile",
+            BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+        );
+
+        // The estimation-costs branch (apply=false) uses fake cost estimates
+        // instead of real grove operations, so it succeeds whether or not
+        // the document actually exists — what matters is that the branch is
+        // exercised end-to-end and produces a non-zero fee estimate.
+        let fees = result.expect("estimation path should succeed for nonexistent document");
+        assert!(
+            fees.processing_fee > 0 || fees.storage_fee > 0,
+            "expected non-zero fee estimate from estimation path, got {fees:?}"
+        );
+    }
 }

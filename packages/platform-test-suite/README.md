@@ -49,8 +49,6 @@ Usage: test <seed> [options]
               --dpns-tld-identity-private-key=private_key   - top level identity private key
               --dpns-tld-identity-id=tld_identity_id        - top level identity id
               --dpns-contract-id=tld_contract_id            - dpns contract id
-              --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
-              --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
               --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
               --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
   -t          --timeout                                     - test timeout in milliseconds
@@ -89,8 +87,6 @@ Usage: test <seed> [options]
               --dpns-tld-identity-private-key=private_key   - top level identity private key
               --dpns-tld-identity-id=tld_identity_id        - top level identity id
               --dpns-contract-id=tld_contract_id            - dpns contract id
-              --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
-              --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
               --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
               --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
   -t          --timeout                                     - test timeout in milliseconds

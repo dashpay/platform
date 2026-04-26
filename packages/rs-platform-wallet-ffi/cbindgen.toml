@@ -8,11 +8,21 @@ include_version = true
 namespaces = []
 using_namespaces = []
 sys_includes = ["stdint.h", "stdbool.h"]
-includes = ["../key-wallet-ffi/key-wallet-ffi.h"]
+includes = []
 no_includes = false
 cpp_compat = true
 documentation = true
 documentation_style = "c99"
+
+# Forward-declare external Rust types referenced opaquely in this
+# crate's FFI signatures. cbindgen cannot introspect external crates,
+# so without this injection the generated header references `Sdk *`
+# with no type declaration, causing the Swift build to fail with
+# `unknown type name 'Sdk'`. The build_ios.sh post-processor expands
+# these forward declarations into `typedef struct X { uint8_t _opaque; } X;`.
+after_includes = """
+typedef struct Sdk Sdk;
+"""
 
 [defines]
 
@@ -21,6 +31,11 @@ include = ["platform_wallet_*", "identity_manager_*", "managed_identity_*", "con
 exclude = []
 prefix = ""
 item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]
+
+[export.rename]
+"Handle" = "platform_wallet_handle_t"
+"PlatformWalletFFIError" = "platform_wallet_error_t"
+"PlatformWalletFFIResult" = "platform_wallet_result_t"
 
 [fn]
 args = "horizontal"

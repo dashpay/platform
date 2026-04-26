@@ -3,7 +3,7 @@ import SwiftData
 import SwiftDashSDK
 
 struct LocalDataContractsView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
+    @EnvironmentObject var platformState: AppState
     @Query(sort: \PersistentDataContract.lastAccessedAt, order: .reverse)
     private var dataContracts: [PersistentDataContract]
 
@@ -54,7 +54,7 @@ struct LocalDataContractsView: View {
         }
         .sheet(isPresented: $showingLoadContract) {
             LoadDataContractView(isLoading: $isLoading)
-                .environmentObject(unifiedState)
+                .environmentObject(platformState)
                 .environment(\.modelContext, modelContext)
         }
         .alert("Error", isPresented: $showError) {
@@ -142,7 +142,7 @@ struct DataContractRow: View {
 }
 
 struct LoadDataContractView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
+    @EnvironmentObject var platformState: AppState
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @Binding var isLoading: Bool
@@ -170,7 +170,7 @@ struct LoadDataContractView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(footer: Text("Connected to: \(unifiedState.platformState.currentNetwork.rawValue)")) {
+                Section(footer: Text("Connected to: \(platformState.currentNetwork.displayName)")) {
                     EmptyView()
                 }
 
@@ -193,7 +193,7 @@ struct LoadDataContractView: View {
                         .disabled(isLoading)
 
                     if showExampleContracts {
-                        Section(header: Text("Common System Contracts (\(unifiedState.platformState.currentNetwork.rawValue))")) {
+                        Section(header: Text("Common System Contracts (\(platformState.currentNetwork.displayName))")) {
                             ForEach(exampleContracts, id: \.1) { example in
                                 Button(action: {
                                     contractId = example.1
@@ -286,7 +286,7 @@ struct LoadDataContractView: View {
     }
 
     private func loadContract() async {
-        guard let sdk = unifiedState.sdk else {
+        guard let sdk = platformState.sdk else {
             errorMessage = "SDK not initialized"
             showError = true
             return
@@ -451,7 +451,8 @@ struct LoadDataContractView: View {
             let persistentContract = PersistentDataContract(
                 id: contractIdData,
                 name: finalName,
-                serializedContract: serializedContract
+                serializedContract: serializedContract,
+                network: platformState.currentNetwork
             )
 
             // Add the binary serialization if available
@@ -480,7 +481,7 @@ struct LoadDataContractView: View {
             await MainActor.run {
                 // Provide more helpful error messages
                 if error.localizedDescription.contains("Data contract not found") {
-                    errorMessage = "Contract not found on \(unifiedState.platformState.currentNetwork.rawValue). This contract may exist on a different network or the ID may be incorrect."
+                    errorMessage = "Contract not found on \(platformState.currentNetwork.displayName). This contract may exist on a different network or the ID may be incorrect."
                 } else {
                     errorMessage = "Failed to load contract: \(error.localizedDescription)"
                 }
@@ -494,6 +495,6 @@ struct LoadDataContractView: View {
 #Preview {
     NavigationStack {
         LocalDataContractsView()
-            .environmentObject(UnifiedAppState())
+            .environmentObject(AppState())
     }
 }

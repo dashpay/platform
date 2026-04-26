@@ -92,7 +92,7 @@ mod tests {
         );
 
         // Verify the boolean field
-        assert_eq!(json["frozen"].as_bool().unwrap(), true);
+        assert!(json["frozen"].as_bool().unwrap());
 
         // round-trip
         let restored = IdentityTokenInfo::from_json(json).expect("from_json should succeed");

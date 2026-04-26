@@ -421,4 +421,57 @@ mod test {
         .expect("should work");
         assert_eq!(t, restored);
     }
+
+    #[test]
+    fn test_to_object_skip_signature_removes_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_cleaned_object_skip_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_canonical_cleaned_object_skip_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_canonical_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_pooling_roundtrip_never() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let mut t = make_withdrawal_v0();
+        t.pooling = Pooling::Never;
+        let obj = t.to_object(false).expect("to_object");
+        let restored =
+            super::IdentityCreditWithdrawalTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                .expect("from_object");
+        assert_eq!(restored.pooling, Pooling::Never);
+    }
+
+    #[test]
+    fn test_pooling_roundtrip_standard() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let mut t = make_withdrawal_v0();
+        t.pooling = Pooling::Standard;
+        let obj = t.to_object(false).expect("to_object");
+        let restored =
+            super::IdentityCreditWithdrawalTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                .expect("from_object");
+        assert_eq!(restored.pooling, Pooling::Standard);
+    }
 }

@@ -60,7 +60,8 @@ final class SDKMethodTests: XCTestCase {
       let signerResult = key.withUnsafeBytes { keyBytes in
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key.count)
+          UInt(key.count),
+          DashSDKNetwork(rawValue: 1)
         )
       }
 

@@ -27,7 +27,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -52,7 +52,8 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
                     signer,
                     user_fee_increase,
                     platform_version,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer"
