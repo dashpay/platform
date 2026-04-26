@@ -4,13 +4,29 @@ use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::*;
 use dpp::address_funds::PlatformAddress;
+use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use super::runtime;
 
 /// Fund platform addresses from a Core L1 asset lock.
 ///
 /// `asset_lock_proof_bytes` is the bincode-serialized `AssetLockProof`.
-/// `private_key_bytes` must point to exactly 32 bytes.
+/// `private_key_bytes` must point to exactly 32 bytes — this is the
+/// asset-lock private key derived from the Core funding flow, used to
+/// authorize the asset-lock contribution itself. It is unrelated to
+/// the platform-address signer.
+///
+/// `signer_address_handle` is a `*mut SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` (e.g. via `KeychainSigner.handle`)
+/// and is consumed as `Signer<PlatformAddress>` for any
+/// previously-funded input address present in `addresses` (entries
+/// with `has_balance = true`). Even when the call only carries the
+/// freshly-locked output (the single `has_balance = false` entry),
+/// the signer slot is still required so the SDK can resolve the
+/// trait bound — pass any valid handle (typically the wallet's
+/// `KeychainSigner.handle`). The caller retains ownership; this
+/// function does NOT destroy it.
+///
 /// Exactly one entry in `addresses` must have `has_balance = false`.
 ///
 /// Free result with `platform_address_wallet_free_changeset`.
@@ -26,6 +42,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
     private_key_bytes: *const u8,
     fee_strategy: *const FeeStrategyStepFFI,
     fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -34,6 +51,15 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
         || asset_lock_proof_bytes.is_null()
         || private_key_bytes.is_null()
     {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    if signer_address_handle.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "signer_address_handle is null",
+            );
+        }
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
@@ -106,6 +132,10 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
+    // SAFETY: caller guarantees `signer_address_handle` is a valid,
+    // non-destroyed handle that outlives this call.
+    let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
+
     PLATFORM_ADDRESS_WALLET_STORAGE
         .with_item(handle, |wallet| {
             match runtime().block_on(wallet.fund_from_asset_lock(
@@ -114,6 +144,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
                 asset_lock_proof,
                 private_key,
                 fee,
+                address_signer,
             )) {
                 Ok(changeset) => {
                     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);

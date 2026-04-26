@@ -4,6 +4,7 @@ use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dashcore::PrivateKey;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
 use dpp::prelude::AssetLockProof;
 use key_wallet::PlatformP2PKHAddress;
 use std::collections::BTreeMap;
@@ -21,13 +22,17 @@ impl PlatformAddressWallet {
     /// * `asset_lock_proof` - Proof of the asset lock transaction on Core chain.
     /// * `asset_lock_private_key` - Private key corresponding to the asset lock.
     /// * `fee_strategy` - How the fee should be deducted.
-    pub async fn fund_from_asset_lock(
+    /// * `address_signer` - Signs each previously-funded input address's
+    ///   contribution. The wallet struct itself carries no key material.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn fund_from_asset_lock<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
         addresses: BTreeMap<PlatformAddress, Option<Credits>>,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: PrivateKey,
         fee_strategy: AddressFundsFeeStrategy,
+        address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
         if addresses.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
@@ -84,7 +89,7 @@ impl PlatformAddressWallet {
                 asset_lock_proof,
                 asset_lock_private_key,
                 fee_strategy,
-                self,
+                address_signer,
                 None,
             )
             .await?;

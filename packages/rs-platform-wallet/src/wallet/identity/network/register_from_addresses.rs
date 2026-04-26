@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
@@ -83,7 +84,7 @@ impl IdentityWallet {
         // Route through the auto-fetching SDK variant so the caller
         // doesn't need to maintain its own nonce cache — Platform is
         // always the source of truth at submit time.
-        let (identity, _address_infos) = identity
+        let (mut registered_identity, _address_infos) = identity
             .put_with_address_funding_fetching_nonces(
                 &self.sdk,
                 inputs,
@@ -99,6 +100,24 @@ impl IdentityWallet {
                     e
                 ))
             })?;
+
+        // The SDK return path for `put_with_address_funding_fetching_nonces`
+        // can hand back an `Identity` whose `public_keys` map is empty
+        // (the pre-broadcast stub doesn't echo the registered keys
+        // back). The caller-built placeholder we just submitted IS the
+        // canonical record of what the registration transition put on
+        // chain — its `public_keys` was serialized into the state
+        // transition that Platform just accepted. Copy it onto the
+        // returned identity so the in-memory `ManagedIdentity` (and
+        // every downstream auth-key check, e.g. the DPNS
+        // HIGH/CRITICAL gate) sees the same set of keys without
+        // waiting for the next identity-fetch round to repopulate
+        // them. The state transition itself signed those exact keys,
+        // so id (`Identifier`) reproducibility is preserved.
+        if registered_identity.public_keys().is_empty() {
+            registered_identity.set_public_keys(identity.public_keys().clone());
+        }
+        let identity = registered_identity;
 
         // Step 3: Add the identity to the local manager (with its HD
         // index) so subsequent operations route through it.

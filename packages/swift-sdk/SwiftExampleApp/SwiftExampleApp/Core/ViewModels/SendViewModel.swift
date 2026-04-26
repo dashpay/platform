@@ -203,12 +203,16 @@ class SendViewModel: ObservableObject {
                 // keeps the predicate well-formed when the wallet row
                 // hasn't had its network stamped yet — a wallet in
                 // that state has no identities to find anyway.
-                let walletNetwork = wallet.network ?? .testnet
+                //
+                // Filter against `networkRaw` (the Int-backed shadow
+                // field) because Foundation's predicate engine can't
+                // capture `AppNetwork`.
+                let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
                 let amountThreshold = Int64(bitPattern: amount)
                 let descriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate<PersistentIdentity> { identity in
                         identity.wallet?.walletId == walletId &&
-                        identity.network == walletNetwork &&
+                        identity.networkRaw == walletNetworkRaw &&
                         identity.balance >= amountThreshold
                     }
                 )

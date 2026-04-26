@@ -24,6 +24,35 @@ use zeroize::Zeroizing;
 
 use crate::error::*;
 
+/// Parse a BIP-39 mnemonic against every supported wordlist in turn,
+/// returning the first language that yields a valid mnemonic.
+///
+/// `key_wallet::Mnemonic` only exposes language-tagged constructors,
+/// so user-mnemonic FFI entry points must walk the language list
+/// themselves to avoid rejecting a French / Japanese / etc. phrase as
+/// "invalid English". BIP-39 wordlists are mutually exclusive per
+/// phrase (per the spec), so the first match is unambiguous.
+fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
+    const LANGUAGES: [Language; 10] = [
+        Language::English,
+        Language::Spanish,
+        Language::French,
+        Language::Italian,
+        Language::Japanese,
+        Language::Korean,
+        Language::ChineseSimplified,
+        Language::ChineseTraditional,
+        Language::Czech,
+        Language::Portuguese,
+    ];
+    for lang in LANGUAGES {
+        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
+            return Ok(m);
+        }
+    }
+    Err("phrase does not match any supported BIP-39 wordlist")
+}
+
 /// Derive a 32-byte ECDSA private key at a BIP-32 derivation path from
 /// a mnemonic phrase.
 ///
@@ -160,7 +189,11 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
     };
 
     // ---- Derive -------------------------------------------------------------
-    let mnemonic_obj = match Mnemonic::from_phrase(mnemonic_str, Language::English) {
+    // Auto-detect the BIP-39 language so non-English phrases (Spanish,
+    // French, Italian, Japanese, Korean, Chinese {Simplified,
+    // Traditional}, Czech, Portuguese) are accepted instead of being
+    // rejected as "invalid English".
+    let mnemonic_obj = match parse_mnemonic_any_language(mnemonic_str) {
         Ok(m) => m,
         Err(e) => {
             if !out_error.is_null() {

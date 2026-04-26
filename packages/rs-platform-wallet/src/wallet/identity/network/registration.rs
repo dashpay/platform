@@ -40,6 +40,20 @@ impl IdentityWallet {
     /// Convenience wrapper that uses `FundWithWallet` funding. For other
     /// funding methods, use [`register_identity_with_funding`](Self::register_identity_with_funding).
     ///
+    /// # Superseded — prefer the `_with_external_signer` flow
+    ///
+    /// This convenience wrapper threads down to
+    /// [`Self::register_identity_with_funding`] which constructs an
+    /// internal `IdentitySigner`. New callers should build their own
+    /// `Identity` placeholder + funding inputs and call
+    /// [`Self::register_identity_with_funding_external_signer`]
+    /// (asset-lock-funded) or
+    /// [`Self::register_from_addresses`] (DIP-17 funded) directly,
+    /// passing an external `&S: Signer<IdentityPublicKey>`. The iOS
+    /// platform-wallet FFI uses
+    /// [`crate::register_identity_with_signer`-style](https://) entry
+    /// points for both.
+    ///
     /// # Arguments
     ///
     /// * `amount_duffs` - Amount of Dash (in duffs) to lock for the identity's
@@ -64,6 +78,11 @@ impl IdentityWallet {
     }
 
     /// Register a new identity on Platform with a specified funding method.
+    ///
+    /// # Superseded — prefer [`Self::register_identity_with_funding_external_signer`]
+    ///
+    /// Same `IdentitySigner` deprecation rationale as
+    /// [`Self::register_identity`].
     ///
     /// High-level flow:
     /// 1. Obtain an asset lock proof according to the chosen `funding` method.
@@ -308,6 +327,172 @@ impl IdentityWallet {
                     // KeyID == key_index for identities this client
                     // registers (registration loop uses `key_index` as
                     // both the DIP-9 suffix and the DPP KeyID).
+                    let key_index = key_id;
+                    managed.add_key(
+                        pub_key,
+                        Some((wallet_id, identity_index, key_index)),
+                        &self.persister,
+                    );
+                }
+            }
+        }
+
+        Ok(identity)
+    }
+
+    /// Register a new asset-lock-funded identity on Platform using an
+    /// externally-supplied signer + caller-derived authentication keys.
+    ///
+    /// Mirrors [`Self::register_identity_with_funding`] but with the
+    /// `IdentitySigner` replaced by `&S: Signer<IdentityPublicKey>`
+    /// and key derivation pushed to the caller. The caller must
+    /// provide:
+    ///
+    /// - `funding`: same `IdentityFundingMethod` as the legacy variant.
+    /// - `identity_index`: BIP-9 identity index.
+    /// - `keys_map`: the auth pubkeys the new identity will be created
+    ///   with. Caller must derive these from the wallet seed (or from
+    ///   iOS Keychain via `dash_sdk_derive_identity_keys_from_mnemonic`)
+    ///   and persist the matching private keys to whatever store the
+    ///   `signer` reads from. The first key (id=0) MUST be MASTER —
+    ///   the asset-lock-spend signature on the IdentityCreate
+    ///   transition is keyed off it.
+    /// - `signer`: external signer for the IdentityCreate transition's
+    ///   per-key signatures.
+    ///
+    /// On success the new identity is added to the local manager and
+    /// each key is recorded with its derivation breadcrumb for the
+    /// persister callback (same bookkeeping as the legacy variant).
+    /// IS->CL fallback is retained.
+    pub async fn register_identity_with_funding_external_signer<S>(
+        &self,
+        funding: IdentityFundingMethod,
+        identity_index: u32,
+        keys_map: BTreeMap<u32, IdentityPublicKey>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Identity, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        if keys_map.is_empty() {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "keys_map must contain at least one identity public key".to_string(),
+            ));
+        }
+
+        // Step 1: obtain asset lock proof + private key.
+        let (asset_lock_proof, asset_lock_private_key) = match funding {
+            IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
+            IdentityFundingMethod::FundWithWallet { amount_duffs } => {
+                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+                let (proof, key, _out_point) = self
+                    .asset_locks
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        0,
+                        AssetLockFundingType::IdentityRegistration,
+                        identity_index,
+                    )
+                    .await?;
+                (proof, key)
+            }
+        };
+
+        // Step 2: build the placeholder identity from caller-supplied keys.
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::default(),
+            public_keys: keys_map,
+            balance: 0,
+            revision: 0,
+        });
+
+        // Step 3: submit, with IS->CL fallback on InstantSend rejection.
+        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
+
+        let identity = match identity
+            .put_to_platform_and_wait_for_response(
+                &self.sdk,
+                asset_lock_proof,
+                &asset_lock_private_key,
+                signer,
+                settings,
+            )
+            .await
+        {
+            Ok(identity) => identity,
+            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
+                if let Some(out_point) = proof_out_point {
+                    tracing::warn!(
+                        "IS-lock proof rejected for identity registration (tx {}, external signer), \
+                         retrying with ChainLock proof",
+                        out_point.txid
+                    );
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
+                        .await?;
+                    identity
+                        .put_to_platform_and_wait_for_response(
+                            &self.sdk,
+                            chain_proof,
+                            &asset_lock_private_key,
+                            signer,
+                            settings,
+                        )
+                        .await
+                        .map_err(|e| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Failed to register identity on Platform (ChainLock retry): {}",
+                                e
+                            ))
+                        })?
+                } else {
+                    return Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to register identity on Platform: {}",
+                        e
+                    )));
+                }
+            }
+            Err(e) => {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register identity on Platform: {}",
+                    e
+                )));
+            }
+        };
+
+        // Step 4: add to local manager + record key derivation
+        // breadcrumbs (mirrors the legacy variant exactly so the
+        // persister callback fires the same way regardless of which
+        // path produced the identity).
+        {
+            use dpp::identity::accessors::IdentityGettersV0;
+
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            info.identity_manager.add_identity(
+                identity.clone(),
+                identity_index,
+                self.wallet_id,
+                &self.persister,
+            )?;
+
+            let wallet_id = self.wallet_id;
+            let identity_id = identity.id();
+            let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
+                .public_keys()
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect();
+
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                managed.wallet_id = Some(wallet_id);
+                for (key_id, pub_key) in public_keys {
                     let key_index = key_id;
                     managed.add_key(
                         pub_key,

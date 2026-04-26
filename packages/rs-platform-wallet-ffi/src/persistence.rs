@@ -35,13 +35,15 @@ use crate::identity_persistence::{
 };
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::wallet_restore_types::{
-    AccountSpecFFI, AccountTypeTagFFI, IdentityRestoreEntryFFI, LoadWalletListFn,
-    LoadWalletListFreeFn, PersistAccountFn, PersistWalletMetadataFn, StandardAccountTypeTagFFI,
-    WalletRestoreEntryFFI,
+    AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
+    LoadWalletListFn, LoadWalletListFreeFn, PersistAccountFn, PersistWalletMetadataFn,
+    StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
-use dpp::identity::Identity;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
 use std::ffi::CStr;
@@ -907,13 +909,15 @@ fn build_wallet_start_state(
 /// The DPP `Identity` is reconstructed from the persisted scalars via
 /// the `IdentityV0` shape — same approach
 /// [`apply_identity_entry`](platform_wallet::IdentityManager::apply_identity_entry)
-/// uses on the changeset replay path. Public keys are NOT pulled in
-/// here; they live in `PersistentPublicKey` rows on the Swift side
-/// and arrive separately via the next `on_persist_identity_keys_fn`
-/// round during sync. Consequence: identities load with empty
-/// `public_keys` until the first sync repopulates them — fine for
-/// surfacing them in `inMemorySummary().identitiesCount` and
-/// `managed_identity()` lookups, signing requires keys to refresh.
+/// uses on the changeset replay path. Public keys are now pulled in
+/// from the `keys` array on each `IdentityRestoreEntryFFI` (assembled
+/// from the per-identity `PersistentPublicKey` rows on the Swift
+/// side), so the restored `Identity.public_keys` map is populated at
+/// load time. An identity with no persisted keys (e.g. an in-flight
+/// registration whose key-persist round hasn't completed) loads with
+/// an empty map and gets refreshed on the next sync round — same
+/// degraded-but-usable behaviour as before this change for that
+/// narrow case.
 fn build_wallet_identity_bucket(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<BTreeMap<u32, ManagedIdentity>, PersistenceError> {
@@ -928,9 +932,10 @@ fn build_wallet_identity_bucket(
 
     for spec in identity_specs {
         let identifier = Identifier::from(spec.identity_id);
+        let public_keys = unsafe { build_identity_public_keys(spec) };
         let identity = Identity::V0(IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::new(),
+            public_keys,
             balance: spec.balance,
             revision: spec.revision,
         });
@@ -957,6 +962,60 @@ fn build_wallet_identity_bucket(
     }
 
     Ok(bucket)
+}
+
+/// Translate the `keys` array hanging off an `IdentityRestoreEntryFFI`
+/// into a `BTreeMap<KeyID, IdentityPublicKey>` ready to drop into
+/// `IdentityV0.public_keys`.
+///
+/// Rows whose `key_type`, `purpose` or `security_level` discriminant
+/// doesn't decode are skipped silently (forward-compatibility with
+/// future enum variants on the Rust side); rows with null `data`
+/// pointers or zero `data_len` are likewise skipped — neither is
+/// recoverable, and the only consequence of skipping is the
+/// auth-key-gate fallback to "fetch from chain on next sync".
+///
+/// # Safety
+///
+/// `spec.keys` must be either null or point at `spec.keys_count`
+/// valid `IdentityKeyRestoreFFI` rows for the duration of the load
+/// callback. Each row's `data` pointer must be either null or point
+/// at `data_len` bytes Swift owns for the same window.
+unsafe fn build_identity_public_keys(
+    spec: &IdentityRestoreEntryFFI,
+) -> BTreeMap<KeyID, IdentityPublicKey> {
+    let mut map: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
+    if spec.keys.is_null() || spec.keys_count == 0 {
+        return map;
+    }
+    let rows: &[IdentityKeyRestoreFFI] = slice::from_raw_parts(spec.keys, spec.keys_count);
+    for row in rows {
+        let Ok(key_type) = KeyType::try_from(row.key_type) else {
+            continue;
+        };
+        let Ok(purpose) = Purpose::try_from(row.purpose) else {
+            continue;
+        };
+        let Ok(security_level) = SecurityLevel::try_from(row.security_level) else {
+            continue;
+        };
+        if row.data.is_null() || row.data_len == 0 {
+            continue;
+        }
+        let bytes: Vec<u8> = slice::from_raw_parts(row.data, row.data_len).to_vec();
+        let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: row.key_id,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            key_type,
+            read_only: row.read_only,
+            data: BinaryData::new(bytes),
+            disabled_at: None,
+        });
+        map.insert(row.key_id, pk);
+    }
+    map
 }
 
 /// Decode a flat `*const *const c_char` array into a `Vec<String>`.

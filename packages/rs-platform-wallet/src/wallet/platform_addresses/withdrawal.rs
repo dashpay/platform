@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
+use dpp::identity::signer::Signer;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
@@ -22,8 +23,13 @@ impl PlatformAddressWallet {
     ///
     /// If `platform_version` is `None`, the latest platform version's fee
     /// schedule is used for fee estimation during auto-selection.
+    ///
+    /// `address_signer` produces ECDSA signatures for the input
+    /// [`PlatformAddress`]es; the wallet struct carries no key material
+    /// itself (see the type-level docs on
+    /// [`PlatformAddressWallet`]).
     #[allow(clippy::too_many_arguments)]
-    pub async fn withdraw(
+    pub async fn withdraw<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
         input_selection: InputSelection,
@@ -31,6 +37,7 @@ impl PlatformAddressWallet {
         core_fee_per_byte: u32,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
+        address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
         // Validate that the output script is a supported type (P2PKH or P2SH).
         if !output_script.is_p2pkh() && !output_script.is_p2sh() {
@@ -56,7 +63,7 @@ impl PlatformAddressWallet {
                         core_fee_per_byte,
                         Pooling::Never,
                         output_script,
-                        self,
+                        address_signer,
                         None,
                     )
                     .await?
@@ -75,7 +82,7 @@ impl PlatformAddressWallet {
                         core_fee_per_byte,
                         Pooling::Never,
                         output_script,
-                        self,
+                        address_signer,
                         None,
                     )
                     .await?
@@ -92,7 +99,7 @@ impl PlatformAddressWallet {
                         core_fee_per_byte,
                         Pooling::Never,
                         output_script,
-                        self,
+                        address_signer,
                         None,
                     )
                     .await?

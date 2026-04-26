@@ -41,6 +41,8 @@
 
 use crate::types::SignerHandle;
 use async_trait::async_trait;
+use dash_sdk::dpp::address_funds::{AddressWitness, PlatformAddress};
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::{IdentityPublicKey, ProtocolError};
@@ -51,6 +53,24 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
+
+/// `key_type` discriminant byte used by the FFI signer trampoline to
+/// indicate that the supplied "pubkey bytes" are actually the 20-byte
+/// hash of a [`PlatformAddress`] (P2PKH).
+///
+/// This sits outside the standard `dpp::identity::KeyType` enum range
+/// (which only uses 0–4: `ECDSA_SECP256K1`, `BLS12_381`, `ECDSA_HASH160`,
+/// `BIP13_SCRIPT_HASH`, `EDDSA_25519_HASH160`). Picking 0xFF guarantees
+/// no collision with any future `KeyType` addition while still fitting
+/// the existing `u8` slot in `SignAsyncCallback` / `CanSignCallback`,
+/// so the same C vtable can serve both `Signer<IdentityPublicKey>` and
+/// `Signer<PlatformAddress>` impls without an ABI change.
+///
+/// The Swift side dispatches on this tag in the trampoline:
+/// `key_type < 5` → look up `PersistentPublicKey` by raw pubkey bytes;
+/// `key_type == 0xFF` → look up `PersistentPlatformAddress` by the
+/// 20-byte address hash. See `KeychainSigner.swift`.
+pub const SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH: u8 = 0xFF;
 
 /// Upper bound on how long the Rust side will wait for an iOS / FFI signer
 /// to invoke its completion callback after `sign_async` is called.
@@ -96,15 +116,38 @@ pub struct SignerVTable {
 /// expected, for things like biometric-gated HSM signing) for the completion
 /// to run on a different thread than `SignAsyncCallback` itself.
 ///
+/// # Wire shape
+///
+/// `pubkey_bytes` / `pubkey_len` carry the **raw** public-key bytes as they
+/// appear in `IdentityPublicKey::data()` (e.g. 33-byte compressed secp256k1
+/// for `ECDSA_SECP256K1`, 20-byte hash for `ECDSA_HASH160`, 48 bytes for
+/// `BLS12_381`, etc.). `key_type` is the `dpp::identity::KeyType`
+/// discriminant byte (see [`KeyType`] in rs-dpp):
+///
+/// | byte | KeyType                 |
+/// |------|-------------------------|
+/// | 0    | `ECDSA_SECP256K1`       |
+/// | 1    | `BLS12_381`             |
+/// | 2    | `ECDSA_HASH160`         |
+/// | 3    | `BIP13_SCRIPT_HASH`     |
+/// | 4    | `EDDSA_25519_HASH160`   |
+///
+/// The two together are sufficient for an FFI signer to look up the
+/// matching private-key handle in its own store (e.g. iOS Keychain keyed
+/// on `PersistentPublicKey.publicKeyData`). This replaces the old
+/// bincode-encoded `IdentityPublicKey` blob, which forced every iOS
+/// signer to depend on the rs-dpp bincode schema.
+///
 /// # Safety
-/// - `key_bytes` / `data` are only valid for the duration of this call.
+/// - `pubkey_bytes` / `data` are only valid for the duration of this call.
 ///   If the implementation needs them after returning, it must copy them.
 /// - `completion_ctx` is opaque; it must be passed verbatim to `completion`.
 /// - `completion` must be called exactly once.
 pub type SignAsyncCallback = unsafe extern "C" fn(
     signer: *const c_void,
-    key_bytes: *const u8,
-    key_len: usize,
+    pubkey_bytes: *const u8,
+    pubkey_len: usize,
+    key_type: u8,
     data: *const u8,
     data_len: usize,
     completion_ctx: *mut c_void,
@@ -136,8 +179,16 @@ pub type SignCompletionCallback = unsafe extern "C" fn(
 );
 
 /// Function pointer type for the synchronous `can_sign_with` callback.
-pub type CanSignCallback =
-    unsafe extern "C" fn(signer: *const c_void, key_bytes: *const u8, key_len: usize) -> bool;
+///
+/// Mirrors [`SignAsyncCallback`]'s key encoding: raw pubkey bytes plus
+/// the `KeyType` discriminant byte, NOT a bincode-encoded
+/// `IdentityPublicKey`.
+pub type CanSignCallback = unsafe extern "C" fn(
+    signer: *const c_void,
+    pubkey_bytes: *const u8,
+    pubkey_len: usize,
+    key_type: u8,
+) -> bool;
 
 /// Optional destructor callback (may be NULL from C).
 pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut c_void)>;
@@ -279,10 +330,12 @@ impl Signer<IdentityPublicKey> for VTableSigner {
             Inner::Callback {
                 signer_ptr, vtable, ..
             } => {
-                // Serialize the public key for the C side.
-                let key_bytes =
-                    bincode::encode_to_vec(identity_public_key, bincode::config::standard())
-                        .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+                // Pass the raw public-key bytes + KeyType discriminant
+                // across the FFI. The iOS side looks up the matching
+                // private key from its own store (Keychain) — it does
+                // not need the full `IdentityPublicKey` shape.
+                let pubkey = identity_public_key.data().as_slice();
+                let key_type_byte = identity_public_key.key_type() as u8;
 
                 // oneshot + leaked `CompletionSlot` — the slot's `AtomicPtr`
                 // makes duplicate C completions a no-op (see `CompletionSlot`).
@@ -299,8 +352,9 @@ impl Signer<IdentityPublicKey> for VTableSigner {
                 unsafe {
                     ((*(*vtable)).sign_async)(
                         *signer_ptr as *const c_void,
-                        key_bytes.as_ptr(),
-                        key_bytes.len(),
+                        pubkey.as_ptr(),
+                        pubkey.len(),
+                        key_type_byte,
                         data.as_ptr(),
                         data.len(),
                         completion_ctx,
@@ -365,19 +419,193 @@ impl Signer<IdentityPublicKey> for VTableSigner {
             Inner::Callback {
                 signer_ptr, vtable, ..
             } => {
+                // Mirror the `sign_async` encoding: raw pubkey bytes +
+                // KeyType byte. iOS does its own SwiftData lookup.
+                let pubkey = identity_public_key.data().as_slice();
+                let key_type_byte = identity_public_key.key_type() as u8;
                 // SAFETY: vtable is non-null for the Callback variant.
                 unsafe {
-                    match bincode::encode_to_vec(identity_public_key, bincode::config::standard()) {
-                        Ok(key_bytes) => ((*(*vtable)).can_sign_with)(
-                            *signer_ptr as *const c_void,
-                            key_bytes.as_ptr(),
-                            key_bytes.len(),
-                        ),
-                        Err(_) => false,
-                    }
+                    ((*(*vtable)).can_sign_with)(
+                        *signer_ptr as *const c_void,
+                        pubkey.as_ptr(),
+                        pubkey.len(),
+                        key_type_byte,
+                    )
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `Signer<PlatformAddress>` impl on the same `VTableSigner`
+// ---------------------------------------------------------------------------
+//
+// `register_from_addresses` (the address-funded identity-creation path)
+// needs to sign two distinct things:
+//
+// 1. The new identity's state-transition keys — handled by the
+//    `Signer<IdentityPublicKey>` impl above.
+// 2. Each input platform address's funding contribution — handled by
+//    this `Signer<PlatformAddress>` impl.
+//
+// The `Signer` trait in `rs-dpp` is generic over `K`, so the same
+// `VTableSigner` struct can satisfy both bounds — the FFI vtable
+// chooses what to do based on the `key_type` discriminant byte:
+// the standard `KeyType` values (0–4) for identity-key signing, and
+// [`SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH`] (0xFF) for address signing.
+// The byte payload across the FFI is the 20-byte address hash, so the
+// Swift side can look up the matching SwiftData
+// `PersistentPlatformAddress` row and resolve a Keychain-stored
+// private key without ever crossing the seed back to Rust.
+//
+// The `Inner::Native` variant intentionally cannot satisfy
+// `Signer<PlatformAddress>` — its inner `Arc<dyn Signer<IdentityPublicKey>>`
+// only signs identity keys. Callers that need address signing must use
+// the `Callback` variant (the iOS production path) or supply a separate
+// signer.
+
+#[async_trait]
+impl Signer<PlatformAddress> for VTableSigner {
+    async fn sign(
+        &self,
+        platform_address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        match &self.inner {
+            Inner::Native(_) => Err(ProtocolError::Generic(
+                "Native VTableSigner variant does not support Signer<PlatformAddress>; \
+                 use a callback-based VTableSigner for platform-address signing"
+                    .to_string(),
+            )),
+            Inner::Callback {
+                signer_ptr, vtable, ..
+            } => {
+                // Extract the 20-byte address hash and ship it across
+                // the FFI under the `0xFF` discriminant.
+                //
+                // P2PKH and P2SH share the same wire shape — the hash
+                // alone is the natural lookup key on the iOS side.
+                // Future watch-only / hardware paths can use the same
+                // tag to fan out further.
+                let hash: &[u8; 20] = match platform_address {
+                    PlatformAddress::P2pkh(h) => h,
+                    PlatformAddress::P2sh(h) => h,
+                };
+
+                let (tx, rx) = oneshot::channel::<SignResult>();
+                let tx_ptr = Box::into_raw(Box::new(tx));
+                let slot = Box::new(CompletionSlot {
+                    sender: AtomicPtr::new(tx_ptr),
+                });
+                let completion_ctx = Box::into_raw(slot) as *mut c_void;
+
+                // SAFETY: vtable is non-null for the Callback variant
+                // by construction; sign_async is required to invoke
+                // `completion` exactly once.
+                unsafe {
+                    ((*(*vtable)).sign_async)(
+                        *signer_ptr as *const c_void,
+                        hash.as_ptr(),
+                        hash.len(),
+                        SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH,
+                        data.as_ptr(),
+                        data.len(),
+                        completion_ctx,
+                        dash_sdk_sign_async_completion,
+                    );
+                }
+
+                match tokio::time::timeout(SIGN_ASYNC_COMPLETION_TIMEOUT, rx).await {
+                    Ok(Ok(Ok(sig))) => Ok(BinaryData::from(sig)),
+                    Ok(Ok(Err(e))) => Err(e),
+                    Ok(Err(_recv_err)) => Err(ProtocolError::Generic(
+                        "Signer completion channel dropped without a result; \
+                         the FFI signer did not call its completion callback"
+                            .to_string(),
+                    )),
+                    Err(_elapsed) => Err(ProtocolError::Generic(format!(
+                        "Signer completion callback not invoked within {:?}; \
+                         the FFI signer is unresponsive",
+                        SIGN_ASYNC_COMPLETION_TIMEOUT
+                    ))),
+                }
+            }
+        }
+    }
+
+    async fn sign_create_witness(
+        &self,
+        platform_address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        // Mirror the existing `Signer<IdentityPublicKey>` behaviour:
+        // wrap the raw signature in a P2PKH witness. P2SH addresses
+        // are not yet supported across the FFI signer path — the
+        // Swift `KeychainSigner` only stores P2PKH key material.
+        let signature = self.sign(platform_address, data).await?;
+        Ok(AddressWitness::P2pkh { signature })
+    }
+
+    fn can_sign_with(&self, platform_address: &PlatformAddress) -> bool {
+        match &self.inner {
+            Inner::Native(_) => false,
+            Inner::Callback {
+                signer_ptr, vtable, ..
+            } => {
+                let hash: &[u8; 20] = match platform_address {
+                    PlatformAddress::P2pkh(h) => h,
+                    PlatformAddress::P2sh(h) => h,
+                };
+                // SAFETY: vtable is non-null for the Callback variant.
+                unsafe {
+                    ((*(*vtable)).can_sign_with)(
+                        *signer_ptr as *const c_void,
+                        hash.as_ptr(),
+                        hash.len(),
+                        SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VTableSignerRef parallel for `Signer<PlatformAddress>`
+// ---------------------------------------------------------------------------
+//
+// The `register_from_addresses` SDK entry point takes its address
+// signer by `&AS where AS: Signer<PlatformAddress> + Send + Sync`.
+// We expose the same `VTableSignerRef` wrapper used for the
+// identity signer so callers can hand both views over a single
+// underlying `VTableSigner`.
+
+#[async_trait]
+impl<'a> Signer<PlatformAddress> for VTableSignerRef<'a> {
+    async fn sign(
+        &self,
+        platform_address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        <VTableSigner as Signer<PlatformAddress>>::sign(self.0, platform_address, data).await
+    }
+
+    async fn sign_create_witness(
+        &self,
+        platform_address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        <VTableSigner as Signer<PlatformAddress>>::sign_create_witness(
+            self.0,
+            platform_address,
+            data,
+        )
+        .await
+    }
+
+    fn can_sign_with(&self, platform_address: &PlatformAddress) -> bool {
+        <VTableSigner as Signer<PlatformAddress>>::can_sign_with(self.0, platform_address)
     }
 }
 
@@ -483,10 +711,12 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
 /// - `destroy_callback`: optional destructor for the `signer` state. Pass NULL
 ///   if there is nothing to clean up.
 ///
-/// Note: there is intentionally no `signer_ptr` parameter here because the
-/// pre-async iOS path never used it — the signing state was captured by the
-/// C function pointers themselves. If you need a signer context pointer,
-/// construct a `VTableSigner` from Rust using `VTableSigner::from_callback`.
+/// Note: there is intentionally no `signer_ptr` parameter here — the
+/// signing state is expected to be captured by the C function pointers
+/// themselves (e.g. via global state). If you need to thread an opaque
+/// context pointer through to your callbacks (the common iOS pattern, where
+/// the context is `Unmanaged.passRetained(swiftSelf)`), use
+/// [`dash_sdk_signer_create_with_ctx`] instead.
 ///
 /// # Safety
 /// - Callback function pointers must be valid and follow the required ABI
@@ -495,6 +725,48 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
 ///   `dash_sdk_signer_destroy` to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_create(
+    sign_async_callback: SignAsyncCallback,
+    can_sign_callback: CanSignCallback,
+    destroy_callback: DestroyCallback,
+) -> *mut SignerHandle {
+    dash_sdk_signer_create_with_ctx(
+        std::ptr::null_mut(),
+        sign_async_callback,
+        can_sign_callback,
+        destroy_callback,
+    )
+}
+
+/// Create a new signer with async callbacks plus an opaque context pointer.
+///
+/// `ctx` is forwarded verbatim as the first argument (`signer: *const c_void`)
+/// of every `sign_async` / `can_sign_with` invocation, and as the lone
+/// argument of the optional `destroy_callback`. iOS / Swift uses this to
+/// pass an `Unmanaged.passRetained(self).toOpaque()` token so the
+/// trampolines can re-acquire the owning Swift instance:
+///
+/// ```text
+/// // Swift, sketched:
+/// let ctx = Unmanaged.passRetained(self).toOpaque()
+/// let handle = dash_sdk_signer_create_with_ctx(ctx,
+///     { signerPtr, ... in
+///         let me = Unmanaged<KeychainSigner>.fromOpaque(signerPtr!).takeUnretainedValue()
+///         ...
+///     },
+///     ..., destroyCb)
+/// // destroyCb releases the +1 from passRetained.
+/// ```
+///
+/// # Safety
+/// - `ctx` may be null. If non-null it must remain valid for the life of
+///   the signer and must outlive every callback the SDK might fire.
+/// - Callback function pointers must be valid and follow the required ABI.
+/// - The returned `SignerHandle` must be destroyed with
+///   `dash_sdk_signer_destroy` to avoid leaks. The destructor is invoked
+///   exactly once with `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_signer_create_with_ctx(
+    ctx: *mut c_void,
     sign_async_callback: SignAsyncCallback,
     can_sign_callback: CanSignCallback,
     destroy_callback: DestroyCallback,
@@ -509,8 +781,9 @@ pub unsafe extern "C" fn dash_sdk_signer_create(
     let vtable_ptr = Box::into_raw(vtable);
 
     // SAFETY: vtable_ptr was just produced by Box::into_raw, so it is valid
-    // and we own it (owns_vtable = true).
-    let vtable_signer = VTableSigner::from_callback(std::ptr::null_mut(), vtable_ptr, true);
+    // and we own it (owns_vtable = true). `ctx` is treated as opaque — the
+    // vtable's `destroy` is responsible for cleaning it up.
+    let vtable_signer = VTableSigner::from_callback(ctx, vtable_ptr, true);
 
     Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle
 }
@@ -579,8 +852,9 @@ mod tests {
     /// 64-byte signature. This simulates the simplest possible iOS signer.
     unsafe extern "C" fn test_sign_async_sync(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
         completion_ctx: *mut c_void,
@@ -595,8 +869,9 @@ mod tests {
     /// Test sign callback that reports an error via the completion callback.
     unsafe extern "C" fn test_sign_async_error(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
         completion_ctx: *mut c_void,
@@ -610,8 +885,9 @@ mod tests {
     /// completion — exercising the thread-safety of `oneshot::Sender`.
     unsafe extern "C" fn test_sign_async_threaded(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
         completion_ctx: *mut c_void,
@@ -638,8 +914,9 @@ mod tests {
     /// Test can-sign callback.
     unsafe extern "C" fn test_can_sign(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
     ) -> bool {
         true
     }
@@ -729,8 +1006,9 @@ mod tests {
     /// single-shot guard; second and third calls must be no-ops.
     unsafe extern "C" fn test_sign_async_double_complete(
         _signer: *const c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
         completion_ctx: *mut c_void,
@@ -760,6 +1038,172 @@ mod tests {
             sig.as_slice()[0],
             0x42,
             "first completion's signature must win; duplicate overwrite must be ignored"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Signer<PlatformAddress> dispatch — verifies the trampoline sees
+    // `key_type == 0xFF` and the 20-byte address hash for both P2PKH
+    // and P2SH variants.
+    //
+    // Each dispatch test owns its own per-thread capture slot to keep
+    // tokio's parallel test runner from racing on a shared global —
+    // this also exercises the `passRetained`-style capture pattern the
+    // production iOS path uses (the `signer` pointer is the test's
+    // own `Box::into_raw`-ed slot).
+    // ------------------------------------------------------------------
+
+    /// Per-test capture slot for the trampoline. The dispatch tests
+    /// each allocate one, hand the raw pointer through the
+    /// `signer_ptr` slot of `VTableSigner::from_callback`, and read
+    /// the captured tuple back after the sign call returns.
+    struct DispatchCapture {
+        observed: std::sync::Mutex<Option<(u8, Vec<u8>)>>,
+    }
+
+    unsafe extern "C" fn capture_sign_async(
+        signer: *const c_void,
+        pubkey_bytes: *const u8,
+        pubkey_len: usize,
+        key_type: u8,
+        _data: *const u8,
+        _data_len: usize,
+        completion_ctx: *mut c_void,
+        completion: SignCompletionCallback,
+    ) {
+        let cap = &*(signer as *const DispatchCapture);
+        let bytes = if pubkey_bytes.is_null() {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(pubkey_bytes, pubkey_len).to_vec()
+        };
+        *cap.observed.lock().unwrap() = Some((key_type, bytes));
+        let sig = [0x77u8; 64];
+        completion(completion_ctx, sig.as_ptr(), sig.len(), std::ptr::null());
+    }
+
+    unsafe extern "C" fn capture_can_sign(
+        signer: *const c_void,
+        pubkey_bytes: *const u8,
+        pubkey_len: usize,
+        key_type: u8,
+    ) -> bool {
+        let cap = &*(signer as *const DispatchCapture);
+        let bytes = if pubkey_bytes.is_null() {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(pubkey_bytes, pubkey_len).to_vec()
+        };
+        *cap.observed.lock().unwrap() = Some((key_type, bytes));
+        true
+    }
+
+    /// Vtable destructor for the dispatch tests — reclaims the
+    /// `Box<DispatchCapture>` we leaked via `Box::into_raw`.
+    unsafe extern "C" fn capture_destroy(signer: *mut c_void) {
+        if !signer.is_null() {
+            let _ = Box::from_raw(signer as *mut DispatchCapture);
+        }
+    }
+
+    /// Build a `(VTableSigner, &DispatchCapture)` pair for one test.
+    /// The capture slot is owned by the signer's vtable destructor —
+    /// the returned reference is valid for as long as the signer is
+    /// alive (the test holds the signer on its stack).
+    fn make_dispatch_signer() -> (VTableSigner, *const DispatchCapture) {
+        let cap = Box::new(DispatchCapture {
+            observed: std::sync::Mutex::new(None),
+        });
+        let cap_ptr = Box::into_raw(cap);
+
+        let vtable = Box::new(SignerVTable {
+            sign_async: capture_sign_async,
+            can_sign_with: capture_can_sign,
+            destroy: capture_destroy,
+        });
+        let vtable_ptr = Box::into_raw(vtable);
+
+        // SAFETY: `cap_ptr` and `vtable_ptr` are both freshly
+        // `Box::into_raw`-ed; the destructor reclaims `cap_ptr` and
+        // `owns_vtable = true` reclaims `vtable_ptr` on drop.
+        let signer =
+            unsafe { VTableSigner::from_callback(cap_ptr as *mut c_void, vtable_ptr, true) };
+        (signer, cap_ptr as *const DispatchCapture)
+    }
+
+    #[tokio::test]
+    async fn platform_address_signer_dispatches_p2pkh_with_0xff_tag() {
+        let (signer, cap) = make_dispatch_signer();
+        let hash = [0xAAu8; 20];
+        let address = PlatformAddress::P2pkh(hash);
+
+        let sig = <VTableSigner as Signer<PlatformAddress>>::sign(&signer, &address, &[1, 2, 3])
+            .await
+            .expect("sign should succeed");
+        assert_eq!(sig.len(), 64);
+
+        let observed = unsafe { (*cap).observed.lock().unwrap().clone() };
+        let (key_type, bytes) = observed.expect("trampoline must have been invoked exactly once");
+        assert_eq!(
+            key_type, SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH,
+            "P2PKH dispatch must use the 0xFF discriminant byte"
+        );
+        assert_eq!(bytes.as_slice(), &hash, "20-byte hash must round-trip");
+    }
+
+    #[tokio::test]
+    async fn platform_address_signer_dispatches_p2sh_with_0xff_tag() {
+        let (signer, cap) = make_dispatch_signer();
+        let hash = [0xBBu8; 20];
+        let address = PlatformAddress::P2sh(hash);
+
+        let _ = <VTableSigner as Signer<PlatformAddress>>::sign(&signer, &address, &[4, 5, 6])
+            .await
+            .expect("sign should succeed");
+
+        let observed = unsafe { (*cap).observed.lock().unwrap().clone() };
+        let (key_type, bytes) = observed.expect("trampoline must have been invoked");
+        assert_eq!(key_type, SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH);
+        assert_eq!(bytes.as_slice(), &hash);
+    }
+
+    #[tokio::test]
+    async fn platform_address_signer_can_sign_with_dispatches_0xff() {
+        let (signer, cap) = make_dispatch_signer();
+        let hash = [0xCCu8; 20];
+        let address = PlatformAddress::P2pkh(hash);
+
+        assert!(<VTableSigner as Signer<PlatformAddress>>::can_sign_with(
+            &signer, &address
+        ));
+
+        let observed = unsafe { (*cap).observed.lock().unwrap().clone() };
+        let (key_type, bytes) = observed.expect("can_sign_with must invoke the trampoline");
+        assert_eq!(key_type, SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH);
+        assert_eq!(bytes.as_slice(), &hash);
+    }
+
+    #[tokio::test]
+    async fn identity_signer_does_not_use_0xff_tag() {
+        // Sanity-check the dispatch boundary: identity-key signing
+        // must continue to use the standard KeyType discriminant.
+        let (signer, cap) = make_dispatch_signer();
+        let key = make_dummy_key();
+
+        let _ = signer
+            .sign(&key, &[7, 8, 9])
+            .await
+            .expect("sign should succeed");
+
+        let observed = unsafe { (*cap).observed.lock().unwrap().clone() };
+        let (key_type, _) = observed.expect("trampoline must have been invoked");
+        assert_ne!(
+            key_type, SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH,
+            "identity-key signing must NOT use the platform-address tag"
+        );
+        assert!(
+            key_type < 5,
+            "identity-key signing must use a real KeyType discriminant (0–4); got {key_type}"
         );
     }
 }

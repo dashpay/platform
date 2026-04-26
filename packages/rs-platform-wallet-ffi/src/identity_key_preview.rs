@@ -44,6 +44,14 @@ use crate::handle::*;
 /// `public_key` buffer is exactly 33 bytes — a compressed
 /// secp256k1 public key — so callers can read `public_key_len`
 /// defensively without assuming the constant.
+///
+/// `private_key_bytes` is the raw 32-byte ECDSA scalar — needed by
+/// the Swift side so it can persist the key into the iOS Keychain
+/// before calling [`platform_wallet_register_identity_with_signer`]
+/// (the Swift `KeychainSigner` then re-reads it during
+/// state-transition signing). `private_key_wif` carries the same
+/// material in the human-readable WIF form for the keychain
+/// explorer / debugging UI.
 #[repr(C)]
 pub struct IdentityKeyPreviewFFI {
     /// Identity index (BIP-9 position under the identity branch).
@@ -60,6 +68,12 @@ pub struct IdentityKeyPreviewFFI {
     /// the private key. Network-aware (mainnet vs testnet/devnet/
     /// regtest version byte) and compressed.
     pub private_key_wif: *mut c_char,
+    /// Raw 32-byte ECDSA private-key scalar. Inline — no heap
+    /// allocation — so the freed-rows path doesn't need to chase a
+    /// pointer for it. Treat as sensitive material: the Swift side
+    /// is expected to copy it straight into the iOS Keychain and
+    /// drop the local reference.
+    pub private_key_bytes: [u8; 32],
 }
 
 /// Heap-allocated array of [`IdentityKeyPreviewFFI`] rows. Release
@@ -253,6 +267,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                     public_key: pub_ptr,
                     public_key_len: pub_len,
                     private_key_wif: wif_cstring.into_raw(),
+                    private_key_bytes: ext_priv.private_key.secret_bytes(),
                 });
             }
 

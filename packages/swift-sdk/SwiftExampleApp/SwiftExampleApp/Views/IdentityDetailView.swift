@@ -253,8 +253,17 @@ struct IdentityDetailView: View {
             EditAliasView(identity: identity, newAlias: $newAlias)
         }
         .sheet(isPresented: $showingRegisterName) {
-            RegisterNameView(identity: identity)
-                .environmentObject(appState)
+            RegisterNameView(identity: identity, onRegistered: { name in
+                // Append the just-registered name to the local @State
+                // list immediately so the section re-renders without
+                // waiting for the parent's `onAppear` re-fetch.
+                // De-dupe in case a stale `loadDPNSNames()` already
+                // landed it.
+                if !dpnsNames.contains(name) {
+                    dpnsNames.append(name)
+                }
+            })
+            .environmentObject(appState)
         }
         .sheet(isPresented: $showingSelectMainName) {
             SelectMainNameView(identity: identity)
@@ -772,6 +781,7 @@ struct DashPayProfileEditorView: View {
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     @State private var displayName: String = ""
     @State private var publicMessage: String = ""
@@ -895,16 +905,27 @@ struct DashPayProfileEditorView: View {
                     errorMessage = "No wallet available for this identity"
                     return
                 }
+                // Construct a fresh `KeychainSigner` for this submit
+                // pass the same way `RegisterNameView.registerName()`
+                // does. Routes the document state-transition signature
+                // through the iOS Keychain instead of the legacy
+                // wallet-internal `IdentitySigner`, so watch-only
+                // wallets are unblocked end-to-end and the Tokio
+                // worker no longer risks the inner-lock-deadlock the
+                // legacy path hit.
+                let signer = KeychainSigner(modelContainer: modelContext.container)
                 let saved: DashPayProfile
                 if isCreating {
                     saved = try await wallet.createDashPayProfile(
                         identityId: identityId,
-                        update: update
+                        update: update,
+                        signer: signer
                     )
                 } else {
                     saved = try await wallet.updateDashPayProfile(
                         identityId: identityId,
-                        update: update
+                        update: update,
+                        signer: signer
                     )
                 }
                 onSaved(saved)

@@ -367,6 +367,31 @@ func platform_wallet_update_dashpay_profile(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+/// Mirrors `platform_wallet_create_or_update_dashpay_profile_with_signer`
+/// from Rust (`packages/rs-platform-wallet-ffi/src/dashpay_profile.rs`).
+///
+/// `do_create == true` calls
+/// `IdentityWallet::create_profile_with_external_signer`; `false`
+/// calls `update_profile_with_external_signer`. Both route the
+/// document state-transition signature through the supplied
+/// `signer_handle` (typically `KeychainSigner.handle`) instead of an
+/// internal `IdentitySigner`. Required for watch-only wallets and
+/// the architecturally correct path per `swift-sdk/CLAUDE.md`.
+@_silgen_name("platform_wallet_create_or_update_dashpay_profile_with_signer")
+func platform_wallet_create_or_update_dashpay_profile_with_signer(
+    _ wallet_handle: Handle,
+    _ identity_id: UnsafePointer<UInt8>,
+    _ display_name: UnsafePointer<CChar>?,
+    _ public_message: UnsafePointer<CChar>?,
+    _ avatar_url: UnsafePointer<CChar>?,
+    _ avatar_bytes: UnsafePointer<UInt8>?,
+    _ avatar_bytes_len: Int,
+    _ do_create: Bool,
+    _ signer_handle: OpaquePointer?,
+    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - ContactRequest Functions
 
 @_silgen_name("contact_request_create")
@@ -528,6 +553,21 @@ func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>, _ len: Int
 @_silgen_name("platform_wallet_ffi_error_free")
 func platform_wallet_ffi_error_free(_ error: UnsafeMutablePointer<PlatformWalletFFIError>)
 
+/// hash160 = RIPEMD160(SHA256(data)). 20-byte output.
+///
+/// Mirrors `platform_wallet_hash160` from
+/// `rs-platform-wallet-ffi/src/utils.rs`. Exposed so the keychain
+/// metadata writer can stamp `publicKeyHash` without pulling a
+/// RIPEMD-160 implementation into the Swift side (CommonCrypto and
+/// CryptoKit don't expose one). Returns 0 on success, -1 on a null /
+/// zero-length input.
+@_silgen_name("platform_wallet_hash160")
+func platform_wallet_hash160(
+    _ data: UnsafePointer<UInt8>?,
+    _ data_len: Int,
+    _ out_hash: UnsafeMutablePointer<UInt8>?
+) -> Int32
+
 // MARK: - DPNS name FFI
 
 /// Mirrors `DpnsSearchResultFFI` from
@@ -549,6 +589,35 @@ func platform_wallet_register_dpns_name(
     _ wallet_handle: Handle,
     _ identity_id: UnsafePointer<UInt8>,
     _ name: UnsafePointer<CChar>?,
+    _ out_full_domain_name: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_register_dpns_name_with_signer` from Rust
+/// (`packages/rs-platform-wallet-ffi/src/dpns.rs`).
+///
+/// Same as `platform_wallet_register_dpns_name` but signing is routed
+/// through the supplied `signer_handle` (typically `KeychainSigner.handle`)
+/// instead of through a wallet-derived `IdentitySigner`. Required for
+/// watch-only wallets and the path that avoids the inner-lock-deadlock
+/// the legacy variant hit when its derivation path tried to
+/// `blocking_read` the wallet manager from inside a Tokio worker.
+///
+/// The wallet handle is still required so Rust can look up the
+/// identity from the in-process `IdentityManager` and pick the
+/// HIGH/CRITICAL authentication key DPP requires for document state
+/// transitions — but no signing happens via the wallet's own seed.
+///
+/// Caller retains ownership of the signer handle.
+@_silgen_name("platform_wallet_register_dpns_name_with_signer")
+func platform_wallet_register_dpns_name_with_signer(
+    _ wallet_handle: Handle,
+    _ identity_id: UnsafePointer<UInt8>,
+    _ name: UnsafePointer<CChar>?,
+    // Raw `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`
+    // (e.g. via `KeychainSigner.handle`). Used as `Signer<IdentityPublicKey>`.
+    // Caller retains ownership; this function does NOT destroy it.
+    _ signer_handle: OpaquePointer?,
     _ out_full_domain_name: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
@@ -828,6 +897,161 @@ func platform_wallet_send_dashpay_payment(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+/// Mirrors `platform_wallet_send_contact_request_with_signer` from
+/// Rust. Same shape as `platform_wallet_send_contact_request` but the
+/// document state-transition signature is routed through
+/// `signer_handle` (typically `KeychainSigner.handle`) instead of an
+/// internal `IdentitySigner`.
+@_silgen_name("platform_wallet_send_contact_request_with_signer")
+func platform_wallet_send_contact_request_with_signer(
+    _ wallet_handle: Handle,
+    _ sender_identity_id: UnsafePointer<UInt8>,
+    _ recipient_identity_id: UnsafePointer<UInt8>,
+    _ account_label: UnsafePointer<CChar>?,
+    _ auto_accept_proof: UnsafePointer<UInt8>?,
+    _ auto_accept_proof_len: Int,
+    _ signer_handle: OpaquePointer?,
+    _ out_request_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_accept_contact_request_with_signer` from
+/// Rust.
+@_silgen_name("platform_wallet_accept_contact_request_with_signer")
+func platform_wallet_accept_contact_request_with_signer(
+    _ wallet_handle: Handle,
+    _ request_handle: Handle,
+    _ signer_handle: OpaquePointer?,
+    _ out_established_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+// MARK: - Identity transfer / withdraw / update — external-signer FFI
+
+/// Mirrors `PlatformAddressCreditOutputFFI` from
+/// `rs-platform-wallet-ffi/src/identity_transfer.rs`. Stripped-down
+/// version of `AddressBalanceEntryFFI` — only carries
+/// `(address_type, hash, credits)` because the SDK fetches the
+/// platform-address nonce at submit time.
+@frozen
+public struct PlatformAddressCreditOutputFFI {
+    public var address_type: UInt8
+    public var hash: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+    public var credits: UInt64
+}
+
+/// Mirrors `platform_wallet_transfer_credits_with_signer` from Rust
+/// (`packages/rs-platform-wallet-ffi/src/identity_transfer.rs`).
+///
+/// Identity → identity credit transfer routed through the supplied
+/// `signer_handle` (typically `KeychainSigner.handle`).
+@_silgen_name("platform_wallet_transfer_credits_with_signer")
+func platform_wallet_transfer_credits_with_signer(
+    _ wallet_handle: Handle,
+    _ from_identity_id: UnsafePointer<UInt8>,
+    _ to_identity_id: UnsafePointer<UInt8>,
+    _ amount: UInt64,
+    _ signer_handle: OpaquePointer?,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_transfer_credits_to_addresses_with_signer`
+/// from Rust. Identity → 1+ platform addresses transfer.
+///
+/// `out_new_balance` (when non-null) receives the sender's remaining
+/// balance after the transfer.
+@_silgen_name("platform_wallet_transfer_credits_to_addresses_with_signer")
+func platform_wallet_transfer_credits_to_addresses_with_signer(
+    _ wallet_handle: Handle,
+    _ from_identity_id: UnsafePointer<UInt8>,
+    _ outputs: UnsafePointer<PlatformAddressCreditOutputFFI>?,
+    _ outputs_count: Int,
+    _ signer_handle: OpaquePointer?,
+    _ out_new_balance: UnsafeMutablePointer<UInt64>?,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_withdraw_credits_with_signer` from Rust
+/// (`packages/rs-platform-wallet-ffi/src/identity_withdrawal.rs`).
+///
+/// `to_address` is a NUL-terminated UTF-8 C-string carrying a
+/// network-aware Dash P2PKH address (e.g. `"yNPbcFf..."` for
+/// testnet).
+@_silgen_name("platform_wallet_withdraw_credits_with_signer")
+func platform_wallet_withdraw_credits_with_signer(
+    _ wallet_handle: Handle,
+    _ identity_id: UnsafePointer<UInt8>,
+    _ amount: UInt64,
+    _ to_address: UnsafePointer<CChar>?,
+    _ signer_handle: OpaquePointer?,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_update_identity_with_signer` from Rust
+/// (`packages/rs-platform-wallet-ffi/src/identity_update.rs`).
+///
+/// Add and/or disable identity public keys; signs the
+/// `IdentityUpdateTransition` with the identity's MASTER auth key
+/// via the supplied `signer_handle`.
+///
+/// The new keys are passed in as flat `IdentityPubkeyFFI` rows
+/// (re-uses the registration-with-signer key-row shape). Caller is
+/// responsible for pre-persisting each new key's private material to
+/// whatever store the signer reads from (iOS Keychain in the typical
+/// case) BEFORE calling this — the signer here only signs the
+/// update transition itself with an existing MASTER key.
+///
+/// Pass `(nil, 0)` for either array to skip the corresponding
+/// operation (e.g. disable-only or add-only updates).
+@_silgen_name("platform_wallet_update_identity_with_signer")
+func platform_wallet_update_identity_with_signer(
+    _ wallet_handle: Handle,
+    _ identity_id: UnsafePointer<UInt8>,
+    _ add_public_keys: UnsafePointer<IdentityPubkeyFFI>?,
+    _ add_public_keys_count: Int,
+    _ disable_public_key_ids: UnsafePointer<UInt32>?,
+    _ disable_public_key_ids_count: Int,
+    _ signer_handle: OpaquePointer?,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_register_identity_with_funding_signer`
+/// from Rust
+/// (`packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs`).
+///
+/// Asset-lock-funded identity registration driven by an external
+/// signer. The asset lock proof is built Rust-side from
+/// `amount_duffs` (wallet must have spendable Core UTXOs); the
+/// IdentityCreate state transition is signed via `signer_handle`.
+///
+/// Caller pre-derives the new identity's authentication pubkeys via
+/// `dash_sdk_derive_identity_keys_from_mnemonic` (works for
+/// watch-only wallets, unlike the wallet-handle variant) and ships
+/// them in via `identity_pubkeys`. Caller is also responsible for
+/// pre-persisting each key's matching private material to the
+/// signer's store (iOS Keychain in the typical case) BEFORE calling
+/// this so the IdentityCreate signature can complete.
+@_silgen_name("platform_wallet_register_identity_with_funding_signer")
+func platform_wallet_register_identity_with_funding_signer(
+    _ wallet_handle: Handle,
+    _ amount_duffs: UInt64,
+    _ identity_index: UInt32,
+    _ identity_pubkeys: UnsafePointer<IdentityPubkeyFFI>?,
+    _ identity_pubkeys_count: Int,
+    _ signer_handle: OpaquePointer?,
+    _ out_identity_id: UnsafeMutablePointer<(
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )>,
+    _ out_identity_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - Identity persistence FFI
 
 /// 32-byte C tuple — mirrors a single `[u8; 32]` on the Rust side.
@@ -993,6 +1217,17 @@ struct IdentityKeyPreviewFFI {
     var public_key: UnsafeMutablePointer<UInt8>?
     var public_key_len: Int
     var private_key_wif: UnsafeMutablePointer<CChar>?
+    /// Inline 32-byte ECDSA private-key scalar. Mirror of the
+    /// `[u8; 32]` field on the Rust struct. Treat as sensitive — the
+    /// Swift caller is expected to copy it straight into the iOS
+    /// Keychain (via `KeychainManager.storeIdentityPrivateKey`) and
+    /// drop the local reference.
+    var private_key_bytes: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
 }
 
 /// Mirrors `IdentityKeyPreviewsFFI`. `items` points at a contiguous
@@ -1030,4 +1265,68 @@ func platform_wallet_preview_identity_registration_keys(
 @_silgen_name("platform_wallet_preview_identity_registration_keys_free")
 func platform_wallet_preview_identity_registration_keys_free(
     _ previews: UnsafeMutablePointer<IdentityKeyPreviewsFFI>
+)
+
+// MARK: - Pre-registration key derivation
+
+/// Mirrors `IdentityRegistrationKeyDerivationsFFI` from
+/// `rs-platform-wallet-ffi/src/identity_registration_with_signer.rs`.
+/// Same row layout as `IdentityKeyPreviewsFFI` (re-uses
+/// `IdentityKeyPreviewFFI`), but each row is one
+/// `(identity_index, key_id)` pair fixed to a single identity_index.
+struct IdentityRegistrationKeyDerivationsFFI {
+    var items: UnsafeMutablePointer<IdentityKeyPreviewFFI>?
+    var count: Int
+}
+
+func identityRegistrationKeyDerivationsFFIEmpty() -> IdentityRegistrationKeyDerivationsFFI {
+    IdentityRegistrationKeyDerivationsFFI(items: nil, count: 0)
+}
+
+/// Derive every authentication-key pair the upcoming
+/// `platform_wallet_register_identity_with_signer` call will need
+/// for `identity_index`, returning one row per `key_id` in
+/// `0..key_count`.
+@_silgen_name("platform_wallet_derive_identity_keys_for_index")
+func platform_wallet_derive_identity_keys_for_index(
+    _ wallet_handle: Handle,
+    _ identity_index: UInt32,
+    _ key_count: UInt32,
+    _ out_rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_derive_identity_keys_for_index_free")
+func platform_wallet_derive_identity_keys_for_index_free(
+    _ rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>
+)
+
+// MARK: - Mnemonic-driven pre-registration key derivation
+//
+// Companion entry point to
+// `platform_wallet_derive_identity_keys_for_index` that takes the
+// BIP-39 mnemonic directly instead of routing through a wallet
+// handle. The wallet-handle variant fails for wallets restored from
+// SwiftData persistence (the seed lives in iOS Keychain, not in the
+// in-process `WalletManager`); this one works for every wallet shape
+// because it pulls the seed from the caller per call.
+//
+// Same row layout as the wallet-handle variant
+// (`IdentityRegistrationKeyDerivationsFFI` over `IdentityKeyPreviewFFI`).
+// Paired free function frees the matching shape — distinct symbol
+// name purely so call sites pair allocator with deallocator 1:1.
+@_silgen_name("dash_sdk_derive_identity_keys_from_mnemonic")
+func dash_sdk_derive_identity_keys_from_mnemonic(
+    _ mnemonic_cstr: UnsafePointer<CChar>,
+    _ passphrase_cstr: UnsafePointer<CChar>?,
+    _ network: DashSDKNetwork,
+    _ identity_index: UInt32,
+    _ key_count: UInt32,
+    _ out_rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("dash_sdk_derive_identity_keys_from_mnemonic_free")
+func dash_sdk_derive_identity_keys_from_mnemonic_free(
+    _ rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>
 )

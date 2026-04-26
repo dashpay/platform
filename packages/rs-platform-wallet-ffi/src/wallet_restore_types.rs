@@ -99,6 +99,49 @@ pub struct AccountSpecFFI {
     pub account_xpub_bytes_len: usize,
 }
 
+/// Per-identity public-key row carried on
+/// [`IdentityRestoreEntryFFI::keys`].
+///
+/// Mirrors the persisted `PersistentPublicKey` columns Swift writes
+/// during the `on_persist_identity_keys_fn` round. Carrying them on the
+/// load path means each restored `Identity` enters the in-memory
+/// `IdentityManager` with a populated `public_keys` `BTreeMap` instead
+/// of an empty one — the original gap that left
+/// `Identity::public_keys()` empty after cold-start until the next sync
+/// round repopulated it.
+///
+/// Field discriminants match the DPP `repr(u8)` enum layouts (same
+/// convention used by [`crate::identity_registration_with_signer::IdentityPubkeyFFI`]):
+/// - `key_type`: [`dpp::identity::KeyType`] discriminant
+///   (0 = ECDSA_SECP256K1, …).
+/// - `purpose`: [`dpp::identity::Purpose`] discriminant
+///   (0 = AUTHENTICATION, …).
+/// - `security_level`: [`dpp::identity::SecurityLevel`] discriminant
+///   (0 = MASTER, 1 = CRITICAL, 2 = HIGH, 3 = MEDIUM).
+///
+/// `data` is the public-key bytes (compressed secp256k1 → 33 bytes;
+/// BLS → 48; etc.). The pointer is Swift-owned and valid only for the
+/// duration of the load callback.
+///
+/// Disabled-at, contract-bounds and other non-essential fields are
+/// intentionally omitted — they're either always `None` for newly
+/// derived identity-auth keys or get re-populated by the next
+/// identity sync round if they exist on chain. The scope of this
+/// restore is narrowly "make `Identity.public_keys` non-empty so
+/// auth-key gates pass".
+#[repr(C)]
+pub struct IdentityKeyRestoreFFI {
+    pub key_id: u32,
+    pub key_type: u8,
+    pub purpose: u8,
+    pub security_level: u8,
+    pub read_only: bool,
+    /// Public-key bytes (33 for ECDSA_SECP256K1; 48 for BLS; etc.).
+    /// Valid for callback duration only; Swift owns the allocation.
+    pub data: *const u8,
+    pub data_len: usize,
+}
+
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].
 ///
 /// Carries the scalar fields needed to rebuild a `ManagedIdentity`
@@ -115,16 +158,18 @@ pub struct AccountSpecFFI {
 /// `IdentityManager::apply_identity_entry` does on the changeset
 /// replay path — so no full `Identity` blob crosses the FFI.
 ///
-/// Public keys are NOT carried here; they live in the per-identity
-/// `PersistentPublicKey` rows on the Swift side and arrive separately
-/// via the existing `on_persist_identity_keys_fn` callback during the
-/// next sync round. Identities load with empty `public_keys` —
-/// sufficient to surface them in the explorer and
-/// `IdentityManager::managed_identity()` lookups.
+/// Public keys ride along on `keys` / `keys_count` as
+/// `IdentityKeyRestoreFFI` rows assembled from the per-identity
+/// `PersistentPublicKey` rows on the Swift side. Each row is converted
+/// into an `IdentityPublicKey::V0` and inserted into the
+/// reconstructed `Identity.public_keys` map keyed by `key_id`. When
+/// `keys_count == 0` the identity loads with an empty `public_keys`
+/// map (e.g. an in-flight registration whose key persist round
+/// hasn't completed); a subsequent sync round refreshes it.
 ///
-/// All pointer fields (`dpns_names`, `contested_dpns_names`) are
-/// Swift-owned and valid only for the duration of the load callback.
-/// The matching free callback releases them.
+/// All pointer fields (`dpns_names`, `contested_dpns_names`, `keys`)
+/// are Swift-owned and valid only for the duration of the load
+/// callback. The matching free callback releases them.
 #[repr(C)]
 pub struct IdentityRestoreEntryFFI {
     /// 32-byte identifier.
@@ -159,6 +204,14 @@ pub struct IdentityRestoreEntryFFI {
     /// Same array shape as `dpns_names`. `null` when none.
     pub contested_dpns_names: *const *const c_char,
     pub contested_dpns_names_count: usize,
+    /// Identity public-key rows assembled from the per-identity
+    /// `PersistentPublicKey` SwiftData rows. Each row is folded into
+    /// the reconstructed `Identity.public_keys` map keyed by
+    /// `key_id`. `null` / `0` when the identity has no persisted
+    /// keys (e.g. an in-flight registration whose key-persist round
+    /// hasn't completed).
+    pub keys: *const IdentityKeyRestoreFFI,
+    pub keys_count: usize,
 }
 
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
@@ -196,6 +249,8 @@ pub struct WalletRestoreEntryFFI {
 // use must happen within the callback window.
 unsafe impl Send for AccountSpecFFI {}
 unsafe impl Sync for AccountSpecFFI {}
+unsafe impl Send for IdentityKeyRestoreFFI {}
+unsafe impl Sync for IdentityKeyRestoreFFI {}
 unsafe impl Send for IdentityRestoreEntryFFI {}
 unsafe impl Sync for IdentityRestoreEntryFFI {}
 unsafe impl Send for WalletRestoreEntryFFI {}
@@ -219,9 +274,11 @@ pub type LoadWalletListFn = unsafe extern "C" fn(
 /// Paired free callback for `LoadWalletListFn`. Releases any memory
 /// Swift allocated for the entries array, the per-wallet accounts
 /// arrays, the optional per-wallet platform-address balance arrays,
-/// every xpub byte buffer, the per-wallet identity arrays, and every
+/// every xpub byte buffer, the per-wallet identity arrays, every
 /// nested c-string + c-string pointer array carried by the identity
-/// entries. Called exactly once after a successful `LoadWalletListFn`
+/// entries, and every per-identity `IdentityKeyRestoreFFI` array
+/// together with the public-key byte buffers each row points at.
+/// Called exactly once after a successful `LoadWalletListFn`
 /// invocation.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);
