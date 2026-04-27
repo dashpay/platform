@@ -1,0 +1,420 @@
+# Platform Wallet
+
+The `rs-platform-wallet` crate (`packages/rs-platform-wallet`) is the Rust wallet
+implementation for Dash Platform client applications. It bridges two distinct asset
+layers: the Layer 1 UTXO chain and the Layer 2 Platform identity system.
+
+## Overview
+
+Traditional Dash wallets track coins — UTXOs, addresses, balances. Platform adds a
+second layer on top: identities that hold credits, sign documents, and interact with
+decentralized applications. Managing both layers together requires state that neither a
+plain key-wallet nor the SDK alone provides.
+
+`rs-platform-wallet` fills that gap. A single `PlatformWallet` handle gives you:
+
+- **Layer 1 (Core):** HD accounts, UTXO tracking, address derivation, transaction
+  broadcast via SPV, and a lock-free balance cache for UI rendering.
+- **Layer 2 (Platform):** Multiple managed identities per wallet, asset lock lifecycle
+  tracking (the on-ramp from UTXO to Platform credits), DPNS name records, DashPay
+  contact management, and per-platform-address credit balances.
+
+The design goal is a client that an application can embed without running a full node:
+SPV provides chain data, the `dash-sdk` provides proof-verified Platform queries, and
+the wallet ties the two together with a changeset-based persistence model that avoids
+lock contention.
+
+For the JavaScript/TypeScript equivalent — offline key derivation utilities used by the
+Evo SDK — see [Wallet Utilities](../evo-sdk/wallet-utilities.md).
+
+## Quick Start
+
+The example below is derived from `packages/rs-platform-wallet/examples/basic_usage.rs`.
+It uses a minimal no-op persister and event handler so you can run it without
+infrastructure.
+
+```rust
+use std::sync::Arc;
+use dash_sdk::Sdk;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::Network;
+use platform_wallet::changeset::PlatformWalletPersistence;
+use platform_wallet::events::PlatformEventHandler;
+use platform_wallet::PlatformWalletManager;
+
+// 1. Implement PlatformWalletPersistence (no-op for illustration)
+struct NoopPersister;
+impl PlatformWalletPersistence for NoopPersister {
+    fn store(
+        &self,
+        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+        _changeset: platform_wallet::changeset::PlatformWalletChangeSet,
+    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
+        Ok(())
+    }
+    fn flush(
+        &self,
+        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
+        Ok(())
+    }
+    fn load(
+        &self,
+    ) -> Result<platform_wallet::changeset::ClientStartState,
+               platform_wallet::changeset::PersistenceError> {
+        Ok(platform_wallet::changeset::ClientStartState::default())
+    }
+}
+
+// 2. Implement PlatformEventHandler (no-op for illustration)
+struct NoopEventHandler;
+impl platform_wallet::events::EventHandler for NoopEventHandler {}
+impl PlatformEventHandler for NoopEventHandler {}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let sdk = Arc::new(Sdk::new_mock());
+    let persister = Arc::new(NoopPersister);
+    let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+
+    // 3. Create the manager
+    let manager = PlatformWalletManager::new(sdk, persister, event_handler);
+
+    // 4. Create a wallet from seed bytes (or use create_wallet_from_mnemonic)
+    let seed_bytes = [0u8; 64];
+    let wallet = manager
+        .create_wallet_from_seed_bytes(
+            Network::Testnet,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+        )
+        .await?;
+
+    println!("Wallet ID: {}", hex::encode(wallet.wallet_id()));
+
+    // 5. Read the lock-free balance
+    let bal = wallet.balance();
+    println!("confirmed={} unconfirmed={}", bal.confirmed(), bal.unconfirmed());
+
+    // 6. Derive a receive address
+    let addr = wallet.core().next_receive_address_for_account(0).await?;
+    println!("Receive address: {addr}");
+
+    // 7. Read wallet state under a read guard
+    {
+        let state = wallet.state().await;
+        println!("Birth height: {:?}", state.core_wallet.birth_height());
+        println!("Managed identities: {}", state.identity_manager.identity_count());
+    }
+
+    Ok(())
+}
+```
+
+Production code replaces `Sdk::new_mock()` with a real `SdkBuilder` configuration
+(see [Builder Pattern](builder-pattern.md)) and replaces `NoopPersister` with a
+database-backed implementation of `PlatformWalletPersistence`.
+
+## Core Types
+
+### `PlatformWalletManager`
+
+`PlatformWalletManager<P>` is the top-level coordinator. It is generic over a
+persistence backend `P: PlatformWalletPersistence`. One manager instance owns:
+
+- An `Arc<dash_sdk::Sdk>` for Platform queries.
+- An `Arc<RwLock<WalletManager<PlatformWalletInfo>>>` that holds all wallets' key
+  material and per-account UTXO state.
+- An `Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>` for lightweight handle
+  lookup without acquiring the SPV-contended manager lock.
+- A `SpvRuntime` that drives block-filter sync across all registered wallets.
+- A `PlatformAddressSyncManager` for periodic credit-balance refresh (BLAST sync).
+
+The manager is not `Clone` — it is meant to be held in a single `Arc` and shared
+across threads.
+
+**Creating wallets:**
+
+```rust
+// From a BIP-39 mnemonic (language auto-detected across all supported wordlists)
+let wallet = manager
+    .create_wallet_from_mnemonic(
+        "abandon abandon abandon ...",
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .await?;
+
+// From raw 64-byte seed material
+let wallet = manager
+    .create_wallet_from_seed_bytes(Network::Testnet, seed, WalletAccountCreationOptions::Default)
+    .await?;
+```
+
+### `PlatformWallet`
+
+`PlatformWallet` is a lightweight, cheaply cloneable handle to a single wallet's
+shared state. Clones are **shared references** — not independent copies. All clones
+see the same UTXOs, balances, and identities through the `Arc<RwLock<...>>` inside
+`PlatformWalletManager`.
+
+`PlatformWallet` exposes four sub-wallet facets:
+
+| Accessor | Type | Purpose |
+|----------|------|---------|
+| `wallet.core()` | `CoreWallet` | Addresses, UTXOs, transaction broadcast |
+| `wallet.identity` | `IdentityWallet` | Identity registration and top-ups |
+| `wallet.platform` | `PlatformAddressWallet` | Platform address credit balances |
+| `wallet.tokens` | `TokenWallet` | Platform token balances |
+
+The `wallet.asset_locks()` accessor returns an `Arc<AssetLockManager>` for tracking
+the lifecycle of asset lock transactions (the on-ramp from UTXO to Platform credits).
+
+**Reading state:** Use `wallet.state().await` to acquire a read guard that derefs to
+`PlatformWalletInfo`.
+
+**Lock-free balance:** `wallet.balance()` returns `Arc<WalletBalance>` without
+acquiring any lock. It is updated by the SPV event handler after each block. Use it
+for UI rendering where you cannot await.
+
+### `PlatformWalletInfo`
+
+`PlatformWalletInfo` is the mutable state struct that lives inside the shared
+`WalletManager`. It is not accessed directly by application code — you reach it
+through the `wallet.state()` guard. Its fields are:
+
+```rust
+pub struct PlatformWalletInfo {
+    pub core_wallet: ManagedWalletInfo,   // accounts, UTXOs, transaction history
+    pub balance: Arc<WalletBalance>,      // lock-free balance cache
+    pub identity_manager: IdentityManager,
+    pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    pub token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
+    pub token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>,
+}
+```
+
+`ManagedWalletInfo` (from `key-wallet`) holds the HD accounts. `IdentityManager`
+holds all `ManagedIdentity` records. The token maps index by `(contract_id,
+identity_id)`.
+
+## Wallet Lifecycle
+
+### Creation
+
+Both creation paths — mnemonic and seed bytes — end up calling `register_wallet`
+internally. That function:
+
+1. Creates a `ManagedWalletInfo` from the `Wallet` key material.
+2. Inserts the new wallet into the `WalletManager` under a write lock.
+3. Builds a `PlatformWallet` handle with all sub-wallet facets.
+4. Loads persisted state from the `PlatformWalletPersistence` backend and applies
+   any stored changeset.
+5. Inserts the handle into the wallets map and returns an `Arc<PlatformWallet>`.
+
+### Persistence Model
+
+The crate uses a **BDK-style changeset approach**: every mutation method produces a
+`PlatformWalletChangeSet` describing what changed. An external persister consumes
+these changesets asynchronously, translating them to storage at its own pace.
+
+```rust
+pub struct PlatformWalletChangeSet {
+    pub core: Option<key_wallet::changeset::WalletChangeSet>,
+    pub identities: Option<IdentityChangeSet>,
+    pub asset_locks: Option<AssetLockChangeSet>,
+    pub platform_addresses: Option<PlatformAddressChangeSet>,
+    pub token_balances: Option<TokenBalanceChangeSet>,
+    // ... contact changesets
+}
+```
+
+The changeset is **idempotent**: applying the same changeset twice produces the same
+result as applying it once. This makes it safe to replay on startup to reconstruct
+state. The `Merge` trait (also re-exported from this crate) lets you accumulate
+multiple changesets into one before writing to storage.
+
+**Recovery:** On startup, call `persister.load()` to retrieve a `ClientStartState`,
+then pass it to `PlatformWalletManager`'s load path. The manager applies each stored
+changeset to restore wallet and identity state without re-fetching from the network.
+
+See `PERSISTENCE_REDESIGN.md` in `packages/rs-platform-wallet/` for the full design
+rationale, including why the previous lock-contention approach was replaced.
+
+## Identity Flow
+
+The lifecycle from seed phrase to a funded Platform identity runs through three phases:
+
+### 1. Register the Identity
+
+Registration converts a UTXO into an asset lock transaction that funds a new identity
+on Platform. The asset lock is created, signed, and broadcast on the Core chain; the
+Platform state transition is sent to DAPI once the asset lock is confirmed.
+
+<!-- TODO: Verify the exact method name on IdentityWallet for identity registration
+     once the full identity flow API is stable. The register_identity method may be
+     on PlatformWallet directly or on IdentityWallet. Cross-check with
+     src/wallet/identity/ and the rs-sdk integration tests. -->
+
+```rust
+// Sketch — verify method names against src/wallet/identity/
+use platform_wallet::IdentityFundingMethod;
+
+let funding = IdentityFundingMethod::UseSpecificUtxo(outpoint);
+// wallet.identity.register_identity(funding, keys, sdk).await?;
+```
+
+### 2. Top Up Credits
+
+Once an identity exists, you can top it up by burning another UTXO:
+
+<!-- TODO: Verify TopUpFundingMethod variants and the top_up method signature
+     against src/wallet/identity/. -->
+
+```rust
+use platform_wallet::TopUpFundingMethod;
+// wallet.identity.top_up_identity(identity_id, TopUpFundingMethod::UseAvailableUtxo, sdk).await?;
+```
+
+### 3. Withdraw Credits
+
+Credits can be withdrawn back to the Core chain as Dash. The withdrawal creates a
+Platform state transition; the Core chain processes it in the next withdrawal cycle.
+
+<!-- TODO: Confirm the withdrawal method signature once the withdrawal flow is
+     integrated end-to-end in PlatformWallet. Check src/wallet/identity/ and
+     the rs-sdk WithdrawFromIdentity state transition. -->
+
+### Asset Lock Lifecycle
+
+Asset locks are tracked via `AssetLockManager`. Each lock moves through a state
+machine:
+
+```text
+Created → Broadcast → Seen in mempool → InstantLocked / ChainLocked → Spent (on Platform)
+```
+
+`TrackedAssetLock` holds the current `AssetLockStatus` and the `OutPoint` of the
+funding UTXO. When an InstantLock event arrives via SPV, the manager notifies any
+`AssetLockManager` waiters that are blocking on confirmation.
+
+```rust
+let asset_locks = wallet.asset_locks();
+let locked = asset_locks.list_tracked_locks_blocking();
+for lock in locked {
+    println!("outpoint={} status={:?}", lock.outpoint, lock.status);
+}
+```
+
+## Balance and UTXO Tracking
+
+### SPV Sync
+
+`SpvRuntime` drives the block-filter sync loop across all registered wallets. It is
+started automatically when the first wallet is registered. The sync loop:
+
+1. Downloads compact block filters from the peer network.
+2. Matches filters against each wallet's monitored addresses.
+3. Fetches full blocks for matches, extracts relevant transactions.
+4. Updates UTXOs, transaction history, and the lock-free `WalletBalance` atomic.
+5. Emits a balance-changed event so the UI can re-render without holding a lock.
+
+### Address Derivation
+
+Addresses follow BIP-44 derivation. The default account is `0` for standard
+payments. A separate account index is used internally for identity funding UTXOs.
+
+```rust
+// Derive the next unused receive address for account 0
+let addr = wallet.core().next_receive_address_for_account(0).await?;
+
+// Inspect UTXOs under the read guard
+let state = wallet.state().await;
+let synced_height = state.core_wallet.synced_height();
+if let Some(account) = state.core_wallet.accounts.standard_bip44_accounts.get(&0) {
+    let utxos = account.spendable_utxos(synced_height);
+    println!("{} spendable UTXOs", utxos.len());
+}
+```
+
+For the Platform address system (Bech32m P2PKH/P2SH/Orchard), see
+[Platform Addresses](../addresses/platform-addresses.md). Credit balances for
+platform addresses are tracked in `PlatformWalletInfo.token_balances` and refreshed
+by `PlatformAddressSyncManager`.
+
+### Transaction Broadcast
+
+`CoreWallet` holds a `SpvBroadcaster` that routes signed transactions to connected
+SPV peers. Asset lock transactions are broadcast through the same path, but tracked
+separately by `AssetLockManager` so their confirmation status drives the identity
+registration flow.
+
+## Event Handling
+
+`PlatformWalletManager` dispatches all SPV and Platform events through a
+`PlatformEventManager`, which fans out to every registered `PlatformEventHandler`.
+The application-supplied handler passed to `PlatformWalletManager::new` is one
+subscriber; two internal handlers are always registered:
+
+- `LockNotifyHandler` — wakes `AssetLockManager` async waiters when an
+  InstantLock or ChainLock is seen.
+- `BalanceUpdateHandler` — updates the lock-free `WalletBalance` atomics after
+  each block, using a separate `wallets` map so it never contends with the
+  SPV `wallet_manager` lock.
+
+Implement `PlatformEventHandler` to react to balance changes, lock events, identity
+sync completions, and contact updates:
+
+```rust
+use platform_wallet::events::{EventHandler, PlatformEventHandler};
+
+struct MyHandler;
+impl EventHandler for MyHandler {
+    // override event methods as needed
+}
+impl PlatformEventHandler for MyHandler {}
+```
+
+## FFI Integration
+
+`packages/rs-platform-wallet-ffi` exposes the wallet and identity API through a
+C-compatible FFI layer, enabling integration with Swift, Kotlin, C++, and any
+language that can call C functions.
+
+The FFI surface uses an opaque **handle-based** model: all Rust objects are kept
+alive in a thread-safe handle store; callers receive integer handles and pass them
+back to subsequent API calls. Memory is freed by calling the matching `_destroy()`
+function.
+
+**Key entry points:**
+
+| Function | Purpose |
+|----------|---------|
+| `platform_wallet_info_create_from_mnemonic` | Create wallet from BIP-39 phrase |
+| `platform_wallet_info_create_from_seed` | Create wallet from 64-byte seed |
+| `identity_manager_create` | Create a new identity manager |
+| `managed_identity_create_from_identity_bytes` | Wrap a DPP-serialized identity |
+| `managed_identity_get_balance` | Read identity credit balance |
+| `platform_wallet_string_free` | Free C string returned by the library |
+
+All functions return a `PlatformWalletFFIResult` status code. Check for
+`PLATFORM_WALLET_FFI_SUCCESS` before reading output parameters.
+
+The iOS Swift binding is built on top of this FFI layer and lives at
+`packages/swift-sdk/`. For build instructions, see
+[`packages/swift-sdk/BUILD_GUIDE_FOR_AI.md`](../../packages/swift-sdk/BUILD_GUIDE_FOR_AI.md).
+For the full FFI API surface and C header details, see the
+[`rs-platform-wallet-ffi` README](../../packages/rs-platform-wallet-ffi/README.md).
+
+## Further Reading
+
+- [Platform Addresses](../addresses/platform-addresses.md) — Bech32m address types
+  used for Platform credit tracking.
+- [Wallet Utilities (Evo SDK)](../evo-sdk/wallet-utilities.md) — JavaScript/TypeScript
+  offline key derivation utilities for the same key hierarchy.
+- [Architecture Overview](../architecture/overview.md) — Where `rs-platform-wallet`
+  sits in the full crate map.
+- [Builder Pattern](builder-pattern.md) — How to construct the `Sdk` instance that
+  `PlatformWalletManager` requires.
+- [BLAST Sync](blast-sync.md) — Details of the platform-address credit-balance sync
+  that `PlatformAddressSyncManager` drives.

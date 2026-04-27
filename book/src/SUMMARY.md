@@ -87,6 +87,7 @@
 - [Put Operations](sdk/put-operations.md)
 - [Identity Keys Deep Dive](sdk/identity-keys.md)
 - [BLAST Sync](sdk/blast-sync.md)
+- [Platform Wallet](sdk/wallet.md)
 
 # WASM
 
