@@ -63,7 +63,7 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Balance", value: record.formattedBalance)
                 FieldRow(label: "Revision", value: "\(record.revision)")
                 FieldRow(label: "Is Local", value: record.isLocal ? "Yes" : "No")
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network.displayName)
                 // `identityIndex` is the DIP-9 index the owning
                 // wallet registered this identity at. Only
                 // meaningful when `wallet != nil`; shown as "—"
@@ -122,7 +122,7 @@ struct DocumentStorageDetailView: View {
                 FieldRow(label: "Revision", value: "\(record.revision)")
                 FieldRow(label: "Contract ID", value: record.contractId)
                 FieldRow(label: "Owner ID", value: record.ownerId)
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network.displayName)
                 FieldRow(label: "Deleted", value: record.isDeleted ? "Yes" : "No")
             }
             Section("Timestamps") {
@@ -152,7 +152,7 @@ struct DataContractStorageDetailView: View {
                 FieldRow(label: "Name", value: record.name)
                 FieldRow(label: "Version", value: record.version.map { "\($0)" } ?? "None")
                 FieldRow(label: "Owner (Base58)", value: record.ownerIdBase58 ?? "None")
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network.displayName)
                 FieldRow(label: "Has Tokens", value: record.hasTokens ? "Yes" : "No")
             }
             Section("Flags") {
@@ -251,7 +251,7 @@ struct TokenBalanceStorageDetailView: View {
                 FieldRow(label: "Identity ID", value: hexString(record.identityId))
                 FieldRow(label: "Balance", value: "\(record.balance)")
                 FieldRow(label: "Frozen", value: record.frozen ? "Yes" : "No")
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network.displayName)
             }
             Section("Token Info") {
                 FieldRow(label: "Name", value: record.tokenName ?? "None")
@@ -422,7 +422,7 @@ struct SyncStateStorageDetailView: View {
     var body: some View {
         Form {
             Section("Sync Watermark") {
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network.displayName)
                 FieldRow(label: "Sync Height", value: "\(record.syncHeight)")
                 FieldRow(label: "Sync Timestamp", value: "\(record.syncTimestamp)")
                 if let date = blockDate {
@@ -511,7 +511,7 @@ struct WalletStorageDetailView: View {
         Form {
             Section("Core") {
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network?.displayName ?? "Unknown")
                 FieldRow(label: "Name", value: record.name ?? "None")
                 FieldRow(label: "Birth Height", value: "\(record.birthHeight)")
                 FieldRow(label: "Synced Height", value: "\(record.syncedHeight)")
@@ -764,7 +764,7 @@ struct WalletManagerMetadataStorageDetailView: View {
     var body: some View {
         Form {
             Section("Core") {
-                FieldRow(label: "Network", value: record.network)
+                FieldRow(label: "Network", value: record.network.displayName)
                 FieldRow(label: "Combined Sync Height", value: "\(record.combinedSyncHeight)")
                 FieldRow(label: "Wallet Count", value: "\(record.walletCount)")
                 if let hash = record.combinedSyncBlockHash {

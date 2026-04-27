@@ -7,8 +7,17 @@ import SwiftData
 /// manager-wide state. Singleton per network.
 @Model
 public final class PersistentWalletManagerMetadata {
-    /// Network name (unique per network).
-    @Attribute(.unique) public var network: String
+    /// Network this metadata row belongs to (unique per network).
+    ///
+    /// Stored as the `AppNetwork.rawValue` `Int` rather than the
+    /// enum itself because SwiftData refuses `@Attribute(.unique)`
+    /// on non-primitive types (Codable-wrapped raw-value enums are
+    /// not "valid for unique constraints" per Core Data's rule) —
+    /// the app crashes at container init otherwise. The `network`
+    /// computed accessor below keeps the public API type-safe; only
+    /// predicates that need to filter by network have to reach for
+    /// `networkRaw`.
+    @Attribute(.unique) public var networkRaw: Int
     /// Combined sync height across all wallets.
     public var combinedSyncHeight: UInt32
     /// Combined sync block hash (32 bytes).
@@ -19,8 +28,17 @@ public final class PersistentWalletManagerMetadata {
     public var createdAt: Date
     public var lastUpdated: Date
 
-    public init(network: String) {
-        self.network = network
+    /// Type-safe accessor over `networkRaw`. Reads fall back to
+    /// `.testnet` if the stored raw value ever drifts out of the
+    /// `AppNetwork` range (shouldn't happen — writers only go
+    /// through this setter which uses `AppNetwork.rawValue`).
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
+
+    public init(network: AppNetwork) {
+        self.networkRaw = network.rawValue
         self.combinedSyncHeight = 0
         self.walletCount = 0
         self.createdAt = Date()

@@ -364,24 +364,10 @@ fn test_contact_request_with_different_account_references() {
     assert_eq!(contact.incoming_request.account_reference, 1);
 }
 
-#[test]
-fn test_identity_label_management() {
-    // Test setting and clearing labels on managed identities
-
-    let identity = create_test_identity([1u8; 32]);
-    let mut managed = ManagedIdentity::new(identity, 0);
-
-    assert_eq!(managed.label, None);
-
-    managed.set_label("Primary Identity".to_string(), &noop_persister());
-    assert_eq!(managed.label, Some("Primary Identity".to_string()));
-
-    managed.set_label("Updated Label".to_string(), &noop_persister());
-    assert_eq!(managed.label, Some("Updated Label".to_string()));
-
-    managed.clear_label(&noop_persister());
-    assert_eq!(managed.label, None);
-}
+// `test_identity_label_management` was deleted alongside the
+// `ManagedIdentity.label` field. Per-identity user-facing labels live
+// on the Swift `PersistentIdentity.alias` column now, not on the
+// in-memory wallet object.
 
 #[test]
 fn test_concurrent_bidirectional_requests() {

@@ -278,7 +278,7 @@ struct CreateDocumentView: View {
             data: dataBlob,
             contractId: contract.idBase58,
             ownerId: selectedOwnerId,
-            network: appState.currentNetwork.rawValue
+            network: appState.currentNetwork
         )
         // Link to the parent contract so cascading cleanup works.
         document.dataContract = contract

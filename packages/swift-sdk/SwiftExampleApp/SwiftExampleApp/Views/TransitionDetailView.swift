@@ -551,7 +551,7 @@ struct TransitionDetailView: View {
         revision: 0,
         isLocal: false,
         alias: formInputs["alias"],
-        network: appState.currentNetwork.rawValue
+        network: appState.currentNetwork
       )
       modelContext.insert(row)
       try? modelContext.save()

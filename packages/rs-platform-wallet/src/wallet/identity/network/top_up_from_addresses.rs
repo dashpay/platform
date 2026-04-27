@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use dpp::identity::accessors::IdentitySettersV0;
+use dpp::identity::signer::Signer;
 use dpp::prelude::Identifier;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -12,7 +13,6 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::platform_addresses::PlatformAddressWallet;
 
 use super::*;
 
@@ -30,12 +30,15 @@ impl IdentityWallet {
     ///
     /// * `identity_id` - The identity to top up.
     /// * `inputs` - Map of platform addresses to credit amounts to spend.
-    /// * `platform_address_wallet` - The platform address wallet (provides signing).
-    pub async fn top_up_from_addresses(
+    /// * `address_signer` - Produces ECDSA signatures for the input
+    ///   [`PlatformAddress`]es. Construction is the caller's concern —
+    ///   seed-backed, hardware, FFI trampoline, whatever — the wallet
+    ///   struct carries no key material itself.
+    pub async fn top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity_id: &Identifier,
         inputs: BTreeMap<PlatformAddress, Credits>,
-        platform_address_wallet: &PlatformAddressWallet,
+        address_signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Credits, PlatformWalletError> {
         let identity = {
@@ -48,12 +51,12 @@ impl IdentityWallet {
             let manager = &info.identity_manager;
             manager
                 .identity(identity_id)
-                .cloned()
+                .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
         let (_address_infos, new_balance) = identity
-            .top_up_from_addresses(&self.sdk, inputs, platform_address_wallet, settings)
+            .top_up_from_addresses(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(

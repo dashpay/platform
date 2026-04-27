@@ -31,16 +31,9 @@ impl IdentityWallet {
     ) -> Result<Option<Identity>, PlatformWalletError> {
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
-        use crate::wallet::identity::state::managed_identity::key_storage::PrivateKeyData;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
         use dpp::util::hash::ripemd160_sha256;
-        use key_wallet::bip32::ChildNumber;
-        use key_wallet::bip32::DerivationPath;
-        use key_wallet::bip32::KeyDerivationType;
-        use key_wallet::dip9::{
-            IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        };
 
         let (network, wallet_id, key_hash_array) = {
             let wm = self.wallet_manager.read().await;
@@ -54,6 +47,7 @@ impl IdentityWallet {
             let key_hash_array = derive_identity_auth_key_hash(wallet, network, identity_index, 0)?;
             (network, wallet_id, key_hash_array)
         };
+        let _ = network;
 
         // Query Platform for an identity registered with this key hash.
         let identity = match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
@@ -68,25 +62,6 @@ impl IdentityWallet {
         };
 
         let identity_id = identity.id();
-
-        // Build the full derivation path for the matched key (key_index 0).
-        let base_path: DerivationPath = match network {
-            key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-            _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        }
-        .into();
-        let key_type_index: u32 = KeyDerivationType::ECDSA.into();
-        let full_path = base_path.extend([
-            ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Invalid key type index: {}", e))
-            })?,
-            ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Invalid identity index: {}", e))
-            })?,
-            ChildNumber::from_hardened_idx(0u32).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
-            })?,
-        ]);
 
         // Find which KeyID in the on-chain identity matches this key hash.
         let matched_key_id_and_pub = identity
@@ -110,6 +85,7 @@ impl IdentityWallet {
                 info.identity_manager.add_identity(
                     identity.clone(),
                     identity_index,
+                    wallet_id,
                     &self.persister,
                 )?;
             }
@@ -118,16 +94,13 @@ impl IdentityWallet {
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
 
-                if let Some((kid, pub_key)) = matched_key_id_and_pub {
+                if let Some((_kid, pub_key)) = matched_key_id_and_pub {
+                    // Emit the DIP-9 derivation breadcrumb on the
+                    // keys-changeset upsert so the client can re-derive
+                    // the private key from its wallet mnemonic.
                     managed.add_key(
-                        kid,
                         pub_key,
-                        PrivateKeyData::AtWalletDerivationPath {
-                            wallet_id,
-                            derivation_path: full_path,
-                            identity_index,
-                            key_index: 0,
-                        },
+                        Some((wallet_id, identity_index, 0)),
                         &self.persister,
                     );
                 }
@@ -278,7 +251,11 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            info.identity_manager.identities().keys().copied().collect()
+            info.identity_manager
+                .all_identities()
+                .into_iter()
+                .map(|i| i.id())
+                .collect()
         };
 
         for identity_id in identity_ids {
@@ -356,8 +333,8 @@ impl IdentityWallet {
                 ))
             })?;
 
-        // Add to watched identities (read-only — we don't know the wallet
-        // index and cannot sign).
+        // Add to the out-of-wallet bucket (observed read-only — we
+        // don't know the wallet index and cannot sign).
         {
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
@@ -366,7 +343,7 @@ impl IdentityWallet {
                 )
             })?;
             info.identity_manager
-                .add_watched_identity(identity.clone())?;
+                .add_out_of_wallet_identity(identity.clone(), &self.persister)?;
         }
 
         Ok(Some(identity))

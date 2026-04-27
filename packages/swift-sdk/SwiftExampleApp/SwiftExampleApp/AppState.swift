@@ -31,14 +31,21 @@ class AppState: ObservableObject {
         }
     }
 
-    private let testSigner = TestSigner()
+    // Identity-key signing is performed per-flow via a fresh
+    // `KeychainSigner` constructed from the active `ModelContainer`
+    // (see `CreateIdentityView.submit()`). `AppState` no longer holds
+    // a long-lived signer field — there is no shared signing state to
+    // amortize across flows, and the keychain-backed lookup makes
+    // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 
     init() {
-        // Load saved network preference or use default
-        if let savedNetwork = UserDefaults.standard.string(forKey: "currentNetwork"),
-           let network = AppNetwork(rawValue: savedNetwork) {
+        // Load saved network preference or use default. Read via
+        // `object(forKey:)` and cast — `integer(forKey:)` returns 0
+        // for missing keys, which would silently pin to mainnet.
+        if let rawInt = UserDefaults.standard.object(forKey: "currentNetwork") as? Int,
+           let network = AppNetwork(rawValue: rawInt) {
             self.currentNetwork = network
         } else {
             self.currentNetwork = .testnet

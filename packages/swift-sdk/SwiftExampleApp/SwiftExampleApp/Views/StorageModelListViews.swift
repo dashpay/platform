@@ -76,6 +76,7 @@ struct DataContractStorageListView: View {
 /// `(walletId, identityIndex)` — that way identity #0 of wallet A
 /// shows before identity #1, and unnamed wallets stay clustered.
 struct PublicKeyStorageListView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \PersistentIdentity.identityIndex)
     private var identities: [PersistentIdentity]
 
@@ -83,6 +84,11 @@ struct PublicKeyStorageListView: View {
     private var allKeys: [PersistentPublicKey]
 
     @Query private var hdWallets: [PersistentWallet]
+
+    /// Key targeted by a pending Remove swipe. Non-nil presents the
+    /// confirmation dialog; holding the reference lets the dialog
+    /// show `Key N` without re-fetching.
+    @State private var keyPendingRemoval: PersistentPublicKey?
 
     var body: some View {
         List {
@@ -104,6 +110,29 @@ struct PublicKeyStorageListView: View {
             if allKeys.isEmpty {
                 ContentUnavailableView("No Records", systemImage: "key")
             }
+        }
+        .confirmationDialog(
+            removalDialogTitle,
+            isPresented: Binding(
+                get: { keyPendingRemoval != nil },
+                set: { newValue in
+                    if !newValue { keyPendingRemoval = nil }
+                }
+            ),
+            titleVisibility: .visible,
+            presenting: keyPendingRemoval
+        ) { key in
+            Button("Remove from Device", role: .destructive) {
+                removePublicKeyLocally(key)
+                keyPendingRemoval = nil
+            }
+            Button("Keep on Device", role: .cancel) {
+                keyPendingRemoval = nil
+            }
+        } message: { _ in
+            Text(
+                "This only deletes the local copy of this public key and any matching private key stored in the Keychain. It does not change the identity on the Dash Platform network."
+            )
         }
     }
 
@@ -239,6 +268,42 @@ struct PublicKeyStorageListView: View {
                     .foregroundColor(.secondary)
             }
         }
+        // Same pattern as the identities list: no `role: .destructive`
+        // on the swipe button itself (that would animate the row out
+        // before the user confirms), and `.tint(.red)` gives us the
+        // expected red look. `allowsFullSwipe: false` forces the user
+        // through the confirmation dialog.
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                keyPendingRemoval = record
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+            .tint(.red)
+        }
+    }
+
+    private var removalDialogTitle: String {
+        guard let key = keyPendingRemoval else {
+            return "Remove public key from this device?"
+        }
+        return "Remove Key \(key.keyId) from this device?"
+    }
+
+    /// Local-only removal of a public key row plus any paired
+    /// Keychain entry. We delete by the stored
+    /// `privateKeyKeychainIdentifier` string (format-agnostic across
+    /// the `privkey_<identityHex>_<keyIndex>` and
+    /// `identity_privkey.<derivationPath>` formats the app writes).
+    /// SwiftData handles the rest: the public-key row disappears,
+    /// and the `@Relationship(inverse: \PersistentIdentity.publicKeys)`
+    /// inverse removes it from the owning identity's collection.
+    private func removePublicKeyLocally(_ key: PersistentPublicKey) {
+        if let identifier = key.privateKeyKeychainIdentifier {
+            _ = KeychainManager.shared.deleteKeyData(identifier: identifier)
+        }
+        modelContext.delete(key)
+        try? modelContext.save()
     }
 }
 
@@ -390,7 +455,7 @@ struct SyncStateStorageListView: View {
         List(records) { record in
             NavigationLink(destination: SyncStateStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(record.network.capitalized)
+                    Text(record.network.displayName)
                         .font(.body)
                     Text("Height \(record.syncHeight)")
                         .font(.caption)
@@ -418,7 +483,7 @@ struct WalletStorageListView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name ?? record.walletId.map { String(format: "%02x", $0) }.prefix(16).joined())
                         .font(.body).lineLimit(1)
-                    Text("\(record.network) · height \(record.syncedHeight)")
+                    Text("\(record.network?.displayName ?? "Unknown") · height \(record.syncedHeight)")
                         .font(.caption).foregroundColor(.secondary)
                 }
             }
@@ -491,7 +556,7 @@ struct AccountStorageListView: View {
     private func walletHeader(for wallet: PersistentWallet) -> String {
         let id = wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
         let label = wallet.name ?? "Wallet \(id)…"
-        return "\(label) (\(wallet.network))"
+        return "\(label) (\(wallet.network?.displayName ?? "Unknown"))"
     }
 
     /// Same ordering used in the load-path emit — stable across runs.
@@ -821,7 +886,7 @@ struct WalletManagerMetadataStorageListView: View {
         List(records) { record in
             NavigationLink(destination: WalletManagerMetadataStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(record.network).font(.body)
+                    Text(record.network.displayName).font(.body)
                     Text("Height \(record.combinedSyncHeight) · \(record.walletCount) wallets")
                         .font(.caption).foregroundColor(.secondary)
                 }

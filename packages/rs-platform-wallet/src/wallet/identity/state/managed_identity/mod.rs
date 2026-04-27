@@ -6,7 +6,6 @@
 mod contact_requests;
 mod contacts;
 mod identity_ops;
-mod label;
 mod sync;
 
 // `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
@@ -15,7 +14,7 @@ mod sync;
 // `state::managed_identity::*` path.
 pub use crate::wallet::identity::types::block_time::{self, BlockTime};
 pub use crate::wallet::identity::types::key_storage::{
-    self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData, WatchedIdentity,
+    self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
 use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
@@ -23,7 +22,17 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
 
-/// A managed identity that combines an Identity with wallet-specific metadata
+/// A managed identity that combines an Identity with wallet-specific metadata.
+///
+/// Two buckets the manager keeps these in:
+///
+/// - `IdentityManager.wallet_identities[wallet_id][identity_index]` —
+///   wallet-owned, signing-capable. `wallet_id == Some(_)`,
+///   `identity_index == Some(_)`.
+/// - `IdentityManager.out_of_wallet_identities[identity_id]` —
+///   observed read-only. `wallet_id == None`, `identity_index == None`.
+///   Cannot sign — not because of an explicit "watched" flag, but because
+///   there's no wallet to derive private keys from.
 #[derive(Debug, Clone)]
 pub struct ManagedIdentity {
     /// The Platform identity
@@ -31,19 +40,21 @@ pub struct ManagedIdentity {
 
     /// The BIP-9 HD identity index used during registration or discovery.
     ///
-    /// This is the index in the derivation path `m/9'/coin'/5'/0'/key_type'/identity_index'/key_id'`.
+    /// This is the index in the derivation path
+    /// `m/9'/coin'/5'/0'/key_type'/identity_index'/key_id'`.
     /// Recorded during identity registration or gap-limit discovery so that
     /// subsequent operations (signing, ECDH) can derive the correct keys.
-    pub identity_index: u32,
+    ///
+    /// `Some(idx)` when this identity lives in a wallet's bucket — `idx` is
+    /// the inner BTreeMap key. `None` for out-of-wallet identities (formerly
+    /// "watched"); they have no HD-derivation context.
+    pub identity_index: Option<u32>,
 
     /// Last block time when balance was updated for this identity
     pub last_updated_balance_block_time: Option<BlockTime>,
 
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,
-
-    /// User-defined label for this identity
-    pub label: Option<String>,
 
     /// Map of established contacts (bidirectional relationships) keyed by contact identity ID
     pub established_contacts: BTreeMap<Identifier, EstablishedContact>,
@@ -53,9 +64,6 @@ pub struct ManagedIdentity {
 
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
     pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
-
-    /// Private key storage mapping KeyID to (public key, private key data).
-    pub key_storage: KeyStorage,
 
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
@@ -79,6 +87,10 @@ pub struct ManagedIdentity {
     /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
     /// the wallet that owns this identity, if known. Set during
     /// gap-limit scan and identity recovery.
+    ///
+    /// Denormalized — when the identity lives in the wallet bucket
+    /// this is also the outer `BTreeMap` key. `None` means the identity
+    /// lives in the out-of-wallet bucket (observed only).
     pub wallet_id: Option<[u8; 32]>,
 
     /// DashPay profile (display name, bio, avatar, public message)
@@ -122,22 +134,8 @@ mod tests {
         assert_eq!(managed.id(), Identifier::from([1u8; 32]));
         assert_eq!(managed.balance(), 1000);
         assert_eq!(managed.revision(), 1);
-        assert_eq!(managed.label, None);
         assert_eq!(managed.last_updated_balance_block_time, None);
         assert_eq!(managed.last_synced_keys_block_time, None);
-    }
-
-    #[test]
-    fn test_label_management() {
-        let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity, 0);
-        let p = noop_persister();
-
-        managed.set_label("Test Identity".to_string(), &p);
-        assert_eq!(managed.label, Some("Test Identity".to_string()));
-
-        managed.clear_label(&p);
-        assert_eq!(managed.label, None);
     }
 
     #[test]

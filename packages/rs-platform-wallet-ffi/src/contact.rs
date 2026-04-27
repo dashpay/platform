@@ -124,11 +124,12 @@ pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
         })
 }
 
-/// Check if a contact is established
+/// Check if a contact is established. `contact_id` is a `*const u8`
+/// to a 32-byte identifier buffer.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_is_contact_established(
     identity_handle: Handle,
-    contact_id: IdentifierBytes,
+    contact_id: *const u8,
     out_is_established: *mut bool,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -144,7 +145,7 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match contact_id.to_identifier() {
+    let id = match unsafe { read_identifier(contact_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -270,10 +271,10 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_reject_contact_request(
     identity_handle: Handle,
-    sender_id: IdentifierBytes,
+    sender_id: *const u8,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let id = match sender_id.to_identifier() {
+    let id = match unsafe { read_identifier(sender_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -373,7 +374,7 @@ mod tests {
             assert_eq!(array.count, 0); // Should be empty for new identity
 
             // Cleanup
-            platform_wallet_identifier_array_free(array);
+            platform_wallet_identifier_array_free(&mut array);
             crate::managed_identity_destroy(handle);
         }
     }
@@ -397,7 +398,7 @@ mod tests {
             assert_eq!(array.count, 0);
 
             // Cleanup
-            platform_wallet_identifier_array_free(array);
+            platform_wallet_identifier_array_free(&mut array);
             crate::managed_identity_destroy(handle);
         }
     }
@@ -421,7 +422,7 @@ mod tests {
             assert_eq!(array.count, 0);
 
             // Cleanup
-            platform_wallet_identifier_array_free(array);
+            platform_wallet_identifier_array_free(&mut array);
             crate::managed_identity_destroy(handle);
         }
     }
@@ -434,13 +435,13 @@ mod tests {
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
             let contact_id = Identifier::random();
-            let id_bytes: IdentifierBytes = contact_id.into();
+            let id_bytes: [u8; 32] = contact_id.to_buffer();
             let mut error = PlatformWalletFFIError::success();
 
             let mut is_established = true;
             let result = managed_identity_is_contact_established(
                 handle,
-                id_bytes,
+                id_bytes.as_ptr(),
                 &mut is_established,
                 &mut error,
             );

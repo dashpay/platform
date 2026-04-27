@@ -337,6 +337,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield(
             user_fee_increase,
             wrapper.sdk.version(),
         )
+        .await
         .map_err(|e| {
             FFIError::InternalError(format!("Failed to build shield transition: {}", e))
         })?;

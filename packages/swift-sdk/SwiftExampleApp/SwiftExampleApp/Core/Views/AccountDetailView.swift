@@ -110,7 +110,7 @@ struct AccountDetailView: View {
                     Text("Network:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(wallet.network.capitalized)
+                    Text(wallet.network?.displayName ?? "Unknown")
                         .fontWeight(.medium)
                 }
 

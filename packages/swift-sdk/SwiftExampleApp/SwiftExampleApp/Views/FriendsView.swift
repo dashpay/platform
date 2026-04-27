@@ -484,6 +484,7 @@ struct AddFriendView: View {
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var searchText = ""
     @State private var searchMethod = 0 // 0: DPNS, 1: Identity ID
     @State private var isSending = false
@@ -595,9 +596,18 @@ struct AddFriendView: View {
                     recipientId = parsed
                 }
 
+                // Construct a fresh `KeychainSigner` and route through
+                // the platform-wallet
+                // `IdentityWallet::send_contact_request_with_external_signer`
+                // path. CAVEAT: the contact-request encryption step
+                // still derives the sender's ECDH key Rust-side from
+                // the wallet seed (watch-only wallets fail there) —
+                // see the docstring on `sendContactRequest(...,signer:)`.
+                let signer = KeychainSigner(modelContainer: modelContext.container)
                 _ = try await wallet.sendContactRequest(
                     senderIdentityId: identity.identityId,
-                    recipientIdentityId: recipientId
+                    recipientIdentityId: recipientId,
+                    signer: signer
                 )
                 onSent()
                 dismiss()

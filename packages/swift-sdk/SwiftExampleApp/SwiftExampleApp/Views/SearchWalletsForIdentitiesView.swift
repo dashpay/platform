@@ -1,17 +1,18 @@
 // SearchWalletsForIdentitiesView.swift
 // SwiftExampleApp
 //
-// Sheet invoked from the Identities tab that runs the HD
-// gap-limit identity discovery scan over every loaded platform
-// wallet, surfacing the count of newly-discovered identities on
-// completion.
+// Sheet invoked from the Identities tab that drives the DIP-9
+// identity-authentication gap-limit scan against a single user-
+// selected wallet.
 //
-// Per the platform-wallet proposal: by default the scan resumes
-// from each wallet's cached `last_scanned_index`; a "Full rescan
-// from index 0" toggle flips to a cold scan. Heavy lifting
-// (derivation, Platform lookup, cache writes) all happens on the
-// Rust side — this view just drives the async call and reports
-// aggregate results.
+// On success the scan's discovered-identity count renders per the
+// existing per-wallet row. On an empty scan the view also asks Rust
+// for the identity-authentication keypairs the scan would have used
+// (same derivation policy the scan applies — `previewIdentityRegistrationKeys`
+// is a read-only view over the loaded wallet seed, no mnemonic needed
+// on the Swift side), so the user can sanity-check the (public /
+// private) keys being probed. Private keys are hidden by default and
+// can be revealed per-row with a tap.
 
 import SwiftUI
 import SwiftDashSDK
@@ -21,111 +22,73 @@ struct SearchWalletsForIdentitiesView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) private var dismiss
 
-    /// Local persisted wallet list drives the "wallets to scan"
-    /// count shown in the explainer copy. The actual scan walks
-    /// `walletManager.wallets` because that's where the runtime
-    /// `ManagedPlatformWallet` handles live.
-    @Query private var hdWallets: [PersistentWallet]
+    /// Wallet list for the picker. Sorted by `createdAt` to match
+    /// the ordering `CreateIdentityView` uses, so the "first wallet"
+    /// that's preselected is deterministic and consistent with the
+    /// rest of the app.
+    @Query(sort: \PersistentWallet.createdAt) private var hdWallets: [PersistentWallet]
 
-    /// Toggle wired to the `startIndex` argument: `false` → resume
-    /// from cache (nil); `true` → start from 0.
-    @State private var fullRescan: Bool = false
+    /// User-selected wallet id. Initialized to the first wallet on
+    /// appear; always preselected even when the list only has one
+    /// entry (so the picker stays visible and the UI is uniform).
+    @State private var selectedWalletId: Data?
 
     @State private var isSearching: Bool = false
-    @State private var result: SearchOutcome?
+    @State private var result: WalletFinding?
+    @State private var previewKeys: [ManagedPlatformWallet.IdentityRegistrationKeyPreview] = []
+    @State private var previewError: String?
+    @State private var revealedKeyIndex: UInt32?
 
-    /// Result bucket. `perWallet` drives the per-wallet breakdown
-    /// list that renders after a successful scan.
-    struct SearchOutcome: Equatable {
-        struct WalletFinding: Equatable, Identifiable {
-            let walletId: Data
-            let label: String
-            let foundCount: Int
-            let error: String?
-            var id: Data { walletId }
-        }
-        var perWallet: [WalletFinding]
-        var totalFound: Int {
-            perWallet.reduce(0) { $0 + $1.foundCount }
-        }
+    /// One wallet's outcome. Post-redesign we scan a single wallet
+    /// at a time, so this is a flat struct rather than an array.
+    struct WalletFinding: Equatable {
+        let walletId: Data
+        let label: String
+        let foundCount: Int
+        /// Rust-side error as reported by `discoverIdentities`.
+        /// Rendered in full (no truncation) so path-derivation
+        /// failures and similar long messages aren't cut off.
+        let error: String?
+    }
+
+    /// Resolved runtime wallet for the current selection, or `nil`
+    /// when the user's picked wallet isn't loaded in the manager
+    /// (e.g. the app hasn't restored it from the persistor).
+    private var selectedManagedWallet: ManagedPlatformWallet? {
+        guard let id = selectedWalletId else { return nil }
+        return walletManager.wallet(for: id)
+    }
+
+    /// Persisted row for the selected wallet — drives the label
+    /// shown in the result / preview sections.
+    private var selectedPersistentWallet: PersistentWallet? {
+        guard let id = selectedWalletId else { return nil }
+        return hdWallets.first { $0.walletId == id }
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Scan every loaded wallet's DIP-9 identity "
-                            + "authentication tree and register any "
-                            + "identities found on Platform.")
-                            .font(.callout)
-                        Text("\(hdWallets.count) wallet\(hdWallets.count == 1 ? "" : "s") will be scanned.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 2)
-                }
-
-                Section("Options") {
-                    Toggle("Full rescan from index 0", isOn: $fullRescan)
-                        .disabled(isSearching)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(fullRescan
-                            ? "Every wallet is scanned from identity index 0. Slower."
-                            : "Each wallet resumes from its cached last-scanned index. Fast path.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                explainerSection
+                walletPickerSection
 
                 if let result {
-                    Section("Result") {
-                        HStack {
-                            Text("Total new identities")
-                            Spacer()
-                            Text("\(result.totalFound)")
-                                .fontWeight(.semibold)
-                                .foregroundColor(result.totalFound > 0 ? .green : .secondary)
-                        }
-                        ForEach(result.perWallet) { wallet in
-                            HStack(alignment: .top) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(wallet.label)
-                                        .font(.subheadline)
-                                    if let err = wallet.error {
-                                        Text(err)
-                                            .font(.caption)
-                                            .foregroundColor(.red)
-                                            .lineLimit(2)
-                                    }
-                                }
-                                Spacer()
-                                Text("+\(wallet.foundCount)")
-                                    .foregroundColor(wallet.foundCount > 0 ? .green : .secondary)
-                            }
-                        }
+                    resultSection(result)
+                }
+
+                if !previewKeys.isEmpty {
+                    previewKeysSection
+                }
+
+                if let previewError {
+                    Section {
+                        Text(previewError)
+                            .font(.caption)
+                            .foregroundColor(.red)
                     }
                 }
 
-                Section {
-                    Button {
-                        Task { await runScan() }
-                    } label: {
-                        HStack {
-                            if isSearching {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                    .padding(.trailing, 4)
-                                Text("Scanning…")
-                            } else {
-                                Image(systemName: "magnifyingglass")
-                                Text(result == nil ? "Search Wallets" : "Search Again")
-                            }
-                            Spacer()
-                        }
-                    }
-                    .disabled(isSearching || hdWallets.isEmpty)
-                }
+                searchButtonSection
             }
             .navigationTitle("Search Wallets")
             .navigationBarTitleDisplayMode(.inline)
@@ -135,75 +98,320 @@ struct SearchWalletsForIdentitiesView: View {
                         .disabled(isSearching)
                 }
             }
+            .onAppear(perform: ensureDefaultSelection)
+            .onChange(of: hdWallets) {
+                ensureDefaultSelection()
+            }
         }
     }
 
-    /// Iterate every runtime wallet, kick off `discoverIdentities`
-    /// for each, and aggregate the outcome. Failures for individual
-    /// wallets are collected into `perWallet[i].error` rather than
-    /// aborting — partial progress is still useful.
+    // MARK: - Sections
+
+    private var explainerSection: some View {
+        Section {
+            Text("Scan this wallet's DIP-9 identity authentication "
+                + "tree and register any identities found on Platform.")
+                .font(.callout)
+                .padding(.vertical, 2)
+        }
+    }
+
+    @ViewBuilder
+    private var walletPickerSection: some View {
+        Section("Wallet") {
+            if hdWallets.isEmpty {
+                Text("No wallets loaded. Create or import a wallet first.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Picker(
+                    "Wallet",
+                    selection: Binding<Data?>(
+                        get: { selectedWalletId },
+                        set: { newId in
+                            selectedWalletId = newId
+                            // A new wallet selection invalidates
+                            // the previous scan's result and
+                            // preview keys — they belong to a
+                            // different seed.
+                            result = nil
+                            previewKeys = []
+                            previewError = nil
+                            revealedKeyIndex = nil
+                        }
+                    )
+                ) {
+                    ForEach(hdWallets, id: \.walletId) { wallet in
+                        walletPickerRow(wallet).tag(Optional(wallet.walletId))
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(isSearching || hdWallets.count < 1)
+            }
+        }
+    }
+
+    private func walletPickerRow(_ wallet: PersistentWallet) -> some View {
+        HStack {
+            Text(wallet.label)
+            Text(labelFingerprint(wallet.walletId))
+                .font(.caption.monospaced())
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func resultSection(_ finding: WalletFinding) -> some View {
+        Section("Result") {
+            HStack {
+                Text("New identities")
+                Spacer()
+                Text("+\(finding.foundCount)")
+                    .fontWeight(.semibold)
+                    .foregroundColor(finding.foundCount > 0 ? .green : .secondary)
+            }
+            if let err = finding.error {
+                // No `.lineLimit` — identity-derivation errors can
+                // be long (full path + SECP error chain). Let
+                // SwiftUI wrap so nothing's truncated.
+                Text(err)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .textSelection(.enabled)
+            } else if finding.foundCount == 0 {
+                // The gap-limit window is owned by Rust; the
+                // preview list below is sized against the same
+                // policy, so we point the user at it rather than
+                // naming a Swift-side constant.
+                Text("No identities were registered under this wallet's "
+                    + "DIP-9 identity tree within the gap-limit window. "
+                    + "See the keypairs below for the exact keys the scan walked.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var previewKeysSection: some View {
+        Section(
+            header: Text("Identity Registration Keys"),
+            footer: Text("These are the first \(previewKeys.count) "
+                + "MASTER identity-authentication keys "
+                + "(`m/9'/coin'/5'/0'/0'/identity_index'/0'`) "
+                + "the discovery scan would use. Tap a row to reveal "
+                + "its private key (WIF).")
+                .font(.caption2)
+        ) {
+            ForEach(previewKeys) { preview in
+                previewKeyRow(preview)
+            }
+        }
+    }
+
+    private func previewKeyRow(
+        _ preview: ManagedPlatformWallet.IdentityRegistrationKeyPreview
+    ) -> some View {
+        let isRevealed = revealedKeyIndex == preview.identityIndex
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Index \(preview.identityIndex)")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    revealedKeyIndex = isRevealed ? nil : preview.identityIndex
+                } label: {
+                    Label(
+                        isRevealed ? "Hide Private Key" : "Reveal Private Key",
+                        systemImage: isRevealed ? "eye.slash" : "eye"
+                    )
+                    .font(.caption)
+                    .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderless)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Path")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(preview.derivationPath)
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Public Key")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(preview.publicKeyHex)
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+            }
+
+            if isRevealed {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Private Key (WIF)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(preview.privateKeyWIF)
+                        .font(.system(.caption2, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(6)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(6)
+                    Button {
+                        UIPasteboard.general.string = preview.privateKeyWIF
+                    } label: {
+                        Label("Copy Private Key", systemImage: "doc.on.doc")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var searchButtonSection: some View {
+        Section {
+            Button {
+                Task { await runScan() }
+            } label: {
+                HStack {
+                    if isSearching {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .padding(.trailing, 4)
+                        Text("Scanning…")
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                        Text(result == nil ? "Search Wallet" : "Search Again")
+                    }
+                    Spacer()
+                }
+            }
+            .disabled(
+                isSearching
+                    || selectedWalletId == nil
+                    || selectedManagedWallet == nil
+            )
+            if selectedWalletId != nil && selectedManagedWallet == nil {
+                Text("This wallet isn't loaded in the wallet manager yet. "
+                    + "Restore it from the Wallets tab and try again.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Preselect the first wallet (by `createdAt` order) once the
+    /// query loads, and clear the selection if the underlying list
+    /// shrank to exclude the previously-selected id.
+    private func ensureDefaultSelection() {
+        if let current = selectedWalletId,
+           hdWallets.contains(where: { $0.walletId == current }) {
+            return
+        }
+        selectedWalletId = hdWallets.first?.walletId
+        result = nil
+        previewKeys = []
+        previewError = nil
+        revealedKeyIndex = nil
+    }
+
+    /// Run discovery against the selected wallet. Resume-from-cache
+    /// (the Rust default) — no full-rescan toggle post-redesign,
+    /// since re-walking cached slots is the wrong tool for a "find
+    /// my identities" button. Empty / errored results trigger the
+    /// Rust-side preview keypair fetch.
     private func runScan() async {
+        guard let walletId = selectedWalletId,
+              let managed = walletManager.wallet(for: walletId),
+              let persistent = selectedPersistentWallet
+        else { return }
+
         isSearching = true
         defer { isSearching = false }
 
-        // Snapshot the map so we don't hold the publisher mid-iteration.
-        let runtimeWallets = walletManager.wallets
+        // Wipe stale state before kicking off.
+        result = nil
+        previewKeys = []
+        previewError = nil
+        revealedKeyIndex = nil
 
-        // Join runtime wallets against the PersistentWallet table
-        // so we can render the user-visible label. A runtime
-        // wallet that's missing from SwiftData still gets
-        // scanned; we just fall back to its id fingerprint for
-        // the label.
-        let labelsById = Dictionary(
-            uniqueKeysWithValues: hdWallets.map { ($0.walletId, $0.label) }
-        )
+        let label = persistent.label
+        do {
+            let found = try await managed.discoverIdentities(
+                startIndex: nil, // resume from cache
+                gapLimit: nil    // Rust default (IDENTITY_GAP_LIMIT)
+            )
+            result = WalletFinding(
+                walletId: walletId,
+                label: label,
+                foundCount: found.count,
+                error: nil
+            )
 
-        var findings: [SearchOutcome.WalletFinding] = []
-        for (walletId, wallet) in runtimeWallets {
-            let label = labelsById[walletId] ?? labelFingerprint(walletId)
-            do {
-                let found = try await wallet.discoverIdentities(
-                    startIndex: fullRescan ? 0 : nil,
-                    gapLimit: nil
-                )
-                findings.append(
-                    SearchOutcome.WalletFinding(
-                        walletId: walletId,
-                        label: label,
-                        foundCount: found.count,
-                        error: nil
-                    )
-                )
-            } catch {
-                findings.append(
-                    SearchOutcome.WalletFinding(
-                        walletId: walletId,
-                        label: label,
-                        foundCount: 0,
-                        error: error.localizedDescription
-                    )
-                )
+            // Zero hits → ask Rust for the preview keypairs the
+            // scan walked so the user can eyeball / copy them.
+            if found.isEmpty {
+                await loadPreviewKeys(on: managed)
             }
-        }
+        } catch {
+            result = WalletFinding(
+                walletId: walletId,
+                label: label,
+                foundCount: 0,
+                error: error.localizedDescription
+            )
 
-        // Sort: wallets with hits first, then by label for stability.
-        findings.sort { lhs, rhs in
-            if lhs.foundCount != rhs.foundCount {
-                return lhs.foundCount > rhs.foundCount
-            }
-            return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
+            // Even on error, show the candidate keys. The user's
+            // reason for pulling this sheet up is usually "I don't
+            // see my identity" — the keypairs let them confirm
+            // whether the scan is probing the right derivation tree.
+            await loadPreviewKeys(on: managed)
         }
-
-        result = SearchOutcome(perWallet: findings)
     }
 
-    /// Short human fingerprint for a wallet id when we have no
-    /// persisted label to render (e.g. a runtime-only wallet that
-    /// hasn't been saved yet).
+    /// Call the Rust-side preview FFI on the already-loaded wallet
+    /// handle and publish the result. No Keychain / mnemonic
+    /// access required on this path — derivation happens entirely
+    /// in Rust against the wallet's resident seed. Runs off the
+    /// main actor anyway because the call spins up a secp256k1
+    /// context per row.
+    @MainActor
+    private func loadPreviewKeys(on managed: ManagedPlatformWallet) async {
+        let previews: [ManagedPlatformWallet.IdentityRegistrationKeyPreview]
+        do {
+            previews = try await Task.detached(priority: .userInitiated) {
+                // `count: nil` defers to the Rust-side
+                // IDENTITY_GAP_LIMIT so the preview window tracks
+                // whatever the discovery scan just walked.
+                try managed.previewIdentityRegistrationKeys(
+                    startIndex: 0,
+                    count: nil
+                )
+            }.value
+        } catch {
+            previewError = "Couldn't derive identity-authentication keys: "
+                + error.localizedDescription
+            return
+        }
+
+        self.previewKeys = previews
+    }
+
+    /// Short human fingerprint for a wallet id when the list row
+    /// needs a distinguishing suffix alongside the label.
     private func labelFingerprint(_ walletId: Data) -> String {
         let hex = walletId.prefix(4)
             .map { String(format: "%02x", $0) }
             .joined()
-        return "Wallet \(hex)"
+        return hex.isEmpty ? "" : "(\(hex))"
     }
 }

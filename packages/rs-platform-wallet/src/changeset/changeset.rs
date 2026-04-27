@@ -95,10 +95,13 @@ pub struct IdentityEntry {
     /// On-chain identity revision; used as the monotonic gate for
     /// `balance`/`revision` replacement in merge + apply.
     pub revision: Revision,
-    /// HD identity index used during registration.
-    pub identity_index: u32,
-    /// User-defined label.
-    pub label: Option<String>,
+    /// HD identity index used during registration. `Some(idx)` for
+    /// wallet-owned identities (matches the bucket key in
+    /// `IdentityManager.wallet_identities[wallet_id][idx]`); `None` for
+    /// out-of-wallet (observed) identities, which have no derivation
+    /// context. Mirrors the shape of
+    /// [`ManagedIdentity::identity_index`](crate::wallet::identity::ManagedIdentity).
+    pub identity_index: Option<u32>,
     /// Last block time when balance was updated.
     pub last_updated_balance_block_time: Option<BlockTime>,
     /// Last block time when keys were synced.
@@ -138,7 +141,6 @@ impl IdentityEntry {
             balance: managed.identity.balance(),
             revision: managed.identity.revision(),
             identity_index: managed.identity_index,
-            label: managed.label.clone(),
             last_updated_balance_block_time: managed.last_updated_balance_block_time,
             last_synced_keys_block_time: managed.last_synced_keys_block_time,
             dpns_names: managed.dpns_names.clone(),
@@ -231,9 +233,7 @@ impl Merge for IdentityKeysChangeSet {
 
 /// Changes to the identity store.
 ///
-/// Carries inserted/updated identities, tombstones for removals, and
-/// wallet-level metadata mutated via [`IdentityManager`](crate::wallet::identity::IdentityManager)
-/// (primary identity selection, gap-limit scan watermark).
+/// Carries inserted/updated identities and tombstones for removals.
 ///
 /// # Merge ordering hazard
 ///
@@ -250,10 +250,6 @@ pub struct IdentityChangeSet {
     pub identities: BTreeMap<Identifier, IdentityEntry>,
     /// Identities removed from the wallet.
     pub removed: BTreeSet<Identifier>,
-    /// New primary identity selection. `None` means no change.
-    pub primary_identity: Option<Identifier>,
-    /// New gap-limit scan watermark. `None` means no change.
-    pub last_scanned_index: Option<u32>,
 }
 
 impl Merge for IdentityChangeSet {
@@ -274,7 +270,6 @@ impl Merge for IdentityChangeSet {
                         existing.balance = entry.balance;
                         existing.revision = entry.revision;
                     }
-                    existing.label = entry.label.clone();
                     existing.last_updated_balance_block_time =
                         entry.last_updated_balance_block_time;
                     existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
@@ -320,30 +315,10 @@ impl Merge for IdentityChangeSet {
                 .or_insert(entry);
         }
         self.removed.extend(other.removed);
-        if other.primary_identity.is_some() {
-            self.primary_identity = other.primary_identity;
-        }
-        // Monotonic merge for `last_scanned_index` — the gap-limit
-        // scan watermark only advances forward. Defending against
-        // stale replay / reordered flushes (holistic review S2):
-        // even though the current writer is single, out-of-order
-        // merging during staged-changeset accumulation or flush
-        // failure recovery could clobber a newer value with an
-        // older one. Use MAX for safety.
-        match (self.last_scanned_index, other.last_scanned_index) {
-            (None, Some(v)) => self.last_scanned_index = Some(v),
-            (Some(current), Some(v)) if v > current => {
-                self.last_scanned_index = Some(v);
-            }
-            _ => {}
-        }
     }
 
     fn is_empty(&self) -> bool {
-        self.identities.is_empty()
-            && self.removed.is_empty()
-            && self.primary_identity.is_none()
-            && self.last_scanned_index.is_none()
+        self.identities.is_empty() && self.removed.is_empty()
     }
 }
 

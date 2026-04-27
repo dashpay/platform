@@ -66,7 +66,7 @@ mod tests {
     }
 
     /// Create a simple AddressFundsTransferTransition with proper signing
-    fn create_signed_address_funds_transfer_transition(
+    async fn create_signed_address_funds_transfer_transition(
         signer: &TestAddressSigner,
         input_address: PlatformAddress,
         input_nonce: AddressNonce,
@@ -88,6 +88,7 @@ mod tests {
             0,
             PlatformVersion::latest(),
         )
+        .await
         .expect("should create signed transition")
     }
 
@@ -112,7 +113,7 @@ mod tests {
     }
 
     /// Create a signed transition with custom inputs/outputs and fee strategy
-    fn create_signed_transition_with_custom_outputs(
+    async fn create_signed_transition_with_custom_outputs(
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
         outputs: BTreeMap<PlatformAddress, u64>,
@@ -126,6 +127,7 @@ mod tests {
             0,
             PlatformVersion::latest(),
         )
+        .await
         .expect("should create signed transition")
     }
 
@@ -138,8 +140,8 @@ mod tests {
     mod structure_validation {
         use super::*;
 
-        #[test]
-        fn test_no_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             // No inputs case - doesn't need address setup since there are no inputs
@@ -195,8 +197,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_outputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_outputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -222,7 +224,8 @@ mod tests {
 
             // Create transition with proper signature but empty outputs
             let transition =
-                create_signed_transition_with_custom_outputs(&signer, inputs, outputs, vec![]);
+                create_signed_transition_with_custom_outputs(&signer, inputs, outputs, vec![])
+                    .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -251,8 +254,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_too_many_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -287,7 +290,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -316,8 +320,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_witness_count_mismatch_returns_error() {
+        #[tokio::test]
+        async fn test_input_witness_count_mismatch_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -352,7 +356,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             // Remove one witness to create mismatch
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -391,8 +396,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_address_also_input_returns_error() {
+        #[tokio::test]
+        async fn test_output_address_also_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -423,7 +428,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -452,8 +458,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_fee_strategy_returns_error() {
+        #[tokio::test]
+        async fn test_empty_fee_strategy_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -481,7 +487,8 @@ mod tests {
 
             // Empty fee strategy
             let transition =
-                create_signed_transition_with_custom_outputs(&signer, inputs, outputs, vec![]);
+                create_signed_transition_with_custom_outputs(&signer, inputs, outputs, vec![])
+                    .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -510,8 +517,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_too_many_steps_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_too_many_steps_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -549,7 +556,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                 ],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -578,8 +586,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_duplicate_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_duplicate_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -614,7 +622,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0), // Duplicate
                 ],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -643,8 +652,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_input_index_out_of_bounds_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_input_index_out_of_bounds_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -676,7 +685,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(5)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -705,8 +715,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_output_index_out_of_bounds_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_output_index_out_of_bounds_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -738,7 +748,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(5)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -767,8 +778,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_input_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -800,7 +811,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -829,8 +841,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_output_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -862,7 +874,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -891,8 +904,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_output_balance_mismatch_returns_error() {
+        #[tokio::test]
+        async fn test_input_output_balance_mismatch_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -923,7 +936,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -962,8 +976,8 @@ mod tests {
     mod state_validation {
         use super::*;
 
-        #[test]
-        fn test_address_does_not_exist_returns_error() {
+        #[tokio::test]
+        async fn test_address_does_not_exist_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -993,7 +1007,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1022,8 +1037,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_too_high_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_nonce_too_high_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1056,7 +1071,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1085,8 +1101,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_too_low_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_nonce_too_low_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1119,7 +1135,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1148,8 +1165,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_max_nonce_reached_returns_error() {
+        #[tokio::test]
+        async fn test_max_nonce_reached_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1188,7 +1205,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1217,8 +1235,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1253,7 +1271,8 @@ mod tests {
                 requested_amount,
                 output_address,
                 requested_amount,
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1284,8 +1303,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_one_missing_returns_error() {
+        #[tokio::test]
+        async fn test_multiple_inputs_one_missing_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1326,6 +1345,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -1364,8 +1384,8 @@ mod tests {
     mod success {
         use super::*;
 
-        #[test]
-        fn test_simple_transfer_success() {
+        #[tokio::test]
+        async fn test_simple_transfer_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1396,7 +1416,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1423,8 +1444,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_with_non_zero_starting_nonce_success() {
+        #[tokio::test]
+        async fn test_transfer_with_non_zero_starting_nonce_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1463,7 +1484,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1501,7 +1523,7 @@ mod tests {
         use dpp::consensus::signature::SignatureError;
 
         /// Helper to create a transition with a tampered witness
-        fn create_transition_with_tampered_witness<F>(
+        async fn create_transition_with_tampered_witness<F>(
             signer: &TestAddressSigner,
             input_address: PlatformAddress,
             input_nonce: AddressNonce,
@@ -1520,7 +1542,8 @@ mod tests {
                 input_amount,
                 output_address,
                 output_amount,
-            );
+            )
+            .await;
 
             // Tamper with the witness
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -1535,8 +1558,8 @@ mod tests {
             transition
         }
 
-        #[test]
-        fn test_invalid_signature_bytes_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_signature_bytes_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1571,7 +1594,8 @@ mod tests {
                         *signature = BinaryData::new(vec![0xDE, 0xAD, 0xBE, 0xEF]);
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1608,8 +1632,8 @@ mod tests {
         // The equivalent test is test_signature_from_different_key_returns_error which tests
         // that a signature made with a different private key is rejected.
 
-        #[test]
-        fn test_empty_signature_returns_error() {
+        #[tokio::test]
+        async fn test_empty_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1643,7 +1667,8 @@ mod tests {
                         *signature = BinaryData::new(vec![]);
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1675,8 +1700,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_signature_from_different_key_returns_error() {
+        #[tokio::test]
+        async fn test_signature_from_different_key_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1714,7 +1739,8 @@ mod tests {
                         *signature = BinaryData::new(wrong_signature.clone());
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -1746,8 +1772,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_tampered_transition_after_signing_returns_error() {
+        #[tokio::test]
+        async fn test_tampered_transition_after_signing_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1776,7 +1802,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Tamper with the transition data after signing (change output amount)
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -1817,8 +1844,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_tampered_input_amount_returns_error() {
+        #[tokio::test]
+        async fn test_tampered_input_amount_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1847,7 +1874,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Tamper with the input amount after signing
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -1887,8 +1915,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_tampered_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_tampered_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1917,7 +1945,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Tamper with the nonce after signing
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -1958,8 +1987,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_one_invalid_witness_returns_error() {
+        #[tokio::test]
+        async fn test_multiple_inputs_one_invalid_witness_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1998,6 +2027,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             // Corrupt the second witness
@@ -2042,8 +2072,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_swapped_witnesses_returns_error() {
+        #[tokio::test]
+        async fn test_swapped_witnesses_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2082,6 +2112,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             // Swap the witnesses (each witness is for the wrong address now)
@@ -2125,8 +2156,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_witness_for_different_address_type_returns_error() {
+        #[tokio::test]
+        async fn test_witness_for_different_address_type_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2155,7 +2186,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Replace P2PKH witness with a P2SH witness (wrong type for address)
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -2198,8 +2230,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_truncated_signature_returns_error() {
+        #[tokio::test]
+        async fn test_truncated_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2236,7 +2268,8 @@ mod tests {
                         *signature = BinaryData::new(truncated);
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2268,8 +2301,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_extra_bytes_in_signature_returns_error() {
+        #[tokio::test]
+        async fn test_extra_bytes_in_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2305,7 +2338,8 @@ mod tests {
                         *signature = BinaryData::new(extended);
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2337,8 +2371,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_all_zero_signature_returns_error() {
+        #[tokio::test]
+        async fn test_all_zero_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2372,7 +2406,8 @@ mod tests {
                         *signature = BinaryData::new(vec![0u8; 65]); // All zeros, 65 bytes
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2404,8 +2439,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_flipped_bit_in_signature_returns_error() {
+        #[tokio::test]
+        async fn test_flipped_bit_in_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2444,7 +2479,8 @@ mod tests {
                         *signature = BinaryData::new(bytes);
                     }
                 },
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2476,8 +2512,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_user_fee_increase_tampered_returns_error() {
+        #[tokio::test]
+        async fn test_user_fee_increase_tampered_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2506,7 +2542,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Tamper with user_fee_increase after signing
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -2557,7 +2594,7 @@ mod tests {
         use dpp::consensus::signature::SignatureError;
 
         /// Helper to create a P2SH multisig transfer with proper signing
-        fn create_p2sh_multisig_transfer(
+        async fn create_p2sh_multisig_transfer(
             signer: &TestAddressSigner,
             input_address: PlatformAddress,
             input_nonce: AddressNonce,
@@ -2579,6 +2616,7 @@ mod tests {
                 0,
                 PlatformVersion::latest(),
             )
+            .await
             .expect("should create signed transition")
         }
 
@@ -2586,8 +2624,8 @@ mod tests {
         // SUCCESS TESTS
         // ==========================================
 
-        #[test]
-        fn test_2_of_3_multisig_success() {
+        #[tokio::test]
+        async fn test_2_of_3_multisig_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2617,7 +2655,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2645,8 +2684,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_1_of_2_multisig_success() {
+        #[tokio::test]
+        async fn test_1_of_2_multisig_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2676,7 +2715,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2704,8 +2744,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_3_of_5_multisig_success() {
+        #[tokio::test]
+        async fn test_3_of_5_multisig_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2736,7 +2776,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -2768,8 +2809,8 @@ mod tests {
         // FAILURE TESTS
         // ==========================================
 
-        #[test]
-        fn test_insufficient_signatures_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_signatures_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2800,7 +2841,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Remove one signature to have only 1-of-2 required
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -2849,8 +2891,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_redeem_script_hash_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_redeem_script_hash_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2879,7 +2921,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Replace redeem script with a different one (wrong keys)
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -2933,8 +2976,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_corrupted_signature_in_multisig_returns_error() {
+        #[tokio::test]
+        async fn test_corrupted_signature_in_multisig_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2963,7 +3006,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Corrupt one of the signatures
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -3015,8 +3059,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_signature_from_wrong_key_returns_error() {
+        #[tokio::test]
+        async fn test_signature_from_wrong_key_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3045,7 +3089,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Replace one signature with a signature from a different key
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -3100,8 +3145,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_signatures_returns_error() {
+        #[tokio::test]
+        async fn test_empty_signatures_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3130,7 +3175,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Set empty signatures
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -3175,8 +3221,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_redeem_script_returns_error() {
+        #[tokio::test]
+        async fn test_empty_redeem_script_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3205,7 +3251,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Set empty redeem script
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -3250,8 +3297,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_duplicate_signatures_returns_error() {
+        #[tokio::test]
+        async fn test_duplicate_signatures_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3280,7 +3327,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Use duplicate signatures (same signature twice)
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -3329,8 +3377,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_invalid_redeem_script_format_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_redeem_script_format_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3359,7 +3407,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Set garbage redeem script
             if let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
@@ -3404,8 +3453,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_p2pkh_and_p2sh_inputs_success() {
+        #[tokio::test]
+        async fn test_mixed_p2pkh_and_p2sh_inputs_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3444,6 +3493,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -3480,8 +3530,8 @@ mod tests {
     mod multiple_inputs_outputs {
         use super::*;
 
-        #[test]
-        fn test_2_inputs_1_output_success() {
+        #[tokio::test]
+        async fn test_2_inputs_1_output_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3520,6 +3570,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -3548,8 +3599,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_1_input_2_outputs_success() {
+        #[tokio::test]
+        async fn test_1_input_2_outputs_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3587,6 +3638,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -3615,8 +3667,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_2_inputs_2_outputs_success() {
+        #[tokio::test]
+        async fn test_2_inputs_2_outputs_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3657,6 +3709,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -3685,8 +3738,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_maximum_16_inputs_success() {
+        #[tokio::test]
+        async fn test_maximum_16_inputs_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3724,6 +3777,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -3760,8 +3814,8 @@ mod tests {
     mod post_execution_state {
         use super::*;
 
-        #[test]
-        fn test_input_balance_decreased_correctly() {
+        #[tokio::test]
+        async fn test_input_balance_decreased_correctly() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3792,7 +3846,8 @@ mod tests {
                 transfer_amount,
                 output_address,
                 transfer_amount,
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -3841,8 +3896,8 @@ mod tests {
             assert_eq!(new_nonce, 1);
         }
 
-        #[test]
-        fn test_input_nonce_incremented() {
+        #[tokio::test]
+        async fn test_input_nonce_incremented() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3877,7 +3932,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -3920,8 +3976,8 @@ mod tests {
             assert_eq!(new_nonce, initial_nonce + 1);
         }
 
-        #[test]
-        fn test_output_address_balance_increased() {
+        #[tokio::test]
+        async fn test_output_address_balance_increased() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3954,7 +4010,8 @@ mod tests {
                 transfer_amount,
                 output_address,
                 transfer_amount,
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -3997,8 +4054,8 @@ mod tests {
             assert_eq!(new_balance, output_initial_balance + transfer_amount);
         }
 
-        #[test]
-        fn test_output_address_created_if_not_exists() {
+        #[tokio::test]
+        async fn test_output_address_created_if_not_exists() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4036,7 +4093,8 @@ mod tests {
                 transfer_amount,
                 output_address,
                 transfer_amount,
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -4078,8 +4136,8 @@ mod tests {
     mod fee_strategy_execution {
         use super::*;
 
-        #[test]
-        fn test_deduct_from_input_deducts_from_input_balance() {
+        #[tokio::test]
+        async fn test_deduct_from_input_deducts_from_input_balance() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4121,6 +4179,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4175,8 +4234,8 @@ mod tests {
             assert_eq!(output_balance, output_initial_balance + transfer_amount);
         }
 
-        #[test]
-        fn test_reduce_output_reduces_output_amount() {
+        #[tokio::test]
+        async fn test_reduce_output_reduces_output_amount() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4218,6 +4277,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4275,8 +4335,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_user_fee_increase_affects_fee() {
+        #[tokio::test]
+        async fn test_user_fee_increase_affects_fee() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4313,6 +4373,7 @@ mod tests {
                 100, // 100% fee increase
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4354,8 +4415,8 @@ mod tests {
         use super::*;
         use dpp::consensus::signature::SignatureError;
 
-        #[test]
-        fn test_p2pkh_witness_for_p2sh_address_returns_error() {
+        #[tokio::test]
+        async fn test_p2pkh_witness_for_p2sh_address_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4393,6 +4454,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             // Replace P2SH witness with P2PKH witness
@@ -4435,8 +4497,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_1_of_1_multisig_success() {
+        #[tokio::test]
+        async fn test_1_of_1_multisig_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4473,6 +4535,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4501,8 +4564,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_p2sh_inputs_success() {
+        #[tokio::test]
+        async fn test_multiple_p2sh_inputs_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4541,6 +4604,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4569,8 +4633,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_signature_for_wrong_message_returns_error() {
+        #[tokio::test]
+        async fn test_signature_for_wrong_message_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4610,6 +4674,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             // Replace signatures with ones for wrong message (but from correct keys)
@@ -4672,8 +4737,8 @@ mod tests {
     mod edge_cases {
         use super::*;
 
-        #[test]
-        fn test_transfer_full_balance_with_reduce_output_fee_strategy() {
+        #[tokio::test]
+        async fn test_transfer_full_balance_with_reduce_output_fee_strategy() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4712,6 +4777,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4741,8 +4807,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_amount_equals_minimum_exactly() {
+        #[tokio::test]
+        async fn test_input_amount_equals_minimum_exactly() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4782,6 +4848,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4811,8 +4878,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_amount_equals_minimum_exactly() {
+        #[tokio::test]
+        async fn test_output_amount_equals_minimum_exactly() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4850,6 +4917,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -4886,8 +4954,8 @@ mod tests {
     mod nonce_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_first_transaction_nonce_0_to_1() {
+        #[tokio::test]
+        async fn test_first_transaction_nonce_0_to_1() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4918,7 +4986,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -4961,8 +5030,8 @@ mod tests {
             assert_eq!(new_nonce, 1);
         }
 
-        #[test]
-        fn test_nonce_at_max_minus_1_can_transact() {
+        #[tokio::test]
+        async fn test_nonce_at_max_minus_1_can_transact() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4999,7 +5068,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let transition_bytes = transition
                 .serialize_to_bytes()
@@ -5027,8 +5097,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_different_nonces() {
+        #[tokio::test]
+        async fn test_multiple_inputs_different_nonces() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5071,6 +5141,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let transition_bytes = transition
@@ -5131,8 +5202,8 @@ mod tests {
         use super::*;
         use dpp::serialization::PlatformDeserializable;
 
-        #[test]
-        fn test_serialize_deserialize_roundtrip() {
+        #[tokio::test]
+        async fn test_serialize_deserialize_roundtrip() {
             let platform_version = PlatformVersion::latest();
 
             let mut signer = TestAddressSigner::new();
@@ -5146,7 +5217,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Serialize
             let bytes = transition
@@ -5203,8 +5275,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_malformed_serialized_data_rejected() {
+        #[tokio::test]
+        async fn test_malformed_serialized_data_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5257,8 +5329,8 @@ mod tests {
     mod same_block_ordering {
         use super::*;
 
-        #[test]
-        fn test_two_transactions_same_address_same_block() {
+        #[tokio::test]
+        async fn test_two_transactions_same_address_same_block() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5289,7 +5361,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address_1,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Second transaction with nonce 2
             let transition2 = create_signed_address_funds_transfer_transition(
@@ -5299,7 +5372,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address_2,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let bytes1 = transition1.serialize_to_bytes().unwrap();
             let bytes2 = transition2.serialize_to_bytes().unwrap();
@@ -5334,8 +5408,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_order_in_same_block() {
+        #[tokio::test]
+        async fn test_wrong_nonce_order_in_same_block() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5366,7 +5440,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address_1,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             // Second transaction with nonce 1
             let transition2 = create_signed_address_funds_transfer_transition(
@@ -5376,7 +5451,8 @@ mod tests {
                 dash_to_credits!(0.1),
                 output_address_2,
                 dash_to_credits!(0.1),
-            );
+            )
+            .await;
 
             let bytes1 = transition1.serialize_to_bytes().unwrap();
             let bytes2 = transition2.serialize_to_bytes().unwrap();
@@ -5428,8 +5504,8 @@ mod tests {
         // Structure Validation Security
         // ------------------------------------------
 
-        #[test]
-        fn test_too_many_outputs_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_outputs_returns_error() {
             // A hacker might try to create many outputs to bloat state or cause DoS
             let platform_version = PlatformVersion::latest();
             let max_outputs = platform_version.dpp.state_transitions.max_address_outputs;
@@ -5474,8 +5550,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_sum_overflow_returns_error() {
+        #[tokio::test]
+        async fn test_input_sum_overflow_returns_error() {
             // Attacker tries to overflow input sum to bypass balance checks
             let platform_version = PlatformVersion::latest();
 
@@ -5514,8 +5590,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_sum_overflow_returns_error() {
+        #[tokio::test]
+        async fn test_output_sum_overflow_returns_error() {
             // Attacker tries to overflow output sum
             let platform_version = PlatformVersion::latest();
 
@@ -5555,8 +5631,8 @@ mod tests {
         // Double-Spend and Replay Attacks
         // ------------------------------------------
 
-        #[test]
-        fn test_double_spend_same_block_second_fails() {
+        #[tokio::test]
+        async fn test_double_spend_same_block_second_fails() {
             // Attacker submits two transactions in same block that together exceed balance
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5597,6 +5673,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             // Second transaction: send 0.6 DASH with nonce 2 (should fail - insufficient balance)
@@ -5614,6 +5691,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let bytes1 = transition1.serialize_to_bytes().unwrap();
@@ -5651,8 +5729,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_replay_attack_same_transaction_twice_fails() {
+        #[tokio::test]
+        async fn test_replay_attack_same_transaction_twice_fails() {
             // Attacker tries to replay an already-executed transaction
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5689,6 +5767,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -5756,8 +5835,8 @@ mod tests {
         // Fee Strategy Attacks
         // ------------------------------------------
 
-        #[test]
-        fn test_fee_reduces_output_to_zero() {
+        #[tokio::test]
+        async fn test_fee_reduces_output_to_zero() {
             // What happens when ReduceOutput strategy reduces output to exactly 0?
             // The output should be removed, but is this handled correctly?
             let platform_version = PlatformVersion::latest();
@@ -5804,6 +5883,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -5856,8 +5936,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_fee_exhaustion_deduct_from_depleted_input() {
+        #[tokio::test]
+        async fn test_fee_exhaustion_deduct_from_depleted_input() {
             // DeductFromInput when input's remaining balance after transfer is 0
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5897,6 +5977,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -5930,8 +6011,8 @@ mod tests {
         // P2SH Security Tests
         // ------------------------------------------
 
-        #[test]
-        fn test_15_of_15_multisig_success() {
+        #[tokio::test]
+        async fn test_15_of_15_multisig_success() {
             // Maximum standard multisig: 15-of-15
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5981,6 +6062,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -6007,8 +6089,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_with_timelock_script_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_timelock_script_fails() {
             // Attacker tries to use a timelock script (CHECKLOCKTIMEVERIFY)
             // Platform should not support timelock scripts as they require block height context
             let platform_version = PlatformVersion::latest();
@@ -6114,8 +6196,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_with_op_return_script_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_op_return_script_fails() {
             // Attacker tries to use a non-standard script that doesn't verify signatures
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6193,8 +6275,8 @@ mod tests {
         // Same Block Edge Cases
         // ------------------------------------------
 
-        #[test]
-        fn test_receive_and_spend_same_block() {
+        #[tokio::test]
+        async fn test_receive_and_spend_same_block() {
             // Can an address receive funds and spend them in the same block?
             // - check_tx for the second tx should FAIL (middle_address doesn't exist in mempool view)
             // - but block execution of both should SUCCEED (first tx creates middle_address before second runs)
@@ -6238,6 +6320,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             // Transaction 2: middle -> final (middle doesn't have funds yet!)
@@ -6256,6 +6339,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let bytes1 = transition1.serialize_to_bytes().unwrap();
@@ -6307,8 +6391,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_concurrent_transfers_to_same_output() {
+        #[tokio::test]
+        async fn test_concurrent_transfers_to_same_output() {
             // Two different inputs send to same output in same block
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6352,6 +6436,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let mut inputs2 = BTreeMap::new();
@@ -6367,6 +6452,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let bytes1 = transition1.serialize_to_bytes().unwrap();
@@ -6424,8 +6510,8 @@ mod tests {
         // Maximum Value Tests
         // ------------------------------------------
 
-        #[test]
-        fn test_transfer_near_max_u64() {
+        #[tokio::test]
+        async fn test_transfer_near_max_u64() {
             // Test transfer of very large amounts (near u64::MAX)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6469,6 +6555,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -6500,8 +6587,8 @@ mod tests {
         // Script Security Tests
         // ------------------------------------------
 
-        #[test]
-        fn test_p2sh_with_op_true_script_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_op_true_script_fails() {
             // CRITICAL: Attacker tries to use OP_TRUE (OP_1) script that always succeeds
             // This would allow anyone to spend without a valid signature
             let platform_version = PlatformVersion::latest();
@@ -6577,8 +6664,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_with_op_1_script_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_op_1_script_fails() {
             // Same as OP_TRUE but using explicit OP_1 (0x51)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6650,8 +6737,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_extra_signatures_beyond_threshold() {
+        #[tokio::test]
+        async fn test_p2sh_extra_signatures_beyond_threshold() {
             // For a 2-of-3 multisig, provide 5 signatures
             // System should either accept (ignoring extras) or reject
             let platform_version = PlatformVersion::latest();
@@ -6768,8 +6855,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_p2sh_with_disabled_opcode_op_cat_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_disabled_opcode_op_cat_fails() {
             // OP_CAT (0x7e) is disabled in Bitcoin/Dash
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6841,8 +6928,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_with_op_ver_disabled_opcode_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_op_ver_disabled_opcode_fails() {
             // OP_VER (0x62) is a reserved/disabled opcode
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6914,8 +7001,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_very_large_redeem_script_rejected() {
+        #[tokio::test]
+        async fn test_very_large_redeem_script_rejected() {
             // Bitcoin limits redeem scripts to 520 bytes
             // Try a script larger than typical limits
             let platform_version = PlatformVersion::latest();
@@ -6994,8 +7081,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_signature_with_high_s_value() {
+        #[tokio::test]
+        async fn test_signature_with_high_s_value() {
             // ECDSA signatures can be malleable - for any valid (r, s), (r, n-s) is also valid
             // Systems should enforce low-S to prevent malleability
             let platform_version = PlatformVersion::latest();
@@ -7034,6 +7121,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             // Extract the signature and create a high-S version
@@ -7109,8 +7197,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_non_canonical_der_signature_rejected() {
+        #[tokio::test]
+        async fn test_non_canonical_der_signature_rejected() {
             // Test signatures with non-canonical DER encoding
             // e.g., extra padding bytes, wrong length prefixes
             let platform_version = PlatformVersion::latest();
@@ -7194,8 +7282,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_script_fails() {
+        #[tokio::test]
+        async fn test_empty_script_fails() {
             // Empty redeem script should fail
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7268,8 +7356,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_with_op_codeseparator_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_op_codeseparator_fails() {
             // OP_CODESEPARATOR can affect which parts of script are signed
             // This is rarely used and could be a vector for confusion attacks
             let platform_version = PlatformVersion::latest();
@@ -7344,8 +7432,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_zero_output_after_fee_deduction() {
+        #[tokio::test]
+        async fn test_zero_output_after_fee_deduction() {
             // What if fee deduction makes output exactly 0?
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7420,8 +7508,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_fee_simple_p2pkh_1_input_1_output_deduct_from_input() {
+        #[tokio::test]
+        async fn test_fee_simple_p2pkh_1_input_1_output_deduct_from_input() {
             // Simple P2PKH transfer: 1 input -> 1 output, fee deducted from input
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7459,6 +7547,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -7507,8 +7596,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_simple_p2pkh_1_input_1_output_reduce_output() {
+        #[tokio::test]
+        async fn test_fee_simple_p2pkh_1_input_1_output_reduce_output() {
             // Simple P2PKH transfer: 1 input -> 1 output, fee reduced from output
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7546,6 +7635,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -7592,8 +7682,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_p2pkh_2_inputs_1_output() {
+        #[tokio::test]
+        async fn test_fee_p2pkh_2_inputs_1_output() {
             // P2PKH: 2 inputs -> 1 output
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7633,6 +7723,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -7679,8 +7770,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_p2pkh_1_input_2_outputs() {
+        #[tokio::test]
+        async fn test_fee_p2pkh_1_input_2_outputs() {
             // P2PKH: 1 input -> 2 outputs
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7719,6 +7810,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -7765,8 +7857,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_p2sh_2_of_3_multisig() {
+        #[tokio::test]
+        async fn test_fee_p2sh_2_of_3_multisig() {
             // P2SH 2-of-3 multisig: 1 input -> 1 output
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7813,6 +7905,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -7859,8 +7952,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_p2sh_3_of_5_multisig() {
+        #[tokio::test]
+        async fn test_fee_p2sh_3_of_5_multisig() {
             // P2SH 3-of-5 multisig: 1 input -> 1 output
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7907,6 +8000,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -7953,8 +8047,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_with_user_fee_increase() {
+        #[tokio::test]
+        async fn test_fee_with_user_fee_increase() {
             // Test that user_fee_increase adds to the processing fee
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7994,6 +8088,7 @@ mod tests {
                 user_fee_increase,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -8047,8 +8142,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_maximum_16_inputs() {
+        #[tokio::test]
+        async fn test_fee_maximum_16_inputs() {
             // Maximum inputs (16) to verify fee scaling
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -8092,6 +8187,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -8144,8 +8240,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_new_output_address_vs_existing() {
+        #[tokio::test]
+        async fn test_fee_new_output_address_vs_existing() {
             // Compare fee when output address already exists vs new address
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -8183,6 +8279,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let bytes1 = transition1.serialize_to_bytes().unwrap();
@@ -8233,6 +8330,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let bytes2 = transition2.serialize_to_bytes().unwrap();
@@ -8287,8 +8385,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_simple_p2pkh_1_input_1_output_deduct_from_input_on_version_11() {
+        #[tokio::test]
+        async fn test_fee_simple_p2pkh_1_input_1_output_deduct_from_input_on_version_11() {
             let platform_version = PlatformVersion::get(11).expect("expected version 11");
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8325,6 +8423,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -8370,8 +8469,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_p2pkh_2_inputs_1_output_on_version_11() {
+        #[tokio::test]
+        async fn test_fee_p2pkh_2_inputs_1_output_on_version_11() {
             let platform_version = PlatformVersion::get(11).expect("expected version 11");
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8411,6 +8510,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -8456,8 +8556,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_p2sh_2_of_3_multisig_on_version_11() {
+        #[tokio::test]
+        async fn test_fee_p2sh_2_of_3_multisig_on_version_11() {
             let platform_version = PlatformVersion::get(11).expect("expected version 11");
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8503,6 +8603,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create transition");
 
             let transition_bytes = transition.serialize_to_bytes().unwrap();
@@ -8565,8 +8666,8 @@ mod tests {
         /// witness validation stage caught it, not the structure validation stage).
         ///
         /// Location: rs-dpp/.../state_transition_witness_validation.rs:56-60
-        #[test]
-        fn test_zero_witnesses_rejected_by_witness_validation() {
+        #[tokio::test]
+        async fn test_zero_witnesses_rejected_by_witness_validation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8666,8 +8767,8 @@ mod tests {
         /// reject such values defensively.
         ///
         /// Location: rs-drive/src/drive/address_funds/set_balance_to_address/v0/mod.rs
-        #[test]
-        fn test_balance_exceeding_i64_max_returns_overflow_error() {
+        #[tokio::test]
+        async fn test_balance_exceeding_i64_max_returns_overflow_error() {
             let platform_version = PlatformVersion::latest();
 
             let platform = TestPlatformBuilder::new()
@@ -8725,8 +8826,8 @@ mod tests {
         /// to verify the address cannot transact further.
         ///
         /// Location: rs-dpp/src/lib.rs:117
-        #[test]
-        fn test_nonce_at_u32_max_locks_address() {
+        #[tokio::test]
+        async fn test_nonce_at_u32_max_locks_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8764,7 +8865,8 @@ mod tests {
                 dash_to_credits!(0.01),
                 recipient,
                 dash_to_credits!(0.01),
-            );
+            )
+            .await;
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
             let platform_state = platform.state.load();
@@ -8817,8 +8919,8 @@ mod tests {
         /// because all indices shifted down after the removal.
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
-        #[test]
-        fn test_fee_deduction_stable_after_entry_removal() {
+        #[tokio::test]
+        async fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8882,7 +8984,8 @@ mod tests {
                 inputs,
                 outputs,
                 fee_strategy,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 

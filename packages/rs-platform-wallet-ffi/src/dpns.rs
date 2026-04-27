@@ -1,19 +1,30 @@
 //! FFI bindings for DPNS name operations on the platform-wallet
 //! [`IdentityWallet`](platform_wallet::IdentityWallet).
 //!
-//! Three entry points:
+//! Entry points (registration is split across two variants — see
+//! the deprecation note on [`platform_wallet_register_dpns_name`]):
 //!
-//! 1. [`platform_wallet_register_dpns_name`] — register a DPNS name
-//!    for an identity. Runs on the 8 MB tokio worker (proof
-//!    verification recurses), updates `ManagedIdentity.dpns_names`
-//!    on success, and persists via the identity changeset so the
-//!    Swift persister callback from `identity_persistence` will
-//!    refresh `PersistentIdentity.dpnsName` automatically.
+//! 1. [`platform_wallet_register_dpns_name_with_signer`] — register a
+//!    DPNS name using an externally-supplied `SignerHandle` (the
+//!    iOS-side `KeychainSigner` in the SwiftExampleApp case). This
+//!    is the architecturally correct path per `swift-sdk/CLAUDE.md`:
+//!    the wallet's own seed never participates in signing, which
+//!    unblocks watch-only wallets where the seed lives in iOS
+//!    Keychain rather than the in-process `WalletManager`.
 //!
-//! 2. [`platform_wallet_resolve_dpns_name`] — resolve a DPNS name
+//! 2. [`platform_wallet_register_dpns_name`] (superseded) — older
+//!    seed-internal path that constructs an `IdentitySigner` from
+//!    the wallet manager. Kept around for the small set of callers
+//!    that haven't migrated yet; new code should call the
+//!    `_with_signer` variant. Both register a DPNS name, update
+//!    `ManagedIdentity.dpns_names` on success, and persist via the
+//!    identity changeset so `PersistentIdentity.dpnsName` refreshes
+//!    via `on_persist_identities_fn`.
+//!
+//! 3. [`platform_wallet_resolve_dpns_name`] — resolve a DPNS name
 //!    to an identity id. Async; no persistence side-effects.
 //!
-//! 3. [`platform_wallet_search_dpns_names`] — prefix search over
+//! 4. [`platform_wallet_search_dpns_names`] — prefix search over
 //!    Platform's DPNS documents. Async; returns a heap-allocated
 //!    array of `DpnsSearchResultFFI` releasable via
 //!    [`dpns_search_results_free`].
@@ -28,6 +39,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
+
+use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::error::*;
 use crate::handle::*;
@@ -57,10 +70,21 @@ pub struct DpnsSearchResultFFI {
 /// `ManagedIdentity.dpns_names` on the Rust side and an identity
 /// changeset is queued so the Swift persister observes the update
 /// via `on_persist_identities_fn`.
+///
+/// # Superseded — prefer [`platform_wallet_register_dpns_name_with_signer`]
+///
+/// This entry point constructs an internal `IdentitySigner` from the
+/// wallet manager and dies on watch-only wallets (no seed Rust-side).
+/// It also re-acquires the wallet-manager lock from inside the
+/// signing path, which can deadlock the Tokio worker if any callee
+/// `blocking_read`s the same lock. New callers should use the
+/// `_with_signer` variant and pass a `KeychainSigner.handle` from
+/// Swift; this function stays in place for the small set of paths
+/// that haven't migrated yet.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_register_dpns_name(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     name: *const c_char,
     out_full_domain_name: *mut *mut c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -77,7 +101,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -158,6 +182,160 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name(
         })
 }
 
+/// Register a DPNS name for an identity on Platform using an
+/// externally-supplied signer.
+///
+/// Replaces [`platform_wallet_register_dpns_name`] for any caller that
+/// has a Swift-side `KeychainSigner` (every iOS path under the new
+/// `_with_signer` regime). The wallet handle is still used to look up
+/// the identity from the in-process `IdentityManager` so we can pick
+/// the HIGH/CRITICAL authentication key the document state transition
+/// requires — but every signature crosses the FFI through the
+/// supplied `signer_handle` rather than via a wallet-derived
+/// `IdentitySigner`. Works on watch-only wallets (no seed
+/// Rust-side) and avoids the inner-lock-deadlock the legacy path
+/// hit when the signer's private-key derivation tried to
+/// `blocking_read` the wallet manager from inside the Tokio worker.
+///
+/// Returns the full domain name (e.g. "alice.dash") via
+/// `out_full_domain_name` — a heap-allocated C-string the caller must
+/// release with [`crate::platform_wallet_string_free`].
+///
+/// On success the just-registered name is appended to
+/// `ManagedIdentity.dpns_names` on the Rust side and an identity
+/// changeset is queued so the Swift persister observes the update via
+/// `on_persist_identities_fn` — identical book-keeping to the legacy
+/// variant.
+///
+/// # Safety
+/// - `wallet_handle` must come from the platform-wallet handle
+///   registry.
+/// - `identity_id` must point at a valid 32-byte buffer for the
+///   duration of the call.
+/// - `name` must be a NUL-terminated UTF-8 C-string for the duration
+///   of the call.
+/// - `signer_handle` must be a valid, non-destroyed handle produced by
+///   `dash_sdk_signer_create_with_ctx` (typically `KeychainSigner.handle`).
+///   The caller retains ownership; this function does NOT destroy it.
+/// - `out_full_domain_name` and `out_error` must be writable for the
+///   duration of the call. `out_error` may be left null only when the
+///   caller is willing to lose the diagnostic message.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    name: *const c_char,
+    signer_handle: *mut SignerHandle,
+    out_full_domain_name: *mut *mut c_char,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if name.is_null() || out_full_domain_name.is_null() || signer_handle.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "name, out_full_domain_name, or signer_handle is null",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let id = match unsafe { read_identifier(identity_id) } {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid identity identifier: {e}"),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+    let name_str = match unsafe { CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorUtf8Conversion,
+                        "name is not valid UTF-8",
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+
+    // Round-trip the signer pointer through `usize` so the spawned
+    // future has a `Send + 'static` capture (raw pointers are `!Send`,
+    // but `usize` is). The underlying `VTableSigner`'s `Inner::Callback
+    // { ctx, vtable }` is `Send + Sync` (see the unsafe impls in
+    // `rs-sdk-ffi/src/signer.rs`).
+    let signer_addr = signer_handle as usize;
+
+    PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            let identity_wallet = wallet.identity().clone();
+            // SAFETY: caller guarantees `signer_handle` is valid and
+            // outlives this call; `signer_addr` is the same pointer
+            // reinterpreted as `usize` for the `Send` capture below.
+            let result = block_on_worker(async move {
+                let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+                identity_wallet
+                    .register_name_with_external_signer(&id, &name_str, signer)
+                    .await
+            });
+            match result {
+                Ok(full_name) => match CString::new(full_name) {
+                    Ok(cstr) => {
+                        unsafe { *out_full_domain_name = cstr.into_raw() };
+                        PlatformWalletFFIResult::Success
+                    }
+                    Err(_) => {
+                        // Defensive — DPNS labels never carry an
+                        // interior NUL today, but guard against a
+                        // future encoding change.
+                        if !out_error.is_null() {
+                            unsafe {
+                                *out_error = PlatformWalletFFIError::new(
+                                    PlatformWalletFFIResult::ErrorSerialization,
+                                    "full domain name contained NUL",
+                                );
+                            }
+                        }
+                        PlatformWalletFFIResult::ErrorSerialization
+                    }
+                },
+                Err(e) => {
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorWalletOperation,
+                                format!("register_dpns_name_with_signer failed: {e}"),
+                            );
+                        }
+                    }
+                    PlatformWalletFFIResult::ErrorWalletOperation
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid platform-wallet handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
 /// Resolve a DPNS name (`"alice"` or `"alice.dash"`) to an identity id.
 ///
 /// `out_found` reports whether the lookup returned a hit. When `true`,
@@ -166,7 +344,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name(
 pub unsafe extern "C" fn platform_wallet_resolve_dpns_name(
     wallet_handle: Handle,
     name: *const c_char,
-    out_identity_id: *mut IdentifierBytes,
+    out_identity_id: *mut u8,
     out_found: *mut bool,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -204,14 +382,16 @@ pub unsafe extern "C" fn platform_wallet_resolve_dpns_name(
             match result {
                 Ok(Some(id)) => {
                     unsafe {
-                        *out_identity_id = id.into();
+                        write_identifier(out_identity_id, &id);
                         *out_found = true;
                     }
                     PlatformWalletFFIResult::Success
                 }
                 Ok(None) => {
                     unsafe {
-                        *out_identity_id = IdentifierBytes { bytes: [0u8; 32] };
+                        // Zero out the 32-byte buffer for a clean
+                        // "not found" return value.
+                        std::ptr::write_bytes(out_identity_id, 0u8, 32);
                         *out_found = false;
                     }
                     PlatformWalletFFIResult::Success
@@ -400,11 +580,11 @@ pub unsafe extern "C" fn dpns_search_results_free(results: *mut DpnsSearchResult
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_sync_dpns_names(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_added: *mut u32,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -545,9 +725,19 @@ pub unsafe extern "C" fn managed_identity_get_dpns_names(
 /// Release an array previously returned by
 /// [`managed_identity_get_dpns_names`]. Walks the array to free every
 /// label C-string before releasing the array itself. Safe to call
-/// with `labels = null` / `count = 0`.
+/// with `labels = null` / `count = 0`, and with a null outer pointer
+/// (no-op).
+///
+/// Pointer-only signature: `DpnsNameArray` is a 16-byte aggregate at
+/// the AAPCS64 / Swift-ABI cliff, so by-value isn't safe across
+/// `@_silgen_name`. Caller passes `&mut array`; on return the
+/// pointer + count are reset so a double-free no-ops.
 #[no_mangle]
-pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
+pub unsafe extern "C" fn dpns_name_array_free(array: *mut DpnsNameArray) {
+    if array.is_null() {
+        return;
+    }
+    let array = unsafe { &mut *array };
     if array.labels.is_null() || array.count == 0 {
         return;
     }
@@ -559,6 +749,8 @@ pub unsafe extern "C" fn dpns_name_array_free(array: DpnsNameArray) {
         }
     }
     let _ = unsafe { Box::from_raw(slice as *mut [*mut c_char]) };
+    array.labels = std::ptr::null_mut();
+    array.count = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +833,7 @@ impl ContestVoteStateFFI {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     label: *const c_char,
     out_state: *mut ContestVoteStateFFI,
     out_found: *mut bool,
@@ -659,7 +851,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {
@@ -783,17 +975,29 @@ pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
 
 /// Release heap allocations owned by a [`ContestVoteStateFFI`] —
 /// the `label` C-string and the `contenders_ptr` array. Safe on an
-/// `empty()` snapshot (every owned pointer is null-checked).
+/// `empty()` snapshot (every owned pointer is null-checked) and on
+/// a null outer pointer (no-op).
+///
+/// Pointer-only signature: `ContestVoteStateFFI` is a heavyweight
+/// aggregate well over the 16-byte AAPCS64 / Swift cliff. After the
+/// call the owned pointers are reset so a double-free no-ops.
 #[no_mangle]
-pub unsafe extern "C" fn contest_vote_state_ffi_free(state: ContestVoteStateFFI) {
+pub unsafe extern "C" fn contest_vote_state_ffi_free(state: *mut ContestVoteStateFFI) {
+    if state.is_null() {
+        return;
+    }
+    let state = unsafe { &mut *state };
     if !state.label.is_null() {
         let _ = unsafe { CString::from_raw(state.label) };
+        state.label = std::ptr::null_mut();
     }
     if !state.contenders_ptr.is_null() && state.contenders_count > 0 {
         let slice =
             unsafe { std::slice::from_raw_parts_mut(state.contenders_ptr, state.contenders_count) };
         let _ = unsafe { Box::from_raw(slice as *mut [ContestContenderFFI]) };
     }
+    state.contenders_ptr = std::ptr::null_mut();
+    state.contenders_count = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -810,11 +1014,11 @@ pub unsafe extern "C" fn contest_vote_state_ffi_free(state: ContestVoteStateFFI)
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_sync_contested_dpns_names(
     wallet_handle: Handle,
-    identity_id: IdentifierBytes,
+    identity_id: *const u8,
     out_count: *mut u32,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let id = match identity_id.to_identifier() {
+    let id = match unsafe { read_identifier(identity_id) } {
         Ok(i) => i,
         Err(e) => {
             if !out_error.is_null() {

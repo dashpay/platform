@@ -24,7 +24,7 @@ use platform_version::version::PlatformVersion;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         master_public_key_id: &KeyID,
         add_public_keys: Vec<IdentityPublicKey>,
@@ -52,7 +52,8 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
                 signer,
                 platform_version,
                 version,
-            )?),
+            )
+            .await?),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityUpdateTransition version for try_from_identity_with_signer {v}"
             ))),

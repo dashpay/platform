@@ -1,149 +1,123 @@
-//! Read/write accessors for [`IdentityManager`].
+//! Read accessors for [`IdentityManager`].
 //!
-//! Typed getters, label mutation, primary-identity selection,
-//! aggregated balance, and the gap-limit scan watermark. Mutating
-//! methods persist a corresponding
-//! [`IdentityChangeSet`](crate::changeset::IdentityChangeSet) so the
-//! apply path can rebuild state after a restart.
+//! Typed getters that scan both buckets, plus aggregated balance and
+//! a derived gap-limit watermark helper. Mutating methods live in
+//! [`super::lifecycle`].
 
-use super::IdentityManager;
-use crate::changeset::IdentityChangeSet;
-use crate::error::PlatformWalletError;
+use super::{IdentityLocation, IdentityManager, RegistrationIndex};
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
-use crate::wallet::persister::WalletPersister;
+use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
-use indexmap::IndexMap;
 
 impl IdentityManager {
-    /// Get an identity by ID
-    pub fn identity(&self, identity_id: &Identifier) -> Option<&Identity> {
-        self.identities.get(identity_id).map(|m| &m.identity)
-    }
-
-    /// Get a mutable reference to an identity
-    pub fn identity_mut(&mut self, identity_id: &Identifier) -> Option<&mut Identity> {
-        self.identities
-            .get_mut(identity_id)
-            .map(|m| &mut m.identity)
-    }
-
-    /// Get all identities
-    pub fn identities(&self) -> IndexMap<Identifier, Identity> {
-        self.identities
-            .iter()
-            .map(|(id, managed)| (*id, managed.identity.clone()))
-            .collect()
-    }
-
-    /// Get all identities as a vector
-    pub fn all_identities(&self) -> Vec<&Identity> {
-        self.identities
-            .values()
-            .map(|managed| &managed.identity)
-            .collect()
-    }
-
-    /// Get the primary identity ID.
-    pub fn primary_identity_id(&self) -> Option<&Identifier> {
-        self.primary_identity_id.as_ref()
-    }
-
-    /// Get the primary identity
-    pub fn primary_identity(&self) -> Option<&Identity> {
-        self.primary_identity_id
-            .as_ref()
-            .and_then(|id| self.identities.get(id))
-            .map(|m| &m.identity)
-    }
-
-    /// Set the primary identity.
+    /// Look up a managed identity by id across both buckets.
     ///
-    /// Persists the new selection via `persister` and returns `()`.
-    pub fn set_primary_identity(
-        &mut self,
-        identity_id: Identifier,
-        persister: &WalletPersister,
-    ) -> Result<(), PlatformWalletError> {
-        if !self.identities.contains_key(&identity_id) {
-            return Err(PlatformWalletError::IdentityNotFound(identity_id));
+    /// O(log n): hits the side-index for the bucket discriminant +
+    /// inner key, then a single `BTreeMap::get` hop into the right
+    /// bucket. The index is maintained as an invariant by every add /
+    /// remove path in this module (see field doc on `location_index`).
+    pub fn identity(&self, identity_id: &Identifier) -> Option<&ManagedIdentity> {
+        match self.location_index().get(identity_id).copied()? {
+            IdentityLocation::InWallet {
+                wallet_id,
+                registration_index,
+            } => self
+                .wallet_identities
+                .get(&wallet_id)?
+                .get(&registration_index),
+            IdentityLocation::OutOfWallet => self.out_of_wallet_identities.get(identity_id),
         }
-        self.primary_identity_id = Some(identity_id);
-        let cs = IdentityChangeSet {
-            primary_identity: Some(identity_id),
-            ..Default::default()
-        };
-        if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
-        Ok(())
     }
 
-    /// Get a managed identity by ID
+    /// Mutable counterpart to [`Self::identity`]. Same O(log n) shape.
+    pub fn identity_mut(&mut self, identity_id: &Identifier) -> Option<&mut ManagedIdentity> {
+        // Pull the location out by value first so the immutable borrow
+        // on `location_index` ends before we take the mutable borrow on
+        // the bucket.
+        match self.location_index().get(identity_id).copied()? {
+            IdentityLocation::InWallet {
+                wallet_id,
+                registration_index,
+            } => self
+                .wallet_identities
+                .get_mut(&wallet_id)?
+                .get_mut(&registration_index),
+            IdentityLocation::OutOfWallet => self.out_of_wallet_identities.get_mut(identity_id),
+        }
+    }
+
+    /// Snapshot every managed identity (both buckets) into an owned
+    /// `Vec<&Identity>`. Used by callers that want a flat list without
+    /// caring about which bucket each identity lives in.
+    pub fn all_identities(&self) -> Vec<&Identity> {
+        let mut out: Vec<&Identity> = self
+            .out_of_wallet_identities
+            .values()
+            .map(|m| &m.identity)
+            .collect();
+        for inner in self.wallet_identities.values() {
+            for managed in inner.values() {
+                out.push(&managed.identity);
+            }
+        }
+        out
+    }
+
+    /// Backwards-compatible name used by FFI / external callers — same
+    /// as [`Self::managed_identity`].
     pub fn managed_identity(&self, identity_id: &Identifier) -> Option<&ManagedIdentity> {
-        self.identities.get(identity_id)
+        self.identity(identity_id)
     }
 
-    /// Get a mutable managed identity by ID
+    /// Mutable counterpart to [`Self::managed_identity`].
     pub fn managed_identity_mut(
         &mut self,
         identity_id: &Identifier,
     ) -> Option<&mut ManagedIdentity> {
-        self.identities.get_mut(identity_id)
+        self.identity_mut(identity_id)
     }
 
-    /// Set a label for an identity.
-    ///
-    /// Persists the resulting changeset via `persister` and returns `()`.
-    pub fn set_label(
-        &mut self,
-        identity_id: &Identifier,
-        label: String,
-        persister: &WalletPersister,
-    ) -> Result<(), PlatformWalletError> {
-        let managed = self
-            .identities
-            .get_mut(identity_id)
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        managed.set_label(label, persister);
-        Ok(())
-    }
-
-    /// Get total credit balance across all identities
+    /// Total credit balance across every identity in either bucket.
     pub fn total_credit_balance(&self) -> u64 {
-        self.identities
+        let out_of_wallet: u64 = self
+            .out_of_wallet_identities
             .values()
-            .map(|managed| managed.identity.balance())
-            .sum()
+            .map(|m| m.identity.balance())
+            .sum();
+        let in_wallet: u64 = self
+            .wallet_identities
+            .values()
+            .flat_map(|inner| inner.values().map(|m| m.identity.balance()))
+            .sum();
+        out_of_wallet + in_wallet
     }
 
-    /// Get the number of managed identities.
+    /// Total number of managed identities across both buckets.
     pub fn identity_count(&self) -> usize {
-        self.identities.len()
+        self.out_of_wallet_identities.len()
+            + self
+                .wallet_identities
+                .values()
+                .map(|m| m.len())
+                .sum::<usize>()
     }
 
-    /// Check if there are no managed identities.
+    /// `true` iff both buckets are empty.
     pub fn is_empty(&self) -> bool {
-        self.identities.is_empty()
+        self.out_of_wallet_identities.is_empty() && self.wallet_identities.is_empty()
     }
 
-    /// Get the last scanned identity index.
-    pub fn last_scanned_index(&self) -> u32 {
-        self.last_scanned_index
-    }
-
-    /// Set the last scanned identity index.
+    /// Highest BIP-9 identity index ever registered for `wallet_id`,
+    /// or `None` if the wallet has no identities yet.
     ///
-    /// Persists the new watermark via `persister` and returns `()`.
-    pub fn set_last_scanned_index(&mut self, index: u32, persister: &WalletPersister) {
-        self.last_scanned_index = index;
-        let cs = IdentityChangeSet {
-            last_scanned_index: Some(index),
-            ..Default::default()
-        };
-        if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+    /// Replaces the old `last_scanned_index` watermark — the gap-limit
+    /// scan now resumes from `highest_registration_index(...).map_or(0, |i| i + 1)`
+    /// rather than carrying its own counter on the manager.
+    pub fn highest_registration_index(&self, wallet_id: &WalletId) -> Option<RegistrationIndex> {
+        self.wallet_identities
+            .get(wallet_id)
+            .and_then(|m| m.keys().last().copied())
     }
 }

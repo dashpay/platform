@@ -21,9 +21,9 @@ mod tests {
     use dpp::version::PlatformVersion;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
-    #[test]
     #[stack_size(4*1024*1024)]
-    fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
+    #[test]
+    async fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -103,7 +103,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         outcome
             .abci_app
@@ -130,8 +131,8 @@ mod tests {
             .expect("expected to get a contract");
     }
 
-    #[test]
-    fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
+    #[tokio::test]
+    async fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
         let mut strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -202,7 +203,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         //platform block didn't complete, so it should get another init chain
 
@@ -216,7 +218,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 
     // #[test]
@@ -272,7 +275,7 @@ mod tests {
     //         &mut simple_signer,
     //         &mut rng,
     //         platform_version,
-    //     );
+    //     ).await;
 
     //     let dpns_contract = platform
     //         .drive
@@ -382,7 +385,7 @@ mod tests {
 
     //     // On the first block we only have identities and contracts
     //     let outcome =
-    //         run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);
+    //         run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15).await;
 
     //     let state_transitions_block_2 = &outcome
     //         .state_transition_results_per_block

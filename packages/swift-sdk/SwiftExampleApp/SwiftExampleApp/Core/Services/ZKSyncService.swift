@@ -72,7 +72,7 @@ class ZKSyncService: ObservableObject {
     /// Initialize for a network. Restores persisted balance and address.
     /// The actual periodic loop is managed by UnifiedAppState.
     func startPeriodicSync(network: AppNetwork) {
-        networkName = network.rawValue
+        networkName = network.networkName
 
         // Restore persisted state from previous session
         let savedBalance = persistedBalance

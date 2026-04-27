@@ -77,10 +77,12 @@ struct PersistenceCallbacks {
     ) -> Int32)? = nil
     /// Mirrors `on_persist_identities_fn` on the Rust
     /// `PersistenceCallbacks`. Carries scalar `IdentityEntryFFI`
-    /// upserts + a `[u8; 32]` tombstone array + `primary_identity` /
-    /// gap-limit scan watermark signals. See
+    /// upserts + a `[u8; 32]` tombstone array. See
     /// `rs-platform-wallet-ffi/src/identity_persistence.rs` for the
-    /// payload shape.
+    /// payload shape. Primary-identity selection and the gap-limit
+    /// scan watermark are no longer carried — the former is a UI
+    /// concern, the latter is now derived from the manager's
+    /// highest-registered slot.
     ///
     /// Pointers are typed on the Rust side but flow through the Swift
     /// struct as `UnsafeRawPointer?` because `@convention(c)` rejects
@@ -93,10 +95,7 @@ struct PersistenceCallbacks {
         UnsafeRawPointer?,          // upserts_ptr (cast to *IdentityEntryFFI)
         Int,                        // upserts_count
         UnsafeRawPointer?,          // removed_ptr (cast to *[UInt8;32] tuple)
-        Int,                        // removed_count
-        UnsafeRawPointer?,          // primary_identity_ptr (cast to *[UInt8;32] tuple, nullable)
-        Bool,                       // has_last_scanned_index
-        UInt32                      // last_scanned_index
+        Int                         // removed_count
     ) -> Int32)? = nil
     /// Mirrors `on_persist_identity_keys_fn`. Per-key upserts +
     /// `(identity_id, key_id)` removals, maps onto
@@ -168,6 +167,69 @@ struct AccountSpecFFI {
     var account_xpub_bytes_len: Int = 0
 }
 
+/// Mirrors `IdentityKeyRestoreFFI` from
+/// `rs-platform-wallet-ffi/src/wallet_restore_types.rs`. One entry per
+/// public key carried on the load path so the reconstructed
+/// `Identity.public_keys` map is populated immediately at cold-start
+/// (instead of waiting for the next sync round to refresh it from
+/// chain). Field order and types must match bit-for-bit — Rust reads
+/// each row as a `#[repr(C)]` struct via `slice::from_raw_parts`.
+///
+/// Discriminant conventions match the DPP `repr(u8)` enum layouts and
+/// are shared with `IdentityPubkeyFFI` on the registration path:
+/// - `key_type`: 0 = ECDSA_SECP256K1, etc.
+/// - `purpose`: 0 = AUTHENTICATION, etc.
+/// - `security_level`: 0 = MASTER, 1 = CRITICAL, 2 = HIGH, 3 = MEDIUM.
+///
+/// `data` is Swift-owned for the duration of the load callback (carries
+/// the compressed public-key bytes; 33 for ECDSA_SECP256K1). The
+/// matching free callback releases the per-identity arrays plus every
+/// `data` byte buffer.
+struct IdentityKeyRestoreFFI {
+    var key_id: UInt32 = 0
+    var key_type: UInt8 = 0
+    var purpose: UInt8 = 0
+    var security_level: UInt8 = 0
+    var read_only: Bool = false
+    var data: UnsafePointer<UInt8>? = nil
+    var data_len: Int = 0
+}
+
+/// Mirrors `IdentityRestoreEntryFFI` from
+/// `rs-platform-wallet-ffi/src/wallet_restore_types.rs`. Field order
+/// and types must match bit-for-bit — Rust reads each entry as a
+/// `#[repr(C)]` struct via `slice::from_raw_parts`.
+///
+/// Bucket placement is implicit: every identity carried on a wallet
+/// entry lands in `wallet_identities[wallet_id][identity_index]`. The
+/// previous `is_watched` discriminant is gone — out-of-wallet
+/// identities don't ride on this path (no associated wallet).
+///
+/// All pointer fields (`dpns_names`, `contested_dpns_names`, `keys`)
+/// are Swift-owned during the load-callback window and released by
+/// `on_load_wallet_list_free_fn`. `dpns_names` /
+/// `contested_dpns_names` are flat `*const *const c_char` arrays of
+/// NUL-terminated UTF-8 strings; `keys` is a contiguous
+/// `[IdentityKeyRestoreFFI]` carrying the per-identity public keys.
+struct IdentityRestoreEntryFFI {
+    var identity_id: (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+    var balance: UInt64 = 0
+    var revision: UInt64 = 0
+    var identity_index: UInt32 = 0
+    var status: UInt8 = 0
+    var dpns_names: UnsafePointer<UnsafePointer<CChar>?>? = nil
+    var dpns_names_count: Int = 0
+    var contested_dpns_names: UnsafePointer<UnsafePointer<CChar>?>? = nil
+    var contested_dpns_names_count: Int = 0
+    var keys: UnsafePointer<IdentityKeyRestoreFFI>? = nil
+    var keys_count: Int = 0
+}
+
 struct WalletRestoreEntryFFI {
     var wallet_id: (
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -183,6 +245,8 @@ struct WalletRestoreEntryFFI {
     var platform_sync_height: UInt64 = 0
     var platform_sync_timestamp: UInt64 = 0
     var platform_last_known_recent_block: UInt64 = 0
+    var identities: UnsafePointer<IdentityRestoreEntryFFI>? = nil
+    var identities_count: Int = 0
 }
 
 // MARK: - Event Handler Callbacks

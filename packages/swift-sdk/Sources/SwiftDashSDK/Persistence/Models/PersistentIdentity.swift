@@ -28,7 +28,24 @@ public final class PersistentIdentity {
     public var lastSyncedAt: Date?
 
     // MARK: - Network
-    public var network: String
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. Foundation's
+    /// predicate engine rejects captured non-primitive types — even
+    /// Codable raw-value enums crash at evaluation with
+    /// "Unsupported Predicate: Captured/constant values of type
+    /// 'AppNetwork' are not supported". The `network` computed
+    /// accessor below keeps the public API type-safe; only predicates
+    /// that need to filter by network reach for `networkRaw`.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Reads fall back to
+    /// `.testnet` if the stored raw value ever drifts out of the
+    /// `AppNetwork` range (shouldn't happen — writers only go through
+    /// this setter which uses `AppNetwork.rawValue`).
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // MARK: - Wallet Association
     //
@@ -69,7 +86,7 @@ public final class PersistentIdentity {
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
-        network: String = "testnet",
+        network: AppNetwork,
         identityIndex: UInt32 = 0
     ) {
         self.identityId = identityId
@@ -83,7 +100,7 @@ public final class PersistentIdentity {
         self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
         self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
         self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
-        self.network = network
+        self.networkRaw = network.rawValue
         self.identityIndex = identityIndex
         self.publicKeys = []
         self.documents = []
@@ -197,15 +214,21 @@ extension PersistentIdentity {
         }
     }
 
-    public static func predicate(network: String) -> Predicate<PersistentIdentity> {
-        #Predicate<PersistentIdentity> { identity in
-            identity.network == network
+    public static func predicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
+        // Compare against the Int-backed `networkRaw` because Foundation's
+        // predicate evaluator can't capture non-primitive types like
+        // `AppNetwork` (the computed `network` accessor is invisible to
+        // SwiftData — it can't see through `\.network.rawValue` either).
+        let target = network.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.networkRaw == target
         }
     }
 
-    public static func localIdentitiesPredicate(network: String) -> Predicate<PersistentIdentity> {
-        #Predicate<PersistentIdentity> { identity in
-            identity.isLocal == true && identity.network == network
+    public static func localIdentitiesPredicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
+        let target = network.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.isLocal == true && identity.networkRaw == target
         }
     }
 

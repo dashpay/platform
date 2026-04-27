@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_default();
         let tx_count = state.core_wallet.transaction_history().len();
         let birth = state.core_wallet.birth_height();
-        let id_count = state.identity_manager.identities().len();
+        let id_count = state.identity_manager.identity_count();
         println!(
             "UTXOs: {}, transactions: {}, birth_height: {}",
             utxos.len(),

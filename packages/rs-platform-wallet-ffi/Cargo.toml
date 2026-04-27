@@ -13,6 +13,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 platform-wallet = { path = "../rs-platform-wallet" }
 dpp = { path = "../rs-dpp" }
 dash-sdk = { path = "../rs-sdk" }
+# Needed for `SignerHandle` + `VTableSigner` so the `*_with_signer`
+# entry points can accept iOS-side keychain-backed signers without
+# duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
+rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 
 # FFI utilities
 once_cell = "1.19"

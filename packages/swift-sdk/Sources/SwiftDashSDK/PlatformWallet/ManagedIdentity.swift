@@ -41,15 +41,17 @@ public final class ManagedIdentity: @unchecked Sendable {
 
     /// Get the identity ID
     public func getId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = managed_identity_get_id(handle, &ffiId, &error)
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            managed_identity_get_id(handle, bp.baseAddress!, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI(ffiId)
+        return Data(buf)
     }
 
     /// Get the identity balance
@@ -79,6 +81,41 @@ public final class ManagedIdentity: @unchecked Sendable {
             throw PlatformWalletError(result: result, error: error)
         }
         return revision
+    }
+
+    /// Get the BIP-9 identity index recorded on this managed
+    /// identity — the position in
+    /// `m/9'/coin'/5'/0'/key_type'/identity_index'/key_id'` used to
+    /// derive its keys.
+    ///
+    /// Returns `nil` for out-of-wallet (observed) identities, which
+    /// have no derivation context. Both `Some` and `None` are valid
+    /// states; the FFI surfaces them through a paired `out_has_index`
+    /// flag and only signals an error for invalid handles / null
+    /// pointers.
+    public func getIdentityIndex() throws -> UInt32? {
+        var hasIndex: Bool = false
+        var index: UInt32 = 0
+        var error = PlatformWalletFFIError()
+
+        let result = managed_identity_get_identity_index(handle, &hasIndex, &index, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return hasIndex ? index : nil
+    }
+
+    /// Get the lifecycle status this identity carries on the wallet
+    /// side. Maps to `IdentityStatusFFI` on the Rust side.
+    public func getStatus() throws -> IdentityStatus {
+        var raw: UInt8 = 0
+        var error = PlatformWalletFFIError()
+
+        let result = managed_identity_get_status(handle, &raw, &error)
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return IdentityStatus(rawValue: raw) ?? .unknown
     }
 
     /// Snapshot of an identity's registered public keys. Mirrors the
@@ -229,9 +266,11 @@ public final class ManagedIdentity: @unchecked Sendable {
     /// Set the last updated balance block time
     public func setLastUpdatedBalanceBlockTime(_ blockTime: BlockTime) throws {
         var error = PlatformWalletFFIError()
-        let ffiBlockTime = blockTime.ffiValue
+        var ffiBlockTime = blockTime.ffiValue
 
-        let result = managed_identity_set_last_updated_balance_block_time(handle, ffiBlockTime, &error)
+        let result = managed_identity_set_last_updated_balance_block_time(
+            handle, &ffiBlockTime, &error
+        )
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
@@ -268,16 +307,17 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         defer {
-            platform_wallet_identifier_array_free(array)
+            platform_wallet_identifier_array_free(&array)
         }
 
-        guard let items = array.items else {
+        guard array.items != nil, array.count > 0 else {
             return []
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<Int(array.count) {
-            identifiers.append(identifierFromFFI(items[i]))
+        identifiers.reserveCapacity(array.count)
+        for i in 0..<array.count {
+            identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
         return identifiers
@@ -294,16 +334,17 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         defer {
-            platform_wallet_identifier_array_free(array)
+            platform_wallet_identifier_array_free(&array)
         }
 
-        guard let items = array.items else {
+        guard array.items != nil, array.count > 0 else {
             return []
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<Int(array.count) {
-            identifiers.append(identifierFromFFI(items[i]))
+        identifiers.reserveCapacity(array.count)
+        for i in 0..<array.count {
+            identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
         return identifiers
@@ -320,16 +361,17 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         defer {
-            platform_wallet_identifier_array_free(array)
+            platform_wallet_identifier_array_free(&array)
         }
 
-        guard let items = array.items else {
+        guard array.items != nil, array.count > 0 else {
             return []
         }
 
         var identifiers: [Identifier] = []
-        for i in 0..<Int(array.count) {
-            identifiers.append(identifierFromFFI(items[i]))
+        identifiers.reserveCapacity(array.count)
+        for i in 0..<array.count {
+            identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
         return identifiers
@@ -339,9 +381,10 @@ public final class ManagedIdentity: @unchecked Sendable {
     public func getSentContactRequest(recipientId: Identifier) throws -> ContactRequest? {
         var requestHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(recipientId)
 
-        let result = managed_identity_get_sent_contact_request(handle, ffiId, &requestHandle, &error)
+        let result = recipientId.withFFIBytes { idPtr in
+            managed_identity_get_sent_contact_request(handle, idPtr, &requestHandle, &error)
+        }
 
         if result == ErrorContactNotFound {
             return nil
@@ -358,9 +401,10 @@ public final class ManagedIdentity: @unchecked Sendable {
     public func getIncomingContactRequest(senderId: Identifier) throws -> ContactRequest? {
         var requestHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(senderId)
 
-        let result = managed_identity_get_incoming_contact_request(handle, ffiId, &requestHandle, &error)
+        let result = senderId.withFFIBytes { idPtr in
+            managed_identity_get_incoming_contact_request(handle, idPtr, &requestHandle, &error)
+        }
 
         if result == ErrorContactNotFound {
             return nil
@@ -377,9 +421,10 @@ public final class ManagedIdentity: @unchecked Sendable {
     public func getEstablishedContact(contactId: Identifier) throws -> EstablishedContact? {
         var contactHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(contactId)
 
-        let result = managed_identity_get_established_contact(handle, ffiId, &contactHandle, &error)
+        let result = contactId.withFFIBytes { idPtr in
+            managed_identity_get_established_contact(handle, idPtr, &contactHandle, &error)
+        }
 
         if result == ErrorContactNotFound {
             return nil
@@ -396,9 +441,10 @@ public final class ManagedIdentity: @unchecked Sendable {
     public func isContactEstablished(contactId: Identifier) throws -> Bool {
         var isEstablished: Bool = false
         var error = PlatformWalletFFIError()
-        let ffiId = identifierToFFI(contactId)
 
-        let result = managed_identity_is_contact_established(handle, ffiId, &isEstablished, &error)
+        let result = contactId.withFFIBytes { idPtr in
+            managed_identity_is_contact_established(handle, idPtr, &isEstablished, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
@@ -431,9 +477,9 @@ public final class ManagedIdentity: @unchecked Sendable {
     /// Reject a contact request from another identity
     public func rejectContactRequest(senderId: Identifier) throws {
         var error = PlatformWalletFFIError()
-        let ffiSenderId = identifierToFFI(senderId)
-
-        let result = managed_identity_reject_contact_request(handle, ffiSenderId, &error)
+        let result = senderId.withFFIBytes { idPtr in
+            managed_identity_reject_contact_request(handle, idPtr, &error)
+        }
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
@@ -477,7 +523,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         guard result == Success else {
             throw PlatformWalletError(result: result, error: error)
         }
-        defer { dpns_name_array_free(array) }
+        defer { dpns_name_array_free(&array) }
         guard let labels = array.labels, array.count > 0 else {
             return []
         }
@@ -519,7 +565,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         // pointers — calling it on an empty / no-profile struct is
         // safe because each pointer is independently null-checked on
         // the Rust side.
-        defer { dashpay_profile_ffi_free(ffiProfile) }
+        defer { dashpay_profile_ffi_free(&ffiProfile) }
 
         guard hasProfile else { return nil }
         return DashPayProfile(ffi: ffiProfile)

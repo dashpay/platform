@@ -4943,7 +4943,6 @@ dependencies = [
  "grovedb-commitment-tree",
  "hex",
  "image",
- "indexmap 2.13.1",
  "key-wallet",
  "key-wallet-manager",
  "platform-encryption",
@@ -4973,6 +4972,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "platform-wallet",
+ "rs-sdk-ffi",
  "tempfile",
  "tokio",
  "zeroize",
@@ -5972,6 +5972,7 @@ dependencies = [
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
+ "dash-async",
  "dash-sdk",
  "dotenvy",
  "drive-proof-verifier",
@@ -5979,6 +5980,7 @@ dependencies = [
  "envy",
  "getrandom 0.2.17",
  "hex",
+ "key-wallet",
  "libc",
  "log",
  "once_cell",
@@ -6730,6 +6732,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 name = "simple-signer"
 version = "3.1.0-dev.1"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bincode",
  "dpp",
@@ -6869,6 +6872,7 @@ dependencies = [
  "platform-version",
  "rand 0.8.5",
  "simple-signer",
+ "tokio",
  "tracing",
 ]
 
@@ -8217,6 +8221,7 @@ name = "wasm-dpp2"
 version = "3.1.0-dev.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "dpp",
  "dpp-json-convertible-derive",

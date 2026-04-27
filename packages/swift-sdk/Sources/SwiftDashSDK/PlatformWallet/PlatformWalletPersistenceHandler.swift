@@ -17,7 +17,6 @@ public class PlatformWalletPersistenceHandler {
         self.modelContainer = modelContainer
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
-        migrateLegacySyncStateRecordsToNetworkScope()
     }
 
     // MARK: - Platform Address Balances
@@ -97,7 +96,7 @@ public class PlatformWalletPersistenceHandler {
         syncTimestamp: UInt64,
         lastKnownRecentBlock: UInt64
     ) {
-        guard let network = syncStateNetwork(forWalletId: walletId) else {
+        guard let network = walletNetwork(walletId: walletId) else {
             return
         }
         let scopeId = syncStateScopeId(for: network)
@@ -121,24 +120,21 @@ public class PlatformWalletPersistenceHandler {
             )
             backgroundContext.insert(record)
         }
-
-        migrateLegacySyncStateRecordsToNetworkScope()
         // No save() — bracketed by changesetBegin/End from the
         // Rust store() round.
     }
 
     /// Load cached sync state for a wallet's network.
     public func loadCachedSyncState(walletId: Data) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
-        guard let network = syncStateNetwork(forWalletId: walletId) else {
+        guard let network = walletNetwork(walletId: walletId) else {
             return nil
         }
         return loadCachedSyncState(network: network)
     }
 
     /// Load cached sync state for a specific network.
-    public func loadCachedSyncState(network: String) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
-        let normalizedNetwork = normalizedNetworkName(network)
-        let scopeId = syncStateScopeId(for: normalizedNetwork)
+    public func loadCachedSyncState(network: AppNetwork) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+        let scopeId = syncStateScopeId(for: network)
         let descriptor = FetchDescriptor<PersistentSyncState>(
             predicate: #Predicate { $0.walletId == scopeId }
         )
@@ -200,7 +196,7 @@ public class PlatformWalletPersistenceHandler {
         if let existing = try? backgroundContext.fetch(descriptor).first {
             return existing
         }
-        let record = PersistentWallet(walletId: walletId, network: "unknown")
+        let record = PersistentWallet(walletId: walletId, network: nil)
         backgroundContext.insert(record)
         return record
     }
@@ -493,24 +489,20 @@ public class PlatformWalletPersistenceHandler {
     /// - Each `upsert.identity_id` gets an upsert on
     ///   `PersistentIdentity` keyed by that unique column.
     /// - Each `removed` id drops the matching row.
-    /// - `primaryIdentity` is a wallet-level hint that currently
-    ///   maps onto `PersistentIdentity.alias == nil` semantics —
-    ///   we don't store a dedicated "primary" column yet, so the
-    ///   value is ignored on the Swift side for now. Wiring is here
-    ///   so the signal doesn't get dropped when we add a column.
-    /// - `lastScannedIndex` is wallet-level and not yet stored on
-    ///   `PersistentWallet`; also passed through as a future-wire.
     ///
     /// Public keys are written by `persistIdentityKeys` on a paired
     /// callback; this path only touches the identity row itself.
     /// Both callbacks run under the same Rust-side wallet lock so
     /// the two-step apply is atomic from Swift's perspective.
+    ///
+    /// Primary-identity selection and the gap-limit scan watermark
+    /// were dropped from the Rust side — the former moved to the UI
+    /// layer, the latter is now derived from
+    /// `IdentityManager.highestRegistrationIndex(...)` at read time.
     func persistIdentities(
         walletId: Data,
         upserts: [IdentityEntrySnapshot],
-        removed: [Data],
-        primaryIdentity: Data?,
-        lastScannedIndex: UInt32?
+        removed: [Data]
     ) {
         for entry in upserts {
             let identityId = entry.identityId
@@ -521,11 +513,22 @@ public class PlatformWalletPersistenceHandler {
             if let existing = try? backgroundContext.fetch(descriptor).first {
                 row = existing
             } else {
+                // Resolve the network from the owning wallet row.
+                // `persistWalletMetadata` always fires before the
+                // first `persistIdentities` call for a new wallet, so
+                // the row's network is populated by now; if for some
+                // reason the lookup comes up empty, fall back to
+                // `.testnet` so we never block the write path on a
+                // missing network column (the CreateIdentity flow
+                // restamps the network on return anyway).
+                let resolvedWalletId = entry.walletId ?? walletId
+                let network = walletNetwork(walletId: resolvedWalletId) ?? .testnet
                 row = PersistentIdentity(
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
                     revision: Int64(bitPattern: entry.revision),
-                    isLocal: false
+                    isLocal: false,
+                    network: network
                 )
                 backgroundContext.insert(row)
             }
@@ -535,7 +538,15 @@ public class PlatformWalletPersistenceHandler {
             // overwriting unconditionally here is safe.
             row.balance = Int64(bitPattern: entry.balance)
             row.revision = Int64(bitPattern: entry.revision)
-            row.identityIndex = entry.identityIndex
+            // Only write the index when the snapshot actually carries
+            // one (wallet-owned identities). Out-of-wallet entries
+            // arrive with `nil` — leave the existing column untouched
+            // rather than overwriting with the placeholder `0`, which
+            // would collide with a real wallet-owned identity at
+            // index 0 if the row were ever rebound.
+            if let idx = entry.identityIndex {
+                row.identityIndex = idx
+            }
             if let label = entry.label {
                 row.alias = label
             }
@@ -574,13 +585,6 @@ public class PlatformWalletPersistenceHandler {
                 backgroundContext.delete(existing)
             }
         }
-
-        // `primaryIdentity` + `lastScannedIndex` aren't yet mapped
-        // onto PersistentIdentity / PersistentWallet columns. Keep
-        // the call sites so the future column addition is one-line
-        // row.primary = … work.
-        _ = primaryIdentity
-        _ = lastScannedIndex
 
         // No save() — bracketed by changesetBegin/End.
     }
@@ -746,7 +750,7 @@ public class PlatformWalletPersistenceHandler {
             print("⚠️ deriveAndStoreIdentityKey: wallet row not found for \(walletId.prefix(4).toHexString())…")
             return nil
         }
-        let network: KeyWalletNetwork = keyWalletNetwork(fromName: persistentWallet.network)
+        let network: KeyWalletNetwork = persistentWallet.network?.toKeyWalletNetwork() ?? .testnet
 
         // 2. Fetch the mnemonic for this wallet from the keychain.
         //    WalletStorage stores it under `wallet.mnemonic.<hex>`
@@ -817,7 +821,10 @@ public class PlatformWalletPersistenceHandler {
             keyIndex: indices.keyIndex,
             derivationPath: derivationPath,
             publicKey: publicKeyHex,
-            publicKeyHash: publicKeyHashHex
+            publicKeyHash: publicKeyHashHex,
+            keyType: entry.keyType,
+            purpose: entry.purpose,
+            securityLevel: entry.securityLevel
         )
         let account = KeychainManager.shared.storeIdentityPrivateKey(
             privateKey,
@@ -834,19 +841,6 @@ public class PlatformWalletPersistenceHandler {
         return account
     }
 
-    /// Map `PersistentWallet.network` string back onto
-    /// `KeyWalletNetwork` for `KeyDerivation` calls. Unknown
-    /// values fall back to testnet — every DIP-9 helper already
-    /// handles Testnet / Devnet / Regtest via the same coin type.
-    private func keyWalletNetwork(fromName name: String) -> KeyWalletNetwork {
-        switch name.lowercased() {
-        case "mainnet": return .mainnet
-        case "devnet": return .devnet
-        case "regtest": return .testnet
-        default: return .testnet
-        }
-    }
-
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -858,7 +852,10 @@ public class PlatformWalletPersistenceHandler {
         let identityId: Data
         let balance: UInt64
         let revision: UInt64
-        let identityIndex: UInt32
+        /// `nil` for out-of-wallet (observed) identities — they have
+        /// no derivation context. `Some(_)` mirrors the BIP-9 HD
+        /// identity index used during registration.
+        let identityIndex: UInt32?
         let label: String?
         let status: UInt8
         let walletId: Data?
@@ -1105,11 +1102,10 @@ public class PlatformWalletPersistenceHandler {
     /// manager's SDK; birth height is SPV's confirmed tip at creation).
     func persistWalletMetadata(walletId: Data, networkTag: UInt8, birthHeight: UInt32) {
         let wallet = ensureWalletRecord(walletId: walletId)
-        wallet.network = networkName(for: networkTag)
+        wallet.network = appNetwork(for: networkTag)
         wallet.birthHeight = birthHeight
         wallet.lastUpdated = Date()
         try? backgroundContext.save()
-        migrateLegacySyncStateRecordsToNetworkScope()
     }
 
     /// Set the user-facing name on the `PersistentWallet` row.
@@ -1124,14 +1120,18 @@ public class PlatformWalletPersistenceHandler {
     }
 
     /// Reverse of the tag convention used by
-    /// `platform_wallet_manager_create_wallet_from_seed`.
-    private func networkName(for tag: UInt8) -> String {
+    /// `platform_wallet_manager_create_wallet_from_seed`. Note the
+    /// tag ordering (0=mainnet, 1=testnet, 2=devnet, 3=regtest)
+    /// intentionally does not match `AppNetwork.rawValue`
+    /// (which swaps devnet/regtest to align with `KeyWalletNetwork`),
+    /// so this has to stay an explicit switch.
+    private func appNetwork(for tag: UInt8) -> AppNetwork? {
         switch tag {
-        case 0: return "mainnet"
-        case 1: return "testnet"
-        case 2: return "devnet"
-        case 3: return "regtest"
-        default: return "unknown"
+        case 0: return .mainnet
+        case 1: return .testnet
+        case 2: return .devnet
+        case 3: return .regtest
+        default: return nil
         }
     }
 
@@ -1322,7 +1322,22 @@ public class PlatformWalletPersistenceHandler {
                 allocation.addressBalanceArrays.append((buf, cachedBalances.count))
             }
 
-            let syncState = loadCachedSyncState(network: w.network)
+            let syncState = w.network.flatMap { loadCachedSyncState(network: $0) }
+
+            // Identity slice. Sorted by `identityIndex` then
+            // `identityId` so the rehydrated `IndexMap` order is
+            // deterministic across launches; the explorer paginates by
+            // index, so the order matters for stable rendering.
+            let sortedIdentities = w.identities.sorted {
+                if $0.identityIndex != $1.identityIndex {
+                    return $0.identityIndex < $1.identityIndex
+                }
+                return $0.identityId.lexicographicallyPrecedes($1.identityId)
+            }
+            let identitiesBuffer = buildIdentityRestoreBuffer(
+                identities: sortedIdentities,
+                allocation: allocation
+            )
 
             var entry = WalletRestoreEntryFFI()
             copyBytes(w.walletId, into: &entry.wallet_id)
@@ -1334,12 +1349,151 @@ public class PlatformWalletPersistenceHandler {
             entry.platform_sync_height = syncState?.syncHeight ?? 0
             entry.platform_sync_timestamp = syncState?.syncTimestamp ?? 0
             entry.platform_last_known_recent_block = syncState?.lastKnownRecentBlock ?? 0
+            entry.identities = identitiesBuffer.map { UnsafePointer($0) }
+            entry.identities_count = sortedIdentities.count
+            // Primary-identity selection + gap-limit scan watermark
+            // were dropped from the FFI shape — both moved off the
+            // Rust manager (UI owns selection now, scan resume is
+            // derived from the highest already-registered slot).
             entriesPtr[i] = entry
         }
 
         let opaque = UnsafeRawPointer(entriesPtr)
         loadAllocations[opaque] = allocation
         return (opaque, restorable.count)
+    }
+
+    /// Allocate a contiguous `[IdentityRestoreEntryFFI]` buffer for
+    /// one wallet's identities and stash every nested allocation on
+    /// `allocation` so the matching free callback can release them.
+    ///
+    /// Returns `nil` for an empty input — Rust treats `null` +
+    /// `count == 0` as "no identities for this wallet".
+    ///
+    /// Every entry on a wallet's list is wallet-owned by definition
+    /// (the per-identity `is_watched` flag was dropped along with the
+    /// underlying `WatchedIdentity` type). The Rust side files each
+    /// entry into `wallet_identities[wallet_id][identity_index]`.
+    ///
+    /// `dpns_names` / `contested_dpns_names` / `alias` aren't
+    /// reflected here today — the sync path drops them on the floor.
+    /// Both arrays come back as zero length and a `null` outer
+    /// pointer. They're wired up so a future SwiftData column for
+    /// either list is one-line work. The user-facing `alias` lives
+    /// on `PersistentIdentity` and is read directly by the UI; it
+    /// no longer roundtrips through Rust now that `ManagedIdentity`
+    /// dropped its `label` field.
+    private func buildIdentityRestoreBuffer(
+        identities: [PersistentIdentity],
+        allocation: LoadAllocation
+    ) -> UnsafeMutablePointer<IdentityRestoreEntryFFI>? {
+        if identities.isEmpty {
+            return nil
+        }
+        let buf = UnsafeMutablePointer<IdentityRestoreEntryFFI>.allocate(
+            capacity: identities.count
+        )
+        for (j, identity) in identities.enumerated() {
+            var entry = IdentityRestoreEntryFFI()
+            copyBytes(identity.identityId, into: &entry.identity_id)
+            // `PersistentIdentity` stores balance / revision as Int64
+            // bit-pattern (matches how `persistIdentities` writes them).
+            // Round-trip them as the same UInt64 bit-pattern.
+            entry.balance = UInt64(bitPattern: identity.balance)
+            entry.revision = UInt64(bitPattern: identity.revision)
+            entry.identity_index = identity.identityIndex
+            // Status isn't persisted today (no `status` column on
+            // `PersistentIdentity`); fall back to `Unknown` (0). The
+            // next identity sync round will re-stamp it via the
+            // identity changeset path.
+            entry.status = 0
+
+            // DPNS names — currently empty. Wiring is here so a
+            // future query against `PersistentDpnsName` rows (or a
+            // dedicated array column on the identity) drops in
+            // without touching the FFI plumbing.
+            entry.dpns_names = nil
+            entry.dpns_names_count = 0
+            entry.contested_dpns_names = nil
+            entry.contested_dpns_names_count = 0
+
+            // Public keys — read the per-identity `PersistentPublicKey`
+            // rows (relationship navigated directly; the rows are
+            // fetched lazily by SwiftData but live in the same
+            // background context as the identity row so the access is
+            // synchronous). Sort by `keyId` so the BTreeMap that gets
+            // built on the Rust side keeps a deterministic order.
+            let sortedKeys = identity.publicKeys.sorted { $0.keyId < $1.keyId }
+            if sortedKeys.isEmpty {
+                entry.keys = nil
+                entry.keys_count = 0
+            } else {
+                let keyBuf = UnsafeMutablePointer<IdentityKeyRestoreFFI>.allocate(
+                    capacity: sortedKeys.count
+                )
+                for (k, pk) in sortedKeys.enumerated() {
+                    var row = IdentityKeyRestoreFFI()
+                    row.key_id = UInt32(bitPattern: pk.keyId)
+                    // PersistentPublicKey stores the discriminants as
+                    // `String(rawValue)` of the original `UInt8` — same
+                    // shape as the `purposeEnum` / `securityLevelEnum` /
+                    // `keyTypeEnum` accessors on the model. Decode
+                    // back to `UInt8`; fall back to 0 (the safest DPP
+                    // default for each enum) on parse failure so we
+                    // don't drop the row entirely.
+                    row.key_type = UInt8(pk.keyType) ?? 0
+                    row.purpose = UInt8(pk.purpose) ?? 0
+                    row.security_level = UInt8(pk.securityLevel) ?? 0
+                    row.read_only = pk.readOnly
+
+                    // Allocate a dedicated byte buffer for the public
+                    // key data. Same lifetime convention as xpub
+                    // bytes — released by `LoadAllocation.release`
+                    // via the `scalarBuffers` list.
+                    let len = pk.publicKeyData.count
+                    if len > 0 {
+                        let dataBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: len)
+                        pk.publicKeyData.copyBytes(to: dataBuf, count: len)
+                        row.data = UnsafePointer(dataBuf)
+                        row.data_len = len
+                        allocation.scalarBuffers.append((dataBuf, len))
+                    } else {
+                        row.data = nil
+                        row.data_len = 0
+                    }
+                    keyBuf[k] = row
+                }
+                entry.keys = UnsafePointer(keyBuf)
+                entry.keys_count = sortedKeys.count
+                allocation.identityKeyArrays.append((keyBuf, sortedKeys.count))
+            }
+
+            buf[j] = entry
+        }
+        allocation.identityArrays.append((buf, identities.count))
+        return buf
+    }
+
+    /// Allocate a NUL-terminated UTF-8 c-string copy of `s` and stash
+    /// it on `allocation` for release after the load callback returns.
+    /// Empty strings are still allocated (round-trip with a
+    /// `\0`-only buffer) — callers gate emission on `!isEmpty` before
+    /// asking for one.
+    private func duplicateCString(
+        _ s: String,
+        allocation: LoadAllocation
+    ) -> UnsafeMutablePointer<CChar> {
+        // `Array(s.utf8) + [0]` builds the byte sequence with the
+        // trailing NUL Rust's `CStr::from_ptr` requires. We allocate
+        // the pointer ourselves (rather than `strdup`) so the free
+        // path can use `deallocate()` without coupling to libc.
+        let utf8 = Array(s.utf8) + [0]
+        let buf = UnsafeMutablePointer<CChar>.allocate(capacity: utf8.count)
+        for (i, byte) in utf8.enumerated() {
+            buf[i] = CChar(bitPattern: byte)
+        }
+        allocation.cStringBuffers.append((buf, utf8.count))
+        return buf
     }
 
     /// Return the list of wallet ids that could be restored from
@@ -1402,26 +1556,26 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    private func networkTag(for name: String) -> UInt8 {
-        switch name.lowercased() {
-        case "mainnet": return 0
-        case "testnet": return 1
-        case "devnet": return 2
-        case "regtest": return 3
-        default: return 1 // default to testnet for unknown during dev
+    /// Inverse of `appNetwork(for:)`. The Rust-side tag convention
+    /// (0=mainnet, 1=testnet, 2=devnet, 3=regtest) differs from
+    /// `AppNetwork.rawValue` ordering, so this has to stay an
+    /// explicit switch. `nil` defaults to testnet (tag=1) —
+    /// matches the old "unknown" fallback during dev.
+    private func networkTag(for network: AppNetwork?) -> UInt8 {
+        switch network {
+        case .mainnet: return 0
+        case .testnet: return 1
+        case .devnet: return 2
+        case .regtest: return 3
+        case .none: return 1
         }
     }
 
-    private func normalizedNetworkName(_ network: String) -> String {
-        let trimmed = network.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else {
-            return "unknown"
-        }
-        return trimmed
-    }
-
-    private func syncStateScopeId(for network: String) -> Data {
-        let scopeString = "platform-sync:\(normalizedNetworkName(network))"
+    /// Build the 32-byte synthetic walletId used as the uniqueness
+    /// key for the per-network `PersistentSyncState` row. The content
+    /// is "platform-sync:<networkName>" zero-padded to 32 bytes.
+    private func syncStateScopeId(for network: AppNetwork) -> Data {
+        let scopeString = "platform-sync:\(network.networkName)"
         var data = Data(scopeString.utf8.prefix(32))
         if data.count < 32 {
             data.append(Data(repeating: 0, count: 32 - data.count))
@@ -1429,126 +1583,17 @@ public class PlatformWalletPersistenceHandler {
         return data
     }
 
-    private func walletNetwork(walletId: Data) -> String? {
+    /// Look up the network for a wallet id by reading the owning
+    /// `PersistentWallet` row. Returns `nil` if the wallet row
+    /// doesn't exist or its network hasn't been resolved yet.
+    private func walletNetwork(walletId: Data) -> AppNetwork? {
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         guard let wallet = try? backgroundContext.fetch(descriptor).first else {
             return nil
         }
-        let normalized = normalizedNetworkName(wallet.network)
-        return normalized == "unknown" && wallet.network.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? nil
-            : normalized
-    }
-
-    private func syncStateNetwork(forWalletId walletId: Data) -> String? {
-        if let network = walletNetwork(walletId: walletId) {
-            return network
-        }
-
-        let descriptor = FetchDescriptor<PersistentSyncState>(
-            predicate: #Predicate { $0.walletId == walletId }
-        )
-        guard let record = try? backgroundContext.fetch(descriptor).first else {
-            return nil
-        }
-        return syncStateNetwork(for: record)
-    }
-
-    private func syncStateNetwork(for record: PersistentSyncState) -> String? {
-        let normalized = normalizedNetworkName(record.network)
-        if normalized != "unknown" || !record.network.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return normalized
-        }
-
-        return walletNetwork(walletId: record.walletId)
-    }
-
-    private func fetchSyncStateRecord(scopeId: Data) -> PersistentSyncState? {
-        let descriptor = FetchDescriptor<PersistentSyncState>(
-            predicate: #Predicate { $0.walletId == scopeId }
-        )
-        return try? backgroundContext.fetch(descriptor).first
-    }
-
-    private func mergeSyncState(_ source: PersistentSyncState, into target: PersistentSyncState) {
-        target.syncHeight = max(target.syncHeight, source.syncHeight)
-        target.syncTimestamp = max(target.syncTimestamp, source.syncTimestamp)
-        target.lastKnownRecentBlock = max(
-            target.lastKnownRecentBlock,
-            source.lastKnownRecentBlock
-        )
-        if source.lastUpdated > target.lastUpdated {
-            target.lastUpdated = source.lastUpdated
-        }
-        if let network = syncStateNetwork(for: source) {
-            target.network = network
-        }
-    }
-
-    private func migrateLegacySyncStateRecordsToNetworkScope() {
-        let descriptor = FetchDescriptor<PersistentSyncState>()
-        guard let records = try? backgroundContext.fetch(descriptor), !records.isEmpty else {
-            return
-        }
-
-        var canonicalByNetwork: [String: PersistentSyncState] = [:]
-        var mutated = false
-
-        for record in records {
-            guard let network = syncStateNetwork(for: record) else {
-                continue
-            }
-            let scopeId = syncStateScopeId(for: network)
-
-            if record.walletId == scopeId {
-                if record.network != network {
-                    record.network = network
-                    mutated = true
-                }
-
-                if let canonical = canonicalByNetwork[network], canonical !== record {
-                    mergeSyncState(record, into: canonical)
-                    backgroundContext.delete(record)
-                    mutated = true
-                } else {
-                    canonicalByNetwork[network] = record
-                }
-                continue
-            }
-
-            let canonical: PersistentSyncState
-            if let existing = canonicalByNetwork[network] {
-                canonical = existing
-            } else if let existing = fetchSyncStateRecord(scopeId: scopeId) {
-                canonical = existing
-                if existing.network != network {
-                    existing.network = network
-                    mutated = true
-                }
-                canonicalByNetwork[network] = existing
-            } else {
-                canonical = PersistentSyncState(
-                    walletId: scopeId,
-                    network: network,
-                    syncHeight: 0,
-                    syncTimestamp: 0,
-                    lastKnownRecentBlock: 0
-                )
-                backgroundContext.insert(canonical)
-                canonicalByNetwork[network] = canonical
-                mutated = true
-            }
-
-            mergeSyncState(record, into: canonical)
-            backgroundContext.delete(record)
-            mutated = true
-        }
-
-        if mutated {
-            try? backgroundContext.save()
-        }
+        return wallet.network
     }
 }
 
@@ -1561,8 +1606,25 @@ private final class LoadAllocation {
     var accountArrays: [(UnsafeMutablePointer<AccountSpecFFI>, Int)] = []
     /// `AddressBalanceEntryFFI` arrays per wallet.
     var addressBalanceArrays: [(UnsafeMutablePointer<AddressBalanceEntryFFI>, Int)] = []
+    /// `IdentityRestoreEntryFFI` arrays per wallet.
+    var identityArrays: [(UnsafeMutablePointer<IdentityRestoreEntryFFI>, Int)] = []
+    /// Per-identity `IdentityKeyRestoreFFI` arrays. One entry per
+    /// identity that has at least one persisted public key. The byte
+    /// buffers each row's `data` pointer references live in
+    /// `scalarBuffers` (same `UnsafeMutablePointer<UInt8>.allocate`
+    /// shape as xpub bytes).
+    var identityKeyArrays: [(UnsafeMutablePointer<IdentityKeyRestoreFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
+    /// NUL-terminated c-string buffers carried by identity entries
+    /// (`label`, dpns name labels, etc.). Allocated via plain
+    /// `UnsafeMutablePointer<CChar>.allocate`, freed by `deallocate()`.
+    var cStringBuffers: [(UnsafeMutablePointer<CChar>, Int)] = []
+    /// `*const c_char` arrays referenced by `dpns_names` /
+    /// `contested_dpns_names`. Each inner pointer points into
+    /// `cStringBuffers`; releasing this array doesn't touch the
+    /// underlying strings.
+    var cStringPointerArrays: [(UnsafeMutablePointer<UnsafePointer<CChar>?>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -1577,7 +1639,21 @@ private final class LoadAllocation {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
+        for (ptr, count) in identityArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in identityKeyArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
         for (ptr, _) in scalarBuffers {
+            ptr.deallocate()
+        }
+        for (ptr, _) in cStringBuffers {
+            ptr.deallocate()
+        }
+        for (ptr, _) in cStringPointerArrays {
             ptr.deallocate()
         }
     }
@@ -1866,10 +1942,7 @@ private func persistIdentitiesCallback(
     upsertsRaw: UnsafeRawPointer?,
     upsertsCount: Int,
     removedRaw: UnsafeRawPointer?,
-    removedCount: Int,
-    primaryIdentityRaw: UnsafeRawPointer?,
-    hasLastScannedIndex: Bool,
-    lastScannedIndex: UInt32
+    removedCount: Int
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
@@ -1888,13 +1961,15 @@ private func persistIdentitiesCallback(
             let e = upsertsPtr[i]
             let identityId = dataFromTuple32(e.identity_id)
             let walletIdField: Data? = e.wallet_id_is_some ? dataFromTuple32(e.wallet_id) : nil
-            let label: String? = e.label.map { String(cString: $0) }
+            let identityIndexField: UInt32? = e.identity_index_is_some ? e.identity_index : nil
             upserts.append(.init(
                 identityId: identityId,
                 balance: e.balance,
                 revision: e.revision,
-                identityIndex: e.identity_index,
-                label: label,
+                identityIndex: identityIndexField,
+                // Label is no longer carried over the FFI — Swift
+                // owns `PersistentIdentity.alias` directly.
+                label: nil,
                 status: e.status,
                 walletId: walletIdField
             ))
@@ -1910,18 +1985,10 @@ private func persistIdentitiesCallback(
         }
     }
 
-    let primary: Data? = primaryIdentityRaw.map { raw in
-        let ptr = raw.assumingMemoryBound(to: FFIByteTuple32.self)
-        return dataFromTuple32(ptr.pointee)
-    }
-    let scanIndex: UInt32? = hasLastScannedIndex ? lastScannedIndex : nil
-
     handler.persistIdentities(
         walletId: walletId,
         upserts: upserts,
-        removed: removed,
-        primaryIdentity: primary,
-        lastScannedIndex: scanIndex
+        removed: removed
     )
     return 0
 }

@@ -150,7 +150,7 @@ mod tests {
     }
 
     /// Create a signed IdentityCreateFromAddressesTransition using the proper method
-    fn create_signed_identity_create_from_addresses_transition(
+    async fn create_signed_identity_create_from_addresses_transition(
         identity: &Identity,
         address_signer: &TestAddressSigner,
         identity_signer: &SimpleSigner,
@@ -172,11 +172,12 @@ mod tests {
             0, // user_fee_increase
             platform_version,
         )
+        .await
         .expect("should create transition")
     }
 
     /// Create a signed identity create from addresses transition with optional output
-    fn create_signed_identity_create_from_addresses_transition_with_output(
+    async fn create_signed_identity_create_from_addresses_transition_with_output(
         identity: &Identity,
         address_signer: &TestAddressSigner,
         identity_signer: &SimpleSigner,
@@ -218,26 +219,28 @@ mod tests {
             if public_key.key_type().is_unique_key_type() {
                 let signature = identity_signer
                     .sign(public_key, &signable_bytes)
+                    .await
                     .expect("should sign");
                 public_key_in_creation.set_signature(signature);
             }
         }
 
         // Create witnesses for each input address
-        transition.input_witnesses = inputs
-            .keys()
-            .map(|address| {
-                address_signer
-                    .sign_create_witness(address, &signable_bytes)
-                    .expect("should create witness")
-            })
-            .collect();
+        let mut witnesses = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            let witness = address_signer
+                .sign_create_witness(address, &signable_bytes)
+                .await
+                .expect("should create witness");
+            witnesses.push(witness);
+        }
+        transition.input_witnesses = witnesses;
 
         transition.into()
     }
 
     /// Create a signed identity create from addresses transition with output and fee strategy
-    fn create_signed_identity_create_from_addresses_transition_full(
+    async fn create_signed_identity_create_from_addresses_transition_full(
         identity: &Identity,
         address_signer: &TestAddressSigner,
         identity_signer: &SimpleSigner,
@@ -278,20 +281,22 @@ mod tests {
             if public_key.key_type().is_unique_key_type() {
                 let signature = identity_signer
                     .sign(public_key, &signable_bytes)
+                    .await
                     .expect("should sign");
                 public_key_in_creation.set_signature(signature);
             }
         }
 
         // Create witnesses for each input address
-        transition.input_witnesses = inputs
-            .keys()
-            .map(|address| {
-                address_signer
-                    .sign_create_witness(address, &signable_bytes)
-                    .expect("should create witness")
-            })
-            .collect();
+        let mut witnesses = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            let witness = address_signer
+                .sign_create_witness(address, &signable_bytes)
+                .await
+                .expect("should create witness");
+            witnesses.push(witness);
+        }
+        transition.input_witnesses = witnesses;
 
         transition.into()
     }
@@ -319,8 +324,8 @@ mod tests {
     mod structure_validation {
         use super::*;
 
-        #[test]
-        fn test_no_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(567);
 
@@ -380,8 +385,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_public_keys_returns_error() {
+        #[tokio::test]
+        async fn test_no_public_keys_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -426,14 +431,15 @@ mod tests {
 
             // Create witnesses for each input address
             let mut transition = transition;
-            transition.input_witnesses = inputs
-                .keys()
-                .map(|addr| {
-                    address_signer
-                        .sign_create_witness(addr, &signable_bytes)
-                        .expect("should create witness")
-                })
-                .collect();
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for addr in inputs.keys() {
+                let witness = address_signer
+                    .sign_create_witness(addr, &signable_bytes)
+                    .await
+                    .expect("should create witness");
+                witnesses.push(witness);
+            }
+            transition.input_witnesses = witnesses;
 
             let state_transition: StateTransition = transition.into();
             let raw_tx = state_transition
@@ -451,8 +457,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_too_many_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -498,7 +504,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -512,8 +519,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_witness_count_mismatch_returns_error() {
+        #[tokio::test]
+        async fn test_input_witness_count_mismatch_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -580,6 +587,7 @@ mod tests {
                 if public_key.key_type().is_unique_key_type() {
                     let signature = identity_signer
                         .sign(public_key, &signable_bytes)
+                        .await
                         .expect("should sign");
                     public_key_in_creation.set_signature(signature);
                 }
@@ -588,6 +596,7 @@ mod tests {
             // Only create 1 witness for 2 inputs (this is the mismatch!)
             transition.input_witnesses = vec![address_signer
                 .sign_create_witness(&address1, &signable_bytes)
+                .await
                 .expect("should create witness")];
 
             let state_transition: StateTransition = transition.into();
@@ -610,8 +619,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_input_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -651,7 +660,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -665,8 +675,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_address_same_as_input_returns_error() {
+        #[tokio::test]
+        async fn test_output_address_same_as_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -704,7 +714,8 @@ mod tests {
                 inputs,
                 Some((address, dash_to_credits!(0.1))),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -718,8 +729,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_output_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -758,7 +769,8 @@ mod tests {
                 inputs,
                 Some((output_address, 100)),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -772,8 +784,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_fee_strategy_returns_error() {
+        #[tokio::test]
+        async fn test_empty_fee_strategy_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -812,7 +824,8 @@ mod tests {
                 None,
                 AddressFundsFeeStrategy::from(vec![]),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -826,8 +839,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_index_out_of_bounds_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_index_out_of_bounds_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -868,7 +881,8 @@ mod tests {
                     5,
                 )]),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -882,8 +896,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_inputs_not_covering_minimum_identity_funding_returns_error() {
+        #[tokio::test]
+        async fn test_inputs_not_covering_minimum_identity_funding_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -939,7 +953,8 @@ mod tests {
                 inputs,
                 Some((output_address, min_output)),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -966,8 +981,8 @@ mod tests {
     mod successful_transitions {
         use super::*;
 
-        #[test]
-        fn test_simple_identity_create_from_single_address() {
+        #[tokio::test]
+        async fn test_simple_identity_create_from_single_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1014,7 +1029,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1040,8 +1056,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_identity_create_from_multiple_addresses() {
+        #[tokio::test]
+        async fn test_identity_create_from_multiple_addresses() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1113,7 +1129,8 @@ mod tests {
                 None,
                 Some(fee_strategy),
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1139,8 +1156,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_identity_create_with_maximum_allowed_inputs() {
+        #[tokio::test]
+        async fn test_identity_create_with_maximum_allowed_inputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1218,7 +1235,8 @@ mod tests {
                 None,
                 Some(fee_strategy),
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1253,8 +1271,8 @@ mod tests {
     mod state_verification {
         use super::*;
 
-        #[test]
-        fn test_identity_created_with_correct_balance() {
+        #[tokio::test]
+        async fn test_identity_created_with_correct_balance() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1301,7 +1319,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1362,8 +1381,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_address_balance_decreases_after_identity_creation() {
+        #[tokio::test]
+        async fn test_input_address_balance_decreases_after_identity_creation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1419,7 +1438,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1468,8 +1488,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_identity_has_correct_public_keys() {
+        #[tokio::test]
+        async fn test_identity_has_correct_public_keys() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1516,7 +1536,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1589,8 +1610,8 @@ mod tests {
     mod state_validation {
         use super::*;
 
-        #[test]
-        fn test_address_does_not_exist_returns_error() {
+        #[tokio::test]
+        async fn test_address_does_not_exist_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1631,7 +1652,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1660,8 +1682,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_address_balance_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_address_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1706,7 +1728,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1735,8 +1758,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_invalid_address_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_address_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1783,7 +1806,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1824,8 +1848,8 @@ mod tests {
         //
         // The duplicate test `test_duplicate_public_key_in_state_returns_error` exists below
         // and properly tests duplicate public keys in state.
-        #[test]
-        fn test_identity_keys_already_exist_returns_error() {
+        #[tokio::test]
+        async fn test_identity_keys_already_exist_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1876,7 +1900,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
 
@@ -1927,7 +1952,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
@@ -1961,8 +1987,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_duplicate_public_key_in_state_returns_error() {
+        #[tokio::test]
+        async fn test_duplicate_public_key_in_state_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2013,7 +2039,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
 
@@ -2069,7 +2096,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
@@ -2109,8 +2137,8 @@ mod tests {
     mod signature_validation {
         use super::*;
 
-        #[test]
-        fn test_invalid_address_witness_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_address_witness_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2201,8 +2229,8 @@ mod tests {
     mod edge_cases {
         use super::*;
 
-        #[test]
-        fn test_minimum_valid_input_amount() {
+        #[tokio::test]
+        async fn test_minimum_valid_input_amount() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2272,7 +2300,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2301,8 +2330,8 @@ mod tests {
             // The identity funding amount should be the input amount minus the processing fees
         }
 
-        #[test]
-        fn test_check_tx_rejects_invalid_transition() {
+        #[tokio::test]
+        async fn test_check_tx_rejects_invalid_transition() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2340,8 +2369,8 @@ mod tests {
             assert!(!is_valid, "check_tx should reject invalid transition");
         }
 
-        #[test]
-        fn test_check_tx_accepts_valid_transition() {
+        #[tokio::test]
+        async fn test_check_tx_accepts_valid_transition() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2388,7 +2417,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2406,8 +2436,8 @@ mod tests {
     mod additional_structure_validation {
         use super::*;
 
-        #[test]
-        fn test_too_many_public_keys_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_public_keys_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2472,14 +2502,15 @@ mod tests {
 
             // Create witnesses
             let mut transition = transition;
-            transition.input_witnesses = inputs
-                .keys()
-                .map(|addr| {
-                    address_signer
-                        .sign_create_witness(addr, &signable_bytes)
-                        .expect("should create witness")
-                })
-                .collect();
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for addr in inputs.keys() {
+                let witness = address_signer
+                    .sign_create_witness(addr, &signable_bytes)
+                    .await
+                    .expect("should create witness");
+                witnesses.push(witness);
+            }
+            transition.input_witnesses = witnesses;
 
             let state_transition: StateTransition = transition.into();
             let raw_tx = state_transition
@@ -2496,8 +2527,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_too_many_steps_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_too_many_steps_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2549,7 +2580,8 @@ mod tests {
                 None,
                 AddressFundsFeeStrategy::from(fee_steps),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2563,8 +2595,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_duplicate_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_duplicate_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2606,7 +2638,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0), // Duplicate
                 ]),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2620,8 +2653,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_reduce_output_index_out_of_bounds_no_output_returns_error() {
+        #[tokio::test]
+        async fn test_reduce_output_index_out_of_bounds_no_output_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2660,7 +2693,8 @@ mod tests {
                 None, // No output
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2674,8 +2708,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_reduce_output_index_out_of_bounds_with_output_returns_error() {
+        #[tokio::test]
+        async fn test_reduce_output_index_out_of_bounds_with_output_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2715,7 +2749,8 @@ mod tests {
                 Some((output_address, dash_to_credits!(0.1))),
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(1)]), // Index 1 doesn't exist
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2729,8 +2764,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_valid_reduce_output_fee_strategy() {
+        #[tokio::test]
+        async fn test_valid_reduce_output_fee_strategy() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2777,7 +2812,8 @@ mod tests {
                 inputs,
                 Some((output_address, dash_to_credits!(0.5))),
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2805,8 +2841,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_fee_strategy_steps_valid() {
+        #[tokio::test]
+        async fn test_multiple_fee_strategy_steps_valid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2856,7 +2892,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                 ]),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -2868,8 +2905,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_amounts_very_high_should_succeed() {
+        #[tokio::test]
+        async fn test_input_amounts_very_high_should_succeed() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2919,7 +2956,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -2927,8 +2965,8 @@ mod tests {
             assert!(check_result.is_valid());
         }
 
-        #[test]
-        fn test_valid_structure_with_output() {
+        #[tokio::test]
+        async fn test_valid_structure_with_output() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2975,7 +3013,8 @@ mod tests {
                 inputs,
                 Some((output_address, dash_to_credits!(0.5))),
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3003,8 +3042,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_exactly_maximum_inputs_is_valid() {
+        #[tokio::test]
+        async fn test_exactly_maximum_inputs_is_valid() {
             let platform_version = PlatformVersion::latest();
             let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
 
@@ -3048,7 +3087,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -3060,8 +3100,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_single_minimum_input_amount_fails_due_to_insufficient_funding() {
+        #[tokio::test]
+        async fn test_single_minimum_input_amount_fails_due_to_insufficient_funding() {
             // A single input at min_input_amount (100k) fails because identity creation
             // requires at least min_identity_funding_amount (200k) worth of credits.
             let platform_version = PlatformVersion::latest();
@@ -3109,7 +3149,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -3124,8 +3165,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_two_minimum_inputs_meet_identity_funding_requirement() {
+        #[tokio::test]
+        async fn test_two_minimum_inputs_meet_identity_funding_requirement() {
             // Two inputs at min_input_amount (100k each = 200k total) should succeed
             // because it meets min_identity_funding_amount (200k).
             let platform_version = PlatformVersion::latest();
@@ -3185,7 +3226,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(address1_index),
                 ])),
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3213,8 +3255,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_exactly_minimum_output_amount_is_valid() {
+        #[tokio::test]
+        async fn test_exactly_minimum_output_amount_is_valid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3261,7 +3303,8 @@ mod tests {
                 inputs,
                 Some((output_address, min_output)),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -3273,8 +3316,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_one_below_minimum_input_returns_error() {
+        #[tokio::test]
+        async fn test_one_below_minimum_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3320,7 +3363,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -3334,8 +3378,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_one_below_minimum_output_returns_error() {
+        #[tokio::test]
+        async fn test_one_below_minimum_output_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3382,7 +3426,8 @@ mod tests {
                 inputs,
                 Some((output_address, min_output - 1)),
                 platform_version,
-            );
+            )
+            .await;
 
             let raw_tx = transition.serialize_to_bytes().expect("should serialize");
             let check_result = run_check_tx(&platform, &raw_tx, platform_version);
@@ -3405,8 +3450,8 @@ mod tests {
     mod p2sh_multisig_tests {
         use super::*;
 
-        #[test]
-        fn test_p2sh_multisig_address_structure_validation() {
+        #[tokio::test]
+        async fn test_p2sh_multisig_address_structure_validation() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -3461,8 +3506,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_p2pkh_and_p2sh_addresses_structure() {
+        #[tokio::test]
+        async fn test_mixed_p2pkh_and_p2sh_addresses_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -3526,8 +3571,8 @@ mod tests {
     mod public_key_validation {
         use super::*;
 
-        #[test]
-        fn test_single_master_key_is_valid() {
+        #[tokio::test]
+        async fn test_single_master_key_is_valid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3573,7 +3618,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3601,8 +3647,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_public_keys_is_valid() {
+        #[tokio::test]
+        async fn test_multiple_public_keys_is_valid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3648,7 +3694,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3676,8 +3723,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_exactly_max_public_keys_is_valid() {
+        #[tokio::test]
+        async fn test_exactly_max_public_keys_is_valid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3723,7 +3770,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3760,8 +3808,8 @@ mod tests {
     mod nonce_handling {
         use super::*;
 
-        #[test]
-        fn test_zero_nonce_is_valid_structure() {
+        #[tokio::test]
+        async fn test_zero_nonce_is_valid_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -3797,8 +3845,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_high_nonce_is_valid_structure() {
+        #[tokio::test]
+        async fn test_high_nonce_is_valid_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -3833,8 +3881,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_different_nonces_valid_structure() {
+        #[tokio::test]
+        async fn test_multiple_inputs_different_nonces_valid_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -3885,8 +3933,8 @@ mod tests {
     mod user_fee_increase {
         use super::*;
 
-        #[test]
-        fn test_zero_user_fee_increase() {
+        #[tokio::test]
+        async fn test_zero_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1000);
 
@@ -3913,8 +3961,8 @@ mod tests {
             assert_eq!(state_transition.user_fee_increase(), 0);
         }
 
-        #[test]
-        fn test_nonzero_user_fee_increase() {
+        #[tokio::test]
+        async fn test_nonzero_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1001);
 
@@ -3941,8 +3989,8 @@ mod tests {
             assert_eq!(state_transition.user_fee_increase(), 100);
         }
 
-        #[test]
-        fn test_max_user_fee_increase() {
+        #[tokio::test]
+        async fn test_max_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1002);
 
@@ -3977,8 +4025,8 @@ mod tests {
     mod serialization {
         use super::*;
 
-        #[test]
-        fn test_transition_serializes_and_deserializes() {
+        #[tokio::test]
+        async fn test_transition_serializes_and_deserializes() {
             use dpp::serialization::PlatformDeserializable;
 
             let platform_version = PlatformVersion::latest();
@@ -4019,8 +4067,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transition_with_output_serializes() {
+        #[tokio::test]
+        async fn test_transition_with_output_serializes() {
             use dpp::serialization::PlatformDeserializable;
 
             let platform_version = PlatformVersion::latest();
@@ -4057,8 +4105,8 @@ mod tests {
             assert_eq!(serialized, reserialized);
         }
 
-        #[test]
-        fn test_transition_with_multiple_inputs_serializes() {
+        #[tokio::test]
+        async fn test_transition_with_multiple_inputs_serializes() {
             use dpp::serialization::PlatformDeserializable;
 
             let platform_version = PlatformVersion::latest();
@@ -4111,8 +4159,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::StateTransitionLike;
 
-        #[test]
-        fn test_unique_identifiers_contains_all_inputs() {
+        #[tokio::test]
+        async fn test_unique_identifiers_contains_all_inputs() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1200);
 
@@ -4160,8 +4208,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_unique_identifiers_include_nonce() {
+        #[tokio::test]
+        async fn test_unique_identifiers_include_nonce() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1201);
 
@@ -4214,8 +4262,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_unique_identifiers_differ_by_address() {
+        #[tokio::test]
+        async fn test_unique_identifiers_differ_by_address() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1202);
 
@@ -4280,8 +4328,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::{StateTransitionLike, StateTransitionType};
 
-        #[test]
-        fn test_state_transition_type_is_identity_create_from_addresses() {
+        #[tokio::test]
+        async fn test_state_transition_type_is_identity_create_from_addresses() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1300);
 
@@ -4313,8 +4361,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_modified_data_ids_is_empty() {
+        #[tokio::test]
+        async fn test_modified_data_ids_is_empty() {
             use dpp::state_transition::StateTransitionLike;
 
             let platform_version = PlatformVersion::latest();
@@ -4355,8 +4403,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 
-        #[test]
-        fn test_identity_id_is_deterministic() {
+        #[tokio::test]
+        async fn test_identity_id_is_deterministic() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1400);
 
@@ -4404,8 +4452,8 @@ mod tests {
             assert_eq!(id1, id2, "Same inputs should produce same identity ID");
         }
 
-        #[test]
-        fn test_different_inputs_produce_different_identity_id() {
+        #[tokio::test]
+        async fn test_different_inputs_produce_different_identity_id() {
             // Identity ID is derived from INPUTS (addresses and nonces), not public keys.
             // Different inputs should produce different identity IDs.
             let platform_version = PlatformVersion::latest();
@@ -4475,8 +4523,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::StateTransitionWitnessSigned;
 
-        #[test]
-        fn test_inputs_accessor() {
+        #[tokio::test]
+        async fn test_inputs_accessor() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1500);
 
@@ -4507,8 +4555,8 @@ mod tests {
             assert_eq!(transition.inputs().len(), 2);
         }
 
-        #[test]
-        fn test_witnesses_accessor() {
+        #[tokio::test]
+        async fn test_witnesses_accessor() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1501);
 
@@ -4536,8 +4584,8 @@ mod tests {
             assert_eq!(transition.witnesses().len(), 1);
         }
 
-        #[test]
-        fn test_set_witnesses() {
+        #[tokio::test]
+        async fn test_set_witnesses() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1502);
 
@@ -4577,8 +4625,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 
-        #[test]
-        fn test_public_keys_accessor() {
+        #[tokio::test]
+        async fn test_public_keys_accessor() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1600);
 
@@ -4607,8 +4655,8 @@ mod tests {
             assert_eq!(transition.public_keys().len(), public_keys_count);
         }
 
-        #[test]
-        fn test_output_accessor_none() {
+        #[tokio::test]
+        async fn test_output_accessor_none() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1601);
 
@@ -4636,8 +4684,8 @@ mod tests {
             assert!(transition.output().is_none());
         }
 
-        #[test]
-        fn test_output_accessor_some() {
+        #[tokio::test]
+        async fn test_output_accessor_some() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1602);
 
@@ -4672,8 +4720,8 @@ mod tests {
             assert_eq!(*amount, output_amount);
         }
 
-        #[test]
-        fn test_fee_strategy_accessor() {
+        #[tokio::test]
+        async fn test_fee_strategy_accessor() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1603);
 
@@ -4712,8 +4760,8 @@ mod tests {
     mod boundary_values {
         use super::*;
 
-        #[test]
-        fn test_zero_amount_in_input_returns_error() {
+        #[tokio::test]
+        async fn test_zero_amount_in_input_returns_error() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -4753,8 +4801,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_zero_amount_in_output_returns_error() {
+        #[tokio::test]
+        async fn test_zero_amount_in_output_returns_error() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -4796,8 +4844,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_max_u64_input_amount() {
+        #[tokio::test]
+        async fn test_max_u64_input_amount() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -4831,8 +4879,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_max_u64_output_amount() {
+        #[tokio::test]
+        async fn test_max_u64_output_amount() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -4878,8 +4926,8 @@ mod tests {
         use dpp::identity::KeyType;
         use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 
-        #[test]
-        fn test_ecdsa_secp256k1_key_structure() {
+        #[tokio::test]
+        async fn test_ecdsa_secp256k1_key_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -4923,8 +4971,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_bls_key_structure() {
+        #[tokio::test]
+        async fn test_bls_key_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -4972,8 +5020,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_key_types_structure() {
+        #[tokio::test]
+        async fn test_mixed_key_types_structure() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5036,8 +5084,8 @@ mod tests {
     mod fee_strategy_combinations {
         use super::*;
 
-        #[test]
-        fn test_deduct_from_all_inputs() {
+        #[tokio::test]
+        async fn test_deduct_from_all_inputs() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5083,8 +5131,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_reduce_output_only_fee_strategy() {
+        #[tokio::test]
+        async fn test_reduce_output_only_fee_strategy() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5120,8 +5168,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_deduct_and_reduce_fee_strategy() {
+        #[tokio::test]
+        async fn test_mixed_deduct_and_reduce_fee_strategy() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5164,8 +5212,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_single_fee_strategy_step() {
+        #[tokio::test]
+        async fn test_single_fee_strategy_step() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5209,8 +5257,8 @@ mod tests {
     mod protocol_version {
         use super::*;
 
-        #[test]
-        fn test_state_transition_protocol_version() {
+        #[tokio::test]
+        async fn test_state_transition_protocol_version() {
             use dpp::state_transition::StateTransitionLike;
 
             let platform_version = PlatformVersion::latest();
@@ -5251,8 +5299,8 @@ mod tests {
     mod address_types {
         use super::*;
 
-        #[test]
-        fn test_p2pkh_address_in_input() {
+        #[tokio::test]
+        async fn test_p2pkh_address_in_input() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5288,8 +5336,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_address_in_input() {
+        #[tokio::test]
+        async fn test_p2sh_address_in_input() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5325,8 +5373,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2pkh_address_in_output() {
+        #[tokio::test]
+        async fn test_p2pkh_address_in_output() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5365,8 +5413,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_address_in_output() {
+        #[tokio::test]
+        async fn test_p2sh_address_in_output() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5413,8 +5461,8 @@ mod tests {
     mod concurrent_transitions {
         use super::*;
 
-        #[test]
-        fn test_same_address_used_in_multiple_transitions_same_block() {
+        #[tokio::test]
+        async fn test_same_address_used_in_multiple_transitions_same_block() {
             // Tests that using the same address in multiple transitions within the same block
             // should be handled correctly (the nonce should prevent double-spending)
             let platform_version = PlatformVersion::latest();
@@ -5455,8 +5503,8 @@ mod tests {
             // Both transitions should be structurally valid; state validation would catch nonce issues
         }
 
-        #[test]
-        fn test_multiple_identities_from_same_address_sequential() {
+        #[tokio::test]
+        async fn test_multiple_identities_from_same_address_sequential() {
             // Tests creating multiple identities from the same address over time
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2201);
@@ -5492,8 +5540,8 @@ mod tests {
     mod input_ordering {
         use super::*;
 
-        #[test]
-        fn test_input_ordering_determinism() {
+        #[tokio::test]
+        async fn test_input_ordering_determinism() {
             // Tests that BTreeMap ordering is deterministic
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2300);
@@ -5525,8 +5573,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_index_refers_to_btreemap_ordering() {
+        #[tokio::test]
+        async fn test_fee_strategy_index_refers_to_btreemap_ordering() {
             // Tests that fee strategy indices refer to BTreeMap ordering
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
@@ -5580,8 +5628,8 @@ mod tests {
     mod witness_validation {
         use super::*;
 
-        #[test]
-        fn test_empty_p2pkh_signature_in_witness() {
+        #[tokio::test]
+        async fn test_empty_p2pkh_signature_in_witness() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2400);
 
@@ -5613,8 +5661,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2pkh_witness_with_valid_signature_format() {
+        #[tokio::test]
+        async fn test_p2pkh_witness_with_valid_signature_format() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2401);
 
@@ -5646,8 +5694,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2sh_witness_with_empty_signatures() {
+        #[tokio::test]
+        async fn test_p2sh_witness_with_empty_signatures() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2402);
 
@@ -5680,8 +5728,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2sh_witness_with_multiple_signatures() {
+        #[tokio::test]
+        async fn test_p2sh_witness_with_multiple_signatures() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2403);
 
@@ -5717,8 +5765,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2sh_witness_with_empty_redeem_script() {
+        #[tokio::test]
+        async fn test_p2sh_witness_with_empty_redeem_script() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2404);
 
@@ -5759,8 +5807,8 @@ mod tests {
     mod balance_calculations {
         use super::*;
 
-        #[test]
-        fn test_total_input_balance_calculation() {
+        #[tokio::test]
+        async fn test_total_input_balance_calculation() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2500);
 
@@ -5794,8 +5842,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_cannot_exceed_total_inputs() {
+        #[tokio::test]
+        async fn test_output_cannot_exceed_total_inputs() {
             // This should fail state validation (not basic structure)
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2501);
@@ -5822,8 +5870,8 @@ mod tests {
             // This should fail during state validation when we check actual balances
         }
 
-        #[test]
-        fn test_fee_deduction_leaves_identity_with_remaining_balance() {
+        #[tokio::test]
+        async fn test_fee_deduction_leaves_identity_with_remaining_balance() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2502);
 
@@ -5855,8 +5903,8 @@ mod tests {
     mod nonce_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_nonce_at_max_u64() {
+        #[tokio::test]
+        async fn test_nonce_at_max_u64() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5892,8 +5940,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_different_nonces_for_different_addresses() {
+        #[tokio::test]
+        async fn test_different_nonces_for_different_addresses() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5945,8 +5993,8 @@ mod tests {
         use super::*;
         use dpp::identity::SecurityLevel;
 
-        #[test]
-        fn test_all_keys_at_master_level() {
+        #[tokio::test]
+        async fn test_all_keys_at_master_level() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -5992,8 +6040,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_keys_at_different_security_levels() {
+        #[tokio::test]
+        async fn test_keys_at_different_security_levels() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2701);
 
@@ -6053,8 +6101,8 @@ mod tests {
     mod replay_attack_prevention {
         use super::*;
 
-        #[test]
-        fn test_same_transition_cannot_be_applied_twice() {
+        #[tokio::test]
+        async fn test_same_transition_cannot_be_applied_twice() {
             // This is handled by nonce checking in state validation
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(2800);
@@ -6084,8 +6132,8 @@ mod tests {
             let _ = transition;
         }
 
-        #[test]
-        fn test_identity_id_derived_from_first_input_prevents_replay() {
+        #[tokio::test]
+        async fn test_identity_id_derived_from_first_input_prevents_replay() {
             // Identity ID is derived from the first public key
             // This means the identity created is deterministic based on the public keys
             let platform_version = PlatformVersion::latest();
@@ -6146,8 +6194,8 @@ mod tests {
     mod error_messages {
         use super::*;
 
-        #[test]
-        fn test_no_inputs_error_is_descriptive() {
+        #[tokio::test]
+        async fn test_no_inputs_error_is_descriptive() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -6183,8 +6231,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_public_keys_error_is_descriptive() {
+        #[tokio::test]
+        async fn test_no_public_keys_error_is_descriptive() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -6233,8 +6281,8 @@ mod tests {
     mod conversions {
         use super::*;
 
-        #[test]
-        fn test_transition_to_state_transition_conversion() {
+        #[tokio::test]
+        async fn test_transition_to_state_transition_conversion() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(3000);
 
@@ -6272,8 +6320,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_v0_wrapper_conversion() {
+        #[tokio::test]
+        async fn test_v0_wrapper_conversion() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(3001);
 
@@ -6315,8 +6363,8 @@ mod tests {
     mod minimum_balance_constants {
         use super::*;
 
-        #[test]
-        fn test_minimum_input_balance_is_enforced() {
+        #[tokio::test]
+        async fn test_minimum_input_balance_is_enforced() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -6346,8 +6394,8 @@ mod tests {
             assert!(!result.is_valid(), "1 credit input should be below minimum");
         }
 
-        #[test]
-        fn test_minimum_output_balance_is_enforced() {
+        #[tokio::test]
+        async fn test_minimum_output_balance_is_enforced() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -6391,8 +6439,8 @@ mod tests {
     mod advanced_structure_validation_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_p2pkh_witness_with_invalid_signature() {
+        #[tokio::test]
+        async fn test_p2pkh_witness_with_invalid_signature() {
             // P2PKH witness with an invalid signature (wrong format)
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4000);
@@ -6425,8 +6473,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2sh_witness_redeem_script_hash_mismatch() {
+        #[tokio::test]
+        async fn test_p2sh_witness_redeem_script_hash_mismatch() {
             // P2SH witness where redeem script hash doesn't match the address
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4001);
@@ -6462,8 +6510,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_invalid_der_signature_format() {
+        #[tokio::test]
+        async fn test_invalid_der_signature_format() {
             // Signature that's not valid DER encoding
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4002);
@@ -6499,8 +6547,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_signature_for_wrong_message() {
+        #[tokio::test]
+        async fn test_signature_for_wrong_message() {
             // Valid signature format but for different message/signable bytes
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4003);
@@ -6535,8 +6583,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2sh_with_incorrect_signature_count() {
+        #[tokio::test]
+        async fn test_p2sh_with_incorrect_signature_count() {
             // P2SH multisig where we don't have enough signatures
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4004);
@@ -6572,8 +6620,8 @@ mod tests {
             let _state_transition: StateTransition = transition.into();
         }
 
-        #[test]
-        fn test_p2sh_signatures_in_wrong_order() {
+        #[tokio::test]
+        async fn test_p2sh_signatures_in_wrong_order() {
             // P2SH where signatures might not match expected public key order
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4005);
@@ -6621,8 +6669,8 @@ mod tests {
         use super::*;
         use crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 
-        #[test]
-        fn test_transform_into_action_basic() {
+        #[tokio::test]
+        async fn test_transform_into_action_basic() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4100);
 
@@ -6683,8 +6731,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transform_into_action_with_output() {
+        #[tokio::test]
+        async fn test_transform_into_action_with_output() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4101);
 
@@ -6749,8 +6797,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transform_into_action_multiple_inputs() {
+        #[tokio::test]
+        async fn test_transform_into_action_multiple_inputs() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4102);
 
@@ -6830,8 +6878,8 @@ mod tests {
     mod public_key_signature_validation {
         use super::*;
 
-        #[test]
-        fn test_validate_public_key_signatures_with_valid_ecdsa() {
+        #[tokio::test]
+        async fn test_validate_public_key_signatures_with_valid_ecdsa() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4200);
 
@@ -6868,8 +6916,8 @@ mod tests {
             // This is separate from address witness validation
         }
 
-        #[test]
-        fn test_public_key_with_invalid_signature() {
+        #[tokio::test]
+        async fn test_public_key_with_invalid_signature() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4201);
 
@@ -6907,8 +6955,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_keys_some_with_signatures() {
+        #[tokio::test]
+        async fn test_multiple_keys_some_with_signatures() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4202);
 
@@ -6953,8 +7001,8 @@ mod tests {
     mod state_validation_with_platform {
         use super::*;
 
-        #[test]
-        fn test_identity_already_exists_with_same_id() {
+        #[tokio::test]
+        async fn test_identity_already_exists_with_same_id() {
             // For IdentityCreateFromAddresses, the identity ID is derived from inputs (addresses + nonces).
             // This test verifies that trying to create an identity with the same inputs
             // (which would produce the same ID) after one already exists returns an error.
@@ -7042,7 +7090,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -7071,8 +7120,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_address_balance_exact_match() {
+        #[tokio::test]
+        async fn test_address_balance_exact_match() {
             // Address has exactly the balance claimed in the transition
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4301);
@@ -7115,8 +7164,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_partial_existence() {
+        #[tokio::test]
+        async fn test_multiple_inputs_partial_existence() {
             // Some input addresses exist, some don't
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4302);
@@ -7173,8 +7222,8 @@ mod tests {
             // State validation should fail because non_existing_address doesn't exist
         }
 
-        #[test]
-        fn test_address_balance_less_than_claimed() {
+        #[tokio::test]
+        async fn test_address_balance_less_than_claimed() {
             // Address has less balance than claimed in the transition
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4303);
@@ -7219,8 +7268,8 @@ mod tests {
             // State validation should fail with insufficient balance error
         }
 
-        #[test]
-        fn test_nonce_already_used() {
+        #[tokio::test]
+        async fn test_nonce_already_used() {
             // Address exists but nonce has already been used
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4304);
@@ -7273,8 +7322,8 @@ mod tests {
     mod fee_calculation_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_fee_exactly_equals_available_balance() {
+        #[tokio::test]
+        async fn test_fee_exactly_equals_available_balance() {
             // After fees, zero credits remain for identity
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4400);
@@ -7321,8 +7370,8 @@ mod tests {
             // This might or might not be allowed depending on rules
         }
 
-        #[test]
-        fn test_reduce_output_to_negative_should_fail() {
+        #[tokio::test]
+        async fn test_reduce_output_to_negative_should_fail() {
             // ReduceOutput that would make output go negative
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
@@ -7361,8 +7410,8 @@ mod tests {
             // Multiple ReduceOutput steps for tiny output should fail
         }
 
-        #[test]
-        fn test_multiple_fee_steps_exceed_total_funds() {
+        #[tokio::test]
+        async fn test_multiple_fee_steps_exceed_total_funds() {
             // Multiple DeductFromInput steps that together exceed available funds
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
@@ -7394,8 +7443,8 @@ mod tests {
             // At execution time, this might fail if fees exceed input balance
         }
 
-        #[test]
-        fn test_fee_strategy_deduct_from_multiple_inputs_in_sequence() {
+        #[tokio::test]
+        async fn test_fee_strategy_deduct_from_multiple_inputs_in_sequence() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -7441,8 +7490,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_deduct_and_reduce_fee_strategy() {
+        #[tokio::test]
+        async fn test_mixed_deduct_and_reduce_fee_strategy() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -7488,8 +7537,8 @@ mod tests {
         use super::*;
         use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 
-        #[test]
-        fn test_full_roundtrip_serialization() {
+        #[tokio::test]
+        async fn test_full_roundtrip_serialization() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4500);
 
@@ -7543,8 +7592,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_roundtrip_with_output() {
+        #[tokio::test]
+        async fn test_roundtrip_with_output() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4501);
 
@@ -7591,8 +7640,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_roundtrip_with_p2sh_witness() {
+        #[tokio::test]
+        async fn test_roundtrip_with_p2sh_witness() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4502);
 
@@ -7656,8 +7705,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_roundtrip_complex_fee_strategy() {
+        #[tokio::test]
+        async fn test_roundtrip_complex_fee_strategy() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4503);
 
@@ -7709,16 +7758,16 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_deserialize_invalid_bytes() {
+        #[tokio::test]
+        async fn test_deserialize_invalid_bytes() {
             let invalid_bytes = vec![0xFF, 0xFF, 0xFF, 0xFF];
 
             let result = StateTransition::deserialize_from_bytes(&invalid_bytes);
             assert!(result.is_err(), "Invalid bytes should fail deserialization");
         }
 
-        #[test]
-        fn test_deserialize_truncated_data() {
+        #[tokio::test]
+        async fn test_deserialize_truncated_data() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4504);
 
@@ -7766,8 +7815,8 @@ mod tests {
     mod platform_version_handling {
         use super::*;
 
-        #[test]
-        fn test_validation_with_latest_version() {
+        #[tokio::test]
+        async fn test_validation_with_latest_version() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -7802,8 +7851,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_validation_with_first_version() {
+        #[tokio::test]
+        async fn test_validation_with_first_version() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::first();
@@ -7849,8 +7898,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_transform_action_version_check() {
+        #[tokio::test]
+        async fn test_transform_action_version_check() {
             use crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 
             let platform_version = PlatformVersion::latest();
@@ -7920,8 +7969,8 @@ mod tests {
 
         /// Tests that duplicate key IDs are rejected during state transition processing.
         /// This validation happens in advanced_structure via validate_identity_public_keys_structure.
-        #[test]
-        fn test_duplicate_key_ids() {
+        #[tokio::test]
+        async fn test_duplicate_key_ids() {
             use dpp::serialization::Signable;
 
             let platform_version = PlatformVersion::latest();
@@ -7994,14 +8043,15 @@ mod tests {
                 .expect("should get signable bytes");
 
             // Create proper witness for the address
-            transition_v0.input_witnesses = inputs
-                .keys()
-                .map(|addr| {
-                    address_signer
-                        .sign_create_witness(addr, &signable_bytes)
-                        .expect("should create witness")
-                })
-                .collect();
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for addr in inputs.keys() {
+                let witness = address_signer
+                    .sign_create_witness(addr, &signable_bytes)
+                    .await
+                    .expect("should create witness");
+                witnesses.push(witness);
+            }
+            transition_v0.input_witnesses = witnesses;
 
             let transition: StateTransition = transition_v0.into();
 
@@ -8038,8 +8088,8 @@ mod tests {
 
         /// Tests that ECDSA keys with invalid data (wrong length) are rejected.
         /// This validation happens in advanced_structure via validate_identity_public_keys_structure.
-        #[test]
-        fn test_invalid_key_data_for_ecdsa() {
+        #[tokio::test]
+        async fn test_invalid_key_data_for_ecdsa() {
             use dpp::serialization::Signable;
 
             let platform_version = PlatformVersion::latest();
@@ -8108,14 +8158,15 @@ mod tests {
                 .expect("should get signable bytes");
 
             // Create proper witness for the address
-            transition_v0.input_witnesses = inputs
-                .keys()
-                .map(|addr| {
-                    address_signer
-                        .sign_create_witness(addr, &signable_bytes)
-                        .expect("should create witness")
-                })
-                .collect();
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for addr in inputs.keys() {
+                let witness = address_signer
+                    .sign_create_witness(addr, &signable_bytes)
+                    .await
+                    .expect("should create witness");
+                witnesses.push(witness);
+            }
+            transition_v0.input_witnesses = witnesses;
 
             let transition: StateTransition = transition_v0.into();
 
@@ -8150,8 +8201,8 @@ mod tests {
 
         /// Tests that BLS keys with invalid data (wrong length) are rejected.
         /// This validation happens in advanced_structure via validate_identity_public_keys_structure.
-        #[test]
-        fn test_invalid_key_data_for_bls() {
+        #[tokio::test]
+        async fn test_invalid_key_data_for_bls() {
             use dpp::serialization::Signable;
 
             let platform_version = PlatformVersion::latest();
@@ -8220,14 +8271,15 @@ mod tests {
                 .expect("should get signable bytes");
 
             // Create proper witness for the address
-            transition_v0.input_witnesses = inputs
-                .keys()
-                .map(|addr| {
-                    address_signer
-                        .sign_create_witness(addr, &signable_bytes)
-                        .expect("should create witness")
-                })
-                .collect();
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for addr in inputs.keys() {
+                let witness = address_signer
+                    .sign_create_witness(addr, &signable_bytes)
+                    .await
+                    .expect("should create witness");
+                witnesses.push(witness);
+            }
+            transition_v0.input_witnesses = witnesses;
 
             let transition: StateTransition = transition_v0.into();
 
@@ -8260,8 +8312,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_key_with_wrong_purpose() {
+        #[tokio::test]
+        async fn test_key_with_wrong_purpose() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8305,8 +8357,8 @@ mod tests {
             // Should require at least one authentication key
         }
 
-        #[test]
-        fn test_no_master_level_key() {
+        #[tokio::test]
+        async fn test_no_master_level_key() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8346,8 +8398,8 @@ mod tests {
             // Identity creation might require at least one master key
         }
 
-        #[test]
-        fn test_disabled_key_at_creation() {
+        #[tokio::test]
+        async fn test_disabled_key_at_creation() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8383,8 +8435,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_read_only_authentication_key() {
+        #[tokio::test]
+        async fn test_read_only_authentication_key() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8437,8 +8489,8 @@ mod tests {
         use super::*;
         use dpp::dashcore::Network;
 
-        #[test]
-        fn test_validation_on_mainnet() {
+        #[tokio::test]
+        async fn test_validation_on_mainnet() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8469,8 +8521,8 @@ mod tests {
             // Should work on mainnet
         }
 
-        #[test]
-        fn test_validation_on_testnet() {
+        #[tokio::test]
+        async fn test_validation_on_testnet() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8505,8 +8557,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_validation_on_devnet() {
+        #[tokio::test]
+        async fn test_validation_on_devnet() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8537,8 +8589,8 @@ mod tests {
             // Should work on devnet
         }
 
-        #[test]
-        fn test_validation_on_regtest() {
+        #[tokio::test]
+        async fn test_validation_on_regtest() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8578,8 +8630,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 
-        #[test]
-        fn test_same_identity_id_from_different_transitions() {
+        #[tokio::test]
+        async fn test_same_identity_id_from_different_transitions() {
             // Two transitions that would create the same identity ID
             // This should be caught by mempool deduplication
             // Note: Identity ID is derived from input addresses and nonces, NOT public keys
@@ -8640,8 +8692,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_nonce_gap_detection() {
+        #[tokio::test]
+        async fn test_nonce_gap_detection() {
             // Using nonce 3 when nonce should be 1 (gap of 2)
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4901);
@@ -8686,8 +8738,8 @@ mod tests {
             // State validation should fail due to nonce gap
         }
 
-        #[test]
-        fn test_multiple_transitions_same_address_increasing_nonces() {
+        #[tokio::test]
+        async fn test_multiple_transitions_same_address_increasing_nonces() {
             // Multiple valid transitions from same address with incrementing nonces
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(4902);
@@ -8734,8 +8786,8 @@ mod tests {
     mod output_address_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_output_to_same_address_as_input() {
+        #[tokio::test]
+        async fn test_output_to_same_address_as_input() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8770,8 +8822,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_to_one_of_multiple_input_addresses() {
+        #[tokio::test]
+        async fn test_output_to_one_of_multiple_input_addresses() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8808,8 +8860,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_address_at_maximum_balance() {
+        #[tokio::test]
+        async fn test_output_address_at_maximum_balance() {
             // Output to address that already has near-maximum balance
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5002);
@@ -8870,8 +8922,8 @@ mod tests {
             // This should fail during execution due to balance overflow
         }
 
-        #[test]
-        fn test_output_to_new_address() {
+        #[tokio::test]
+        async fn test_output_to_new_address() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -8921,8 +8973,8 @@ mod tests {
             StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0,
         };
 
-        #[test]
-        fn test_full_flow_single_input_no_output() {
+        #[tokio::test]
+        async fn test_full_flow_single_input_no_output() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5100);
 
@@ -9005,8 +9057,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_full_flow_multiple_inputs_with_output() {
+        #[tokio::test]
+        async fn test_full_flow_multiple_inputs_with_output() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5101);
 
@@ -9064,8 +9116,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_full_flow_with_p2sh_multisig() {
+        #[tokio::test]
+        async fn test_full_flow_with_p2sh_multisig() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5102);
 
@@ -9138,8 +9190,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_verify_identity_created_after_execution() {
+        #[tokio::test]
+        async fn test_verify_identity_created_after_execution() {
             // This test would verify that after full execution, the identity exists in state
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5103);
@@ -9195,8 +9247,8 @@ mod tests {
             // This is a template for what full integration would test
         }
 
-        #[test]
-        fn test_verify_address_balance_updated_after_execution() {
+        #[tokio::test]
+        async fn test_verify_address_balance_updated_after_execution() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5104);
 
@@ -9247,8 +9299,8 @@ mod tests {
             // 3. Identity balance = remaining after fees and output
         }
 
-        #[test]
-        fn test_verify_nonce_incremented_after_execution() {
+        #[tokio::test]
+        async fn test_verify_nonce_incremented_after_execution() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(5105);
 
@@ -9336,8 +9388,8 @@ mod tests {
             (address, witness)
         }
 
-        #[test]
-        fn test_create_transition_with_real_p2pkh_signature() {
+        #[tokio::test]
+        async fn test_create_transition_with_real_p2pkh_signature() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6000);
 
@@ -9412,8 +9464,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_signature_verification_with_wrong_secret_key() {
+        #[tokio::test]
+        async fn test_signature_verification_with_wrong_secret_key() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6001);
 
@@ -9480,8 +9532,8 @@ mod tests {
             // Advanced structure validation should fail because recovered key doesn't match address
         }
 
-        #[test]
-        fn test_multiple_inputs_all_correctly_signed() {
+        #[tokio::test]
+        async fn test_multiple_inputs_all_correctly_signed() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6002);
 
@@ -9568,8 +9620,8 @@ mod tests {
             // All signatures should verify correctly
         }
 
-        #[test]
-        fn test_p2sh_multisig_real_signatures() {
+        #[tokio::test]
+        async fn test_p2sh_multisig_real_signatures() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6003);
 
@@ -9669,8 +9721,8 @@ mod tests {
         use super::*;
         use dpp::fee::fee_result::FeeResult;
 
-        #[test]
-        fn test_fee_increases_with_more_inputs() {
+        #[tokio::test]
+        async fn test_fee_increases_with_more_inputs() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6200);
 
@@ -9727,8 +9779,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_increases_with_more_public_keys() {
+        #[tokio::test]
+        async fn test_fee_increases_with_more_public_keys() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6201);
 
@@ -9792,8 +9844,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_with_p2sh_vs_p2pkh_witness() {
+        #[tokio::test]
+        async fn test_fee_with_p2sh_vs_p2pkh_witness() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6202);
 
@@ -9857,8 +9909,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_user_fee_increase_effect() {
+        #[tokio::test]
+        async fn test_user_fee_increase_effect() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6203);
 
@@ -9922,8 +9974,8 @@ mod tests {
     mod consensus_error_types {
         use super::*;
 
-        #[test]
-        fn test_no_inputs_returns_correct_error_type() {
+        #[tokio::test]
+        async fn test_no_inputs_returns_correct_error_type() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -9965,8 +10017,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_public_keys_returns_correct_error_type() {
+        #[tokio::test]
+        async fn test_no_public_keys_returns_correct_error_type() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10006,8 +10058,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_witness_count_mismatch_returns_correct_error_type() {
+        #[tokio::test]
+        async fn test_witness_count_mismatch_returns_correct_error_type() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10055,8 +10107,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_index_out_of_bounds_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_index_out_of_bounds_error() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10097,8 +10149,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_same_as_input_error() {
+        #[tokio::test]
+        async fn test_output_same_as_input_error() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10137,8 +10189,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_duplicate_key_ids_error() {
+        #[tokio::test]
+        async fn test_duplicate_key_ids_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -10232,8 +10284,8 @@ mod tests {
     mod asset_lock_interaction {
         use super::*;
 
-        #[test]
-        fn test_address_funded_from_asset_lock_can_create_identity() {
+        #[tokio::test]
+        async fn test_address_funded_from_asset_lock_can_create_identity() {
             // When an address was funded via asset lock, it should be able
             // to create identities just like any other funded address
             let platform_version = PlatformVersion::latest();
@@ -10284,8 +10336,8 @@ mod tests {
             assert!(result.is_valid());
         }
 
-        #[test]
-        fn test_remaining_balance_after_identity_creation() {
+        #[tokio::test]
+        async fn test_remaining_balance_after_identity_creation() {
             // After creating identity, remaining funds stay in the address
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6501);
@@ -10341,8 +10393,8 @@ mod tests {
     mod event_verification {
         use super::*;
 
-        #[test]
-        fn test_tracing_logs_on_transition_creation() {
+        #[tokio::test]
+        async fn test_tracing_logs_on_transition_creation() {
             // The v0_methods.rs has tracing::debug calls
             // This test verifies the code path is exercised
             let platform_version = PlatformVersion::latest();
@@ -10374,8 +10426,8 @@ mod tests {
             // which we can't easily test since sign_by_private_key returns false
         }
 
-        #[test]
-        fn test_validation_produces_meaningful_errors() {
+        #[tokio::test]
+        async fn test_validation_produces_meaningful_errors() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10433,8 +10485,8 @@ mod tests {
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use platform_version::DefaultForPlatformVersion;
 
-        #[test]
-        fn test_execution_context_tracks_operations() {
+        #[tokio::test]
+        async fn test_execution_context_tracks_operations() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6800);
 
@@ -10481,8 +10533,8 @@ mod tests {
             // and track operations performed
         }
 
-        #[test]
-        fn test_dry_run_does_not_modify_state() {
+        #[tokio::test]
+        async fn test_dry_run_does_not_modify_state() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6801);
 
@@ -10530,8 +10582,8 @@ mod tests {
     mod recovery_and_error_handling {
         use super::*;
 
-        #[test]
-        fn test_transaction_rollback_on_validation_failure() {
+        #[tokio::test]
+        async fn test_transaction_rollback_on_validation_failure() {
             let platform_version = PlatformVersion::latest();
 
             let config = PlatformConfig {
@@ -10598,8 +10650,8 @@ mod tests {
             assert_eq!(nonce, 0, "Nonce should be unchanged after rollback");
         }
 
-        #[test]
-        fn test_partial_execution_cleanup() {
+        #[tokio::test]
+        async fn test_partial_execution_cleanup() {
             // If execution fails midway, earlier changes should be rolled back
             let platform_version = PlatformVersion::latest();
 
@@ -10678,8 +10730,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_graceful_handling_of_missing_address() {
+        #[tokio::test]
+        async fn test_graceful_handling_of_missing_address() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(6902);
 
@@ -10719,8 +10771,8 @@ mod tests {
     mod maximum_limits_at_boundary {
         use super::*;
 
-        #[test]
-        fn test_exactly_max_inputs() {
+        #[tokio::test]
+        async fn test_exactly_max_inputs() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10766,8 +10818,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_exactly_max_public_keys() {
+        #[tokio::test]
+        async fn test_exactly_max_public_keys() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10818,8 +10870,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_exactly_max_fee_strategy_steps() {
+        #[tokio::test]
+        async fn test_exactly_max_fee_strategy_steps() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10866,8 +10918,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_minimum_input_balance_exactly() {
+        #[tokio::test]
+        async fn test_minimum_input_balance_exactly() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10906,8 +10958,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_minimum_output_balance_exactly() {
+        #[tokio::test]
+        async fn test_minimum_output_balance_exactly() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -10949,8 +11001,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_one_below_max_inputs() {
+        #[tokio::test]
+        async fn test_one_below_max_inputs() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -11008,8 +11060,8 @@ mod tests {
         use crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses::advanced_structure::v0::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0;
         use platform_version::DefaultForPlatformVersion;
 
-        #[test]
-        fn test_public_key_signatures_validation_trait() {
+        #[tokio::test]
+        async fn test_public_key_signatures_validation_trait() {
             use dpp::serialization::Signable;
             use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
@@ -11057,6 +11109,7 @@ mod tests {
                 if public_key.key_type().is_unique_key_type() {
                     let signature = identity_signer
                         .sign(public_key, &signable_bytes)
+                        .await
                         .expect("should sign");
                     public_key_in_creation.set_signature(signature);
                 }
@@ -11088,8 +11141,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_advanced_structure_validation_trait() {
+        #[tokio::test]
+        async fn test_advanced_structure_validation_trait() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(7101);
 
@@ -11138,8 +11191,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_witness_validation_with_mismatched_address_type() {
+        #[tokio::test]
+        async fn test_witness_validation_with_mismatched_address_type() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(7102);
 
@@ -11193,8 +11246,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_p2sh_witness_with_correct_script_hash() {
+        #[tokio::test]
+        async fn test_p2sh_witness_with_correct_script_hash() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(7103);
 
@@ -11264,8 +11317,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_witnesses_validation_order() {
+        #[tokio::test]
+        async fn test_multiple_witnesses_validation_order() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(7104);
 
@@ -11334,8 +11387,8 @@ mod tests {
         /// because all indices shifted down after the removal.
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
-        #[test]
-        fn test_fee_deduction_stable_after_entry_removal() {
+        #[tokio::test]
+        async fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -11402,7 +11455,8 @@ mod tests {
                 None, // No output
                 fee_strategy,
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -11476,8 +11530,8 @@ mod tests {
         /// correct level, but notes the transformer lacks defense-in-depth.
         ///
         /// Location: rs-drive/.../identity_create_from_addresses/v0/transformer.rs:39,43
-        #[test]
-        fn test_transformer_subtraction_uses_checked_arithmetic() {
+        #[tokio::test]
+        async fn test_transformer_subtraction_uses_checked_arithmetic() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -11522,8 +11576,8 @@ mod tests {
         /// enough for the transfer amount but insufficient to cover fees.
         ///
         /// Location: rs-drive-abci/.../identity_create_from_addresses (fee deduction logic)
-        #[test]
-        fn test_partial_fee_payment_rejected() {
+        #[tokio::test]
+        async fn test_partial_fee_payment_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -11572,7 +11626,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                 ])),
                 platform_version,
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -11640,8 +11695,8 @@ mod tests {
         /// the same identity ID, creating potential cross-transition collisions.
         ///
         /// Location: rs-dpp/.../state_transition_identity_id_from_inputs.rs
-        #[test]
-        fn test_identity_id_has_no_domain_separator() {
+        #[tokio::test]
+        async fn test_identity_id_has_no_domain_separator() {
             use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 
             let platform_version = PlatformVersion::latest();
@@ -11666,7 +11721,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             // Get the identity ID from the transition
             let create_id = match &transition {
@@ -11690,7 +11746,8 @@ mod tests {
                 None,
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             let create_id_2 = match &transition2 {
                 StateTransition::IdentityCreateFromAddresses(t) => t

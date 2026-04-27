@@ -99,7 +99,8 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
     // and points to a live Identity. We cannot detect dangling pointers without a handle
     // registry; null checks are the only sound validation available.
     let from_identity = &*(from_identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
+    let signer =
+        crate::signer::VTableSignerRef(&*(signer_handle as *const crate::signer::VTableSigner));
 
     eprintln!(
         "🔵 dash_sdk_identity_transfer_credits: public_key_id = {}",
@@ -201,7 +202,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         eprintln!("  - to_id: {:?}", to_id);
         eprintln!("  - amount: {}", amount);
         eprintln!("  - signing_key present: {}", signing_key.is_some());
-        eprintln!("  - signer: {:p}", signer as *const _);
+        eprintln!("  - signer: {:p}", signer.0 as *const _);
 
         // Additional defensive checks before calling transfer_credits
         eprintln!("🔵 dash_sdk_identity_transfer_credits: Performing defensive checks...");
@@ -238,7 +239,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         eprintln!("🔵 dash_sdk_identity_transfer_credits: This will internally call IdentityCreditTransferTransition::try_from_identity");
 
         let transfer_result = from_identity
-            .transfer_credits(&wrapper.sdk, to_id, amount, signing_key, *signer, settings)
+            .transfer_credits(&wrapper.sdk, to_id, amount, signing_key, signer, settings)
             .await;
 
         eprintln!("🔵 dash_sdk_identity_transfer_credits: transfer_credits returned: {:?}", transfer_result.is_ok());

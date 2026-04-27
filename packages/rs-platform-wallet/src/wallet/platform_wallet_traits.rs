@@ -277,7 +277,7 @@ impl std::fmt::Debug for PlatformWalletInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformWalletInfo")
             .field("wallet_id", &hex::encode(self.core_wallet.wallet_id()))
-            .field("identity_count", &self.identity_manager.identities.len())
+            .field("identity_count", &self.identity_manager.identity_count())
             .finish()
     }
 }

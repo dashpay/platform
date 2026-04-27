@@ -37,12 +37,16 @@ pub use wallet::core::WalletBalance;
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
+pub use wallet::identity::network::{
+    derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
     derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
     ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityFunding,
-    IdentityFundingMethod, IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity,
-    PrivateKeyData, ProfileUpdate, TopUpFundingMethod, WatchedIdentity, DEFAULT_CONTACT_GAP_LIMIT,
+    IdentityFundingMethod, IdentityLocation, IdentityManager, IdentityStatus, KeyStorage,
+    ManagedIdentity, PrivateKeyData, ProfileUpdate, RegistrationIndex, TopUpFundingMethod,
+    DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::ManagedIdentitySigner;

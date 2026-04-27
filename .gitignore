@@ -94,6 +94,7 @@ __pycache__/
 .claude/settings.local.json
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+.codex/
 
 # Security audit reports (local-only, not committed)
 audits/

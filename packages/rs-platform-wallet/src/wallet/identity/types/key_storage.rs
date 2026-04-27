@@ -1,6 +1,5 @@
 //! Key storage types, identity status, and DPNS name metadata for managed identities.
 
-use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyID;
 use key_wallet::bip32::DerivationPath;
@@ -45,12 +44,11 @@ pub struct DpnsNameInfo {
 }
 
 /// Private key storage mapping KeyID to public key metadata + private key data.
+///
+/// Lives only in transient places — the `IdentityKeysChangeSet` apply
+/// path constructs one per replay, the FFI key-preview path uses one
+/// internally — but is no longer carried as a field on `ManagedIdentity`.
+/// Private keys belong in the iOS Keychain on the client side; the Rust
+/// side derives them on demand from the wallet seed via the DIP-9 path
+/// recorded in `PrivateKeyData::AtWalletDerivationPath`.
 pub type KeyStorage = BTreeMap<KeyID, (IdentityPublicKey, PrivateKeyData)>;
-
-/// An identity we observe but don't own — read-only, no signing capability.
-#[derive(Debug, Clone)]
-pub struct WatchedIdentity {
-    pub identity: Identity,
-    pub dpns_names: Vec<DpnsNameInfo>,
-    pub status: IdentityStatus,
-}

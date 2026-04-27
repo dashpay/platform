@@ -132,7 +132,7 @@ mod tests {
     }
 
     /// Create a signed AddressCreditWithdrawalTransition
-    fn create_signed_address_credit_withdrawal_transition(
+    async fn create_signed_address_credit_withdrawal_transition(
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
         output: Option<(PlatformAddress, u64)>,
@@ -147,9 +147,10 @@ mod tests {
             output_script,
             0,
         )
+        .await
     }
 
-    fn create_signed_address_credit_withdrawal_transition_with_fee_increase(
+    async fn create_signed_address_credit_withdrawal_transition_with_fee_increase(
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
         output: Option<(PlatformAddress, u64)>,
@@ -168,6 +169,7 @@ mod tests {
             user_fee_increase,
             PlatformVersion::latest(),
         )
+        .await
         .expect("should create signed transition")
     }
 
@@ -937,8 +939,8 @@ mod tests {
     mod successful_transitions {
         use super::*;
 
-        #[test]
-        fn test_simple_withdrawal_from_single_address() {
+        #[tokio::test]
+        async fn test_simple_withdrawal_from_single_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -969,7 +971,8 @@ mod tests {
                 None, // No change output
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1001,8 +1004,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_with_change_output() {
+        #[tokio::test]
+        async fn test_withdrawal_with_change_output() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1036,7 +1039,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1068,8 +1072,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_from_multiple_inputs() {
+        #[tokio::test]
+        async fn test_withdrawal_from_multiple_inputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1106,7 +1110,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1138,8 +1143,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_with_fee_deducted_from_output() {
+        #[tokio::test]
+        async fn test_withdrawal_with_fee_deducted_from_output() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1173,7 +1178,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1205,8 +1211,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_with_user_fee_increase() {
+        #[tokio::test]
+        async fn test_withdrawal_with_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1239,7 +1245,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
                 100, // 1% fee increase
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1280,8 +1287,8 @@ mod tests {
     mod state_verification {
         use super::*;
 
-        #[test]
-        fn test_balance_decreases_after_withdrawal() {
+        #[tokio::test]
+        async fn test_balance_decreases_after_withdrawal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1323,7 +1330,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1380,8 +1388,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_address_receives_credits() {
+        #[tokio::test]
+        async fn test_output_address_receives_credits() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1427,7 +1435,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1474,8 +1483,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_all_decremented() {
+        #[tokio::test]
+        async fn test_multiple_inputs_all_decremented() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1509,7 +1518,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1579,8 +1589,8 @@ mod tests {
     mod state_validation {
         use super::*;
 
-        #[test]
-        fn test_input_address_does_not_exist_returns_error() {
+        #[tokio::test]
+        async fn test_input_address_does_not_exist_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1611,7 +1621,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1645,8 +1656,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_in_input_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_in_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1679,7 +1690,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1713,8 +1725,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1747,7 +1759,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1789,8 +1802,8 @@ mod tests {
     mod signature_validation {
         use super::*;
 
-        #[test]
-        fn test_signature_from_different_key_for_input_returns_error() {
+        #[tokio::test]
+        async fn test_signature_from_different_key_for_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1840,7 +1853,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2016,8 +2030,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_multiple_inputs_one_wrong_signature_returns_error() {
+        #[tokio::test]
+        async fn test_multiple_inputs_one_wrong_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2060,6 +2074,7 @@ mod tests {
                     // First input: correct signature
                     let witness = signer
                         .sign_create_witness(key, &data_to_sign)
+                        .await
                         .expect("should sign");
                     witnesses.push(witness);
                 } else {
@@ -2122,8 +2137,8 @@ mod tests {
     mod p2sh_multisig {
         use super::*;
 
-        #[test]
-        fn test_withdrawal_with_p2sh_multisig_input() {
+        #[tokio::test]
+        async fn test_withdrawal_with_p2sh_multisig_input() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2155,7 +2170,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2187,8 +2203,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_with_mixed_p2pkh_and_p2sh_inputs() {
+        #[tokio::test]
+        async fn test_withdrawal_with_mixed_p2pkh_and_p2sh_inputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2226,7 +2242,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2344,8 +2361,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_p2sh_1_of_2_multisig_succeeds() {
+        #[tokio::test]
+        async fn test_p2sh_1_of_2_multisig_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2377,7 +2394,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2409,8 +2427,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_3_of_3_multisig_succeeds() {
+        #[tokio::test]
+        async fn test_p2sh_3_of_3_multisig_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2442,7 +2460,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2579,8 +2598,8 @@ mod tests {
     mod error_type_verification {
         use super::*;
 
-        #[test]
-        fn test_address_does_not_exist_returns_specific_error() {
+        #[tokio::test]
+        async fn test_address_does_not_exist_returns_specific_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2611,7 +2630,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2642,8 +2662,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_returns_specific_error_with_amounts() {
+        #[tokio::test]
+        async fn test_insufficient_balance_returns_specific_error_with_amounts() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2676,7 +2696,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2709,8 +2730,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_invalid_nonce_returns_specific_error_with_values() {
+        #[tokio::test]
+        async fn test_invalid_nonce_returns_specific_error_with_values() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2742,7 +2763,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2855,8 +2877,8 @@ mod tests {
     mod fee_strategy_execution {
         use super::*;
 
-        #[test]
-        fn test_fee_cascade_through_multiple_inputs() {
+        #[tokio::test]
+        async fn test_fee_cascade_through_multiple_inputs() {
             // Test that fees cascade through inputs when first input is exhausted
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -2897,7 +2919,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(1),
                 ],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2928,8 +2951,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_deducted_from_input_and_output_combined() {
+        #[tokio::test]
+        async fn test_fee_deducted_from_input_and_output_combined() {
             // Test combined fee strategy: deduct from input first, then reduce output
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -2968,7 +2991,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                 ],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2999,8 +3023,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_exactly_depletes_input_to_zero() {
+        #[tokio::test]
+        async fn test_fee_exactly_depletes_input_to_zero() {
             // Edge case: fee exactly depletes an input, leaving zero balance
             // With the minimum balance pre-check, we need remaining balance >= required fee (~0.004 DASH)
             // Required fee = 400_000_000 (base) + 500_000 (1 input) = ~400.5M credits = ~0.004 DASH
@@ -3039,7 +3063,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3138,8 +3163,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_valid_p2pkh_output_script_succeeds() {
+        #[tokio::test]
+        async fn test_valid_p2pkh_output_script_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3171,7 +3196,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 CoreScript::random_p2pkh(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3202,8 +3228,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_valid_p2sh_output_script_succeeds() {
+        #[tokio::test]
+        async fn test_valid_p2sh_output_script_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3235,7 +3261,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 CoreScript::random_p2sh(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3309,8 +3336,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_different_core_fee_per_byte_values() {
+        #[tokio::test]
+        async fn test_different_core_fee_per_byte_values() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3349,6 +3376,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let result = transition.serialize_to_bytes().expect("should serialize");
@@ -3388,8 +3416,8 @@ mod tests {
     mod pooling_tests {
         use super::*;
 
-        #[test]
-        fn test_pooling_if_available() {
+        #[tokio::test]
+        async fn test_pooling_if_available() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3428,6 +3456,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let result = transition.serialize_to_bytes().expect("should serialize");
@@ -3447,8 +3476,8 @@ mod tests {
             )));
         }
 
-        #[test]
-        fn test_pooling_standard() {
+        #[tokio::test]
+        async fn test_pooling_standard() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3487,6 +3516,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("should create signed transition");
 
             let result = transition.serialize_to_bytes().expect("should serialize");
@@ -3514,8 +3544,8 @@ mod tests {
     mod user_fee_increase_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_maximum_user_fee_increase() {
+        #[tokio::test]
+        async fn test_maximum_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3549,7 +3579,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
                 u16::MAX, // Maximum fee increase
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3580,8 +3611,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_increase_with_sufficient_balance_succeeds() {
+        #[tokio::test]
+        async fn test_fee_increase_with_sufficient_balance_succeeds() {
             // Test that reasonable fee increases work with sufficient balance
             // Fee base ~400M credits, even with 100% increase is ~800M credits
             // 0.05 DASH = 5B credits remaining >> 800M required
@@ -3617,7 +3648,8 @@ mod tests {
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
                 10000, // 100% fee increase
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3636,8 +3668,8 @@ mod tests {
     mod system_credits_verification {
         use super::*;
 
-        #[test]
-        fn test_system_credits_decrease_after_withdrawal() {
+        #[tokio::test]
+        async fn test_system_credits_decrease_after_withdrawal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3677,7 +3709,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3734,8 +3767,8 @@ mod tests {
     mod boundary_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_maximum_inputs_succeeds() {
+        #[tokio::test]
+        async fn test_maximum_inputs_succeeds() {
             let platform_version = PlatformVersion::latest();
             let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
 
@@ -3774,7 +3807,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3805,8 +3839,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_exact_balance_withdrawal_fails_insufficient_remaining_for_fees() {
+        #[tokio::test]
+        async fn test_exact_balance_withdrawal_fails_insufficient_remaining_for_fees() {
             // Spending 100% of address balance should fail because there's nothing left for fees
             // Required fee = ~400.5M credits (~0.004 DASH), so remaining balance must be >= that
             let platform_version = PlatformVersion::latest();
@@ -3841,7 +3875,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3852,8 +3887,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_high_balance_withdrawal() {
+        #[tokio::test]
+        async fn test_high_balance_withdrawal() {
             // Test withdrawing a large portion of balance while leaving enough for fees
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3889,7 +3924,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3920,8 +3956,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_large_amount_withdrawal() {
+        #[tokio::test]
+        async fn test_large_amount_withdrawal() {
             // Test withdrawal at the maximum allowed amount (500 Dash)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3957,7 +3993,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -3996,8 +4033,8 @@ mod tests {
     mod replay_protection {
         use super::*;
 
-        #[test]
-        fn test_same_transition_replayed_fails() {
+        #[tokio::test]
+        async fn test_same_transition_replayed_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4028,7 +4065,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -4106,8 +4144,8 @@ mod tests {
     mod block_info_effects {
         use super::*;
 
-        #[test]
-        fn test_withdrawal_with_different_block_height() {
+        #[tokio::test]
+        async fn test_withdrawal_with_different_block_height() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4138,7 +4176,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -4172,8 +4211,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_at_genesis_block() {
+        #[tokio::test]
+        async fn test_withdrawal_at_genesis_block() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4204,7 +4243,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -4246,8 +4286,8 @@ mod tests {
     mod serialization_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_transition_round_trip_serialization() {
+        #[tokio::test]
+        async fn test_transition_round_trip_serialization() {
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
 
@@ -4262,7 +4302,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             // Serialize
             let serialized = transition.serialize_to_bytes().expect("should serialize");
@@ -4283,8 +4324,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transition_with_many_inputs_serializes() {
+        #[tokio::test]
+        async fn test_transition_with_many_inputs_serializes() {
             let platform_version = PlatformVersion::latest();
             let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
 
@@ -4308,7 +4349,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             // Should serialize without error
             let serialized = transition.serialize_to_bytes().expect("should serialize");
@@ -4318,8 +4360,8 @@ mod tests {
                 StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
         }
 
-        #[test]
-        fn test_corrupted_serialized_data_returns_error() {
+        #[tokio::test]
+        async fn test_corrupted_serialized_data_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut signer = TestAddressSigner::new();
@@ -4336,7 +4378,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let mut serialized = transition.serialize_to_bytes().expect("should serialize");
 
@@ -4383,8 +4426,8 @@ mod tests {
     mod concurrent_input_usage {
         use super::*;
 
-        #[test]
-        fn test_two_transitions_same_input_address_sequential_nonces() {
+        #[tokio::test]
+        async fn test_two_transitions_same_input_address_sequential_nonces() {
             // Test that two withdrawals from the same address succeed with sequential nonces
             // when processed in separate blocks
             let platform_version = PlatformVersion::latest();
@@ -4418,7 +4461,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
 
@@ -4452,8 +4496,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_second_transition_exceeds_remaining_balance() {
+        #[tokio::test]
+        async fn test_second_transition_exceeds_remaining_balance() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4486,7 +4530,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             // Second transition: try to spend 0.6 DASH again (but only ~0.4 remains after first)
             let mut inputs2 = BTreeMap::new();
@@ -4498,7 +4543,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
@@ -4716,8 +4762,8 @@ mod tests {
     mod fee_strategy_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_fee_exceeds_entire_withdrawal_amount() {
+        #[tokio::test]
+        async fn test_fee_exceeds_entire_withdrawal_amount() {
             // When fees would consume the entire withdrawal, leaving nothing for output
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4751,7 +4797,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -4940,8 +4987,8 @@ mod tests {
     mod nonce_boundary {
         use super::*;
 
-        #[test]
-        fn test_nonce_at_max_minus_one() {
+        #[tokio::test]
+        async fn test_nonce_at_max_minus_one() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4983,7 +5030,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5015,8 +5063,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_nonce_zero_for_fresh_address() {
+        #[tokio::test]
+        async fn test_nonce_zero_for_fresh_address() {
             // Fresh address should have nonce 0, first transaction uses nonce 1
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5050,7 +5098,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5069,8 +5118,8 @@ mod tests {
     mod output_field_tests {
         use super::*;
 
-        #[test]
-        fn test_withdrawal_with_change_output_to_same_address_fails() {
+        #[tokio::test]
+        async fn test_withdrawal_with_change_output_to_same_address_fails() {
             // Test withdrawal with change output going back to the same input address
             // This should fail because output address cannot be the same as an input address
             let platform_version = PlatformVersion::latest();
@@ -5107,7 +5156,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5118,8 +5168,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_with_change_output_to_different_address() {
+        #[tokio::test]
+        async fn test_withdrawal_with_change_output_to_different_address() {
             // Test withdrawal with change output going to a different address
             let platform_version = PlatformVersion::latest();
 
@@ -5157,7 +5207,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5167,8 +5218,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_with_zero_change_output() {
+        #[tokio::test]
+        async fn test_withdrawal_with_zero_change_output() {
             // Test withdrawal with change output of zero credits (should likely be rejected)
             let platform_version = PlatformVersion::latest();
 
@@ -5204,7 +5255,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5214,8 +5266,8 @@ mod tests {
             println!("Zero change output validity: {}", is_valid);
         }
 
-        #[test]
-        fn test_withdrawal_change_output_exceeds_available() {
+        #[tokio::test]
+        async fn test_withdrawal_change_output_exceeds_available() {
             // Test withdrawal where change output amount exceeds what's available after withdrawal
             let platform_version = PlatformVersion::latest();
 
@@ -5251,7 +5303,8 @@ mod tests {
                 output,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5261,8 +5314,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_withdrawal_without_change_output() {
+        #[tokio::test]
+        async fn test_withdrawal_without_change_output() {
             // Test withdrawal with no change output (None)
             let platform_version = PlatformVersion::latest();
 
@@ -5296,7 +5349,8 @@ mod tests {
                 None,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5314,8 +5368,8 @@ mod tests {
     mod input_ordering_tests {
         use super::*;
 
-        #[test]
-        fn test_multiple_inputs_processed_in_btreemap_order() {
+        #[tokio::test]
+        async fn test_multiple_inputs_processed_in_btreemap_order() {
             // BTreeMap ensures consistent ordering by key
             let platform_version = PlatformVersion::latest();
 
@@ -5362,7 +5416,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(2),
                 ],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5372,8 +5427,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_deduction_follows_strategy_order() {
+        #[tokio::test]
+        async fn test_fee_deduction_follows_strategy_order() {
             // Verify that fee deduction happens in the order specified by fee_strategy
             let platform_version = PlatformVersion::latest();
 
@@ -5415,7 +5470,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                 ],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5577,7 +5633,7 @@ mod tests {
         use super::*;
 
         /// Helper to create signed transition with custom core_fee_per_byte
-        fn create_signed_withdrawal_with_core_fee(
+        async fn create_signed_withdrawal_with_core_fee(
             signer: &TestAddressSigner,
             inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
             output_script: CoreScript,
@@ -5596,11 +5652,12 @@ mod tests {
                 0,
                 PlatformVersion::latest(),
             )
+            .await
             .expect("should create signed transition")
         }
 
-        #[test]
-        fn test_max_core_fee_per_byte() {
+        #[tokio::test]
+        async fn test_max_core_fee_per_byte() {
             // Test with u32::MAX core fee per byte
             let platform_version = PlatformVersion::latest();
 
@@ -5632,7 +5689,8 @@ mod tests {
                 inputs,
                 create_random_output_script(&mut rng),
                 u32::MAX, // Maximum value
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5642,8 +5700,8 @@ mod tests {
             println!("Max core_fee_per_byte validity: {}", is_valid);
         }
 
-        #[test]
-        fn test_high_core_fee_affects_withdrawal_amount() {
+        #[tokio::test]
+        async fn test_high_core_fee_affects_withdrawal_amount() {
             // Test that high core fee affects the actual withdrawal to core
             let platform_version = PlatformVersion::latest();
 
@@ -5675,7 +5733,8 @@ mod tests {
                 inputs,
                 create_random_output_script(&mut rng),
                 987, // High fibonacci number (1000 is not fibonacci)
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5892,8 +5951,8 @@ mod tests {
         ///
         /// Expected: the transition is rejected with an error.
         /// Actual: panics (debug) or produces a wrapped withdrawal amount (release).
-        #[test]
-        fn test_output_exceeds_input_rejected_by_processing() {
+        #[tokio::test]
+        async fn test_output_exceeds_input_rejected_by_processing() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5930,7 +5989,8 @@ mod tests {
                 Some((output_address, dash_to_credits!(0.5))),
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5970,8 +6030,8 @@ mod tests {
         /// because all indices shifted down after the removal.
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
-        #[test]
-        fn test_fee_deduction_stable_after_entry_removal() {
+        #[tokio::test]
+        async fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6029,7 +6089,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(1),
                 ],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -6145,8 +6206,8 @@ mod tests {
         /// AUDIT H2 (Processing): Dust withdrawal reaches processing without rejection.
         ///
         /// Signed version of the H2 test that goes through the full processing pipeline.
-        #[test]
-        fn test_withdrawal_below_min_amount_rejected_by_processing() {
+        #[tokio::test]
+        async fn test_withdrawal_below_min_amount_rejected_by_processing() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6183,7 +6244,8 @@ mod tests {
                 Some((output_address, output_amount)),
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
                 create_random_output_script(&mut rng),
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
