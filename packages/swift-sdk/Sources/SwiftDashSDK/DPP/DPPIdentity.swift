@@ -27,7 +27,7 @@ public enum KeyType: UInt8, CaseIterable, Codable, Sendable {
 
 // MARK: - Key Purpose
 
-public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable {
+public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConvertible {
     case authentication = 0
     case encryption = 1
     case decryption = 2
@@ -68,7 +68,10 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable {
 
 // MARK: - Security Level
 
-public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable {
+/// DPP protocol ordering uses lower raw values for stricter security levels.
+/// That means `SecurityLevel.master < .medium == true`; prefer named helpers
+/// such as `meetsOrExceeds(_:)` at authorization call sites.
+public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable, CustomStringConvertible {
     case master = 0
     case critical = 1
     case high = 2
@@ -96,6 +99,16 @@ public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable {
         lhs.rawValue < rhs.rawValue
     }
 
+    /// Returns true when this level is at least as strict as the required level.
+    public func meetsOrExceeds(_ required: SecurityLevel) -> Bool {
+        rawValue <= required.rawValue
+    }
+
+    /// Returns true when this level is less strict than another level.
+    public func isLessSecure(than other: SecurityLevel) -> Bool {
+        rawValue > other.rawValue
+    }
+
     /// FFI representation value
     public var ffiValue: UInt8 {
         return self.rawValue
@@ -114,11 +127,20 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
     public let data: BinaryData
     public let disabledAt: TimestampMillis?
 
-    /// Check if the key is currently disabled
-    public var isDisabled: Bool {
+    /// Check if the key is disabled at a deterministic timestamp.
+    public func isDisabled(at timestamp: TimestampMillis) -> Bool {
         guard let disabledAt = disabledAt else { return false }
-        let currentTime = TimestampMillis(Date().timeIntervalSince1970 * 1000)
-        return disabledAt <= currentTime
+        return disabledAt <= timestamp
+    }
+
+    /// Check if the key is disabled at a deterministic date.
+    public func isDisabled(at date: Date = Date()) -> Bool {
+        isDisabled(at: TimestampMillis(date.timeIntervalSince1970 * 1000))
+    }
+
+    /// Check if the key is currently disabled.
+    public var isDisabled: Bool {
+        isDisabled(at: Date())
     }
 
     public init(
@@ -144,9 +166,49 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
 
 // MARK: - Contract Bounds
 
-public enum ContractBounds: Codable, Equatable, Sendable {
+public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertible {
     case singleContract(id: Identifier)
     case singleContractDocumentType(id: Identifier, documentTypeName: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case id
+        case documentType
+    }
+
+    private enum BoundType: String, Codable {
+        case singleContract
+        case singleContractDocumentType
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(BoundType.self, forKey: .type)
+
+        switch type {
+        case .singleContract:
+            let id = try container.decode(Identifier.self, forKey: .id)
+            self = .singleContract(id: id)
+        case .singleContractDocumentType:
+            let id = try container.decode(Identifier.self, forKey: .id)
+            let documentType = try container.decode(String.self, forKey: .documentType)
+            self = .singleContractDocumentType(id: id, documentTypeName: documentType)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case .singleContract(let id):
+            try container.encode(BoundType.singleContract, forKey: .type)
+            try container.encode(id, forKey: .id)
+        case .singleContractDocumentType(let id, let documentType):
+            try container.encode(BoundType.singleContractDocumentType, forKey: .type)
+            try container.encode(id, forKey: .id)
+            try container.encode(documentType, forKey: .documentType)
+        }
+    }
 
     public var description: String {
         switch self {

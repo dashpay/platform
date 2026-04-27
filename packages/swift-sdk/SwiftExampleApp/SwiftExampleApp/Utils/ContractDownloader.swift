@@ -434,7 +434,7 @@ public enum ContractDownloader {
         // Stand up an ephemeral SwiftData store. Anything we insert
         // here disappears the moment the caller drops the returned
         // `ContractPreviewState`.
-        let container = try ModelContainerHelper.createInMemoryContainer()
+        let container = try DashModelContainer.createInMemory()
         let context = ModelContext(container)
 
         // Default-name heuristic: keep the same labels the persisted
