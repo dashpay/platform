@@ -66,6 +66,7 @@ tempfile = "3"
 dotenvy = "0.15"
 bip39 = "2"
 fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
 simple-signer = { path = "../simple-signer" }
 parking_lot = "0.12"
 # `rt` feature gives us `CancellationToken` for the panic-hook +
