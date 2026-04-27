@@ -1,5 +1,11 @@
 //! SPV runtime startup and readiness wait.
 //!
+//! **NOTE: currently disabled in favor of
+//! `rs_sdk_trusted_context_provider::TrustedHttpContextProvider`
+//! — see `harness.rs` for the commented-out wiring. Re-enable
+//! when SPV cold-start is stable (Task #15). The module remains
+//! compilable so re-enablement is a single-block uncomment.**
+//!
 //! [`start_spv`] kicks off the SPV client via
 //! [`platform_wallet::SpvRuntime::spawn_in_background`] using a
 //! [`ClientConfig`] derived from the e2e [`Config`]. Storage is

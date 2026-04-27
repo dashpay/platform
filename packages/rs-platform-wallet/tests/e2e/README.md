@@ -60,6 +60,7 @@ The framework reads configuration from the process environment (or a `.env` file
 | `PLATFORM_WALLET_E2E_DAPI_ADDRESSES` | no | network default | Comma-separated list of DAPI endpoint URLs. Overrides the SDK's built-in seed list for the selected network. |
 | `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `100_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
 | `PLATFORM_WALLET_E2E_WORKDIR` | no | `${TMPDIR}/dash-platform-wallet-e2e` | Base path for the slot-locked working directory. SPV block cache, the test-wallet registry, and SDK state are stored here. |
+| `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for devnet runs and any custom trust anchor. |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
 A `.env` file is convenient for local development. Shell-exported variables take
@@ -221,6 +222,35 @@ corruption from mid-write crashes.
 
 ---
 
+## Context provider
+
+The harness installs
+[`rs-sdk-trusted-context-provider::TrustedHttpContextProvider`](../../../rs-sdk-trusted-context-provider)
+as the SDK's context provider at construction time. That provider answers quorum
+public-key lookups over a trusted HTTP endpoint (testnet / mainnet defaults are
+baked into the crate), which keeps e2e runs fast and reliable without spinning up
+an SPV client.
+
+Override the endpoint via `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` when running
+against devnet, a custom test cluster, or any non-default trust anchor.
+
+```bash
+PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL="https://my-trusted-quorum.example/" \
+  cargo test --test e2e -- --ignored --nocapture
+```
+
+---
+
+## Deferred
+
+- **SPV-based context provider** (Task #15). The framework keeps the SPV plumbing
+  (`framework/spv.rs`, `framework/context_provider.rs`) compilable but disabled:
+  see the commented-out block in `framework/harness.rs::E2eContext::build`. Re-enable
+  by uncommenting that block once SPV cold-start is stable enough to drive from
+  tests; the `TrustedHttpContextProvider` swap is a single-line change.
+
+---
+
 ## Future Core support
 
 The directory is intentionally named `e2e/` rather than `platform_e2e/`. Once the
@@ -228,10 +258,10 @@ wallet's SPV-driven Core operations (UTXO selection, transaction broadcast, asse
 locks) are stable enough to test end-to-end, Core-feature tests will live alongside
 the existing platform-address tests under `tests/e2e/cases/core/`.
 
-SPV is already started at framework initialization — a `SpvRuntime` is running for
-the lifetime of the test process, and `SpvContextProvider` is wired to bridge
-quorum-key lookups into the SDK. Future identity and Core tests get proof verification
-for free without changing the initialization sequence.
+When Task #15 lands, an `SpvRuntime` will run for the lifetime of the test process
+and `SpvContextProvider` will be live-swapped into the SDK after mn-list sync.
+Future identity and Core tests will get SPV-backed proof verification at that
+point without changing the public test API.
 
 ---
 

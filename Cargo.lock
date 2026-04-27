@@ -4963,6 +4963,7 @@ dependencies = [
  "parking_lot",
  "platform-encryption",
  "rand 0.8.5",
+ "rs-sdk-trusted-context-provider",
  "serde",
  "serde_json",
  "sha2",

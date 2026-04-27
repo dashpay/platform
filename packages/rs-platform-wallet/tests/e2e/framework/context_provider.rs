@@ -1,5 +1,11 @@
 //! SDK [`ContextProvider`] backed by the local SPV runtime.
 //!
+//! **NOTE: currently disabled in favor of
+//! `rs_sdk_trusted_context_provider::TrustedHttpContextProvider`
+//! — see `harness.rs` for the commented-out wiring. Re-enable
+//! when SPV cold-start is stable (Task #15). The module remains
+//! compilable so re-enablement is a single-block uncomment.**
+//!
 //! [`SpvContextProvider`] satisfies the synchronous `ContextProvider`
 //! trait by bridging to [`SpvRuntime::get_quorum_public_key`]
 //! (`async fn`) via [`dash_async::block_on`], which transparently

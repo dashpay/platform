@@ -24,6 +24,10 @@ pub mod vars {
     pub const MIN_BANK_CREDITS: &str = "PLATFORM_WALLET_E2E_MIN_BANK_CREDITS";
     /// Workdir base path; slot fallback adds `-N` suffixes.
     pub const WORKDIR: &str = "PLATFORM_WALLET_E2E_WORKDIR";
+    /// Optional override URL for the trusted HTTP context provider.
+    /// Defaults to the network-builtin endpoint baked into
+    /// `rs-sdk-trusted-context-provider` when unset.
+    pub const TRUSTED_CONTEXT_URL: &str = "PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL";
 }
 
 /// Default minimum bank balance in credits — `100_000_000` matches
@@ -46,6 +50,11 @@ pub struct Config {
     /// Workdir base path; slot fallback adds `-N` suffixes.
     /// Defaults to `${TMPDIR}/dash-platform-wallet-e2e`.
     pub workdir_base: PathBuf,
+    /// Optional override for the trusted HTTP context provider URL.
+    /// `None` means "use the per-network default baked into the
+    /// `rs-sdk-trusted-context-provider` crate" (testnet / mainnet
+    /// have built-in endpoints; devnet requires this override).
+    pub trusted_context_url: Option<String>,
 }
 
 impl Default for Config {
@@ -56,6 +65,7 @@ impl Default for Config {
             dapi_addresses: Vec::new(),
             min_bank_credits: DEFAULT_MIN_BANK_CREDITS,
             workdir_base: default_workdir_base(),
+            trusted_context_url: None,
         }
     }
 }
@@ -108,12 +118,18 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_workdir_base());
 
+        let trusted_context_url = std::env::var(vars::TRUSTED_CONTEXT_URL)
+            .ok()
+            .map(|raw| raw.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         Ok(Self {
             bank_mnemonic,
             network,
             dapi_addresses,
             min_bank_credits,
             workdir_base,
+            trusted_context_url,
         })
     }
 

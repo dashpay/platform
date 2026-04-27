@@ -3,36 +3,33 @@
 //! [`build_sdk`] returns an `Arc<Sdk>` configured for the network
 //! selected via [`super::config::Config`] (testnet by default;
 //! `devnet` and `local` are accepted aliases for `Devnet` /
-//! `Regtest`). DAPI addresses come from `Config::dapi_addresses` when
-//! non-empty, otherwise the network's hard-coded testnet defaults are
-//! used.
+//! `Regtest`). DAPI addresses come from `Config::dapi_addresses`
+//! when non-empty, otherwise the network's hard-coded testnet
+//! defaults are used.
 //!
-//! # ContextProvider strategy
+//! # Context provider
 //!
-//! The first iteration of the framework wires a [`NoopContextProvider`]
-//! at SDK construction time. The first test (pure platform-address
-//! transfers) doesn't need proof verification, so the no-op variant
-//! is safe — any future call into proof verification would surface
-//! an explicit error rather than silently returning fabricated keys.
+//! The harness wires
+//! [`rs_sdk_trusted_context_provider::TrustedHttpContextProvider`]
+//! as the SDK's [`ContextProvider`] directly at construction time.
+//! That provider answers quorum public-key lookups over a trusted
+//! HTTP endpoint (testnet / mainnet defaults are baked into the
+//! crate); the harness does NOT spin up an SPV client to seed
+//! quorum state. The SPV-based provider plumbing lives in
+//! `framework/spv.rs` and `framework/context_provider.rs` for
+//! future re-enablement (Task #15) but is currently disabled —
+//! see `harness.rs` for the commented-out wiring.
 //!
-//! Once SPV is started ([`super::spv::start_spv`] +
-//! [`super::spv::wait_for_mn_list_synced`]), the harness swaps in the
-//! [`super::context_provider::SpvContextProvider`] via
-//! [`dash_sdk::Sdk::set_context_provider`]. That method backs the
-//! provider with `ArcSwap` (see `rs-sdk/src/sdk.rs`), so live swap
-//! is supported and we do not need to rebuild the SDK once SPV is
-//! ready. `harness.rs` (Wave 4) calls [`build_sdk`] exactly once
-//! during init and then performs the swap in place.
+//! Operators can override the provider URL via
+//! `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` ([`Config::trusted_context_url`]).
 
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use dash_sdk::dapi_client::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
 use dashcore::Network;
-use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
-use dpp::data_contract::DataContract;
-use dpp::prelude::Identifier;
-use dpp::version::PlatformVersion;
+use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 
 use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
@@ -47,19 +44,27 @@ pub const TESTNET_DAPI_ADDRESSES: &[&str] = &[
     "https://68.67.122.3:1443",
 ];
 
+/// Cache size for [`TrustedHttpContextProvider`]'s LRU quorum cache.
+/// 256 entries comfortably covers the working set for a single
+/// e2e test run; the provider only allocates an entry on a cache
+/// miss and the bound is `NonZeroUsize` for the constructor.
+const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
+
 /// Build a fresh `Sdk` configured from `config`.
 ///
-/// The returned SDK has a [`NoopContextProvider`] installed.
-/// `harness.rs` calls [`Sdk::set_context_provider`] to upgrade to
-/// [`super::context_provider::SpvContextProvider`] once SPV finishes
-/// its initial masternode-list sync.
+/// Installs [`TrustedHttpContextProvider`] as the SDK's
+/// [`ContextProvider`] using either the network-builtin endpoint
+/// or the override at [`Config::trusted_context_url`] when set.
 pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
     let network = parse_network(&config.network)?;
     let address_list = build_address_list(config, network)?;
 
+    let cache_size = NonZeroUsize::new(TRUSTED_CONTEXT_CACHE_SIZE).expect("cache size > 0");
+    let context_provider = build_trusted_context_provider(network, config, cache_size)?;
+
     let sdk = SdkBuilder::new(address_list)
         .with_network(network)
-        .with_context_provider(NoopContextProvider)
+        .with_context_provider(context_provider)
         .build()
         .map_err(|e| {
             tracing::error!(target: "platform_wallet::e2e::sdk", "SdkBuilder::build failed: {e}");
@@ -69,10 +74,47 @@ pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
     Ok(Arc::new(sdk))
 }
 
+/// Build the trusted HTTP context provider for `network`, honoring
+/// the optional `trusted_context_url` override.
+fn build_trusted_context_provider(
+    network: Network,
+    config: &Config,
+    cache_size: NonZeroUsize,
+) -> FrameworkResult<TrustedHttpContextProvider> {
+    let result = match &config.trusted_context_url {
+        Some(url) => {
+            tracing::info!(
+                target: "platform_wallet::e2e::sdk",
+                %url,
+                "using TrustedHttpContextProvider with operator-supplied URL"
+            );
+            TrustedHttpContextProvider::new_with_url(network, url.clone(), cache_size)
+        }
+        None => {
+            tracing::info!(
+                target: "platform_wallet::e2e::sdk",
+                ?network,
+                "using TrustedHttpContextProvider with network-builtin URL"
+            );
+            TrustedHttpContextProvider::new(network, None, cache_size)
+        }
+    };
+    result.map_err(|e| {
+        tracing::error!(
+            target: "platform_wallet::e2e::sdk",
+            "TrustedHttpContextProvider construction failed: {e}"
+        );
+        FrameworkError::NotImplemented(
+            "sdk::build_trusted_context_provider — TrustedHttpContextProvider failed (see logs)",
+        )
+    })
+}
+
 /// Translate the string network selector from [`Config`] into a
-/// `dashcore::Network` value. Accepts `testnet` (default in `Config`),
-/// `mainnet`, `devnet`, `regtest`, and the `local` alias (mapped to
-/// `Regtest` to match the convention used elsewhere in the workspace).
+/// `dashcore::Network` value. Accepts `testnet` (default in
+/// `Config`), `mainnet`, `devnet`, `regtest`, and the `local`
+/// alias (mapped to `Regtest` to match the convention used
+/// elsewhere in the workspace).
 fn parse_network(name: &str) -> FrameworkResult<Network> {
     match name.trim().to_ascii_lowercase().as_str() {
         "" | "testnet" => Ok(Network::Testnet),
@@ -135,48 +177,4 @@ where
             })
         })
         .collect()
-}
-
-/// SDK [`ContextProvider`] that fails closed on quorum-key lookup
-/// and returns `Ok(None)` for everything else.
-///
-/// Used as the bootstrap provider before SPV finishes its initial
-/// sync. Tests that don't need proof verification (e.g. the
-/// platform-address transfer happy path) never call
-/// `get_quorum_public_key`, so the no-op variant is safe; tests that
-/// do need it must wait for the harness to swap in the
-/// [`super::context_provider::SpvContextProvider`] first.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct NoopContextProvider;
-
-impl dash_sdk::platform::ContextProvider for NoopContextProvider {
-    fn get_quorum_public_key(
-        &self,
-        _quorum_type: u32,
-        _quorum_hash: [u8; 32],
-        _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], dash_sdk::error::ContextProviderError> {
-        Err(dash_sdk::error::ContextProviderError::Config(
-            "NoopContextProvider: SPV-backed provider not yet wired".to_string(),
-        ))
-    }
-
-    fn get_data_contract(
-        &self,
-        _id: &Identifier,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<DataContract>>, dash_sdk::error::ContextProviderError> {
-        Ok(None)
-    }
-
-    fn get_token_configuration(
-        &self,
-        _id: &Identifier,
-    ) -> Result<Option<TokenConfiguration>, dash_sdk::error::ContextProviderError> {
-        Ok(None)
-    }
-
-    fn get_platform_activation_height(&self) -> Result<u32, dash_sdk::error::ContextProviderError> {
-        Ok(0)
-    }
 }
