@@ -167,6 +167,19 @@ impl PlatformAddressWallet {
     /// Auto-select all funded addresses for withdrawal. Withdrawals consume
     /// all input balances (minus the fee), so we select every funded address
     /// and verify there's enough to cover the fee.
+    ///
+    /// # Asymmetry vs `auto_select_inputs` (transfer)
+    ///
+    /// Withdrawal validation enforces `Σ inputs > output_amount`
+    /// (strictly greater — see
+    /// `address_credit_withdrawal_transition/v0/state_transition_validation.rs`
+    /// `WithdrawalBalanceMismatchError`), with the surplus going to
+    /// the L1 / Drive fee. Transfer enforces `Σ inputs == Σ outputs`
+    /// (strict equality), which is why
+    /// [`PlatformAddressWallet::auto_select_inputs`] (transfer)
+    /// trims the last input down to the consumed amount whereas
+    /// this withdrawal selector consumes balances in full. The
+    /// asymmetry is by protocol design, not a bug.
     async fn auto_select_inputs_for_withdrawal(
         &self,
         account_index: u32,
