@@ -56,6 +56,22 @@ rand = "0.8"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# E2E test framework — see `tests/e2e/` for the integration harness
+# that exercises the wallet → SDK → broadcast pipeline against a
+# live testnet bank wallet. Pinned to the canonical published crate
+# names; cargo normalizes dash/underscore in keys but the published
+# name is the source of truth (e.g. `tokio-shared-rt`).
+tokio-shared-rt = "0.1"
+tempfile = "3"
+dotenvy = "0.15"
+bip39 = "2"
+fs2 = "0.4"
+simple-signer = { path = "../simple-signer" }
+parking_lot = "0.12"
+# `rt` feature gives us `CancellationToken` for the panic-hook +
+# graceful-shutdown wiring described in the e2e plan.
+tokio-util = { version = "0.7", features = ["rt"] }
+
 
 [features]
 default = ["bls", "eddsa"]
