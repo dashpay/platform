@@ -1018,6 +1018,39 @@ func platform_wallet_update_identity_with_signer(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+/// Mirrors `platform_wallet_create_data_contract_with_signer` from
+/// Rust (`packages/rs-platform-wallet-ffi/src/data_contract.rs`).
+///
+/// Replaces the rs-sdk-ffi `dash_sdk_data_contract_create` +
+/// `dash_sdk_data_contract_put_to_platform_and_wait` pair. The
+/// platform-wallet runtime (`runtime.rs`) configures an 8 MB
+/// worker stack — proof verification on the broadcast response
+/// crashes through the rs-sdk-ffi runtime's mobile-tuned default
+/// stack. Architecturally this also lines up with the
+/// swift-sdk/CLAUDE.md "high-level operations go through
+/// platform-wallet" rule: contract creation spans an identity, a
+/// signer, and persistent state.
+///
+/// Every JSON pointer beyond `documents_schema_json` is optional —
+/// pass NULL to skip. `out_contract_id` receives the 32-byte
+/// deterministic contract id (`H = hash(owner_id || nonce)`) on
+/// success; the Swift caller can re-fetch the contract with that
+/// id once it lands.
+@_silgen_name("platform_wallet_create_data_contract_with_signer")
+func platform_wallet_create_data_contract_with_signer(
+    _ wallet_handle: Handle,
+    _ owner_identity_id: UnsafePointer<UInt8>,
+    _ documents_schema_json: UnsafePointer<CChar>,
+    _ tokens_schema_json: UnsafePointer<CChar>?,
+    _ groups_schema_json: UnsafePointer<CChar>?,
+    _ keywords_json: UnsafePointer<CChar>?,
+    _ description: UnsafePointer<CChar>?,
+    _ config_json: UnsafePointer<CChar>?,
+    _ signer_handle: OpaquePointer?,
+    _ out_contract_id: UnsafeMutablePointer<UInt8>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 /// Mirrors `platform_wallet_register_identity_with_funding_signer`
 /// from Rust
 /// (`packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs`).
@@ -1247,6 +1280,28 @@ func identityKeyPreviewsFFIEmpty() -> IdentityKeyPreviewsFFI {
     IdentityKeyPreviewsFFI(items: nil, count: 0)
 }
 
+/// All-zero / null `IdentityKeyPreviewFFI` value for the single-row
+/// callers (`dash_sdk_derive_identity_key_at_slot`). The
+/// 32-byte tuple is laid out as Swift's nested-tuple representation
+/// of `[u8; 32]`; spelled out as 32 zero bytes here so a freshly-
+/// declared `out_row` is safe to hand to the FFI even on the
+/// failure paths where `_free` will run.
+func identityKeyPreviewFFIEmpty() -> IdentityKeyPreviewFFI {
+    IdentityKeyPreviewFFI(
+        identity_index: 0,
+        derivation_path: nil,
+        public_key: nil,
+        public_key_len: 0,
+        private_key_wif: nil,
+        private_key_bytes: (
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+    )
+}
+
 /// Derive the first N MASTER identity-authentication keypairs this
 /// wallet would probe during a discovery scan. `count_or_neg1< 0`
 /// picks the Rust-side default (`IDENTITY_GAP_LIMIT`, currently 5).
@@ -1331,6 +1386,54 @@ func dash_sdk_derive_identity_keys_from_mnemonic_free(
     _ rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>
 )
 
+// MARK: - dash_sdk_derive_identity_key_at_slot
+//
+// Single-slot variant of `dash_sdk_derive_identity_keys_from_mnemonic`
+// for the "add a new key to an existing identity" flow. Returns ONE
+// row at an arbitrary `(identity_index, key_index)` instead of a
+// `0..key_count` range — the caller picks the slot (typically
+// `max(existing_key_ids) + 1`).
+//
+// Currently ECDSA-only. The caller maps the resulting 33-byte
+// compressed pubkey into either `ECDSA_SECP256K1` (raw bytes) or
+// `ECDSA_HASH160` (ripemd160(sha256(pubkey))) when constructing the
+// `IdentityPublicKey` for the eventual `addPublicKeys` state
+// transition.
+@_silgen_name("dash_sdk_derive_identity_key_at_slot")
+func dash_sdk_derive_identity_key_at_slot(
+    _ mnemonic_cstr: UnsafePointer<CChar>,
+    _ passphrase_cstr: UnsafePointer<CChar>?,
+    _ network: DashSDKNetwork,
+    _ identity_index: UInt32,
+    _ key_index: UInt32,
+    _ out_row: UnsafeMutablePointer<IdentityKeyPreviewFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("dash_sdk_derive_identity_key_at_slot_free")
+func dash_sdk_derive_identity_key_at_slot_free(
+    _ row: UnsafeMutablePointer<IdentityKeyPreviewFFI>
+)
+
+// Resolver-based sibling. Replaces the raw mnemonic c-string with
+// a `MnemonicResolverHandle` keyed by `wallet_id_bytes` so the
+// BIP-39 mnemonic never lives in a Swift `String` outside the
+// resolver trampoline's stack frame. Closes the
+// `swift-sdk/CLAUDE.md` "no mnemonic round-tripping" rule the
+// raw-cstring entry point violates. Use this from new Swift call
+// sites; the raw-cstring variant stays available for tests / any
+// non-iOS caller that already has the mnemonic in hand.
+@_silgen_name("dash_sdk_derive_identity_key_at_slot_with_resolver")
+func dash_sdk_derive_identity_key_at_slot_with_resolver(
+    _ network: DashSDKNetwork,
+    _ wallet_id_bytes: UnsafePointer<UInt8>,
+    _ mnemonic_resolver_handle: UnsafeMutablePointer<MnemonicResolverHandle>?,
+    _ identity_index: UInt32,
+    _ key_index: UInt32,
+    _ out_row: UnsafeMutablePointer<IdentityKeyPreviewFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - Derive-and-persist callback handles
 //
 // Used by `dash_sdk_derive_and_persist_identity_keys` (below). The
@@ -1397,12 +1500,24 @@ struct PersistKeyArgs {
     var security_level: UInt8
 }
 
-/// Expected size of `PersistKeyArgs` as laid out by Rust's
+/// Expected stride of `PersistKeyArgs` as laid out by Rust's
 /// `#[repr(C)]` on 64-bit targets. Mirrors the compile-time
 /// assertion in `rs-platform-wallet-ffi/src/
 /// derive_and_persist_callbacks.rs`. Tested at trampoline entry
 /// via `assertPersistKeyArgsLayout()`.
-let EXPECTED_PERSIST_KEY_ARGS_SIZE: Int = 72
+///
+/// We compare `MemoryLayout<T>.stride` (not `.size`) here. Rust's
+/// `size_of::<T>()` includes trailing padding so an array of `T`
+/// has the right element-to-element distance — that's what the
+/// Rust compile-time assertion pins to 72. Swift's `size` excludes
+/// trailing padding (would return 67 for this struct because the
+/// last field is a `UInt8` at offset 66 with 5 bytes of trailing
+/// pad to 8-align the next array element); Swift's `stride` is
+/// the equivalent of Rust's `size_of`. Earlier revisions checked
+/// `size == 72` AND `stride == 72`, which never held — Swift's
+/// 67-byte `size` for this struct made the assertion abort at the
+/// first persister construction.
+let EXPECTED_PERSIST_KEY_ARGS_STRIDE: Int = 72
 
 /// Verify the Swift `PersistKeyArgs` mirror lays out to the same
 /// 72-byte shape Rust's `#[repr(C)]` produces. Called once per
@@ -1410,14 +1525,31 @@ let EXPECTED_PERSIST_KEY_ARGS_SIZE: Int = 72
 /// between the two sides surfaces as a clean assertion failure
 /// rather than an EXC_BAD_ACCESS in `assumingMemoryBound`.
 func assertPersistKeyArgsLayout() {
-    let actual = MemoryLayout<PersistKeyArgs>.size
     let actualStride = MemoryLayout<PersistKeyArgs>.stride
     precondition(
-        actual == EXPECTED_PERSIST_KEY_ARGS_SIZE
-            && actualStride == EXPECTED_PERSIST_KEY_ARGS_SIZE,
-        "PersistKeyArgs layout mismatch: size=\(actual) stride=\(actualStride), "
-            + "expected \(EXPECTED_PERSIST_KEY_ARGS_SIZE). Rust-side "
-            + "#[repr(C)] and Swift-side struct have diverged; fix one side."
+        actualStride == EXPECTED_PERSIST_KEY_ARGS_STRIDE,
+        "PersistKeyArgs stride mismatch: \(actualStride), expected "
+            + "\(EXPECTED_PERSIST_KEY_ARGS_STRIDE). Rust-side #[repr(C)] "
+            + "and Swift-side struct have diverged; fix one side."
+    )
+    // Belt-and-braces field-offset checks. If a field is
+    // reordered or resized on either side the offsets will drift
+    // even when the total stride happens to stay the same, and
+    // `assumingMemoryBound` would silently read the wrong field.
+    precondition(
+        MemoryLayout<PersistKeyArgs>.offset(of: \.wallet_id_bytes) == 0
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.identity_index) == 8
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.key_id) == 12
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.key_index) == 16
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.derivation_path_cstr) == 24
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.public_key_bytes) == 32
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.public_key_len) == 40
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.public_key_hash_bytes) == 48
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.private_key_bytes) == 56
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.key_type) == 64
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.purpose) == 65
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.security_level) == 66,
+        "PersistKeyArgs field offsets diverged from Rust #[repr(C)] layout"
     )
 }
 

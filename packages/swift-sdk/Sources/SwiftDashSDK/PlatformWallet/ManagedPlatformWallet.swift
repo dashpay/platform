@@ -192,6 +192,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// secp256k1; 48 for BLS; etc.).
         public let pubkeyBytes: Data
         public let readOnly: Bool
+        /// Optional contract-bounds restriction. Required for
+        /// Encryption / Decryption keys (Drive scopes those keys
+        /// to a specific contract / document type so a key issued
+        /// for App A cannot decrypt App B's payloads). `nil` for
+        /// every other purpose.
+        public let contractBounds: ContractBounds?
 
         public init(
             keyId: UInt32,
@@ -199,7 +205,8 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             purpose: KeyPurpose,
             securityLevel: SecurityLevel,
             pubkeyBytes: Data,
-            readOnly: Bool = false
+            readOnly: Bool = false,
+            contractBounds: ContractBounds? = nil
         ) {
             self.keyId = keyId
             self.keyType = keyType
@@ -207,7 +214,21 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             self.securityLevel = securityLevel
             self.pubkeyBytes = pubkeyBytes
             self.readOnly = readOnly
+            self.contractBounds = contractBounds
         }
+    }
+
+    /// Swift mirror of `dpp::identity::identity_public_key::contract_bounds::ContractBounds`.
+    /// Pinned to two variants (no `MultipleContractsOfSameOwner`)
+    /// to match the Rust enum's currently-supported shape.
+    public enum ContractBounds: Sendable, Equatable {
+        /// Key may be used within a specific contract (any
+        /// document type). Maps to `kind == 1` on the FFI side.
+        case singleContract(id: Data)
+        /// Key may be used within a specific contract AND a
+        /// specific document type. Maps to `kind == 2` on the
+        /// FFI side.
+        case singleContractDocumentType(id: Data, documentTypeName: String)
     }
 
     /// Result of a successful identity registration.
@@ -271,6 +292,18 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             throw PlatformWalletError.invalidParameter
         }
         guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
+        // Reject malformed address hashes up front for the same
+        // reason `topUpFromAddresses` does — `.prefix(20)` below
+        // would silently truncate / zero-pad and point the FFI at
+        // a different address.
+        for input in inputs {
+            guard input.hash.count == 20 else {
+                throw PlatformWalletError.invalidParameter
+            }
+        }
+        if let output, output.hash.count != 20 {
             throw PlatformWalletError.invalidParameter
         }
 
@@ -428,6 +461,116 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         )
     }
 
+    // MARK: - Identity top-up (address-funded)
+
+    /// Top up an existing identity's credit balance from one or more
+    /// Platform addresses, using an external `KeychainSigner` for the
+    /// per-address funding signatures.
+    ///
+    /// Top-up state-transitions are signed entirely with the input
+    /// addresses' private keys (no IdentityCreate to sign), so unlike
+    /// `registerIdentityFromAddresses` only one signer is required —
+    /// the same `KeychainSigner` you use for registration's
+    /// `addressSigner` role.
+    ///
+    /// - Parameters:
+    ///   - identityId: 32-byte identity id of the existing identity
+    ///     to top up.
+    ///   - inputs: contributing address rows describing each input
+    ///     platform address + the credit amount to spend from it.
+    ///   - addressSigner: signer whose `.handle` produces signatures
+    ///     for each input platform address. Borrowed for the
+    ///     duration of the call.
+    ///
+    /// - Returns: the new credit balance reported by Platform.
+    public func topUpFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter
+        }
+        guard !inputs.isEmpty else {
+            throw PlatformWalletError.invalidParameter
+        }
+        // Reject malformed address hashes up front. Earlier
+        // revisions used `.prefix(20)` on the FFI build below,
+        // which silently truncates oversize hashes and zero-pads
+        // undersized ones — pointing the FFI at a different
+        // address than the caller intended. A clean precondition
+        // here surfaces the failure as a recoverable error.
+        for input in inputs {
+            guard input.hash.count == 20 else {
+                throw PlatformWalletError.invalidParameter
+            }
+        }
+
+        let handle = self.handle
+        let addressSignerHandle = addressSigner.handle
+
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            // Keepalive — see `registerIdentityFromAddresses` for
+            // rationale. The trampoline ctx pointer dangles unless
+            // the Swift owner stays alive across this detached work.
+            _ = addressSigner
+
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+            withUnsafeMutableBytes(of: &idTuple) { raw in
+                for (i, byte) in identityId.prefix(32).enumerated() {
+                    raw[i] = byte
+                }
+            }
+
+            let ffiInputs = inputs.map { input -> IdentityFundingInputFFI in
+                var hashTuple = hashTupleInit()
+                withUnsafeMutableBytes(of: &hashTuple) { raw in
+                    let src = input.hash.prefix(20)
+                    for (i, byte) in src.enumerated() {
+                        raw[i] = byte
+                    }
+                }
+                return IdentityFundingInputFFI(
+                    address_type: input.addressType,
+                    hash: hashTuple,
+                    credits: input.credits
+                )
+            }
+
+            var newBalance: UInt64 = 0
+            var error = PlatformWalletFFIError()
+
+            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                withUnsafePointer(to: &idTuple) { idPtr in
+                    platform_wallet_top_up_from_addresses_with_signer(
+                        handle,
+                        idPtr,
+                        inputsBuf.baseAddress,
+                        inputsBuf.count,
+                        addressSignerHandle,
+                        &newBalance,
+                        &error
+                    )
+                }
+            }
+
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return newBalance
+        }.value
+    }
+
     /// Pin every pubkey buffer simultaneously and call `body` with a
     /// freshly-built `[IdentityPubkeyFFI]` whose `pubkey_bytes`
     /// pointers all reference the pinned bytes. Recursive shape
@@ -455,6 +598,14 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// `withUnsafeBytes`, append a matching FFI row, and recurse.
     /// At index == count we hand the assembled row array off to
     /// `body` under one combined pinning frame.
+    ///
+    /// Contract-bounds pinning extends the same pattern: when the
+    /// row carries `.singleContract` or `.singleContractDocumentType`
+    /// we open a nested `withUnsafeBytes` (for the 32-byte contract
+    /// id) and a `withCString` (for the document type, if any) so
+    /// the pointers we hand the FFI stay valid for the entire
+    /// `body` invocation. Rows without bounds drop straight through
+    /// to the next level of recursion.
     private static func pinNext<R>(
         _ index: Int,
         _ rows: inout [IdentityPubkeyFFI],
@@ -470,18 +621,64 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let pk = pubkeys[index]
         return buffers[index].withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> R in
             let basePtr = raw.bindMemory(to: UInt8.self).baseAddress
-            rows.append(
-                IdentityPubkeyFFI(
-                    key_id: pk.keyId,
-                    key_type: pk.keyType.ffiValue,
-                    purpose: pk.purpose.ffiValue,
-                    security_level: pk.securityLevel.ffiValue,
-                    pubkey_bytes: basePtr,
-                    pubkey_len: raw.count,
-                    read_only: pk.readOnly
+            return pinContractBounds(pk.contractBounds) { kind, idPtr, docTypePtr in
+                rows.append(
+                    IdentityPubkeyFFI(
+                        key_id: pk.keyId,
+                        key_type: pk.keyType.ffiValue,
+                        purpose: pk.purpose.ffiValue,
+                        security_level: pk.securityLevel.ffiValue,
+                        pubkey_bytes: basePtr,
+                        pubkey_len: raw.count,
+                        read_only: pk.readOnly,
+                        contract_bounds_kind: kind,
+                        contract_bounds_id: idPtr,
+                        contract_bounds_document_type: docTypePtr
+                    )
                 )
+                return pinNext(index + 1, &rows, pubkeys, buffers, body)
+            }
+        }
+    }
+
+    /// Pin the contract-bounds id buffer + optional document-type
+    /// CString, hand the resulting `(kind, idPtr, docTypePtr)` to
+    /// `body`. Mirrors the recursive style the rest of the
+    /// pubkey-array marshalling uses so the lifetimes nest cleanly
+    /// inside `pinNext`.
+    private static func pinContractBounds<R>(
+        _ bounds: ContractBounds?,
+        _ body: (UInt8, UnsafePointer<UInt8>?, UnsafePointer<CChar>?) -> R
+    ) -> R {
+        switch bounds {
+        case .none:
+            return body(0, nil, nil)
+        case .singleContract(let id):
+            // The Rust side reads exactly 32 bytes off
+            // `contract_bounds_id`. A short or empty `Data` would
+            // either dangle the base pointer (empty) or read past
+            // the buffer end (short). Caller-side guard so the
+            // failure surfaces as a clean precondition rather than
+            // an FFI-side OOB read.
+            precondition(
+                id.count == 32,
+                "ContractBounds.singleContract id must be exactly 32 bytes (got \(id.count))"
             )
-            return pinNext(index + 1, &rows, pubkeys, buffers, body)
+            return id.withUnsafeBytes { raw -> R in
+                let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
+                return body(1, idPtr, nil)
+            }
+        case .singleContractDocumentType(let id, let documentTypeName):
+            precondition(
+                id.count == 32,
+                "ContractBounds.singleContractDocumentType id must be exactly 32 bytes (got \(id.count))"
+            )
+            return id.withUnsafeBytes { raw -> R in
+                let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
+                return documentTypeName.withCString { docTypePtr in
+                    body(2, idPtr, docTypePtr)
+                }
+            }
         }
     }
 }
@@ -643,6 +840,116 @@ extension ManagedPlatformWallet {
             )
         }
         return previews
+    }
+
+    /// Derive a single ECDSA identity-authentication keypair at an
+    /// arbitrary `(identityIndex, keyId)` slot — the building block
+    /// the "add key to existing identity" flow runs on.
+    ///
+    /// Routes through the resolver-based FFI
+    /// `dash_sdk_derive_identity_key_at_slot_with_resolver`. Rust
+    /// pulls the BIP-39 mnemonic across the FFI on demand via the
+    /// `MnemonicResolver` callback (whose `resolve` function reads
+    /// from iOS Keychain through `WalletStorage`); the seed never
+    /// lives in a Swift `String` outside the resolver trampoline's
+    /// stack frame, satisfying the `swift-sdk/CLAUDE.md` "no
+    /// mnemonic round-tripping" rule. Earlier revisions pulled the
+    /// mnemonic into Swift, handed it back to a stateless FFI as a
+    /// `withCString` scope, and looped over the result — that
+    /// shape is the canonical anti-precedent the rule cites.
+    ///
+    /// The returned `IdentityRegistrationKeyPreview` carries the
+    /// derived public key bytes + the 32-byte private scalar.
+    /// Callers building the `addPublicKeys` payload for
+    /// `updateIdentity(...)` should:
+    ///   1. Call `KeychainManager.storeIdentityPrivateKey(_:
+    ///      derivationPath:metadata:)` with the private bytes so
+    ///      the `KeychainSigner` trampoline can sign the resulting
+    ///      transition.
+    ///   2. Build an `IdentityPubkey` from the public key bytes +
+    ///      the chosen `purpose / securityLevel / keyType` and
+    ///      hand it to `wallet.updateIdentity(addPublicKeys:...,
+    ///      signer:)`.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: BIP-9 identity index in the HD tree.
+    ///   - keyId: hardened key index. Caller picks
+    ///     `max(existingKeyIds) + 1` to extend an existing identity.
+    ///   - network: the wallet's network — selects the DIP-9
+    ///     coin-type slot in the derivation path AND the WIF version.
+    ///   - storage: defaults to a fresh `WalletStorage()` —
+    ///     overridable for tests. Used by the resolver vtable.
+    ///
+    /// - Throws: `PlatformWalletError` from the FFI on any failure
+    ///   (mnemonic missing, bad slot, derivation failure).
+    @MainActor
+    public func deriveIdentityAuthKeyAtSlot(
+        identityIndex: UInt32,
+        keyId: UInt32,
+        network: DashSDKNetwork,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> IdentityRegistrationKeyPreview {
+        // The FFI takes a 32-byte wallet id which the resolver uses
+        // to look up the mnemonic in iOS Keychain. Pin to
+        // `self.walletId` here — the method is already scoped to
+        // this `ManagedPlatformWallet` instance, so accepting a
+        // separate `walletId` parameter would let a caller derive
+        // a key from one wallet's mnemonic while attributing it
+        // to a different wallet's `ManagedPlatformWallet`. Defensive
+        // length guard for the (unexpected but possible) case where
+        // the instance was constructed with a malformed wallet id.
+        guard self.walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter
+        }
+        let resolver = MnemonicResolver(storage: storage)
+
+        var row = identityKeyPreviewFFIEmpty()
+        var error = PlatformWalletFFIError()
+
+        let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
+            return dash_sdk_derive_identity_key_at_slot_with_resolver(
+                network,
+                walletPtr,
+                resolver.handle,
+                identityIndex,
+                keyId,
+                &row,
+                &error
+            )
+        }
+        defer { dash_sdk_derive_identity_key_at_slot_free(&row) }
+
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
+        let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
+
+        let pubData: Data
+        let pubHex: String
+        if let pubPtr = row.public_key, row.public_key_len > 0 {
+            pubData = Data(bytes: pubPtr, count: row.public_key_len)
+            pubHex = pubData.map { String(format: "%02x", $0) }.joined()
+        } else {
+            pubData = Data()
+            pubHex = ""
+        }
+
+        // Inline tuple → owned `Data`. Copy because the underlying
+        // tuple is zeroed by the deferred free call on scope exit.
+        var pkTuple = row.private_key_bytes
+        let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
+
+        return IdentityRegistrationKeyPreview(
+            identityIndex: row.identity_index,
+            derivationPath: path,
+            publicKeyData: pubData,
+            publicKeyHex: pubHex,
+            privateKeyWIF: wif,
+            privateKeyData: pkData
+        )
     }
 
     /// Pre-derive + pre-persist the authentication keys an upcoming
@@ -2370,6 +2677,121 @@ extension ManagedPlatformWallet {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
+    }
+
+    /// Create + broadcast a new data contract owned by
+    /// `ownerIdentityId`. Returns the 32-byte contract id once
+    /// Platform confirms the transition.
+    ///
+    /// Replaces the older `sdk.dataContractCreate(...)` call site:
+    /// the rs-sdk-ffi runtime's mobile-tuned default thread stack
+    /// is too small for `rs-drive`'s post-broadcast GroveDB proof
+    /// recursion (`EXC_BAD_ACCESS` at the `Op::decode` prologue).
+    /// The platform-wallet runtime uses an 8 MB worker stack and
+    /// fits the recursion comfortably. Architecturally this also
+    /// follows the `swift-sdk/CLAUDE.md` "high-level operations
+    /// go through platform-wallet" rule — contract creation
+    /// spans an identity (the owner), needs the wallet's signer,
+    /// and changes persistent state.
+    ///
+    /// JSON shapes (every input beyond `documentSchemasJSON` is
+    /// optional — pass `nil` to skip):
+    ///   - `documentSchemasJSON`: object keyed by document type
+    ///     name; `"{}"` for token-only contracts.
+    ///   - `tokenSchemasJSON`: object keyed by stringified slot
+    ///     index. Caller supplies the three-level
+    ///     `$formatVersion: "0"` tags (`TokenConfiguration` /
+    ///     `TokenConfigurationConvention` /
+    ///     `TokenConfigurationLocalization`); the V1 deserializer
+    ///     can't dispatch without them.
+    ///   - `groupsJSON`: object keyed by stringified group
+    ///     position.
+    ///   - `keywordsJSON`: JSON array of strings.
+    ///   - `description`: plain string.
+    ///   - `contractConfigJSON`: `DataContractConfig` JSON. The
+    ///     library injects `$formatVersion: "0"` if missing so a
+    ///     bare flags dict round-trips cleanly.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive
+    /// for the duration of the `await` (Rust holds a `passUnretained`
+    /// ctx pointer to the underlying `KeychainSigner`). A `_ = signer`
+    /// keepalive at the call site is the canonical way to pin it.
+    public func createDataContract(
+        ownerIdentityId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id bytes, the required documents string, and
+            // each optional JSON / description string. The Rust
+            // side dereferences the C-string pointers
+            // synchronously inside `block_on_worker`, so the
+            // `withCString` scopes here are sufficient — the
+            // pointers don't need to outlive the call.
+            _ = signer
+            var error = PlatformWalletFFIError()
+            var contractIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = idBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
+                documentSchemasJSON.withCString { docsPtr in
+                    Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                        Self.withOptionalCString(groupsJSON) { groupsPtr in
+                            Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                Self.withOptionalCString(description) { descriptionPtr in
+                                    Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                        contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                            platform_wallet_create_data_contract_with_signer(
+                                                handle,
+                                                idBp.baseAddress!,
+                                                docsPtr,
+                                                tokensPtr,
+                                                groupsPtr,
+                                                keywordsPtr,
+                                                descriptionPtr,
+                                                configPtr,
+                                                signerHandle,
+                                                outBp.baseAddress!,
+                                                &error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            guard result == Success else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+            return Data(contractIdBytes)
+        }.value
+    }
+
+    /// Run `body` with a NUL-terminated C string for `value`, or
+    /// `nil` when `value` is nil. Mirrors the `withCString`
+    /// pattern but terminates the chain when the optional is
+    /// absent so the FFI receives a NULL pointer.
+    fileprivate static func withOptionalCString<R>(
+        _ value: String?,
+        _ body: (UnsafePointer<CChar>?) -> R
+    ) -> R {
+        if let value = value {
+            return value.withCString { body($0) }
+        }
+        return body(nil)
     }
 
     /// Register a new asset-lock-funded identity using an external

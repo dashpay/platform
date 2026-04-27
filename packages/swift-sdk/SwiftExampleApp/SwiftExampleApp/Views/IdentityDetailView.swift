@@ -51,6 +51,20 @@ struct IdentityDetailView: View {
     /// per vote poll.
     @State private var contestedDpnsInfo: [String: Any] = [:]
 
+    /// Tokens this identity holds, paired with their balance + the
+    /// originating PersistentToken for display metadata. Populated on
+    /// appear and on tap of the section's refresh button. Empty during
+    /// the first load and when the identity holds no balances.
+    @State private var tokenBalances: [IdentityTokenEntry] = []
+    @State private var isLoadingTokens = false
+    @State private var tokensError: String?
+
+    /// Drives presentation of `TopUpIdentityView` via the
+    /// `.sheet(isPresented:)` modifier below. Tapped from the
+    /// "Top Up Balance" button under the Balance row — the flow
+    /// itself owns wallet / account / amount selection.
+    @State private var showingTopUp = false
+
     var body: some View {
         if let identity = identity {
             List {
@@ -97,6 +111,28 @@ struct IdentityDetailView: View {
                         .fontWeight(.medium)
                 }
 
+                // Top-up entry point. Hidden for purely-local rows
+                // (no on-chain identity to credit yet) and for
+                // identities whose owning wallet isn't loaded into
+                // the manager — both paths would just surface a
+                // confusing error from the FFI layer.
+                if !identity.isLocal,
+                   let walletId = identity.wallet?.walletId,
+                   walletManager.wallet(for: walletId) != nil {
+                    Button {
+                        showingTopUp = true
+                    } label: {
+                        HStack {
+                            Label("Top Up Balance", systemImage: "plus.circle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 HStack {
                     Label("Type", systemImage: "person.badge.shield.checkmark")
                     Spacer()
@@ -111,6 +147,28 @@ struct IdentityDetailView: View {
                         Spacer()
                         Text("Local Only")
                             .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            // DashPay Section — drill-in to the per-identity Friends
+            // screen. Sits up here next to "Identity Information"
+            // because it's the entry point to *this identity's*
+            // contacts; the richer "DashPay Profile" section further
+            // down still owns profile reads/edits separately.
+            //
+            // Hidden when the identity isn't backed by a loaded
+            // local wallet — `FriendsView.requireWallet` throws on
+            // every action there, and the failure is swallowed into
+            // a `@State errorMessage` that the body never renders.
+            // No-wallet identities (network-only fetches) would
+            // otherwise land on the empty placeholder with no path
+            // forward.
+            if let walletId = identity.wallet?.walletId,
+               walletManager.wallet(for: walletId) != nil {
+                Section("DashPay") {
+                    NavigationLink(destination: FriendsView(identity: identity)) {
+                        Label("Friends", systemImage: "person.2")
                     }
                 }
             }
@@ -176,6 +234,66 @@ struct IdentityDetailView: View {
                             }
                             .foregroundColor(.blue)
                         }
+                    }
+                }
+            }
+
+            // Tokens Section
+            //
+            // Lists every PersistentToken the identity actually holds
+            // a non-zero balance against. Token-id derivation happens
+            // via the FFI `dash_sdk_calculate_token_id` (the protocol
+            // formula must NOT be mirrored in Swift), then we batch
+            // the resulting ids into one `getIdentityTokenBalances`
+            // round-trip. Transient @State only — persistence to
+            // PersistentTokenBalance lives in the platform-wallet
+            // sync path, not here.
+            if !identity.isLocal {
+                Section {
+                    if isLoadingTokens && tokenBalances.isEmpty {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Loading token balances…")
+                                .foregroundColor(.secondary)
+                        }
+                    } else if let err = tokensError {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    } else if tokenBalances.isEmpty {
+                        Text("No tokens")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(tokenBalances) { entry in
+                            // Tapping a token here opens the
+                            // permissions view pinned to *this*
+                            // identity — the call site already
+                            // knows whose tokens these are, so we
+                            // skip the generic identity picker
+                            // inside `TokenActionPermissionsView`.
+                            NavigationLink(
+                                destination: TokenActionPermissionsView(
+                                    token: entry.token,
+                                    identity: identity
+                                )
+                            ) {
+                                IdentityTokenRow(entry: entry)
+                            }
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Tokens")
+                        Spacer()
+                        Button(action: reloadTokenBalances) {
+                            Image(systemName: "arrow.clockwise")
+                                .symbolEffect(
+                                    .rotate,
+                                    options: .nonRepeating,
+                                    isActive: isLoadingTokens
+                                )
+                        }
+                        .disabled(isLoadingTokens)
                     }
                 }
             }
@@ -284,6 +402,10 @@ struct IdentityDetailView: View {
             )
             .environmentObject(walletManager)
         }
+        .sheet(isPresented: $showingTopUp) {
+            TopUpIdentityView(identity: identity)
+                .environmentObject(walletManager)
+        }
         .onAppear {
             print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
 
@@ -302,6 +424,16 @@ struct IdentityDetailView: View {
                 // `IdentityWallet` `sync_profiles` FFI path.
                 loadCachedDashPayProfile(for: identity)
                 Task { await refreshDashPayProfilesFromPlatform(for: identity) }
+
+                // First-load gate for the Tokens section. Same pattern
+                // as the DashPay block above — only auto-fetch when
+                // we have nothing yet; subsequent refreshes are an
+                // explicit user action via the section's refresh
+                // button. Avoids a redundant round-trip on every
+                // back-and-forth navigation.
+                if tokenBalances.isEmpty {
+                    reloadTokenBalances()
+                }
             }
         }
         } else {
@@ -748,6 +880,171 @@ struct IdentityDetailView: View {
             print("⚠️ DashPay profile sync failed: \(error)")
             profileError = "Profile sync failed: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Tokens
+
+    /// Read every locally-known PersistentToken, compute the canonical
+    /// platform token id for each, then ask the SDK for this identity's
+    /// balance against that set in one round trip. Filters to non-zero
+    /// balances for display — the "tokens this identity has" framing
+    /// implies nonzero. The whole pipeline runs in a single Task so
+    /// the UI can show a spinner without blocking.
+    @MainActor
+    private func reloadTokenBalances() {
+        guard let identity = identity, !identity.isLocal,
+              let sdk = appState.sdk else { return }
+
+        isLoadingTokens = true
+        tokensError = nil
+
+        Task { @MainActor in
+            defer { isLoadingTokens = false }
+
+            // Pull tokens off the live PersistentToken store, scoped
+            // to the active network via the parent contract's
+            // `networkRaw`. `PersistentToken` itself has no network
+            // field — every saved contract's tokens are children of
+            // a `PersistentDataContract`, and that's where the
+            // network lives. Without this filter we'd compute token
+            // ids that don't exist on the active network (off-network
+            // ids return zero balances and surface confusing
+            // empty-state UX after a network switch).
+            let target = appState.currentNetwork.rawValue
+            let descriptor = FetchDescriptor<PersistentToken>(
+                predicate: #Predicate<PersistentToken> { token in
+                    token.dataContract?.networkRaw == target
+                }
+            )
+            // Use an explicit do-catch (not `try?`) so a thrown
+            // SwiftData fetch error surfaces in `tokensError`
+            // instead of collapsing into the same "no tokens"
+            // branch as a legitimately empty result. Earlier
+            // `try?` revisions also wiped any previously-loaded
+            // balances on a transient failure; preserve them
+            // here so a flaky reload doesn't blank out the
+            // section.
+            let allTokens: [PersistentToken]
+            do {
+                allTokens = try modelContext.fetch(descriptor)
+            } catch {
+                tokensError =
+                    "Failed to load local tokens: \(error.localizedDescription)"
+                return
+            }
+            guard !allTokens.isEmpty else {
+                tokenBalances = []
+                return
+            }
+
+            // Compute token ids in one pass. Skip tokens whose
+            // position is out of u16 range (shouldn't happen — that
+            // would be a malformed row) so we don't crash on a bad
+            // downcast.
+            var idToToken: [String: PersistentToken] = [:]
+            for token in allTokens {
+                guard token.position >= 0, token.position <= Int(UInt16.max) else { continue }
+                let pos = UInt16(token.position)
+                let cidBase58 = token.contractId.toBase58String()
+                if let canonical = try? sdk.calculateTokenId(contractId: cidBase58, position: pos) {
+                    idToToken[canonical] = token
+                }
+            }
+            guard !idToToken.isEmpty else {
+                tokenBalances = []
+                return
+            }
+
+            do {
+                let balances = try await sdk.getIdentityTokenBalances(
+                    identityId: identity.identityIdBase58,
+                    tokenIds: Array(idToToken.keys)
+                )
+                // Filter to non-zero, sort by token name for stability.
+                let entries: [IdentityTokenEntry] = balances.compactMap { (tokenId, balance) -> IdentityTokenEntry? in
+                    guard balance > 0, let token = idToToken[tokenId] else { return nil }
+                    return IdentityTokenEntry(tokenId: tokenId, token: token, balance: balance)
+                }.sorted { (lhs, rhs) in
+                    let lname = lhs.token.getPluralForm() ?? lhs.token.displayName
+                    let rname = rhs.token.getPluralForm() ?? rhs.token.displayName
+                    return lname.localizedCaseInsensitiveCompare(rname) == .orderedAscending
+                }
+                tokenBalances = entries
+                tokensError = nil
+            } catch {
+                tokensError = "Failed to load token balances: \(error.localizedDescription)"
+            }
+        }
+    }
+}
+
+// MARK: - Token row
+
+/// One token + balance entry, keyed by the canonical base58 token id
+/// so SwiftUI's `ForEach` has a stable identifier across reloads.
+private struct IdentityTokenEntry: Identifiable, Hashable {
+    let tokenId: String
+    let token: PersistentToken
+    let balance: UInt64
+    var id: String { tokenId }
+}
+
+/// Row view for one token holding. Displays the token's plural-form
+/// (or fallback display name), its balance scaled by `decimals`, and
+/// the parent contract's name as a caption.
+private struct IdentityTokenRow: View {
+    let entry: IdentityTokenEntry
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.token.getPluralForm() ?? entry.token.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(contractCaption)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Text(formattedBalance)
+                .font(.subheadline.monospacedDigit())
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Prefer the contract's friendly name; fall back to a truncated
+    /// base58 contract id when the contract isn't loaded locally.
+    private var contractCaption: String {
+        if let name = entry.token.dataContract?.name, !name.isEmpty {
+            return name
+        }
+        let cid = entry.token.contractIdBase58
+        if cid.count > 12 {
+            let prefix = cid.prefix(6)
+            let suffix = cid.suffix(4)
+            return "\(prefix)…\(suffix)"
+        }
+        return cid
+    }
+
+    /// Format the raw u64 balance with the token's `decimals`. Uses
+    /// `Decimal` so we don't lose precision converting through Double
+    /// for high-decimal tokens with large balances.
+    private var formattedBalance: String {
+        let decimals = max(0, entry.token.decimals)
+        let raw = Decimal(entry.balance)
+        let divisor = pow(Decimal(10), decimals)
+        let scaled = divisor == 0 ? raw : (raw / divisor)
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = decimals
+        formatter.minimumFractionDigits = 0
+        formatter.usesGroupingSeparator = true
+        return formatter.string(from: scaled as NSNumber) ?? "\(entry.balance)"
     }
 }
 

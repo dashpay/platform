@@ -76,6 +76,24 @@ pub struct IdentityKeyPreviewFFI {
     pub private_key_bytes: [u8; 32],
 }
 
+impl IdentityKeyPreviewFFI {
+    /// All-null / zero row used by single-row callers
+    /// (e.g. `dash_sdk_derive_identity_key_at_slot`) to pre-zero
+    /// their `out_row` so a failed FFI call leaves the caller
+    /// staring at known empty state instead of uninitialized
+    /// memory.
+    pub fn empty() -> Self {
+        Self {
+            identity_index: 0,
+            derivation_path: ptr::null_mut(),
+            public_key: ptr::null_mut(),
+            public_key_len: 0,
+            private_key_wif: ptr::null_mut(),
+            private_key_bytes: [0u8; 32],
+        }
+    }
+}
+
 /// Heap-allocated array of [`IdentityKeyPreviewFFI`] rows. Release
 /// the whole struct (rows + their owned strings + key buffers) by
 /// handing it back to

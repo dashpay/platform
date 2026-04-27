@@ -6,8 +6,19 @@ import SwiftData
 struct TransitionDetailView: View {
   let transitionKey: String
   let transitionLabel: String
+  /// Optional pre-filled form values applied once on first appear.
+  /// Set by the contracts-register flows (Pasteboard / Quick Basic
+  /// Token) so the user lands on a partially-configured form rather
+  /// than a blank one. Empty for the regular "build a transition by
+  /// hand" entry point.
+  var initialInputs: [String: String] = [:]
+  /// Optional pre-filled checkbox values applied alongside
+  /// `initialInputs`. Same single-shot semantics — applied once on
+  /// first appear, never re-applied.
+  var initialCheckboxInputs: [String: Bool] = [:]
 
   @EnvironmentObject var appState: AppState
+  @EnvironmentObject var walletManager: PlatformWalletManager
   @Environment(\.modelContext) private var modelContext
   @Query private var identities: [PersistentIdentity]
   @EnvironmentObject var transitionState: TransitionState
@@ -109,6 +120,17 @@ struct TransitionDetailView: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       clearForm()
+      // Re-apply caller-supplied pre-fills after every reset.
+      // `clearForm` runs on each appear and wipes back to schema
+      // defaults; merging the pre-fills on top keeps Pasteboard /
+      // Quick-Token entries visible when the user navigates back to
+      // the form mid-flow.
+      for (k, v) in initialInputs {
+        formInputs[k] = v
+      }
+      for (k, v) in initialCheckboxInputs {
+        checkboxInputs[k] = v
+      }
     }
   }
 
@@ -554,6 +576,13 @@ struct TransitionDetailView: View {
         network: appState.currentNetwork
       )
       modelContext.insert(row)
+      // Back-fill any locally-cached contracts that already name
+      // this identity as their owner. The save below persists
+      // the relationship.
+      ContractIdentityLinker.linkIdentityToOwnedContracts(
+        identity: row,
+        modelContext: modelContext
+      )
       try? modelContext.save()
     }
 
@@ -599,16 +628,21 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create transfer signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (transferKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createTransferSigner(for: dppIdentity)
-      return (k, SendableOpaquePointer(s))
+    // Pick the transfer key (no bytes extraction); KeychainSigner
+    // services the actual signature on demand.
+    let transferKey = try await MainActor.run { () throws -> IdentityPublicKey in
+      let km = KeyManager.withSharedKeychain()
+      guard let k = km.findSigningKey(
+        for: dppIdentity,
+        purpose: .transfer,
+        minimumSecurityLevel: nil,
+        preferCritical: true
+      ) else {
+        throw KeyManagerError.noSuitableKey("No transfer key found for identity")
+      }
+      return k
     }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     print("🔑 Using transfer key #\(transferKey.id)")
 
@@ -616,8 +650,9 @@ struct TransitionDetailView: View {
       from: dppIdentity,
       toIdentityId: normalizedToIdentityId,
       amount: amount,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     // Update sender's balance in our local state
     await MainActor.run {
@@ -660,24 +695,18 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create transfer signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createTransferSigner(for: dppIdentity)
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    // External-signer pattern. The trampoline picks the transfer
+    // key off the identity at sign time.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let newBalance = try await sdk.withdrawFromIdentity(
       dppIdentity,
       amount: amount,
       toAddress: toAddress,
       coreFeePerByte: coreFeePerByte,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     // Update identity's balance in our local state
     await MainActor.run {
@@ -745,19 +774,25 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find authentication key with required security level and create signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createDocumentSigner(
+    // Pick an authentication key meeting the document-type's required
+    // security level (no bytes extraction); the KeychainSigner
+    // trampoline pulls private bytes from Keychain on demand at
+    // sign time.
+    let selectedKey = try await MainActor.run { () throws -> IdentityPublicKey in
+      let km = KeyManager.withSharedKeychain()
+      guard let k = km.findSigningKey(
         for: dppIdentity,
-        minimumSecurityLevel: requiredSecurityLevel
-      )
-      return (k, SendableOpaquePointer(s))
+        purpose: .authentication,
+        minimumSecurityLevel: requiredSecurityLevel,
+        preferCritical: true
+      ) else {
+        throw KeyManagerError.noSuitableKey(
+          "No authentication key with security \(requiredSecurityLevel.name) or higher and available private key"
+        )
+      }
+      return k
     }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     print("🔑 Selected signing key: ID: \(selectedKey.id), Purpose: \(selectedKey.purpose.name), Security: \(selectedKey.securityLevel.name)")
 
@@ -766,8 +801,9 @@ struct TransitionDetailView: View {
       documentType: documentType,
       ownerIdentity: dppIdentity,
       properties: properties,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -798,21 +834,10 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find authentication key with private key and create signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createSignerForKey(
-        for: dppIdentity,
-        purpose: .authentication,
-        minimumSecurityLevel: nil,
-        preferCritical: true
-      )
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    // External-signer pattern (see executeDataContractCreate for the
+    // architectural rationale). Rust calls back through the
+    // `KeychainSigner` trampoline when it needs a signature.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     // Call the document delete function
     try await sdk.documentDelete(
@@ -820,8 +845,9 @@ struct TransitionDetailView: View {
       documentType: documentType,
       documentId: documentId,
       ownerIdentity: dppIdentity,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
     return ["message": "Document deleted successfully"]
   }
@@ -865,21 +891,8 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find authentication key with private key and create signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createSignerForKey(
-        for: fromIdentity,
-        purpose: .authentication,
-        minimumSecurityLevel: nil,
-        preferCritical: true
-      )
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    // External-signer pattern.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     // Call the document transfer function
     let result = try await sdk.documentTransfer(
@@ -888,8 +901,9 @@ struct TransitionDetailView: View {
       documentId: documentId,
       fromIdentity: fromIdentity,
       toIdentityId: recipientId,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -932,21 +946,8 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find authentication key with private key and create signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createSignerForKey(
-        for: ownerDPPIdentity,
-        purpose: .authentication,
-        minimumSecurityLevel: nil,
-        preferCritical: true
-      )
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    // External-signer pattern.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     // Call the document update price function
     let result = try await sdk.documentUpdatePrice(
@@ -955,8 +956,9 @@ struct TransitionDetailView: View {
       documentId: documentId,
       newPrice: newPrice,
       ownerIdentity: ownerDPPIdentity,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1002,21 +1004,8 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find any key with private key and create signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createSignerForKey(
-        for: fromIdentity,
-        purpose: nil,
-        minimumSecurityLevel: nil,
-        preferCritical: true
-      )
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    // External-signer pattern.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     // Call the document purchase function
     let result = try await sdk.documentPurchase(
@@ -1025,8 +1014,9 @@ struct TransitionDetailView: View {
       documentId: documentId,
       purchaserIdentity: fromIdentity,
       price: price,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1090,19 +1080,24 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find authentication key with required security level and create signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createDocumentSigner(
+    // Pick an authentication key meeting the required security
+    // level (no bytes extraction). Sign-time bytes come through
+    // the KeychainSigner trampoline.
+    let selectedKey = try await MainActor.run { () throws -> IdentityPublicKey in
+      let km = KeyManager.withSharedKeychain()
+      guard let k = km.findSigningKey(
         for: dppIdentity,
-        minimumSecurityLevel: requiredSecurityLevel
-      )
-      return (k, SendableOpaquePointer(s))
+        purpose: .authentication,
+        minimumSecurityLevel: requiredSecurityLevel,
+        preferCritical: true
+      ) else {
+        throw KeyManagerError.noSuitableKey(
+          "No authentication key with security \(requiredSecurityLevel.name) or higher and available private key"
+        )
+      }
+      return k
     }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     print("🔑 Selected signing key: ID: \(selectedKey.id), Purpose: \(selectedKey.purpose.name), Security: \(selectedKey.securityLevel.name)")
 
@@ -1112,8 +1107,9 @@ struct TransitionDetailView: View {
       documentId: documentId,
       ownerIdentity: dppIdentity,
       properties: properties,
-      signer: signer
+      signer: signer.handle
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1169,42 +1165,34 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find critical key with owner or authentication purpose
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let mintingKey: IdentityPublicKey
-    let signer: OpaquePointer
-
-    // Try owner purpose first
-    let ownerResult: (IdentityPublicKey, SendableOpaquePointer)? = try? await MainActor.run {
-      let (k, s) = try keyManager.createSignerForKey(
+    // Pick a critical key (owner first, then authentication) without
+    // extracting private bytes — `KeychainSigner` does the
+    // bytes-out-of-keychain work later, only when Rust calls back
+    // for a signature. The id from the picked key is still needed
+    // up-front for `tokenMint`'s `keyId:` parameter.
+    let mintingKey = try await MainActor.run { () throws -> IdentityPublicKey in
+      let km = KeyManager.withSharedKeychain()
+      if let owner = km.findSigningKey(
         for: dppIdentity,
         purpose: .owner,
         minimumSecurityLevel: .critical,
         preferCritical: true
-      )
-      return (k, SendableOpaquePointer(s))
-    }
-
-    if let (key, sigBox) = ownerResult {
-      mintingKey = key
-      signer = sigBox.pointer
-    } else {
-      // Fall back to authentication
-      let (key, sigBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-        let (k, s) = try keyManager.createSignerForKey(
-          for: dppIdentity,
-          purpose: .authentication,
-          minimumSecurityLevel: .critical,
-          preferCritical: true
-        )
-        return (k, SendableOpaquePointer(s))
+      ) {
+        return owner
       }
-      mintingKey = key
-      signer = sigBox.pointer
+      guard let auth = km.findSigningKey(
+        for: dppIdentity,
+        purpose: .authentication,
+        minimumSecurityLevel: .critical,
+        preferCritical: true
+      ) else {
+        throw KeyManagerError.noSuitableKey(
+          "No critical owner or authentication key with available private key"
+        )
+      }
+      return auth
     }
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     print("🔑 TOKEN MINT: Selected key \(mintingKey.id) with purpose \(mintingKey.purpose) and security level \(mintingKey.securityLevel)")
 
@@ -1216,9 +1204,10 @@ struct TransitionDetailView: View {
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: mintingKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: note
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1270,42 +1259,31 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to find critical key with owner or authentication purpose
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let burningKey: IdentityPublicKey
-    let signer: OpaquePointer
-
-    // Try owner purpose first
-    let ownerResult: (IdentityPublicKey, SendableOpaquePointer)? = try? await MainActor.run {
-      let (k, s) = try keyManager.createSignerForKey(
+    // Owner-then-authentication critical key, no bytes extraction.
+    // The trampoline pulls private material on demand at sign time.
+    let burningKey = try await MainActor.run { () throws -> IdentityPublicKey in
+      let km = KeyManager.withSharedKeychain()
+      if let owner = km.findSigningKey(
         for: dppIdentity,
         purpose: .owner,
         minimumSecurityLevel: .critical,
         preferCritical: true
-      )
-      return (k, SendableOpaquePointer(s))
-    }
-
-    if let (key, sigBox) = ownerResult {
-      burningKey = key
-      signer = sigBox.pointer
-    } else {
-      // Fall back to authentication
-      let (key, sigBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-        let (k, s) = try keyManager.createSignerForKey(
-          for: dppIdentity,
-          purpose: .authentication,
-          minimumSecurityLevel: .critical,
-          preferCritical: true
-        )
-        return (k, SendableOpaquePointer(s))
+      ) {
+        return owner
       }
-      burningKey = key
-      signer = sigBox.pointer
+      guard let auth = km.findSigningKey(
+        for: dppIdentity,
+        purpose: .authentication,
+        minimumSecurityLevel: .critical,
+        preferCritical: true
+      ) else {
+        throw KeyManagerError.noSuitableKey(
+          "No critical owner or authentication key with available private key"
+        )
+      }
+      return auth
     }
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let note = formInputs["note"]?.isEmpty == false ? formInputs["note"] : nil
 
@@ -1314,9 +1292,10 @@ struct TransitionDetailView: View {
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: burningKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: note
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1351,12 +1330,13 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create token operation signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (freezingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
-    defer {
-      keyManager.destroySigner(signer)
+    // Pick the freezing key (no bytes extraction); construct a
+    // KeychainSigner that pulls private material from Keychain on
+    // demand at sign time.
+    let freezingKey = try await MainActor.run {
+      try findTokenOperationKey(for: dppIdentity)
     }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let note = formInputs["note"]?.isEmpty == false ? formInputs["note"] : nil
 
@@ -1365,9 +1345,10 @@ struct TransitionDetailView: View {
       targetIdentityId: targetIdentityId,
       ownerIdentity: dppIdentity,
       keyId: freezingKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: note
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1402,21 +1383,20 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create token operation signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (unfreezingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
-    defer {
-      keyManager.destroySigner(signer)
+    let unfreezingKey = try await MainActor.run {
+      try findTokenOperationKey(for: dppIdentity)
     }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let result = try await sdk.tokenUnfreeze(
       contractId: contractId,
       targetIdentityId: targetIdentityId,
       ownerIdentity: dppIdentity,
       keyId: unfreezingKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: formInputs["note"]
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1451,21 +1431,20 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create token operation signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (destroyKey, signer) = try createTokenOperationSigner(for: dppIdentity)
-    defer {
-      keyManager.destroySigner(signer)
+    let destroyKey = try await MainActor.run {
+      try findTokenOperationKey(for: dppIdentity)
     }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let result = try await sdk.tokenDestroyFrozenFunds(
       contractId: contractId,
       frozenIdentityId: frozenIdentityId,
       ownerIdentity: dppIdentity,
       keyId: destroyKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: formInputs["note"]
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1500,12 +1479,10 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create token operation signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (claimingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
-    defer {
-      keyManager.destroySigner(signer)
+    let claimingKey = try await MainActor.run {
+      try findTokenOperationKey(for: dppIdentity)
     }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let note = formInputs["publicNote"]?.isEmpty == false ? formInputs["publicNote"] : nil
 
@@ -1514,9 +1491,10 @@ struct TransitionDetailView: View {
       distributionType: distributionType,
       ownerIdentity: dppIdentity,
       keyId: claimingKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: note
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1572,12 +1550,10 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create token operation signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (transferKey, signer) = try createTokenOperationSigner(for: dppIdentity)
-    defer {
-      keyManager.destroySigner(signer)
+    let transferKey = try await MainActor.run {
+      try findTokenOperationKey(for: dppIdentity)
     }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let note = formInputs["note"]?.isEmpty == false ? formInputs["note"] : nil
 
@@ -1587,9 +1563,10 @@ struct TransitionDetailView: View {
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: transferKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: note
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1627,12 +1604,10 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create token operation signer
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (pricingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
-    defer {
-      keyManager.destroySigner(signer)
+    let pricingKey = try await MainActor.run {
+      try findTokenOperationKey(for: dppIdentity)
     }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
     let note = formInputs["publicNote"]?.isEmpty == false ? formInputs["publicNote"] : nil
 
@@ -1642,9 +1617,10 @@ struct TransitionDetailView: View {
       priceData: priceData,
       ownerIdentity: dppIdentity,
       keyId: pricingKey.id,
-      signer: signer,
+      signer: signer.handle,
       note: note
     )
+    _ = signer  // keepalive
 
     return result
   }
@@ -1714,48 +1690,103 @@ struct TransitionDetailView: View {
       contractConfig["requiresIdentityDecryptionBoundedKey"] = true
     }
 
-    // Add optional text fields
-    if let keywords = formInputs["keywords"], !keywords.isEmpty {
-      contractConfig["keywords"] = keywords.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-    }
-    if let description = formInputs["description"], !description.isEmpty {
-      contractConfig["description"] = description
-    }
+    // Optional contract metadata. Both fields live at the top of
+    // the V1 serialized contract format, NOT inside `config`, so we
+    // pass them as siblings to `contractConfig` rather than nesting
+    // them. The Rust FFI maps each to its own JSON parameter.
+    let contractKeywords: [String]? = {
+      guard let raw = formInputs["keywords"], !raw.isEmpty else { return nil }
+      return raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+    }()
+    let contractDescription: String? = {
+      guard let raw = formInputs["description"], !raw.isEmpty else { return nil }
+      return raw
+    }()
 
     // Validate that at least one schema is provided
     if documentSchemas == nil && tokenSchemas == nil {
       throw SDKError.invalidParameter("At least one document schema or token schema must be provided")
     }
 
-    // Use the DPPIdentity for contract creation
-    let dppIdentity = DPPIdentity(
-      id: ownerIdentity.identityId,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
-      balance: UInt64(bitPattern: ownerIdentity.balance),
-      revision: 0
+    // Resolve the wallet that owns this identity — contract create
+    // now goes through `platform-wallet`'s
+    // `createDataContract(...)` (instead of the old
+    // `sdk.dataContractCreate(...)` rs-sdk-ffi path). The
+    // platform-wallet runtime configures an 8 MB worker stack so
+    // the post-broadcast GroveDB proof recursion doesn't blow the
+    // iOS default 512 KB thread stack like it did under rs-sdk-ffi.
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot sign contract create"
+      )
+    }
+
+    // Re-serialize the parsed dicts back to JSON strings — the
+    // wallet-side wrapper takes JSON strings (the V1 contract
+    // format builder lives in `rs-platform-wallet` and assembles
+    // a `serde_json::Map` internally). The form's raw inputs
+    // would also work, but going through the parsed dicts catches
+    // malformed JSON before it crosses the FFI.
+    let documentSchemasJSON = try toJSONString(
+      documentSchemas as Any?,
+      fieldName: "documentSchemas",
+      defaultIfNil: "{}"
+    ) ?? "{}"
+    let tokenSchemasJSON = try toJSONString(tokenSchemas as Any?, fieldName: "tokenSchemas")
+    let groupsJSON = try toJSONString(groups as Any?, fieldName: "groups")
+    let keywordsJSON: String? = try {
+      guard let keywords = contractKeywords, !keywords.isEmpty else { return nil }
+      return try toJSONString(keywords, fieldName: "keywords")
+    }()
+    let configJSON = try toJSONString(
+      contractConfig.isEmpty ? nil : contractConfig,
+      fieldName: "contractConfig"
     )
 
-    // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createContractSigner(for: dppIdentity)
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
+    // External-signer pattern (matches identity flows after #3541):
+    // Rust calls back into Swift over the `KeychainSigner`
+    // trampoline whenever it needs a signature.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
 
-    let result = try await sdk.dataContractCreate(
-      identity: dppIdentity,
-      documentSchemas: documentSchemas,
-      tokenSchemas: tokenSchemas,
-      groups: groups,
-      contractConfig: contractConfig,
+    let contractId = try await wallet.createDataContract(
+      ownerIdentityId: ownerIdentity.identityId,
+      documentSchemasJSON: documentSchemasJSON,
+      tokenSchemasJSON: tokenSchemasJSON,
+      groupsJSON: groupsJSON,
+      keywordsJSON: keywordsJSON,
+      description: contractDescription,
+      contractConfigJSON: configJSON,
       signer: signer
     )
+    // Keepalive: see KeychainSigner lifetime contract.
+    _ = signer
 
-    return result
+    return [
+      "success": true,
+      "contractId": contractId.toBase58String(),
+      "message": "Data contract created and broadcast successfully",
+    ]
+  }
+
+  /// Helper: turn a Swift Foundation value into a JSON string the
+  /// FFI accepts. `nil` input returns `defaultIfNil` (typically
+  /// `nil` for optional FFI params). Throws
+  /// `SDKError.serializationError` on encoding failure.
+  private func toJSONString(
+    _ value: Any?,
+    fieldName: String,
+    defaultIfNil: String? = nil
+  ) throws -> String? {
+    guard let value = value else { return defaultIfNil }
+    guard JSONSerialization.isValidJSONObject(value) else {
+      throw SDKError.serializationError("\(fieldName) is not JSON-serializable")
+    }
+    guard let data = try? JSONSerialization.data(withJSONObject: value),
+          let str = String(data: data, encoding: .utf8) else {
+      throw SDKError.serializationError("Failed to serialize \(fieldName)")
+    }
+    return str
   }
 
   private func executeDataContractUpdate(sdk: SDK) async throws -> Any {
@@ -1811,53 +1842,55 @@ struct TransitionDetailView: View {
       revision: 0
     )
 
-    // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
-    let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (_, signerBox): (IdentityPublicKey, SendableOpaquePointer) = try await MainActor.run {
-      let (k, s) = try keyManager.createContractSigner(for: dppIdentity)
-      return (k, SendableOpaquePointer(s))
-    }
-    let signer = signerBox.pointer
-    defer {
-      keyManager.destroySigner(signer)
-    }
-
-    let result = try await sdk.dataContractUpdate(
-      contractId: contractId,
-      identity: dppIdentity,
-      newDocumentSchemas: newDocumentSchemas,
-      newTokenSchemas: newTokenSchemas,
-      newGroups: newGroups,
-      signer: signer
+    // Contract update via the new platform-wallet path isn't
+    // wired through yet — the previous `sdk.dataContractUpdate(...)`
+    // call always threw `notImplemented` and is now deleted along
+    // with the other legacy rs-sdk-ffi contract surface. Surface
+    // the same error here until a `wallet.updateDataContract(...)`
+    // sibling lands.
+    _ = (contractId, dppIdentity, newDocumentSchemas, newTokenSchemas, newGroups)
+    throw SDKError.notImplemented(
+      "Data contract update is not yet wired through the platform-wallet path. " +
+      "Create a fresh contract for now."
     )
-
-    return result
   }
 
   // MARK: - Helper Functions
 
-  /// Helper function to create a signer for token operations (requires critical owner or authentication key)
+  /// Pick a critical key on `identity` to drive a token operation.
+  /// Tries owner purpose first, falls back to authentication —
+  /// matches the legacy `createTokenOperationSigner` selection
+  /// policy.
+  ///
+  /// Returns just the `IdentityPublicKey`, not a signer: the
+  /// actual signing now happens via `KeychainSigner`'s callback
+  /// trampoline at the call site, which fetches private bytes
+  /// from Keychain on demand and zeroes them after each signature.
+  /// Callers pass `key.id` to the SDK as `keyId:` and a freshly
+  /// constructed `KeychainSigner.handle` as `signer:`.
   @MainActor
-  private func createTokenOperationSigner(for identity: DPPIdentity) throws -> (key: IdentityPublicKey, signer: OpaquePointer) {
+  private func findTokenOperationKey(for identity: DPPIdentity) throws -> IdentityPublicKey {
     let keyManager = KeyManager.withSharedKeychain()
 
-    // Try owner purpose first
-    if let (key, sig) = try? keyManager.createSignerForKey(
+    if let owner = keyManager.findSigningKey(
       for: identity,
       purpose: .owner,
       minimumSecurityLevel: .critical,
       preferCritical: true
     ) {
-      return (key, sig)
+      return owner
     }
-
-    // Fall back to authentication
-    return try keyManager.createSignerForKey(
+    guard let auth = keyManager.findSigningKey(
       for: identity,
       purpose: .authentication,
       minimumSecurityLevel: .critical,
       preferCritical: true
-    )
+    ) else {
+      throw KeyManagerError.noSuitableKey(
+        "No critical owner or authentication key with available private key"
+      )
+    }
+    return auth
   }
 
   private func enrichedInput(for input: TransitionInput) -> TransitionInput {

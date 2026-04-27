@@ -56,6 +56,7 @@ use dashcore::PrivateKey as DashPrivateKey;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -65,7 +66,7 @@ use platform_wallet::derive_identity_auth_keypair;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
 use zeroize::Zeroize;
@@ -90,6 +91,21 @@ use crate::runtime::block_on_worker;
 /// `pubkey_bytes` is borrowed by the FFI for the duration of the call;
 /// the caller retains ownership. Compressed secp256k1 pubkeys are
 /// always 33 bytes (`pubkey_len == 33`); BLS would be 48; etc.
+///
+/// **Contract bounds** — Encryption / Decryption keys carry a
+/// reference to the contract (and optionally a document type)
+/// they're allowed to operate within. Encoded inline as:
+///   - `contract_bounds_kind == 0` → no bounds.
+///   - `contract_bounds_kind == 1` → `SingleContract`. The first
+///     32 bytes at `contract_bounds_id` are the contract id; the
+///     `contract_bounds_document_type` pointer is ignored.
+///   - `contract_bounds_kind == 2` → `SingleContractDocumentType`.
+///     `contract_bounds_id` is the 32-byte contract id;
+///     `contract_bounds_document_type` is a NUL-terminated UTF-8
+///     document type name. Both must be non-null.
+///
+/// All pointers are borrowed for the call duration only — the
+/// FFI does not retain or free them.
 #[repr(C)]
 pub struct IdentityPubkeyFFI {
     pub key_id: u32,
@@ -99,6 +115,152 @@ pub struct IdentityPubkeyFFI {
     pub pubkey_bytes: *const u8,
     pub pubkey_len: usize,
     pub read_only: bool,
+    /// Discriminant for the contract-bounds union. See struct doc.
+    pub contract_bounds_kind: u8,
+    /// 32-byte contract id when `contract_bounds_kind != 0`.
+    pub contract_bounds_id: *const u8,
+    /// NUL-terminated UTF-8 document type name when
+    /// `contract_bounds_kind == 2`. Null otherwise.
+    pub contract_bounds_document_type: *const std::os::raw::c_char,
+}
+
+/// Decode the optional `contract_bounds_*` payload off an
+/// [`IdentityPubkeyFFI`] row.
+///
+/// Shared by the registration and update FFI paths so
+/// Encryption / Decryption keys can carry their bounds through
+/// either entry point. `kind == 0` is "no bounds"; `1` is
+/// `SingleContract { id }`; `2` is
+/// `SingleContractDocumentType { id, document_type_name }`.
+///
+/// **Encryption / Decryption purposes require contract bounds.**
+/// Drive scopes those purposes to a single contract (and optionally
+/// a document type), so registering or updating an identity with an
+/// unbounded encryption / decryption key produces a key that cannot
+/// be used. We reject `kind == 0` for those purposes here so the
+/// failure surfaces as a clean FFI error rather than a key Drive
+/// silently can't use.
+///
+/// `purpose` is the parsed `Purpose` discriminant for the row, used
+/// only for the encryption / decryption guard above.
+///
+/// `row_index` and `field_label` only flavour error messages
+/// (different callers want different prefixes — `add_public_keys[i]`
+/// for update, `identity_pubkeys[i]` for registration). On any
+/// error, populates `out_error` (when non-null) and returns
+/// `Err(result_code)` so the caller can early-return with the same
+/// FFI status it was already returning.
+///
+/// # Safety
+/// Each non-null pointer in the row must remain valid for the
+/// duration of the call. `contract_bounds_id` (when not null) must
+/// point at >=32 bytes; `contract_bounds_document_type` (when not
+/// null) must be a NUL-terminated UTF-8 C string.
+pub(crate) unsafe fn decode_contract_bounds(
+    row: &IdentityPubkeyFFI,
+    purpose: Purpose,
+    row_index: usize,
+    field_label: &str,
+    out_error: *mut PlatformWalletFFIError,
+) -> Result<Option<ContractBounds>, PlatformWalletFFIResult> {
+    match row.contract_bounds_kind {
+        0 => {
+            if matches!(purpose, Purpose::ENCRYPTION | Purpose::DECRYPTION) {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidParameter,
+                        format!(
+                            "{}[{}].contract_bounds_kind = 0 (no bounds) but purpose = {:?} \
+                             requires bounds — Drive scopes Encryption / Decryption keys to a \
+                             specific contract (use kind 1 or 2)",
+                            field_label, row_index, purpose
+                        ),
+                    );
+                }
+                return Err(PlatformWalletFFIResult::ErrorInvalidParameter);
+            }
+            Ok(None)
+        }
+        1 => {
+            if row.contract_bounds_id.is_null() {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorNullPointer,
+                        format!(
+                            "{}[{}].contract_bounds_id is null but kind == 1 \
+                             (SingleContract)",
+                            field_label, row_index
+                        ),
+                    );
+                }
+                return Err(PlatformWalletFFIResult::ErrorNullPointer);
+            }
+            let id_bytes: [u8; 32] =
+                match <[u8; 32]>::try_from(slice::from_raw_parts(row.contract_bounds_id, 32)) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes")
+                    }
+                };
+            Ok(Some(ContractBounds::SingleContract {
+                id: Identifier::from(id_bytes),
+            }))
+        }
+        2 => {
+            if row.contract_bounds_id.is_null() || row.contract_bounds_document_type.is_null() {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorNullPointer,
+                        format!(
+                            "{}[{}].contract_bounds_id or .contract_bounds_document_type \
+                             is null but kind == 2 (SingleContractDocumentType)",
+                            field_label, row_index
+                        ),
+                    );
+                }
+                return Err(PlatformWalletFFIResult::ErrorNullPointer);
+            }
+            let id_bytes: [u8; 32] =
+                match <[u8; 32]>::try_from(slice::from_raw_parts(row.contract_bounds_id, 32)) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes")
+                    }
+                };
+            let doc_type = match CStr::from_ptr(row.contract_bounds_document_type).to_str() {
+                Ok(s) => s.to_string(),
+                Err(e) => {
+                    if !out_error.is_null() {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorUtf8Conversion,
+                            format!(
+                                "{}[{}].contract_bounds_document_type is not valid UTF-8: {}",
+                                field_label, row_index, e
+                            ),
+                        );
+                    }
+                    return Err(PlatformWalletFFIResult::ErrorUtf8Conversion);
+                }
+            };
+            Ok(Some(ContractBounds::SingleContractDocumentType {
+                id: Identifier::from(id_bytes),
+                document_type_name: doc_type,
+            }))
+        }
+        other => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidParameter,
+                    format!(
+                        "{}[{}].contract_bounds_kind = {} is not a valid discriminant \
+                         (0=none, 1=SingleContract, 2=SingleContractDocumentType)",
+                        field_label, row_index, other
+                    ),
+                );
+            }
+            Err(PlatformWalletFFIResult::ErrorInvalidParameter)
+        }
+    }
 }
 
 /// Register a new identity funded by Platform-address balances, using
@@ -209,7 +371,15 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
                 return PlatformWalletFFIResult::ErrorInvalidParameter;
             }
         };
-        input_map.insert(address, entry.credits);
+        // Sum duplicate rows for the same address rather than
+        // overwriting — see the matching comment in
+        // `identity_top_up.rs`. Caller may legitimately split one
+        // address across rows; `insert` alone would silently
+        // under-fund the new identity by the prior contribution.
+        input_map
+            .entry(address)
+            .and_modify(|existing| *existing = existing.saturating_add(entry.credits))
+            .or_insert(entry.credits);
     }
 
     let output_map = if output.is_null() {
@@ -320,13 +490,25 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         }
         let pubkey_bytes: Vec<u8> =
             slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
+        // Decode the optional contract-bounds payload through the
+        // shared helper. Earlier revisions silently dropped these
+        // fields here, so Encryption / Decryption keys registered
+        // via this entry point ended up unbounded on Platform —
+        // matching the update path's parser closes the gap. The
+        // helper also rejects unscoped Encryption / Decryption
+        // keys (Drive requires a contract scope for those).
+        let contract_bounds =
+            match decode_contract_bounds(row, purpose, i, "identity_pubkeys", out_error) {
+                Ok(b) => b,
+                Err(code) => return code,
+            };
         keys_map.insert(
             row.key_id,
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id: row.key_id,
                 purpose,
                 security_level,
-                contract_bounds: None,
+                contract_bounds,
                 key_type,
                 read_only: row.read_only,
                 data: BinaryData::new(pubkey_bytes),

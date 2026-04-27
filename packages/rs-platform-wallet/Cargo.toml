@@ -37,6 +37,8 @@ tracing = "0.1"
 
 # Encoding
 hex = "0.4"
+bs58 = "0.5"
+serde_json = "1.0"
 
 # Image processing (DIP-15 avatar hash + fingerprint)
 sha2 = "0.10"

@@ -442,6 +442,14 @@ struct LoadIdentityView: View {
                             network: network
                         )
                         modelContext.insert(row)
+                        // Back-fill any locally-cached contracts that
+                        // name this identity as their owner. The
+                        // existing `try? modelContext.save()` later
+                        // in this block persists the link.
+                        ContractIdentityLinker.linkIdentityToOwnedContracts(
+                            identity: row,
+                            modelContext: modelContext
+                        )
                     }
 
                     // Insert PersistentPublicKey rows for every key
