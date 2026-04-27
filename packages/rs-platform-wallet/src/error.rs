@@ -133,7 +133,8 @@ pub enum PlatformWalletError {
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
 
-    /// `start_spv` was called while the SPV runtime was already up.
+    /// `SpvRuntime::start` or `SpvRuntime::spawn_in_background` was called
+    /// while the SPV runtime was already up.
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
 

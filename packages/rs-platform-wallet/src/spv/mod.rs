@@ -2,9 +2,10 @@
 //! and the platform-address sync coordinator.
 //!
 //! The runtime owns the connection to dashcore peers, header chain
-//! state, filter sync, and transaction broadcast over P2P. It is built
-//! lazily by `PlatformWalletManager::start_spv` and shared across every
-//! wallet the manager owns.
+//! state, filter sync, and transaction broadcast over P2P. It is obtained
+//! lazily from the manager via `spv()` / `spv_arc()` and started with
+//! [`SpvRuntime::start`] or [`SpvRuntime::spawn_in_background`], then shared
+//! across every wallet the manager owns.
 
 mod runtime;
 

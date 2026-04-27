@@ -37,6 +37,7 @@ infrastructure.
 use std::sync::Arc;
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
 use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::events::PlatformEventHandler;
@@ -163,9 +164,9 @@ see the same UTXOs, balances, and identities through the `Arc<RwLock<...>>` insi
 | Accessor | Type | Purpose |
 |----------|------|---------|
 | `wallet.core()` | `CoreWallet` | Addresses, UTXOs, transaction broadcast |
-| `wallet.identity` | `IdentityWallet` | Identity registration and top-ups |
-| `wallet.platform` | `PlatformAddressWallet` | Platform address credit balances |
-| `wallet.tokens` | `TokenWallet` | Platform token balances |
+| `wallet.identity()` | `IdentityWallet` | Identity registration and top-ups |
+| `wallet.platform()` | `PlatformAddressWallet` | Platform address credit balances |
+| `wallet.tokens()` | `TokenWallet` | Platform token balances |
 
 The `wallet.asset_locks()` accessor returns an `Arc<AssetLockManager>` for tracking
 the lifecycle of asset lock transactions (the on-ramp from UTXO to Platform credits).
@@ -195,8 +196,8 @@ pub struct PlatformWalletInfo {
 ```
 
 `ManagedWalletInfo` (from `key-wallet`) holds the HD accounts. `IdentityManager`
-holds all `ManagedIdentity` records. The token maps index by `(contract_id,
-identity_id)`.
+holds all `ManagedIdentity` records. The token maps index by `(identity_id,
+contract_id)`.
 
 ## Wallet Lifecycle
 
@@ -241,153 +242,93 @@ changeset to restore wallet and identity state without re-fetching from the netw
 See `PERSISTENCE_REDESIGN.md` in `packages/rs-platform-wallet/` for the full design
 rationale, including why the previous lock-contention approach was replaced.
 
+## Private Key Storage
+
+`rs-platform-wallet` is deliberately agnostic about where seed material and signing
+keys live. The crate never persists the seed itself: `PlatformWalletPersistence`
+captures only the changeset (UTXOs, identity records, balances, watch-only xpubs),
+so an embedding application is responsible for choosing a storage strategy that
+matches its threat model. Three patterns cover most deployments.
+
+### In-process seed (development and dApps)
+
+The simplest setup: load a BIP-39 mnemonic or 64-byte seed in memory and call
+`create_wallet_from_mnemonic` / `create_wallet_from_seed_bytes`. The `Wallet`
+retains the seed for HD derivation while the process is running. Drop the seed
+material as soon as you no longer need it.
+
+This is appropriate for tests, server-side bots, or dApps where the user explicitly
+provides a seed per session. **Do not** ship this pattern to end-user mobile or
+desktop apps without an OS-level secret store underneath it.
+
+### OS-managed secret storage (mobile and desktop)
+
+For shipped applications, route the seed through the platform's native secret
+store. The wallet stays watch-only at rest and the seed is read on-demand for
+signing:
+
+- **iOS / macOS** — store the encoded mnemonic (or seed bytes) in the iOS
+  Keychain via the Security framework, gated behind biometrics. The Swift SDK
+  examples in `packages/swift-sdk/SwiftExampleApp` demonstrate the unlock-then-sign
+  pattern.
+- **Android** — use the Android Keystore plus `EncryptedSharedPreferences`.
+- **Linux / Windows** — Secret Service (libsecret) or DPAPI / Windows Credential
+  Manager respectively, fronted by a small Rust crate such as `keyring`.
+
+The integration shape is the same in all three cases:
+1. Persist only public material via `PlatformWalletPersistence` (xpubs, address
+   pools, identity records).
+2. Keep the wallet watch-only in the manager for routine queries and balance
+   display — no seed material in memory.
+3. On a signing path, fetch the seed from the OS secret store, register a fully
+   keyed wallet for the operation, perform the signing, then drop the in-memory
+   key material.
+
+### External signers (hardware wallets, HSMs, custodial)
+
+Hardware wallets (Trezor, Ledger), remote signers, or custodial services do not
+expose private keys at all. Integrate them by implementing the
+`dpp::identity::signer::Signer` trait and routing identity operations through the
+external-signer variants on `IdentityWallet` (`register_identity_with_funding_external_signer`,
+`top_up_identity_with_signer`, `withdraw_credits_with_external_signer`).
+For UTXO-side spends, build transactions using the wallet's PSBT helpers and sign
+externally before broadcasting through `SpvBroadcaster`.
+
+This is the **recommended path for production**: the platform wallet handles state,
+balances, and changeset persistence, while the signer module isolates key custody.
+The internal `IdentitySigner` flow is being phased out for the same reason — it
+forces the seed into the wallet process and is incompatible with watch-only setups.
+
 ## Identity Flow
 
-The lifecycle from seed phrase to a funded Platform identity runs through three phases:
+The lifecycle from seed phrase to a funded Platform identity runs through three
+phases — **register**, **top up**, and **withdraw** — each exposed as a method on
+`IdentityWallet` (accessed via `platform_wallet.identity()`):
 
-### 1. Register the Identity
+- **Register** converts a UTXO into an asset lock transaction that funds a new
+  identity on Platform. The asset lock is created, signed, and broadcast on the Core
+  chain; the Platform state transition is sent to DAPI once the asset lock is
+  confirmed. See `register_identity`, `register_identity_with_funding`, and
+  `register_identity_with_funding_external_signer`.
+- **Top up** locks another UTXO and adds credits to an existing identity. See
+  `top_up_identity` and `top_up_identity_with_funding`.
+- **Withdraw** creates a Platform state transition that returns credits to the Core
+  chain as Dash. See `withdraw_credits`, `withdraw_credits_with_external_signer`,
+  and `withdraw_credits_with_signer`.
 
-Registration converts a UTXO into an asset lock transaction that funds a new identity
-on Platform. The asset lock is created, signed, and broadcast on the Core chain; the
-Platform state transition is sent to DAPI once the asset lock is confirmed.
+Each operation has a convenience variant that funds from wallet UTXOs and signs with
+the wallet's internal signer, plus an `_with_funding` / `_external_signer` variant
+for explicit control over the funding source and signer. **For new code, prefer the
+`_external_signer` variants** — the internal `IdentitySigner` is being deprecated due
+to incompatibility with watch-only wallets and potential Tokio worker deadlocks.
 
-Registration is handled through `IdentityWallet`, which is accessed via
-`platform_wallet.identity()`. The convenience method funds the identity directly from
-wallet UTXOs:
+End-to-end code samples for each flow are not yet checked in alongside this chapter;
+see [`packages/rs-platform-wallet/examples/basic_usage.rs`][basic_usage] for the
+manager bring-up path. Worked examples for register / top-up / withdraw are tracked
+as a follow-up against the integration-test framework PR
+([dashpay/platform#3549](https://github.com/dashpay/platform/pull/3549)).
 
-```rust
-use platform_wallet::PlatformWallet;
-
-let identity = platform_wallet
-    .identity()
-    .register_identity(
-        100_000_000, // amount_duffs
-        0,           // identity_index (BIP-9 hardened path)
-        3,           // key_count
-        None,        // settings (PutSettings)
-    )
-    .await?;
-```
-
-For explicit control over the funding source, use `register_identity_with_funding`:
-
-```rust
-use platform_wallet::{IdentityFundingMethod, PlatformWallet};
-
-let funding = IdentityFundingMethod::FundWithWallet { amount_duffs: 100_000_000 };
-// or: IdentityFundingMethod::UseAssetLock { proof, private_key }
-
-let identity = platform_wallet
-    .identity()
-    .register_identity_with_funding(funding, 0, 3, None)
-    .await?;
-```
-
-For external-signer setups (hardware wallets, watch-only wallets, or iOS/Swift
-integrations) use `register_identity_with_funding_external_signer`. This is the
-**recommended path** for new code — the internal `IdentitySigner` variant is being
-deprecated due to incompatibility with watch-only wallets and potential Tokio
-worker deadlocks:
-
-```rust
-use platform_wallet::{IdentityFundingMethod, PlatformWallet};
-use dpp::identity::signer::Signer;
-
-let funding = IdentityFundingMethod::FundWithWallet { amount_duffs: 100_000_000 };
-
-let identity = platform_wallet
-    .identity()
-    .register_identity_with_funding_external_signer(
-        funding,
-        0,      // identity_index
-        3,      // key_count
-        &my_signer,
-        None,   // settings
-    )
-    .await?;
-```
-
-### 2. Top Up Credits
-
-Once an identity exists, you can add more credits to it by locking another UTXO. The
-convenience method selects UTXOs automatically:
-
-```rust
-use platform_wallet::PlatformWallet;
-
-platform_wallet
-    .identity()
-    .top_up_identity(
-        &identity_id,  // &Identifier
-        1,             // topup_index (incrementing per top-up)
-        50_000_000,    // amount_duffs
-        None,          // settings
-    )
-    .await?;
-```
-
-For explicit control over the funding source, use `top_up_identity_with_funding`.
-`TopUpFundingMethod` mirrors `IdentityFundingMethod` with the same two variants:
-
-```rust
-use platform_wallet::{TopUpFundingMethod, PlatformWallet};
-
-let funding = TopUpFundingMethod::FundWithWallet { amount_duffs: 50_000_000 };
-// or: TopUpFundingMethod::UseAssetLock { proof, private_key }
-
-platform_wallet
-    .identity()
-    .top_up_identity_with_funding(&identity_id, funding, 1, None)
-    .await?;
-```
-
-### 3. Withdraw Credits
-
-Credits can be withdrawn back to the Core chain as Dash. The withdrawal creates a
-Platform state transition; the Core chain processes it in the next withdrawal cycle.
-
-The convenience method looks up the identity in the local `IdentityManager` and signs
-using the wallet's internal signer:
-
-```rust
-use platform_wallet::PlatformWallet;
-use dashcore::Address as DashAddress;
-
-platform_wallet
-    .identity()
-    .withdraw_credits(
-        &identity_id,  // &Identifier
-        10_000_000,    // amount (in platform credits)
-        &to_address,   // &DashAddress (Core P2PKH address)
-        None,          // settings
-    )
-    .await?;
-```
-
-For external-signer setups, use `withdraw_credits_with_external_signer`. This is the
-**recommended path** for new code — the same internal `IdentitySigner` deprecation
-applies here as for registration:
-
-```rust
-use platform_wallet::PlatformWallet;
-use dashcore::Address as DashAddress;
-
-platform_wallet
-    .identity()
-    .withdraw_credits_with_external_signer(
-        &identity_id,
-        10_000_000,
-        &to_address,
-        &my_signer,
-        None,
-    )
-    .await?;
-```
-
-The `withdraw_credits_with_signer` variant is available for callers that manage
-identities outside the `IdentityManager` (for example, evo-tool's
-`QualifiedIdentity`): it accepts an `&Identity` and asset-lock key directly and
-returns the remaining credit balance as `u64`.
+[basic_usage]: https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-platform-wallet/examples/basic_usage.rs
 
 ### Asset Lock Lifecycle
 
@@ -406,7 +347,7 @@ funding UTXO. When an InstantLock event arrives via SPV, the manager notifies an
 let asset_locks = wallet.asset_locks();
 let locked = asset_locks.list_tracked_locks_blocking();
 for lock in locked {
-    println!("outpoint={} status={:?}", lock.outpoint, lock.status);
+    println!("outpoint={} status={:?}", lock.out_point, lock.status);
 }
 ```
 
@@ -414,8 +355,9 @@ for lock in locked {
 
 ### SPV Sync
 
-`SpvRuntime` drives the block-filter sync loop across all registered wallets. It is
-started automatically when the first wallet is registered. The sync loop:
+`SpvRuntime` drives the block-filter sync loop across all registered wallets. After
+registering wallets, explicitly start the runtime with `SpvRuntime::start` or
+`SpvRuntime::spawn_in_background` to begin syncing. The sync loop:
 
 1. Downloads compact block filters from the peer network.
 2. Matches filters against each wallet's monitored addresses.
@@ -443,8 +385,9 @@ if let Some(account) = state.core_wallet.accounts.standard_bip44_accounts.get(&0
 
 For the Platform address system (Bech32m P2PKH/P2SH/Orchard), see
 [Platform Addresses](../addresses/platform-addresses.md). Credit balances for
-platform addresses are tracked in `PlatformWalletInfo.token_balances` and refreshed
-by `PlatformAddressSyncManager`.
+platform addresses are tracked in the platform-address provider state
+(`PlatformPaymentAddressProvider`, per-account `found` map) and refreshed by
+`PlatformAddressSyncManager`.
 
 ### Transaction Broadcast
 
