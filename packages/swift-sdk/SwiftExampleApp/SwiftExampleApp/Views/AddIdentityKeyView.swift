@@ -331,7 +331,6 @@ struct AddIdentityKeyView: View {
             //    the path build + secp256k1 derive; we get the public
             //    bytes + the 32-byte private scalar back.
             let preview = try wallet.deriveIdentityAuthKeyAtSlot(
-                walletId: walletId,
                 identityIndex: identity.identityIndex,
                 keyId: chosenKeyId,
                 network: network

@@ -916,8 +916,23 @@ struct IdentityDetailView: View {
                     token.dataContract?.networkRaw == target
                 }
             )
-            guard let allTokens = try? modelContext.fetch(descriptor),
-                  !allTokens.isEmpty else {
+            // Use an explicit do-catch (not `try?`) so a thrown
+            // SwiftData fetch error surfaces in `tokensError`
+            // instead of collapsing into the same "no tokens"
+            // branch as a legitimately empty result. Earlier
+            // `try?` revisions also wiped any previously-loaded
+            // balances on a transient failure; preserve them
+            // here so a flaky reload doesn't blank out the
+            // section.
+            let allTokens: [PersistentToken]
+            do {
+                allTokens = try modelContext.fetch(descriptor)
+            } catch {
+                tokensError =
+                    "Failed to load local tokens: \(error.localizedDescription)"
+                return
+            }
+            guard !allTokens.isEmpty else {
                 tokenBalances = []
                 return
             }

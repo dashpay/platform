@@ -872,8 +872,6 @@ extension ManagedPlatformWallet {
     ///      signer:)`.
     ///
     /// - Parameters:
-    ///   - walletId: 32-byte wallet id (Rust hands this to the
-    ///     resolver callback to look up the mnemonic in Keychain).
     ///   - identityIndex: BIP-9 identity index in the HD tree.
     ///   - keyId: hardened key index. Caller picks
     ///     `max(existingKeyIds) + 1` to extend an existing identity.
@@ -886,17 +884,21 @@ extension ManagedPlatformWallet {
     ///   (mnemonic missing, bad slot, derivation failure).
     @MainActor
     public func deriveIdentityAuthKeyAtSlot(
-        walletId: Data,
         identityIndex: UInt32,
         keyId: UInt32,
         network: DashSDKNetwork,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityRegistrationKeyPreview {
-        // Public API takes arbitrary `Data`. An empty / short
-        // `walletId` would make `bindMemory(to: UInt8).baseAddress`
-        // nil and the force-unwrap below crash. Reject the bad
-        // shape up front so callers see a recoverable error.
-        guard walletId.count == 32 else {
+        // The FFI takes a 32-byte wallet id which the resolver uses
+        // to look up the mnemonic in iOS Keychain. Pin to
+        // `self.walletId` here — the method is already scoped to
+        // this `ManagedPlatformWallet` instance, so accepting a
+        // separate `walletId` parameter would let a caller derive
+        // a key from one wallet's mnemonic while attributing it
+        // to a different wallet's `ManagedPlatformWallet`. Defensive
+        // length guard for the (unexpected but possible) case where
+        // the instance was constructed with a malformed wallet id.
+        guard self.walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter
         }
         let resolver = MnemonicResolver(storage: storage)
@@ -904,7 +906,7 @@ extension ManagedPlatformWallet {
         var row = identityKeyPreviewFFIEmpty()
         var error = PlatformWalletFFIError()
 
-        let result = walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+        let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
             let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
             return dash_sdk_derive_identity_key_at_slot_with_resolver(
                 network,
