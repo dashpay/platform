@@ -37,11 +37,14 @@
 pub mod bank;
 pub mod cleanup;
 pub mod config;
+pub mod context_provider;
 pub mod harness;
 pub mod panic_hook;
 pub mod persistence;
 pub mod registry;
+pub mod sdk;
 pub mod signer;
+pub mod spv;
 pub mod wait;
 pub mod wallet_factory;
 pub mod workdir;
