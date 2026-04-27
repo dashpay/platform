@@ -1156,6 +1156,490 @@ impl TokenWallet {
     }
 }
 
+// ---------------------------------------------------------------------------
+// External-signer helpers (FFI-facing)
+// ---------------------------------------------------------------------------
+//
+// These wrap the `_with_signer` methods above with the contract fetch and
+// the identity / signing-key lookup so the FFI layer stays a thin shim.
+// Each helper:
+//   1. Fetches the data contract by id (no caller-supplied contract).
+//   2. Resolves the signing key on the identity (AUTHENTICATION purpose,
+//      MASTER or HIGH security, ECDSA_SECP256K1).
+//   3. Delegates to the existing `_with_signer` method using the
+//      caller-provided `Signer` implementation.
+//
+// Keeping the orchestration here rather than in the FFI honours the
+// `swift-sdk/CLAUDE.md` "high-level operations go through platform-wallet"
+// rule.
+
+impl TokenWallet {
+    /// Resolve the AUTHENTICATION signing key on an identity for token
+    /// state-transition operations. Mirrors the lookup in
+    /// `resolve_identity_and_signer` but only returns the key — callers
+    /// that bring their own `Signer` skip the `IdentitySigner`
+    /// construction.
+    async fn resolve_signing_key(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<IdentityPublicKey, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+        let identity = info
+            .identity_manager
+            .identity(identity_id)
+            .map(|m| m.identity.clone())
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+
+        let signing_key = identity
+            .get_first_public_key_matching(
+                Purpose::AUTHENTICATION,
+                [SecurityLevel::MASTER, SecurityLevel::HIGH].into(),
+                [KeyType::ECDSA_SECP256K1].into(),
+                false,
+            )
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "No authentication key found on identity".to_string(),
+                )
+            })?
+            .clone();
+
+        Ok(signing_key)
+    }
+
+    /// Fetch a data contract by id from Platform.
+    async fn fetch_data_contract(
+        &self,
+        contract_id: Identifier,
+    ) -> Result<Arc<DataContract>, PlatformWalletError> {
+        use dash_sdk::platform::Fetch;
+
+        let contract = DataContract::fetch(&*self.sdk, contract_id)
+            .await
+            .map_err(|e| PlatformWalletError::TokenError(format!("Fetch contract failed: {}", e)))?
+            .ok_or_else(|| {
+                PlatformWalletError::TokenError(format!(
+                    "Data contract {} not found on Platform",
+                    contract_id
+                ))
+            })?;
+        Ok(Arc::new(contract))
+    }
+
+    /// Transfer tokens with an external signer. The contract is fetched
+    /// internally; the signing key is selected via [`Self::resolve_signing_key`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transfer_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        from_identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        to_identity_id: Identifier,
+        amount: TokenAmount,
+        public_note: Option<String>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::TransferResult, PlatformWalletError> {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&from_identity_id).await?;
+
+        self.transfer_with_signer(
+            data_contract,
+            token_position,
+            from_identity_id,
+            to_identity_id,
+            amount,
+            &signing_key,
+            signer,
+            public_note,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token transfer failed: {}", e)))
+    }
+
+    /// Burn tokens with an external signer. Contract fetched internally.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn burn_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        amount: TokenAmount,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::BurnResult, PlatformWalletError> {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.burn_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            amount,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token burn failed: {}", e)))
+    }
+
+    /// Mint tokens with an external signer. Contract fetched internally.
+    /// `recipient_id == None` mints to `identity_id`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn mint_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        recipient_id: Option<Identifier>,
+        amount: TokenAmount,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, PlatformWalletError> {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.mint_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            amount,
+            recipient_id,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token mint failed: {}", e)))
+    }
+
+    /// Claim a distribution with an external signer. Contract fetched internally.
+    /// Claim is not group-gated.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn claim_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        distribution_type: dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType,
+        public_note: Option<String>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::ClaimResult, PlatformWalletError> {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.claim_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            distribution_type,
+            &signing_key,
+            signer,
+            public_note,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token claim failed: {}", e)))
+    }
+
+    /// Freeze the entire balance of `frozen_identity_id` for the token at
+    /// `token_position` on `token_contract_id`. Contract fetched internally.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn freeze_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        frozen_identity_id: Identifier,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, PlatformWalletError> {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.freeze_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            frozen_identity_id,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token freeze failed: {}", e)))
+    }
+
+    /// Unfreeze the entire frozen balance of `frozen_identity_id` for the
+    /// token at `token_position` on `token_contract_id`. Contract fetched
+    /// internally.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn unfreeze_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        frozen_identity_id: Identifier,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::UnfreezeResult, PlatformWalletError> {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.unfreeze_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            frozen_identity_id,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token unfreeze failed: {}", e)))
+    }
+
+    /// Pause all token operations for the token at `token_position` on
+    /// `token_contract_id`. Contract fetched internally. Pause is an
+    /// emergency action and targets the token itself — no target identity.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn pause_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, PlatformWalletError>
+    {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.pause_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token pause failed: {}", e)))
+    }
+
+    /// Resume all token operations for the token at `token_position` on
+    /// `token_contract_id`. Contract fetched internally. Resume is an
+    /// emergency action and targets the token itself — no target identity.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn resume_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, PlatformWalletError>
+    {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.resume_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token resume failed: {}", e)))
+    }
+
+    /// Destroy the entire frozen balance of `frozen_identity_id` for the
+    /// token at `token_position` on `token_contract_id`. Contract fetched
+    /// internally. The Rust builder takes no `amount` — the action always
+    /// destroys the full frozen balance.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn destroy_frozen_funds_external_signer<
+        S: dpp::identity::signer::Signer<IdentityPublicKey>,
+    >(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        frozen_identity_id: Identifier,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<
+        dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult,
+        PlatformWalletError,
+    > {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.destroy_frozen_funds_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            frozen_identity_id,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| {
+            PlatformWalletError::TokenError(format!("Token destroy frozen funds failed: {}", e))
+        })
+    }
+
+    /// Configure the direct-purchase price for the token at
+    /// `token_position` on `token_contract_id`. Contract fetched
+    /// internally. The simple-form FFI takes a single
+    /// `price_per_token`: a non-zero value is lifted into
+    /// `TokenPricingSchedule::SinglePrice(price)`, while `0` clears
+    /// the schedule (`None` — disables direct purchase).
+    ///
+    /// The richer `TokenPricingSchedule::SetPrices(BTreeMap<...>)`
+    /// (tiered / volume-discount pricing) is intentionally not
+    /// surfaced through this entry point; a future helper can add it
+    /// without changing the flat-price path.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn set_price_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        price_per_token: u64,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::SetPriceResult, PlatformWalletError> {
+        use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        let pricing_schedule = if price_per_token == 0 {
+            None
+        } else {
+            Some(TokenPricingSchedule::SinglePrice(price_per_token))
+        };
+
+        self.set_price_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            pricing_schedule,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token set price failed: {}", e)))
+    }
+
+    /// Purchase `amount` of the token at `token_position` on
+    /// `token_contract_id`. Contract fetched internally. Purchase is
+    /// not group-gated; the buyer's identity is the only actor.
+    ///
+    /// `total_agreed_price` is the credits the caller agrees to pay in
+    /// total for `amount` tokens — Platform rejects the transition if
+    /// the on-chain pricing schedule disagrees, protecting the buyer
+    /// from price-change races between fetch and submit.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn purchase_external_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        amount: TokenAmount,
+        total_agreed_price: dpp::fee::Credits,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::DirectPurchaseResult, PlatformWalletError>
+    {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.purchase_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            amount,
+            total_agreed_price,
+            &signing_key,
+            signer,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token purchase failed: {}", e)))
+    }
+
+    /// Update token configuration with an external signer. Contract is
+    /// fetched internally; the signing key is selected via
+    /// [`Self::resolve_signing_key`]. `config_change` is the full
+    /// `TokenConfigurationChangeItem` enum so this entry point stays
+    /// open-ended for the variants the FFI doesn't yet surface.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_config_external_signer<
+        S: dpp::identity::signer::Signer<IdentityPublicKey>,
+    >(
+        &self,
+        identity_id: Identifier,
+        token_contract_id: Identifier,
+        token_position: TokenContractPosition,
+        config_change: dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        signer: &S,
+    ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, PlatformWalletError>
+    {
+        let data_contract = self.fetch_data_contract(token_contract_id).await?;
+        let signing_key = self.resolve_signing_key(&identity_id).await?;
+
+        self.update_config_with_signer(
+            data_contract,
+            token_position,
+            identity_id,
+            config_change,
+            &signing_key,
+            signer,
+            public_note,
+            group_info,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::TokenError(format!("Token config update failed: {}", e)))
+    }
+}
+
 impl std::fmt::Debug for TokenWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenWallet")
