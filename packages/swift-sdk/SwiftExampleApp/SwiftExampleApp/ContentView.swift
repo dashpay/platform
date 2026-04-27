@@ -78,9 +78,9 @@ struct ContentView: View {
 
                 // Tab 2: Wallets
                 WalletsTabView()
+                    .accessibilityIdentifier("rootTab.wallets")
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
-                            .accessibilityIdentifier("rootTab.wallets")
                     }
                     .tag(RootTab.wallets)
 

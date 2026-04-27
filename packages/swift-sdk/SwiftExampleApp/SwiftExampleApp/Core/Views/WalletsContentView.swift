@@ -54,7 +54,8 @@ struct WalletsContentView: View {
                         } label: {
                             WalletRowView(wallet: wallet)
                         }
-                        .accessibilityIdentifier("wallets.walletRow.\(wallet.label)")
+                        .accessibilityIdentifier("wallets.walletRow.\(wallet.walletId.toHexString())")
+                        .accessibilityLabel(wallet.label)
                     }
                 }
             }

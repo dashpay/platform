@@ -18,9 +18,8 @@ jobs:
         with:
           clean: true
 
-      - name: Force clean working directory
+      - name: Reset checked-out worktree
         run: |
-          git clean -ffdx
           git reset --hard HEAD
 
       - name: Show Xcode and Swift versions
@@ -38,6 +37,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
 
       - name: Add iOS simulator Rust target
         run: |
@@ -52,33 +53,23 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.HOME }}/.local/protoc-32.0/bin
-            ${{ env.HOME }}/.local/protoc-32.0/include
+            ~/.local/protoc-32.0/bin
+            ~/.local/protoc-32.0/include
           key: protoc/32.0/${{ runner.os }}/universal
+          restore-keys: |
+            protoc/32.0/${{ runner.os }}/
 
       - name: Install Protobuf if cache miss
         if: steps.cache-protoc.outputs.cache-hit != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
           VERSION=32.0
           OS=osx-universal_binary
           PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
           mkdir -p "$PROTOC_DIR"
-          curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
-            -o /tmp/protoc.zip \
+          curl -fsSL -o /tmp/protoc.zip \
             "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
           unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
-
-      - name: Save cached Protobuf
-        if: steps.cache-protoc.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ${{ env.HOME }}/.local/protoc-32.0/bin
-            ${{ env.HOME }}/.local/protoc-32.0/include
-          key: protoc/32.0/${{ runner.os }}/universal
 
       - name: Verify protoc and export env
         run: |
@@ -123,13 +114,17 @@ jobs:
           abort "No available iOS simulator runtime found" unless runtime
 
           preferred_names = ["iPhone 16", "iPhone 16e"]
+          supported_ids = runtime.fetch("supportedDeviceTypes", []).map { |item| item["identifier"] }
+          candidates = device_types.select do |item|
+            supported_ids.empty? || supported_ids.include?(item["identifier"])
+          end
           device = preferred_names
-            .map { |name| device_types.find { |item| item["name"] == name } }
+            .map { |name| candidates.find { |item| item["name"] == name } }
             .compact
             .first
-          device ||= device_types.find { |item| item["name"].start_with?("iPhone") && !item["name"].include?("SE") }
-          device ||= device_types.find { |item| item["name"].start_with?("iPhone") }
-          abort "No iPhone simulator device type found" unless device
+          device ||= candidates.find { |item| item["name"].start_with?("iPhone") && !item["name"].include?("SE") }
+          device ||= candidates.find { |item| item["name"].start_with?("iPhone") }
+          abort "No compatible iPhone simulator device type found for runtime #{runtime.fetch("name")}" unless device
 
           name = ENV.fetch("SIM_NAME")
           stdout, stderr, status = Open3.capture3(

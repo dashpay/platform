@@ -21,10 +21,6 @@ final class SwiftExampleAppUITests: XCTestCase {
         static let confirmSeedCreateWalletButton = "seedBackup.createWalletButton"
         static let walletInfoButton = "walletDetail.infoButton"
         static let deleteWalletButton = "walletInfo.deleteWalletButton"
-
-        static func walletRow(named name: String) -> String {
-            "wallets.walletRow.\(name)"
-        }
     }
 
     override func setUpWithError() throws {
@@ -65,15 +61,22 @@ final class SwiftExampleAppUITests: XCTestCase {
         )
         failIfRecoveryPromptVisible(in: app, timeout: 0)
 
-        let walletsTab = button(Identifier.walletsTab, in: app)
-        if walletsTab.exists && walletsTab.isHittable {
+        let walletsTab = app.tabBars.buttons
+            .matching(identifier: Identifier.walletsTab)
+            .firstMatch
+        if walletsTab.waitForExistence(timeout: 2) {
             walletsTab.tap()
         } else {
             let labeledWalletsTab = app.tabBars.buttons["Wallets"]
-            if labeledWalletsTab.exists && labeledWalletsTab.isHittable {
+            if labeledWalletsTab.waitForExistence(timeout: 2) {
                 labeledWalletsTab.tap()
             } else {
-                tapTabBarItem(index: 1, itemCount: 5, in: app)
+                let indexedWalletsTab = app.tabBars.buttons.element(boundBy: 1)
+                XCTAssertTrue(
+                    indexedWalletsTab.waitForExistence(timeout: 5),
+                    "Expected Wallets tab button to exist."
+                )
+                indexedWalletsTab.tap()
             }
         }
 
@@ -143,7 +146,7 @@ final class SwiftExampleAppUITests: XCTestCase {
                 .tap()
         }
         XCTAssertTrue(
-            wait(timeout: 5) { isSwitchOn(wroteItDownToggle) },
+            waitForSwitchToTurnOn(wroteItDownToggle, timeout: 5),
             "Expected seed backup confirmation switch to turn on."
         )
 
@@ -199,11 +202,23 @@ final class SwiftExampleAppUITests: XCTestCase {
 
     @MainActor
     private func scrollToWalletRow(named walletName: String, in app: XCUIApplication) -> XCUIElement {
-        let row = element(Identifier.walletRow(named: walletName), in: app)
+        let row = app.buttons
+            .matching(NSPredicate(format: "label == %@", walletName))
+            .firstMatch
         for _ in 0..<8 where !row.exists {
             app.swipeUp()
         }
-        return row
+        if row.exists {
+            return row
+        }
+
+        let label = app.staticTexts
+            .matching(NSPredicate(format: "label == %@", walletName))
+            .firstMatch
+        for _ in 0..<8 where !label.exists {
+            app.swipeUp()
+        }
+        return label
     }
 
     @MainActor
@@ -211,19 +226,6 @@ final class SwiftExampleAppUITests: XCTestCase {
         for _ in 0..<6 where !(element.exists && element.isHittable) {
             app.swipeUp()
         }
-    }
-
-    @MainActor
-    private func tapTabBarItem(index: Int, itemCount: Int, in app: XCUIApplication) {
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 10), "Expected tab bar to be present.")
-
-        let itemWidth = tabBar.frame.width / CGFloat(itemCount)
-        let x = tabBar.frame.minX + itemWidth * (CGFloat(index) + 0.5)
-        let y = tabBar.frame.midY
-        app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: x, dy: y))
-            .tap()
     }
 
     @MainActor
@@ -266,9 +268,12 @@ final class SwiftExampleAppUITests: XCTestCase {
         _ element: XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
-        wait(timeout: timeout) {
-            element.exists && element.isEnabled
+        let predicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            return element.exists && element.isEnabled
         }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     @MainActor
@@ -276,9 +281,26 @@ final class SwiftExampleAppUITests: XCTestCase {
         _ element: XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
-        wait(timeout: timeout) {
-            !element.exists
+        let predicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            return !element.exists
         }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForSwitchToTurnOn(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            guard let value = element.value as? String else { return false }
+            return value == "1" || value.lowercased() == "true"
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     @MainActor
@@ -289,15 +311,4 @@ final class SwiftExampleAppUITests: XCTestCase {
         return value == "1" || value.lowercased() == "true"
     }
 
-    @MainActor
-    private func wait(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        return condition()
-    }
 }
