@@ -106,6 +106,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;

@@ -29,9 +29,45 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let attrs = function.attrs;
     let vis = function.vis;
-    let sig = function.sig;
+    let mut sig = function.sig;
     let block = function.block;
     let fn_ident = sig.ident.clone();
+
+    // If the function is async, we strip async from the outer signature
+    // and run the body on a new tokio current-thread runtime inside the
+    // spawned thread. This keeps the externally-visible function sync so
+    // that it works with `#[test]` (and avoids needing `#[tokio::test]`).
+    let is_async = sig.asyncness.is_some();
+    if is_async {
+        sig.asyncness = None;
+    }
+
+    // TODO(issue #3535): migrate to `dash_async::block_on` — the
+    // inline `Builder::new_current_thread().block_on(...)` pattern can
+    // deadlock inside a running runtime.
+    let spawned_body = if is_async {
+        quote! {
+            builder
+                .spawn(move || {
+                    ::tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("failed to build tokio runtime for stack_size thread")
+                        .block_on(async move #block)
+                })
+                .expect("failed to spawn stack_size thread")
+                .join()
+                .expect("stack_size thread panicked")
+        }
+    } else {
+        quote! {
+            builder
+                .spawn(move || #block)
+                .expect("failed to spawn stack_size thread")
+                .join()
+                .expect("stack_size thread panicked")
+        }
+    };
 
     TokenStream::from(quote! {
         #(#attrs)*
@@ -40,11 +76,7 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .stack_size(#stack_size_expr)
                 .name(::std::string::String::from(stringify!(#fn_ident)));
 
-            builder
-                .spawn(|| #block)
-                .expect("failed to spawn stack_size thread")
-                .join()
-                .expect("stack_size thread panicked")
+            #spawned_body
         }
     })
 }

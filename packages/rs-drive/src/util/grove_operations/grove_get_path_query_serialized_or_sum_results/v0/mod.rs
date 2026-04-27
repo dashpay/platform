@@ -112,7 +112,7 @@ mod tests {
         let path_query = PathQuery::new(vec![b"root".to_vec()], SizedQuery::new(query, None, None));
 
         let mut ops = vec![];
-        let (results, count) = drive
+        let (results, _count) = drive
             .grove_get_path_query_serialized_or_sum_results_v0(
                 &path_query,
                 Some(&tx),

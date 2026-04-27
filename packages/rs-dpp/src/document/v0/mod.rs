@@ -520,18 +520,12 @@ mod tests {
             .expect("person type");
 
         use crate::data_contract::document_type::random_document::CreateRandomDocument;
-        let doc_a = match doc_type
+        let crate::document::Document::V0(doc_a) = doc_type
             .random_document(Some(1), platform_version)
-            .expect("random a")
-        {
-            crate::document::Document::V0(d) => d,
-        };
-        let doc_b = match doc_type
+            .expect("random a");
+        let crate::document::Document::V0(doc_b) = doc_type
             .random_document(Some(2), platform_version)
-            .expect("random b")
-        {
-            crate::document::Document::V0(d) => d,
-        };
+            .expect("random b");
 
         let h_a = doc_a
             .hash_v0(&contract, doc_type, platform_version)

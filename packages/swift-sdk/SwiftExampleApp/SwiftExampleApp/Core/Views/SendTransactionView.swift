@@ -1,26 +1,28 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
-    let wallet: HDWallet
+    let wallet: PersistentWallet
 
     @StateObject private var viewModel: SendViewModel
 
-    init(wallet: HDWallet) {
+    @Environment(\.modelContext) private var modelContext
+
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
-        // Default to testnet; the actual network is set in onAppear
-        _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network))
+        _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                // Recipient Section
-                Section {
+                // Recipient
+                Section("Recipient") {
                     TextField("Recipient Address", text: $viewModel.recipientAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -28,35 +30,10 @@ struct SendTransactionView: View {
                     if !viewModel.recipientAddress.isEmpty {
                         AddressTypeBadge(type: viewModel.detectedAddressType)
                     }
-
-                    // Quick-fill address buttons
-                    let quickAddresses = buildQuickAddresses()
-                    if !quickAddresses.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(quickAddresses, id: \.label) { qa in
-                                    Button {
-                                        viewModel.recipientAddress = qa.address
-                                    } label: {
-                                        Text(qa.label)
-                                            .font(.caption2)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(qa.color.opacity(0.15))
-                                            .foregroundColor(qa.color)
-                                            .cornerRadius(12)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Recipient")
                 }
 
-                // Amount Section
-                Section {
+                // Amount
+                Section("Amount") {
                     HStack {
                         TextField("0.00000000", text: $viewModel.amountString)
                             .keyboardType(.decimalPad)
@@ -64,37 +41,49 @@ struct SendTransactionView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    // Available balances
                     VStack(alignment: .leading, spacing: 4) {
-                        BalanceInfoRow(
-                            label: "Shielded:",
-                            amount: shieldedService.shieldedBalance,
-                            color: .purple
-                        )
-                        BalanceInfoRow(
-                            label: "Platform:",
-                            amount: platformBalance,
-                            color: .blue
-                        )
-                        BalanceInfoRow(
-                            label: "Core:",
-                            amount: coreBalance,
-                            color: .primary
-                        )
+                        BalanceInfoRow(label: "Core:", amount: coreBalance, color: .green)
+                        BalanceInfoRow(label: "Shielded:", amount: shieldedBalance, color: .purple)
+                        BalanceInfoRow(label: "Platform:", amount: platformBalance, color: .blue)
                     }
-                } header: {
-                    Text("Amount")
                 }
 
-                // Flow Detection Section
+                // Fund Source
+                if !availableSources.isEmpty {
+                    Section("Send From") {
+                        ForEach(availableSources) { source in
+                            Button {
+                                viewModel.selectedSource = source
+                                viewModel.updateFlow()
+                            } label: {
+                                HStack {
+                                    Image(systemName: source.iconName)
+                                        .foregroundColor(source.color)
+                                        .frame(width: 24)
+                                    Text(source.rawValue)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Text(formatBalance(balance(for: source)))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    if viewModel.selectedSource == source {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Transaction Type
                 if let flow = viewModel.detectedFlow {
-                    Section {
+                    Section("Transaction Type") {
                         HStack {
                             Image(systemName: flow.iconName)
                                 .foregroundColor(flowColor(for: flow))
                             Text(flow.displayName)
                                 .fontWeight(.medium)
-                            Spacer()
                         }
 
                         if let fee = viewModel.estimatedFee {
@@ -105,24 +94,6 @@ struct SendTransactionView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                    } header: {
-                        Text("Transaction Type")
-                    }
-                }
-
-                // Source Toggle (for Orchard destination only)
-                if case .orchard = viewModel.detectedAddressType {
-                    Section {
-                        Toggle("Send from Shielded Pool", isOn: $viewModel.preferShieldedSource)
-                            .onChange(of: viewModel.preferShieldedSource) { _, _ in
-                                viewModel.detectAddressType()
-                            }
-                    } header: {
-                        Text("Source")
-                    } footer: {
-                        Text(viewModel.preferShieldedSource
-                             ? "Shielded-to-shielded transfer (fully private)"
-                             : "Shield credits from platform balance")
                     }
                 }
 
@@ -136,13 +107,23 @@ struct SendTransactionView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Send") {
                         Task {
-                            guard let sdk = unifiedAppState.sdk else { return }
+                            guard let sdk = platformState.sdk else { return }
+                            // Look up the managed wallet by the
+                            // `PersistentWallet` we were handed,
+                            // not the "active" manager slot —
+                            // the Rust manager holds all wallets
+                            // and this view's `wallet` may not
+                            // be the one that was last created.
+                            let coreWallet = try? walletManager
+                                .wallet(for: wallet.walletId)?
+                                .coreWallet()
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 shieldedService: shieldedService,
-                                walletService: walletService,
-                                platformState: unifiedAppState.platformState,
-                                wallet: wallet
+                                platformState: platformState,
+                                wallet: wallet,
+                                coreWallet: coreWallet,
+                                modelContext: modelContext
                             )
                         }
                     }
@@ -172,30 +153,55 @@ struct SendTransactionView: View {
                     Text(msg)
                 }
             }
+            .onChange(of: viewModel.detectedAddressType) { _, _ in
+                autoSelectSource()
+            }
         }
     }
 
     // MARK: - Computed
 
-    private var platformBalance: UInt64 {
-        unifiedAppState.platformState.identities
-            .filter {
-                $0.walletId == wallet.walletId &&
-                $0.network == wallet.network.rawValue
-            }
-            .reduce(0) { $0 + $1.balance }
+    private var coreBalance: UInt64 {
+        wallet.balanceConfirmed
     }
 
-    private var coreBalance: UInt64 {
-        walletService.walletManager.getBalance(for: wallet).confirmed
+    private var shieldedBalance: UInt64 {
+        shieldedService.shieldedBalance
+    }
+
+    private var platformBalance: UInt64 {
+        wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
+    }
+
+    private var availableSources: [FundSource] {
+        viewModel.availableSources(
+            coreBalance: coreBalance,
+            shieldedBalance: shieldedBalance,
+            platformBalance: platformBalance
+        )
+    }
+
+    private func balance(for source: FundSource) -> UInt64 {
+        switch source {
+        case .core: return coreBalance
+        case .shielded: return shieldedBalance
+        case .platform: return platformBalance
+        }
+    }
+
+    /// Auto-select the first available source when address type changes.
+    private func autoSelectSource() {
+        if let first = availableSources.first {
+            viewModel.selectedSource = first
+            viewModel.updateFlow()
+        }
     }
 
     // MARK: - Helpers
 
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
-        case .coreToPlatform: return .indigo
-        case .coreToCore: return .blue
+        case .coreToCore: return .green
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
@@ -216,61 +222,6 @@ struct SendTransactionView: View {
         }
         return String(format: "%.8f DASH", dash)
     }
-
-    // MARK: - Quick Address Buttons
-
-    private struct QuickAddress {
-        let label: String
-        let address: String
-        let color: Color
-    }
-
-    private func buildQuickAddresses() -> [QuickAddress] {
-        var addresses: [QuickAddress] = []
-        let wallets = walletService.walletManager.wallets
-
-        // Our wallet's internal addresses
-        let ownCoreAddress = walletService.walletManager.getReceiveAddress(for: wallet)
-        if !ownCoreAddress.isEmpty {
-            addresses.append(QuickAddress(label: "My Core", address: ownCoreAddress, color: .blue))
-        }
-
-        // Our platform address
-        if let collection = walletService.walletManager.getManagedAccountCollection(for: wallet),
-           let platformAccount = collection.getPlatformPaymentAccount(accountIndex: 0, keyClass: 0),
-           let pool = platformAccount.getAddressPool(),
-           let infos = try? pool.getAddresses(from: 0, to: 1),
-           let addrInfo = infos.first {
-            let networkValue: UInt32 = wallet.network == .mainnet ? 0 : 1
-            let result = addrInfo.scriptPubKey.withUnsafeBytes { buffer -> DashSDKResult in
-                guard let base = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                    return DashSDKResult()
-                }
-                return dash_sdk_encode_platform_address(base, UInt32(addrInfo.scriptPubKey.count), networkValue)
-            }
-            if result.error == nil, let dataPtr = result.data {
-                let str = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
-                dash_sdk_string_free(dataPtr)
-                addresses.append(QuickAddress(label: "My Platform", address: str, color: .indigo))
-            }
-        }
-
-        // Our shielded address
-        if let orchardAddress = shieldedService.orchardDisplayAddress {
-            addresses.append(QuickAddress(label: "My Shielded", address: orchardAddress, color: .purple))
-        }
-
-        // Other wallet's addresses (first wallet that isn't ours)
-        if let otherWallet = wallets.first(where: { $0.id != wallet.id }) {
-            let otherCore = walletService.walletManager.getReceiveAddress(for: otherWallet)
-            if !otherCore.isEmpty {
-                let name = otherWallet.label.isEmpty ? "Other" : otherWallet.label
-                addresses.append(QuickAddress(label: "\(name) Core", address: otherCore, color: .green))
-            }
-        }
-
-        return addresses
-    }
 }
 
 // MARK: - Subviews
@@ -280,16 +231,11 @@ private struct AddressTypeBadge: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(badgeColor)
-                .frame(width: 8, height: 8)
+            Circle().fill(badgeColor).frame(width: 8, height: 8)
             Text(badgeText)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(badgeColor)
+                .font(.caption).fontWeight(.medium).foregroundColor(badgeColor)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10).padding(.vertical, 4)
         .background(badgeColor.opacity(0.1))
         .cornerRadius(8)
     }
@@ -320,13 +266,10 @@ private struct BalanceInfoRow: View {
 
     var body: some View {
         HStack {
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text(label).font(.caption).foregroundColor(.secondary)
             Spacer()
             Text(formatBalance(amount))
-                .font(.caption)
-                .foregroundColor(amount > 0 ? color : .secondary)
+                .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
         }
     }
 

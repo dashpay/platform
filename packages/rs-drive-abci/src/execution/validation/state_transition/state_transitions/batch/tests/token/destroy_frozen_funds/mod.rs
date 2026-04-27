@@ -4,8 +4,8 @@ mod token_destroy_frozen_funds_tests {
     use super::*;
     use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 
-    #[test]
-    fn test_token_destroy_frozen_funds_success() {
+    #[tokio::test]
+    async fn test_token_destroy_frozen_funds_success() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -78,6 +78,7 @@ mod token_destroy_frozen_funds_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create mint transition");
 
         let serialized = mint_transition
@@ -139,6 +140,7 @@ mod token_destroy_frozen_funds_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create freeze transition");
 
         let serialized = freeze_transition
@@ -201,6 +203,7 @@ mod token_destroy_frozen_funds_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create destroy frozen funds transition");
 
         let serialized = destroy_transition
@@ -260,8 +263,8 @@ mod token_destroy_frozen_funds_tests {
         assert_eq!(token_frozen, Some(true));
     }
 
-    #[test]
-    fn test_token_destroy_frozen_funds_on_unfrozen_account_should_fail() {
+    #[tokio::test]
+    async fn test_token_destroy_frozen_funds_on_unfrozen_account_should_fail() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -326,6 +329,7 @@ mod token_destroy_frozen_funds_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create mint transition");
 
         let serialized = mint_transition
@@ -370,6 +374,7 @@ mod token_destroy_frozen_funds_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create destroy frozen funds transition");
 
         let serialized = destroy_transition

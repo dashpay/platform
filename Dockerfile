@@ -381,6 +381,7 @@ COPY --parents \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/withdrawals-contract \
@@ -472,6 +473,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-dpp-json-convertible-derive \
@@ -590,6 +592,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-dpp-json-convertible-derive \
@@ -832,6 +835,7 @@ COPY --parents \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/wallet-utils-contract \

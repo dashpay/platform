@@ -167,6 +167,7 @@ impl Drive {
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod tests {
     use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
     use crate::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;

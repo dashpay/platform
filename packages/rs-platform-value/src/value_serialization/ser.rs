@@ -722,6 +722,7 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};

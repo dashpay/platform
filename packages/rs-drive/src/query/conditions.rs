@@ -1701,6 +1701,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
 
 #[cfg(feature = "server")]
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use crate::error::query::QuerySyntaxError;
     use crate::query::conditions::WhereClause;
@@ -2581,7 +2582,7 @@ mod tests {
 
     #[test]
     fn in_values_too_many_returns_error() {
-        let values: Vec<Value> = (0..101).map(|i| Value::I64(i)).collect();
+        let values: Vec<Value> = (0..101).map(Value::I64).collect();
         let clause = WhereClause {
             field: "f".to_string(),
             operator: In,

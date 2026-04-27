@@ -27,7 +27,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -763,9 +763,6 @@ impl ContextProvider for TrustedHttpContextProvider {
             Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
             Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
-            _ => Err(ContextProviderError::Generic(
-                "Unsupported network".to_string(),
-            )),
         }
     }
 }

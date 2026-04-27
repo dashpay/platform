@@ -62,7 +62,7 @@ impl Drive {
 mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
     use grovedb_epoch_based_storage_flags::StorageFlags;

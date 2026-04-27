@@ -19,7 +19,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_identity_with_identifier: Identifier,
         amount: u64,
@@ -46,7 +46,8 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
                 nonce,
                 platform_version,
                 version,
-            )?),
+            )
+            .await?),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityCreditTransferTransition::try_from_identity".to_string(),
                 known_versions: vec![0],

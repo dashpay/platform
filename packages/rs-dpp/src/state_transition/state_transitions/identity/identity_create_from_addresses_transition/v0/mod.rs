@@ -231,7 +231,7 @@ mod tests {
     fn validate_structure_output_is_input() {
         let mut t = make_valid();
         let (addr, _) = t.inputs.iter().next().unwrap();
-        t.output = Some((addr.clone(), 500_000));
+        t.output = Some((*addr, 500_000));
         let r = t.validate_structure(pv());
         assert!(matches!(
             r.errors.as_slice(),
@@ -364,7 +364,7 @@ mod tests {
         let inner = IdentityCreateFromAddressesTransitionV0Inner {
             public_keys: t.public_keys.clone(),
             inputs: t.inputs.clone(),
-            output: t.output.clone(),
+            output: t.output,
             fee_strategy: t.fee_strategy.clone(),
             user_fee_increase: t.user_fee_increase,
             input_witnesses: t.input_witnesses.clone(),

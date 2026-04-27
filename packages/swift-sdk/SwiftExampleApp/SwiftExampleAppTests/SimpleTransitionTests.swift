@@ -84,7 +84,8 @@ final class SimpleTransitionTests: XCTestCase {
       let signerResult = key3Private.withUnsafeBytes { keyBytes in
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key3Private.count)
+          UInt(key3Private.count),
+          DashSDKNetwork(rawValue: 1)
         )
       }
 
@@ -99,12 +100,17 @@ final class SimpleTransitionTests: XCTestCase {
         dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
       }
 
+      // `OpaquePointer` lost its retroactive `Sendable` conformance
+      // under compiler 6.2+; surface the pointers as unsafe-but-sendable
+      // locals so they can cross the awaited call.
+      nonisolated(unsafe) let identityPtr = OpaquePointer(identityHandle)
+      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
       let result = try await sdk.identityTransferCredits(
-        fromIdentity: OpaquePointer(identityHandle),
+        fromIdentity: identityPtr,
         toIdentityId: recipientId,
         amount: amount,
         publicKeyId: 3,  // Transfer key ID
-        signer: OpaquePointer(signer)
+        signer: signerPtr
       )
 
       print("✅ Transfer successful!")

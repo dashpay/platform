@@ -45,9 +45,6 @@ public enum AccountType: UInt32 {
     case providerOwnerKeys = 8
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
-    case dashPayReceivingFunds = 11
-    case dashPayExternalAccount = 12
-    case platformPayment = 13
 
     var ffiValue: FFIAccountType {
         FFIAccountType(rawValue: self.rawValue)
@@ -234,6 +231,22 @@ public struct TransactionCheckResult {
         self.totalReceived = ffiResult.total_received
         self.totalSent = ffiResult.total_sent
         self.affectedAccountsCount = ffiResult.affected_accounts_count
+    }
+}
+
+/// Transaction context details (wraps FFITransactionContext + FFIBlockInfo)
+public struct TransactionContextDetails {
+    public let context: TransactionContextType
+    public let height: UInt32
+    public let blockHash: Data?
+    public let timestamp: UInt32
+
+    init(ffiContext: FFITransactionContext) {
+        self.context = TransactionContextType(ffiContext: ffiContext.context_type)
+        self.height = ffiContext.block_info.height
+        self.timestamp = ffiContext.block_info.timestamp
+        let hashBytes = withUnsafeBytes(of: ffiContext.block_info.block_hash) { Data($0) }
+        self.blockHash = hashBytes.allSatisfy({ $0 == 0 }) ? nil : hashBytes
     }
 }
 
