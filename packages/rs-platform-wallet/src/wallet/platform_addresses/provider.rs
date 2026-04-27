@@ -343,6 +343,37 @@ impl PlatformPaymentAddressProvider {
             .map(|a| KeySource::Public(a.extended_public_key))
     }
 
+    /// Reverse-lookup a known [`PlatformP2PKHAddress`] tracked under
+    /// `wallet_id`. Returns `(account_index, address_index,
+    /// extended_public_key)` for the first matching account.
+    ///
+    /// The `extended_public_key` is returned alongside the indices so
+    /// callers can disambiguate which `key_class` registered it (the
+    /// per-account state itself doesn't retain that hardened-level
+    /// index — it's recovered from the wallet's
+    /// `platform_payment_accounts` map by xpub equality).
+    ///
+    /// Used by [`PlatformAddressWallet::address_derivation_info`] to
+    /// expose DIP-17 derivation coordinates to external signer
+    /// implementations without giving them the inner provider lock.
+    pub(crate) fn lookup_p2pkh(
+        &self,
+        wallet_id: &WalletId,
+        p2pkh: &PlatformP2PKHAddress,
+    ) -> Option<(u32, AddressIndex, ExtendedPubKey)> {
+        let state = self.per_wallet.get(wallet_id)?;
+        for (&account_index, account_state) in state {
+            if let Some(&address_index) = account_state.addresses.get_by_right(p2pkh) {
+                return Some((
+                    account_index,
+                    address_index,
+                    account_state.extended_public_key,
+                ));
+            }
+        }
+        None
+    }
+
     /// The last sync timestamp, or `None` if never synced.
     pub(crate) fn last_sync_timestamp(&self) -> Option<u64> {
         if self.sync_timestamp == 0 {
