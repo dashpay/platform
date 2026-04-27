@@ -32,6 +32,7 @@ use crate::identity_persistence::{
     IdentityKeyRemovalFFI,
 };
 use crate::platform_address_types::AddressBalanceEntryFFI;
+use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
     LoadWalletListFreeFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
@@ -209,6 +210,23 @@ pub struct PersistenceCallbacks {
             upserts_ptr: *const IdentityKeyEntryFFI,
             upserts_count: usize,
             removed_ptr: *const IdentityKeyRemovalFFI,
+            removed_count: usize,
+        ) -> i32,
+    >,
+    /// Called with a `TokenBalanceChangeSet` slice — `(identity_id,
+    /// token_id) -> balance` upserts and `(identity_id, token_id)`
+    /// tombstones. Swift maps upserts onto `PersistentTokenBalance`
+    /// rows keyed by `(tokenId, identityId)` and removes rows for
+    /// every tombstone. The `watched` / `unwatched` portions of the
+    /// underlying changeset are not surfaced — see
+    /// [`crate::token_persistence`] for the rationale.
+    pub on_persist_token_balances_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            upserts_ptr: *const TokenBalanceUpsertFFI,
+            upserts_count: usize,
+            removed_ptr: *const TokenBalanceRemovalFFI,
             removed_count: usize,
         ) -> i32,
     >,
@@ -391,6 +409,58 @@ impl PlatformWalletPersistence for FFIPersister {
                         result
                     );
                     round_success = false;
+                }
+            }
+        }
+
+        // Send token-balance changeset — `(identity_id, token_id) ->
+        // balance` upserts and `(identity_id, token_id)` tombstones.
+        // Maps onto Swift's `PersistentTokenBalance` rows.
+        if let Some(ref tb_cs) = changeset.token_balances {
+            if let Some(cb) = self.callbacks.on_persist_token_balances_fn {
+                let upserts: Vec<TokenBalanceUpsertFFI> = tb_cs
+                    .balances
+                    .iter()
+                    .map(|((iid, tid), amount)| TokenBalanceUpsertFFI {
+                        identity_id: iid.to_buffer(),
+                        token_id: tid.to_buffer(),
+                        balance: *amount,
+                    })
+                    .collect();
+                let removals: Vec<TokenBalanceRemovalFFI> = tb_cs
+                    .removed_balances
+                    .iter()
+                    .map(|(iid, tid)| TokenBalanceRemovalFFI {
+                        identity_id: iid.to_buffer(),
+                        token_id: tid.to_buffer(),
+                    })
+                    .collect();
+                if !upserts.is_empty() || !removals.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            if upserts.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                upserts.as_ptr()
+                            },
+                            upserts.len(),
+                            if removals.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                removals.as_ptr()
+                            },
+                            removals.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Token balance persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
                 }
             }
         }
