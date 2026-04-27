@@ -4,8 +4,8 @@ mod additional_validation_tests {
     use super::*;
     use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 
-    #[test]
-    fn test_token_freeze_already_frozen_should_fail() {
+    #[tokio::test]
+    async fn test_token_freeze_already_frozen_should_fail() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -56,6 +56,7 @@ mod additional_validation_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create freeze transition");
 
         let serialized = freeze_transition
@@ -117,6 +118,7 @@ mod additional_validation_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create freeze transition");
 
         let serialized = freeze_again_transition
@@ -149,8 +151,8 @@ mod additional_validation_tests {
         );
     }
 
-    #[test]
-    fn test_token_unfreeze_not_frozen_should_fail() {
+    #[tokio::test]
+    async fn test_token_unfreeze_not_frozen_should_fail() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -201,6 +203,7 @@ mod additional_validation_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create unfreeze transition");
 
         let serialized = unfreeze_transition

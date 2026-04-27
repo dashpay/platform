@@ -223,8 +223,8 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn test_data_contract_creation_with_contested_unique_index() {
+    #[tokio::test]
+    async fn test_data_contract_creation_with_contested_unique_index() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -256,6 +256,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let data_contract_create_serialized_transition = data_contract_create_transition
@@ -290,8 +291,8 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    #[test]
-    fn test_data_contract_creation_with_contested_unique_index_old_version_has_low_fees() {
+    #[tokio::test]
+    async fn test_data_contract_creation_with_contested_unique_index_old_version_has_low_fees() {
         let platform_version = PlatformVersion::get(8).unwrap();
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(8)
@@ -324,6 +325,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let data_contract_create_serialized_transition = data_contract_create_transition
@@ -358,8 +360,8 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    #[test]
-    fn test_dpns_contract_creation_with_contract_id_non_contested() {
+    #[tokio::test]
+    async fn test_dpns_contract_creation_with_contract_id_non_contested() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -391,6 +393,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let data_contract_create_serialized_transition = data_contract_create_transition
@@ -425,8 +428,9 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    #[test]
-    fn test_data_contract_creation_with_contested_unique_index_and_unique_index_should_fail() {
+    #[tokio::test]
+    async fn test_data_contract_creation_with_contested_unique_index_and_unique_index_should_fail()
+    {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -458,6 +462,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let data_contract_create_serialized_transition = data_contract_create_transition
@@ -509,8 +514,8 @@ mod tests {
             use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
             use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
             use super::*;
-            #[test]
-            fn test_data_contract_creation_with_single_token() {
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -557,6 +562,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -602,8 +608,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_and_group() {
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_and_group() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -685,6 +691,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -730,8 +737,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_with_starting_balance() {
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_with_starting_balance() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -776,6 +783,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
@@ -823,8 +831,8 @@ mod tests {
                 assert_eq!(token_balance, Some(base_supply_start_amount));
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_burn_of_internal_token_on_nft_purchase_should_be_allowed(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_burn_of_internal_token_on_nft_purchase_should_be_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -894,6 +902,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create data contract create batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -928,8 +937,8 @@ mod tests {
                     .expect("expected to commit transaction");
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_transfer_on_nft_purchase_with_internal_token_should_be_allowed(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_transfer_on_nft_purchase_with_internal_token_should_be_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -1001,6 +1010,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create data contract create batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -1035,8 +1045,9 @@ mod tests {
                     .expect("expected to commit transaction");
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_identifier_that_does_exist() {
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_identifier_that_does_exist(
+            ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -1095,6 +1106,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -1140,8 +1152,8 @@ mod tests {
                 assert_eq!(token_balance, Some(100_000));
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_transfer_on_nft_purchase_with_external_token_should_be_allowed(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_transfer_on_nft_purchase_with_external_token_should_be_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -1231,6 +1243,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create data contract create batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -1265,8 +1278,9 @@ mod tests {
                     .expect("expected to commit transaction");
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_with_valid_perpetual_distribution() {
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_with_valid_perpetual_distribution(
+            ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -1332,6 +1346,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
@@ -1385,8 +1400,8 @@ mod tests {
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
             use drive::drive::Drive;
 
-            #[test]
-            fn test_data_contract_pre_programmed_distribution() {
+            #[tokio::test]
+            async fn test_data_contract_pre_programmed_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -1471,6 +1486,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -1568,8 +1584,8 @@ mod tests {
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_with_starting_balance_over_limit_should_cause_error(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_with_starting_balance_over_limit_should_cause_error(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -1615,6 +1631,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
@@ -1663,8 +1680,9 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_needing_group_that_does_not_exist() {
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_needing_group_that_does_not_exist(
+            ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
                     .build_with_mock_rpc()
@@ -1728,6 +1746,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -1775,8 +1794,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_main_group_that_does_not_exist(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_main_group_that_does_not_exist(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -1842,6 +1861,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -1889,8 +1909,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_authorization_to_non_defined_main_group(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_authorization_to_non_defined_main_group(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -1955,6 +1975,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2002,8 +2023,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_identifier_that_does_not_exist(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_identifier_that_does_not_exist(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2060,6 +2081,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2110,8 +2132,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_minting_recipient_to_identity_that_does_not_exist(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_minting_recipient_to_identity_that_does_not_exist(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2159,6 +2181,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2209,8 +2232,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_pre_programmed_distribution_to_identity_that_does_not_exist(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_pre_programmed_distribution_to_identity_that_does_not_exist(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2294,6 +2317,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2344,8 +2368,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_burn_of_external_token_not_allowed(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_burn_of_external_token_not_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2433,6 +2457,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create data contract create batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2472,8 +2497,8 @@ mod tests {
                     .expect("expected to commit transaction");
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_transfer_of_external_token_that_does_not_exist(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_transfer_of_external_token_that_does_not_exist(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2548,6 +2573,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create data contract create batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2585,8 +2611,8 @@ mod tests {
                     .expect("expected to commit transaction");
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_setting_transfer_of_external_token_that_does_not_exist_in_contract_that_does_exist(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_setting_transfer_of_external_token_that_does_not_exist_in_contract_that_does_exist(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2676,6 +2702,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create data contract create batch transition");
 
                 let data_contract_create_serialized_transition = data_contract_create_transition
@@ -2715,8 +2742,8 @@ mod tests {
                     .expect("expected to commit transaction");
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_with_invalid_perpetual_distribution_should_cause_error(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_with_invalid_perpetual_distribution_should_cause_error(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2783,6 +2810,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
@@ -2833,8 +2861,8 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
-            #[test]
-            fn test_data_contract_creation_with_single_token_with_random_perpetual_distribution_should_cause_error(
+            #[tokio::test]
+            async fn test_data_contract_creation_with_single_token_with_random_perpetual_distribution_should_cause_error(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -2891,6 +2919,7 @@ mod tests {
                         platform_version,
                         None,
                     )
+                    .await
                     .expect("expect to create documents batch transition");
 
                 let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
@@ -2943,8 +2972,8 @@ mod tests {
 
     mod group_errors {
         use super::*;
-        #[test]
-        fn test_data_contract_creation_with_non_contiguous_groups_should_error() {
+        #[tokio::test]
+        async fn test_data_contract_creation_with_non_contiguous_groups_should_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3025,6 +3054,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3074,8 +3104,8 @@ mod tests {
             assert_eq!(token_balance, None);
         }
 
-        #[test]
-        fn test_data_contract_creation_with_group_with_member_with_zero_power_should_error() {
+        #[tokio::test]
+        async fn test_data_contract_creation_with_group_with_member_with_zero_power_should_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3155,6 +3185,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3202,8 +3233,8 @@ mod tests {
             assert_eq!(token_balance, None);
         }
 
-        #[test]
-        fn test_data_contract_creation_with_group_with_single_member_should_error() {
+        #[tokio::test]
+        async fn test_data_contract_creation_with_group_with_single_member_should_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3267,6 +3298,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3314,8 +3346,9 @@ mod tests {
             assert_eq!(token_balance, None);
         }
 
-        #[test]
-        fn test_data_contract_creation_with_group_with_member_with_too_big_power_should_error() {
+        #[tokio::test]
+        async fn test_data_contract_creation_with_group_with_member_with_too_big_power_should_error(
+        ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3395,6 +3428,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3442,8 +3476,8 @@ mod tests {
             assert_eq!(token_balance, None);
         }
 
-        #[test]
-        fn test_data_contract_creation_with_group_with_member_with_power_over_required_should_error(
+        #[tokio::test]
+        async fn test_data_contract_creation_with_group_with_member_with_power_over_required_should_error(
         ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -3524,6 +3558,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3571,8 +3606,8 @@ mod tests {
             assert_eq!(token_balance, None);
         }
 
-        #[test]
-        fn test_dcc_group_with_member_power_not_reaching_threshold() {
+        #[tokio::test]
+        async fn test_dcc_group_with_member_power_not_reaching_threshold() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3652,6 +3687,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3699,8 +3735,8 @@ mod tests {
             assert_eq!(token_balance, None);
         }
 
-        #[test]
-        fn test_dcc_group_with_non_unilateral_member_power_not_reaching_threshold() {
+        #[tokio::test]
+        async fn test_dcc_group_with_non_unilateral_member_power_not_reaching_threshold() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3780,6 +3816,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -3842,8 +3879,8 @@ mod tests {
             drive::document::query::QueryDocumentsOutcomeV0Methods, query::DriveDocumentQuery,
         };
 
-        #[test]
-        fn test_data_contract_creation_fails_with_more_than_fifty_keywords() {
+        #[tokio::test]
+        async fn test_data_contract_creation_fails_with_more_than_fifty_keywords() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3892,6 +3929,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract transition");
 
             // Serialize the transition
@@ -3924,8 +3962,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_creation_fails_with_duplicate_keywords() {
+        #[tokio::test]
+        async fn test_data_contract_creation_fails_with_duplicate_keywords() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3976,6 +4014,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract transition");
 
             // Serialize the transition
@@ -4008,8 +4047,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_creation_fails_with_keyword_too_short() {
+        #[tokio::test]
+        async fn test_data_contract_creation_fails_with_keyword_too_short() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4054,6 +4093,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create transition");
 
             // Process
@@ -4084,8 +4124,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_creation_fails_with_keyword_too_long() {
+        #[tokio::test]
+        async fn test_data_contract_creation_fails_with_keyword_too_long() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4125,6 +4165,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -4153,8 +4194,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_creation_succeeds_with_valid_keywords() {
+        #[tokio::test]
+        async fn test_data_contract_creation_succeeds_with_valid_keywords() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4205,6 +4246,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create data contract transition");
 
             // Serialize the transition
@@ -4441,8 +4483,8 @@ mod tests {
             contract_value
         }
 
-        #[test]
-        fn test_data_contract_creation_fails_with_description_too_short() {
+        #[tokio::test]
+        async fn test_data_contract_creation_fails_with_description_too_short() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4468,6 +4510,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expected to create transition");
 
             let serialized = transition
@@ -4496,8 +4539,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_creation_fails_with_description_too_long() {
+        #[tokio::test]
+        async fn test_data_contract_creation_fails_with_description_too_long() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4525,6 +4568,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expected to create transition");
 
             let serialized = transition
@@ -4553,8 +4597,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_data_contract_creation_succeeds_with_valid_description() {
+        #[tokio::test]
+        async fn test_data_contract_creation_succeeds_with_valid_description() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4580,6 +4624,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expected to create transition");
 
             let serialized = transition
@@ -4734,8 +4779,8 @@ mod tests {
         use dpp::tests::json_document::json_document_to_contract_with_ids;
         use platform_version::version::PlatformVersion;
 
-        #[test]
-        fn test_data_contract_creation_with_creator_id_index() {
+        #[tokio::test]
+        async fn test_data_contract_creation_with_creator_id_index() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -4764,6 +4809,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -4798,8 +4844,9 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_data_contract_creation_with_creator_id_index_not_available_on_protocol_version_9() {
+        #[tokio::test]
+        async fn test_data_contract_creation_with_creator_id_index_not_available_on_protocol_version_9(
+        ) {
             let platform_version = PlatformVersion::get(9).unwrap();
             let mut platform = TestPlatformBuilder::new()
                 .with_initial_protocol_version(9)
@@ -4829,6 +4876,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expect to create documents batch transition");
 
             let data_contract_create_serialized_transition = data_contract_create_transition
@@ -4867,8 +4915,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_data_contract_creation_with_countable_index() {
+    #[tokio::test]
+    async fn test_data_contract_creation_with_countable_index() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -4900,6 +4948,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create data contract create transition");
 
         let data_contract_create_serialized_transition = data_contract_create_transition

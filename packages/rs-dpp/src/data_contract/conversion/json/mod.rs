@@ -209,7 +209,7 @@ mod tests {
             }
         });
 
-        let result = DataContract::from_json(contract, true, &platform_version);
+        let result = DataContract::from_json(contract, true, platform_version);
         assert!(
             result.is_ok(),
             "Stepwise with string keys should be accepted by from_json"
@@ -361,7 +361,7 @@ mod tests {
             }
         });
 
-        let result = DataContract::from_json(contract, true, &platform_version);
+        let result = DataContract::from_json(contract, true, platform_version);
         assert!(
             result.is_ok(),
             "PreProgrammed with string timestamp keys should be accepted by from_json"

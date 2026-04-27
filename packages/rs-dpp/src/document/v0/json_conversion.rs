@@ -385,9 +385,7 @@ mod tests {
                 .random_document(Some(seed), platform_version)
                 .expect("expected random document");
 
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
 
             let json_val = doc_v0
                 .to_json(platform_version)
@@ -485,6 +483,142 @@ mod tests {
         assert_eq!(doc.updated_at_core_block_height, None);
         assert_eq!(doc.transferred_at_core_block_height, None);
         assert_eq!(doc.creator_id, None);
+    }
+
+    // ================================================================
+    //  to_json_with_identifiers_using_bytes: minimal document has only
+    //  $id and $ownerId keys (no optional fields rendered).
+    // ================================================================
+
+    #[test]
+    fn to_json_with_identifiers_using_bytes_minimal_document_has_only_id_and_owner() {
+        let platform_version = PlatformVersion::latest();
+        let doc = make_minimal_document_v0();
+        let json = doc
+            .to_json_with_identifiers_using_bytes(platform_version)
+            .expect("to_json_with_identifiers_using_bytes should succeed");
+        let obj = json.as_object().expect("object");
+        assert!(obj.contains_key(property_names::ID));
+        assert!(obj.contains_key(property_names::OWNER_ID));
+        // None-valued optional fields are NOT emitted by this serializer.
+        assert!(!obj.contains_key(property_names::CREATED_AT));
+        assert!(!obj.contains_key(property_names::UPDATED_AT));
+        assert!(!obj.contains_key(property_names::TRANSFERRED_AT));
+        assert!(!obj.contains_key(property_names::CREATED_AT_BLOCK_HEIGHT));
+        assert!(!obj.contains_key(property_names::UPDATED_AT_BLOCK_HEIGHT));
+        assert!(!obj.contains_key(property_names::TRANSFERRED_AT_BLOCK_HEIGHT));
+        assert!(!obj.contains_key(property_names::CREATED_AT_CORE_BLOCK_HEIGHT));
+        assert!(!obj.contains_key(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT));
+        assert!(!obj.contains_key(property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT));
+        assert!(!obj.contains_key(property_names::CREATOR_ID));
+        assert!(!obj.contains_key(property_names::REVISION));
+    }
+
+    // ================================================================
+    //  to_json_with_identifiers_using_bytes: id/owner emitted as
+    //  base58 strings (via serde_json derive on Identifier).
+    // ================================================================
+
+    #[test]
+    fn to_json_with_identifiers_using_bytes_emits_base58_identifiers() {
+        let platform_version = PlatformVersion::latest();
+        let doc = make_minimal_document_v0();
+        let json = doc
+            .to_json_with_identifiers_using_bytes(platform_version)
+            .expect("should succeed");
+        let obj = json.as_object().expect("object");
+        // $id and $ownerId are serialized as base58 strings by Identifier's
+        // Serialize impl, which is what the underlying json! macro uses.
+        let id_val = obj.get(property_names::ID).expect("id present");
+        assert!(id_val.is_string(), "expected base58 string for $id");
+        let owner_val = obj.get(property_names::OWNER_ID).expect("owner present");
+        assert!(owner_val.is_string(), "expected base58 string for $ownerId");
+    }
+
+    // ================================================================
+    //  from_json_value handles null creator_id by leaving it None.
+    // ================================================================
+
+    #[test]
+    fn from_json_value_with_null_creator_id_stays_none() {
+        let platform_version = PlatformVersion::latest();
+        let json_val = json!({
+            "$id": bs58::encode([1u8; 32]).into_string(),
+            "$ownerId": bs58::encode([2u8; 32]).into_string(),
+            "$creatorId": JsonValue::Null,
+        });
+        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
+            .expect("from_json_value should succeed with null creator_id");
+        assert_eq!(doc.creator_id, None);
+    }
+
+    // ================================================================
+    //  from_json_value handles null id/owner by leaving them defaulted.
+    // ================================================================
+
+    #[test]
+    fn from_json_value_with_null_id_leaves_default() {
+        let platform_version = PlatformVersion::latest();
+        let json_val = json!({
+            "$id": JsonValue::Null,
+            "$ownerId": bs58::encode([2u8; 32]).into_string(),
+        });
+        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
+            .expect("from_json_value should succeed with null $id");
+        // Default Identifier is all-zeros.
+        assert_eq!(doc.id, Identifier::new([0u8; 32]));
+    }
+
+    // ================================================================
+    //  to_json_with_identifiers_using_bytes: multiple user-defined
+    //  properties are all included.
+    // ================================================================
+
+    #[test]
+    fn to_json_with_identifiers_using_bytes_with_multiple_properties() {
+        let platform_version = PlatformVersion::latest();
+        let mut props = BTreeMap::new();
+        props.insert("a".to_string(), Value::U64(1));
+        props.insert("b".to_string(), Value::Text("two".to_string()));
+        props.insert("c".to_string(), Value::Bool(true));
+        let doc = DocumentV0 {
+            id: Identifier::new([1u8; 32]),
+            owner_id: Identifier::new([2u8; 32]),
+            properties: props,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        };
+        let json = doc
+            .to_json_with_identifiers_using_bytes(platform_version)
+            .expect("should succeed");
+        let obj = json.as_object().expect("object");
+        assert_eq!(obj.get("a").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(obj.get("b").and_then(|v| v.as_str()), Some("two"));
+        assert_eq!(obj.get("c").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    // ================================================================
+    //  from_json_value: an empty object produces a fully-defaulted doc
+    // ================================================================
+
+    #[test]
+    fn from_json_value_empty_object_returns_default_document() {
+        let platform_version = PlatformVersion::latest();
+        let doc = DocumentV0::from_json_value::<String, _>(json!({}), platform_version)
+            .expect("from_json_value should succeed with empty object");
+        assert_eq!(doc.id, Identifier::new([0u8; 32]));
+        assert_eq!(doc.owner_id, Identifier::new([0u8; 32]));
+        assert_eq!(doc.revision, None);
+        assert!(doc.properties.is_empty());
     }
 
     // ================================================================

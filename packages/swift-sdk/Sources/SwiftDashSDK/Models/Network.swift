@@ -1,19 +1,19 @@
 import Foundation
 
-/// App-level network enum (distinct from the SDK's DashSDKNetwork typealias)
-public enum AppNetwork: String, CaseIterable, Codable, Sendable {
-    case mainnet = "mainnet"
-    case testnet = "testnet"
-    case devnet = "devnet"
-    case regtest = "regtest"
+/// App-level network enum (distinct from the SDK's DashSDKNetwork typealias).
+///
+/// Raw values intentionally match `KeyWalletNetwork.rawValue` so conversions
+/// between the two are a direct raw-value passthrough.
+public enum AppNetwork: Int, CaseIterable, Codable, Sendable {
+    case mainnet = 0
+    case testnet = 1
+    case regtest = 2
+    case devnet = 3
 
     init(network: KeyWalletNetwork) {
-        switch network {
-        case .mainnet: self = .mainnet  // Dash = 0
-        case .testnet: self = .testnet  // Testnet = 1
-        case .regtest: self = .regtest  // Regtest = 2
-        case .devnet: self = .devnet   // Devnet = 3
-        }
+        // Raw values are aligned with `KeyWalletNetwork` by construction,
+        // so every case maps; the force-unwrap can never fire.
+        self = AppNetwork(rawValue: Int(network.rawValue))!
     }
 
     public var displayName: String {
@@ -29,17 +29,25 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    public var sdkNetwork: DashSDKNetwork {
+    /// Lowercase canonical name ("mainnet", "testnet", "regtest",
+    /// "devnet"). Used as the persisted string key for sibling
+    /// `PersistentX` rows (identities, documents, contracts, sync
+    /// state) that still store network as `String`.
+    public var networkName: String {
         switch self {
         case .mainnet:
-            return DashSDKNetwork(rawValue: 0)
+            return "mainnet"
         case .testnet:
-            return DashSDKNetwork(rawValue: 1)
+            return "testnet"
         case .regtest:
-            return DashSDKNetwork(rawValue: 2)
+            return "regtest"
         case .devnet:
-            return DashSDKNetwork(rawValue: 3)
+            return "devnet"
         }
+    }
+
+    public var sdkNetwork: DashSDKNetwork {
+        DashSDKNetwork(rawValue: UInt32(rawValue))
     }
 
     public static var defaultNetwork: AppNetwork {
@@ -48,15 +56,7 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
 
     // Convert to KeyWalletNetwork for wallet operations
     public func toKeyWalletNetwork() -> KeyWalletNetwork {
-        switch self {
-        case .mainnet:
-            return .mainnet
-        case .testnet:
-            return .testnet
-        case .regtest:
-            return .regtest
-        case .devnet:
-            return .devnet
-        }
+        // Raw values are aligned by construction; unwrap is safe.
+        return KeyWalletNetwork(rawValue: UInt32(rawValue))!
     }
 }

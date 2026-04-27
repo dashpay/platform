@@ -220,4 +220,56 @@ mod tests {
             "empty-property documents with same ids should be equal ignoring timestamps"
         );
     }
+
+    // ================================================================
+    //  also_ignore_fields with a field that doesn't exist in either
+    //  document: behaves the same as no ignore list.
+    // ================================================================
+
+    #[test]
+    fn also_ignore_fields_with_nonexistent_field_has_no_effect() {
+        let doc1 = make_base_document();
+        let doc2 = make_base_document();
+        assert!(doc1.is_equal_ignoring_time_based_fields_v0(
+            &doc2,
+            Some(vec!["this_field_does_not_exist"])
+        ));
+    }
+
+    // ================================================================
+    //  Empty also_ignore_fields vec: equivalent to None.
+    // ================================================================
+
+    #[test]
+    fn also_ignore_fields_empty_vec_is_equivalent_to_none() {
+        let doc1 = make_base_document();
+        let mut doc2 = make_base_document();
+        doc2.properties
+            .insert("name".to_string(), Value::Text("Bob".to_string()));
+        // Empty ignore list means all properties are compared.
+        assert!(!doc1.is_equal_ignoring_time_based_fields_v0(&doc2, Some(vec![])));
+    }
+
+    // ================================================================
+    //  Revision None vs Some is not equal
+    // ================================================================
+
+    #[test]
+    fn documents_with_none_and_some_revision_are_not_equal() {
+        let mut doc1 = make_base_document();
+        let doc2 = make_base_document();
+        doc1.revision = None;
+        assert!(!doc1.is_equal_ignoring_time_based_fields_v0(&doc2, None));
+    }
+
+    // ================================================================
+    //  Self-equal: same document equals itself (time-based differences
+    //  shouldn't matter when both sides are identical).
+    // ================================================================
+
+    #[test]
+    fn a_document_equals_itself_ignoring_time_based_fields() {
+        let doc = make_base_document();
+        assert!(doc.is_equal_ignoring_time_based_fields_v0(&doc, None));
+    }
 }

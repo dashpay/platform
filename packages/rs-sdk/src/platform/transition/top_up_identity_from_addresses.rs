@@ -78,7 +78,8 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
             user_fee_increase,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         match state_transition

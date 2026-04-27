@@ -163,24 +163,15 @@ mod tests {
         let json = rules.to_json().expect("to_json should succeed");
 
         // Verify boolean fields
-        assert_eq!(
-            json["changingAuthorizedActionTakersToNoOneAllowed"]
-                .as_bool()
-                .unwrap(),
-            true
-        );
-        assert_eq!(
-            json["changingAdminActionTakersToNoOneAllowed"]
-                .as_bool()
-                .unwrap(),
-            false
-        );
-        assert_eq!(
-            json["selfChangingAdminActionTakersAllowed"]
-                .as_bool()
-                .unwrap(),
-            true
-        );
+        assert!(json["changingAuthorizedActionTakersToNoOneAllowed"]
+            .as_bool()
+            .unwrap());
+        assert!(!json["changingAdminActionTakersToNoOneAllowed"]
+            .as_bool()
+            .unwrap());
+        assert!(json["selfChangingAdminActionTakersAllowed"]
+            .as_bool()
+            .unwrap());
 
         // round-trip
         let restored = ChangeControlRules::from_json(json).expect("from_json should succeed");

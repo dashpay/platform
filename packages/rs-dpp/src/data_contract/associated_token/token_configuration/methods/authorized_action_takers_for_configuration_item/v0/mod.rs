@@ -125,9 +125,7 @@ impl TokenConfigurationV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::associated_token::token_configuration::accessors::v0::{
-        TokenConfigurationV0Getters, TokenConfigurationV0Setters,
-    };
+    use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
     use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
     use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;

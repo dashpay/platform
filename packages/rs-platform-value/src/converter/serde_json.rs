@@ -422,6 +422,7 @@ impl From<&BTreeMap<String, JsonValue>> for Value {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use crate::converter::serde_json::BTreeValueJsonConverter;
     use crate::{Error, Value};

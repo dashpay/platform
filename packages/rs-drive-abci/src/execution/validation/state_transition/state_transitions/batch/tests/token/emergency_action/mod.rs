@@ -6,8 +6,8 @@ mod token_emergency_action_tests {
     use dpp::tokens::status::v0::TokenStatusV0;
     use dpp::tokens::status::TokenStatus;
 
-    #[test]
-    fn test_token_emergency_pause() {
+    #[tokio::test]
+    async fn test_token_emergency_pause() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -56,6 +56,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = pause_transition
@@ -100,8 +101,8 @@ mod token_emergency_action_tests {
         );
     }
 
-    #[test]
-    fn test_token_emergency_resume() {
+    #[tokio::test]
+    async fn test_token_emergency_resume() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -150,6 +151,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = pause_transition
@@ -209,6 +211,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = resume_transition
@@ -253,8 +256,8 @@ mod token_emergency_action_tests {
         );
     }
 
-    #[test]
-    fn test_token_emergency_pause_already_paused_should_fail() {
+    #[tokio::test]
+    async fn test_token_emergency_pause_already_paused_should_fail() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -303,6 +306,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = pause_transition
@@ -352,6 +356,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = pause_again_transition
@@ -382,8 +387,8 @@ mod token_emergency_action_tests {
         );
     }
 
-    #[test]
-    fn test_token_emergency_resume_not_paused_should_fail() {
+    #[tokio::test]
+    async fn test_token_emergency_resume_not_paused_should_fail() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -432,6 +437,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = pause_transition
@@ -481,6 +487,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = resume_transition
@@ -530,6 +537,7 @@ mod token_emergency_action_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create emergency action transition");
 
         let serialized = resume_again_transition

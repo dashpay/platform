@@ -1,6 +1,11 @@
 //! Comprehensive unit tests for platform-wallet-ffi
 //!
-//! These tests cover all functionality with realistic fake data
+//! These tests cover all functionality with realistic fake data.
+//!
+//! Updated to the pointer-passing FFI ABI (every former
+//! `IdentifierBytes` slot is a `*const u8` / `*mut u8` to a 32-byte
+//! buffer; every former by-value free is `&mut`). See the EXC_BAD_ACCESS
+//! sweep for the rationale.
 
 mod test_data;
 
@@ -18,7 +23,7 @@ fn test_contact_request_field_access() {
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice);
 
         let bob = identities::bob();
-        let bob_id_bytes: IdentifierBytes = bob.identity.id().into();
+        let bob_id_bytes: [u8; 32] = bob.identity.id().to_buffer();
 
         let mut error = PlatformWalletFFIError::success();
 
@@ -26,7 +31,7 @@ fn test_contact_request_field_access() {
         let mut request_handle: Handle = NULL_HANDLE;
         let result = managed_identity_get_sent_contact_request(
             alice_handle,
-            bob_id_bytes,
+            bob_id_bytes.as_ptr(),
             &mut request_handle,
             &mut error,
         );
@@ -34,17 +39,18 @@ fn test_contact_request_field_access() {
         assert_ne!(request_handle, NULL_HANDLE);
 
         // Verify sender ID
-        let mut sender_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result = contact_request_get_sender_id(request_handle, &mut sender_id, &mut error);
+        let mut sender_id = [0u8; 32];
+        let result =
+            contact_request_get_sender_id(request_handle, sender_id.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(sender_id.bytes, [1u8; 32]); // Alice's ID
+        assert_eq!(sender_id, [1u8; 32]); // Alice's ID
 
         // Verify recipient ID
-        let mut recipient_id = IdentifierBytes { bytes: [0u8; 32] };
+        let mut recipient_id = [0u8; 32];
         let result =
-            contact_request_get_recipient_id(request_handle, &mut recipient_id, &mut error);
+            contact_request_get_recipient_id(request_handle, recipient_id.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(recipient_id.bytes, [2u8; 32]); // Bob's ID
+        assert_eq!(recipient_id, [2u8; 32]); // Bob's ID
 
         // Verify sender key index
         let mut sender_key_idx = 999u32;
@@ -104,7 +110,7 @@ fn test_incoming_contact_request_retrieval() {
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice);
 
         let bob = identities::bob();
-        let bob_id_bytes: IdentifierBytes = bob.identity.id().into();
+        let bob_id_bytes: [u8; 32] = bob.identity.id().to_buffer();
 
         let mut error = PlatformWalletFFIError::success();
 
@@ -112,7 +118,7 @@ fn test_incoming_contact_request_retrieval() {
         let mut request_handle: Handle = NULL_HANDLE;
         let result = managed_identity_get_incoming_contact_request(
             alice_handle,
-            bob_id_bytes,
+            bob_id_bytes.as_ptr(),
             &mut request_handle,
             &mut error,
         );
@@ -120,16 +126,17 @@ fn test_incoming_contact_request_retrieval() {
         assert_ne!(request_handle, NULL_HANDLE);
 
         // Verify it's from Bob to Alice
-        let mut sender_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result = contact_request_get_sender_id(request_handle, &mut sender_id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(sender_id.bytes, [2u8; 32]); // Bob's ID
-
-        let mut recipient_id = IdentifierBytes { bytes: [0u8; 32] };
+        let mut sender_id = [0u8; 32];
         let result =
-            contact_request_get_recipient_id(request_handle, &mut recipient_id, &mut error);
+            contact_request_get_sender_id(request_handle, sender_id.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(recipient_id.bytes, [1u8; 32]); // Alice's ID
+        assert_eq!(sender_id, [2u8; 32]); // Bob's ID
+
+        let mut recipient_id = [0u8; 32];
+        let result =
+            contact_request_get_recipient_id(request_handle, recipient_id.as_mut_ptr(), &mut error);
+        assert_eq!(result, PlatformWalletFFIResult::Success);
+        assert_eq!(recipient_id, [1u8; 32]); // Alice's ID
 
         // Cleanup
         contact_request_destroy(request_handle);
@@ -158,11 +165,13 @@ fn test_multiple_contact_requests() {
 
         // Verify we can retrieve each request
         for i in 0..array.count {
-            let id_bytes = *array.items.add(i);
+            // Each row is a flat 32-byte buffer; take a pointer into
+            // the contiguous array storage.
+            let row_ptr: *const u8 = (*array.items.add(i)).as_ptr();
             let mut request_handle: Handle = NULL_HANDLE;
             let result = managed_identity_get_sent_contact_request(
                 alice_handle,
-                id_bytes,
+                row_ptr,
                 &mut request_handle,
                 &mut error,
             );
@@ -173,7 +182,7 @@ fn test_multiple_contact_requests() {
         }
 
         // Cleanup
-        platform_wallet_identifier_array_free(array);
+        platform_wallet_identifier_array_free(&mut array);
         managed_identity_destroy(alice_handle);
     }
 }
@@ -198,11 +207,11 @@ fn test_established_contacts() {
         assert_eq!(array.count, 2); // Bob and Carol
 
         // Check if Bob is established
-        let bob_id_bytes: IdentifierBytes = identities::bob().identity.id().into();
+        let bob_id_bytes: [u8; 32] = identities::bob().identity.id().to_buffer();
         let mut is_established = false;
         let result = managed_identity_is_contact_established(
             alice_handle,
-            bob_id_bytes,
+            bob_id_bytes.as_ptr(),
             &mut is_established,
             &mut error,
         );
@@ -210,11 +219,11 @@ fn test_established_contacts() {
         assert!(is_established);
 
         // Check if Dave is NOT established
-        let dave_id_bytes: IdentifierBytes = identities::dave().identity.id().into();
+        let dave_id_bytes: [u8; 32] = identities::dave().identity.id().to_buffer();
         let mut is_established = true;
         let result = managed_identity_is_contact_established(
             alice_handle,
-            dave_id_bytes,
+            dave_id_bytes.as_ptr(),
             &mut is_established,
             &mut error,
         );
@@ -222,7 +231,7 @@ fn test_established_contacts() {
         assert!(!is_established);
 
         // Cleanup
-        platform_wallet_identifier_array_free(array);
+        platform_wallet_identifier_array_free(&mut array);
         managed_identity_destroy(alice_handle);
     }
 }
@@ -269,9 +278,9 @@ fn test_mixed_contact_scenario() {
         assert_eq!(incoming_array.count, 2); // Dave and Eve
 
         // Cleanup
-        platform_wallet_identifier_array_free(established_array);
-        platform_wallet_identifier_array_free(sent_array);
-        platform_wallet_identifier_array_free(incoming_array);
+        platform_wallet_identifier_array_free(&mut established_array);
+        platform_wallet_identifier_array_free(&mut sent_array);
+        platform_wallet_identifier_array_free(&mut incoming_array);
         managed_identity_destroy(alice_handle);
     }
 }
@@ -320,56 +329,38 @@ fn test_identity_manager_with_multiple_identities() {
         assert_eq!(result, PlatformWalletFFIResult::Success);
         assert_eq!(array.count, 3);
 
-        // Set Alice as primary
-        let alice_id_bytes: IdentifierBytes = alice_id.into();
-        let result =
-            identity_manager_set_primary_identity(manager_handle, alice_id_bytes, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-
-        // Get primary
-        let mut primary_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result =
-            identity_manager_get_primary_identity_id(manager_handle, &mut primary_id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(primary_id.bytes, alice_id_bytes.bytes);
+        // Primary-identity FFI was dropped along with the field;
+        // the test_data fixture's `alice_id` is no longer relevant
+        // here.
+        let alice_id_bytes: [u8; 32] = alice_id.to_buffer();
+        let _ = alice_id_bytes;
 
         // Cleanup
-        platform_wallet_identifier_array_free(array);
+        platform_wallet_identifier_array_free(&mut array);
         identity_manager_destroy(manager_handle);
     }
 }
 
 #[test]
 fn test_managed_identity_label_operations() {
+    // `ManagedIdentity` no longer carries a `label` field — the FFI
+    // get/set entry points return null / no-op success respectively.
+    // Verify the stubs still link and behave consistently.
     unsafe {
         let alice = identities::alice();
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice);
 
         let mut error = PlatformWalletFFIError::success();
 
-        // Get current label
         let mut label_ptr: *mut std::os::raw::c_char = std::ptr::null_mut();
         let result = managed_identity_get_label(alice_handle, &mut label_ptr, &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert!(!label_ptr.is_null());
+        // Stub returns null — labels live on `PersistentIdentity.alias`.
+        assert!(label_ptr.is_null());
 
-        let label = std::ffi::CStr::from_ptr(label_ptr).to_str().unwrap();
-        assert_eq!(label, "Alice");
-        platform_wallet_string_free(label_ptr);
-
-        // Set new label
         let new_label = CString::new("Alice the Great").unwrap();
         let result = managed_identity_set_label(alice_handle, new_label.as_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
-
-        // Verify new label
-        let mut label_ptr: *mut std::os::raw::c_char = std::ptr::null_mut();
-        let result = managed_identity_get_label(alice_handle, &mut label_ptr, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-
-        let label = std::ffi::CStr::from_ptr(label_ptr).to_str().unwrap();
-        assert_eq!(label, "Alice the Great");
-        platform_wallet_string_free(label_ptr);
 
         // Cleanup
         managed_identity_destroy(alice_handle);
@@ -401,7 +392,7 @@ fn test_managed_identity_balance_and_block_time() {
         };
         let result = managed_identity_set_last_updated_balance_block_time(
             alice_handle,
-            block_time,
+            &block_time,
             &mut error,
         );
         assert_eq!(result, PlatformWalletFFIResult::Success);
@@ -434,17 +425,18 @@ fn test_error_handling_invalid_handles() {
         let invalid_handle = 99999;
 
         // Try to get identity with invalid handle
-        let mut id_bytes = IdentifierBytes { bytes: [0u8; 32] };
-        let result = managed_identity_get_id(invalid_handle, &mut id_bytes, &mut error);
+        let mut id_bytes = [0u8; 32];
+        let result = managed_identity_get_id(invalid_handle, id_bytes.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
         assert!(!error.message.is_null());
-        platform_wallet_ffi_error_free(error);
+        platform_wallet_ffi_error_free(&mut error);
 
         // Try to get contact request with invalid handle
         error = PlatformWalletFFIError::success();
-        let result = contact_request_get_sender_id(invalid_handle, &mut id_bytes, &mut error);
+        let result =
+            contact_request_get_sender_id(invalid_handle, id_bytes.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
-        platform_wallet_ffi_error_free(error);
+        platform_wallet_ffi_error_free(&mut error);
 
         // Try to destroy invalid handle
         let result = managed_identity_destroy(invalid_handle);
@@ -488,13 +480,13 @@ fn test_contact_request_not_found() {
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice);
 
         let mut error = PlatformWalletFFIError::success();
-        let eve_id_bytes: IdentifierBytes = identities::eve().identity.id().into();
+        let eve_id_bytes: [u8; 32] = identities::eve().identity.id().to_buffer();
 
         // Try to get non-existent sent request
         let mut request_handle: Handle = NULL_HANDLE;
         let result = managed_identity_get_sent_contact_request(
             alice_handle,
-            eve_id_bytes,
+            eve_id_bytes.as_ptr(),
             &mut request_handle,
             &mut error,
         );
@@ -502,7 +494,7 @@ fn test_contact_request_not_found() {
         assert!(!error.message.is_null());
 
         // Cleanup
-        platform_wallet_ffi_error_free(error);
+        platform_wallet_ffi_error_free(&mut error);
         managed_identity_destroy(alice_handle);
     }
 }
@@ -513,15 +505,15 @@ fn test_identifier_operations() {
         let mut error = PlatformWalletFFIError::success();
 
         // Generate random identifier
-        let mut id = IdentifierBytes { bytes: [0u8; 32] };
-        let result = platform_wallet_generate_random_identifier(&mut id, &mut error);
+        let mut id = [0u8; 32];
+        let result = platform_wallet_generate_random_identifier(id.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
         // Should not be all zeros
-        assert_ne!(id.bytes, [0u8; 32]);
+        assert_ne!(id, [0u8; 32]);
 
         // Convert to string (actually Base58, despite function name)
         let mut id_string: *mut std::os::raw::c_char = std::ptr::null_mut();
-        let result = platform_wallet_identifier_to_hex(id, &mut id_string, &mut error);
+        let result = platform_wallet_identifier_to_hex(id.as_ptr(), &mut id_string, &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
         assert!(!id_string.is_null());
 
@@ -534,12 +526,12 @@ fn test_identifier_operations() {
         );
 
         // Convert back from string
-        let mut id2 = IdentifierBytes { bytes: [0u8; 32] };
-        let result = platform_wallet_identifier_from_hex(id_string, &mut id2, &mut error);
+        let mut id2 = [0u8; 32];
+        let result = platform_wallet_identifier_from_hex(id_string, id2.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
 
         // Should match original
-        assert_eq!(id.bytes, id2.bytes);
+        assert_eq!(id, id2);
 
         // Cleanup
         platform_wallet_string_free(id_string);
@@ -562,18 +554,18 @@ fn test_memory_lifecycle() {
 
         // Verify they exist
         let mut error = PlatformWalletFFIError::success();
-        let mut id = IdentifierBytes { bytes: [0u8; 32] };
+        let mut id = [0u8; 32];
 
         assert_eq!(
-            managed_identity_get_id(alice_handle, &mut id, &mut error),
+            managed_identity_get_id(alice_handle, id.as_mut_ptr(), &mut error),
             PlatformWalletFFIResult::Success
         );
         assert_eq!(
-            managed_identity_get_id(bob_handle, &mut id, &mut error),
+            managed_identity_get_id(bob_handle, id.as_mut_ptr(), &mut error),
             PlatformWalletFFIResult::Success
         );
         assert_eq!(
-            managed_identity_get_id(carol_handle, &mut id, &mut error),
+            managed_identity_get_id(carol_handle, id.as_mut_ptr(), &mut error),
             PlatformWalletFFIResult::Success
         );
 
@@ -585,18 +577,18 @@ fn test_memory_lifecycle() {
 
         // Alice should be gone, but Bob and Carol should still exist
         assert_eq!(
-            managed_identity_get_id(alice_handle, &mut id, &mut error),
+            managed_identity_get_id(alice_handle, id.as_mut_ptr(), &mut error),
             PlatformWalletFFIResult::ErrorInvalidHandle
         );
-        platform_wallet_ffi_error_free(error);
+        platform_wallet_ffi_error_free(&mut error);
         error = PlatformWalletFFIError::success();
 
         assert_eq!(
-            managed_identity_get_id(bob_handle, &mut id, &mut error),
+            managed_identity_get_id(bob_handle, id.as_mut_ptr(), &mut error),
             PlatformWalletFFIResult::Success
         );
         assert_eq!(
-            managed_identity_get_id(carol_handle, &mut id, &mut error),
+            managed_identity_get_id(carol_handle, id.as_mut_ptr(), &mut error),
             PlatformWalletFFIResult::Success
         );
 
@@ -664,10 +656,10 @@ fn test_concurrent_identity_operations() {
         assert_eq!(bob_array2.count, 3);
 
         // Cleanup
-        platform_wallet_identifier_array_free(alice_array);
-        platform_wallet_identifier_array_free(bob_array);
-        platform_wallet_identifier_array_free(bob_array2);
-        platform_wallet_identifier_array_free(carol_sent);
+        platform_wallet_identifier_array_free(&mut alice_array);
+        platform_wallet_identifier_array_free(&mut bob_array);
+        platform_wallet_identifier_array_free(&mut bob_array2);
+        platform_wallet_identifier_array_free(&mut carol_sent);
         managed_identity_destroy(alice_handle);
         managed_identity_destroy(bob_handle);
         managed_identity_destroy(carol_handle);
@@ -688,7 +680,7 @@ fn test_get_established_contact_and_fields() {
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
 
         let bob_id = test_data::identities::bob().identity.id();
-        let bob_id_bytes: IdentifierBytes = bob_id.into();
+        let bob_id_bytes: [u8; 32] = bob_id.to_buffer();
 
         let mut contact_handle: Handle = NULL_HANDLE;
         let mut error = PlatformWalletFFIError::success();
@@ -696,7 +688,7 @@ fn test_get_established_contact_and_fields() {
         // Get established contact
         let result = managed_identity_get_established_contact(
             alice_handle,
-            bob_id_bytes,
+            bob_id_bytes.as_ptr(),
             &mut contact_handle,
             &mut error,
         );
@@ -705,11 +697,14 @@ fn test_get_established_contact_and_fields() {
         assert_ne!(contact_handle, NULL_HANDLE);
 
         // Get contact ID
-        let mut retrieved_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result =
-            established_contact_get_contact_id(contact_handle, &mut retrieved_id, &mut error);
+        let mut retrieved_id = [0u8; 32];
+        let result = established_contact_get_contact_id(
+            contact_handle,
+            retrieved_id.as_mut_ptr(),
+            &mut error,
+        );
         assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(retrieved_id.bytes, bob_id_bytes.bytes);
+        assert_eq!(retrieved_id, bob_id_bytes);
 
         // Cleanup
         established_contact_destroy(contact_handle);
@@ -726,14 +721,14 @@ fn test_established_contact_outgoing_and_incoming_requests() {
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
 
         let bob_id = test_data::identities::bob().identity.id();
-        let bob_id_bytes: IdentifierBytes = bob_id.into();
+        let bob_id_bytes: [u8; 32] = bob_id.to_buffer();
 
         let mut contact_handle: Handle = NULL_HANDLE;
         let mut error = PlatformWalletFFIError::success();
 
         managed_identity_get_established_contact(
             alice_handle,
-            bob_id_bytes,
+            bob_id_bytes.as_ptr(),
             &mut contact_handle,
             &mut error,
         );
@@ -760,20 +755,21 @@ fn test_established_contact_outgoing_and_incoming_requests() {
 
         // Verify the requests have correct sender/recipient
         let alice_id = alice.identity.id();
-        let mut sender_id = IdentifierBytes { bytes: [0u8; 32] };
-        let mut recipient_id = IdentifierBytes { bytes: [0u8; 32] };
+        let alice_id_bytes: [u8; 32] = alice_id.to_buffer();
+        let mut sender_id = [0u8; 32];
+        let mut recipient_id = [0u8; 32];
 
         // Outgoing: from alice to bob
-        contact_request_get_sender_id(outgoing_handle, &mut sender_id, &mut error);
-        contact_request_get_recipient_id(outgoing_handle, &mut recipient_id, &mut error);
-        assert_eq!(sender_id.bytes, IdentifierBytes::from(alice_id).bytes);
-        assert_eq!(recipient_id.bytes, bob_id_bytes.bytes);
+        contact_request_get_sender_id(outgoing_handle, sender_id.as_mut_ptr(), &mut error);
+        contact_request_get_recipient_id(outgoing_handle, recipient_id.as_mut_ptr(), &mut error);
+        assert_eq!(sender_id, alice_id_bytes);
+        assert_eq!(recipient_id, bob_id_bytes);
 
         // Incoming: from bob to alice
-        contact_request_get_sender_id(incoming_handle, &mut sender_id, &mut error);
-        contact_request_get_recipient_id(incoming_handle, &mut recipient_id, &mut error);
-        assert_eq!(sender_id.bytes, bob_id_bytes.bytes);
-        assert_eq!(recipient_id.bytes, IdentifierBytes::from(alice_id).bytes);
+        contact_request_get_sender_id(incoming_handle, sender_id.as_mut_ptr(), &mut error);
+        contact_request_get_recipient_id(incoming_handle, recipient_id.as_mut_ptr(), &mut error);
+        assert_eq!(sender_id, bob_id_bytes);
+        assert_eq!(recipient_id, alice_id_bytes);
 
         // Cleanup
         contact_request_destroy(outgoing_handle);
@@ -792,14 +788,14 @@ fn test_established_contact_request_fields() {
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
 
         let bob_id = test_data::identities::bob().identity.id();
-        let bob_id_bytes: IdentifierBytes = bob_id.into();
+        let bob_id_bytes: [u8; 32] = bob_id.to_buffer();
 
         let mut contact_handle: Handle = NULL_HANDLE;
         let mut error = PlatformWalletFFIError::success();
 
         managed_identity_get_established_contact(
             alice_handle,
-            bob_id_bytes,
+            bob_id_bytes.as_ptr(),
             &mut contact_handle,
             &mut error,
         );
@@ -855,14 +851,14 @@ fn test_get_nonexistent_established_contact() {
         let alice = test_data::identities::alice();
         let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice);
 
-        let nonexistent_id = IdentifierBytes { bytes: [99u8; 32] };
+        let nonexistent_id: [u8; 32] = [99u8; 32];
 
         let mut contact_handle: Handle = NULL_HANDLE;
         let mut error = PlatformWalletFFIError::success();
 
         let result = managed_identity_get_established_contact(
             alice_handle,
-            nonexistent_id,
+            nonexistent_id.as_ptr(),
             &mut contact_handle,
             &mut error,
         );
@@ -893,6 +889,8 @@ fn test_multiple_established_contacts() {
 
         let bob_id = test_data::identities::bob().identity.id();
         let carol_id = test_data::identities::carol().identity.id();
+        let bob_id_bytes: [u8; 32] = bob_id.to_buffer();
+        let carol_id_bytes: [u8; 32] = carol_id.to_buffer();
 
         let mut error = PlatformWalletFFIError::success();
 
@@ -900,7 +898,7 @@ fn test_multiple_established_contacts() {
         let mut bob_contact_handle: Handle = NULL_HANDLE;
         let result = managed_identity_get_established_contact(
             alice_handle,
-            bob_id.into(),
+            bob_id_bytes.as_ptr(),
             &mut bob_contact_handle,
             &mut error,
         );
@@ -910,28 +908,29 @@ fn test_multiple_established_contacts() {
         let mut carol_contact_handle: Handle = NULL_HANDLE;
         let result = managed_identity_get_established_contact(
             alice_handle,
-            carol_id.into(),
+            carol_id_bytes.as_ptr(),
             &mut carol_contact_handle,
             &mut error,
         );
         assert_eq!(result, PlatformWalletFFIResult::Success);
 
         // Verify Bob's contact ID
-        let mut retrieved_bob_id = IdentifierBytes { bytes: [0u8; 32] };
-        established_contact_get_contact_id(bob_contact_handle, &mut retrieved_bob_id, &mut error);
-        assert_eq!(retrieved_bob_id.bytes, IdentifierBytes::from(bob_id).bytes);
-
-        // Verify Carol's contact ID
-        let mut retrieved_carol_id = IdentifierBytes { bytes: [0u8; 32] };
+        let mut retrieved_bob_id = [0u8; 32];
         established_contact_get_contact_id(
-            carol_contact_handle,
-            &mut retrieved_carol_id,
+            bob_contact_handle,
+            retrieved_bob_id.as_mut_ptr(),
             &mut error,
         );
-        assert_eq!(
-            retrieved_carol_id.bytes,
-            IdentifierBytes::from(carol_id).bytes
+        assert_eq!(retrieved_bob_id, bob_id_bytes);
+
+        // Verify Carol's contact ID
+        let mut retrieved_carol_id = [0u8; 32];
+        established_contact_get_contact_id(
+            carol_contact_handle,
+            retrieved_carol_id.as_mut_ptr(),
+            &mut error,
         );
+        assert_eq!(retrieved_carol_id, carol_id_bytes);
 
         // Cleanup
         established_contact_destroy(bob_contact_handle);

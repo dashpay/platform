@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn should_return_invalid_result_if_too_many_recipients() {
         let platform_version = PlatformVersion::latest();
-        let max = platform_version.dpp.state_transitions.max_address_outputs as u16;
+        let max = platform_version.dpp.state_transitions.max_address_outputs;
         let mut recipient_addresses = BTreeMap::new();
         for i in 0..=max {
             let mut addr = [0u8; 20];

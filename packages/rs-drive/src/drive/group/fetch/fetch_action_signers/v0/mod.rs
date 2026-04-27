@@ -146,9 +146,8 @@ mod tests {
 
         // Either returns Ok(empty) or an error reflecting the missing path; it
         // must not panic.
-        match result {
-            Ok(map) => assert!(map.is_empty()),
-            Err(_) => {}
+        if let Ok(map) = result {
+            assert!(map.is_empty());
         }
     }
 }

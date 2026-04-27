@@ -173,7 +173,6 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::error::drive::DriveError;
     use crate::error::Error;

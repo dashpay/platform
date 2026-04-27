@@ -170,12 +170,9 @@ where
 mod test {
     use super::*;
     use rs_dapi_client::ExecutionError;
-    use std::{
-        future::Future,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
     };
 
     use crate::error::StaleNodeError;
