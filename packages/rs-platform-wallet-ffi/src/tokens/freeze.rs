@@ -1,4 +1,4 @@
-//! FFI binding for `TokenWallet::freeze_external_signer`.
+//! FFI binding for `IdentityWallet::token_freeze_with_external_signer`.
 //!
 //! Freeze is group-capable; the caller passes the same flat
 //! `(group_info_kind, position, action_id, action_is_proposer)` tuple
@@ -128,11 +128,11 @@ pub unsafe extern "C" fn platform_wallet_token_freeze(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                token_wallet
-                    .freeze_external_signer(
+                identity_wallet
+                    .token_freeze_with_external_signer(
                         id,
                         contract_id,
                         token_position,

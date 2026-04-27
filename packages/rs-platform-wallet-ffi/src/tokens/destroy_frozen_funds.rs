@@ -1,4 +1,4 @@
-//! FFI binding for `TokenWallet::destroy_frozen_funds_external_signer`.
+//! FFI binding for `IdentityWallet::token_destroy_frozen_funds_with_external_signer`.
 //!
 //! Destroy-frozen-funds is group-capable; same shape as Freeze /
 //! Unfreeze. The Rust builder takes no `amount` — destroying always
@@ -126,11 +126,11 @@ pub unsafe extern "C" fn platform_wallet_token_destroy_frozen_funds(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                token_wallet
-                    .destroy_frozen_funds_external_signer(
+                identity_wallet
+                    .token_destroy_frozen_funds_with_external_signer(
                         id,
                         contract_id,
                         token_position,

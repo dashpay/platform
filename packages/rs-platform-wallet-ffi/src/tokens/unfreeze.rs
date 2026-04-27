@@ -1,4 +1,4 @@
-//! FFI binding for `TokenWallet::unfreeze_external_signer`.
+//! FFI binding for `IdentityWallet::token_unfreeze_with_external_signer`.
 //!
 //! Unfreeze is group-capable; same shape as Freeze. There is no
 //! `amount` — the action unfreezes the full frozen balance of
@@ -126,11 +126,11 @@ pub unsafe extern "C" fn platform_wallet_token_unfreeze(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                token_wallet
-                    .unfreeze_external_signer(
+                identity_wallet
+                    .token_unfreeze_with_external_signer(
                         id,
                         contract_id,
                         token_position,

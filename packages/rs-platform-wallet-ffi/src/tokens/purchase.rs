@@ -1,4 +1,4 @@
-//! FFI binding for `TokenWallet::purchase_external_signer`.
+//! FFI binding for `IdentityWallet::token_purchase_with_external_signer`.
 //!
 //! Direct Purchase is not group-gated and the underlying builder
 //! (`TokenDirectPurchaseTransitionBuilder`) takes no `public_note`,
@@ -79,11 +79,11 @@ pub unsafe extern "C" fn platform_wallet_token_purchase(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                token_wallet
-                    .purchase_external_signer(
+                identity_wallet
+                    .token_purchase_with_external_signer(
                         id,
                         contract_id,
                         token_position,

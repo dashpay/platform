@@ -1,4 +1,4 @@
-//! FFI binding for `TokenWallet::update_config_external_signer`.
+//! FFI binding for `IdentityWallet::token_update_config_with_external_signer`.
 //!
 //! `TokenConfigurationChangeItem` has 32 variants. Surfacing each one
 //! through its own FFI parameter list would be both noisy and a
@@ -255,11 +255,11 @@ pub unsafe extern "C" fn platform_wallet_token_update_config(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                token_wallet
-                    .update_config_external_signer(
+                identity_wallet
+                    .token_update_config_with_external_signer(
                         id,
                         contract_id,
                         token_position,

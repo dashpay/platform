@@ -1,4 +1,4 @@
-//! FFI binding for `TokenWallet::pause_external_signer`.
+//! FFI binding for `IdentityWallet::token_pause_with_external_signer`.
 //!
 //! Pause is an emergency action and is group-capable; same group-info
 //! shape as Freeze / Unfreeze. There is no `amount` and no target
@@ -114,11 +114,11 @@ pub unsafe extern "C" fn platform_wallet_token_pause(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let identity_wallet = wallet.identity().clone();
             let result = block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                token_wallet
-                    .pause_external_signer(
+                identity_wallet
+                    .token_pause_with_external_signer(
                         id,
                         contract_id,
                         token_position,
