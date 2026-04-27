@@ -6,19 +6,6 @@
 //     cargo test --test e2e -- --ignored --nocapture \
 //       transfer_between_two_platform_addresses
 //   See `tests/e2e/README.md` "Bank pre-funding" for the procedure.
-//
-// TODO(qa-wave5): the test attribute is missing `flavor = "multi_thread"`.
-//   `tokio_shared_rt::test(shared)` defaults to a current-thread runtime,
-//   under which `SpvContextProvider`'s `block_in_place` call inside
-//   `framework/context_provider.rs:81` panics with:
-//     "can call blocking only when running on the multi-threaded runtime"
-//   This was reproduced under an empty BIP-39 bank during the QA pass.
-//   DET's precedent (`dash-evo-tool/tests/backend-e2e/`) uses
-//   `#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]`
-//   on every test for exactly this reason. A follow-up Bilby pass should
-//   either (a) update this attribute and the README example, or (b)
-//   replace `block_in_place` with a channel-based async->sync bridge
-//   inside `SpvContextProvider`.
 
 //! First end-to-end test — credits transfer between two
 //! platform-payment addresses owned by the same test wallet.
@@ -60,7 +47,11 @@ const TRANSFER_CREDITS: u64 = 10_000_000;
 /// covers BLAST-sync round-trip plus Drive block time on testnet.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared)]
+// `flavor = "multi_thread"` is REQUIRED — `SpvContextProvider`'s
+// `block_in_place` bridge (framework/context_provider.rs) panics on a
+// current-thread runtime, which is the `tokio_shared_rt::test`
+// default. Mirrors `dash-evo-tool/tests/backend-e2e/` precedent.
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access"]
 async fn transfer_between_two_platform_addresses() {
     let _ = tracing_subscriber::fmt()

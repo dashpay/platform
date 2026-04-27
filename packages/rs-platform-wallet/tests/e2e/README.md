@@ -2,7 +2,8 @@
 
 ## Status
 
-This framework was assembled across Waves 1-4 and audited by QA in Wave 5. The single
+This framework was assembled across Waves 1-4, audited by QA in Wave 5, and patched
+in Wave 6 to clear the QA-001 blocker. The single
 `transfer_between_two_platform_addresses` test compiles cleanly, its module wiring is
 sound, and `cargo check` / `cargo clippy` / `cargo fmt --check` are green. **The live
 happy-path run has not yet been executed in this branch** because no testnet bank
@@ -11,16 +12,12 @@ to the QA agent. Once an operator provisions one and exports
 `PLATFORM_WALLET_E2E_BANK_MNEMONIC`, the run is one `cargo test` away (see
 [Running tests](#running-tests)).
 
-A reproducible defect was found while attempting the under-funded panic check: the
-test attribute `#[tokio_shared_rt::test(shared)]` defaults to a **current-thread**
-tokio runtime, under which `SpvContextProvider::get_quorum_public_key` panics with
-`"can call blocking only when running on the multi-threaded runtime"` because it uses
-`tokio::task::block_in_place`. DET's precedent uses
-`#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]` on
-every test for exactly this reason. A follow-up Bilby pass should either fix the
-attribute on `cases::transfer::transfer_between_two_platform_addresses` and the
-example in this README, or replace the `block_in_place` bridge with a channel-based
-async->sync handoff inside `framework/context_provider.rs`.
+The runtime-flavor defect surfaced during the QA-001 reproduction (default
+`tokio_shared_rt::test(shared)` lands on a current-thread runtime, which panics inside
+`SpvContextProvider`'s `block_in_place` bridge) is resolved: every e2e test attribute
+MUST be `#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]`,
+mirroring the `dash-evo-tool/tests/backend-e2e/` precedent. The canonical pattern below
+is updated accordingly.
 
 End-to-end tests that exercise the full wallet -> SDK -> broadcast pipeline against a
 live Dash testnet. The framework validates platform-address credit operations through
@@ -258,10 +255,10 @@ Canonical test pattern:
 ```rust
 use crate::framework::prelude::*;
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and testnet access"]
 async fn transfer_between_two_platform_addresses() {
-    let mut s = setup().await.expect("e2e setup failed");
+    let s = setup().await.expect("e2e setup failed");
 
     let addr_1 = s.test_wallet.next_unused_address().await.unwrap();
     s.ctx.bank().fund_address(&addr_1, 50_000_000).await.unwrap();
@@ -296,12 +293,11 @@ For deeper implementation details — module responsibilities, registry schema, 
 design, workdir slot algorithm — refer to the plan file at
 `.claude/plans/ok-now-we-ll-get-prancy-biscuit.md`.
 
-> **Note (QA Wave 5):** the example above intentionally omits the runtime flavor for
-> brevity, but in practice the attribute must include
-> `flavor = "multi_thread", worker_threads = 12` (mirroring DET's e2e harness) — see
-> the [Status](#status) section. Without it, `SpvContextProvider`'s
-> `block_in_place` bridge panics on the current-thread runtime that
-> `tokio_shared_rt::test(shared)` builds by default.
+> **Runtime flavor is non-optional:** the example's attribute MUST include
+> `flavor = "multi_thread", worker_threads = 12`. Without it,
+> `SpvContextProvider`'s `block_in_place` bridge panics on the current-thread
+> runtime that `tokio_shared_rt::test(shared)` builds by default. Mirrors the DET
+> precedent.
 
 ---
 

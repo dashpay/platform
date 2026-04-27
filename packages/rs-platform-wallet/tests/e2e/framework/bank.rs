@@ -131,12 +131,21 @@ impl BankWallet {
             // operator error — there's nothing useful the test
             // suite can do without it. Panic so CI logs surface
             // the actionable message clearly rather than burying
-            // it in a Result chain.
+            // it in a Result chain. Format mirrors the README's
+            // "Bank pre-funding" section (multi-line, bech32m
+            // address) so the operator-facing pointer is identical
+            // whether they hit it from the README or from a CI
+            // failure.
+            let address_bech32m = primary_receive_address.to_bech32m_string(network);
             panic!(
-                "e2e bank wallet under-funded: have {} credits, need {} (min). \
-                 Top up the bank's primary receive address {:?} via testnet faucet \
-                 or another funded wallet, then re-run.",
-                total, config.min_bank_credits, primary_receive_address
+                "Bank wallet under-funded.\n  \
+                 balance : {balance} credits\n  \
+                 required: {required} credits\n  \
+                 top up at: {address_bech32m}\n\
+                 \n\
+                 Send testnet platform credits to the address above, then re-run the tests.",
+                balance = total,
+                required = config.min_bank_credits,
             );
         }
 

@@ -151,8 +151,17 @@ async fn sweep_one(
         );
         // Best-effort manager unregister — leaks are harmless here
         // because the wallet has no balance and the manager is
-        // recreated on next run anyway.
-        let _ = manager.remove_wallet(hash).await;
+        // recreated on next run anyway. Log failures so operators
+        // can spot leaked manager state in CI logs (e.g. SPV still
+        // tracking a wallet's addresses on subsequent passes).
+        if let Err(err) = manager.remove_wallet(hash).await {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(hash),
+                error = %err,
+                "manager unregister failed for dust-threshold sweep; wallet remains tracked"
+            );
+        }
         return Ok(());
     }
     let amount = total.saturating_sub(SWEEP_FEE_ESTIMATE);
@@ -173,8 +182,17 @@ async fn sweep_one(
         .map_err(wallet_err)?;
 
     // Best-effort manager unregister — keeps SPV from continuing
-    // to track this wallet's addresses on subsequent passes.
-    let _ = manager.remove_wallet(hash).await;
+    // to track this wallet's addresses on subsequent passes. Log
+    // failures explicitly so operators can spot leaked manager
+    // state.
+    if let Err(err) = manager.remove_wallet(hash).await {
+        tracing::warn!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(hash),
+            error = %err,
+            "manager unregister failed after sweep; wallet remains tracked"
+        );
+    }
     Ok(())
 }
 
@@ -202,9 +220,17 @@ pub async fn teardown_one(
 
     // Drop the entry first so a subsequent unregister failure
     // doesn't leak the registry entry — the wallet already has no
-    // balance to recover.
+    // balance to recover. Log unregister failures so operators
+    // can spot leaked manager state across long-lived test runs.
     registry.remove(&test_wallet.id())?;
-    let _ = manager.remove_wallet(&test_wallet.id()).await;
+    if let Err(err) = manager.remove_wallet(&test_wallet.id()).await {
+        tracing::warn!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(test_wallet.id()),
+            error = %err,
+            "manager unregister failed after teardown; wallet remains tracked"
+        );
+    }
     Ok(())
 }
 
