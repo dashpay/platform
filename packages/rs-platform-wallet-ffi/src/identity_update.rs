@@ -7,18 +7,16 @@
 //! supplied `signer_handle` (typically the iOS-side `KeychainSigner`).
 
 use std::convert::TryFrom;
-use std::ffi::CStr;
 use std::slice;
 
-use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::{BinaryData, Identifier};
+use dpp::platform_value::BinaryData;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_registration_with_signer::IdentityPubkeyFFI;
+use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::types::*;
 
@@ -160,97 +158,10 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
             // / Decryption keys MUST carry a value here for Drive
             // to scope the key correctly; the iOS form blocks
             // submission if the caller forgot to populate them.
-            let contract_bounds = match row.contract_bounds_kind {
-                0 => None,
-                1 => {
-                    if row.contract_bounds_id.is_null() {
-                        if !out_error.is_null() {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorNullPointer,
-                                format!(
-                                    "add_public_keys[{}].contract_bounds_id is null \
-                                     but kind == 1 (SingleContract)",
-                                    i
-                                ),
-                            );
-                        }
-                        return PlatformWalletFFIResult::ErrorNullPointer;
-                    }
-                    let id_bytes: [u8; 32] = match <[u8; 32]>::try_from(slice::from_raw_parts(
-                        row.contract_bounds_id,
-                        32,
-                    )) {
-                        Ok(b) => b,
-                        Err(_) => {
-                            unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes")
-                        }
-                    };
-                    Some(ContractBounds::SingleContract {
-                        id: Identifier::from(id_bytes),
-                    })
-                }
-                2 => {
-                    if row.contract_bounds_id.is_null()
-                        || row.contract_bounds_document_type.is_null()
-                    {
-                        if !out_error.is_null() {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorNullPointer,
-                                format!(
-                                    "add_public_keys[{}].contract_bounds_id or \
-                                     .contract_bounds_document_type is null but \
-                                     kind == 2 (SingleContractDocumentType)",
-                                    i
-                                ),
-                            );
-                        }
-                        return PlatformWalletFFIResult::ErrorNullPointer;
-                    }
-                    let id_bytes: [u8; 32] = match <[u8; 32]>::try_from(slice::from_raw_parts(
-                        row.contract_bounds_id,
-                        32,
-                    )) {
-                        Ok(b) => b,
-                        Err(_) => {
-                            unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes")
-                        }
-                    };
-                    let doc_type = match CStr::from_ptr(row.contract_bounds_document_type).to_str()
-                    {
-                        Ok(s) => s.to_string(),
-                        Err(e) => {
-                            if !out_error.is_null() {
-                                *out_error = PlatformWalletFFIError::new(
-                                    PlatformWalletFFIResult::ErrorUtf8Conversion,
-                                    format!(
-                                        "add_public_keys[{}].contract_bounds_document_type \
-                                             is not valid UTF-8: {}",
-                                        i, e
-                                    ),
-                                );
-                            }
-                            return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                        }
-                    };
-                    Some(ContractBounds::SingleContractDocumentType {
-                        id: Identifier::from(id_bytes),
-                        document_type_name: doc_type,
-                    })
-                }
-                other => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorInvalidParameter,
-                            format!(
-                                "add_public_keys[{}].contract_bounds_kind = {} is not \
-                                 a valid discriminant (0=none, 1=SingleContract, \
-                                 2=SingleContractDocumentType)",
-                                i, other
-                            ),
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorInvalidParameter;
-                }
+            let contract_bounds = match decode_contract_bounds(row, i, "add_public_keys", out_error)
+            {
+                Ok(b) => b,
+                Err(code) => return code,
             };
 
             keys.push(IdentityPublicKey::V0(IdentityPublicKeyV0 {

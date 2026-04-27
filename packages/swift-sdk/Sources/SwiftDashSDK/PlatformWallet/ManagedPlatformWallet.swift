@@ -631,11 +631,25 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         case .none:
             return body(0, nil, nil)
         case .singleContract(let id):
+            // The Rust side reads exactly 32 bytes off
+            // `contract_bounds_id`. A short or empty `Data` would
+            // either dangle the base pointer (empty) or read past
+            // the buffer end (short). Caller-side guard so the
+            // failure surfaces as a clean precondition rather than
+            // an FFI-side OOB read.
+            precondition(
+                id.count == 32,
+                "ContractBounds.singleContract id must be exactly 32 bytes (got \(id.count))"
+            )
             return id.withUnsafeBytes { raw -> R in
                 let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
                 return body(1, idPtr, nil)
             }
         case .singleContractDocumentType(let id, let documentTypeName):
+            precondition(
+                id.count == 32,
+                "ContractBounds.singleContractDocumentType id must be exactly 32 bytes (got \(id.count))"
+            )
             return id.withUnsafeBytes { raw -> R in
                 let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
                 return documentTypeName.withCString { docTypePtr in
@@ -807,19 +821,19 @@ extension ManagedPlatformWallet {
 
     /// Derive a single ECDSA identity-authentication keypair at an
     /// arbitrary `(identityIndex, keyId)` slot — the building block
-    /// the "add key to existing identity" flow runs on. Routes
-    /// through the watch-only-safe FFI
-    /// `dash_sdk_derive_identity_key_at_slot`, which delegates to
-    /// the `rs-platform-wallet` library's
-    /// `derive_ecdsa_identity_auth_keypair_from_master` for the
-    /// actual path build + secp256k1 derive.
+    /// the "add key to existing identity" flow runs on.
     ///
-    /// The mnemonic is fetched from Keychain via `WalletStorage`
-    /// inside this method, handed to the FFI as a `withCString`
-    /// scope, and dropped before the function returns. Per the
-    /// swift-sdk/CLAUDE.md "no mnemonic round-tripping" rule the
-    /// seed never lives in a Swift `String` outside the
-    /// scoped-cstring window.
+    /// Routes through the resolver-based FFI
+    /// `dash_sdk_derive_identity_key_at_slot_with_resolver`. Rust
+    /// pulls the BIP-39 mnemonic across the FFI on demand via the
+    /// `MnemonicResolver` callback (whose `resolve` function reads
+    /// from iOS Keychain through `WalletStorage`); the seed never
+    /// lives in a Swift `String` outside the resolver trampoline's
+    /// stack frame, satisfying the `swift-sdk/CLAUDE.md` "no
+    /// mnemonic round-tripping" rule. Earlier revisions pulled the
+    /// mnemonic into Swift, handed it back to a stateless FFI as a
+    /// `withCString` scope, and looped over the result — that
+    /// shape is the canonical anti-precedent the rule cites.
     ///
     /// The returned `IdentityRegistrationKeyPreview` carries the
     /// derived public key bytes + the 32-byte private scalar.
@@ -835,14 +849,15 @@ extension ManagedPlatformWallet {
     ///      signer:)`.
     ///
     /// - Parameters:
-    ///   - walletId: 32-byte wallet id (used to fetch the mnemonic).
+    ///   - walletId: 32-byte wallet id (Rust hands this to the
+    ///     resolver callback to look up the mnemonic in Keychain).
     ///   - identityIndex: BIP-9 identity index in the HD tree.
     ///   - keyId: hardened key index. Caller picks
     ///     `max(existingKeyIds) + 1` to extend an existing identity.
     ///   - network: the wallet's network — selects the DIP-9
     ///     coin-type slot in the derivation path AND the WIF version.
     ///   - storage: defaults to a fresh `WalletStorage()` —
-    ///     overridable for tests.
+    ///     overridable for tests. Used by the resolver vtable.
     ///
     /// - Throws: `PlatformWalletError` from the FFI on any failure
     ///   (mnemonic missing, bad slot, derivation failure).
@@ -854,16 +869,17 @@ extension ManagedPlatformWallet {
         network: DashSDKNetwork,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityRegistrationKeyPreview {
-        let mnemonic = try storage.retrieveMnemonic(for: walletId)
+        let resolver = MnemonicResolver(storage: storage)
 
         var row = identityKeyPreviewFFIEmpty()
         var error = PlatformWalletFFIError()
 
-        let result = mnemonic.withCString { mnemonicPtr in
-            dash_sdk_derive_identity_key_at_slot(
-                mnemonicPtr,
-                nil, // passphrase
+        let result = walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
+            return dash_sdk_derive_identity_key_at_slot_with_resolver(
                 network,
+                walletPtr,
+                resolver.handle,
                 identityIndex,
                 keyId,
                 &row,

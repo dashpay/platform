@@ -157,6 +157,16 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
         key_index,
     )?;
     let secp = Secp256k1::new();
+    // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
+    // wrap it in `Zeroizing` directly — but its inner
+    // `secp256k1::SecretKey` does implement `Drop` with a memzero,
+    // so the secret scalar is scrubbed when `derived` falls out of
+    // scope. The surrounding `chain_code` / `depth` /
+    // `parent_fingerprint` / `child_number` are non-secret BIP-32
+    // metadata; leaking them on the stack is a non-event. The
+    // returned `private_key` is wrapped in `Zeroizing` below so
+    // the 32-byte scalar copy crossing the function boundary is
+    // also scrubbed on the caller's drop.
     let derived = master.derive_priv(&secp, &path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"

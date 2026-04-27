@@ -19,7 +19,8 @@
 //! builder + secp256k1 derive are not duplicated here. Only the
 //! C-ABI marshalling lives in this file.
 
-use std::ffi::CString;
+use std::ffi::{c_void, CString};
+use std::os::raw::c_char;
 
 use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::ExtendedPrivKey;
@@ -27,6 +28,9 @@ use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypa
 use rs_sdk_ffi::DashSDKNetwork;
 use zeroize::Zeroizing;
 
+use crate::derive_and_persist_callbacks::{
+    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+};
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::{map_network, parse_mnemonic_any_language};
@@ -130,6 +134,29 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
         }
     };
 
+    derive_at_slot_inner(
+        mnemonic_str,
+        passphrase_str,
+        network,
+        identity_index,
+        key_index,
+        out_row,
+        out_error,
+    )
+}
+
+/// Inner implementation shared by the mnemonic-string and resolver-
+/// based entry points. Assumes the caller has already pre-zeroed
+/// `*out_row` (so a failed call returns a known empty struct).
+unsafe fn derive_at_slot_inner(
+    mnemonic_str: &str,
+    passphrase_str: &str,
+    network: DashSDKNetwork,
+    identity_index: u32,
+    key_index: u32,
+    out_row: *mut IdentityKeyPreviewFFI,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
     // ---- Mnemonic + seed -----------------------------------------------------
     let mnemonic = match parse_mnemonic_any_language(mnemonic_str) {
         Ok(m) => m,
@@ -211,7 +238,14 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
         Ok(k) => k,
         Err(e) => {
             // Roll back the path / pubkey allocations before bailing.
-            drop(Vec::from_raw_parts(pub_ptr, pub_len, pub_len));
+            // Reclaim the boxed slice through the same allocator
+            // shape it was created with (`into_boxed_slice` →
+            // `Box<[u8]>`). Reconstructing a `Vec` here is UB
+            // whenever `len < capacity` for the original source
+            // vector.
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                pub_ptr, pub_len,
+            )));
             drop(path_cstring);
             if !out_error.is_null() {
                 *out_error = PlatformWalletFFIError::new(
@@ -230,7 +264,14 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
     let wif_cstring = match CString::new(dash_private.to_wif()) {
         Ok(s) => s,
         Err(e) => {
-            drop(Vec::from_raw_parts(pub_ptr, pub_len, pub_len));
+            // Reclaim the boxed slice through the same allocator
+            // shape it was created with (`into_boxed_slice` →
+            // `Box<[u8]>`). Reconstructing a `Vec` here is UB
+            // whenever `len < capacity` for the original source
+            // vector.
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                pub_ptr, pub_len,
+            )));
             drop(path_cstring);
             if !out_error.is_null() {
                 *out_error = PlatformWalletFFIError::new(
@@ -261,6 +302,138 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
     PlatformWalletFFIResult::Success
 }
 
+/// Resolver-based variant of
+/// [`dash_sdk_derive_identity_key_at_slot`].
+///
+/// Replaces the raw-mnemonic entry point with the same callback
+/// pattern that
+/// [`crate::dash_sdk_derive_and_persist_identity_keys`] uses: the
+/// caller hands in a [`MnemonicResolverHandle`] keyed by
+/// `wallet_id_bytes`, and Rust pulls the BIP-39 mnemonic across
+/// the FFI from Swift's iOS Keychain on demand. The mnemonic
+/// never lives in a Swift `String` outside the resolver
+/// trampoline's stack frame — closes the
+/// `swift-sdk/CLAUDE.md` "no mnemonic round-tripping" rule that
+/// the raw-cstring entry point still violates.
+///
+/// Use this in preference to
+/// [`dash_sdk_derive_identity_key_at_slot`] from Swift. The
+/// raw-cstring variant is retained for tests + any non-iOS caller
+/// that already has the mnemonic in hand.
+///
+/// # Safety
+/// - `wallet_id_bytes` must be valid for 32 readable bytes.
+/// - `mnemonic_resolver_handle` must be a non-null handle
+///   produced by `dash_sdk_mnemonic_resolver_create`, and remain
+///   valid for the duration of the call.
+/// - `out_row` must be a valid, writable pointer.
+/// - `out_error` may be NULL.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
+    network: DashSDKNetwork,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_index: u32,
+    key_index: u32,
+    out_row: *mut IdentityKeyPreviewFFI,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if out_row.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "out_row is null",
+            );
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+    *out_row = IdentityKeyPreviewFFI::empty();
+
+    if wallet_id_bytes.is_null() || mnemonic_resolver_handle.is_null() {
+        if !out_error.is_null() {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorNullPointer,
+                "wallet_id_bytes and mnemonic_resolver_handle are required",
+            );
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    // Stack-resident, zeroized-on-drop buffer the resolver writes
+    // into. Same shape as `dash_sdk_derive_and_persist_identity_keys`.
+    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
+        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
+    let mut mnemonic_len: usize = 0;
+
+    let resolver = &*mnemonic_resolver_handle;
+    let resolver_vtable = &*resolver.vtable;
+    let rc = (resolver_vtable.resolve)(
+        resolver.ctx as *const c_void,
+        wallet_id_bytes,
+        mnemonic_buf.as_mut_ptr() as *mut c_char,
+        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+        &mut mnemonic_len,
+    );
+    match rc {
+        x if x == mnemonic_resolver_result::SUCCESS => {}
+        x if x == mnemonic_resolver_result::NOT_FOUND => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorWalletOperation,
+                    "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
+                );
+            }
+            return PlatformWalletFFIResult::ErrorWalletOperation;
+        }
+        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorWalletOperation,
+                    "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
+                );
+            }
+            return PlatformWalletFFIResult::ErrorWalletOperation;
+        }
+        _ => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorWalletOperation,
+                    "mnemonic resolver: failed (other / Keychain access error)",
+                );
+            }
+            return PlatformWalletFFIResult::ErrorWalletOperation;
+        }
+    }
+
+    let mnemonic_str = match std::str::from_utf8(&mnemonic_buf[..mnemonic_len]) {
+        Ok(s) => s,
+        Err(e) => {
+            if !out_error.is_null() {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorUtf8Conversion,
+                    format!("mnemonic resolver: not valid UTF-8: {e}"),
+                );
+            }
+            return PlatformWalletFFIResult::ErrorUtf8Conversion;
+        }
+    };
+
+    // Passphrase isn't part of the resolver vtable today; the
+    // existing `dash_sdk_derive_and_persist_identity_keys` makes
+    // the same assumption (BIP-39 wallets don't carry a passphrase
+    // in this app). When that changes, extend the resolver to
+    // surface it the same way the mnemonic is surfaced.
+    derive_at_slot_inner(
+        mnemonic_str,
+        "",
+        network,
+        identity_index,
+        key_index,
+        out_row,
+        out_error,
+    )
+}
+
 /// Free a row populated by
 /// [`dash_sdk_derive_identity_key_at_slot`]. Zeroes the inline
 /// 32-byte secret + the WIF buffer in place before releasing the
@@ -284,7 +457,16 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_free(
         row.derivation_path = std::ptr::null_mut();
     }
     if !row.public_key.is_null() && row.public_key_len > 0 {
-        let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
+        // Mirror the allocator shape from
+        // `dash_sdk_derive_identity_key_at_slot` — the buffer was
+        // created via `Vec::into_boxed_slice` + `Box::into_raw`,
+        // so `Box::from_raw(slice_from_raw_parts_mut(...))` is the
+        // matching dispose. `Vec::from_raw_parts(ptr, len, len)`
+        // is UB whenever the source vec had `cap > len`.
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            row.public_key,
+            row.public_key_len,
+        ));
         row.public_key = std::ptr::null_mut();
         row.public_key_len = 0;
     }

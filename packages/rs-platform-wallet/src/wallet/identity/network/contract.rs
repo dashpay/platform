@@ -121,6 +121,7 @@ impl IdentityWallet {
     ///   injects `$formatVersion: "0"` if the caller-supplied
     ///   config dict doesn't carry one (Swift form-builder shape
     ///   doesn't know the tag).
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_data_contract_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,

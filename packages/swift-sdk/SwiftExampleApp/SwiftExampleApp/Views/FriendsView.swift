@@ -28,23 +28,18 @@ struct FriendsView: View {
     var body: some View {
         // No outer NavigationStack — this view is always pushed inside
         // the parent's stack (IdentityDetailView's tab NavigationStack).
-        VStack(spacing: 0) {
-            // Incoming requests section
-            if !incomingRequests.isEmpty {
-                Section {
-                    ForEach(incomingRequests) { request in
-                        ContactRequestRow(request: request, isIncoming: true) {
-                            acceptRequest(request)
-                        } onReject: {
-                            rejectRequest(request)
-                        }
-                    }
-                } header: {
-                    Text("Incoming Requests (\(incomingRequests.count))")
-                }
-            }
-
-            // Friends list
+        // Single `List` so the Incoming Requests `Section` actually
+        // gets sectioned styling — a `Section` directly inside a
+        // `VStack` is a no-op visually, just rendering its rows
+        // without a header/separator.
+        //
+        // We qualify with `SwiftUI.Group` here because
+        // `SwiftDashSDK.Group` is a `Codable` DPP type, and an
+        // unqualified `Group { ... }` resolves to its Codable
+        // initializer rather than the SwiftUI view builder — Swift
+        // surfaces that as a "trailing closure passed to parameter
+        // of type 'any Decoder'" diagnostic.
+        SwiftUI.Group {
             if contacts.isEmpty && !isLoading && incomingRequests.isEmpty {
                 VStack(spacing: 20) {
                     Spacer()
@@ -72,7 +67,7 @@ struct FriendsView: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if isLoading {
+            } else if isLoading && contacts.isEmpty && incomingRequests.isEmpty {
                 VStack {
                     Spacer()
                     ProgressView("Loading contacts...")
@@ -80,13 +75,33 @@ struct FriendsView: View {
                 }
             } else {
                 List {
-                    ForEach(contacts.filter { !$0.isHidden }) { contact in
-                        Button {
-                            paymentTarget = contact
-                        } label: {
-                            ContactRowView(contact: contact)
+                    if !incomingRequests.isEmpty {
+                        Section {
+                            ForEach(incomingRequests) { request in
+                                ContactRequestRow(request: request, isIncoming: true) {
+                                    acceptRequest(request)
+                                } onReject: {
+                                    rejectRequest(request)
+                                }
+                            }
+                        } header: {
+                            Text("Incoming Requests (\(incomingRequests.count))")
                         }
-                        .buttonStyle(.plain)
+                    }
+
+                    if !contacts.isEmpty {
+                        Section {
+                            ForEach(contacts.filter { !$0.isHidden }) { contact in
+                                Button {
+                                    paymentTarget = contact
+                                } label: {
+                                    ContactRowView(contact: contact)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } header: {
+                            Text("Friends (\(contacts.filter { !$0.isHidden }.count))")
+                        }
                     }
                 }
             }

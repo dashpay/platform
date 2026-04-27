@@ -108,7 +108,18 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
                 return PlatformWalletFFIResult::ErrorInvalidParameter;
             }
         };
-        input_map.insert(address, entry.credits);
+        // Caller may pass the same address twice (the Swift inputs
+        // builder is greedy and could legitimately split a single
+        // address across multiple rows in a future shape). Sum the
+        // contributions rather than overwriting — `BTreeMap::insert`
+        // would silently keep only the last credit value, causing
+        // the top-up to under-fund the identity by the difference.
+        // Saturating add keeps a pathological caller from looping
+        // overflow back to a small value.
+        input_map
+            .entry(address)
+            .and_modify(|existing| *existing = existing.saturating_add(entry.credits))
+            .or_insert(entry.credits);
     }
 
     // Round-trip the signer pointer through `usize` so the spawned

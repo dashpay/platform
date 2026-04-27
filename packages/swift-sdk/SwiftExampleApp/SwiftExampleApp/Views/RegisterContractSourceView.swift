@@ -228,9 +228,21 @@ struct RegisterContractSourceView: View {
         }
     }
 
-    /// Re-classify the current pasteboard contents. Cheap enough to
-    /// call on appear and on every app-foreground transition.
+    /// Re-classify the current pasteboard contents. Gated behind
+    /// `UIPasteboard.general.hasStrings` because reading
+    /// `UIPasteboard.general.string` directly fires the iOS 14+
+    /// "Pasted from <App>" privacy banner — which is noisy when
+    /// triggered on every foreground transition for users who
+    /// just switched apps without intending to paste anything.
+    /// `hasStrings` is the documented iOS API for "is there a
+    /// string-like item on the clipboard" that does NOT trigger
+    /// the banner. When it returns false we treat the pasteboard
+    /// as empty.
     private func refreshPasteboardCandidate() {
+        guard UIPasteboard.general.hasStrings else {
+            pasteboardState = PasteboardContractCandidate.classify("")
+            return
+        }
         let raw = UIPasteboard.general.string ?? ""
         pasteboardState = PasteboardContractCandidate.classify(raw)
     }
@@ -437,10 +449,33 @@ struct PasteboardContractCandidate {
            let str = jsonString(from: groupsArr) {
             formInputs["groups"] = str
         } else if let groupsDict = dict["groups"] as? [String: Any] {
-            let asArray: [[String: Any]] = groupsDict
+            // Sort by integer key when possible so the array order
+            // matches the on-chain group-position semantics —
+            // unordered Swift dict iteration would otherwise yield
+            // a non-deterministic id sequence in
+            // `TransitionDetailView`. Always carry an `id` field
+            // through: integer-parseable keys become Int (matches
+            // the chain shape), other keys round-trip as the
+            // original String so the form has *some* identifier
+            // to render. Earlier revisions silently dropped the
+            // id when the key wasn't integer-parseable, leaving
+            // the form with anonymous group entries.
+            let sortedEntries = groupsDict.sorted { lhs, rhs in
+                switch (Int(lhs.key), Int(rhs.key)) {
+                case let (.some(l), .some(r)): return l < r
+                case (.some, .none): return true
+                case (.none, .some): return false
+                case (.none, .none): return lhs.key < rhs.key
+                }
+            }
+            let asArray: [[String: Any]] = sortedEntries
                 .compactMap { (key, value) in
                     guard var entry = value as? [String: Any] else { return nil }
-                    if let id = Int(key) { entry["id"] = id }
+                    if let id = Int(key) {
+                        entry["id"] = id
+                    } else {
+                        entry["id"] = key
+                    }
                     return entry
                 }
             if let str = jsonString(from: asArray) {

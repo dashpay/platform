@@ -383,10 +383,13 @@ struct ContractsTabView: View {
 
         // 32-byte id paths fire on Submit, not on every keystroke —
         // pasting a 64-char hex id shouldn't need a debounce window.
-        // Clear stale state but do nothing else here.
+        // Clear stale state — including any keyword-search rows from
+        // before the user pasted the id — so the rendered list lines
+        // up with the new query shape.
         if isLikelyContractIdBytes(trimmed) != nil {
             searchInFlight = false
             searchError = nil
+            searchResults = []
             return
         }
 

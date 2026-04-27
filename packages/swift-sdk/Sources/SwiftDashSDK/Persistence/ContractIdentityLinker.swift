@@ -62,10 +62,15 @@ public enum ContractIdentityLinker {
     /// `PersistentDataContract` whose `ownerId` matches this
     /// identity's id and back-fills `ownerIdentity` on each one.
     ///
-    /// Cheap: the underlying `FetchDescriptor` predicate filters on
-    /// the indexed `ownerId` column and returns only the contracts
-    /// that actually need patching. Idempotent — the per-contract
-    /// `==` check below skips rows already linked to this identity.
+    /// Cheap in practice: the `FetchDescriptor` filters on the
+    /// `ownerId` column and returns only the contracts that
+    /// actually need patching. (The column isn't explicitly
+    /// `@Attribute(.indexed)` and SwiftData doesn't auto-index
+    /// optional `Data`, so this is a linear scan over the saved
+    /// contracts on this device — the row count is tiny in the
+    /// example app, and adding the index attribute would be a
+    /// schema migration.) Idempotent — the per-contract `==`
+    /// check below skips rows already linked to this identity.
     ///
     /// The caller is responsible for saving the `ModelContext`.
     public static func linkIdentityToOwnedContracts(

@@ -460,8 +460,14 @@ struct LoadDataContractView: View {
     /// the "already saved" toast, and `fetchedContract` preview.
     private func loadContract(contractIdString: String) async {
         guard let sdk = platformState.sdk else {
-            errorMessage = "SDK not initialized"
-            showError = true
+            // Match the empty-input branch below: bounce the error
+            // mutations through `MainActor.run` so we don't write
+            // to `@State` from a non-main actor on the SDK-nil
+            // path either.
+            await MainActor.run {
+                errorMessage = "SDK not initialized"
+                showError = true
+            }
             return
         }
 

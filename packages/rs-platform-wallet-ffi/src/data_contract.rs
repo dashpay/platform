@@ -231,8 +231,7 @@ unsafe fn read_optional_str<'a>(
         return Ok(None);
     }
     match CStr::from_ptr(ptr).to_str() {
-        Ok(s) if s.is_empty() => Ok(None),
-        Ok(s) => Ok(Some(s)),
+        Ok(s) => Ok(if s.is_empty() { None } else { Some(s) }),
         Err(e) => {
             if !out_error.is_null() {
                 *out_error = PlatformWalletFFIError::new(

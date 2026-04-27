@@ -1415,6 +1415,25 @@ func dash_sdk_derive_identity_key_at_slot_free(
     _ row: UnsafeMutablePointer<IdentityKeyPreviewFFI>
 )
 
+// Resolver-based sibling. Replaces the raw mnemonic c-string with
+// a `MnemonicResolverHandle` keyed by `wallet_id_bytes` so the
+// BIP-39 mnemonic never lives in a Swift `String` outside the
+// resolver trampoline's stack frame. Closes the
+// `swift-sdk/CLAUDE.md` "no mnemonic round-tripping" rule the
+// raw-cstring entry point violates. Use this from new Swift call
+// sites; the raw-cstring variant stays available for tests / any
+// non-iOS caller that already has the mnemonic in hand.
+@_silgen_name("dash_sdk_derive_identity_key_at_slot_with_resolver")
+func dash_sdk_derive_identity_key_at_slot_with_resolver(
+    _ network: DashSDKNetwork,
+    _ wallet_id_bytes: UnsafePointer<UInt8>,
+    _ mnemonic_resolver_handle: UnsafeMutablePointer<MnemonicResolverHandle>?,
+    _ identity_index: UInt32,
+    _ key_index: UInt32,
+    _ out_row: UnsafeMutablePointer<IdentityKeyPreviewFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - Derive-and-persist callback handles
 //
 // Used by `dash_sdk_derive_and_persist_identity_keys` (below). The

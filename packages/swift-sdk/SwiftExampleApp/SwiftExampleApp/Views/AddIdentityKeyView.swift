@@ -337,13 +337,51 @@ struct AddIdentityKeyView: View {
                 network: network
             )
 
-            // 2. Pre-persist private bytes to Keychain under the
+            // 2. Verify the derived scalar matches the returned
+            //    public key. Cheap defence against derivation drift
+            //    or bit-rot in the FFI marshalling — mismatched key
+            //    material lands as a key Drive can't sign with, and
+            //    surfaces as a mid-state-transition validation
+            //    failure that's painful to debug after-the-fact.
+            //    Validation goes against the compressed pubkey
+            //    (33 bytes) regardless of `keyType`; the HASH160
+            //    variant just stores a different on-chain payload.
+            // `DashSDKNetwork` is a `(rawValue: UInt32)` struct;
+            // 0 = mainnet, 1 = testnet (see SDK.swift's default).
+            let isMainnet = (network.rawValue == 0)
+            guard
+                KeyValidation.validatePrivateKeyForPublicKey(
+                    privateKeyHex: preview.privateKeyData.toHexString(),
+                    publicKeyHex: preview.publicKeyHex,
+                    keyType: .ecdsaSecp256k1,
+                    isTestnet: !isMainnet
+                )
+            else {
+                isSubmitting = false
+                errorMessage =
+                    "Derived key didn't match its public key — refusing to broadcast."
+                return
+            }
+
+            // 3. Pre-persist private bytes to Keychain under the
             //    wallet-derived `identity_privkey.<path>` scheme so
             //    the `KeychainSigner` trampoline can find them when
             //    Rust signs the resulting `updateIdentity` transition.
-            //    `publicKeyHash` is left empty here — only the
-            //    keychain-explorer UI consumes it, and the trampoline
-            //    matches by full public-key hex (which is populated).
+            //
+            //    The trampoline looks up the privkey by hex match
+            //    against `metadata.publicKey`, comparing whatever
+            //    bytes Rust ships in via the FFI. For
+            //    `ECDSA_SECP256K1` that's the 33-byte compressed
+            //    pubkey; for `ECDSA_HASH160` it's the 20-byte
+            //    HASH160. So the `metadata.publicKey` we stamp
+            //    here must match the on-chain payload shape, not
+            //    the raw derived pubkey. `publicKeyHash` is always
+            //    the HASH160 hex (kept around for the explorer UI's
+            //    cross-referencing).
+            let pubKeyHashHex =
+                SwiftDashSDK.KeychainManager.computePublicKeyHashHex(preview.publicKeyData)
+            let metadataPublicKeyHex: String =
+                keyType == .ecdsaHash160 ? pubKeyHashHex : preview.publicKeyHex
             let metadata = IdentityPrivateKeyMetadata(
                 identityId: identity.identityIdString,
                 keyId: chosenKeyId,
@@ -351,28 +389,60 @@ struct AddIdentityKeyView: View {
                 identityIndex: identity.identityIndex,
                 keyIndex: chosenKeyId,
                 derivationPath: preview.derivationPath,
-                publicKey: preview.publicKeyHex,
-                publicKeyHash: "",
+                publicKey: metadataPublicKeyHex,
+                publicKeyHash: pubKeyHashHex,
                 keyType: keyType.rawValue,
                 purpose: purpose.rawValue,
                 securityLevel: chosenSecurityLevel.rawValue
             )
-            _ = KeychainManager.shared.storeIdentityPrivateKey(
-                preview.privateKeyData,
-                derivationPath: preview.derivationPath,
-                metadata: metadata
-            )
+            // `storeIdentityPrivateKey` returns nil on Keychain
+            // failure. Earlier revisions ignored the return, so a
+            // failed write would silently broadcast a key whose
+            // matching scalar wasn't actually persisted — the
+            // signer trampoline would then fail to sign anything
+            // for the new key. Treat the nil return as fatal.
+            guard
+                KeychainManager.shared.storeIdentityPrivateKey(
+                    preview.privateKeyData,
+                    derivationPath: preview.derivationPath,
+                    metadata: metadata
+                ) != nil
+            else {
+                isSubmitting = false
+                errorMessage =
+                    "Could not persist new key to the iOS Keychain — aborted before broadcast."
+                return
+            }
 
-            // 3. Submit `updateIdentity(addPublicKeys:)`. Rust signs
+            // 4. Submit `updateIdentity(addPublicKeys:)`. Rust signs
             //    via the trampoline and broadcasts; the persister
             //    callback writes the matching `PersistentPublicKey`
             //    row when the transition lands on-chain.
+            //
+            //    For `ECDSA_HASH160` the on-chain payload is the
+            //    20-byte HASH160 of the compressed pubkey — not
+            //    the pubkey itself. Compute it here so the FFI row
+            //    matches the selected key type's expected byte
+            //    length.
+            let pubkeyBytesForFFI: Data
+            if keyType == .ecdsaHash160 {
+                guard let hashBytes = Data(hexString: pubKeyHashHex), hashBytes.count == 20 else {
+                    isSubmitting = false
+                    errorMessage =
+                        "Could not compute HASH160 of derived pubkey — aborted before broadcast."
+                    return
+                }
+                pubkeyBytesForFFI = hashBytes
+            } else {
+                pubkeyBytesForFFI = preview.publicKeyData
+            }
+
             let newKey = ManagedPlatformWallet.IdentityPubkey(
                 keyId: chosenKeyId,
                 keyType: keyType,
                 purpose: purpose,
                 securityLevel: chosenSecurityLevel,
-                pubkeyBytes: preview.publicKeyData,
+                pubkeyBytes: pubkeyBytesForFFI,
                 contractBounds: contractBounds
             )
             let signer = KeychainSigner(modelContainer: modelContext.container)
