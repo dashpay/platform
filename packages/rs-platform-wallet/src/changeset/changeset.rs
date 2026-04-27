@@ -625,35 +625,6 @@ pub struct PlatformAddressChangeSet {
     /// Last block height with recent address changes (compaction marker).
     /// `None` means "no change".
     pub last_known_recent_block: Option<u64>,
-    /// Fee paid in credits for the transfer that produced this
-    /// changeset, computed as `total_inputs_consumed -
-    /// total_outputs_credited`. `0` when the changeset doesn't
-    /// represent a transfer (e.g. a sync-only changeset, or an
-    /// asset-lock fund-in path that doesn't burn credits).
-    ///
-    /// Read via the [`PlatformAddressChangeSet::fee_paid`] accessor.
-    /// Accumulates across [`Merge::merge`] so a merged changeset
-    /// representing N transfers reports the sum of their individual
-    /// fees.
-    pub fee_paid: Credits,
-}
-
-impl PlatformAddressChangeSet {
-    /// Total fee paid for the transfer represented by this changeset.
-    ///
-    /// Computed at construction time as `total_inputs_consumed -
-    /// total_outputs_credited`. Returns `0` when this changeset does
-    /// not represent a transfer (e.g. a sync-only changeset emitted
-    /// by [`PlatformAddressWallet::sync_balances`](crate::wallet::PlatformAddressWallet::sync_balances),
-    /// or an asset-lock fund-in path where credits are minted rather
-    /// than burned).
-    ///
-    /// For changesets produced by merging several transfer-emitting
-    /// changesets together via [`Merge::merge`], this is the sum of
-    /// the individual fees.
-    pub fn fee_paid(&self) -> Credits {
-        self.fee_paid
-    }
 }
 
 impl Merge for PlatformAddressChangeSet {
@@ -678,11 +649,6 @@ impl Merge for PlatformAddressChangeSet {
                     .map_or(r, |existing| existing.max(r)),
             );
         }
-        // Sum-merge: each contributing changeset records the fee paid
-        // for its own transfer, so the merged total is the sum.
-        // Saturating-add guards against pathological accumulation
-        // (Credits is `u64`).
-        self.fee_paid = self.fee_paid.saturating_add(other.fee_paid);
     }
 
     fn is_empty(&self) -> bool {
@@ -690,7 +656,6 @@ impl Merge for PlatformAddressChangeSet {
             && self.sync_height.is_none()
             && self.sync_timestamp.is_none()
             && self.last_known_recent_block.is_none()
-            && self.fee_paid == 0
     }
 }
 

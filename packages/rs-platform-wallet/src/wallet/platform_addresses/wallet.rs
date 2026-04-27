@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
@@ -14,29 +13,6 @@ use key_wallet_manager::WalletManager;
 use crate::wallet::persister::WalletPersister;
 
 use super::provider::PlatformPaymentAddressProvider;
-
-/// DIP-17 derivation coordinates for an address owned by a
-/// [`PlatformAddressWallet`].
-///
-/// Surfaced by [`PlatformAddressWallet::address_derivation_info`] so
-/// external [`Signer<PlatformAddress>`](dpp::identity::signer::Signer)
-/// implementations can re-derive the matching ECDSA private key from
-/// the wallet seed at the DIP-17 path:
-///
-/// `m/9'/coin_type'/17'/account_index'/key_class'/key_index`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AddressDerivationInfo {
-    /// DIP-17 account index (hardened level).
-    pub account_index: u32,
-    /// DIP-17 key-class index (hardened level) — selects key purpose.
-    /// `0` denotes the clear-funds payment key class. Mirrors
-    /// `key_wallet`'s
-    /// [`PlatformPaymentAccountKey::key_class`](key_wallet::account::account_collection::PlatformPaymentAccountKey).
-    pub key_class: u32,
-    /// Address derivation index within the
-    /// `(account_index, key_class)` subtree.
-    pub key_index: u32,
-}
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
@@ -287,77 +263,6 @@ impl PlatformAddressWallet {
             .and_then(|info| info.core_wallet.first_platform_payment_managed_account())
             .map(|account| account.total_credit_balance())
             .unwrap_or(0)
-    }
-
-    /// Look up the DIP-17 derivation info for an address owned by this
-    /// wallet.
-    ///
-    /// Returns `Some(AddressDerivationInfo { account_index, key_class,
-    /// key_index })` when `addr` belongs to one of this wallet's
-    /// tracked platform-payment accounts; `None` otherwise. `None` is
-    /// also returned for:
-    ///
-    /// - P2SH addresses (platform-payment accounts derive only P2PKH).
-    /// - Addresses for an account that has not been initialized via
-    ///   [`Self::initialize`] yet.
-    /// - Addresses derived under a `(account, key_class)` pair whose
-    ///   xpub does not appear in the wallet's
-    ///   `platform_payment_accounts` map (i.e. account drift between
-    ///   the provider and the wallet manager — should not happen in
-    ///   normal operation).
-    ///
-    /// Useful for external
-    /// [`Signer<PlatformAddress>`](dpp::identity::signer::Signer)
-    /// implementations that need to re-derive the matching ECDSA
-    /// private key from the seed without poking at the wallet manager
-    /// directly.
-    pub async fn address_derivation_info(
-        &self,
-        addr: &PlatformAddress,
-    ) -> Option<AddressDerivationInfo> {
-        // Platform-payment accounts only derive P2PKH; bail out fast
-        // on any other variant rather than searching the provider.
-        let p2pkh = match addr {
-            PlatformAddress::P2pkh(bytes) => PlatformP2PKHAddress::new(*bytes),
-            PlatformAddress::P2sh(_) => return None,
-        };
-
-        // Phase 1: provider holds the (account_index, key_index, xpub)
-        // bijection for every tracked address — but key_class isn't
-        // stored alongside, so we capture the xpub here and recover
-        // key_class against the wallet's account map below.
-        let (account_index, key_index, xpub) = {
-            let provider_guard = self.provider.read().await;
-            provider_guard
-                .as_ref()?
-                .lookup_p2pkh(&self.wallet_id, &p2pkh)?
-        };
-
-        // Phase 2: walk the wallet's platform_payment_accounts map and
-        // pick the entry whose `(account, account_xpub)` matches the
-        // tuple captured above. Multiple key classes per account index
-        // are possible in principle (DIP-17), so xpub equality is the
-        // disambiguator.
-        let wm = self.wallet_manager.read().await;
-        let wallet = wm.get_wallet(&self.wallet_id)?;
-        let key_class =
-            wallet
-                .accounts
-                .platform_payment_accounts
-                .iter()
-                .find_map(|(key, acct)| {
-                    if key.account == account_index && acct.account_xpub == xpub {
-                        Some(key.key_class)
-                    } else {
-                        None
-                    }
-                })?;
-
-        Some(AddressDerivationInfo {
-            account_index,
-            key_class,
-            key_index,
-        })
     }
 }
 
