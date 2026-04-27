@@ -150,11 +150,15 @@ struct TokenClaimActionView: View {
             return
         }
 
+        guard let position = UInt16(exactly: token.position) else {
+            submitError = .init(message: "Invalid token position.")
+            return
+        }
+
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
-        let position = UInt16(token.position)
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
         let dist = selectedDistribution

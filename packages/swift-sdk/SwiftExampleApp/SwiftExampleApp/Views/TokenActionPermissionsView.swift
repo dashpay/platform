@@ -520,7 +520,6 @@ enum TokenActionResolver {
         let distributionRule = token.distributionChangeRules?.perpetualDistributionRules
             ?? token.distributionChangeRules?.newTokensDestinationIdentityRules
             ?? token.distributionChangeRules?.mintingAllowChoosingDestinationRules
-            ?? token.distributionChangeRules?.changeDirectPurchasePricingRules
         rows.append(ResolvedTokenAction(
             kind: .changeDistribution,
             permission: TokenActionEvaluator.evaluate(

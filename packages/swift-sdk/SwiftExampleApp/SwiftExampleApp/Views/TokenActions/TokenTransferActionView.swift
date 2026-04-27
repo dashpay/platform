@@ -148,11 +148,17 @@ struct TokenTransferActionView: View {
             return
         }
 
+        // Guard before flipping `isSubmitting` so an out-of-range
+        // position doesn't leave the spinner stuck.
+        guard let position = UInt16(exactly: token.position) else {
+            submitError = .init(message: "Invalid token position.")
+            return
+        }
+
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
-        let position = UInt16(token.position)
         let recipientId = recipient.identityId
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note

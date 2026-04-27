@@ -246,7 +246,12 @@ struct CoSignProposalView: View {
               let group = groups[String(position)] as? [String: Any],
               let value = group["requiredPower"]
         else { return 0 }
-        if let i = value as? Int { return UInt32(i) }
+        if let i = value as? Int {
+            // Negative or out-of-range values are non-sensical for a
+            // signature threshold; treat as "no required power known".
+            guard let v = UInt32(exactly: i) else { return 0 }
+            return v
+        }
         if let n = value as? NSNumber { return n.uint32Value }
         return 0
     }
@@ -267,8 +272,12 @@ struct CoSignProposalView: View {
         guard managedWallet != nil else { return false }
         guard isUserMember else { return false }
         guard !hasUserSigned else { return false }
-        if case .other = proposal.params { return false }
-        return true
+        switch proposal.params {
+        case .directPurchase, .other:
+            return false
+        default:
+            return true
+        }
     }
 
     private var coSignButtonLabel: String {
@@ -281,10 +290,12 @@ struct CoSignProposalView: View {
     private var coSignDisabledReason: String? {
         if !isUserMember { return "Only members of the gating group can sign." }
         if hasUserSigned { return "You already signed this proposal." }
-        if case .other = proposal.params {
+        switch proposal.params {
+        case .directPurchase, .other:
             return "This proposal type isn't supported by the co-sign UI yet."
+        default:
+            return nil
         }
-        return nil
     }
 
     // MARK: - Loading signers

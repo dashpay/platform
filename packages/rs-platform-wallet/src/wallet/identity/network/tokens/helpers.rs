@@ -21,6 +21,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// `_with_external_signer` variants where the caller brings the
     /// `Signer` and we just need to pick which on-chain key id to sign
     /// with.
+    ///
+    /// Key selection is currently a fixed canonical policy:
+    /// `Purpose::AUTHENTICATION` × `{MASTER, HIGH}` × `ECDSA_SECP256K1`.
+    /// Callers that pass a `signing_key_id` over FFI are advisory —
+    /// this Rust path is authoritative and Drive validates the chosen
+    /// key matches what the state transition needs.
     pub(super) async fn token_resolve_signing_key(
         &self,
         identity_id: &Identifier,
@@ -44,9 +50,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 false,
             )
             .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "No authentication key found on identity".to_string(),
-                )
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "No AUTHENTICATION ECDSA_SECP256K1 key at MASTER/HIGH security level on identity {}",
+                    identity_id
+                ))
             })?
             .clone();
 

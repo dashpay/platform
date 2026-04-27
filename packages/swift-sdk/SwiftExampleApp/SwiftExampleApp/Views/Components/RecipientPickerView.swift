@@ -80,9 +80,13 @@ struct RecipientPickerView: View {
             }
             .pickerStyle(.segmented)
             .onChange(of: mode) { _, _ in
-                // Switching modes clears any prior selection so the
-                // confirmation summary always reflects the active
-                // input field.
+                // Cancel any in-flight DPNS resolution and reset its
+                // visible state *before* clearing the selection — a
+                // late-arriving "resolved" callback could otherwise
+                // overwrite a fresh selection in the new mode.
+                resolveTask?.cancel()
+                resolveTask = nil
+                dpnsState = .idle
                 selection = nil
             }
 
@@ -99,6 +103,10 @@ struct RecipientPickerView: View {
                 Divider()
                 selectionSummary(selection)
             }
+        }
+        .onDisappear {
+            resolveTask?.cancel()
+            resolveTask = nil
         }
     }
 
@@ -236,6 +244,14 @@ struct RecipientPickerView: View {
                 let resolved = try await wallet.resolveDpnsName(input)
                 if Task.isCancelled { return }
                 await MainActor.run {
+                    // Only commit the result if the user is still on
+                    // DPNS mode AND the input they're looking at
+                    // matches the input we just resolved. Late
+                    // callbacks otherwise stomp on a fresh selection
+                    // (e.g. user switched to Paste, or kept typing).
+                    guard self.mode == .dpns,
+                          self.dpnsInput.trimmingCharacters(in: .whitespacesAndNewlines) == input
+                    else { return }
                     if let id = resolved {
                         if let exclude = exclude, id == exclude {
                             self.dpnsState = .failed("That's the sender.")
@@ -255,6 +271,9 @@ struct RecipientPickerView: View {
             } catch {
                 if Task.isCancelled { return }
                 await MainActor.run {
+                    guard self.mode == .dpns,
+                          self.dpnsInput.trimmingCharacters(in: .whitespacesAndNewlines) == input
+                    else { return }
                     self.dpnsState = .failed(error.localizedDescription)
                     self.selection = nil
                 }

@@ -155,10 +155,16 @@ struct TokenBurnActionView: View {
         let authorized = rule.authorizedToMakeChange
 
         if authorized == AuthorizedActionTakers.mainGroup.rawValue {
-            return token.mainControlGroupPosition
+            // Drop positions that don't fit in UInt16 — the FFI takes
+            // u16 and we don't want to surprise callers with a trap.
+            guard let main = token.mainControlGroupPosition,
+                  UInt16(exactly: main) != nil
+            else { return nil }
+            return main
         }
         if authorized.hasPrefix("Group:"),
-           let pos = Int(authorized.dropFirst("Group:".count)) {
+           let pos = Int(authorized.dropFirst("Group:".count)),
+           UInt16(exactly: pos) != nil {
             return pos
         }
         return nil
@@ -167,25 +173,40 @@ struct TokenBurnActionView: View {
     // MARK: - Submit
 
     private func submit() {
+        // Re-check balance at submit time: the user could have spent
+        // the underlying tokens between render and tap.
         guard
             let wallet = managedWallet,
             let amount = parsedAmount,
-            amount > 0
+            amount > 0,
+            amount <= balanceValue
         else {
-            submitError = .init(message: "Amount is invalid.")
+            submitError = .init(message: "Amount is invalid or exceeds your balance.")
             return
+        }
+
+        guard let position = UInt16(exactly: token.position) else {
+            submitError = .init(message: "Invalid token position.")
+            return
+        }
+
+        let groupAction: GroupActionMode
+        if let rawGroupPosition = inferredGroupPosition {
+            guard let groupPosition = UInt16(exactly: rawGroupPosition) else {
+                submitError = .init(message: "Group position is out of range.")
+                return
+            }
+            groupAction = .propose(position: groupPosition)
+        } else {
+            groupAction = .none
         }
 
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
-        let position = UInt16(token.position)
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
-        let groupAction: GroupActionMode = inferredGroupPosition.map {
-            .propose(position: UInt16($0))
-        } ?? .none
 
         Task {
             do {

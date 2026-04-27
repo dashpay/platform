@@ -341,32 +341,6 @@ func platform_wallet_sync_dashpay_profiles(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
-@_silgen_name("platform_wallet_create_dashpay_profile")
-func platform_wallet_create_dashpay_profile(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ display_name: UnsafePointer<CChar>?,
-    _ public_message: UnsafePointer<CChar>?,
-    _ avatar_url: UnsafePointer<CChar>?,
-    _ avatar_bytes: UnsafePointer<UInt8>?,
-    _ avatar_bytes_len: Int,
-    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_update_dashpay_profile")
-func platform_wallet_update_dashpay_profile(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ display_name: UnsafePointer<CChar>?,
-    _ public_message: UnsafePointer<CChar>?,
-    _ avatar_url: UnsafePointer<CChar>?,
-    _ avatar_bytes: UnsafePointer<UInt8>?,
-    _ avatar_bytes_len: Int,
-    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 /// Mirrors `platform_wallet_create_or_update_dashpay_profile_with_signer`
 /// from Rust (`packages/rs-platform-wallet-ffi/src/dashpay_profile.rs`).
 ///
@@ -583,15 +557,6 @@ struct DpnsSearchResultFFI {
     )
     var label: UnsafeMutablePointer<CChar>?
 }
-
-@_silgen_name("platform_wallet_register_dpns_name")
-func platform_wallet_register_dpns_name(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ name: UnsafePointer<CChar>?,
-    _ out_full_domain_name: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
 
 /// Mirrors `platform_wallet_register_dpns_name_with_signer` from Rust
 /// (`packages/rs-platform-wallet-ffi/src/dpns.rs`).
@@ -836,30 +801,10 @@ func platform_wallet_get_managed_identity(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
-@_silgen_name("platform_wallet_send_contact_request")
-func platform_wallet_send_contact_request(
-    _ wallet_handle: Handle,
-    _ sender_identity_id: UnsafePointer<UInt8>,
-    _ recipient_identity_id: UnsafePointer<UInt8>,
-    _ account_label: UnsafePointer<CChar>?,
-    _ auto_accept_proof: UnsafePointer<UInt8>?,
-    _ auto_accept_proof_len: Int,
-    _ out_request_handle: UnsafeMutablePointer<Handle>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 @_silgen_name("platform_wallet_sync_contact_requests")
 func platform_wallet_sync_contact_requests(
     _ wallet_handle: Handle,
     _ out_array: UnsafeMutablePointer<ContactRequestHandleArray>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_accept_contact_request")
-func platform_wallet_accept_contact_request(
-    _ wallet_handle: Handle,
-    _ request_handle: Handle,
-    _ out_established_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 

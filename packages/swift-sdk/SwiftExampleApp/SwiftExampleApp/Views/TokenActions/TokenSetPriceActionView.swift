@@ -137,10 +137,14 @@ struct TokenSetPriceActionView: View {
         let authorized = rule.authorizedToMakeChange
 
         if authorized == AuthorizedActionTakers.mainGroup.rawValue {
-            return token.mainControlGroupPosition
+            guard let main = token.mainControlGroupPosition,
+                  UInt16(exactly: main) != nil
+            else { return nil }
+            return main
         }
         if authorized.hasPrefix("Group:"),
-           let pos = Int(authorized.dropFirst("Group:".count)) {
+           let pos = Int(authorized.dropFirst("Group:".count)),
+           UInt16(exactly: pos) != nil {
             return pos
         }
         return nil
@@ -158,16 +162,28 @@ struct TokenSetPriceActionView: View {
             return
         }
 
+        guard let position = UInt16(exactly: token.position) else {
+            submitError = .init(message: "Invalid token position.")
+            return
+        }
+
+        let groupAction: GroupActionMode
+        if let rawGroupPosition = inferredGroupPosition {
+            guard let groupPosition = UInt16(exactly: rawGroupPosition) else {
+                submitError = .init(message: "Group position is out of range.")
+                return
+            }
+            groupAction = .propose(position: groupPosition)
+        } else {
+            groupAction = .none
+        }
+
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
-        let position = UInt16(token.position)
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
-        let groupAction: GroupActionMode = inferredGroupPosition.map {
-            .propose(position: UInt16($0))
-        } ?? .none
 
         Task {
             do {

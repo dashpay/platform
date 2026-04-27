@@ -105,17 +105,22 @@ struct PendingGroupActionsView: View {
 
         var collected: [DiscoveredProposal] = []
         for position in positions {
+            // The resolver already filters out positions that don't
+            // fit in UInt16; re-validate to keep the cast trap-free.
+            guard let groupContractPosition = UInt16(exactly: position) else {
+                continue
+            }
             do {
                 let page = try await wallet.tokenPendingGroupActions(
                     contractId: token.contractId,
-                    groupContractPosition: UInt16(position),
+                    groupContractPosition: groupContractPosition,
                     status: .pending,
                     startAtActionId: nil,
                     limit: 0
                 )
                 for proposal in page {
                     collected.append(DiscoveredProposal(
-                        groupContractPosition: UInt16(position),
+                        groupContractPosition: groupContractPosition,
                         proposal: proposal
                     ))
                 }
@@ -279,10 +284,16 @@ enum TokenGroupRuleResolver {
     private static func position(of rule: ChangeControlRules, token: PersistentToken) -> Int? {
         let authorized = rule.authorizedToMakeChange
         if authorized == AuthorizedActionTakers.mainGroup.rawValue {
-            return token.mainControlGroupPosition
+            // Group positions are u16 over FFI; drop entries that don't
+            // fit so callers can downcast safely.
+            guard let main = token.mainControlGroupPosition,
+                  UInt16(exactly: main) != nil
+            else { return nil }
+            return main
         }
         if authorized.hasPrefix("Group:"),
-           let pos = Int(authorized.dropFirst("Group:".count)) {
+           let pos = Int(authorized.dropFirst("Group:".count)),
+           UInt16(exactly: pos) != nil {
             return pos
         }
         return nil

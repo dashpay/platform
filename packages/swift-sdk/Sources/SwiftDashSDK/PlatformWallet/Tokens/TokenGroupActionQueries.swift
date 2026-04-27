@@ -209,8 +209,23 @@ public enum TokenGroupActionParams: Equatable, Sendable {
         case .resume:
             self = .resume(publicNote: try c.decodeIfPresent(String.self, forKey: .publicNote))
         case .setPrice:
+            // Treat a present-but-non-numeric `pricePerToken` as a
+            // hard decode error rather than silently mapping it to
+            // `nil` (which would render as "disable direct purchase").
             let priceString = try c.decodeIfPresent(String.self, forKey: .pricePerToken)
-            let parsed: UInt64? = priceString.flatMap { UInt64($0) }
+            let parsed: UInt64?
+            if let priceString {
+                guard let value = UInt64(priceString) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .pricePerToken,
+                        in: c,
+                        debugDescription: "expected stringly-typed UInt64 price, got \(priceString)"
+                    )
+                }
+                parsed = value
+            } else {
+                parsed = nil
+            }
             self = .setPrice(
                 pricePerToken: parsed,
                 publicNote: try c.decodeIfPresent(String.self, forKey: .publicNote)
@@ -309,6 +324,13 @@ extension ManagedPlatformWallet {
     ) async throws -> [TokenGroupAction] {
         let handle = self.handle
         let contractBytes = contractId.toFFIByteArray()
+        // FFI expects a 32-byte identifier when present; surface
+        // length drift loudly instead of forwarding garbage.
+        if let startAtActionId, startAtActionId.count != 32 {
+            throw PlatformWalletError.serialization(
+                "startAtActionId must be 32 bytes, got \(startAtActionId.count)"
+            )
+        }
         let startBytes: [UInt8]? = startAtActionId.map { Array($0) }
         let statusRaw = status.rawValue
 
