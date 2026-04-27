@@ -71,17 +71,34 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration from environment variables and `.env`.
+    /// Load configuration from environment variables and
+    /// `${CARGO_MANIFEST_DIR}/tests/.env`.
     ///
-    /// `.env` is consulted via `dotenvy::dotenv()` from the current
-    /// working directory (best-effort — a missing `.env` is fine,
-    /// the env vars themselves are the source of truth). The bank
-    /// mnemonic is required; everything else falls back to the
-    /// defaults documented on each [`Config`] field.
+    /// The `.env` path is anchored at the crate's manifest dir
+    /// (mirrors the convention from
+    /// `packages/rs-sdk/tests/fetch/config.rs` and
+    /// `packages/rs-sdk-ffi/tests/integration_tests/config.rs`),
+    /// so loading is deterministic regardless of the caller's CWD.
+    /// A missing `.env` is fine — process env vars stay the
+    /// source of truth — but if the file exists and fails to
+    /// parse, the warning surfaces in test logs.
+    ///
+    /// The bank mnemonic is required; everything else falls back
+    /// to the defaults documented on each [`Config`] field.
     pub fn from_env() -> FrameworkResult<Self> {
-        // Best-effort `.env` load — fine to ignore failure (no .env
-        // file is the common case in CI).
-        let _ = dotenvy::dotenv();
+        // Best-effort `.env` load anchored at the crate's manifest
+        // dir — matches workspace convention. A missing file is
+        // expected (CI rarely ships one); other failures (parse
+        // error, permissions) get logged but don't abort init.
+        let path: String = env!("CARGO_MANIFEST_DIR").to_owned() + "/tests/.env";
+        if let Err(err) = dotenvy::from_path(&path) {
+            tracing::warn!(
+                target: "platform_wallet::e2e::config",
+                path = %path,
+                ?err,
+                "failed to load e2e .env (process env vars still apply)"
+            );
+        }
 
         let bank_mnemonic = std::env::var(vars::BANK_MNEMONIC).map_err(|_| {
             FrameworkError::Bank(format!(

@@ -1,12 +1,3 @@
-// TODO(qa-wave5): live happy-path run pending operator bank pre-funding.
-//   Marvin's QA pass could not execute the funded scenario because no
-//   testnet bank wallet with `>= PLATFORM_WALLET_E2E_MIN_BANK_CREDITS`
-//   credits is available in this environment. Once an operator
-//   provisions one and exports `PLATFORM_WALLET_E2E_BANK_MNEMONIC`, run:
-//     cargo test --test e2e -- --ignored --nocapture \
-//       transfer_between_two_platform_addresses
-//   See `tests/e2e/README.md` "Bank pre-funding" for the procedure.
-
 //! First end-to-end test — credits transfer between two
 //! platform-payment addresses owned by the same test wallet.
 //!
@@ -42,13 +33,21 @@
 //!
 //! [`SpvContextProvider`]: crate::framework::context_provider::SpvContextProvider
 //!
-//! Marked `#[ignore]` because it requires a live testnet + a
-//! pre-funded bank wallet (see `tests/e2e/README.md` for operator
-//! setup). Run with:
+//! Runs by default — no `#[ignore]` gate. Operator setup happens
+//! once via `packages/rs-platform-wallet/tests/.env` (see
+//! `tests/.env.example` for the canonical template); from there
+//! every `cargo test` run picks up `PLATFORM_WALLET_E2E_BANK_MNEMONIC`
+//! automatically. If the env var is missing, the harness panics
+//! with an actionable bank-under-funded message naming the bank's
+//! primary receive address — operators know exactly where to top up.
 //!
 //! ```bash
-//! PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." \
-//!   cargo test --test e2e -- --ignored --nocapture
+//! # One-time setup
+//! cp packages/rs-platform-wallet/tests/.env.example \
+//!    packages/rs-platform-wallet/tests/.env
+//! # then edit `tests/.env` to set PLATFORM_WALLET_E2E_BANK_MNEMONIC
+//!
+//! cargo test --test e2e -- --nocapture
 //! ```
 
 use std::collections::BTreeMap;
@@ -75,7 +74,6 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 // attribute is no longer load-bearing — but multi-thread still
 // gives the optimal `block_in_place + spawn` bridge path.
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access"]
 async fn transfer_between_two_platform_addresses() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

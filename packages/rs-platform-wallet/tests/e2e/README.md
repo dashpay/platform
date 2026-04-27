@@ -43,15 +43,32 @@ stable enough to drive from tests. See [Future Core support](#future-core-suppor
 - Network access to Dash testnet DAPI nodes (default) or a local/devnet cluster.
 - Rust toolchain (stable, matches workspace `rust-toolchain.toml`).
 
-All tests carry `#[ignore]`, so they are excluded from normal `cargo test` runs and
-will never trip CI pipelines that do not set the required environment variable.
+Tests run by default once `tests/.env` exists with a valid bank mnemonic. They are
+NOT marked `#[ignore]`. If `PLATFORM_WALLET_E2E_BANK_MNEMONIC` is unset or the bank
+is under-funded the harness panics with an actionable message naming the bank's
+primary receive address — the failure is operator-actionable, not silent. CI jobs
+that run `cargo test` without setting up the operator env will surface that panic;
+gate those jobs at the workflow level (e.g. only run e2e on a dedicated job).
 
 ---
 
 ## Environment variables
 
-The framework reads configuration from the process environment (or a `.env` file in the
-`packages/rs-platform-wallet` directory, loaded via `dotenvy`).
+The framework reads configuration from the process environment and from
+`packages/rs-platform-wallet/tests/.env` (anchored at `${CARGO_MANIFEST_DIR}/tests/.env`,
+loaded via `dotenvy::from_path`). The path is deterministic regardless of the
+shell's CWD — the framework matches the convention used by `rs-sdk` and
+`rs-sdk-ffi`'s integration-test harnesses.
+
+A canonical operator template lives at `tests/.env.example` — copy it to
+`tests/.env` and fill in the bank mnemonic before the first run:
+
+```bash
+cp packages/rs-platform-wallet/tests/.env.example \
+   packages/rs-platform-wallet/tests/.env
+# then edit `packages/rs-platform-wallet/tests/.env` to set
+# PLATFORM_WALLET_E2E_BANK_MNEMONIC
+```
 
 | Var | Required | Default | Purpose |
 |-----|----------|---------|---------|
@@ -63,13 +80,9 @@ The framework reads configuration from the process environment (or a `.env` file
 | `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for devnet runs and any custom trust anchor. |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
-A `.env` file is convenient for local development. Shell-exported variables take
-precedence — `dotenvy` does not overwrite variables that are already set.
-
-```bash
-# packages/rs-platform-wallet/.env  (do not commit this file)
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12"
-```
+Shell-exported variables take precedence — `dotenvy::from_path` does NOT overwrite
+variables already set in the process environment. The workspace `.gitignore` covers
+`.env` files anywhere under the tree, so the operator file never gets committed.
 
 ---
 
@@ -103,8 +116,15 @@ which the startup sweep helps prevent by recovering funds from completed test wa
 ## Running tests
 
 ```bash
+# After copying tests/.env.example -> tests/.env and filling in the bank mnemonic:
 cd packages/rs-platform-wallet
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." cargo test --test e2e -- --ignored --nocapture
+cargo test --test e2e -- --nocapture
+```
+
+Or override the mnemonic inline if you keep multiple banks:
+
+```bash
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." cargo test --test e2e -- --nocapture
 ```
 
 The first run takes **60–180 seconds**:
@@ -118,8 +138,7 @@ The first run takes **60–180 seconds**:
 Run a single test by appending its name:
 
 ```bash
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." \
-  cargo test --test e2e -- --ignored --nocapture transfer_between_two_platform_addresses
+cargo test --test e2e -- --nocapture transfer_between_two_platform_addresses
 ```
 
 Tracing output (SPV sync events, balance polls, sweep results) is written to stderr.
@@ -236,7 +255,7 @@ against devnet, a custom test cluster, or any non-default trust anchor.
 
 ```bash
 PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL="https://my-trusted-quorum.example/" \
-  cargo test --test e2e -- --ignored --nocapture
+  cargo test --test e2e -- --nocapture
 ```
 
 ---
@@ -286,7 +305,6 @@ Canonical test pattern:
 use crate::framework::prelude::*;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and testnet access"]
 async fn transfer_between_two_platform_addresses() {
     let s = setup().await.expect("e2e setup failed");
 
