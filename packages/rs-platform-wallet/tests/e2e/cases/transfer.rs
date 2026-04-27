@@ -1,3 +1,25 @@
+// TODO(qa-wave5): live happy-path run pending operator bank pre-funding.
+//   Marvin's QA pass could not execute the funded scenario because no
+//   testnet bank wallet with `>= PLATFORM_WALLET_E2E_MIN_BANK_CREDITS`
+//   credits is available in this environment. Once an operator
+//   provisions one and exports `PLATFORM_WALLET_E2E_BANK_MNEMONIC`, run:
+//     cargo test --test e2e -- --ignored --nocapture \
+//       transfer_between_two_platform_addresses
+//   See `tests/e2e/README.md` "Bank pre-funding" for the procedure.
+//
+// TODO(qa-wave5): the test attribute is missing `flavor = "multi_thread"`.
+//   `tokio_shared_rt::test(shared)` defaults to a current-thread runtime,
+//   under which `SpvContextProvider`'s `block_in_place` call inside
+//   `framework/context_provider.rs:81` panics with:
+//     "can call blocking only when running on the multi-threaded runtime"
+//   This was reproduced under an empty BIP-39 bank during the QA pass.
+//   DET's precedent (`dash-evo-tool/tests/backend-e2e/`) uses
+//   `#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]`
+//   on every test for exactly this reason. A follow-up Bilby pass should
+//   either (a) update this attribute and the README example, or (b)
+//   replace `block_in_place` with a channel-based async->sync bridge
+//   inside `SpvContextProvider`.
+
 //! First end-to-end test — credits transfer between two
 //! platform-payment addresses owned by the same test wallet.
 //!

@@ -1,5 +1,27 @@
 # E2E Test Framework — `rs-platform-wallet`
 
+## Status
+
+This framework was assembled across Waves 1-4 and audited by QA in Wave 5. The single
+`transfer_between_two_platform_addresses` test compiles cleanly, its module wiring is
+sound, and `cargo check` / `cargo clippy` / `cargo fmt --check` are green. **The live
+happy-path run has not yet been executed in this branch** because no testnet bank
+wallet pre-funded with `>= PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` credits is available
+to the QA agent. Once an operator provisions one and exports
+`PLATFORM_WALLET_E2E_BANK_MNEMONIC`, the run is one `cargo test` away (see
+[Running tests](#running-tests)).
+
+A reproducible defect was found while attempting the under-funded panic check: the
+test attribute `#[tokio_shared_rt::test(shared)]` defaults to a **current-thread**
+tokio runtime, under which `SpvContextProvider::get_quorum_public_key` panics with
+`"can call blocking only when running on the multi-threaded runtime"` because it uses
+`tokio::task::block_in_place`. DET's precedent uses
+`#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]` on
+every test for exactly this reason. A follow-up Bilby pass should either fix the
+attribute on `cases::transfer::transfer_between_two_platform_addresses` and the
+example in this README, or replace the `block_in_place` bridge with a channel-based
+async->sync handoff inside `framework/context_provider.rs`.
+
 End-to-end tests that exercise the full wallet -> SDK -> broadcast pipeline against a
 live Dash testnet. The framework validates platform-address credit operations through
 the same `PlatformWalletManager` and `dash-sdk` layers used by production applications.
@@ -273,6 +295,13 @@ causing channel-closed errors in later tests.
 For deeper implementation details — module responsibilities, registry schema, signer
 design, workdir slot algorithm — refer to the plan file at
 `.claude/plans/ok-now-we-ll-get-prancy-biscuit.md`.
+
+> **Note (QA Wave 5):** the example above intentionally omits the runtime flavor for
+> brevity, but in practice the attribute must include
+> `flavor = "multi_thread", worker_threads = 12` (mirroring DET's e2e harness) — see
+> the [Status](#status) section. Without it, `SpvContextProvider`'s
+> `block_in_place` bridge panics on the current-thread runtime that
+> `tokio_shared_rt::test(shared)` builds by default.
 
 ---
 
