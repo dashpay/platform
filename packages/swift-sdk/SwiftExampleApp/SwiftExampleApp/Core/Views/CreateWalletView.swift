@@ -51,6 +51,7 @@ struct CreateWalletView: View {
                     .textInputAutocapitalization(.words)
                     .focused($focusedField, equals: .walletName)
                     .submitLabel(.next)
+                    .accessibilityIdentifier("createWallet.walletNameField")
                     .onSubmit {
                         focusedField = .pin
                     }
@@ -114,6 +115,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .pin)
+                        .accessibilityIdentifier("createWallet.pinField")
                 }
 
                 HStack {
@@ -124,6 +126,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .confirmPin)
+                        .accessibilityIdentifier("createWallet.confirmPinField")
                 }
             } header: {
                 Text("Security")
@@ -182,6 +185,7 @@ struct CreateWalletView: View {
                     onCreateTapped()
                 }
                 .disabled(!canCreateWallet)
+                .accessibilityIdentifier("createWallet.createButton")
             }
         }
         .disabled(isCreating)

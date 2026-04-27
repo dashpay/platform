@@ -80,6 +80,7 @@ struct ContentView: View {
                 WalletsTabView()
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
+                            .accessibilityIdentifier("rootTab.wallets")
                     }
                     .tag(RootTab.wallets)
 

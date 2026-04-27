@@ -147,6 +147,7 @@ struct WalletDetailView: View {
                 } label: {
                     Image(systemName: "info.circle")
                 }
+                .accessibilityIdentifier("walletDetail.infoButton")
             }
         }
         .sheet(isPresented: $showReceiveAddress) {
@@ -386,6 +387,7 @@ struct WalletInfoView: View {
                         }
                     }
                     .disabled(isDeleting)
+                    .accessibilityIdentifier("walletInfo.deleteWalletButton")
                     .listRowBackground(Color.red)
                 }
             }
@@ -528,6 +530,8 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
+        let walletId = wallet.walletId
+
         // Dismiss views FIRST to prevent UI from accessing deleted
         // relationships, then delete the `PersistentWallet` row.
         // Cascade-delete rules on `accounts` / `identities` null out
@@ -539,6 +543,13 @@ struct WalletInfoView: View {
 
         modelContext.delete(wallet)
         try? modelContext.save()
+        do {
+            try WalletStorage().deleteMnemonic(for: walletId)
+        } catch {
+            SDKLogger.error(
+                "Failed to delete wallet mnemonic from keychain: \(error.localizedDescription)"
+            )
+        }
         // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
         // so the Rust side also drops the in-memory handle.
     }

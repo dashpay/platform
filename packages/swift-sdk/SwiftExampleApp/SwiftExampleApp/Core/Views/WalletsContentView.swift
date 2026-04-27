@@ -43,6 +43,7 @@ struct WalletsContentView: View {
                                 .background(Color.blue)
                                 .cornerRadius(8)
                         }
+                        .accessibilityIdentifier("wallets.empty.createWalletButton")
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
@@ -53,10 +54,12 @@ struct WalletsContentView: View {
                         } label: {
                             WalletRowView(wallet: wallet)
                         }
+                        .accessibilityIdentifier("wallets.walletRow.\(wallet.label)")
                     }
                 }
             }
         }
+        .accessibilityIdentifier("wallets.screen")
         .navigationTitle("Wallets")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -65,6 +68,7 @@ struct WalletsContentView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityIdentifier("wallets.addWalletButton")
             }
         }
         .sheet(isPresented: $showingCreateWallet) {
