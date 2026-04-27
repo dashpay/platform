@@ -44,7 +44,7 @@ public final class ContactRequest: @unchecked Sendable {
                         recipientKeyIndex,
                         accountReference,
                         keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        encryptedPublicKey.count,
+                        UInt(encryptedPublicKey.count),
                         coreHeightCreatedAt,
                         createdAt,
                         &handle,
@@ -54,7 +54,7 @@ public final class ContactRequest: @unchecked Sendable {
             }
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -69,7 +69,7 @@ public final class ContactRequest: @unchecked Sendable {
         let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
             contact_request_get_sender_id(handle, bp.baseAddress!, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -84,7 +84,7 @@ public final class ContactRequest: @unchecked Sendable {
         let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
             contact_request_get_recipient_id(handle, bp.baseAddress!, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -97,7 +97,7 @@ public final class ContactRequest: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_sender_key_index(handle, &keyIndex, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -110,7 +110,7 @@ public final class ContactRequest: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_recipient_key_index(handle, &keyIndex, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -123,7 +123,7 @@ public final class ContactRequest: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_account_reference(handle, &accountRef, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -133,11 +133,11 @@ public final class ContactRequest: @unchecked Sendable {
     /// Get the encrypted public key
     public func getEncryptedPublicKey() throws -> Data {
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var length: Int = 0
+        var length: UInt = 0
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_encrypted_public_key(handle, &bytesPtr, &length, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -160,7 +160,7 @@ public final class ContactRequest: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_created_at(handle, &createdAt, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 

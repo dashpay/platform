@@ -139,8 +139,8 @@ public final class MnemonicResolver: @unchecked Sendable {
     fileprivate func resolve(
         walletId: Data,
         outBuffer: UnsafeMutablePointer<CChar>,
-        outCapacity: Int,
-        outLen: UnsafeMutablePointer<Int>
+        outCapacity: UInt,
+        outLen: UnsafeMutablePointer<UInt>
     ) -> MnemonicResolverResult {
         let mnemonicUTF8Bytes: Data
         do {
@@ -172,7 +172,7 @@ public final class MnemonicResolver: @unchecked Sendable {
         return maskedMnemonic.withDeobfuscatedBytes { bytes -> MnemonicResolverResult in
             let mnemonicLen = bytes.count
             // Need room for the data plus a trailing NUL byte.
-            guard mnemonicLen + 1 <= outCapacity else {
+            guard UInt(mnemonicLen) + 1 <= outCapacity else {
                 return .bufferTooSmall
             }
             guard let srcBase = bytes.baseAddress else {
@@ -188,7 +188,7 @@ public final class MnemonicResolver: @unchecked Sendable {
             // works off `out_len` not strlen but matching the
             // wire contract is cheap insurance.
             (outBuffer + mnemonicLen).pointee = 0
-            outLen.pointee = mnemonicLen
+            outLen.pointee = UInt(mnemonicLen)
             return .success
         }
     }
@@ -200,8 +200,8 @@ private func mnemonicResolverResolveTrampoline(
     ctx: UnsafeRawPointer?,
     walletIdBytes: UnsafePointer<UInt8>?,
     outBuffer: UnsafeMutablePointer<CChar>?,
-    outCapacity: Int,
-    outLen: UnsafeMutablePointer<Int>?
+    outCapacity: UInt,
+    outLen: UnsafeMutablePointer<UInt>?
 ) -> Int32 {
     guard let ctx, let walletIdBytes, let outBuffer, let outLen else {
         return MnemonicResolverResult.other.rawValue
@@ -281,11 +281,6 @@ public final class IdentityKeyPersister: @unchecked Sendable {
     private var handlePtr: UnsafeMutablePointer<IdentityKeyPersisterHandle>?
 
     public init(keychain: KeychainManager = .shared) {
-        // Layout sanity check before the trampoline starts firing.
-        // Catches Rust `#[repr(C)]` drift at construction rather
-        // than letting `assumingMemoryBound` blow up mid-derive.
-        assertPersistKeyArgsLayout()
-
         self.keychain = keychain
 
         let ctx = Unmanaged.passUnretained(self).toOpaque()
@@ -324,7 +319,7 @@ public final class IdentityKeyPersister: @unchecked Sendable {
         let walletIdBytes = Data(bytes: walletIdPtr, count: 32)
         let walletIdHex = walletIdBytes.map { String(format: "%02x", $0) }.joined()
         let derivationPath = String(cString: pathPtr)
-        let publicKeyData = Data(bytes: pubKeyPtr, count: a.public_key_len)
+        let publicKeyData = Data(bytes: pubKeyPtr, count: Int(a.public_key_len))
         let publicKeyHex = publicKeyData.map { String(format: "%02x", $0) }.joined()
         let publicKeyHashData = Data(bytes: pubHashPtr, count: 20)
         let publicKeyHashHex = publicKeyHashData
@@ -397,12 +392,11 @@ public final class IdentityKeyPersister: @unchecked Sendable {
 
 private func identityKeyPersisterPersistTrampoline(
     ctx: UnsafeRawPointer?,
-    args: UnsafeRawPointer?
+    args: UnsafePointer<PersistKeyArgs>?
 ) -> UInt8 {
-    guard let ctx, let args else { return PERSIST_KEY_FAILURE }
+    guard let ctx, let args else { return UInt8(PERSIST_KEY_FAILURE) }
     let persister = Unmanaged<IdentityKeyPersister>.fromOpaque(ctx).takeUnretainedValue()
-    let typedArgs = args.assumingMemoryBound(to: PersistKeyArgs.self)
-    return persister.persist(args: typedArgs) ? PERSIST_KEY_SUCCESS : PERSIST_KEY_FAILURE
+    return persister.persist(args: args) ? UInt8(PERSIST_KEY_SUCCESS) : UInt8(PERSIST_KEY_FAILURE)
 }
 
 /// No-op destructor — see `mnemonicResolverDestroyTrampoline`.

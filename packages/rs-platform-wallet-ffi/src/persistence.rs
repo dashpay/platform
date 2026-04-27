@@ -25,9 +25,7 @@ use std::ffi::CString;
 use std::os::raw::c_void;
 use std::slice;
 
-use crate::core_address_types::{
-    AddressPoolTypeTagFFI, CoreAddressEntryFFI, PersistAccountAddressesFn,
-};
+use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
 use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
@@ -36,8 +34,7 @@ use crate::identity_persistence::{
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFn, LoadWalletListFreeFn, PersistAccountFn, PersistWalletMetadataFn,
-    StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
+    LoadWalletListFreeFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -116,23 +113,76 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Called once per account when the account is added to a wallet.
-    /// Caller should upsert keyed by `(wallet_id, account spec)`. See
-    /// [`PersistAccountFn`].
-    pub on_persist_account_fn: Option<PersistAccountFn>,
+    /// Caller should upsert keyed by `(wallet_id, account spec)`.
+    /// Returns 0 on success. A non-zero return is propagated as a
+    /// `PersistenceError` from `store_account`, aborting the
+    /// caller's operation.
+    pub on_persist_account_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            spec: *const AccountSpecFFI,
+        ) -> i32,
+    >,
     /// Invoked on [`FFIPersister::load`] to pull the persisted wallet
-    /// list back into Rust for watch-only reconstruction. See
-    /// [`LoadWalletListFn`] for the allocation / lifetime contract.
-    pub on_load_wallet_list_fn: Option<LoadWalletListFn>,
+    /// list back into Rust for watch-only reconstruction.
+    ///
+    /// Implementations must set `*out_entries` to a Swift-allocated
+    /// array of `WalletRestoreEntryFFI` and `*out_count` to the
+    /// length. The allocation is freed by the caller via
+    /// `on_load_wallet_list_free_fn` once Rust has consumed it.
+    /// Returns 0 on success, non-zero on failure; on failure Rust
+    /// does not call the free callback.
+    pub on_load_wallet_list_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const WalletRestoreEntryFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
     /// Paired free callback for `on_load_wallet_list_fn`. See
-    /// [`LoadWalletListFreeFn`].
-    pub on_load_wallet_list_free_fn: Option<LoadWalletListFreeFn>,
+    /// [`LoadWalletListFreeFn`] for the allocation / lifetime contract.
+    pub on_load_wallet_list_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            count: usize,
+        ),
+    >,
     /// Called once per wallet at registration with network tag and
-    /// birth height. See [`PersistWalletMetadataFn`].
-    pub on_persist_wallet_metadata_fn: Option<PersistWalletMetadataFn>,
+    /// birth height. `network` uses the same discriminant as
+    /// `WalletRestoreEntryFFI.network` (0 = Mainnet, 1 = Testnet,
+    /// 2 = Devnet, 3 = Regtest). `birth_height` is the best estimate
+    /// of the block at which the wallet started; zero means
+    /// "scan from genesis / unknown". Returns 0 on success. A
+    /// non-zero return is propagated as a `PersistenceError` from
+    /// `store_wallet_metadata`, aborting the caller's operation.
+    pub on_persist_wallet_metadata_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            network: u8,
+            birth_height: u32,
+        ) -> i32,
+    >,
     /// Called per account whenever its address pool content changes
-    /// (initial population, pool extension, `used` flip). See
-    /// [`PersistAccountAddressesFn`].
-    pub on_persist_account_addresses_fn: Option<PersistAccountAddressesFn>,
+    /// (initial population, pool extension, `used` flip). The
+    /// `account` pointer identifies which `PersistentAccount` row to
+    /// link the addresses to (Swift matches by the same key used in
+    /// `on_persist_account_fn`). The addresses slice is contiguous
+    /// and Rust-owned; Swift must copy any string before returning.
+    /// Returns 0 on success. A non-zero return is propagated as a
+    /// `PersistenceError` from `store_account_addresses`, aborting
+    /// the caller's operation.
+    pub on_persist_account_addresses_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            account: *const AccountSpecFFI,
+            addresses: *const CoreAddressEntryFFI,
+            count: usize,
+        ) -> i32,
+    >,
     /// Called with an `IdentityChangeSet` slice — scalar-only
     /// identity upserts (id / balance / revision / status /
     /// wallet_id / identity_index) and identity-id removals. Swift

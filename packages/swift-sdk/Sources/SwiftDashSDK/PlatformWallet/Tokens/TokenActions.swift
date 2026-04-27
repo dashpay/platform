@@ -1,213 +1,12 @@
 import Foundation
 
-// MARK: - FFI declarations
-//
-// Mirror the C-ABI exports from
-// `packages/rs-platform-wallet-ffi/src/tokens/{transfer,burn,mint,claim,freeze,unfreeze,destroy_frozen_funds,pause,resume,set_price,purchase}.rs`.
-// `platform-wallet-ffi` is excluded from the umbrella header (see
-// `swift-sdk/build_ios.sh::inject_modulemap`), so each entry point
-// is named explicitly via `@_silgen_name`.
-
-@_silgen_name("platform_wallet_token_transfer")
-func platform_wallet_token_transfer(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ recipient_id: UnsafePointer<UInt8>,
-    _ amount: UInt64,
-    _ public_note: UnsafePointer<CChar>?,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_burn")
-func platform_wallet_token_burn(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ amount: UInt64,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_mint")
-func platform_wallet_token_mint(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ issued_to_identity_id: UnsafePointer<UInt8>?,
-    _ amount: UInt64,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_claim")
-func platform_wallet_token_claim(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ distribution_type: UInt8,
-    _ public_note: UnsafePointer<CChar>?,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_freeze")
-func platform_wallet_token_freeze(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ frozen_identity_id: UnsafePointer<UInt8>,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_unfreeze")
-func platform_wallet_token_unfreeze(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ frozen_identity_id: UnsafePointer<UInt8>,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_destroy_frozen_funds")
-func platform_wallet_token_destroy_frozen_funds(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ frozen_identity_id: UnsafePointer<UInt8>,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_pause")
-func platform_wallet_token_pause(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_resume")
-func platform_wallet_token_resume(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_set_price")
-func platform_wallet_token_set_price(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ price_per_token: UInt64,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_purchase")
-func platform_wallet_token_purchase(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ amount: UInt64,
-    _ expected_total_cost: UInt64,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_update_config")
-func platform_wallet_token_update_config(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ token_position: UInt16,
-    _ change_item_tag: UInt8,
-    _ change_item_payload_json: UnsafePointer<CChar>?,
-    _ public_note: UnsafePointer<CChar>?,
-    _ group_info_kind: UInt8,
-    _ group_info_position: UInt16,
-    _ group_info_action_id: UnsafePointer<UInt8>?,
-    _ group_info_action_is_proposer: Bool,
-    _ signing_key_id: UInt32,
-    _ signer_handle: OpaquePointer?,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 // MARK: - Token distribution type
 
 /// Mirrors
 /// `dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType`.
 /// The raw values are the FFI discriminants accepted by
 /// `platform_wallet_token_claim`.
-public enum TokenDistributionType: UInt8, Equatable, CaseIterable {
+public enum TokenDistributionType: UInt8, Equatable, CaseIterable, Sendable {
     case preProgrammed = 0
     case perpetual = 1
 }
@@ -319,7 +118,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -376,7 +175,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -435,7 +234,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -481,7 +280,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -538,7 +337,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -592,7 +391,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -647,7 +446,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -699,7 +498,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -751,7 +550,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -810,7 +609,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -861,7 +660,7 @@ extension ManagedPlatformWallet {
                     )
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value
@@ -924,7 +723,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value

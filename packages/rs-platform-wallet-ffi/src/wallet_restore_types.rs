@@ -256,60 +256,13 @@ unsafe impl Sync for IdentityRestoreEntryFFI {}
 unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
 
-/// Function-pointer type for the load callback.
-///
-/// Implementations must set `*out_entries` to a Swift-allocated array
-/// of `WalletRestoreEntryFFI` and `*out_count` to the length. The
-/// allocation is freed by the caller via `LoadWalletListFreeFn` once
-/// Rust has consumed it.
-///
-/// Returns 0 on success, non-zero on failure. On failure Rust does not
-/// call the free callback.
-pub type LoadWalletListFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    out_entries: *mut *const WalletRestoreEntryFFI,
-    out_count: *mut usize,
-) -> i32;
-
-/// Paired free callback for `LoadWalletListFn`. Releases any memory
-/// Swift allocated for the entries array, the per-wallet accounts
-/// arrays, the optional per-wallet platform-address balance arrays,
-/// every xpub byte buffer, the per-wallet identity arrays, every
-/// nested c-string + c-string pointer array carried by the identity
-/// entries, and every per-identity `IdentityKeyRestoreFFI` array
-/// together with the public-key byte buffers each row points at.
-/// Called exactly once after a successful `LoadWalletListFn`
-/// invocation.
+/// Paired free callback for the wallet-list load callback. Releases
+/// any memory Swift allocated for the entries array, the per-wallet
+/// accounts arrays, the optional per-wallet platform-address balance
+/// arrays, every xpub byte buffer, the per-wallet identity arrays,
+/// every nested c-string + c-string pointer array carried by the
+/// identity entries, and every per-identity `IdentityKeyRestoreFFI`
+/// array together with the public-key byte buffers each row points
+/// at. Called exactly once after a successful load.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);
-
-/// Fires once per account when it's added to a wallet. Swift should
-/// upsert into `PersistentAccount` keyed by `(wallet_id, type_tag,
-/// index, ...)`.
-///
-/// `spec.account_xpub_bytes` is valid only for the duration of the
-/// callback.
-pub type PersistAccountFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    spec: *const AccountSpecFFI,
-) -> i32;
-
-/// Fires once per wallet at registration time carrying Swift-visible
-/// metadata that isn't derivable from the xpub: network tag + birth
-/// height.
-///
-/// `network` uses the same discriminant as
-/// [`WalletRestoreEntryFFI.network`] (0 = Mainnet, 1 = Testnet,
-/// 2 = Devnet, 3 = Regtest).
-///
-/// `birth_height` is the best estimate of the block height at which
-/// the wallet started. Zero means "scan from genesis / unknown";
-/// callers can overwrite with a better value when SPV discovers the
-/// chain tip.
-pub type PersistWalletMetadataFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    network: u8,
-    birth_height: u32,
-) -> i32;

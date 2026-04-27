@@ -1,39 +1,5 @@
 import Foundation
 
-// MARK: - FFI declarations
-//
-// Mirror the C-ABI exports from
-// `packages/rs-platform-wallet-ffi/src/tokens/group_queries.rs`. These
-// queries are read-only — they list pending (or closed) group-action
-// proposals on a token contract, and list which identities have signed
-// a specific proposal.
-
-@_silgen_name("platform_wallet_token_pending_group_actions")
-func platform_wallet_token_pending_group_actions(
-    _ wallet_handle: Handle,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ group_contract_position: UInt16,
-    _ status: UInt8,
-    _ start_at_action_id: UnsafePointer<UInt8>?,
-    _ limit: UInt16,
-    _ out_json: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_token_group_action_signers")
-func platform_wallet_token_group_action_signers(
-    _ wallet_handle: Handle,
-    _ token_contract_id: UnsafePointer<UInt8>,
-    _ group_contract_position: UInt16,
-    _ status: UInt8,
-    _ action_id: UnsafePointer<UInt8>,
-    _ out_json: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-// `platform_wallet_free_string` is declared in
-// `PlatformWalletManagerFFI.swift` — reuse that symbol.
-
 // MARK: - Public types
 
 /// Status of a group-action proposal on Platform. Mirrors
@@ -351,7 +317,7 @@ extension ManagedPlatformWallet {
                     )
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
             return try ManagedPlatformWallet.consumeJSONArray(jsonOut)
@@ -387,7 +353,7 @@ extension ManagedPlatformWallet {
                     )
                 }
             }
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
             return try ManagedPlatformWallet.consumeJSONArray(jsonOut)

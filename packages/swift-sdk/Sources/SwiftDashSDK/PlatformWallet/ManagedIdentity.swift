@@ -26,13 +26,13 @@ public final class ManagedIdentity: @unchecked Sendable {
         let result = bytes.withUnsafeBytes { bytesPtr in
             managed_identity_create_from_identity_bytes(
                 bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                bytes.count,
+                UInt(bytes.count),
                 &handle,
                 &error
             )
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -47,7 +47,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
             managed_identity_get_id(handle, bp.baseAddress!, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -60,7 +60,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_balance(handle, &balance, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -77,7 +77,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_revision(handle, &revision, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return revision
@@ -99,7 +99,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_identity_index(handle, &hasIndex, &index, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return hasIndex ? index : nil
@@ -112,7 +112,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_status(handle, &raw, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return IdentityStatus(rawValue: raw) ?? .unknown
@@ -142,7 +142,7 @@ public final class ManagedIdentity: @unchecked Sendable {
     /// returning.
     public func getPublicKeys() throws -> [IdentityPublicKeyInfo] {
         var outPtr: UnsafeMutablePointer<IdentityPublicKeyFFI>? = nil
-        var outCount: Int = 0
+        var outCount: UInt = 0
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_public_keys(
@@ -151,7 +151,7 @@ public final class ManagedIdentity: @unchecked Sendable {
             &outCount,
             &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -165,8 +165,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var keys: [IdentityPublicKeyInfo] = []
-        keys.reserveCapacity(outCount)
-        for i in 0..<outCount {
+        keys.reserveCapacity(Int(outCount))
+        for i in 0..<Int(outCount) {
             let ffi = ptr[i]
 
             guard let purpose = KeyPurpose(rawValue: ffi.purpose),
@@ -183,7 +183,7 @@ public final class ManagedIdentity: @unchecked Sendable {
 
             let data: Data
             if let blob = ffi.data_ptr, ffi.data_len > 0 {
-                data = Data(bytes: blob, count: ffi.data_len)
+                data = Data(bytes: blob, count: Int(ffi.data_len))
             } else {
                 data = Data()
             }
@@ -213,11 +213,11 @@ public final class ManagedIdentity: @unchecked Sendable {
 
         let result = managed_identity_get_label(handle, &labelPtr, &error)
 
-        if result == ErrorIdentityNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_IDENTITY_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -240,69 +240,69 @@ public final class ManagedIdentity: @unchecked Sendable {
         let labelCStr = (label as NSString).utf8String
 
         let result = managed_identity_set_label(handle, labelCStr, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
 
     /// Get the last updated balance block time
     public func getLastUpdatedBalanceBlockTime() throws -> BlockTime? {
-        var ffiBlockTime = FFIBlockTime(height: 0, core_height: 0, timestamp: 0)
+        var blockTime = BlockTime()
         var error = PlatformWalletFFIError()
 
-        let result = managed_identity_get_last_updated_balance_block_time(handle, &ffiBlockTime, &error)
+        let result = managed_identity_get_last_updated_balance_block_time(handle, &blockTime, &error)
 
-        if result == ErrorIdentityNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_IDENTITY_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return BlockTime(ffiBlockTime: ffiBlockTime)
+        return blockTime
     }
 
     /// Set the last updated balance block time
     public func setLastUpdatedBalanceBlockTime(_ blockTime: BlockTime) throws {
         var error = PlatformWalletFFIError()
-        var ffiBlockTime = blockTime.ffiValue
+        var bt = blockTime
 
         let result = managed_identity_set_last_updated_balance_block_time(
-            handle, &ffiBlockTime, &error
+            handle, &bt, &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
 
     /// Get the last synced keys block time
     public func getLastSyncedKeysBlockTime() throws -> BlockTime? {
-        var ffiBlockTime = FFIBlockTime(height: 0, core_height: 0, timestamp: 0)
+        var blockTime = BlockTime()
         var error = PlatformWalletFFIError()
 
-        let result = managed_identity_get_last_synced_keys_block_time(handle, &ffiBlockTime, &error)
+        let result = managed_identity_get_last_synced_keys_block_time(handle, &blockTime, &error)
 
-        if result == ErrorIdentityNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_IDENTITY_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return BlockTime(ffiBlockTime: ffiBlockTime)
+        return blockTime
     }
 
     // MARK: - Contact Request Management
 
     /// Get all sent contact request IDs
     public func getSentContactRequestIds() throws -> [Identifier] {
-        var array = IdentifierArray(items: nil, count: 0)
+        var array = IdentifierArray()
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_sent_contact_request_ids(handle, &array, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -315,8 +315,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var identifiers: [Identifier] = []
-        identifiers.reserveCapacity(array.count)
-        for i in 0..<array.count {
+        identifiers.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
             identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
@@ -325,11 +325,11 @@ public final class ManagedIdentity: @unchecked Sendable {
 
     /// Get all incoming contact request IDs
     public func getIncomingContactRequestIds() throws -> [Identifier] {
-        var array = IdentifierArray(items: nil, count: 0)
+        var array = IdentifierArray()
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_incoming_contact_request_ids(handle, &array, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -342,8 +342,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var identifiers: [Identifier] = []
-        identifiers.reserveCapacity(array.count)
-        for i in 0..<array.count {
+        identifiers.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
             identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
@@ -352,11 +352,11 @@ public final class ManagedIdentity: @unchecked Sendable {
 
     /// Get all established contact IDs
     public func getEstablishedContactIds() throws -> [Identifier] {
-        var array = IdentifierArray(items: nil, count: 0)
+        var array = IdentifierArray()
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_get_established_contact_ids(handle, &array, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -369,8 +369,8 @@ public final class ManagedIdentity: @unchecked Sendable {
         }
 
         var identifiers: [Identifier] = []
-        identifiers.reserveCapacity(array.count)
-        for i in 0..<array.count {
+        identifiers.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
             identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
@@ -386,11 +386,11 @@ public final class ManagedIdentity: @unchecked Sendable {
             managed_identity_get_sent_contact_request(handle, idPtr, &requestHandle, &error)
         }
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -406,11 +406,11 @@ public final class ManagedIdentity: @unchecked Sendable {
             managed_identity_get_incoming_contact_request(handle, idPtr, &requestHandle, &error)
         }
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -426,11 +426,11 @@ public final class ManagedIdentity: @unchecked Sendable {
             managed_identity_get_established_contact(handle, idPtr, &contactHandle, &error)
         }
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -445,7 +445,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         let result = contactId.withFFIBytes { idPtr in
             managed_identity_is_contact_established(handle, idPtr, &isEstablished, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -458,7 +458,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_send_contact_request(handle, request.handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -469,7 +469,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = managed_identity_accept_contact_request(handle, request.handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -480,7 +480,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         let result = senderId.withFFIBytes { idPtr in
             managed_identity_reject_contact_request(handle, idPtr, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -517,10 +517,10 @@ public final class ManagedIdentity: @unchecked Sendable {
     private func readDpnsNameArray(
         _ fetch: (inout DpnsNameArray, inout PlatformWalletFFIError) -> PlatformWalletFFIResult
     ) throws -> [String] {
-        var array = DpnsNameArray(labels: nil, count: 0)
+        var array = DpnsNameArray()
         var error = PlatformWalletFFIError()
         let result = fetch(&array, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         defer { dpns_name_array_free(&array) }
@@ -528,8 +528,8 @@ public final class ManagedIdentity: @unchecked Sendable {
             return []
         }
         var names: [String] = []
-        names.reserveCapacity(array.count)
-        for i in 0..<array.count {
+        names.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
             if let labelPtr = labels[i] {
                 names.append(String(cString: labelPtr))
             }
@@ -547,7 +547,7 @@ public final class ManagedIdentity: @unchecked Sendable {
     /// `ManagedPlatformWallet.syncDashPayProfiles()` first when you
     /// want the freshest on-chain data.
     public func getDashPayProfile() throws -> DashPayProfile? {
-        var ffiProfile = dashPayProfileFFIEmpty()
+        var ffiProfile = DashPayProfileFFI()
         var hasProfile: Bool = false
         var error = PlatformWalletFFIError()
 
@@ -557,7 +557,7 @@ public final class ManagedIdentity: @unchecked Sendable {
             &hasProfile,
             &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
