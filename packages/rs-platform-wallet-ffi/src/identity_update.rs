@@ -16,7 +16,7 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_registration_with_signer::IdentityPubkeyFFI;
+use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::types::*;
 
@@ -151,11 +151,24 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
             }
             let pubkey_bytes: Vec<u8> =
                 slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
+
+            // Decode optional contract-bounds payload. `kind == 0`
+            // means "no bounds" — Authentication / Transfer keys
+            // and any caller that just doesn't set them. Encryption
+            // / Decryption keys MUST carry a value here for Drive
+            // to scope the key correctly; the helper rejects
+            // unscoped rows for those purposes.
+            let contract_bounds =
+                match decode_contract_bounds(row, purpose, i, "add_public_keys", out_error) {
+                    Ok(b) => b,
+                    Err(code) => return code,
+                };
+
             keys.push(IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id: row.key_id,
                 purpose,
                 security_level,
-                contract_bounds: None,
+                contract_bounds,
                 key_type,
                 read_only: row.read_only,
                 data: BinaryData::new(pubkey_bytes),

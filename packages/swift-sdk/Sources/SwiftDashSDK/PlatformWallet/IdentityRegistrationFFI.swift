@@ -71,6 +71,19 @@ public struct IdentityPubkeyFFI {
     public var pubkey_bytes: UnsafePointer<UInt8>?
     public var pubkey_len: Int
     public var read_only: Bool
+    /// Contract-bounds discriminant. `0` = no bounds (Authentication
+    /// / Transfer / etc.), `1` = `SingleContract` (Encryption /
+    /// Decryption restricted to a contract), `2` =
+    /// `SingleContractDocumentType` (further narrowed to a
+    /// document type within the contract).
+    public var contract_bounds_kind: UInt8
+    /// 32-byte contract id when `contract_bounds_kind != 0`. Null
+    /// otherwise. Borrowed for the duration of the FFI call.
+    public var contract_bounds_id: UnsafePointer<UInt8>?
+    /// NUL-terminated UTF-8 document type name when
+    /// `contract_bounds_kind == 2`. Null otherwise. Borrowed for
+    /// the duration of the FFI call.
+    public var contract_bounds_document_type: UnsafePointer<CChar>?
 }
 
 // MARK: - FFI Functions
@@ -129,6 +142,41 @@ func platform_wallet_register_identity_with_signer(
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
     )>,
     _ out_identity_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+/// Mirrors `platform_wallet_top_up_from_addresses_with_signer` from
+/// Rust (`packages/rs-platform-wallet-ffi/src/identity_top_up.rs`).
+///
+/// Top up an existing identity's credit balance from one or more
+/// Platform addresses. Reuses the `IdentityFundingInputFFI` row shape
+/// the registration FFI exposes — each row names one input address +
+/// the credit amount to spend from it.
+///
+/// Top-up state-transitions are signed with the Platform address
+/// inputs' private keys (not the identity's authentication keys), so
+/// only one signer handle is required: `signer_address_handle`,
+/// dispatching `key_type == 0xFF` through the Swift `KeychainSigner`
+/// trampoline.
+///
+/// On success `out_new_balance` is populated with the post-transition
+/// credit balance returned by Platform. The Rust-side
+/// `ManagedIdentity` for `identity_id` has its balance updated
+/// inside the library call; subsequent reads through the same handle
+/// reflect the new value without a round trip.
+@_silgen_name("platform_wallet_top_up_from_addresses_with_signer")
+func platform_wallet_top_up_from_addresses_with_signer(
+    _ wallet_handle: Handle,
+    _ identity_id: UnsafePointer<(
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )>,
+    _ inputs: UnsafePointer<IdentityFundingInputFFI>?,
+    _ inputs_count: Int,
+    _ signer_address_handle: OpaquePointer?,
+    _ out_new_balance: UnsafeMutablePointer<UInt64>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 

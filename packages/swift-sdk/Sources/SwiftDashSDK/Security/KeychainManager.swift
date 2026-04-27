@@ -479,6 +479,13 @@ extension KeychainManager {
     }
 }
 
+/// Module-level alias so cross-module callers can reference the
+/// metadata type without the (apparently brittle in some Xcode
+/// toolchains) `KeychainManager.IdentityPrivateKeyMetadata` nested
+/// path. Both names point at the same struct; pick whichever reads
+/// better at the call site.
+public typealias IdentityPrivateKeyMetadata = KeychainManager.IdentityPrivateKeyMetadata
+
 extension KeychainManager {
     /// Metadata stamped into each identity-private-key keychain item
     /// as a JSON blob on `kSecAttrGeneric`. Everything here is
@@ -677,6 +684,51 @@ extension KeychainManager {
             }
         }
         return nil
+    }
+
+    /// Existence check for the wallet-derived identity-private-key
+    /// scheme (`identity_privkey.<derivationPath>` items keyed by
+    /// public-key hex in metadata). Mirrors
+    /// `retrieveIdentityPrivateKey(publicKeyHex:)` but skips
+    /// `kSecReturnData` so the secret bytes never enter Swift
+    /// memory — only the metadata blob is loaded and matched.
+    /// Useful for UI diagnostics ("do we hold the private bytes
+    /// for this public key?") that should not surface the key
+    /// material itself.
+    public nonisolated func hasIdentityPrivateKey(publicKeyHex: String) -> Bool {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return false
+        }
+
+        let decoder = JSONDecoder()
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                let metadata = try? decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
+            else {
+                continue
+            }
+            if metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
+                return true
+            }
+        }
+        return false
     }
 
     /// Delete the identity private-key row for `derivationPath`.
