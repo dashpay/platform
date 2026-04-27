@@ -1,4 +1,35 @@
-//! Platform wallet with identity management
+//! Platform wallet with identity management.
+//!
+//! `platform-wallet` ties together a `key-wallet` HD wallet (UTXO state,
+//! key derivation), a Dash Platform identity manager, asset locks,
+//! platform-address tracking, and an optional SPV runtime into a single
+//! coherent abstraction. Most callers should drive it through
+//! [`PlatformWalletManager`], which owns one or more
+//! [`PlatformWallet`]s and the shared SPV runtime.
+//!
+//! # Module map
+//!
+//! - [`manager`] — top-level [`PlatformWalletManager`] (wallet
+//!   lifecycle, SPV start/stop, accessors).
+//! - [`wallet`] — the [`PlatformWallet`] aggregate plus the
+//!   sub-wallets that make it up: `core`, `identity`, `platform_addresses`,
+//!   `tokens`, `asset_lock`, and the optional `shielded` pool.
+//! - [`changeset`] — delta types persisted on every mutation; the apply
+//!   path replays them to rebuild in-memory state on startup.
+//! - [`broadcaster`] — pluggable [`TransactionBroadcaster`](broadcaster::TransactionBroadcaster)
+//!   (DAPI or SPV).
+//! - [`spv`] — SPV runtime used by the SPV broadcaster and by sync.
+//! - [`events`] — fan-out event manager and handlers.
+//! - [`platform_address_sync`] — periodic platform-address balance sync
+//!   coordinator.
+//! - [`error`] — the unified [`PlatformWalletError`] type.
+//!
+//! # Quick start
+//!
+//! See `examples/basic_usage.rs` for an end-to-end walkthrough — create a
+//! manager with `PlatformWalletManager::new`, build a wallet from a seed
+//! with `create_wallet_from_seed_bytes`, then read balances or derive
+//! receive addresses through the returned [`PlatformWallet`] handle.
 
 // The crate's error enum wraps several large variants (SDK errors, DPP
 // consensus errors, etc.). Shrinking it (e.g. boxing variants) would be a

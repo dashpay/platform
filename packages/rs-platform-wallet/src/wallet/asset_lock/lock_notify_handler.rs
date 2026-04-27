@@ -15,6 +15,8 @@ pub struct LockNotifyHandler {
 }
 
 impl LockNotifyHandler {
+    /// Build a notify-handler that wakes waiters on the given `Notify`
+    /// when an InstantSend or ChainLock event arrives from SPV.
     pub fn new(notify: Arc<Notify>) -> Self {
         Self { notify }
     }

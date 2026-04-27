@@ -47,6 +47,7 @@ pub enum WalletSyncOutcome {
 }
 
 impl WalletSyncOutcome {
+    /// Returns `true` if the wallet's sync pass completed successfully.
     pub fn is_ok(&self) -> bool {
         matches!(self, WalletSyncOutcome::Ok(_))
     }
@@ -63,14 +64,18 @@ pub struct PlatformAddressSyncSummary {
 }
 
 impl PlatformAddressSyncSummary {
+    /// `true` if no wallets were synced in this pass (e.g. a concurrent
+    /// pass was already in flight, or no wallets are registered yet).
     pub fn is_empty(&self) -> bool {
         self.wallet_results.is_empty()
     }
 
+    /// Number of wallets whose sync completed successfully in this pass.
     pub fn success_count(&self) -> usize {
         self.wallet_results.values().filter(|o| o.is_ok()).count()
     }
 
+    /// Number of wallets whose sync failed in this pass.
     pub fn error_count(&self) -> usize {
         self.wallet_results.len() - self.success_count()
     }
@@ -110,6 +115,9 @@ pub struct PlatformAddressSyncManager {
 }
 
 impl PlatformAddressSyncManager {
+    /// Build a sync manager bound to the manager's `wallets` map and
+    /// `event_manager`. The returned manager is **not** running — call
+    /// [`start`](Self::start) once SPV is up.
     pub fn new(
         wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_manager: Arc<PlatformEventManager>,

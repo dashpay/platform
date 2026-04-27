@@ -20,6 +20,19 @@ use crate::spv::SpvRuntime;
 /// Implementations may use DAPI (gRPC), SPV (P2P peers), or Core RPC.
 #[async_trait]
 pub trait TransactionBroadcaster: Send + Sync {
+    /// Push a fully signed transaction to the Dash network.
+    ///
+    /// # Returns
+    ///
+    /// The transaction id, computed before broadcast — callers can use
+    /// it to wait for confirmation or InstantSend lock without a round
+    /// trip back through the broadcaster.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PlatformWalletError::TransactionBroadcast`] if the
+    /// underlying transport rejects the transaction (mempool conflict,
+    /// network error, peer disconnect, …).
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError>;
 }
 
@@ -31,6 +44,7 @@ pub struct DapiBroadcaster {
 }
 
 impl DapiBroadcaster {
+    /// Build a DAPI-backed broadcaster from an `Sdk` handle.
     pub fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
         Self { sdk }
     }
@@ -72,6 +86,7 @@ pub struct SpvBroadcaster {
 }
 
 impl SpvBroadcaster {
+    /// Build an SPV-backed broadcaster from a running [`SpvRuntime`].
     pub fn new(spv: Arc<SpvRuntime>) -> Self {
         Self { spv }
     }

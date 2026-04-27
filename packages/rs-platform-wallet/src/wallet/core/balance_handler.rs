@@ -28,6 +28,9 @@ pub struct BalanceUpdateHandler {
 }
 
 impl BalanceUpdateHandler {
+    /// Build a balance-update handler bound to the manager's `wallets`
+    /// map. Register the handler on the [`PlatformEventManager`] so SPV
+    /// `BalanceUpdated` events flow through it.
     pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
         Self { wallets }
     }

@@ -42,11 +42,30 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
-    /// Create a new PlatformWalletManager.
+    /// Build a new `PlatformWalletManager`.
     ///
-    /// `app_handler` receives all SPV and platform events by reference.
-    /// Internally, a `LockNotifyHandler` is also registered to wake
-    /// `AssetLockManager` async waiters on lock events.
+    /// The manager is created empty: no wallets are registered, the SPV
+    /// runtime is not yet started, and the platform-address sync loop is
+    /// idle. Use [`create_wallet_from_seed_bytes`](Self::create_wallet_from_seed_bytes)
+    /// or [`create_wallet_from_mnemonic`](Self::create_wallet_from_mnemonic)
+    /// to register a wallet.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` — Dash Platform SDK handle, shared with every wallet the
+    ///   manager creates.
+    /// * `persister` — backing store for changesets; consult
+    ///   [`PlatformWalletPersistence`] for the trait shape.
+    /// * `app_handler` — application-level event sink. Receives every
+    ///   SPV and platform event by reference (no cloning). Internally,
+    ///   a [`LockNotifyHandler`] and a [`BalanceUpdateHandler`] are
+    ///   chained alongside it so async asset-lock waiters and lock-free
+    ///   balance atomics stay current without the application handler
+    ///   having to forward those events.
+    ///
+    /// # Examples
+    ///
+    /// See `examples/basic_usage.rs` for a runnable end-to-end example.
     pub fn new(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,

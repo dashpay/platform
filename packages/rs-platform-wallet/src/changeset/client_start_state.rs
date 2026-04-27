@@ -33,6 +33,8 @@ pub struct ClientStartState {
 }
 
 impl ClientStartState {
+    /// `true` when no persisted state was returned for any wallet — the
+    /// platform wallet has nothing to hydrate and should boot fresh.
     pub fn is_empty(&self) -> bool {
         self.platform_addresses.is_empty() && self.wallets.is_empty()
     }

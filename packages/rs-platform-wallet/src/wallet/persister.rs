@@ -23,6 +23,9 @@ pub struct WalletPersister {
 }
 
 impl WalletPersister {
+    /// Build a per-wallet persistence handle that binds `wallet_id` to
+    /// the shared `inner` persister. Subsequent `store`/`flush` calls go
+    /// through `inner` with `wallet_id` already attached.
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
         Self { wallet_id, inner }
     }

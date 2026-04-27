@@ -1,3 +1,6 @@
+//! [`PlatformWallet`] aggregate plus its sub-wallets (core, identity,
+//! platform addresses, tokens, asset locks, optional shielded pool).
+
 pub mod apply;
 pub mod asset_lock;
 pub mod core;

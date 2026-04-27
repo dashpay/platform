@@ -27,6 +27,9 @@ pub struct CorePersistenceBridge {
 }
 
 impl CorePersistenceBridge {
+    /// Wrap a [`PlatformWalletPersistence`] so it can be passed to
+    /// [`key_wallet_manager::WalletManager::new_with_persister`] as a
+    /// [`WalletPersistence`] implementor.
     pub fn new(inner: Arc<dyn PlatformWalletPersistence>) -> Self {
         Self { inner }
     }

@@ -46,13 +46,44 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
-    /// Create a PlatformWallet from a BIP39 mnemonic phrase.
+    /// Create a `PlatformWallet` from a BIP-39 mnemonic phrase.
     ///
     /// The mnemonic's language is auto-detected by trying each
-    /// supported BIP-39 wordlist in turn (see
-    /// [`parse_mnemonic_any_language`]). For passphrase-only flows or
-    /// out-of-band seed material, derive the seed externally and use
+    /// supported BIP-39 wordlist in turn (`parse_mnemonic_any_language`,
+    /// internal). For passphrase-only flows or out-of-band seed
+    /// material, derive the seed externally and use
     /// [`Self::create_wallet_from_seed_bytes`].
+    ///
+    /// # Arguments
+    ///
+    /// * `mnemonic_phrase` — BIP-39 mnemonic in any of the 10 supported
+    ///   wordlists (English, Spanish, French, Italian, Japanese,
+    ///   Korean, Chinese Simplified/Traditional, Czech, Portuguese).
+    /// * `network` — `Network::Dash` (mainnet), `Network::Testnet`, or
+    ///   `Network::Devnet` / `Network::Regtest`.
+    /// * `accounts` — BIP-44 account creation policy
+    ///   (`Default` creates the standard set; supply a
+    ///   [`WalletAccountCreationOptions`] variant to customize).
+    ///
+    /// # Returns
+    ///
+    /// An `Arc<PlatformWallet>` pointing at the freshly registered
+    /// wallet. The same handle is also stored inside the manager and
+    /// can be retrieved by `WalletId` later.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PlatformWalletError::WalletCreation`] if the phrase
+    /// doesn't parse against any supported wordlist or if the
+    /// underlying `Wallet::from_mnemonic` rejects the seed.
+    ///
+    /// # Security
+    ///
+    /// The mnemonic phrase is treated as a high-value secret. Callers
+    /// should pass it in via a buffer they control and zeroize after
+    /// the call; this function does not hold onto the input string,
+    /// but the resulting wallet **does** retain seed material in
+    /// memory (encrypted only when the wallet is locked).
     pub async fn create_wallet_from_mnemonic(
         &self,
         mnemonic_phrase: &str,
@@ -70,8 +101,39 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         self.register_wallet(wallet).await
     }
 
-    /// Create a PlatformWallet from raw seed bytes, initialize persisted
-    /// state, register it with the manager and return an `Arc` handle.
+    /// Create a `PlatformWallet` from raw 64-byte BIP-39 seed material.
+    ///
+    /// Equivalent to [`create_wallet_from_mnemonic`](Self::create_wallet_from_mnemonic)
+    /// for callers that already own the seed (e.g. derived from a
+    /// hardware wallet or a passphrase-protected mnemonic). After
+    /// construction the wallet is registered with the manager,
+    /// persisted-state hydration runs, and an `Arc` handle is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `network` — target Dash network.
+    /// * `seed_bytes` — 64-byte BIP-39 seed (PBKDF2 output, **not** the
+    ///   raw mnemonic phrase).
+    /// * `accounts` — BIP-44 account creation policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PlatformWalletError::WalletCreation`] if the seed is
+    /// rejected by `Wallet::from_seed_bytes`, if the wallet can't be
+    /// inserted into the underlying `WalletManager`, or if persisted
+    /// state hydration fails.
+    ///
+    /// # Security
+    ///
+    /// The 64-byte seed is taken by value; the caller's copy is moved
+    /// in and the resulting wallet retains derived key material.
+    /// Callers handling the seed before this call should keep it in a
+    /// `zeroize::Zeroizing` wrapper and let it drop immediately
+    /// afterwards.
+    ///
+    /// # Examples
+    ///
+    /// See `examples/basic_usage.rs` for a runnable example.
     pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,

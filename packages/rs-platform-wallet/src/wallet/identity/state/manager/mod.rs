@@ -57,7 +57,9 @@ pub enum IdentityLocation {
     OutOfWallet,
     /// The identity lives in `wallet_identities[wallet_id][registration_index]`.
     InWallet {
+        /// Wallet that owns the identity (outer bucket key).
         wallet_id: WalletId,
+        /// HD registration index inside the wallet bucket (inner key).
         registration_index: RegistrationIndex,
     },
 }

@@ -1,3 +1,6 @@
+//! Core (UTXO) wallet: balances, addresses, broadcast helpers, and the
+//! lock-free [`WalletBalance`] used by UI layers.
+
 pub mod balance;
 pub mod balance_handler;
 mod broadcast;

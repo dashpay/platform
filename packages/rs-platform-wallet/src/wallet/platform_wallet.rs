@@ -40,9 +40,17 @@ pub struct PlatformWalletInfo {
     /// Lock-free balance for UI reads. Updated from `ManagedWalletInfo` after
     /// each SPV block/mempool processing and RPC refresh.
     pub balance: Arc<WalletBalance>,
+    /// Identities owned (or observed) by this wallet — see
+    /// [`IdentityManager`] for the bucket layout.
     pub identity_manager: IdentityManager,
+    /// Live asset-lock transactions tracked from build through
+    /// finality, keyed by their credit `OutPoint`.
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// `identity_id -> set<contract_id>` — token contracts each
+    /// identity is watching, used to gate balance refresh.
     pub token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
+    /// Cached `(identity_id, contract_id) -> balance` for the watched
+    /// token positions.
     pub token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>,
 }
 

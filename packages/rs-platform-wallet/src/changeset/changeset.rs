@@ -460,13 +460,21 @@ impl Merge for ContactChangeSet {
 /// HD slot it belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlatformAddressBalanceEntry {
+    /// Wallet that owns the underlying HD account.
     pub wallet_id: WalletId,
+    /// DIP-17 platform-payment account index.
     pub account_index: u32,
+    /// Derivation index inside the account (BIP-32 leaf).
     pub address_index: u32,
+    /// The platform P2PKH address that received the funds.
     pub address: PlatformP2PKHAddress,
+    /// Funds snapshot for `address` (balance in credits + nonce).
     pub funds: AddressFunds,
 }
 
+/// Diff produced by a platform-address sync pass: the addresses whose
+/// funds changed plus the watermark that lets the next pass resume
+/// incrementally instead of rescanning from genesis.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlatformAddressChangeSet {
     /// Updated platform addresses produced by the last sync pass.

@@ -36,6 +36,7 @@ impl Default for WalletBalance {
 }
 
 impl WalletBalance {
+    /// Construct a fresh, all-zero balance.
     pub fn new() -> Self {
         Self {
             confirmed: AtomicU64::new(0),
@@ -45,22 +46,30 @@ impl WalletBalance {
         }
     }
 
+    /// Confirmed (spendable) balance, in duffs.
     pub fn confirmed(&self) -> u64 {
         self.confirmed.load(Ordering::Relaxed)
     }
 
+    /// Mempool / unconfirmed balance, in duffs. Becomes part of
+    /// [`Self::confirmed`] once the funding transaction is mined.
     pub fn unconfirmed(&self) -> u64 {
         self.unconfirmed.load(Ordering::Relaxed)
     }
 
+    /// Immature coinbase balance, in duffs (e.g. masternode rewards
+    /// still inside the maturity window).
     pub fn immature(&self) -> u64 {
         self.immature.load(Ordering::Relaxed)
     }
 
+    /// Funds locked in CoinJoin / asset-lock outputs that are not
+    /// freely spendable, in duffs.
     pub fn locked(&self) -> u64 {
         self.locked.load(Ordering::Relaxed)
     }
 
+    /// Sum of every balance bucket, in duffs.
     pub fn total(&self) -> u64 {
         self.confirmed() + self.unconfirmed() + self.immature() + self.locked()
     }
