@@ -294,6 +294,18 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         guard !identityPubkeys.isEmpty else {
             throw PlatformWalletError.invalidParameter
         }
+        // Reject malformed address hashes up front for the same
+        // reason `topUpFromAddresses` does — `.prefix(20)` below
+        // would silently truncate / zero-pad and point the FFI at
+        // a different address.
+        for input in inputs {
+            guard input.hash.count == 20 else {
+                throw PlatformWalletError.invalidParameter
+            }
+        }
+        if let output, output.hash.count != 20 {
+            throw PlatformWalletError.invalidParameter
+        }
 
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
@@ -481,6 +493,17 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         }
         guard !inputs.isEmpty else {
             throw PlatformWalletError.invalidParameter
+        }
+        // Reject malformed address hashes up front. Earlier
+        // revisions used `.prefix(20)` on the FFI build below,
+        // which silently truncates oversize hashes and zero-pads
+        // undersized ones — pointing the FFI at a different
+        // address than the caller intended. A clean precondition
+        // here surfaces the failure as a recoverable error.
+        for input in inputs {
+            guard input.hash.count == 20 else {
+                throw PlatformWalletError.invalidParameter
+            }
         }
 
         let handle = self.handle
@@ -869,6 +892,13 @@ extension ManagedPlatformWallet {
         network: DashSDKNetwork,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityRegistrationKeyPreview {
+        // Public API takes arbitrary `Data`. An empty / short
+        // `walletId` would make `bindMemory(to: UInt8).baseAddress`
+        // nil and the force-unwrap below crash. Reject the bad
+        // shape up front so callers see a recoverable error.
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter
+        }
         let resolver = MnemonicResolver(storage: storage)
 
         var row = identityKeyPreviewFFIEmpty()

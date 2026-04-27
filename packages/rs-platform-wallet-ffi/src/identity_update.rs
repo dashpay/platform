@@ -156,13 +156,13 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
             // means "no bounds" — Authentication / Transfer keys
             // and any caller that just doesn't set them. Encryption
             // / Decryption keys MUST carry a value here for Drive
-            // to scope the key correctly; the iOS form blocks
-            // submission if the caller forgot to populate them.
-            let contract_bounds = match decode_contract_bounds(row, i, "add_public_keys", out_error)
-            {
-                Ok(b) => b,
-                Err(code) => return code,
-            };
+            // to scope the key correctly; the helper rejects
+            // unscoped rows for those purposes.
+            let contract_bounds =
+                match decode_contract_bounds(row, purpose, i, "add_public_keys", out_error) {
+                    Ok(b) => b,
+                    Err(code) => return code,
+                };
 
             keys.push(IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id: row.key_id,

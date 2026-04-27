@@ -417,7 +417,7 @@ struct ContractsTabView: View {
     /// Submit handler. ID-shaped inputs run the lookup pipeline
     /// immediately. Keyword-shaped inputs collapse the debounce
     /// window and fire right away (so hitting Return doesn't make the
-    /// user wait the full 400ms).
+    /// user wait the full `keywordDebounceMs`).
     private func handleSubmit() {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -503,7 +503,12 @@ struct ContractsTabView: View {
                             : "Saved \(result.contract.name)"
                     )
                 ]
-                searchQuery = ""
+                // Don't clear `searchQuery` here. Earlier revisions
+                // did, but the resulting `.onChange` fired
+                // `handleQueryChange("")` → `searchResults = []`,
+                // wiping the success row before SwiftUI rendered
+                // it. Leave the field as the user typed; the "x"
+                // button is the documented clear path.
             }
             return
         } catch ContractDownloadError.notFound {
@@ -570,7 +575,8 @@ struct ContractsTabView: View {
                         contextNote: note
                     )
                 ]
-                searchQuery = ""
+                // Don't clear `searchQuery` here — see the matching
+                // comment in the contract-id success branch above.
             }
         } catch ContractDownloadError.notFound {
             await MainActor.run {

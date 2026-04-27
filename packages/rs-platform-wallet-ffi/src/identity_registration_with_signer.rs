@@ -133,6 +133,17 @@ pub struct IdentityPubkeyFFI {
 /// `SingleContract { id }`; `2` is
 /// `SingleContractDocumentType { id, document_type_name }`.
 ///
+/// **Encryption / Decryption purposes require contract bounds.**
+/// Drive scopes those purposes to a single contract (and optionally
+/// a document type), so registering or updating an identity with an
+/// unbounded encryption / decryption key produces a key that cannot
+/// be used. We reject `kind == 0` for those purposes here so the
+/// failure surfaces as a clean FFI error rather than a key Drive
+/// silently can't use.
+///
+/// `purpose` is the parsed `Purpose` discriminant for the row, used
+/// only for the encryption / decryption guard above.
+///
 /// `row_index` and `field_label` only flavour error messages
 /// (different callers want different prefixes — `add_public_keys[i]`
 /// for update, `identity_pubkeys[i]` for registration). On any
@@ -147,12 +158,29 @@ pub struct IdentityPubkeyFFI {
 /// null) must be a NUL-terminated UTF-8 C string.
 pub(crate) unsafe fn decode_contract_bounds(
     row: &IdentityPubkeyFFI,
+    purpose: Purpose,
     row_index: usize,
     field_label: &str,
     out_error: *mut PlatformWalletFFIError,
 ) -> Result<Option<ContractBounds>, PlatformWalletFFIResult> {
     match row.contract_bounds_kind {
-        0 => Ok(None),
+        0 => {
+            if matches!(purpose, Purpose::ENCRYPTION | Purpose::DECRYPTION) {
+                if !out_error.is_null() {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidParameter,
+                        format!(
+                            "{}[{}].contract_bounds_kind = 0 (no bounds) but purpose = {:?} \
+                             requires bounds — Drive scopes Encryption / Decryption keys to a \
+                             specific contract (use kind 1 or 2)",
+                            field_label, row_index, purpose
+                        ),
+                    );
+                }
+                return Err(PlatformWalletFFIResult::ErrorInvalidParameter);
+            }
+            Ok(None)
+        }
         1 => {
             if row.contract_bounds_id.is_null() {
                 if !out_error.is_null() {
@@ -466,11 +494,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         // shared helper. Earlier revisions silently dropped these
         // fields here, so Encryption / Decryption keys registered
         // via this entry point ended up unbounded on Platform —
-        // matching the update path's parser closes the gap.
-        let contract_bounds = match decode_contract_bounds(row, i, "identity_pubkeys", out_error) {
-            Ok(b) => b,
-            Err(code) => return code,
-        };
+        // matching the update path's parser closes the gap. The
+        // helper also rejects unscoped Encryption / Decryption
+        // keys (Drive requires a contract scope for those).
+        let contract_bounds =
+            match decode_contract_bounds(row, purpose, i, "identity_pubkeys", out_error) {
+                Ok(b) => b,
+                Err(code) => return code,
+            };
         keys_map.insert(
             row.key_id,
             IdentityPublicKey::V0(IdentityPublicKeyV0 {

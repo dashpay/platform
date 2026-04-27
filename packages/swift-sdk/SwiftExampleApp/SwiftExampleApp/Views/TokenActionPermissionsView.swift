@@ -532,8 +532,15 @@ enum TokenActionResolver {
         let hasPerpetual = token.perpetualDistribution != nil
         let hasPreProgrammed = token.preProgrammedDistribution != nil
 
-        // No distribution at all and not designated -> hide.
-        if !hasPerpetual && !hasPreProgrammed && !isDesignated {
+        // No distribution at all → hide regardless of whether this
+        // identity happens to be the designated recipient. A token
+        // without a distribution slot has nothing to claim, so
+        // surfacing the row would advertise an action the token
+        // can't actually perform. (Earlier revisions kept the row
+        // for designated recipients and surfaced `.allowed`, which
+        // would land in the placeholder action sheet only to fail
+        // when the user tapped through.)
+        if !hasPerpetual && !hasPreProgrammed {
             return .hidden
         }
 

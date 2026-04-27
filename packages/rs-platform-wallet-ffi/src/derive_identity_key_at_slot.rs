@@ -287,8 +287,16 @@ unsafe fn derive_at_slot_inner(
     // The original `derived` value drops at scope exit and zeroizes
     // the source buffer; the FFI row's `private_key_bytes` is the
     // caller's responsibility to scrub via the paired `_free`.
-    let mut private_key_bytes = [0u8; 32];
-    private_key_bytes.copy_from_slice(derived.private_key.as_ref());
+    //
+    // Stage the inline 32-byte copy through `Zeroizing<[u8; 32]>`
+    // so the **stack** copy gets scrubbed when this function
+    // returns. `[u8; 32]` is `Copy`, so writing into the FFI row
+    // duplicates the bytes — the row's bytes are the caller's
+    // problem, but the local buffer would otherwise linger on the
+    // stack with the live secret until the frame is overwritten
+    // by the next call.
+    let mut private_key_bytes_buf: Zeroizing<[u8; 32]> = Zeroizing::new([0u8; 32]);
+    private_key_bytes_buf.copy_from_slice(derived.private_key.as_ref());
 
     *out_row = IdentityKeyPreviewFFI {
         identity_index,
@@ -296,7 +304,7 @@ unsafe fn derive_at_slot_inner(
         public_key: pub_ptr,
         public_key_len: pub_len,
         private_key_wif: wif_cstring.into_raw(),
-        private_key_bytes,
+        private_key_bytes: *private_key_bytes_buf,
     };
 
     PlatformWalletFFIResult::Success
@@ -471,13 +479,20 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_free(
         row.public_key_len = 0;
     }
     if !row.private_key_wif.is_null() {
-        // Overwrite the WIF chars in place before releasing the
-        // CString allocation. Matches the loop variant's scrub.
-        let len = std::ffi::CStr::from_ptr(row.private_key_wif)
-            .to_bytes()
-            .len();
-        std::ptr::write_bytes(row.private_key_wif as *mut u8, 0, len);
-        let _ = CString::from_raw(row.private_key_wif);
+        // Reconstruct the owned `CString` first, THEN scrub through
+        // its owned buffer. Earlier revisions zeroed via
+        // `write_bytes(ptr, 0, strlen)` *before* `CString::from_raw`
+        // — that is undefined behaviour: `CString::from_raw`
+        // recomputes the length internally with `strlen`, so a
+        // pre-zeroed buffer makes it free a 1-byte allocation
+        // against the original `(len + 1)`-byte allocation
+        // (rust-lang/rust#68456). Reconstructing first preserves
+        // the original length in `CString::as_bytes().len()` so the
+        // allocator sees a matching size on drop.
+        let cstring = CString::from_raw(row.private_key_wif);
+        let bytes_len = cstring.as_bytes().len();
+        std::ptr::write_bytes(cstring.as_ptr() as *mut u8, 0, bytes_len);
+        drop(cstring);
         row.private_key_wif = std::ptr::null_mut();
     }
     // Inline 32-byte secret — zero in place. The struct itself is

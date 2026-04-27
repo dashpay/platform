@@ -265,7 +265,20 @@ struct IdentityDetailView: View {
                             .foregroundColor(.secondary)
                     } else {
                         ForEach(tokenBalances) { entry in
-                            IdentityTokenRow(entry: entry)
+                            // Tapping a token here opens the
+                            // permissions view pinned to *this*
+                            // identity — the call site already
+                            // knows whose tokens these are, so we
+                            // skip the generic identity picker
+                            // inside `TokenActionPermissionsView`.
+                            NavigationLink(
+                                destination: TokenActionPermissionsView(
+                                    token: entry.token,
+                                    identity: identity
+                                )
+                            ) {
+                                IdentityTokenRow(entry: entry)
+                            }
                         }
                     }
                 } header: {

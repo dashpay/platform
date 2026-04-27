@@ -29,7 +29,6 @@
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
@@ -171,21 +170,19 @@ impl IdentityWallet {
                 .clone()
         };
 
-        // 2. Identity nonce — fresh from Platform so the broadcast
-        //    doesn't reuse a stale value the network will reject.
-        let identity_nonce = self
-            .sdk
-            .get_identity_nonce(*owner_identity_id, true, None)
-            .await?;
-
-        // 3. Build the V1 serialization format. The path-build +
-        //    contract-id-from-(owner, nonce) generation goes
-        //    through the existing V0 helper because the id derivation
-        //    is the same on both versions.
-        let id = DataContract::generate_data_contract_id_v0(
-            owner_identity_id.to_buffer(),
-            identity_nonce,
-        );
+        // 2. Build the V1 serialization format with a placeholder id.
+        //    The SDK's `DataContractCreateTransition::new_from_data_contract`
+        //    fetches the identity nonce itself and overwrites the
+        //    contract id with the canonical
+        //    `generate_data_contract_id_v0(owner, fetched_nonce)` —
+        //    so any id we set here is dropped on the floor. Earlier
+        //    revisions also pre-fetched the nonce via
+        //    `sdk.get_identity_nonce(.., bump = true, ..)` for an
+        //    in-place id computation, which double-bumped the network
+        //    nonce (the SDK's own put-path bumps it a second time)
+        //    and wasted one slot per call. Dropping the local fetch
+        //    keeps the broadcast on a single nonce increment.
+        let placeholder_id = Identifier::default();
 
         let mut format_value = serde_json::Map::new();
         format_value.insert(
@@ -194,7 +191,7 @@ impl IdentityWallet {
         );
         format_value.insert(
             "id".to_string(),
-            serde_json::Value::String(bs58::encode(id.to_buffer()).into_string()),
+            serde_json::Value::String(bs58::encode(placeholder_id.to_buffer()).into_string()),
         );
         format_value.insert(
             "ownerId".to_string(),
@@ -265,21 +262,14 @@ impl IdentityWallet {
                     ))
                 })?;
 
-        // Wrap in `CreatedDataContract` so `put_to_platform` has the
-        // identity-nonce breadcrumb it needs internally.
-        let _created = CreatedDataContract::from_contract_and_identity_nonce(
-            data_contract.clone(),
-            identity_nonce,
-            platform_version,
-        )
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!("Failed to wrap contract: {e}"))
-        })?;
-
-        // 4. Broadcast via `PutContract`. This runs on the
+        // 3. Broadcast via `PutContract`. This runs on the
         //    platform-wallet 8 MB-stack worker, so the proof-
         //    verification recursion in GroveDB doesn't blow the
-        //    stack like it does on the rs-sdk-ffi runtime.
+        //    stack like it does on the rs-sdk-ffi runtime. The
+        //    SDK fetches+bumps the identity nonce internally and
+        //    overwrites the contract id with the canonical
+        //    `(owner, nonce)` derivation; the placeholder id we
+        //    set above is intentionally discarded.
         let confirmed = data_contract
             .put_to_platform_and_wait_for_response(&self.sdk, signing_key, &SignerRef(signer), None)
             .await
