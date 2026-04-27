@@ -4948,6 +4948,7 @@ dependencies = [
  "bimap",
  "bip39",
  "bs58",
+ "dash-async",
  "dash-sdk",
  "dash-spv",
  "dashcore",

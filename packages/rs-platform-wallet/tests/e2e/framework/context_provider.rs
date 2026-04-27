@@ -2,17 +2,23 @@
 //!
 //! [`SpvContextProvider`] satisfies the synchronous `ContextProvider`
 //! trait by bridging to [`SpvRuntime::get_quorum_public_key`]
-//! (`async fn`) via [`tokio::task::block_in_place`] +
-//! [`tokio::runtime::Handle::block_on`]. The harness therefore MUST
-//! run on a multi-threaded tokio runtime — the
-//! `#[tokio_shared_rt::test(shared)]` attribute used by the e2e test
-//! cases provides that by default.
+//! (`async fn`) via [`dash_async::block_on`], which transparently
+//! handles all three tokio runtime scenarios:
 //!
-//! Calling [`SpvContextProvider::get_quorum_public_key`] from a
-//! single-threaded runtime panics inside `block_in_place`. If the
-//! suite ever needs single-threaded execution, replace this provider
-//! with a channel-based bridge (push the request onto a sync channel
-//! polled by an async helper task).
+//! - No active runtime: spins up a temporary current-thread runtime
+//!   for the call.
+//! - Current-thread runtime (the `tokio_shared_rt::test` default):
+//!   spawns a dedicated OS thread with its own runtime so the call
+//!   doesn't deadlock and `block_in_place` doesn't panic.
+//! - Multi-thread runtime: uses the optimal `block_in_place + spawn`
+//!   path via the workspace helper.
+//!
+//! As a result the e2e harness works on every runtime flavor —
+//! tests can use `#[tokio_shared_rt::test(shared)]` directly — but
+//! [`cases::transfer`](crate::cases::transfer) still spells out
+//! `flavor = "multi_thread", worker_threads = 12` for parity with
+//! `dash-evo-tool/tests/backend-e2e/` and to take the optimal
+//! bridge path when the test is run live.
 //!
 //! Data-contract and token-configuration lookups deliberately return
 //! `Ok(None)` — the SDK falls back to a network fetch. We surface
@@ -68,25 +74,37 @@ impl ContextProvider for SpvContextProvider {
     /// Bridge SDK proof verification to the SPV's masternode-list
     /// state.
     ///
-    /// Uses `block_in_place` + `Handle::block_on` to call the async
-    /// SPV API from the synchronous trait method. **Multi-threaded
-    /// tokio runtime required** — see the module docs.
+    /// Uses [`dash_async::block_on`] to call the async SPV API from
+    /// the synchronous trait method. The helper picks the right
+    /// strategy for whichever tokio runtime is in scope — see the
+    /// module docs for the per-flavor breakdown.
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
+        // `dash_async::block_on` requires `Future: Send + 'static`,
+        // so capture an owned `Arc<SpvRuntime>` clone and the small
+        // `Copy` arguments by value. Outer `Result` carries a
+        // bridge-level `AsyncError` (runtime panic, channel hangup,
+        // …); inner `Result` carries the SPV's own quorum-lookup
+        // error. Both fold into `InvalidQuorum` for the SDK.
         let spv = Arc::clone(&self.spv_runtime);
-        let result = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                spv.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-                    .await
-            })
-        });
-        result.map_err(|e| {
+        let inner = dash_async::block_on(async move {
+            spv.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+                .await
+        })
+        .map_err(|e| {
             ContextProviderError::InvalidQuorum(format!(
-                "SPV quorum lookup failed (type={quorum_type}, height={core_chain_locked_height}): {e}"
+                "SPV quorum lookup bridge failed (type={quorum_type}, \
+                 height={core_chain_locked_height}): {e}"
+            ))
+        })?;
+        inner.map_err(|e| {
+            ContextProviderError::InvalidQuorum(format!(
+                "SPV quorum lookup failed (type={quorum_type}, \
+                 height={core_chain_locked_height}): {e}"
             ))
         })
     }

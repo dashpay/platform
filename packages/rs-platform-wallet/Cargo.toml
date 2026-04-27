@@ -69,6 +69,13 @@ fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
 simple-signer = { path = "../simple-signer" }
 parking_lot = "0.12"
+# `dash-async::block_on` is the runtime-flavor-agnostic bridge used by
+# `framework/context_provider.rs` to call `SpvRuntime`'s async API
+# from the synchronous `ContextProvider` trait. Handles all three
+# tokio runtime scenarios (no runtime, current-thread, multi-thread)
+# without the `block_in_place` panic that `tokio::task::block_in_place`
+# triggers on a current-thread runtime.
+dash-async = { path = "../rs-dash-async" }
 # `rt` feature gives us `CancellationToken` for the panic-hook +
 # graceful-shutdown wiring described in the e2e plan.
 tokio-util = { version = "0.7", features = ["rt"] }
