@@ -5,46 +5,97 @@
 //! common specialisation is [`wait_for_balance`]: poll a wallet's
 //! address balance until it reaches the expected value or the
 //! deadline elapses.
-//!
-//! Wave 2 stub. Wave 3 wires the real poll-with-timeout loop and
-//! replaces the wallet/address placeholder types.
 
 use std::future::Future;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
+
+use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
+
+/// Default poll interval between attempts. Matches the working
+/// baseline used in `dash-evo-tool`'s e2e harness — small enough to
+/// keep the test responsive, large enough not to hammer the SDK.
+pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Poll a closure until it returns `Some(T)` or `timeout` elapses.
 ///
-/// The closure is invoked synchronously; each call returns a
-/// future that resolves to `Option<T>`. The loop sleeps a small
-/// fixed interval between calls (Wave 3 picks the constant — DET's
-/// 500 ms is the working baseline).
-///
-/// Wave 2 stub: returns `NotImplemented` immediately.
-pub async fn wait_for<F, Fut, T>(_poll: F, _timeout: Duration) -> FrameworkResult<T>
+/// The closure is invoked once per round; each invocation returns a
+/// future. `wait_for` does NOT cancel the in-flight future when the
+/// deadline lapses — it waits for the current attempt to resolve and
+/// then returns a timeout error if the deadline has been exceeded
+/// and the result was still `None`.
+pub async fn wait_for<F, Fut, T>(mut poll: F, timeout: Duration) -> FrameworkResult<T>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Option<T>>,
 {
-    Err(FrameworkError::NotImplemented(
-        "wait::wait_for — wired in Wave 3",
-    ))
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(value) = poll().await {
+            return Ok(value);
+        }
+        if Instant::now() >= deadline {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for timed out after {timeout:?}"
+            )));
+        }
+        tokio::time::sleep(DEFAULT_POLL_INTERVAL).await;
+    }
 }
 
-/// Poll a wallet's address balance until it reaches `expected`.
+/// Poll a wallet's address balance until it reaches at least
+/// `expected` or the deadline elapses.
 ///
-/// Wave 2 stub: takes placeholder unit types for the wallet and
-/// address slots. Wave 3 replaces them with the real
-/// `&framework::wallet_factory::TestWallet` and
-/// `&dpp::address_funds::PlatformAddress`.
+/// Each round runs a full `sync_balances` pass and then re-reads the
+/// cached balance — the SDK's BLAST sync is the only way to observe
+/// new on-chain funds, so polling the cached map without a sync
+/// would never see the deposit. Sync errors are logged and treated
+/// as transient: the next round retries.
 pub async fn wait_for_balance(
-    _test_wallet: &(),
-    _addr: &(),
-    _expected: u64,
-    _timeout: Duration,
+    test_wallet: &TestWallet,
+    addr: &PlatformAddress,
+    expected: Credits,
+    timeout: Duration,
 ) -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(
-        "wait::wait_for_balance — wired in Wave 3",
-    ))
+    let start = Instant::now();
+    let result = wait_for(
+        || async {
+            if let Err(err) = test_wallet.sync_balances().await {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    "sync_balances during wait_for_balance failed; retrying"
+                );
+                return None;
+            }
+            let balances = test_wallet.balances().await;
+            let current = balances.get(addr).copied().unwrap_or(0);
+            if current >= expected {
+                Some(current)
+            } else {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    addr = ?addr,
+                    current,
+                    expected,
+                    "balance below target; polling"
+                );
+                None
+            }
+        },
+        timeout,
+    )
+    .await?;
+
+    tracing::info!(
+        target: "platform_wallet::e2e::wait",
+        addr = ?addr,
+        observed = result,
+        elapsed = ?start.elapsed(),
+        "balance reached target"
+    );
+    Ok(())
 }

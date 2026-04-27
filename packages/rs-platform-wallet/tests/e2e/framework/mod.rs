@@ -110,12 +110,40 @@ pub type FrameworkResult<T> = Result<T, FrameworkError>;
 
 /// One-shot setup entry point for test cases.
 ///
-/// Wave 3a stubs out the Wave-4 integration glue: returns
-/// [`FrameworkError::NotImplemented`] until [`E2eContext`] exposes
-/// `manager()` / `bank()` / `registry()` accessors that
-/// `wallet_factory::create_test_wallet` needs.
+/// Lazily initialises the process-shared [`E2eContext`] (bank,
+/// SDK, SPV, registry, panic hook) and produces a fresh-seeded
+/// [`SetupGuard::test_wallet`].
+///
+/// The wallet is **registered in the persistent registry before
+/// being returned** — that way a panic between `setup` and
+/// `teardown` leaves a recoverable trail for the next process
+/// startup's sweep.
 pub async fn setup() -> FrameworkResult<SetupGuard> {
-    Err(FrameworkError::NotImplemented(
-        "framework::setup — wave 4 wires E2eContext accessors",
-    ))
+    let ctx = E2eContext::init().await?;
+
+    let (seed_bytes, seed_hex) = wallet_factory::fresh_seed();
+
+    // Build the test wallet first so we can derive the wallet id
+    // for the registry entry. If creation fails we never persist —
+    // there's nothing to sweep.
+    let network = ctx.bank().network();
+    let test_wallet =
+        wallet_factory::TestWallet::create(ctx.manager(), seed_bytes, network).await?;
+
+    // Persist the registry entry BEFORE handing the wallet to the
+    // test body. Once this returns the entry is durable — a panic
+    // mid-test will surface to the next process startup's sweep.
+    let entry = registry::RegistryEntry {
+        seed_hex,
+        created_at: std::time::SystemTime::now(),
+        status: registry::EntryStatus::Active,
+        note: None,
+    };
+    ctx.registry().insert(test_wallet.id(), entry)?;
+
+    Ok(SetupGuard {
+        ctx,
+        test_wallet,
+        teardown_called: false,
+    })
 }

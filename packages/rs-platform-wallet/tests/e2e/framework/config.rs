@@ -5,14 +5,10 @@
 //! standalone-crate extraction can swap [`Config::from_env`] out
 //! without rewiring call sites. The same struct can be built
 //! programmatically via [`Config::new`].
-//!
-//! Wave 2 stub: field shape only — Wave 3 adds the parser, default
-//! resolution (network → DAPI URLs, workdir → `${TMPDIR}/...`), and
-//! validation of required fields.
 
 use std::path::PathBuf;
 
-use super::FrameworkResult;
+use super::{FrameworkError, FrameworkResult};
 
 /// Names of environment variables read by [`Config::from_env`].
 /// Centralised so future-crate extraction stays mechanical.
@@ -30,13 +26,12 @@ pub mod vars {
     pub const WORKDIR: &str = "PLATFORM_WALLET_E2E_WORKDIR";
 }
 
+/// Default minimum bank balance in credits — `100_000_000` matches
+/// the plan's env-var table.
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 100_000_000;
+
 /// E2E framework configuration.
-///
-/// Wave 2 stub. Wave 3 populates the loader and adds `Network` /
-/// `DapiUri` parsing. The shape here matches the plan's env-var
-/// table so call sites land directly on real fields once Wave 3
-/// fills them in.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// BIP-39 bank mnemonic. Required (validated by `from_env`).
     pub bank_mnemonic: String,
@@ -45,23 +40,81 @@ pub struct Config {
     /// Optional DAPI address overrides. Empty means "use the
     /// network default list".
     pub dapi_addresses: Vec<String>,
-    /// Minimum bank balance threshold. Defaults to `100_000_000`.
+    /// Minimum bank balance threshold (credits). Defaults to
+    /// [`DEFAULT_MIN_BANK_CREDITS`].
     pub min_bank_credits: u64,
     /// Workdir base path; slot fallback adds `-N` suffixes.
     /// Defaults to `${TMPDIR}/dash-platform-wallet-e2e`.
     pub workdir_base: PathBuf,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            bank_mnemonic: String::new(),
+            network: "testnet".into(),
+            dapi_addresses: Vec::new(),
+            min_bank_credits: DEFAULT_MIN_BANK_CREDITS,
+            workdir_base: default_workdir_base(),
+        }
+    }
+}
+
 impl Config {
     /// Load configuration from environment variables and `.env`.
     ///
-    /// Wave 2 stub. Wave 3 wires `dotenvy::dotenv()`, parses every
-    /// var listed in [`vars`], and validates required fields
-    /// (currently just `BANK_MNEMONIC`).
+    /// `.env` is consulted via `dotenvy::dotenv()` from the current
+    /// working directory (best-effort — a missing `.env` is fine,
+    /// the env vars themselves are the source of truth). The bank
+    /// mnemonic is required; everything else falls back to the
+    /// defaults documented on each [`Config`] field.
     pub fn from_env() -> FrameworkResult<Self> {
-        Err(super::FrameworkError::NotImplemented(
-            "Config::from_env — wired in Wave 3",
-        ))
+        // Best-effort `.env` load — fine to ignore failure (no .env
+        // file is the common case in CI).
+        let _ = dotenvy::dotenv();
+
+        let bank_mnemonic = std::env::var(vars::BANK_MNEMONIC).map_err(|_| {
+            FrameworkError::Bank(format!(
+                "{} not set — point it at a BIP-39 testnet mnemonic with at least \
+                 {} pre-funded credits and re-run",
+                vars::BANK_MNEMONIC,
+                DEFAULT_MIN_BANK_CREDITS
+            ))
+        })?;
+
+        let network = std::env::var(vars::NETWORK).unwrap_or_else(|_| "testnet".into());
+
+        let dapi_addresses = std::env::var(vars::DAPI_ADDRESSES)
+            .ok()
+            .map(|raw| {
+                raw.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let min_bank_credits = match std::env::var(vars::MIN_BANK_CREDITS) {
+            Ok(raw) => raw.trim().parse::<u64>().map_err(|err| {
+                FrameworkError::Bank(format!(
+                    "{} = {raw:?} is not a valid u64: {err}",
+                    vars::MIN_BANK_CREDITS
+                ))
+            })?,
+            Err(_) => DEFAULT_MIN_BANK_CREDITS,
+        };
+
+        let workdir_base = std::env::var(vars::WORKDIR)
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| default_workdir_base());
+
+        Ok(Self {
+            bank_mnemonic,
+            network,
+            dapi_addresses,
+            min_bank_credits,
+            workdir_base,
+        })
     }
 
     /// Programmatic-construction entry point for the future
@@ -74,4 +127,11 @@ impl Config {
             ..Self::default()
         }
     }
+}
+
+/// `${TMPDIR}/dash-platform-wallet-e2e` — the default workdir base
+/// before slot-fallback. Matches the plan's "Workdir &
+/// Cross-Process Coordination" section.
+fn default_workdir_base() -> PathBuf {
+    std::env::temp_dir().join("dash-platform-wallet-e2e")
 }

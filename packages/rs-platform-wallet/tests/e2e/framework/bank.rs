@@ -161,6 +161,13 @@ impl BankWallet {
         &self.primary_receive_address
     }
 
+    /// Network the bank is operating against. Mirrors
+    /// `wallet.sdk().network`; centralised here so cleanup paths
+    /// don't need to dig through the wallet handle.
+    pub fn network(&self) -> Network {
+        self.wallet.sdk().network
+    }
+
     /// Fund a target address with `credits` credits. Acquires the
     /// in-process [`FUNDING_MUTEX`] for the duration of the SDK
     /// transfer so concurrent in-process calls serialise cleanly.

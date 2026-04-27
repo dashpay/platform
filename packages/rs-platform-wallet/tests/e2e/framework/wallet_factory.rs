@@ -224,10 +224,6 @@ pub fn registry_entry_from_seed(seed: &[u8; 64], note: Option<String>) -> Regist
 /// they're done; the [`Drop`] impl is a panic-safety fallback that
 /// logs a warning and relies on the next process startup running
 /// `cleanup::sweep_orphans` against the persistent registry.
-///
-/// Wave 3a ships the type and the `Drop` warning; Wave 4 wires the
-/// `teardown` body once `E2eContext` exposes `bank()` / `registry()`
-/// / `manager()` accessors.
 pub struct SetupGuard {
     /// Process-shared context. `&'static` because
     /// `E2eContext::init` returns a singleton handle.
@@ -243,30 +239,23 @@ impl SetupGuard {
     /// Sweep the test wallet's funds back to the bank and remove
     /// the entry from the persistent registry.
     ///
-    /// Wave 3a stub: returns [`FrameworkError::NotImplemented`] —
-    /// the body lives in [`super::cleanup::teardown_one`] which
-    /// takes its dependencies (manager, bank, registry) explicitly.
-    /// Wave 4 wires `ctx.{manager,bank,registry}()` and forwards
-    /// to it.
+    /// Best-effort: a transient sync / transfer failure leaves the
+    /// registry entry in place so the next process startup retries
+    /// via [`super::cleanup::sweep_orphans`]. Successful teardown
+    /// flips the internal flag so [`Drop`] doesn't emit a spurious
+    /// warning.
     pub async fn teardown(mut self) -> FrameworkResult<()> {
-        // Wave 4 body sketch:
-        //
-        //   let res = cleanup::teardown_one(
-        //       self.ctx.manager(),
-        //       self.ctx.bank(),
-        //       self.ctx.registry(),
-        //       &self.test_wallet,
-        //   ).await;
-        //   if res.is_ok() { self.teardown_called = true; }
-        //   res
-        //
-        // Marking unused fields so clippy stays clean during scaffolding.
-        let _ = &self.ctx;
-        let _ = &self.test_wallet;
-        self.teardown_called = false;
-        Err(FrameworkError::NotImplemented(
-            "SetupGuard::teardown — wave 4 wires E2eContext accessors",
-        ))
+        let result = super::cleanup::teardown_one(
+            self.ctx.manager(),
+            self.ctx.bank(),
+            self.ctx.registry(),
+            &self.test_wallet,
+        )
+        .await;
+        if result.is_ok() {
+            self.teardown_called = true;
+        }
+        result
     }
 }
 
