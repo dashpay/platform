@@ -40,16 +40,39 @@ use super::wallet_factory::{default_fee_strategy, TestWallet};
 use super::{FrameworkError, FrameworkResult};
 
 /// Dust threshold below which a sweep is skipped — sweeping a few
-/// credits costs more in fees than it recovers. Mirrors the
-/// `dash-evo-tool` constant; conservative enough to leave a clear
-/// margin above realistic transfer fees.
-const SWEEP_DUST_THRESHOLD: Credits = 1_000_000;
+/// credits costs more in fees than it recovers. The bound is
+/// proportional to [`SWEEP_FEE_ESTIMATE`] so that successful
+/// sweeps actually recover something meaningful net of fees;
+/// at 5M with a 15M fee estimate the minimum-worth-sweeping total
+/// is `dust + fee = 20M`, recovering at least 5M after the fee.
+const SWEEP_DUST_THRESHOLD: Credits = 5_000_000;
 
-/// Approximate fee for a 1-input / 1-output sweep transfer. The
-/// real fee depends on platform-version + transition size; this
-/// estimate is used only to decide whether a sweep is worth
-/// attempting and which amount to send.
-const SWEEP_FEE_ESTIMATE: Credits = 1_000_000;
+/// Approximate fee for a sweep transfer (1- or 2-input → 1-output).
+///
+/// The real fee depends on the platform version and the transition
+/// size; this estimate is only used to decide (a) whether a sweep
+/// is worth attempting and (b) how much to send (the rest stays in
+/// the source address as the fee margin per
+/// [`AddressFundsFeeStrategyStep::DeductFromInput`]).
+///
+/// Observed Dash testnet fees in early 2026:
+/// - 1-input → 1-output: ~9.55M credits
+/// - 2-input → 1-output: ~7.00M credits
+///
+/// 15M provides comfortable headroom up to ~3 inputs without
+/// failing the protocol's `address_balance >= consumed + fee`
+/// check at sweep time.
+///
+/// **Latent risk** (deferred — Marvin's QA-003): protocol fee
+/// schedules can change. The long-term fix is computing the
+/// estimate dynamically via the same
+/// `transfer::PlatformAddressWallet::estimate_fee_for_inputs`
+/// the wallet uses internally; that requires lifting the
+/// helper to a small public module-scope fn (or duplicating
+/// the calc here against `AddressFundsTransferTransition::estimate_min_fee`).
+/// Track as a follow-up; until then bump this constant when
+/// testnet fee observations move beyond ~10M.
+const SWEEP_FEE_ESTIMATE: Credits = 15_000_000;
 
 /// Default per-step timeout for cleanup polls (sync, balance
 /// observation). Matches the plan's 60s default for human-scale
