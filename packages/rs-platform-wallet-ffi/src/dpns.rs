@@ -1,30 +1,19 @@
 //! FFI bindings for DPNS name operations on the platform-wallet
 //! [`IdentityWallet`](platform_wallet::IdentityWallet).
 //!
-//! Entry points (registration is split across two variants — see
-//! the deprecation note on [`platform_wallet_register_dpns_name`]):
+//! Entry points:
 //!
 //! 1. [`platform_wallet_register_dpns_name_with_signer`] — register a
 //!    DPNS name using an externally-supplied `SignerHandle` (the
-//!    iOS-side `KeychainSigner` in the SwiftExampleApp case). This
-//!    is the architecturally correct path per `swift-sdk/CLAUDE.md`:
-//!    the wallet's own seed never participates in signing, which
+//!    iOS-side `KeychainSigner` in the SwiftExampleApp case). The
+//!    wallet's own seed never participates in signing, which
 //!    unblocks watch-only wallets where the seed lives in iOS
 //!    Keychain rather than the in-process `WalletManager`.
 //!
-//! 2. [`platform_wallet_register_dpns_name`] (superseded) — older
-//!    seed-internal path that constructs an `IdentitySigner` from
-//!    the wallet manager. Kept around for the small set of callers
-//!    that haven't migrated yet; new code should call the
-//!    `_with_signer` variant. Both register a DPNS name, update
-//!    `ManagedIdentity.dpns_names` on success, and persist via the
-//!    identity changeset so `PersistentIdentity.dpnsName` refreshes
-//!    via `on_persist_identities_fn`.
-//!
-//! 3. [`platform_wallet_resolve_dpns_name`] — resolve a DPNS name
+//! 2. [`platform_wallet_resolve_dpns_name`] — resolve a DPNS name
 //!    to an identity id. Async; no persistence side-effects.
 //!
-//! 4. [`platform_wallet_search_dpns_names`] — prefix search over
+//! 3. [`platform_wallet_search_dpns_names`] — prefix search over
 //!    Platform's DPNS documents. Async; returns a heap-allocated
 //!    array of `DpnsSearchResultFFI` releasable via
 //!    [`dpns_search_results_free`].
@@ -60,142 +49,14 @@ pub struct DpnsSearchResultFFI {
     pub label: *mut c_char,
 }
 
-/// Register a DPNS name for an identity on Platform.
-///
-/// Returns the full domain name (e.g. "alice.dash") via
-/// `out_full_domain_name` — a heap-allocated C-string the caller
-/// must release with [`crate::platform_wallet_string_free`].
-///
-/// On success the just-registered name is appended to
-/// `ManagedIdentity.dpns_names` on the Rust side and an identity
-/// changeset is queued so the Swift persister observes the update
-/// via `on_persist_identities_fn`.
-///
-/// # Superseded — prefer [`platform_wallet_register_dpns_name_with_signer`]
-///
-/// This entry point constructs an internal `IdentitySigner` from the
-/// wallet manager and dies on watch-only wallets (no seed Rust-side).
-/// It also re-acquires the wallet-manager lock from inside the
-/// signing path, which can deadlock the Tokio worker if any callee
-/// `blocking_read`s the same lock. New callers should use the
-/// `_with_signer` variant and pass a `KeychainSigner.handle` from
-/// Swift; this function stays in place for the small set of paths
-/// that haven't migrated yet.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_register_dpns_name(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    name: *const c_char,
-    out_full_domain_name: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if name.is_null() || out_full_domain_name.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "name or out_full_domain_name is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
-    let id = match unsafe { read_identifier(identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let name_str = match unsafe { CStr::from_ptr(name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        "name is not valid UTF-8",
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorUtf8Conversion;
-        }
-    };
-
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result =
-                block_on_worker(async move { identity.register_name(&id, &name_str).await });
-            match result {
-                Ok(full_name) => match CString::new(full_name) {
-                    Ok(cstr) => {
-                        unsafe { *out_full_domain_name = cstr.into_raw() };
-                        PlatformWalletFFIResult::Success
-                    }
-                    Err(_) => {
-                        // The returned domain name should never carry
-                        // an interior NUL, but guard against it in
-                        // case a future label encoding changes.
-                        if !out_error.is_null() {
-                            unsafe {
-                                *out_error = PlatformWalletFFIError::new(
-                                    PlatformWalletFFIResult::ErrorSerialization,
-                                    "full domain name contained NUL",
-                                );
-                            }
-                        }
-                        PlatformWalletFFIResult::ErrorSerialization
-                    }
-                },
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("register_dpns_name failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
 /// Register a DPNS name for an identity on Platform using an
 /// externally-supplied signer.
 ///
-/// Replaces [`platform_wallet_register_dpns_name`] for any caller that
-/// has a Swift-side `KeychainSigner` (every iOS path under the new
-/// `_with_signer` regime). The wallet handle is still used to look up
-/// the identity from the in-process `IdentityManager` so we can pick
-/// the HIGH/CRITICAL authentication key the document state transition
-/// requires — but every signature crosses the FFI through the
-/// supplied `signer_handle` rather than via a wallet-derived
-/// `IdentitySigner`. Works on watch-only wallets (no seed
-/// Rust-side) and avoids the inner-lock-deadlock the legacy path
-/// hit when the signer's private-key derivation tried to
-/// `blocking_read` the wallet manager from inside the Tokio worker.
+/// The wallet handle is still used to look up the identity from the
+/// in-process `IdentityManager` so we can pick the HIGH/CRITICAL
+/// authentication key the document state transition requires — but
+/// every signature crosses the FFI through the supplied
+/// `signer_handle`. Works on watch-only wallets (no seed Rust-side).
 ///
 /// Returns the full domain name (e.g. "alice.dash") via
 /// `out_full_domain_name` — a heap-allocated C-string the caller must
@@ -204,8 +65,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name(
 /// On success the just-registered name is appended to
 /// `ManagedIdentity.dpns_names` on the Rust side and an identity
 /// changeset is queued so the Swift persister observes the update via
-/// `on_persist_identities_fn` — identical book-keeping to the legacy
-/// variant.
+/// `on_persist_identities_fn`.
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle

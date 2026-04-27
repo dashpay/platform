@@ -1214,69 +1214,6 @@ public struct DpnsSearchResult: Sendable, Equatable {
 }
 
 extension ManagedPlatformWallet {
-    /// Register a DPNS name for `identityId` on Platform.
-    ///
-    /// # Superseded — prefer the `signer:`-taking overload
-    ///
-    /// This variant routes through the legacy
-    /// `platform_wallet_register_dpns_name` FFI which constructs an
-    /// internal `IdentitySigner` from the wallet manager. That path
-    /// dies on watch-only wallets (no seed Rust-side) and can also
-    /// deadlock the Tokio worker when its derivation tries to
-    /// `blocking_read` the wallet-manager lock from inside a signing
-    /// future. New call sites should use the
-    /// `registerDpnsName(identityId:name:signer:)` overload below
-    /// and pass a `KeychainSigner`.
-    ///
-    /// Goes through `IdentityWallet::register_name`, which on success:
-    ///   1. broadcasts the DPNS preorder + domain documents
-    ///   2. appends the new `DpnsNameInfo` to
-    ///      `ManagedIdentity.dpns_names`
-    ///   3. queues the updated identity in the persister so the
-    ///      SwiftData `PersistentIdentity` row refreshes via the
-    ///      `on_persist_identities_fn` callback.
-    ///
-    /// Returns the full domain name (e.g. `"alice.dash"`).
-    @discardableResult
-    public func registerDpnsName(
-        identityId: Identifier,
-        name: String
-    ) async throws -> String {
-        let handle = self.handle
-        // Capture the 32-byte payload by value into a Sendable
-        // `[UInt8]` so the detached Task can hand a fresh pointer
-        // back to the FFI (the source `Identifier`/`Data` is itself
-        // not Sendable across the suspension point).
-        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        return try await Task.detached(priority: .userInitiated) { () -> String in
-            var outPtr: UnsafeMutablePointer<CChar>? = nil
-            var error = PlatformWalletFFIError()
-            let result = idBytes.withUnsafeBufferPointer { idBp in
-                name.withCString { namePtr in
-                    platform_wallet_register_dpns_name(
-                        handle,
-                        idBp.baseAddress!,
-                        namePtr,
-                        &outPtr,
-                        &error
-                    )
-                }
-            }
-            guard result == Success else {
-                throw PlatformWalletError(result: result, error: error)
-            }
-            defer { if let p = outPtr { platform_wallet_string_free(p) } }
-            guard let p = outPtr else {
-                throw PlatformWalletError.walletOperation(
-                    "register_dpns_name returned a null full-domain-name pointer"
-                )
-            }
-            return String(cString: p)
-        }.value
-    }
-
     /// Register a DPNS name for `identityId` on Platform using an
     /// externally-supplied `KeychainSigner`.
     ///
@@ -1286,9 +1223,7 @@ extension ManagedPlatformWallet {
     /// Swift-side signer's vtable, so the wallet's own seed never
     /// participates. Required for watch-only wallets restored from
     /// SwiftData state (where the seed lives in iOS Keychain rather
-    /// than the in-process `WalletManager`) and avoids the deadlock
-    /// the legacy `IdentitySigner`-based variant hit on the Tokio
-    /// worker.
+    /// than the in-process `WalletManager`).
     ///
     /// Goes through `IdentityWallet::register_name_with_external_signer`,
     /// which on success:
@@ -1566,95 +1501,6 @@ extension ManagedPlatformWallet {
         return ManagedIdentity(handle: outHandle)
     }
 
-    /// Send a contact request to `recipientIdentityId` owned by
-    /// `senderIdentityId`.
-    ///
-    /// Routes through `IdentityWallet::send_contact_request`, which
-    /// resolves signing keys internally, broadcasts the DashPay
-    /// contactRequest document, and adds the result to
-    /// `ManagedIdentity.sent_contact_requests` via the persister.
-    /// Swift persister callback (5f5ac06d6) forwards the identity
-    /// update to SwiftData.
-    ///
-    /// Returns a fresh `ContactRequest` wrapper owning a handle into
-    /// the Rust-side `CONTACT_REQUEST_STORAGE`.
-    public func sendContactRequest(
-        senderIdentityId: Identifier,
-        recipientIdentityId: Identifier,
-        accountLabel: String? = nil,
-        autoAcceptProof: Data? = nil
-    ) async throws -> ContactRequest {
-        let handle = self.handle
-        // Snapshot identifiers as Sendable byte arrays before the
-        // Task.detached suspension point — Identifier (= Data) is
-        // not Sendable across boundaries by itself.
-        let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let recipientBytes: [UInt8] = recipientIdentityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let accountLabel = accountLabel
-        let autoAcceptProof = autoAcceptProof
-
-        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
-            () -> Handle in
-            var outHandle: Handle = NULL_HANDLE
-            var error = PlatformWalletFFIError()
-
-            // Nest the buffer pointers + optional CString + optional
-            // proof bytes so every FFI argument stays live across
-            // the call window.
-            let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
-                senderBp -> PlatformWalletFFIResult in
-                recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
-                    let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
-                        labelPtr in
-                        if let autoAcceptProof, !autoAcceptProof.isEmpty {
-                            return autoAcceptProof.withUnsafeBytes { rawBuf in
-                                let bytesPtr = rawBuf.baseAddress?
-                                    .assumingMemoryBound(to: UInt8.self)
-                                return platform_wallet_send_contact_request(
-                                    handle,
-                                    senderBp.baseAddress!,
-                                    recipientBp.baseAddress!,
-                                    labelPtr,
-                                    bytesPtr,
-                                    autoAcceptProof.count,
-                                    &outHandle,
-                                    &error
-                                )
-                            }
-                        } else {
-                            return platform_wallet_send_contact_request(
-                                handle,
-                                senderBp.baseAddress!,
-                                recipientBp.baseAddress!,
-                                labelPtr,
-                                nil,
-                                0,
-                                &outHandle,
-                                &error
-                            )
-                        }
-                    }
-                    if let accountLabel {
-                        return accountLabel.withCString { callWithLabel($0) }
-                    } else {
-                        return callWithLabel(nil)
-                    }
-                }
-            }
-
-            guard result == Success else {
-                throw PlatformWalletError(result: result, error: error)
-            }
-            return outHandle
-        }.value
-
-        return ContactRequest(handle: requestHandle)
-    }
-
     /// Sync received contact requests for every managed identity on
     /// this wallet from Platform. Returns wrappers for each
     /// newly-discovered request (an empty array when nothing new
@@ -1680,32 +1526,6 @@ extension ManagedPlatformWallet {
             }
             return requests
         }.value
-    }
-
-    /// Accept an incoming contact request by sending a reciprocal
-    /// request. Returns the established contact.
-    public func acceptContactRequest(
-        _ request: ContactRequest
-    ) async throws -> EstablishedContact {
-        let walletHandle = self.handle
-        let requestHandle = request.handle
-        let establishedHandle: Handle = try await Task.detached(
-            priority: .userInitiated
-        ) { () -> Handle in
-            var outHandle: Handle = NULL_HANDLE
-            var error = PlatformWalletFFIError()
-            let result = platform_wallet_accept_contact_request(
-                walletHandle,
-                requestHandle,
-                &outHandle,
-                &error
-            )
-            guard result == Success else {
-                throw PlatformWalletError(result: result, error: error)
-            }
-            return outHandle
-        }.value
-        return EstablishedContact(handle: establishedHandle)
     }
 
     /// Send a contact request using an externally-supplied
@@ -2023,41 +1843,6 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Create a new DashPay profile document on Platform for
-    /// `identityId`, then refresh the local cache with the result.
-    ///
-    /// Fails with `.walletOperation` when a profile already exists —
-    /// use `updateDashPayProfile` in that case. All fields in `update`
-    /// are optional; `nil` fields are simply omitted from the outgoing
-    /// document. `avatarBytes` triggers SHA-256 + dHash computation
-    /// on the Rust side.
-    @discardableResult
-    public func createDashPayProfile(
-        identityId: Identifier,
-        update: DashPayProfileUpdate
-    ) async throws -> DashPayProfile {
-        try await submitDashPayProfile(
-            identityId: identityId,
-            update: update,
-            doCreate: true
-        )
-    }
-
-    /// Update an existing DashPay profile document. Errors with
-    /// `.walletOperation` when no profile is on Platform yet — use
-    /// `createDashPayProfile` in that case.
-    @discardableResult
-    public func updateDashPayProfile(
-        identityId: Identifier,
-        update: DashPayProfileUpdate
-    ) async throws -> DashPayProfile {
-        try await submitDashPayProfile(
-            identityId: identityId,
-            update: update,
-            doCreate: false
-        )
-    }
-
     /// Create a new DashPay profile using an externally-supplied
     /// `KeychainSigner` for the document state-transition.
     ///
@@ -2171,113 +1956,6 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Shared submit path for create / update — same inputs, same
-    /// error mapping; only the routed FFI function differs.
-    ///
-    /// `Task.detached` keeps the tokio-driven blocking call off the
-    /// calling (user-interactive) thread, mirroring the pattern used
-    /// by `registerIdentityFromAddresses`.
-    private func submitDashPayProfile(
-        identityId: Identifier,
-        update: DashPayProfileUpdate,
-        doCreate: Bool
-    ) async throws -> DashPayProfile {
-        let handle = self.handle
-        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let displayName = update.displayName
-        let publicMessage = update.publicMessage
-        let avatarUrl = update.avatarUrl
-        let avatarBytes = update.avatarBytes
-
-        return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
-            var outProfile = dashPayProfileFFIEmpty()
-            var error = PlatformWalletFFIError()
-
-            // Hold the identifier buffer pointer live across the
-            // entire optional-CString / optional-avatar-bytes call
-            // tree by sinking the FFI invocation inside
-            // `withUnsafeBufferPointer`.
-            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                let idPtr = idBp.baseAddress!
-                return invokeWithOptionalCStrings(
-                    displayName,
-                    publicMessage,
-                    avatarUrl
-                ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
-                    let bytes = avatarBytes ?? Data()
-                    if let avatarBytes, !avatarBytes.isEmpty {
-                        return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
-                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                            if doCreate {
-                                return platform_wallet_create_dashpay_profile(
-                                    handle,
-                                    idPtr,
-                                    namePtr,
-                                    msgPtr,
-                                    urlPtr,
-                                    bytesPtr,
-                                    avatarBytes.count,
-                                    &outProfile,
-                                    &error
-                                )
-                            } else {
-                                return platform_wallet_update_dashpay_profile(
-                                    handle,
-                                    idPtr,
-                                    namePtr,
-                                    msgPtr,
-                                    urlPtr,
-                                    bytesPtr,
-                                    avatarBytes.count,
-                                    &outProfile,
-                                    &error
-                                )
-                            }
-                        }
-                    } else {
-                        // Referenced only so the compiler keeps the
-                        // enclosing `bytes` scope in a consistent type.
-                        _ = bytes
-                        if doCreate {
-                            return platform_wallet_create_dashpay_profile(
-                                handle,
-                                idPtr,
-                                namePtr,
-                                msgPtr,
-                                urlPtr,
-                                nil,
-                                0,
-                                &outProfile,
-                                &error
-                            )
-                        } else {
-                            return platform_wallet_update_dashpay_profile(
-                                handle,
-                                idPtr,
-                                namePtr,
-                                msgPtr,
-                                urlPtr,
-                                nil,
-                                0,
-                                &outProfile,
-                                &error
-                            )
-                        }
-                    }
-                }
-            }
-
-            defer { dashpay_profile_ffi_free(&outProfile) }
-
-            guard result == Success else {
-                throw PlatformWalletError(result: result, error: error)
-            }
-            return DashPayProfile(ffi: outProfile)
-        }.value
-    }
 }
 
 // MARK: - In-memory state (Wallet Memory Explorer)

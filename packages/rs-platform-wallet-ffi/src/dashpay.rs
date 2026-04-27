@@ -11,15 +11,16 @@
 //!
 //! Entry points:
 //!
-//! - [`platform_wallet_send_contact_request`] — submit a contact
-//!   request document. Returns a handle into
+//! - [`platform_wallet_send_contact_request_with_signer`] — submit a
+//!   contact request document, signing the document state-transition
+//!   through the supplied `SignerHandle`. Returns a handle into
 //!   `CONTACT_REQUEST_STORAGE` pointing at the freshly-created
 //!   [`ContactRequest`](platform_wallet::ContactRequest).
 //! - [`platform_wallet_sync_contact_requests`] — fetch all
 //!   received contact requests for every managed identity. Returns
 //!   an array of handles via `platform_wallet_contact_request_handle_array_free`.
-//! - [`platform_wallet_accept_contact_request`] — reciprocate an
-//!   incoming request, returning a handle into
+//! - [`platform_wallet_accept_contact_request_with_signer`] —
+//!   reciprocate an incoming request, returning a handle into
 //!   `ESTABLISHED_CONTACT_STORAGE`.
 //! - [`platform_wallet_reject_contact_request`] — drop an incoming
 //!   request locally (on-chain contactInfo tombstone is a future
@@ -222,142 +223,6 @@ pub unsafe extern "C" fn platform_wallet_contact_request_handle_array_free(
 }
 
 // ---------------------------------------------------------------------------
-// Send contact request
-// ---------------------------------------------------------------------------
-
-/// Send a contact request to `recipient_id`.
-///
-/// All the usual parameters (key indices, account index, ECDH
-/// inputs) are resolved internally by the Rust side from the
-/// sender's local `ManagedIdentity`. Optional:
-/// - `account_label`: a NUL-terminated UTF-8 string, or null. The
-///   label is encrypted by the SDK.
-/// - `auto_accept_proof` / `auto_accept_proof_len`: optional byte
-///   slice; pass `(null, 0)` to omit.
-///
-/// Returns a handle into `CONTACT_REQUEST_STORAGE` via
-/// `out_request_handle`. Release via
-/// [`crate::contact_request_destroy`].
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_send_contact_request(
-    wallet_handle: Handle,
-    sender_identity_id: *const u8,
-    recipient_identity_id: *const u8,
-    account_label: *const c_char,
-    auto_accept_proof: *const u8,
-    auto_accept_proof_len: usize,
-    out_request_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_request_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_request_handle is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
-    let sender = match unsafe { read_identifier(sender_identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid sender identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let recipient = match unsafe { read_identifier(recipient_identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid recipient identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-
-    let label = if account_label.is_null() {
-        None
-    } else {
-        match unsafe { CStr::from_ptr(account_label) }.to_str() {
-            Ok(s) => Some(s.to_string()),
-            Err(_) => {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            "account_label is not valid UTF-8",
-                        );
-                    }
-                }
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
-            }
-        }
-    };
-    let proof: Option<Vec<u8>> = if auto_accept_proof.is_null() || auto_accept_proof_len == 0 {
-        None
-    } else {
-        Some(
-            unsafe { std::slice::from_raw_parts(auto_accept_proof, auto_accept_proof_len) }
-                .to_vec(),
-        )
-    };
-
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                identity
-                    .send_contact_request(&sender, &recipient, label, proof)
-                    .await
-            });
-            match result {
-                Ok(request) => {
-                    let handle = CONTACT_REQUEST_STORAGE.insert(request);
-                    unsafe { *out_request_handle = handle };
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("send_contact_request failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
-// ---------------------------------------------------------------------------
 // Sync received contact requests from Platform
 // ---------------------------------------------------------------------------
 
@@ -423,99 +288,23 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
 }
 
 // ---------------------------------------------------------------------------
-// Accept contact request
-// ---------------------------------------------------------------------------
-
-/// Accept an incoming contact request by sending a reciprocal
-/// request back to the sender. Returns a handle into
-/// `ESTABLISHED_CONTACT_STORAGE` pointing at the newly-established
-/// contact. Release via [`crate::established_contact_destroy`].
-///
-/// `request_handle` must be a live handle from
-/// `CONTACT_REQUEST_STORAGE` (typically obtained via
-/// `managed_identity_get_incoming_contact_request` or
-/// [`platform_wallet_sync_contact_requests`]).
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_accept_contact_request(
-    wallet_handle: Handle,
-    request_handle: Handle,
-    out_established_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_established_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_established_handle is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
-    let request = match CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone()) {
-        Some(r) => r,
-        None => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact request handle",
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidHandle;
-        }
-    };
-
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result =
-                block_on_worker(async move { identity.accept_contact_request(&request).await });
-            match result {
-                Ok(contact) => {
-                    let handle = ESTABLISHED_CONTACT_STORAGE.insert(contact);
-                    unsafe { *out_established_handle = handle };
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("accept_contact_request failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
-// ---------------------------------------------------------------------------
 // Send / accept contact request — external-signer variants
 // ---------------------------------------------------------------------------
 
 /// Send a contact request to `recipient_id` using an
 /// externally-supplied signer for the document state-transition.
 ///
-/// Mirrors [`platform_wallet_send_contact_request`] but signing is
-/// routed through `signer_handle` instead of an internal
-/// `IdentitySigner`.
+/// All the usual parameters (key indices, account index, ECDH
+/// inputs) are resolved internally by the Rust side from the
+/// sender's local `ManagedIdentity`. Optional:
+/// - `account_label`: a NUL-terminated UTF-8 string, or null. The
+///   label is encrypted by the SDK.
+/// - `auto_accept_proof` / `auto_accept_proof_len`: optional byte
+///   slice; pass `(null, 0)` to omit.
+///
+/// Returns a handle into `CONTACT_REQUEST_STORAGE` via
+/// `out_request_handle`. Release via
+/// [`crate::contact_request_destroy`].
 ///
 /// CAVEAT — ECDH derivation: the Rust side still derives the
 /// sender's ECDH private key from the wallet seed for the contact
@@ -525,10 +314,8 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request(
 /// for the planned follow-up to push ECDH across the FFI as well.
 ///
 /// # Safety
-/// Same null/lifetime rules as [`platform_wallet_send_contact_request`].
-/// Additionally `signer_handle` must be a valid, non-destroyed handle
-/// produced by `dash_sdk_signer_create_with_ctx`. Caller retains
-/// ownership.
+/// `signer_handle` must be a valid, non-destroyed handle produced by
+/// `dash_sdk_signer_create_with_ctx`. Caller retains ownership.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
@@ -642,10 +429,17 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
 /// Accept an incoming contact request using an externally-supplied
 /// signer for the reciprocal request's document state-transition.
 ///
-/// Mirrors [`platform_wallet_accept_contact_request`] but the
-/// reciprocal `send_contact_request` path uses the supplied
-/// `signer_handle` instead of an internal `IdentitySigner`. Same
-/// ECDH caveat applies — see
+/// Sends a reciprocal request back to the sender via the supplied
+/// `signer_handle` and returns a handle into
+/// `ESTABLISHED_CONTACT_STORAGE` pointing at the newly-established
+/// contact. Release via [`crate::established_contact_destroy`].
+///
+/// `request_handle` must be a live handle from
+/// `CONTACT_REQUEST_STORAGE` (typically obtained via
+/// `managed_identity_get_incoming_contact_request` or
+/// [`platform_wallet_sync_contact_requests`]).
+///
+/// Same ECDH caveat applies as for
 /// [`platform_wallet_send_contact_request_with_signer`].
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(

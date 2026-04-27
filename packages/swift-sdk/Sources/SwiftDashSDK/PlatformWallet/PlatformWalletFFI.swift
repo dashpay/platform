@@ -341,32 +341,6 @@ func platform_wallet_sync_dashpay_profiles(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
-@_silgen_name("platform_wallet_create_dashpay_profile")
-func platform_wallet_create_dashpay_profile(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ display_name: UnsafePointer<CChar>?,
-    _ public_message: UnsafePointer<CChar>?,
-    _ avatar_url: UnsafePointer<CChar>?,
-    _ avatar_bytes: UnsafePointer<UInt8>?,
-    _ avatar_bytes_len: Int,
-    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_update_dashpay_profile")
-func platform_wallet_update_dashpay_profile(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ display_name: UnsafePointer<CChar>?,
-    _ public_message: UnsafePointer<CChar>?,
-    _ avatar_url: UnsafePointer<CChar>?,
-    _ avatar_bytes: UnsafePointer<UInt8>?,
-    _ avatar_bytes_len: Int,
-    _ out_profile: UnsafeMutablePointer<DashPayProfileFFI>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 /// Mirrors `platform_wallet_create_or_update_dashpay_profile_with_signer`
 /// from Rust (`packages/rs-platform-wallet-ffi/src/dashpay_profile.rs`).
 ///
@@ -374,9 +348,9 @@ func platform_wallet_update_dashpay_profile(
 /// `IdentityWallet::create_profile_with_external_signer`; `false`
 /// calls `update_profile_with_external_signer`. Both route the
 /// document state-transition signature through the supplied
-/// `signer_handle` (typically `KeychainSigner.handle`) instead of an
-/// internal `IdentitySigner`. Required for watch-only wallets and
-/// the architecturally correct path per `swift-sdk/CLAUDE.md`.
+/// `signer_handle` (typically `KeychainSigner.handle`). Required for
+/// watch-only wallets and the architecturally correct path per
+/// `swift-sdk/CLAUDE.md`.
 @_silgen_name("platform_wallet_create_or_update_dashpay_profile_with_signer")
 func platform_wallet_create_or_update_dashpay_profile_with_signer(
     _ wallet_handle: Handle,
@@ -584,24 +558,13 @@ struct DpnsSearchResultFFI {
     var label: UnsafeMutablePointer<CChar>?
 }
 
-@_silgen_name("platform_wallet_register_dpns_name")
-func platform_wallet_register_dpns_name(
-    _ wallet_handle: Handle,
-    _ identity_id: UnsafePointer<UInt8>,
-    _ name: UnsafePointer<CChar>?,
-    _ out_full_domain_name: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 /// Mirrors `platform_wallet_register_dpns_name_with_signer` from Rust
 /// (`packages/rs-platform-wallet-ffi/src/dpns.rs`).
 ///
-/// Same as `platform_wallet_register_dpns_name` but signing is routed
-/// through the supplied `signer_handle` (typically `KeychainSigner.handle`)
-/// instead of through a wallet-derived `IdentitySigner`. Required for
-/// watch-only wallets and the path that avoids the inner-lock-deadlock
-/// the legacy variant hit when its derivation path tried to
-/// `blocking_read` the wallet manager from inside a Tokio worker.
+/// Signing is routed through the supplied `signer_handle` (typically
+/// `KeychainSigner.handle`). Required for watch-only wallets where
+/// the seed lives in iOS Keychain rather than the in-process
+/// `WalletManager`.
 ///
 /// The wallet handle is still required so Rust can look up the
 /// identity from the in-process `IdentityManager` and pick the
@@ -838,30 +801,10 @@ func platform_wallet_get_managed_identity(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
-@_silgen_name("platform_wallet_send_contact_request")
-func platform_wallet_send_contact_request(
-    _ wallet_handle: Handle,
-    _ sender_identity_id: UnsafePointer<UInt8>,
-    _ recipient_identity_id: UnsafePointer<UInt8>,
-    _ account_label: UnsafePointer<CChar>?,
-    _ auto_accept_proof: UnsafePointer<UInt8>?,
-    _ auto_accept_proof_len: Int,
-    _ out_request_handle: UnsafeMutablePointer<Handle>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
 @_silgen_name("platform_wallet_sync_contact_requests")
 func platform_wallet_sync_contact_requests(
     _ wallet_handle: Handle,
     _ out_array: UnsafeMutablePointer<ContactRequestHandleArray>,
-    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
-) -> PlatformWalletFFIResult
-
-@_silgen_name("platform_wallet_accept_contact_request")
-func platform_wallet_accept_contact_request(
-    _ wallet_handle: Handle,
-    _ request_handle: Handle,
-    _ out_established_handle: UnsafeMutablePointer<Handle>,
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
@@ -898,10 +841,8 @@ func platform_wallet_send_dashpay_payment(
 ) -> PlatformWalletFFIResult
 
 /// Mirrors `platform_wallet_send_contact_request_with_signer` from
-/// Rust. Same shape as `platform_wallet_send_contact_request` but the
-/// document state-transition signature is routed through
-/// `signer_handle` (typically `KeychainSigner.handle`) instead of an
-/// internal `IdentitySigner`.
+/// Rust. The document state-transition signature is routed through
+/// `signer_handle` (typically `KeychainSigner.handle`).
 @_silgen_name("platform_wallet_send_contact_request_with_signer")
 func platform_wallet_send_contact_request_with_signer(
     _ wallet_handle: Handle,

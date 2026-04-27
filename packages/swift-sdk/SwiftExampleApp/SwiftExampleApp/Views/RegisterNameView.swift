@@ -386,9 +386,6 @@ struct RegisterNameView: View {
     //     same model identity registration uses — so the wallet's
     //     own seed never participates and watch-only restored
     //     wallets can register names too.
-    //   - Avoids the legacy `IdentitySigner` path, which would
-    //     deadlock the Tokio worker by `blocking_read`-ing the
-    //     wallet manager from inside the signing future.
     //   - On success the Rust side appends the new name to
     //     `ManagedIdentity.dpns_names` and queues an `IdentityChangeSet`
     //     so `PersistentIdentity.dpnsName` refreshes automatically via
