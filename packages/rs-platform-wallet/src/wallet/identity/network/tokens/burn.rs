@@ -14,30 +14,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Burn tokens using the wallet's internal signer.
-    pub async fn token_burn(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-        amount: TokenAmount,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::burn::TokenBurnTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let builder =
-            TokenBurnTransitionBuilder::new(data_contract, token_position, *identity_id, amount);
-
-        self.sdk
-            .token_burn(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| PlatformWalletError::TokenError(format!("Token burn failed: {}", e)))?;
-
-        Ok(())
-    }
-
     /// Burn tokens using a caller-supplied signer + key.
     #[allow(clippy::too_many_arguments)]
     pub async fn token_burn_with_signer<S: Signer<IdentityPublicKey>>(

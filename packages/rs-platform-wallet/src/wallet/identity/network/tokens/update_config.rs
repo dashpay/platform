@@ -15,36 +15,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Update token configuration using the wallet's internal signer.
-    pub async fn token_update_config(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-        config_change: dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let builder = TokenConfigUpdateTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *identity_id,
-            config_change,
-        );
-
-        self.sdk
-            .token_update_contract_token_configuration(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token config update failed: {}", e))
-            })?;
-
-        Ok(())
-    }
-
     /// Update config with a caller-supplied signer + key.
     #[allow(clippy::too_many_arguments)]
     pub async fn token_update_config_with_signer<S: Signer<IdentityPublicKey>>(

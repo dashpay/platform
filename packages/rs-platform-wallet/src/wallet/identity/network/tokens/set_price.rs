@@ -20,37 +20,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Set a single direct-purchase price using the wallet's internal
-    /// signer.
-    pub async fn token_set_price(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-        price: dpp::fee::Credits,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *identity_id,
-        )
-        .with_single_price(price);
-
-        self.sdk
-            .token_set_price_for_direct_purchase(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token set price failed: {}", e))
-            })?;
-
-        Ok(())
-    }
-
     /// Set price with a caller-supplied signer + key. Accepts the full
     /// `TokenPricingSchedule` so callers can express tiered pricing.
     #[allow(clippy::too_many_arguments)]

@@ -13,34 +13,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Claim a token distribution using the wallet's internal signer.
-    pub async fn token_claim(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-        distribution_type: dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let builder = TokenClaimTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *identity_id,
-            distribution_type,
-        );
-
-        self.sdk
-            .token_claim(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| PlatformWalletError::TokenError(format!("Token claim failed: {}", e)))?;
-
-        Ok(())
-    }
-
     /// Claim a token distribution using a caller-supplied signer + key.
     #[allow(clippy::too_many_arguments)]
     pub async fn token_claim_with_signer<S: Signer<IdentityPublicKey>>(

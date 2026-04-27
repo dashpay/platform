@@ -14,40 +14,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Transfer tokens from one identity to another using the wallet's
-    /// internal [`IdentitySigner`](crate::wallet::signer::IdentitySigner).
-    pub async fn token_transfer(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        from_identity_id: &Identifier,
-        to_identity_id: Identifier,
-        amount: TokenAmount,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::transfer::TokenTransferTransitionBuilder;
-
-        let (_identity, signer, signing_key) = self
-            .token_resolve_identity_and_signer(from_identity_id)
-            .await?;
-
-        let builder = TokenTransferTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *from_identity_id,
-            to_identity_id,
-            amount,
-        );
-
-        self.sdk
-            .token_transfer(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token transfer failed: {}", e))
-            })?;
-
-        Ok(())
-    }
-
     /// Transfer tokens using a caller-supplied signer + key. Returns
     /// the SDK's `TransferResult` so the caller can inspect the
     /// proof-verified outcome.

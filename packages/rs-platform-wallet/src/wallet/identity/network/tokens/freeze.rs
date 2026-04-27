@@ -13,35 +13,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Freeze a target identity's token balance using the wallet's
-    /// internal signer.
-    pub async fn token_freeze(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-        target_identity_id: Identifier,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::freeze::TokenFreezeTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let builder = TokenFreezeTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *identity_id,
-            target_identity_id,
-        );
-
-        self.sdk
-            .token_freeze(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| PlatformWalletError::TokenError(format!("Token freeze failed: {}", e)))?;
-
-        Ok(())
-    }
-
     /// Freeze with a caller-supplied signer + key.
     #[allow(clippy::too_many_arguments)]
     pub async fn token_freeze_with_signer<S: Signer<IdentityPublicKey>>(

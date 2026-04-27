@@ -14,32 +14,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Pause a token using the wallet's internal signer.
-    pub async fn token_pause(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let builder = TokenEmergencyActionTransitionBuilder::pause(
-            data_contract,
-            token_position,
-            *identity_id,
-        );
-
-        self.sdk
-            .token_emergency_action(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| PlatformWalletError::TokenError(format!("Token pause failed: {}", e)))?;
-
-        Ok(())
-    }
-
     /// Pause with a caller-supplied signer + key.
     #[allow(clippy::too_many_arguments)]
     pub async fn token_pause_with_signer<S: Signer<IdentityPublicKey>>(

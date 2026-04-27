@@ -25,7 +25,7 @@ use std::sync::Arc;
 use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
-use dpp::prelude::{AssetLockProof, Identifier};
+use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -40,7 +40,7 @@ use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
+use crate::wallet::signer::IdentitySigner;
 
 /// Default gap limit for identity discovery scanning.
 ///
@@ -389,34 +389,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         })?;
 
         Ok(Zeroizing::new(secret_key.secret_bytes()))
-    }
-
-    /// Create a [`ManagedIdentitySigner`] for a managed identity by its ID.
-    ///
-    /// Looks up the identity's BIP-9 HD index in the manager and binds
-    /// the signer to it. Private keys are derived on demand from the
-    /// wallet seed at the DIP-9 identity authentication path —
-    /// `ManagedIdentity` no longer carries a `KeyStorage`.
-    pub async fn signer_for(
-        &self,
-        identity_id: &Identifier,
-    ) -> Result<ManagedIdentitySigner, PlatformWalletError> {
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            crate::error::PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
-        let identity_index = info
-            .identity_manager
-            .identity_index(identity_id)
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(ManagedIdentitySigner::new(
-            self.wallet_manager.clone(),
-            self.wallet_id,
-            identity_index,
-            self.sdk.network,
-        ))
     }
 
     /// Get a read-lock handle to the shared [`WalletManager`].

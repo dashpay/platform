@@ -14,35 +14,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Mint tokens using the wallet's internal signer.
-    pub async fn token_mint(
-        &self,
-        data_contract: Arc<DataContract>,
-        token_position: TokenContractPosition,
-        identity_id: &Identifier,
-        amount: TokenAmount,
-        recipient_id: Option<Identifier>,
-    ) -> Result<(), PlatformWalletError> {
-        use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
-
-        let (_identity, signer, signing_key) =
-            self.token_resolve_identity_and_signer(identity_id).await?;
-
-        let mut builder =
-            TokenMintTransitionBuilder::new(data_contract, token_position, *identity_id, amount);
-
-        if let Some(recipient) = recipient_id {
-            builder.recipient_id = Some(recipient);
-        }
-
-        self.sdk
-            .token_mint(builder, &signing_key, &signer)
-            .await
-            .map_err(|e| PlatformWalletError::TokenError(format!("Token mint failed: {}", e)))?;
-
-        Ok(())
-    }
-
     /// Mint tokens using a caller-supplied signer + key.
     #[allow(clippy::too_many_arguments)]
     pub async fn token_mint_with_signer<S: Signer<IdentityPublicKey>>(
