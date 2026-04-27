@@ -147,6 +147,7 @@ struct WalletDetailView: View {
                 } label: {
                     Image(systemName: "info.circle")
                 }
+                .accessibilityIdentifier("walletDetail.infoButton")
             }
         }
         .sheet(isPresented: $showReceiveAddress) {
@@ -386,6 +387,7 @@ struct WalletInfoView: View {
                         }
                     }
                     .disabled(isDeleting)
+                    .accessibilityIdentifier("walletInfo.deleteWalletButton")
                     .listRowBackground(Color.red)
                 }
             }
@@ -528,17 +530,34 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
-        // Dismiss views FIRST to prevent UI from accessing deleted
-        // relationships, then delete the `PersistentWallet` row.
+        let walletId = wallet.walletId
+
+        await MainActor.run { isDeleting = true }
+
         // Cascade-delete rules on `accounts` / `identities` null out
         // or cascade the children automatically.
+        modelContext.delete(wallet)
+        do {
+            try modelContext.save()
+            try WalletStorage().deleteMnemonic(for: walletId)
+        } catch {
+            modelContext.rollback()
+            SDKLogger.error(
+                "Failed to fully delete wallet: \(error.localizedDescription)"
+            )
+            await MainActor.run {
+                errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
+                showError = true
+                isDeleting = false
+            }
+            return
+        }
+
         await MainActor.run {
+            isDeleting = false
             dismiss()
             onWalletDeleted()
         }
-
-        modelContext.delete(wallet)
-        try? modelContext.save()
         // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
         // so the Rust side also drops the in-memory handle.
     }
