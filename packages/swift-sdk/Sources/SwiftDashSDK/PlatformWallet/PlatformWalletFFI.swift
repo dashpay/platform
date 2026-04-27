@@ -1500,12 +1500,24 @@ struct PersistKeyArgs {
     var security_level: UInt8
 }
 
-/// Expected size of `PersistKeyArgs` as laid out by Rust's
+/// Expected stride of `PersistKeyArgs` as laid out by Rust's
 /// `#[repr(C)]` on 64-bit targets. Mirrors the compile-time
 /// assertion in `rs-platform-wallet-ffi/src/
 /// derive_and_persist_callbacks.rs`. Tested at trampoline entry
 /// via `assertPersistKeyArgsLayout()`.
-let EXPECTED_PERSIST_KEY_ARGS_SIZE: Int = 72
+///
+/// We compare `MemoryLayout<T>.stride` (not `.size`) here. Rust's
+/// `size_of::<T>()` includes trailing padding so an array of `T`
+/// has the right element-to-element distance — that's what the
+/// Rust compile-time assertion pins to 72. Swift's `size` excludes
+/// trailing padding (would return 67 for this struct because the
+/// last field is a `UInt8` at offset 66 with 5 bytes of trailing
+/// pad to 8-align the next array element); Swift's `stride` is
+/// the equivalent of Rust's `size_of`. Earlier revisions checked
+/// `size == 72` AND `stride == 72`, which never held — Swift's
+/// 67-byte `size` for this struct made the assertion abort at the
+/// first persister construction.
+let EXPECTED_PERSIST_KEY_ARGS_STRIDE: Int = 72
 
 /// Verify the Swift `PersistKeyArgs` mirror lays out to the same
 /// 72-byte shape Rust's `#[repr(C)]` produces. Called once per
@@ -1513,14 +1525,31 @@ let EXPECTED_PERSIST_KEY_ARGS_SIZE: Int = 72
 /// between the two sides surfaces as a clean assertion failure
 /// rather than an EXC_BAD_ACCESS in `assumingMemoryBound`.
 func assertPersistKeyArgsLayout() {
-    let actual = MemoryLayout<PersistKeyArgs>.size
     let actualStride = MemoryLayout<PersistKeyArgs>.stride
     precondition(
-        actual == EXPECTED_PERSIST_KEY_ARGS_SIZE
-            && actualStride == EXPECTED_PERSIST_KEY_ARGS_SIZE,
-        "PersistKeyArgs layout mismatch: size=\(actual) stride=\(actualStride), "
-            + "expected \(EXPECTED_PERSIST_KEY_ARGS_SIZE). Rust-side "
-            + "#[repr(C)] and Swift-side struct have diverged; fix one side."
+        actualStride == EXPECTED_PERSIST_KEY_ARGS_STRIDE,
+        "PersistKeyArgs stride mismatch: \(actualStride), expected "
+            + "\(EXPECTED_PERSIST_KEY_ARGS_STRIDE). Rust-side #[repr(C)] "
+            + "and Swift-side struct have diverged; fix one side."
+    )
+    // Belt-and-braces field-offset checks. If a field is
+    // reordered or resized on either side the offsets will drift
+    // even when the total stride happens to stay the same, and
+    // `assumingMemoryBound` would silently read the wrong field.
+    precondition(
+        MemoryLayout<PersistKeyArgs>.offset(of: \.wallet_id_bytes) == 0
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.identity_index) == 8
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.key_id) == 12
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.key_index) == 16
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.derivation_path_cstr) == 24
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.public_key_bytes) == 32
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.public_key_len) == 40
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.public_key_hash_bytes) == 48
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.private_key_bytes) == 56
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.key_type) == 64
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.purpose) == 65
+            && MemoryLayout<PersistKeyArgs>.offset(of: \.security_level) == 66,
+        "PersistKeyArgs field offsets diverged from Rust #[repr(C)] layout"
     )
 }
 
