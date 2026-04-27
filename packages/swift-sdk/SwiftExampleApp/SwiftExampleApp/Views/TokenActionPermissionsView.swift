@@ -532,22 +532,26 @@ enum TokenActionResolver {
         let hasPerpetual = token.perpetualDistribution != nil
         let hasPreProgrammed = token.preProgrammedDistribution != nil
 
-        // No distribution at all → hide regardless of whether this
-        // identity happens to be the designated recipient. A token
-        // without a distribution slot has nothing to claim, so
-        // surfacing the row would advertise an action the token
-        // can't actually perform. (Earlier revisions kept the row
-        // for designated recipients and surfaced `.allowed`, which
-        // would land in the placeholder action sheet only to fail
-        // when the user tapped through.)
+        // Match the rest of the screen's pattern: rows stay visible
+        // and surface a denial reason instead of disappearing —
+        // freeze / unfreeze / destroy-frozen-funds all do this when
+        // "no one is authorized." Hiding Claim outright made it look
+        // like the screen was missing an action entirely.
+        //
+        // Drive's claim mechanic only fires against an actual
+        // distribution schedule, so without one the token has
+        // nothing to claim — surface that as the disabled-state
+        // reason rather than offering a tappable action that
+        // would round-trip into a "no distribution" error.
         if !hasPerpetual && !hasPreProgrammed {
-            return .hidden
+            return .denied(reason: "Token has no distribution schedule")
         }
 
-        // If the contract doesn't allow choosing destination and this
-        // identity isn't the designated recipient, the prompt says hide.
+        // The contract doesn't let identities choose where new
+        // mints go AND this identity isn't the pinned recipient,
+        // so they'd never receive anything to claim.
         if !allowsChoosing && !isDesignated {
-            return .hidden
+            return .denied(reason: "Not the designated distribution recipient")
         }
 
         if isDesignated {
@@ -770,11 +774,12 @@ struct TokenActionPermissionsView: View {
 
             Spacer()
 
-            if row.permission.isAllowed {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
+            // Allowed rows are wrapped in a `NavigationLink` (see
+            // `actionRow`) which already draws its own trailing
+            // chevron; drawing one here too produced the doubled
+            // `> >` users were seeing. Only render the lock for
+            // denied rows; the system chevron handles the rest.
+            if !row.permission.isAllowed {
                 Image(systemName: "lock.fill")
                     .font(.caption)
                     .foregroundColor(.secondary)
