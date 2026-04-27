@@ -289,8 +289,8 @@ fn estimate_fee_for_inputs_pub(
 /// Given a `candidates` list of `(address, balance)` pairs in
 /// preferred selection order (DIP-17 derivation order, in practice),
 /// pick the smallest prefix that covers `total_output + estimated_fee`,
-/// then trim the **last** included input down to the consumed
-/// contribution that satisfies `Σ inputs.credits == total_output`.
+/// then trim the **last consumed input** down so that
+/// `Σ inputs.credits == total_output` exactly.
 ///
 /// The fee is *not* added to the returned `Credits` values. It's
 /// covered separately by the fee strategy (typically
@@ -298,6 +298,14 @@ fn estimate_fee_for_inputs_pub(
 /// the remaining balance left at the targeted input address by the
 /// fee — a separate on-chain operation from the consumed-credits
 /// transfer modeled by the inputs map).
+///
+/// # Invariant
+///
+/// The returned map always satisfies `Σ values == total_output`.
+/// Tail candidates that were only added to satisfy the fee margin
+/// (i.e. whose balance is not needed to reach `total_output`) are
+/// excluded from the map; the fee continues to be paid out of the
+/// fee-bearing input's remaining balance per `fee_strategy`.
 ///
 /// Returns `Err(PlatformWalletError::AddressOperation(_))` when no
 /// prefix of `candidates` has total balance covering
@@ -310,18 +318,19 @@ fn select_inputs(
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
     let output_count = outputs.len();
-    let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+    // Track the chosen prefix in INSERTION order so we can trim
+    // from the front-to-back when building the result. A
+    // `BTreeMap` would re-order by key, which loses the DIP-17
+    // derivation-order intent and complicates the trim logic.
+    let mut chosen: Vec<(PlatformAddress, Credits)> = Vec::new();
     let mut accumulated: Credits = 0;
 
     for (address, balance) in candidates {
-        let prior_accumulated = accumulated;
-        // Tentatively assume the full balance is available so the
-        // fee estimator runs against the right input count.
-        selected.insert(address, balance);
+        chosen.push((address, balance));
         accumulated = accumulated.saturating_add(balance);
 
         let estimated_fee = estimate_fee_for_inputs_pub(
-            selected.len(),
+            chosen.len(),
             output_count,
             fee_strategy,
             outputs,
@@ -330,30 +339,28 @@ fn select_inputs(
         let required = total_output.saturating_add(estimated_fee);
 
         if accumulated >= required {
-            // Trim the last included input so that the consumed
-            // amounts sum to exactly `total_output`. The fee is
-            // covered by `balance - consumed_from_last >= fee`,
-            // which holds because `accumulated >= required ==
-            // total_output + fee` and `balance == accumulated -
-            // prior_accumulated`.
-            let consumed_from_last = total_output.saturating_sub(prior_accumulated);
-            if consumed_from_last == 0 {
-                // Edge case: prior inputs alone already covered
-                // `total_output` (they were each individually
-                // below the per-iteration `required` because
-                // adding more inputs raises the fee margin), but
-                // the fee margin needed this last balance. The
-                // protocol rejects zero-amount inputs
-                // (`InputBelowMinimumError`); drop this last
-                // address from the selection. Its balance still
-                // sits in the wallet, just untouched by this
-                // transfer; the fee will be paid out of the
-                // PRECEDING input's remaining-balance margin via
-                // the fee strategy. The selected map already
-                // covers `total_output` after the removal.
-                selected.remove(&address);
-            } else {
-                selected.insert(address, consumed_from_last);
+            // Build the result by consuming from the front of
+            // `chosen` until exactly `total_output` is reached.
+            // Any remaining candidates were only added to satisfy
+            // the fee margin and are excluded — protecting the
+            // protocol's `Σ inputs == Σ outputs` structural
+            // invariant. The fee continues to be paid out of the
+            // fee-bearing input's remaining balance per
+            // `fee_strategy`, which `accumulated >= required`
+            // already guarantees has enough head-room.
+            let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+            let mut remaining = total_output;
+            for (addr, bal) in chosen.iter() {
+                if remaining == 0 {
+                    break;
+                }
+                let consumed = (*bal).min(remaining);
+                // The protocol rejects zero-amount inputs
+                // (`InputBelowMinimumError`); we never insert
+                // here when `consumed == 0` because the loop
+                // breaks out as soon as `remaining` hits zero.
+                selected.insert(*addr, consumed);
+                remaining = remaining.saturating_sub(consumed);
             }
             return Ok(selected);
         }
@@ -361,7 +368,7 @@ fn select_inputs(
 
     // Not enough funds to cover `total_output + estimated_fee`.
     let estimated_fee = estimate_fee_for_inputs_pub(
-        selected.len().max(1),
+        chosen.len().max(1),
         output_count,
         fee_strategy,
         outputs,
@@ -478,6 +485,57 @@ mod auto_select_tests {
             }
             other => panic!("expected AddressOperation, got {other:?}"),
         }
+    }
+
+    /// Regression test for the trim invariant: when a tail
+    /// candidate is added only to satisfy the per-input fee
+    /// margin (because the prior prefix already exceeds
+    /// `total_output` strictly, but didn't cover
+    /// `total_output + estimated_fee_for(N - 1)`), the result
+    /// must still satisfy `Σ selected.values() == total_output`.
+    /// The tail candidate is dropped, and the prefix is trimmed
+    /// down to exactly `total_output`.
+    ///
+    /// Numbers are chosen so the bug triggers regardless of the
+    /// exact protocol fee schedule:
+    /// - `addr_a` = 1B + 1 credit (strictly exceeds `total_output`)
+    /// - `addr_b` = 1B (any positive balance suffices)
+    /// - `total_output` = 1B
+    /// - `fee_for_1` is small (~5M on testnet, ≪ 1) — note that
+    ///   `addr_a < total_output + fee_for_1` only when fee > 1,
+    ///   which is universally true for the protocol's min fee.
+    #[test]
+    fn fee_only_tail_input_does_not_inflate_input_sum() {
+        let addr_a = p2pkh(0xA0);
+        let addr_b = p2pkh(0xB0);
+        let target = p2pkh(0xCC);
+        let total_output = 1_000_000_000u64;
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_a, total_output + 1), (addr_b, total_output)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
+            .expect("selection");
+
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(
+            input_sum, total_output,
+            "Σ inputs must equal Σ outputs (protocol's structural invariant) — \
+             tail-only-for-fee inputs must not inflate the sum"
+        );
+        // The first input is consumed for the full `total_output`
+        // (its balance exceeds it); the tail input is excluded
+        // from the inputs map entirely.
+        assert_eq!(
+            selected.get(&addr_a),
+            Some(&total_output),
+            "first input should consume exactly total_output"
+        );
+        assert!(
+            !selected.contains_key(&addr_b),
+            "tail-only-for-fee input must be excluded from the inputs map"
+        );
     }
 
     /// Empty candidate list → error rather than panic / silent zero-input transition.

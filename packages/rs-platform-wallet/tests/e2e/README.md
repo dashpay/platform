@@ -2,22 +2,26 @@
 
 ## Status
 
-This framework was assembled across Waves 1-4, audited by QA in Wave 5, and patched
-in Wave 6 to clear the QA-001 blocker. The single
-`transfer_between_two_platform_addresses` test compiles cleanly, its module wiring is
-sound, and `cargo check` / `cargo clippy` / `cargo fmt --check` are green. **The live
-happy-path run has not yet been executed in this branch** because no testnet bank
-wallet pre-funded with `>= PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` credits is available
-to the QA agent. Once an operator provisions one and exports
-`PLATFORM_WALLET_E2E_BANK_MNEMONIC`, the run is one `cargo test` away (see
-[Running tests](#running-tests)).
+This framework was assembled across Waves 1-18, audited by QA in Wave 5, and exercised
+end-to-end against Dash testnet. The single `transfer_between_two_platform_addresses`
+test runs green: `cargo check` / `cargo clippy` / `cargo fmt --check` pass, and the
+live happy-path run has been executed successfully in this branch. Future reruns
+still require a testnet bank wallet pre-funded with
+`>= PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` credits; once an operator provisions one
+and exports `PLATFORM_WALLET_E2E_BANK_MNEMONIC` (or sets it in `tests/.env`), the
+harness is ready to run again via `cargo test` (see [Running tests](#running-tests)).
 
 The runtime-flavor defect surfaced during the QA-001 reproduction (default
-`tokio_shared_rt::test(shared)` lands on a current-thread runtime, which panics inside
-`SpvContextProvider`'s `block_in_place` bridge) is resolved: every e2e test attribute
-MUST be `#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]`,
-mirroring the `dash-evo-tool/tests/backend-e2e/` precedent. The canonical pattern below
-is updated accordingly.
+`tokio_shared_rt::test(shared)` lands on a current-thread runtime, which previously
+panicked inside the SPV-backed context provider's `block_in_place` bridge) is
+resolved. The harness now defaults to
+[`TrustedHttpContextProvider`](#context-provider) and the retained
+`SpvContextProvider` was rewritten in Wave 7 to use `dash_async::block_on`, which is
+runtime-flavor agnostic. Multi-thread is therefore no longer strictly required, but
+we still recommend
+`#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]` —
+it mirrors the `dash-evo-tool/tests/backend-e2e/` precedent and gives SPV background
+tasks (when re-enabled per Task #15) head-room. The canonical pattern below uses it.
 
 End-to-end tests that exercise the full wallet -> SDK -> broadcast pipeline against a
 live Dash testnet. The framework validates platform-address credit operations through
@@ -338,20 +342,22 @@ async fn transfer_between_two_platform_addresses() {
 }
 ```
 
-The `shared` runtime attribute is not optional. SPV spawns background tasks bound to
-the runtime that created them. With `#[tokio::test]` each test would create its own
-runtime; the first test's exit would drop that runtime and kill SPV's background tasks,
-causing channel-closed errors in later tests.
+The `shared` runtime attribute is not optional. SPV (when re-enabled per Task #15)
+spawns background tasks bound to the runtime that created them. With `#[tokio::test]`
+each test would create its own runtime; the first test's exit would drop that runtime
+and kill SPV's background tasks, causing channel-closed errors in later tests.
 
 For deeper implementation details — module responsibilities, registry schema, signer
 design, workdir slot algorithm — refer to the plan file at
 `.claude/plans/ok-now-we-ll-get-prancy-biscuit.md`.
 
-> **Runtime flavor is non-optional:** the example's attribute MUST include
-> `flavor = "multi_thread", worker_threads = 12`. Without it,
-> `SpvContextProvider`'s `block_in_place` bridge panics on the current-thread
-> runtime that `tokio_shared_rt::test(shared)` builds by default. Mirrors the DET
-> precedent.
+> **Runtime flavor is recommended, not strictly required.** With the current
+> `TrustedHttpContextProvider` default and the retained `SpvContextProvider`'s
+> `dash_async::block_on` bridge (Wave 7), tests no longer panic on a
+> current-thread runtime. We still recommend
+> `flavor = "multi_thread", worker_threads = 12` to mirror the DET precedent and
+> to leave head-room for SPV-backed providers and other concurrent background
+> work; the canonical example uses it.
 
 ---
 

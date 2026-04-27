@@ -8,10 +8,18 @@
 //! to recover the funds. On the happy path,
 //! [`super::cleanup::teardown_one`] removes the entry.
 //!
-//! Persistence is atomic: each mutation writes to a sibling
-//! `*.tmp` and renames over the live file (POSIX atomic-on-same-fs).
-//! A corrupted JSON file is treated as "no orphans" — the framework
-//! logs a warning and starts fresh rather than failing init.
+//! Persistence is best-effort atomic: each mutation writes to a
+//! sibling `*.tmp` via [`tempfile::NamedTempFile`] and persists it
+//! over the live file. On POSIX this is `rename(2)` (atomic
+//! within a single filesystem); on Windows `tempfile::persist`
+//! uses `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING` so updates
+//! still overwrite cleanly. The contents are NOT `fsync`'d — a
+//! crash between the rename and the OS flushing the page cache
+//! could lose the most recent update; the next-run sweep
+//! tolerates that by treating a missing-but-previously-known
+//! wallet as already-cleaned-up. A corrupted JSON file is
+//! treated as "no orphans" — the framework logs a warning and
+//! starts fresh rather than failing init.
 //!
 //! Wave 3a delivers the full registry implementation. Higher waves
 //! drive the file from `E2eContext::init` (sweep) and
@@ -68,9 +76,11 @@ pub struct RegistryEntry {
 
 /// JSON-backed test-wallet registry guarded by a process-local mutex
 /// so concurrent in-process inserts/removes serialise safely. The
-/// file itself is rewritten atomically on every change (write-temp +
-/// rename) so cross-process visibility is consistent at file
-/// granularity.
+/// file itself is rewritten on every change via
+/// [`tempfile::NamedTempFile::persist`] (write-temp + rename) so
+/// cross-process visibility is consistent at file granularity on
+/// POSIX and Windows alike. See module docs for the durability /
+/// `fsync` contract.
 pub struct PersistentTestWalletRegistry {
     path: PathBuf,
     state: Mutex<HashMap<WalletSeedHash, RegistryEntry>>,
@@ -176,30 +186,54 @@ impl PersistentTestWalletRegistry {
     }
 }
 
-/// Atomic JSON write: serialise to `<path>.tmp`, fsync the dir-style
-/// rename target, then rename over the live file. POSIX guarantees
-/// rename atomicity within a single filesystem.
+/// Cross-platform write-temp + rename JSON persist.
+///
+/// Serialises `state` to a sibling `NamedTempFile` and persists it
+/// over `path`. On POSIX this is `rename(2)`; on Windows
+/// [`tempfile::NamedTempFile::persist`] uses `MoveFileEx` with
+/// `MOVEFILE_REPLACE_EXISTING`, so an already-existing destination
+/// is overwritten cleanly (a plain [`std::fs::rename`] would fail
+/// with `ERROR_ALREADY_EXISTS` on Windows after the first write).
+///
+/// No `fsync` is issued — see the module docs for the durability
+/// contract.
 fn atomic_write_json(
     path: &Path,
     state: &HashMap<WalletSeedHash, RegistryEntry>,
 ) -> FrameworkResult<()> {
+    use std::io::Write;
+
     let on_disk = encode_keys(state);
     let bytes = serde_json::to_vec_pretty(&on_disk).map_err(|err| {
         FrameworkError::Io(format!("serialising registry to {}: {err}", path.display()))
     })?;
-    let tmp = path.with_extension("tmp");
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| FrameworkError::Io(format!("creating {}: {err}", parent.display())))?;
-    }
-    fs::write(&tmp, &bytes)
-        .map_err(|err| FrameworkError::Io(format!("writing {}: {err}", tmp.display())))?;
-    fs::rename(&tmp, path).map_err(|err| {
+    let parent = path.parent().ok_or_else(|| {
         FrameworkError::Io(format!(
-            "renaming {} -> {}: {err}",
-            tmp.display(),
+            "registry path {} has no parent directory",
             path.display()
         ))
+    })?;
+    fs::create_dir_all(parent)
+        .map_err(|err| FrameworkError::Io(format!("creating {}: {err}", parent.display())))?;
+
+    // `NamedTempFile::new_in(parent)` keeps the temp file on the
+    // same filesystem as `path`, which is required for atomic
+    // rename. Persisting via `persist` (not `persist_noclobber`)
+    // overwrites the destination cross-platform.
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|err| {
+        FrameworkError::Io(format!("creating temp file in {}: {err}", parent.display()))
+    })?;
+    tmp.write_all(&bytes).map_err(|err| {
+        FrameworkError::Io(format!("writing temp file {}: {err}", tmp.path().display()))
+    })?;
+    tmp.as_file_mut().flush().map_err(|err| {
+        FrameworkError::Io(format!(
+            "flushing temp file {}: {err}",
+            tmp.path().display()
+        ))
+    })?;
+    tmp.persist(path).map_err(|err| {
+        FrameworkError::Io(format!("persisting temp file -> {}: {err}", path.display()))
     })?;
     Ok(())
 }

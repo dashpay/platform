@@ -1,26 +1,19 @@
 //! End-to-end integration tests for `rs-platform-wallet`.
 //!
 //! Single test binary that wires up a shared `E2eContext` (bank
-//! wallet, SDK, SPV runtime, panic-safe registry) once per process
-//! and reuses it across every test case under `cases/`. Submodules
-//! under `framework/` provide the harness pieces; `cases/` hosts the
+//! wallet, SDK, panic-safe registry) once per process and reuses
+//! it across every test case under `cases/`. Submodules under
+//! `framework/` provide the harness pieces; `cases/` hosts the
 //! actual `#[tokio_shared_rt::test(shared)]` entries.
 //!
 //! The full design lives in
 //! `/home/ubuntu/.claude/plans/ok-now-we-ll-get-prancy-biscuit.md`
 //! (Module Layout section).
 //!
-//! # Wave 2 status
-//!
-//! Skeleton only — module surfaces are stubbed with `todo!` /
-//! `FrameworkError::NotImplemented`. Wave 3 fills in the bank,
-//! signer, registry, cleanup, SDK, SPV, and ContextProvider bodies;
-//! Wave 4 wires `framework::setup` and adds the first test case.
-//!
-//! `dead_code` / `unused_imports` are allowed crate-wide because
-//! Wave 2's stubs intentionally don't reference one another yet —
-//! Wave 3 turns those into hard wiring and the allow can be
-//! tightened or removed at that point.
+//! `dead_code` / `unused_imports` remain allowed crate-wide for
+//! this integration-test crate's module layout and helper surfaces
+//! (e.g. the deferred SPV path retained for Task #15 re-enable);
+//! the allow can be tightened as the e2e suite evolves.
 
 #![allow(dead_code, unused_imports)]
 

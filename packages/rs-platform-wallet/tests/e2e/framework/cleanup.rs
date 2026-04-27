@@ -44,8 +44,8 @@ use super::{FrameworkError, FrameworkResult};
 /// credits costs more in fees than it recovers. The bound is
 /// proportional to [`SWEEP_FEE_ESTIMATE`] so that successful
 /// sweeps actually recover something meaningful net of fees;
-/// at 5M with a 15M fee estimate the minimum-worth-sweeping total
-/// is `dust + fee = 20M`, recovering at least 5M after the fee.
+/// at 5M with a 30M fee estimate the minimum-worth-sweeping total
+/// is `dust + fee = 35M`, recovering at least 5M after the fee.
 const SWEEP_DUST_THRESHOLD: Credits = 5_000_000;
 
 /// Approximate fee for a sweep transfer (1- to 3-input → 1-output).
@@ -287,7 +287,7 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 /// But `auto_select`'s internal `estimate_fee_for_inputs` uses the
 /// PROTOCOL fee schedule's `estimate_min_fee` (~5M for a 1→1
 /// transition on testnet), not the harness's
-/// `SWEEP_FEE_ESTIMATE = 15M`. With the auto path the wallet ends
+/// `SWEEP_FEE_ESTIMATE` (currently 30M). With the auto path the wallet ends
 /// up sending less to outputs than the caller asked for and the
 /// protocol's `Σ inputs == Σ outputs` check fails (live observation:
 /// `inputs=30522500, outputs=25522500` — 5M off).
@@ -298,7 +298,7 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 /// fee-bearer address's REMAINING balance via
 /// [`AddressFundsFeeStrategyStep::DeductFromInput`] as long as
 /// `pre_balance(fee_bearer) - inputs[fee_bearer] >= actual_fee`,
-/// which is what `SWEEP_FEE_ESTIMATE = 15M` provides margin for.
+/// which is what [`SWEEP_FEE_ESTIMATE`] provides margin for.
 async fn drain_to_bank<S>(
     wallet: &Arc<PlatformWallet>,
     signer: &S,
@@ -347,8 +347,9 @@ where
 
     // Build the inputs map: every address contributes its full
     // balance, EXCEPT fee-bearer which contributes
-    // `balance - SWEEP_FEE_ESTIMATE` so that 15M stays at the
-    // fee-bearer address as the on-chain fee margin.
+    // `balance - SWEEP_FEE_ESTIMATE` so that exactly that many
+    // credits stay at the fee-bearer address as the on-chain
+    // fee margin.
     let mut inputs_map: BTreeMap<PlatformAddress, Credits> = balances.clone();
     inputs_map.insert(fee_bearer_addr, fee_bearer_balance - SWEEP_FEE_ESTIMATE);
 
