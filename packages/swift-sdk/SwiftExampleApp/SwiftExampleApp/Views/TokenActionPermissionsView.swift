@@ -602,12 +602,24 @@ struct TokenActionPermissionsView: View {
         // Filter to local identities on the same network as this
         // token's parent contract; falls back to "all local" if the
         // contract isn't loaded.
-        let networkRaw = token.dataContract?.networkRaw
-        if let networkRaw {
+        //
+        // Routes through the SDK-side
+        // `PersistentIdentity.localIdentitiesPredicate(network:)`
+        // helper rather than a hand-rolled `#Predicate` block. The
+        // bespoke predicate that lived here referenced a captured
+        // local `networkRaw: Int` whose name shadowed the model's
+        // `identity.networkRaw` property, and SwiftData's
+        // predicate translator chokes on the resulting ambiguity
+        // mid-fetch — surfaces as a `_swift_runtime_on_report` /
+        // `_assertionFailure` crash from `ModelContext.fetch`
+        // (the `@Query` getter is the visible frame). The helper
+        // captures the raw Int by a unique name so the
+        // translator stays unambiguous.
+        let resolvedNetwork: AppNetwork? = token.dataContract
+            .flatMap { AppNetwork(rawValue: $0.networkRaw) }
+        if let resolvedNetwork {
             self._localIdentities = Query(
-                filter: #Predicate<PersistentIdentity> { identity in
-                    identity.isLocal == true && identity.networkRaw == networkRaw
-                },
+                filter: PersistentIdentity.localIdentitiesPredicate(network: resolvedNetwork),
                 sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.identityIdString)]
             )
         } else {
