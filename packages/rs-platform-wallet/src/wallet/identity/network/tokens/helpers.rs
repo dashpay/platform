@@ -1,9 +1,16 @@
 //! Shared lookups for token state-transition methods on
 //! [`IdentityWallet`]. All token actions need to (a) fetch the data
 //! contract by id and (b) resolve the canonical AUTHENTICATION /
-//! MASTER-or-HIGH / ECDSA_SECP256K1 signing key on the actor identity,
+//! CRITICAL / ECDSA_SECP256K1 signing key on the actor identity,
 //! so those steps live here rather than being copy-pasted across each
 //! action file.
+//!
+//! `CRITICAL` is non-negotiable: rs-dpp's
+//! `combined_security_level_requirement` collapses the allowed key
+//! set for *any* batch containing a token transition to
+//! `[SecurityLevel::CRITICAL]` only — MASTER, HIGH, and MEDIUM are
+//! all rejected by Drive. See
+//! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
 use std::sync::Arc;
 
@@ -17,13 +24,13 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Resolve only the AUTHENTICATION signing key — used by the
-    /// `_with_external_signer` variants where the caller brings the
-    /// `Signer` and we just need to pick which on-chain key id to sign
-    /// with.
+    /// Resolve the AUTHENTICATION signing key for token state
+    /// transitions — used by the `_with_external_signer` variants
+    /// where the caller brings the `Signer` and we just need to pick
+    /// which on-chain key id to sign with.
     ///
-    /// Key selection is currently a fixed canonical policy:
-    /// `Purpose::AUTHENTICATION` × `{MASTER, HIGH}` × `ECDSA_SECP256K1`.
+    /// Key selection is a fixed canonical policy:
+    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `ECDSA_SECP256K1`.
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen
     /// key matches what the state transition needs.
@@ -45,13 +52,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let signing_key = identity
             .get_first_public_key_matching(
                 Purpose::AUTHENTICATION,
-                [SecurityLevel::MASTER, SecurityLevel::HIGH].into(),
+                [SecurityLevel::CRITICAL].into(),
                 [KeyType::ECDSA_SECP256K1].into(),
                 false,
             )
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "No AUTHENTICATION ECDSA_SECP256K1 key at MASTER/HIGH security level on identity {}",
+                    "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level on identity {} — \
+                     identities registered before this fix may need an IdentityUpdate to add a CRITICAL key, \
+                     or re-registration",
                     identity_id
                 ))
             })?
