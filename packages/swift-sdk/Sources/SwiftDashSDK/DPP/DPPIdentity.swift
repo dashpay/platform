@@ -151,9 +151,9 @@ public enum ContractBounds: Codable, Equatable, Sendable {
     public var description: String {
         switch self {
         case .singleContract(let id):
-            return "Limited to contract: \(id.toBase58())"
+            return "Limited to contract: \(id.toBase58String())"
         case .singleContractDocumentType(let id, let docType):
-            return "Limited to \(docType) in contract: \(id.toBase58())"
+            return "Limited to \(docType) in contract: \(id.toBase58String())"
         }
     }
 
