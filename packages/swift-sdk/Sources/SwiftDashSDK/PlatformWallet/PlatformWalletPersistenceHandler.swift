@@ -762,21 +762,22 @@ public class PlatformWalletPersistenceHandler {
         }
         let network: KeyWalletNetwork = persistentWallet.network?.toKeyWalletNetwork() ?? .testnet
 
-        // 2. Fetch the mnemonic for this wallet from the keychain.
-        //    WalletStorage stores it under `wallet.mnemonic.<hex>`
-        //    in the unified `org.dashfoundation.wallet` service.
-        let mnemonic: String
+        // 2. Fetch the mnemonic UTF-8 bytes for this wallet from the
+        //    keychain. Keep the call site off Swift `String` so the
+        //    plaintext phrase does not live in higher-level heap
+        //    objects longer than necessary.
+        let mnemonicUTF8Bytes: Data
         do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+            mnemonicUTF8Bytes = try WalletStorage().retrieveMnemonicUTF8Bytes(for: walletId)
         } catch {
             print("⚠️ deriveAndStoreIdentityKey: mnemonic missing for wallet \(walletId.prefix(4).toHexString())…: \(error.localizedDescription)")
             return nil
         }
 
-        // 3. Mnemonic → 64-byte BIP39 seed.
+        // 3. Mnemonic UTF-8 bytes → 64-byte BIP39 seed.
         let seed: Data
         do {
-            seed = try Mnemonic.toSeed(mnemonic: mnemonic)
+            seed = try Mnemonic.toSeed(mnemonicUTF8Bytes: mnemonicUTF8Bytes)
         } catch {
             print("⚠️ deriveAndStoreIdentityKey: mnemonic-to-seed failed: \(error.localizedDescription)")
             return nil
