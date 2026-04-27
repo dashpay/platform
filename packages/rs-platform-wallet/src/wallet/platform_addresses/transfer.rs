@@ -45,16 +45,26 @@ impl PlatformAddressWallet {
 
         let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
 
-        let address_infos = match input_selection {
+        // Snapshot the credits credited to outputs before `outputs` is
+        // moved into the SDK call below — the per-changeset
+        // `fee_paid` is derived from `inputs_total - outputs_total`,
+        // which is the only fee figure available client-side without
+        // re-running the on-chain fee strategy.
+        let outputs_total: Credits = outputs.values().copied().sum();
+
+        let (address_infos, inputs_total) = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
                     return Err(PlatformWalletError::AddressOperation(
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk
+                let total: Credits = inputs.values().copied().sum();
+                let infos = self
+                    .sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await?;
+                (infos, total)
             }
             InputSelection::ExplicitWithNonces(inputs) => {
                 if inputs.is_empty() {
@@ -62,7 +72,9 @@ impl PlatformAddressWallet {
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk
+                let total: Credits = inputs.values().map(|(_, credits)| *credits).sum();
+                let infos = self
+                    .sdk
                     .transfer_address_funds_with_nonce(
                         inputs,
                         outputs,
@@ -70,17 +82,25 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await?;
+                (infos, total)
             }
             InputSelection::Auto => {
                 let inputs = self
                     .auto_select_inputs(account_index, &outputs, &fee_strategy, version)
                     .await?;
-                self.sdk
+                let total: Credits = inputs.values().copied().sum();
+                let infos = self
+                    .sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await?;
+                (infos, total)
             }
         };
+
+        // Saturating subtraction guards against the (non-physical) case
+        // where the SDK accepts an output map that exceeds inputs.
+        let fee_paid = inputs_total.saturating_sub(outputs_total);
 
         // Get the cached key source from the unified provider for gap
         // limit maintenance.
@@ -93,7 +113,10 @@ impl PlatformAddressWallet {
 
         // Update balances in the ManagedPlatformAccount.
         let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
+        let mut cs = PlatformAddressChangeSet {
+            fee_paid,
+            ..Default::default()
+        };
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             if let Some(account) = info
                 .core_wallet

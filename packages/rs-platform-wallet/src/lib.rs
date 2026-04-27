@@ -49,6 +49,7 @@ pub use wallet::identity::{
     DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
+pub use wallet::AddressDerivationInfo;
 pub use wallet::ManagedIdentitySigner;
 pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
