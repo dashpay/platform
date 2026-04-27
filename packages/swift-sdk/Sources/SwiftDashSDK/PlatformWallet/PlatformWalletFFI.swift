@@ -1018,6 +1018,39 @@ func platform_wallet_update_identity_with_signer(
     _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
 ) -> PlatformWalletFFIResult
 
+/// Mirrors `platform_wallet_create_data_contract_with_signer` from
+/// Rust (`packages/rs-platform-wallet-ffi/src/data_contract.rs`).
+///
+/// Replaces the rs-sdk-ffi `dash_sdk_data_contract_create` +
+/// `dash_sdk_data_contract_put_to_platform_and_wait` pair. The
+/// platform-wallet runtime (`runtime.rs`) configures an 8 MB
+/// worker stack — proof verification on the broadcast response
+/// crashes through the rs-sdk-ffi runtime's mobile-tuned default
+/// stack. Architecturally this also lines up with the
+/// swift-sdk/CLAUDE.md "high-level operations go through
+/// platform-wallet" rule: contract creation spans an identity, a
+/// signer, and persistent state.
+///
+/// Every JSON pointer beyond `documents_schema_json` is optional —
+/// pass NULL to skip. `out_contract_id` receives the 32-byte
+/// deterministic contract id (`H = hash(owner_id || nonce)`) on
+/// success; the Swift caller can re-fetch the contract with that
+/// id once it lands.
+@_silgen_name("platform_wallet_create_data_contract_with_signer")
+func platform_wallet_create_data_contract_with_signer(
+    _ wallet_handle: Handle,
+    _ owner_identity_id: UnsafePointer<UInt8>,
+    _ documents_schema_json: UnsafePointer<CChar>,
+    _ tokens_schema_json: UnsafePointer<CChar>?,
+    _ groups_schema_json: UnsafePointer<CChar>?,
+    _ keywords_json: UnsafePointer<CChar>?,
+    _ description: UnsafePointer<CChar>?,
+    _ config_json: UnsafePointer<CChar>?,
+    _ signer_handle: OpaquePointer?,
+    _ out_contract_id: UnsafeMutablePointer<UInt8>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 /// Mirrors `platform_wallet_register_identity_with_funding_signer`
 /// from Rust
 /// (`packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs`).
@@ -1247,6 +1280,28 @@ func identityKeyPreviewsFFIEmpty() -> IdentityKeyPreviewsFFI {
     IdentityKeyPreviewsFFI(items: nil, count: 0)
 }
 
+/// All-zero / null `IdentityKeyPreviewFFI` value for the single-row
+/// callers (`dash_sdk_derive_identity_key_at_slot`). The
+/// 32-byte tuple is laid out as Swift's nested-tuple representation
+/// of `[u8; 32]`; spelled out as 32 zero bytes here so a freshly-
+/// declared `out_row` is safe to hand to the FFI even on the
+/// failure paths where `_free` will run.
+func identityKeyPreviewFFIEmpty() -> IdentityKeyPreviewFFI {
+    IdentityKeyPreviewFFI(
+        identity_index: 0,
+        derivation_path: nil,
+        public_key: nil,
+        public_key_len: 0,
+        private_key_wif: nil,
+        private_key_bytes: (
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+    )
+}
+
 /// Derive the first N MASTER identity-authentication keypairs this
 /// wallet would probe during a discovery scan. `count_or_neg1< 0`
 /// picks the Rust-side default (`IDENTITY_GAP_LIMIT`, currently 5).
@@ -1329,6 +1384,35 @@ func dash_sdk_derive_identity_keys_from_mnemonic(
 @_silgen_name("dash_sdk_derive_identity_keys_from_mnemonic_free")
 func dash_sdk_derive_identity_keys_from_mnemonic_free(
     _ rows: UnsafeMutablePointer<IdentityRegistrationKeyDerivationsFFI>
+)
+
+// MARK: - dash_sdk_derive_identity_key_at_slot
+//
+// Single-slot variant of `dash_sdk_derive_identity_keys_from_mnemonic`
+// for the "add a new key to an existing identity" flow. Returns ONE
+// row at an arbitrary `(identity_index, key_index)` instead of a
+// `0..key_count` range — the caller picks the slot (typically
+// `max(existing_key_ids) + 1`).
+//
+// Currently ECDSA-only. The caller maps the resulting 33-byte
+// compressed pubkey into either `ECDSA_SECP256K1` (raw bytes) or
+// `ECDSA_HASH160` (ripemd160(sha256(pubkey))) when constructing the
+// `IdentityPublicKey` for the eventual `addPublicKeys` state
+// transition.
+@_silgen_name("dash_sdk_derive_identity_key_at_slot")
+func dash_sdk_derive_identity_key_at_slot(
+    _ mnemonic_cstr: UnsafePointer<CChar>,
+    _ passphrase_cstr: UnsafePointer<CChar>?,
+    _ network: DashSDKNetwork,
+    _ identity_index: UInt32,
+    _ key_index: UInt32,
+    _ out_row: UnsafeMutablePointer<IdentityKeyPreviewFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("dash_sdk_derive_identity_key_at_slot_free")
+func dash_sdk_derive_identity_key_at_slot_free(
+    _ row: UnsafeMutablePointer<IdentityKeyPreviewFFI>
 )
 
 // MARK: - Derive-and-persist callback handles

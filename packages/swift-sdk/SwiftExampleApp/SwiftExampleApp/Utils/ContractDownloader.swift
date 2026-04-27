@@ -43,6 +43,29 @@ public struct ContractDownloadResult {
     public let alreadyExisted: Bool
 }
 
+/// Throwaway in-memory representation of a fetched contract used by
+/// the search-result preview path. Carries everything the preview UI
+/// renders, plus the raw JSON / binary buffers that the eventual
+/// `downloadAndPersistContract` call needs if the user opts to save.
+///
+/// Intentionally not a SwiftData model — closing the preview drops it,
+/// which is the whole point of the "view without saving" flow.
+public struct ContractPreviewState: Identifiable {
+    /// `Identifiable` conformance for `.sheet(item:)`. The base58 id
+    /// is unique per contract.
+    public var id: String { contractIdBase58 }
+    /// Base58 form of the contract id, retained so the parent view
+    /// can dedupe / look up the corresponding saved row.
+    public let contractIdBase58: String
+    /// The parsed contract row, owned by `container`. Hand this to
+    /// `DataContractDetailsView` as its `contract` argument.
+    public let contract: PersistentDataContract
+    /// In-memory container backing `contract`. The caller MUST keep
+    /// this alive for the lifetime of the preview sheet — dropping it
+    /// invalidates the row.
+    public let container: ModelContainer
+}
+
 /// Shared download + parse + persist pipeline for data contracts.
 ///
 /// This is the single Swift-side bridge for the "fetch a contract by
@@ -121,18 +144,27 @@ public enum ContractDownloader {
         }
 
         // Fetch JSON + binary in one round trip. The
-        // `dash_sdk_data_contract_fetch_with_serialization` FFI owns
-        // the returned pointers, so we must free the error and
-        // contract handle on every exit path.
-        let result = trimmedId.withCString { idCStr in
+        // `dash_sdk_data_contract_fetch_with_serialization` FFI returns
+        // the result struct by value with heap-allocated inner pointers
+        // (`json_string` via `CString::into_raw`, `serialized_data` via
+        // `Box::into_raw(boxed_slice)`, `contract_handle` via `Box::into_raw`,
+        // `error` via `Box::into_raw`). We copy any data we need into
+        // Swift-owned `Data` / `String` values, then call
+        // `dash_sdk_data_contract_fetch_result_free` exactly once on the
+        // way out to reclaim every owned pointer.
+        var result = trimmedId.withCString { idCStr in
             dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
+        }
+        defer {
+            withUnsafeMutablePointer(to: &result) { ptr in
+                dash_sdk_data_contract_fetch_result_free(ptr)
+            }
         }
 
         if let error = result.error {
             let message = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
                 : "Unknown error"
-            dash_sdk_error_free(error)
             // The FFI doesn't expose a structured "not found" code, so
             // we have to substring-match on the message. This is the
             // same pattern the modal sheet was using before this
@@ -146,12 +178,12 @@ public enum ContractDownloader {
             )
         }
 
-        // Pull JSON and binary out of the result before scheduling
-        // cleanup of the contract handle.
+        // Pull JSON and binary out of the result. The deferred free
+        // above takes ownership of the underlying buffers — we must
+        // not poke at `result` after the function returns, so copy
+        // everything we need into Swift-owned values before falling
+        // through.
         guard let jsonPtr = result.json_string else {
-            if result.contract_handle != nil {
-                dash_sdk_data_contract_destroy(result.contract_handle)
-            }
             throw ContractDownloadError.fetchFailed(
                 "No JSON data returned from contract fetch"
             )
@@ -164,12 +196,6 @@ public enum ContractDownloader {
                 bytes: result.serialized_data,
                 count: Int(result.serialized_data_len)
             )
-        }
-
-        defer {
-            if result.contract_handle != nil {
-                dash_sdk_data_contract_destroy(result.contract_handle)
-            }
         }
 
         // Parse the contract JSON into a dictionary the parser
@@ -314,6 +340,163 @@ public enum ContractDownloader {
         return ContractDownloadResult(
             contract: persistent,
             alreadyExisted: false
+        )
+    }
+
+    /// Fetch a data contract for preview, parse it into a brand-new
+    /// in-memory `ModelContainer`, and return the resulting row.
+    /// The caller is expected to present `DataContractDetailsView`
+    /// against this row so the entire detail UI (tokens, document
+    /// types + indexes, groups) is reused as-is for previews.
+    ///
+    /// The in-memory container is returned alongside the row so the
+    /// caller can keep it alive for the lifetime of the preview
+    /// sheet — when the caller drops `ContractPreviewState`, the
+    /// container deallocates and every preview-only row goes with
+    /// it. No on-disk state is touched. The trusted-context
+    /// registration that `downloadAndPersistContract` performs is
+    /// intentionally skipped here so a previewed-but-not-saved
+    /// contract never leaks into transition validation.
+    public static func previewContractInMemory(
+        contractId: String,
+        sdk: SDK,
+        network: AppNetwork
+    ) async throws -> ContractPreviewState {
+        let trimmedId = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else {
+            throw ContractDownloadError.invalidContractId
+        }
+
+        guard let handle = sdk.handle else {
+            throw ContractDownloadError.fetchFailed("SDK not initialized")
+        }
+
+        // Same lifecycle as `downloadAndPersistContract` — see that
+        // function's comments for why we copy json/binary into Swift
+        // values first and free everything via one deferred call.
+        var result = trimmedId.withCString { idCStr in
+            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
+        }
+        defer {
+            withUnsafeMutablePointer(to: &result) { ptr in
+                dash_sdk_data_contract_fetch_result_free(ptr)
+            }
+        }
+
+        if let error = result.error {
+            let message = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            if message.contains("Data contract not found")
+                || message.contains("not found") {
+                throw ContractDownloadError.notFound(message)
+            }
+            throw ContractDownloadError.fetchFailed(
+                "Failed to fetch data contract: \(message)"
+            )
+        }
+
+        guard let jsonPtr = result.json_string else {
+            throw ContractDownloadError.fetchFailed(
+                "No JSON data returned from contract fetch"
+            )
+        }
+        let jsonString = String(cString: jsonPtr)
+
+        var binaryData: Data? = nil
+        if result.serialized_data != nil && result.serialized_data_len > 0 {
+            binaryData = Data(
+                bytes: result.serialized_data,
+                count: Int(result.serialized_data_len)
+            )
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8),
+              let contractData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            throw ContractDownloadError.fetchFailed(
+                "Failed to parse contract JSON"
+            )
+        }
+
+        let contractIdData: Data
+        if let idString = contractData["id"] as? String,
+           let idData = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
+            contractIdData = idData
+        } else if let idData = Data.identifier(fromBase58: trimmedId) {
+            contractIdData = idData
+        } else {
+            throw ContractDownloadError.fetchFailed(
+                "Could not extract contract ID from response"
+            )
+        }
+        let contractIdBase58 = contractIdData.toBase58String()
+
+        // Stand up an ephemeral SwiftData store. Anything we insert
+        // here disappears the moment the caller drops the returned
+        // `ContractPreviewState`.
+        let container = try ModelContainerHelper.createInMemoryContainer()
+        let context = ModelContext(container)
+
+        // Default-name heuristic: keep the same labels the persisted
+        // row will carry once saved (token-only contracts get
+        // "<TokenName> Token Contract", contracts with documents get
+        // "Contract with <firstDocType>", etc.).
+        let documents = contractData["documents"] as? [String: Any]
+            ?? contractData["documentSchemas"] as? [String: Any]
+            ?? [:]
+        let tokensDict = contractData["tokens"] as? [String: Any] ?? [:]
+        let resolvedName: String = {
+            if documents.isEmpty && tokensDict.count == 1,
+               let tokenData = tokensDict.values.first as? [String: Any] {
+                if let conventions = tokenData["conventions"] as? [String: Any],
+                   let localizations = conventions["localizations"] as? [String: Any],
+                   let enLocalization = localizations["en"] as? [String: Any],
+                   let singularForm = enLocalization["singularForm"] as? String {
+                    return "\(singularForm) Token Contract"
+                }
+                if let desc = tokenData["description"] as? String {
+                    return "\(desc) Token Contract"
+                }
+                if let nm = tokenData["name"] as? String {
+                    return "\(nm) Token Contract"
+                }
+                return "Token Contract"
+            }
+            if let firstDocType = documents.keys.first {
+                return "Contract with \(firstDocType)"
+            }
+            return "Contract \(trimmedId.prefix(8))..."
+        }()
+
+        let persistent = PersistentDataContract(
+            id: contractIdData,
+            name: resolvedName,
+            serializedContract: jsonData,
+            network: network
+        )
+        persistent.binarySerialization = binaryData
+        context.insert(persistent)
+        try context.save()
+
+        // Run the same parser the persist path uses. It populates
+        // tokens, document types (with indexes + properties), groups,
+        // and the contract's owner / version / flags — everything
+        // `DataContractDetailsView` and its drill-downs need.
+        // Identity-linking is intentionally skipped: the in-memory
+        // store has no identities, and even if one happened to share
+        // a row id it would be wrong to mark a previewed contract
+        // as locally-owned.
+        try DataContractParser.parseDataContract(
+            contractData: contractData,
+            contractId: contractIdData,
+            modelContext: context
+        )
+        try context.save()
+
+        return ContractPreviewState(
+            contractIdBase58: contractIdBase58,
+            contract: persistent,
+            container: container
         )
     }
 }

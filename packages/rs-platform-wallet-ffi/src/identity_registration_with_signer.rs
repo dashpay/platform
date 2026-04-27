@@ -90,6 +90,20 @@ use crate::runtime::block_on_worker;
 /// `pubkey_bytes` is borrowed by the FFI for the duration of the call;
 /// the caller retains ownership. Compressed secp256k1 pubkeys are
 /// always 33 bytes (`pubkey_len == 33`); BLS would be 48; etc.
+///
+/// **Contract bounds** — Encryption / Decryption keys carry a
+/// reference to the contract (and optionally a document type)
+/// they're allowed to operate within. Encoded inline as:
+///   - `contract_bounds_kind == 0` → no bounds.
+///   - `contract_bounds_kind == 1` → `SingleContract`. The first
+///     32 bytes at `contract_bounds_id` are the contract id; the
+///     `contract_bounds_document_type` pointer is ignored.
+///   - `contract_bounds_kind == 2` → `SingleContractDocumentType`.
+///     `contract_bounds_id` is the 32-byte contract id;
+///     `contract_bounds_document_type` is a NUL-terminated UTF-8
+///     document type name. Both must be non-null.
+/// All pointers are borrowed for the call duration only — the
+/// FFI does not retain or free them.
 #[repr(C)]
 pub struct IdentityPubkeyFFI {
     pub key_id: u32,
@@ -99,6 +113,13 @@ pub struct IdentityPubkeyFFI {
     pub pubkey_bytes: *const u8,
     pub pubkey_len: usize,
     pub read_only: bool,
+    /// Discriminant for the contract-bounds union. See struct doc.
+    pub contract_bounds_kind: u8,
+    /// 32-byte contract id when `contract_bounds_kind != 0`.
+    pub contract_bounds_id: *const u8,
+    /// NUL-terminated UTF-8 document type name when
+    /// `contract_bounds_kind == 2`. Null otherwise.
+    pub contract_bounds_document_type: *const std::os::raw::c_char,
 }
 
 /// Register a new identity funded by Platform-address balances, using

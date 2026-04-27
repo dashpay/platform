@@ -5,6 +5,15 @@ import UIKit
 
 struct DataContractDetailsView: View {
     let contract: PersistentDataContract
+    /// Optional "Save to Device" hook. Set when the view is rendered
+    /// against a preview-only contract held in an in-memory
+    /// `ModelContainer`. Tapping the Save button calls this closure;
+    /// the parent runs the persist pipeline and dismisses the sheet.
+    /// Nil for the normal saved-contract path.
+    var onSave: (() -> Void)? = nil
+    /// In-flight indicator for the Save button. Owned by the parent
+    /// (the persist call lives there); we just toggle the spinner.
+    var isSaving: Bool = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
@@ -256,6 +265,24 @@ struct DataContractDetailsView: View {
     @ViewBuilder
     private var actionsSection: some View {
         Section {
+            // Preview-mode entry point: caller (the contracts search
+            // sheet) supplies an `onSave` closure that runs the
+            // persist pipeline against the *real* model context.
+            // Hidden in saved-contract mode (`onSave == nil`) since
+            // saving is meaningless for an already-persisted row.
+            if let onSave = onSave {
+                Button(action: onSave) {
+                    HStack {
+                        if isSaving {
+                            ProgressView().controlSize(.small)
+                        }
+                        Label("Save to Device", systemImage: "square.and.arrow.down")
+                            .foregroundColor(.blue)
+                    }
+                }
+                .disabled(isSaving)
+            }
+
             Button(action: { showingShareSheet = true }) {
                 Label("Export Contract", systemImage: "square.and.arrow.up")
                     .foregroundColor(.blue)

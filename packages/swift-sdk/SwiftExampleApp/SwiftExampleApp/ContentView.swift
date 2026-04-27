@@ -14,6 +14,7 @@ struct ContentView: View {
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var platformState: AppState
     @Environment(\.modelContext) private var modelContext
 
     /// All locally persisted wallet records. Drives the
@@ -92,7 +93,12 @@ struct ContentView: View {
                 // Tab 4: Contracts (locally-persisted data contracts +
                 // their tokens). Friends moved to a per-identity drill-in
                 // under the DashPay section of IdentityDetailView.
-                ContractsTabView()
+                //
+                // The current network is threaded in so the contracts +
+                // tokens lists stay scoped to it — `PersistentDataContract`
+                // rows from another network would otherwise leak into
+                // the picker after a network switch.
+                ContractsTabView(network: platformState.currentNetwork)
                     .tabItem {
                         Label("Contracts", systemImage: "doc.text")
                     }

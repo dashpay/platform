@@ -59,6 +59,12 @@ struct IdentityDetailView: View {
     @State private var isLoadingTokens = false
     @State private var tokensError: String?
 
+    /// Drives presentation of `TopUpIdentityView` via the
+    /// `.sheet(isPresented:)` modifier below. Tapped from the
+    /// "Top Up Balance" button under the Balance row — the flow
+    /// itself owns wallet / account / amount selection.
+    @State private var showingTopUp = false
+
     var body: some View {
         if let identity = identity {
             List {
@@ -105,6 +111,28 @@ struct IdentityDetailView: View {
                         .fontWeight(.medium)
                 }
 
+                // Top-up entry point. Hidden for purely-local rows
+                // (no on-chain identity to credit yet) and for
+                // identities whose owning wallet isn't loaded into
+                // the manager — both paths would just surface a
+                // confusing error from the FFI layer.
+                if !identity.isLocal,
+                   let walletId = identity.wallet?.walletId,
+                   walletManager.wallet(for: walletId) != nil {
+                    Button {
+                        showingTopUp = true
+                    } label: {
+                        HStack {
+                            Label("Top Up Balance", systemImage: "plus.circle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 HStack {
                     Label("Type", systemImage: "person.badge.shield.checkmark")
                     Spacer()
@@ -128,9 +156,20 @@ struct IdentityDetailView: View {
             // because it's the entry point to *this identity's*
             // contacts; the richer "DashPay Profile" section further
             // down still owns profile reads/edits separately.
-            Section("DashPay") {
-                NavigationLink(destination: FriendsView(identity: identity)) {
-                    Label("Friends", systemImage: "person.2")
+            //
+            // Hidden when the identity isn't backed by a loaded
+            // local wallet — `FriendsView.requireWallet` throws on
+            // every action there, and the failure is swallowed into
+            // a `@State errorMessage` that the body never renders.
+            // No-wallet identities (network-only fetches) would
+            // otherwise land on the empty placeholder with no path
+            // forward.
+            if let walletId = identity.wallet?.walletId,
+               walletManager.wallet(for: walletId) != nil {
+                Section("DashPay") {
+                    NavigationLink(destination: FriendsView(identity: identity)) {
+                        Label("Friends", systemImage: "person.2")
+                    }
                 }
             }
 
@@ -349,6 +388,10 @@ struct IdentityDetailView: View {
                 }
             )
             .environmentObject(walletManager)
+        }
+        .sheet(isPresented: $showingTopUp) {
+            TopUpIdentityView(identity: identity)
+                .environmentObject(walletManager)
         }
         .onAppear {
             print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
@@ -845,11 +888,21 @@ struct IdentityDetailView: View {
         Task { @MainActor in
             defer { isLoadingTokens = false }
 
-            // Pull tokens off the live PersistentToken store —
-            // every saved contract's tokens are already hanging off
-            // it, so a flat `FetchDescriptor` is the simplest source
-            // of truth for "what tokens does the user know about?"
-            let descriptor = FetchDescriptor<PersistentToken>()
+            // Pull tokens off the live PersistentToken store, scoped
+            // to the active network via the parent contract's
+            // `networkRaw`. `PersistentToken` itself has no network
+            // field — every saved contract's tokens are children of
+            // a `PersistentDataContract`, and that's where the
+            // network lives. Without this filter we'd compute token
+            // ids that don't exist on the active network (off-network
+            // ids return zero balances and surface confusing
+            // empty-state UX after a network switch).
+            let target = appState.currentNetwork.rawValue
+            let descriptor = FetchDescriptor<PersistentToken>(
+                predicate: #Predicate<PersistentToken> { token in
+                    token.dataContract?.networkRaw == target
+                }
+            )
             guard let allTokens = try? modelContext.fetch(descriptor),
                   !allTokens.isEmpty else {
                 tokenBalances = []

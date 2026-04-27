@@ -67,13 +67,39 @@ pub(crate) fn identity_auth_derivation_path(
     identity_index: u32,
     key_index: u32,
 ) -> Result<DerivationPath, PlatformWalletError> {
+    identity_auth_derivation_path_for_type(
+        network,
+        KeyDerivationType::ECDSA,
+        identity_index,
+        key_index,
+    )
+}
+
+/// Build the DIP-9 identity-authentication derivation path for the
+/// given `(key_derivation_type, identity_index, key_index)` on
+/// `network`. Generalizes the ECDSA-hardcoded
+/// [`identity_auth_derivation_path`] so callers building keys for
+/// different key types (BLS, EdDSA) can reach the right slot.
+///
+/// Path format:
+/// `m/9'/COIN_TYPE'/5'/0'/key_derivation_type'/identity_index'/key_index'`
+///
+/// Promoted to `pub` so the FFI crate's mnemonic-driven derivation
+/// path can call the library version instead of duplicating the
+/// path-building logic.
+pub fn identity_auth_derivation_path_for_type(
+    network: key_wallet::Network,
+    key_derivation_type: KeyDerivationType,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<DerivationPath, PlatformWalletError> {
     let base_path: DerivationPath = match network {
         key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
         _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
     }
     .into();
 
-    let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+    let key_type_index: u32 = key_derivation_type.into();
 
     Ok(base_path.extend([
         ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
@@ -86,6 +112,63 @@ pub(crate) fn identity_auth_derivation_path(
             PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
         })?,
     ]))
+}
+
+/// One ECDSA identity-authentication keypair derived from a master
+/// xpriv at a specific `(identity_index, key_index)` slot. Wraps
+/// the secret scalar in [`Zeroizing`] so it is wiped on drop —
+/// callers that ship the bytes elsewhere (FFI, Keychain) should
+/// copy what they need and let this struct fall out of scope to
+/// reclaim the secret memory.
+pub struct DerivedIdentityAuthKey {
+    /// Full DIP-9 path used (so callers can persist the breadcrumb).
+    pub derivation_path: DerivationPath,
+    /// 32-byte secp256k1 secret scalar.
+    pub private_key: Zeroizing<[u8; 32]>,
+    /// 33-byte compressed secp256k1 public key.
+    pub public_key: [u8; 33],
+}
+
+/// Derive a single ECDSA identity-authentication keypair from a
+/// master xpriv at `(identity_index, key_index)`. Pure function —
+/// no `Wallet` required, so this works for watch-only wallets where
+/// the seed is held outside the in-memory wallet manager.
+///
+/// Used by the FFI's mnemonic-driven derivation paths
+/// (`platform_wallet_derive_identity_key_at_slot`,
+/// `dash_sdk_derive_identity_keys_from_mnemonic`) so the path
+/// builder + secp256k1 derive pass aren't duplicated in the FFI
+/// crate. The mnemonic-to-master step still lives in the FFI
+/// because mnemonic parsing pulls `key_wallet::mnemonic`, which
+/// the library doesn't otherwise need.
+pub fn derive_ecdsa_identity_auth_keypair_from_master(
+    master: &ExtendedPrivKey,
+    network: key_wallet::Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
+    use dashcore::secp256k1::Secp256k1;
+    use key_wallet::bip32::ExtendedPubKey;
+
+    let path = identity_auth_derivation_path_for_type(
+        network,
+        KeyDerivationType::ECDSA,
+        identity_index,
+        key_index,
+    )?;
+    let secp = Secp256k1::new();
+    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
+        ))
+    })?;
+    let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+
+    Ok(DerivedIdentityAuthKey {
+        derivation_path: path,
+        private_key: Zeroizing::new(derived.private_key.secret_bytes()),
+        public_key: extended_pub.public_key.serialize(),
+    })
 }
 
 /// Derive the DIP-9 identity-authentication keypair at

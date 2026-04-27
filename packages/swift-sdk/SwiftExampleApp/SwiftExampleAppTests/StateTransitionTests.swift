@@ -140,12 +140,19 @@ final class StateTransitionTests: XCTestCase {
         dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
       }
 
+      // `OpaquePointer` lost its retroactive `Sendable` conformance
+      // under compiler 6.2+; surface the pointers as unsafe-but-sendable
+      // locals so they can cross the awaited call without strict-
+      // concurrency errors. This is an integration-test-only fix; the
+      // runtime path is unchanged.
+      nonisolated(unsafe) let identityPtr = OpaquePointer(identityHandle)
+      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
       let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
-        fromIdentity: OpaquePointer(identityHandle),
+        fromIdentity: identityPtr,
         toIdentityId: recipientId,
         amount: amount,
         publicKeyId: 0,  // Auto-select transfer key
-        signer: OpaquePointer(signer)
+        signer: signerPtr
       )
 
       print("✅ Transfer successful!")
@@ -283,11 +290,12 @@ final class StateTransitionTests: XCTestCase {
         }
 
         print("   Calling transferCredits...")
+        nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
         let result = try await sdk.transferCredits(
           from: dppIdentity,
           toIdentityId: recipientId,
           amount: amount,
-          signer: OpaquePointer(signer)
+          signer: signerPtr
         )
 
         print("   ✅ Transfer successful!")
@@ -375,12 +383,13 @@ final class StateTransitionTests: XCTestCase {
       dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
     }
 
+    nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
     let newBalance = try await sdk.withdrawFromIdentity(
       identity,
       amount: amount,
       toAddress: withdrawalAddress,
       coreFeePerByte: 1,
-      signer: OpaquePointer(signer)
+      signer: signerPtr
     )
 
     print("✅ Withdrawal successful!")

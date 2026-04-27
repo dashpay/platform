@@ -216,7 +216,11 @@ impl IdentityWallet {
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
 
-        let mut identity = {
+        // Snapshot the local identity + its `identity_index` (needed
+        // for the derivation breadcrumb on the post-broadcast apply
+        // pass below). Read lock only — the broadcast itself doesn't
+        // touch local state.
+        let (mut identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
@@ -224,10 +228,19 @@ impl IdentityWallet {
                 )
             })?;
             let manager = &info.identity_manager;
-            manager
+            let identity = manager
                 .identity(identity_id)
                 .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            // `identity_index` may be `None` for out-of-wallet
+            // identities (third-party identities the user added by
+            // id). Tolerated here — we'll skip the breadcrumb on
+            // the local-apply pass and the persister callback still
+            // gets the new key, just without `(wallet_id,
+            // identity_index, key_index)` derivation metadata for
+            // the iOS Keychain re-derivation path.
+            let index = manager.identity_index(identity_id);
+            (identity, index)
         };
 
         // Increment revision for the update transition.
@@ -260,6 +273,12 @@ impl IdentityWallet {
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
 
+        // `try_from_identity_with_signer` consumes the keys vec, so
+        // clone before handing it off — we need the originals to
+        // apply locally after the broadcast succeeds.
+        let added_keys_for_local_apply = add_public_keys.clone();
+        let disabled_ids_for_local_apply = disable_public_keys.clone();
+
         let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
             &identity,
             &master_key_id,
@@ -288,6 +307,64 @@ impl IdentityWallet {
                     e
                 ))
             })?;
+
+        // Post-broadcast local apply.
+        //
+        // Drive accepted the transition, so the on-chain identity
+        // now carries the new keys / disabled flags. If we leave
+        // the local `ManagedIdentity` cache untouched here:
+        //   - The next state transition for this identity reuses
+        //     the stale revision and Platform rejects it as a
+        //     duplicate.
+        //   - The Swift `PersistentPublicKey` rows never receive
+        //     the new keys (rows arrive via the
+        //     `IdentityKeysChangeSet` persister callback that
+        //     `add_key` fires).
+        //   - The Identity Keys list in the iOS app keeps showing
+        //     only the pre-update key set.
+        //
+        // `ManagedIdentity::add_key` handles both the in-memory
+        // mutation AND the `IdentityKeysChangeSet` upsert. Run it
+        // on each new key under a write lock; the breadcrumb lets
+        // the iOS Keychain re-derive the matching private bytes
+        // from the wallet seed + DIP-9 path.
+        if !added_keys_for_local_apply.is_empty() || !disabled_ids_for_local_apply.is_empty() {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                // Bump the cached revision so a subsequent update
+                // doesn't reuse the pre-broadcast value.
+                let cached_revision = managed.identity.revision();
+                managed.identity.set_revision(cached_revision + 1);
+
+                for key in added_keys_for_local_apply {
+                    let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
+                    managed.add_key(key, breadcrumb, &self.persister);
+                }
+
+                if !disabled_ids_for_local_apply.is_empty() {
+                    // TODO(disable-keys): wire a
+                    // `ManagedIdentity::disable_keys` counterpart to
+                    // `add_key` so the disable side of an update
+                    // transition stamps a `disabled_at` on the
+                    // matching `IdentityKeyEntry` rows. For now we
+                    // log + leave the cache stale on the disable
+                    // path; callers that need it should refresh
+                    // from Platform after the broadcast.
+                    tracing::warn!(
+                        identity = %identity_id,
+                        disabled_count = disabled_ids_for_local_apply.len(),
+                        "Disable-keys post-broadcast apply not yet implemented; \
+                         in-memory cache will not reflect disabled key flags \
+                         until the next refresh"
+                    );
+                }
+            }
+        }
 
         Ok(())
     }

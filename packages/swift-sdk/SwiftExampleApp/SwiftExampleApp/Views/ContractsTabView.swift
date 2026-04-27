@@ -17,7 +17,7 @@ import SwiftDashSDK
 ///        `keyword-search-contract` system contract, dedupes by
 ///        contract id, and renders the discovered contracts as
 ///        tap-to-add rows.
-///    Search input is debounced (~400ms) on the keyword path; the
+///    Search input is debounced (~700ms) on the keyword path; the
 ///    id path fires on Submit. The "+" toolbar button still opens
 ///    `LoadDataContractView` for users who prefer the explicit
 ///    paste-an-id workflow.
@@ -31,23 +31,68 @@ import SwiftDashSDK
 /// exact same fetch + parse + persist pipeline.
 struct ContractsTabView: View {
     @EnvironmentObject var platformState: AppState
+    @EnvironmentObject var transitionState: TransitionState
     @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: \PersistentDataContract.lastAccessedAt, order: .reverse)
-    private var dataContracts: [PersistentDataContract]
+    /// Active network the parent passed in. Drives both the
+    /// `dataContracts` and `allTokens` query predicates so contracts
+    /// persisted under another network never leak into the list.
+    /// Captured at init time and threaded into the SwiftData
+    /// predicates below; the parent re-creates the view when the
+    /// active network changes (SwiftUI sees `network` move and
+    /// re-runs `init`, which rebuilds the `@Query` predicate).
+    private let network: AppNetwork
 
-    /// Flat list of every token across every saved contract. Lets the
-    /// user discover tokens without having to remember which contract
-    /// defined them. Sorted by name; rows surface the parent contract
-    /// in the caption so two tokens with the same name in different
-    /// contracts stay distinguishable.
-    @Query(sort: \PersistentToken.name)
-    private var allTokens: [PersistentToken]
+    @Query private var dataContracts: [PersistentDataContract]
+
+    /// Flat list of every token across every saved contract on the
+    /// active network. Tokens carry their network through the parent
+    /// `PersistentDataContract` (no own network field), so the
+    /// predicate filters via the relationship. Rows surface the
+    /// parent contract in the caption so two tokens with the same
+    /// name in different contracts stay distinguishable.
+    @Query private var allTokens: [PersistentToken]
+
+    init(network: AppNetwork) {
+        self.network = network
+        let target = network.rawValue
+        // `PersistentDataContract.predicate(network:)` already exists
+        // for this exact use; reuse it here so the keyed-network
+        // sentence is in one place.
+        _dataContracts = Query(
+            filter: PersistentDataContract.predicate(network: network),
+            sort: \PersistentDataContract.lastAccessedAt,
+            order: .reverse
+        )
+        // PersistentToken doesn't have its own network field; it
+        // inherits via the cascading parent contract relationship.
+        // Filter through `dataContract.networkRaw`.
+        _allTokens = Query(
+            filter: #Predicate<PersistentToken> { token in
+                token.dataContract?.networkRaw == target
+            },
+            sort: \PersistentToken.name
+        )
+    }
 
     @State private var showingLoadContract = false
+    @State private var showingRegisterContract = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
+
+    /// Active preview the user is inspecting. Setting this drives the
+    /// sheet presentation; `nil` dismisses the sheet. The struct
+    /// pins the in-memory `ModelContainer` alive for the sheet's
+    /// lifetime — dropping it tears down every preview-only row.
+    @State private var pendingPreview: ContractPreviewState?
+    /// In-flight indicator for the Save button inside the preview
+    /// sheet. Owned here (not on the sheet view) because the persist
+    /// call writes to the *parent's* `modelContext`.
+    @State private var isSavingPreview: Bool = false
+    /// Inline error rendered alongside the search bar after a failed
+    /// save attempt from inside the preview sheet.
+    @State private var previewSaveError: String?
 
     // MARK: Search-bar state
 
@@ -85,7 +130,7 @@ struct ContractsTabView: View {
     private static let minKeywordLength = 3
     /// Debounce window for keyword-path queries. Tuned to fire roughly
     /// after the user pauses typing, not on every keystroke.
-    private static let keywordDebounceMs = 400
+    private static let keywordDebounceMs = 700
     /// Hard cap on returned keyword-search documents per query.
     private static let keywordSearchLimit: UInt32 = 50
 
@@ -101,8 +146,17 @@ struct ContractsTabView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingLoadContract = true
+                    Menu {
+                        Button {
+                            showingLoadContract = true
+                        } label: {
+                            Label("Load Contract", systemImage: "arrow.down.circle")
+                        }
+                        Button {
+                            showingRegisterContract = true
+                        } label: {
+                            Label("Register Contract", systemImage: "plus.circle")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -114,6 +168,28 @@ struct ContractsTabView: View {
                 LoadDataContractView(isLoading: $isLoading)
                     .environmentObject(platformState)
                     .environment(\.modelContext, modelContext)
+            }
+            .sheet(isPresented: $showingRegisterContract) {
+                RegisterContractSourceView()
+                    .environmentObject(platformState)
+                    .environmentObject(transitionState)
+                    .environment(\.modelContext, modelContext)
+            }
+            .sheet(item: $pendingPreview) { preview in
+                // Render the full saved-contract details view against
+                // the throwaway in-memory container so tokens, document
+                // types + indexes, and groups all surface via the
+                // existing drill-down screens. The container lives on
+                // `preview` and is dropped when the sheet dismisses.
+                DataContractDetailsView(
+                    contract: preview.contract,
+                    onSave: isAlreadySaved(preview.contractIdBase58)
+                        ? nil
+                        : { Task { await savePreview(preview) } },
+                    isSaving: isSavingPreview
+                )
+                .environmentObject(platformState)
+                .modelContainer(preview.container)
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") { }
@@ -542,17 +618,32 @@ struct ContractsTabView: View {
         // `value` by string interpolation would break for inputs that
         // contain `"`, `\`, or control characters.
         let whereClause: String
+        let orderByClause: String
         do {
-            let payload: [[String: Any]] = [[
+            let wherePayload: [[String: Any]] = [[
                 "field": "keyword",
                 "operator": "startsWith",
                 "value": rawQuery
             ]]
-            let data = try JSONSerialization.data(withJSONObject: payload)
-            guard let str = String(data: data, encoding: .utf8) else {
+            let whereData = try JSONSerialization.data(withJSONObject: wherePayload)
+            guard let whereStr = String(data: whereData, encoding: .utf8) else {
                 throw ContractDownloadError.fetchFailed("Failed to encode where clause")
             }
-            whereClause = str
+            whereClause = whereStr
+
+            // Drive requires an `orderBy` for every range element in
+            // the where clause (`startsWith` desugars to a range), and
+            // the field must match the byKeyword index on the
+            // keyword-search contract — `keyword asc`.
+            let orderByPayload: [[String: Any]] = [[
+                "field": "keyword",
+                "ascending": true
+            ]]
+            let orderByData = try JSONSerialization.data(withJSONObject: orderByPayload)
+            guard let orderByStr = String(data: orderByData, encoding: .utf8) else {
+                throw ContractDownloadError.fetchFailed("Failed to encode order by clause")
+            }
+            orderByClause = orderByStr
         } catch {
             await MainActor.run {
                 guard generation == searchGeneration else { return }
@@ -573,7 +664,7 @@ struct ContractsTabView: View {
                 dataContractId: Self.keywordSearchContractId,
                 documentType: Self.keywordSearchDocumentType,
                 whereClause: whereClause,
-                orderByClause: nil,
+                orderByClause: orderByClause,
                 limit: Self.keywordSearchLimit
             )
 
@@ -624,10 +715,13 @@ struct ContractsTabView: View {
         }
     }
 
-    /// Tap-to-add for a keyword-search row. Resolves the contract id
-    /// via `ContractDownloader`, replaces the row's note with the
-    /// outcome (saved / already saved / failed), and leaves the rest
-    /// of the result list intact so the user can keep tapping.
+    /// Tap-to-preview for a keyword-search row. Fetches the contract
+    /// into a throwaway in-memory `ModelContainer`, then presents
+    /// the standard `DataContractDetailsView` against that container
+    /// so the user sees every token, document type, index, and group
+    /// the contract declares without touching the on-disk store.
+    /// Closing the sheet without tapping "Save to Device" drops the
+    /// preview entirely.
     private func tapSearchResult(_ result: SearchResult) async {
         guard let sdk = platformState.sdk else {
             await MainActor.run { searchError = "SDK not initialized" }
@@ -636,27 +730,16 @@ struct ContractsTabView: View {
 
         await MainActor.run { searchInFlight = true }
         do {
-            let download = try await ContractDownloader.downloadAndPersistContract(
+            let preview = try await ContractDownloader.previewContractInMemory(
                 contractId: result.contractIdBase58,
-                suggestedName: result.keywords.first,
                 sdk: sdk,
-                modelContext: modelContext,
-                network: platformState.currentNetwork,
-                existingContracts: dataContracts
+                network: platformState.currentNetwork
             )
             await MainActor.run {
                 searchInFlight = false
                 searchError = nil
-                if let idx = searchResults.firstIndex(of: result) {
-                    let note = download.alreadyExisted
-                        ? "Already saved"
-                        : "Saved \(download.contract.name)"
-                    searchResults[idx] = SearchResult(
-                        contractIdBase58: result.contractIdBase58,
-                        keywords: result.keywords,
-                        contextNote: note
-                    )
-                }
+                previewSaveError = nil
+                pendingPreview = preview
             }
         } catch let err as ContractDownloadError {
             await MainActor.run {
@@ -668,6 +751,41 @@ struct ContractsTabView: View {
                 searchInFlight = false
                 searchError = error.localizedDescription
             }
+        }
+    }
+
+    /// "Save to Device" handler invoked from the preview sheet. Runs
+    /// the standard persist pipeline against this view's
+    /// `modelContext` (NOT the preview's in-memory container) so the
+    /// new row lands in the on-disk store. Dismisses the sheet on
+    /// success; surfaces failures inline under the search bar.
+    @MainActor
+    private func savePreview(_ preview: ContractPreviewState) async {
+        guard let sdk = platformState.sdk else {
+            previewSaveError = "SDK not initialized"
+            return
+        }
+        isSavingPreview = true
+        previewSaveError = nil
+        do {
+            _ = try await ContractDownloader.downloadAndPersistContract(
+                contractId: preview.contractIdBase58,
+                suggestedName: preview.contract.name,
+                sdk: sdk,
+                modelContext: modelContext,
+                network: platformState.currentNetwork,
+                existingContracts: dataContracts
+            )
+            isSavingPreview = false
+            pendingPreview = nil
+        } catch let err as ContractDownloadError {
+            isSavingPreview = false
+            previewSaveError = err.errorDescription
+            searchError = err.errorDescription
+        } catch {
+            isSavingPreview = false
+            previewSaveError = error.localizedDescription
+            searchError = error.localizedDescription
         }
     }
 
@@ -891,6 +1009,7 @@ struct TokenListRow: View {
 }
 
 #Preview {
-    ContractsTabView()
+    ContractsTabView(network: .testnet)
         .environmentObject(AppState())
+        .environmentObject(TransitionState())
 }
