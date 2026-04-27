@@ -36,20 +36,24 @@ use platform_wallet::SpvRuntime;
 use dash_sdk::error::ContextProviderError;
 use dash_sdk::platform::ContextProvider;
 
-/// Placeholder activation height returned by
-/// [`SpvContextProvider::get_platform_activation_height`] until we
-/// surface the real value from the SPV's mn-list state.
+/// Platform activation height returned by
+/// [`SpvContextProvider::get_platform_activation_height`].
 ///
-/// The SDK consumes this when verifying proofs against historic core
-/// chain locked heights; on testnet the mn_rr (masternode reward
-/// reallocation) activation height is well past the heights we care
-/// about for the platform-address transfer flow, so a conservative
-/// `0` is correct enough to unblock that test path.
-//
-// TODO(Wave5): pull from SPV mn-list once we surface that info — the
-// SPV client knows the activation height after its first QRInfo
-// round-trip, but `SpvRuntime` doesn't expose an accessor today.
-const PLACEHOLDER_ACTIVATION_HEIGHT: CoreBlockHeight = 0;
+/// **Hard-coded to `0` — intentional for the e2e framework's
+/// testnet-only scope.** The SDK consumes this when verifying
+/// proofs against historic core-chain-locked heights; on Dash
+/// testnet the mn_rr (masternode reward reallocation) activation
+/// height is well past any height the platform-address transfer
+/// flow exercises, so the verification path that consumes this
+/// value never compares against an unactivated quorum and
+/// returning a conservative `0` is safe-by-position.
+///
+/// If a future test exercises activation-height-sensitive
+/// verification (Core-feature flows, identity verification against
+/// older quorums, mainnet runs), surface the real value via
+/// [`SpvRuntime`] (the SPV client knows the activation height
+/// after its first `QRInfo` round-trip) and wire it through here.
+const PLATFORM_ACTIVATION_HEIGHT_TESTNET_SAFE: CoreBlockHeight = 0;
 
 /// SDK [`ContextProvider`] that resolves quorum public keys from the
 /// local SPV runtime.
@@ -129,6 +133,6 @@ impl ContextProvider for SpvContextProvider {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        Ok(PLACEHOLDER_ACTIVATION_HEIGHT)
+        Ok(PLATFORM_ACTIVATION_HEIGHT_TESTNET_SAFE)
     }
 }

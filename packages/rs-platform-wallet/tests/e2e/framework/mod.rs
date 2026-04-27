@@ -19,7 +19,6 @@
 //! - [`panic_hook`] — installs a hook that trips the cancellation
 //!   token so SPV / background tasks shut down cleanly.
 //! - [`wait`] — generic poller + `wait_for_balance` specialisation.
-//! - [`persistence`] — wraps the no-op persister test wallets use.
 //! - [`bank`] — pre-funded bank wallet (Wave 3a).
 //! - [`wallet_factory`] — `TestWallet` factory + `SetupGuard` (Wave 3a).
 //! - [`signer`] — seed-backed `Signer<PlatformAddress>` (Wave 3a).
@@ -40,7 +39,6 @@ pub mod config;
 pub mod context_provider;
 pub mod harness;
 pub mod panic_hook;
-pub mod persistence;
 pub mod registry;
 pub mod sdk;
 pub mod signer;

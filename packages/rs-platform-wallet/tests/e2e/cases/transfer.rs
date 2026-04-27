@@ -30,6 +30,18 @@
 //! 6. `setup_guard.teardown()` sweeps remaining funds back to the
 //!    bank and removes the registry entry.
 //!
+//! # Testnet assumption
+//!
+//! This test runs against Dash testnet and depends on the harness's
+//! [`SpvContextProvider`] returning a hard-coded
+//! `get_platform_activation_height() = 0` — that's safe-by-position
+//! for the platform-address transfer flow because mn_rr activation
+//! on testnet is past any height the verification path compares
+//! against. See the docs on `PLATFORM_ACTIVATION_HEIGHT_TESTNET_SAFE`
+//! in `framework/context_provider.rs` for the full rationale.
+//!
+//! [`SpvContextProvider`]: crate::framework::context_provider::SpvContextProvider
+//!
 //! Marked `#[ignore]` because it requires a live testnet + a
 //! pre-funded bank wallet (see `tests/e2e/README.md` for operator
 //! setup). Run with:
