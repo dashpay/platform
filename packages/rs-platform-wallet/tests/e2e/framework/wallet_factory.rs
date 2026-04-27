@@ -31,6 +31,7 @@ use rand::RngCore;
 use super::harness::E2eContext;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
 use super::signer::SeedBackedPlatformAddressSigner;
+use super::wait_hub::WaitEventHub;
 use super::{FrameworkError, FrameworkResult};
 
 /// DIP-17 default account/key-class used by test wallets — matches
@@ -51,6 +52,11 @@ pub struct TestWallet {
     seed_bytes: [u8; 64],
     pub(crate) wallet: Arc<PlatformWallet>,
     signer: SeedBackedPlatformAddressSigner,
+    /// Process-shared event hub cloned from the [`E2eContext`] at
+    /// construction time. Test helpers (notably
+    /// [`super::wait::wait_for_balance`]) await on the hub's `Notify`
+    /// to wake on real chain / wallet events.
+    wait_hub: Arc<WaitEventHub>,
 }
 
 impl std::fmt::Debug for TestWallet {
@@ -73,6 +79,7 @@ impl TestWallet {
         manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
         seed_bytes: [u8; 64],
         network: Network,
+        wait_hub: Arc<WaitEventHub>,
     ) -> FrameworkResult<Self> {
         let wallet = manager
             .create_wallet_from_seed_bytes(
@@ -93,6 +100,7 @@ impl TestWallet {
             seed_bytes,
             wallet,
             signer,
+            wait_hub,
         })
     }
 
@@ -122,6 +130,13 @@ impl TestWallet {
     /// pass this signer in.
     pub fn address_signer(&self) -> &SeedBackedPlatformAddressSigner {
         &self.signer
+    }
+
+    /// Borrow the process-shared event hub. Used by helpers like
+    /// [`super::wait::wait_for_balance`] to await on chain / wallet
+    /// events instead of polling on a fixed interval.
+    pub fn wait_hub(&self) -> &Arc<WaitEventHub> {
+        &self.wait_hub
     }
 
     /// Return the next unused receive address on the wallet's

@@ -31,7 +31,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use platform_wallet::events::EventHandler;
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::{PlatformEventHandler, PlatformWalletManager, SpvRuntime};
 use tokio::sync::OnceCell;
@@ -45,6 +44,7 @@ use super::panic_hook;
 use super::registry::PersistentTestWalletRegistry;
 use super::sdk;
 use super::spv;
+use super::wait_hub::WaitEventHub;
 use super::workdir;
 use super::{FrameworkError, FrameworkResult};
 
@@ -87,6 +87,11 @@ pub struct E2eContext {
     /// Cancellation token tripped by the panic hook so SPV /
     /// background tasks shut down cleanly.
     pub cancel_token: CancellationToken,
+    /// Process-shared event hub installed as the harness's
+    /// `PlatformEventHandler`. Test wallets clone this `Arc` so
+    /// `wait_for_balance` can wake on real chain / wallet events
+    /// instead of polling the SDK on a fixed interval.
+    pub wait_hub: Arc<WaitEventHub>,
 }
 
 impl E2eContext {
@@ -141,6 +146,14 @@ impl E2eContext {
         &self.cancel_token
     }
 
+    /// Borrow the process-shared event hub. Test wallets clone the
+    /// `Arc` at construction time; helpers like
+    /// [`super::wait::wait_for_balance`] await on the hub's `Notify`
+    /// to wake on real SPV / wallet / platform-address-sync events.
+    pub fn wait_hub(&self) -> &Arc<WaitEventHub> {
+        &self.wait_hub
+    }
+
     /// Build the singleton. Separated from `init` so the
     /// `OnceCell::get_or_try_init` body stays small.
     async fn build() -> FrameworkResult<E2eContext> {
@@ -153,13 +166,14 @@ impl E2eContext {
 
         let sdk = sdk::build_sdk(&config)?;
 
-        // Persister + event handler: tests use no-op variants. The
-        // persister discards changesets (per-suite re-sync is fast
-        // on testnet). The event handler is a noop bridge that
-        // satisfies the trait without doing anything — bank /
-        // tests don't need event callbacks.
+        // Persister + event handler. The persister discards
+        // changesets (per-suite re-sync is fast on testnet). The
+        // event handler is the shared [`WaitEventHub`] — installed
+        // here so test helpers can `await` on real chain / wallet
+        // events instead of polling the SDK on a fixed interval.
         let persister: Arc<NoPlatformPersistence> = Arc::new(NoPlatformPersistence);
-        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let wait_hub = Arc::new(WaitEventHub::new());
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::clone(&wait_hub) as _;
 
         let manager = Arc::new(PlatformWalletManager::new(
             Arc::clone(&sdk),
@@ -212,17 +226,7 @@ impl E2eContext {
             bank,
             registry,
             cancel_token,
+            wait_hub,
         })
     }
 }
-
-/// No-op `PlatformEventHandler` used by the test harness.
-///
-/// The bank / test wallets don't subscribe to SPV events for any
-/// behavioural decision — sync calls are explicit. We still need a
-/// handler to satisfy the `PlatformWalletManager::new` signature.
-#[derive(Debug)]
-struct NoopEventHandler;
-
-impl EventHandler for NoopEventHandler {}
-impl PlatformEventHandler for NoopEventHandler {}

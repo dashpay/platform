@@ -46,6 +46,7 @@ pub mod sdk;
 pub mod signer;
 pub mod spv;
 pub mod wait;
+pub mod wait_hub;
 pub mod wallet_factory;
 pub mod workdir;
 
@@ -56,6 +57,7 @@ pub mod prelude {
     pub use super::config::Config;
     pub use super::harness::E2eContext;
     pub use super::wait::{wait_for, wait_for_balance};
+    pub use super::wait_hub::WaitEventHub;
     pub use super::{setup, FrameworkError, FrameworkResult, SetupGuard};
 }
 
@@ -127,8 +129,13 @@ pub async fn setup() -> FrameworkResult<SetupGuard> {
     // for the registry entry. If creation fails we never persist —
     // there's nothing to sweep.
     let network = ctx.bank().network();
-    let test_wallet =
-        wallet_factory::TestWallet::create(ctx.manager(), seed_bytes, network).await?;
+    let test_wallet = wallet_factory::TestWallet::create(
+        ctx.manager(),
+        seed_bytes,
+        network,
+        std::sync::Arc::clone(ctx.wait_hub()),
+    )
+    .await?;
 
     // Persist the registry entry BEFORE handing the wallet to the
     // test body. Once this returns the entry is durable — a panic
