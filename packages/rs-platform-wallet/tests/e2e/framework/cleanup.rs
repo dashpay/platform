@@ -48,32 +48,41 @@ use super::{FrameworkError, FrameworkResult};
 /// is `dust + fee = 20M`, recovering at least 5M after the fee.
 const SWEEP_DUST_THRESHOLD: Credits = 5_000_000;
 
-/// Approximate fee for a sweep transfer (1- or 2-input → 1-output).
+/// Approximate fee for a sweep transfer (1- to 3-input → 1-output).
 ///
 /// The real fee depends on the platform version and the transition
 /// size; this estimate is only used to decide (a) whether a sweep
-/// is worth attempting and (b) how much to send (the rest stays in
-/// the source address as the fee margin per
-/// [`AddressFundsFeeStrategyStep::DeductFromInput`]).
+/// is worth attempting and (b) how much to leave at the fee-bearer
+/// address as on-chain fee margin per
+/// [`AddressFundsFeeStrategyStep::DeductFromInput`].
 ///
-/// Observed Dash testnet fees in early 2026:
+/// Observed / projected Dash testnet fees, early 2026:
 /// - 1-input → 1-output: ~9.55M credits
-/// - 2-input → 1-output: ~7.00M credits
+/// - 2-input → 1-output: ~20.9M credits (live-observed in Wave 17)
+/// - 3-input → 1-output: ~30M credits (projected via linear scaling)
 ///
-/// 15M provides comfortable headroom up to ~3 inputs without
-/// failing the protocol's `address_balance >= consumed + fee`
-/// check at sweep time.
+/// **The fee scales with input count**, not by a flat margin —
+/// each additional input adds witness + signature bytes that the
+/// protocol fee schedule charges for. Wave 16's prior 15M value
+/// only covered 1-input sweeps and tripped on 2-input teardowns.
+///
+/// 30M covers up to 3 inputs comfortably, which exceeds the
+/// e2e test's normal distribution (typically 1-2 owned
+/// addresses per wallet). Wallets whose fee-bearer address has
+/// less than 30M can't be swept in a single transition and will
+/// sit in the persistent registry until topped up — a deliberate
+/// trade-off vs. silently leaking dust.
 ///
 /// **Latent risk** (deferred — Marvin's QA-003): protocol fee
 /// schedules can change. The long-term fix is computing the
 /// estimate dynamically via the same
 /// `transfer::PlatformAddressWallet::estimate_fee_for_inputs`
-/// the wallet uses internally; that requires lifting the
-/// helper to a small public module-scope fn (or duplicating
-/// the calc here against `AddressFundsTransferTransition::estimate_min_fee`).
+/// the wallet uses internally; that requires lifting the helper
+/// to a small public module-scope fn (or duplicating the calc
+/// here against `AddressFundsTransferTransition::estimate_min_fee`).
 /// Track as a follow-up; until then bump this constant when
-/// testnet fee observations move beyond ~10M.
-const SWEEP_FEE_ESTIMATE: Credits = 15_000_000;
+/// testnet fee observations move beyond ~25M for ≤3 inputs.
+const SWEEP_FEE_ESTIMATE: Credits = 30_000_000;
 
 /// Default per-step timeout for cleanup polls (sync, balance
 /// observation). Matches the plan's 60s default for human-scale
