@@ -251,29 +251,94 @@ Registration converts a UTXO into an asset lock transaction that funds a new ide
 on Platform. The asset lock is created, signed, and broadcast on the Core chain; the
 Platform state transition is sent to DAPI once the asset lock is confirmed.
 
-<!-- TODO: Verify the exact method name on IdentityWallet for identity registration
-     once the full identity flow API is stable. The register_identity method may be
-     on PlatformWallet directly or on IdentityWallet. Cross-check with
-     src/wallet/identity/ and the rs-sdk integration tests. -->
+Registration is handled through `IdentityWallet`, which is accessed via
+`platform_wallet.identity()`. The convenience method funds the identity directly from
+wallet UTXOs:
 
 ```rust
-// Sketch — verify method names against src/wallet/identity/
-use platform_wallet::IdentityFundingMethod;
+use platform_wallet::PlatformWallet;
 
-let funding = IdentityFundingMethod::UseSpecificUtxo(outpoint);
-// wallet.identity.register_identity(funding, keys, sdk).await?;
+let identity = platform_wallet
+    .identity()
+    .register_identity(
+        100_000_000, // amount_duffs
+        0,           // identity_index (BIP-9 hardened path)
+        3,           // key_count
+        None,        // settings (PutSettings)
+    )
+    .await?;
+```
+
+For explicit control over the funding source, use `register_identity_with_funding`:
+
+```rust
+use platform_wallet::{IdentityFundingMethod, PlatformWallet};
+
+let funding = IdentityFundingMethod::FundWithWallet { amount_duffs: 100_000_000 };
+// or: IdentityFundingMethod::UseAssetLock { proof, private_key }
+
+let identity = platform_wallet
+    .identity()
+    .register_identity_with_funding(funding, 0, 3, None)
+    .await?;
+```
+
+For external-signer setups (hardware wallets, watch-only wallets, or iOS/Swift
+integrations) use `register_identity_with_funding_external_signer`. This is the
+**recommended path** for new code — the internal `IdentitySigner` variant is being
+deprecated due to incompatibility with watch-only wallets and potential Tokio
+worker deadlocks:
+
+```rust
+use platform_wallet::{IdentityFundingMethod, PlatformWallet};
+use dpp::identity::signer::Signer;
+
+let funding = IdentityFundingMethod::FundWithWallet { amount_duffs: 100_000_000 };
+
+let identity = platform_wallet
+    .identity()
+    .register_identity_with_funding_external_signer(
+        funding,
+        0,      // identity_index
+        3,      // key_count
+        &my_signer,
+        None,   // settings
+    )
+    .await?;
 ```
 
 ### 2. Top Up Credits
 
-Once an identity exists, you can top it up by burning another UTXO:
-
-<!-- TODO: Verify TopUpFundingMethod variants and the top_up method signature
-     against src/wallet/identity/. -->
+Once an identity exists, you can add more credits to it by locking another UTXO. The
+convenience method selects UTXOs automatically:
 
 ```rust
-use platform_wallet::TopUpFundingMethod;
-// wallet.identity.top_up_identity(identity_id, TopUpFundingMethod::UseAvailableUtxo, sdk).await?;
+use platform_wallet::PlatformWallet;
+
+platform_wallet
+    .identity()
+    .top_up_identity(
+        &identity_id,  // &Identifier
+        1,             // topup_index (incrementing per top-up)
+        50_000_000,    // amount_duffs
+        None,          // settings
+    )
+    .await?;
+```
+
+For explicit control over the funding source, use `top_up_identity_with_funding`.
+`TopUpFundingMethod` mirrors `IdentityFundingMethod` with the same two variants:
+
+```rust
+use platform_wallet::{TopUpFundingMethod, PlatformWallet};
+
+let funding = TopUpFundingMethod::FundWithWallet { amount_duffs: 50_000_000 };
+// or: TopUpFundingMethod::UseAssetLock { proof, private_key }
+
+platform_wallet
+    .identity()
+    .top_up_identity_with_funding(&identity_id, funding, 1, None)
+    .await?;
 ```
 
 ### 3. Withdraw Credits
@@ -281,9 +346,48 @@ use platform_wallet::TopUpFundingMethod;
 Credits can be withdrawn back to the Core chain as Dash. The withdrawal creates a
 Platform state transition; the Core chain processes it in the next withdrawal cycle.
 
-<!-- TODO: Confirm the withdrawal method signature once the withdrawal flow is
-     integrated end-to-end in PlatformWallet. Check src/wallet/identity/ and
-     the rs-sdk WithdrawFromIdentity state transition. -->
+The convenience method looks up the identity in the local `IdentityManager` and signs
+using the wallet's internal signer:
+
+```rust
+use platform_wallet::PlatformWallet;
+use dashcore::Address as DashAddress;
+
+platform_wallet
+    .identity()
+    .withdraw_credits(
+        &identity_id,  // &Identifier
+        10_000_000,    // amount (in platform credits)
+        &to_address,   // &DashAddress (Core P2PKH address)
+        None,          // settings
+    )
+    .await?;
+```
+
+For external-signer setups, use `withdraw_credits_with_external_signer`. This is the
+**recommended path** for new code — the same internal `IdentitySigner` deprecation
+applies here as for registration:
+
+```rust
+use platform_wallet::PlatformWallet;
+use dashcore::Address as DashAddress;
+
+platform_wallet
+    .identity()
+    .withdraw_credits_with_external_signer(
+        &identity_id,
+        10_000_000,
+        &to_address,
+        &my_signer,
+        None,
+    )
+    .await?;
+```
+
+The `withdraw_credits_with_signer` variant is available for callers that manage
+identities outside the `IdentityManager` (for example, evo-tool's
+`QualifiedIdentity`): it accepts an `&Identity` and asset-lock key directly and
+returns the remaining credit balance as `u64`.
 
 ### Asset Lock Lifecycle
 
