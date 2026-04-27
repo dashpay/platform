@@ -523,18 +523,18 @@ public class PlatformWalletPersistenceHandler {
                 // restamps the network on return anyway).
                 let resolvedWalletId = entry.walletId ?? walletId
                 let network = walletNetwork(walletId: resolvedWalletId) ?? .testnet
-                // `entry.identityIndex == Some(_)` means the identity
-                // was derived by this wallet (BIP-9 HD slot recorded);
-                // `nil` means it's an out-of-wallet observation
-                // (DashPay contact, payment recipient, etc.). That's
-                // the same boolean Drive's "is this identity owned by
-                // me" check needs — it just hadn't been wired into the
-                // persisted column.
+                // `isLocal` is the "Local Only" badge in the UI —
+                // identities the user created locally but Platform
+                // hasn't confirmed yet. The persister fires *after*
+                // Platform has confirmed, so any row created here
+                // is by definition on-network. Wallet ownership
+                // travels on `row.wallet` (the relationship set
+                // below), not on this flag.
                 row = PersistentIdentity(
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
                     revision: Int64(bitPattern: entry.revision),
-                    isLocal: entry.identityIndex != nil,
+                    isLocal: false,
                     network: network
                 )
                 backgroundContext.insert(row)
@@ -563,14 +563,6 @@ public class PlatformWalletPersistenceHandler {
             // index 0 if the row were ever rebound.
             if let idx = entry.identityIndex {
                 row.identityIndex = idx
-                // Self-heal rows persisted before isLocal was wired
-                // to identityIndex — those got `false` even though
-                // they're wallet-derived. The presence of an HD
-                // index in the snapshot is authoritative; flip the
-                // flag whenever we see one.
-                if !row.isLocal {
-                    row.isLocal = true
-                }
             }
             if let label = entry.label {
                 row.alias = label

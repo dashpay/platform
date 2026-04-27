@@ -206,9 +206,15 @@ extension PersistentIdentity {
         }
     }
 
+    /// Identities owned by *some* wallet on this device — i.e. ones
+    /// the persister attached to a `PersistentWallet` via the
+    /// `wallet` relationship. Use this for views that should only
+    /// surface identities the user can act as / sign for. The flag
+    /// `isLocal` is unrelated — that drives the "Local Only" /
+    /// "On Network" badge, not wallet ownership.
     public static var localIdentitiesPredicate: Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
-            identity.isLocal == true
+            identity.wallet != nil
         }
     }
 
@@ -236,10 +242,15 @@ extension PersistentIdentity {
         }
     }
 
+    /// Network-scoped variant of [`localIdentitiesPredicate`] —
+    /// wallet-owned identities on the given network. Used by the
+    /// recipient pickers, the "Acting as" picker, and any view that
+    /// needs to restrict to identities the user controls on a
+    /// specific network.
     public static func localIdentitiesPredicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
         let target = network.rawValue
         return #Predicate<PersistentIdentity> { identity in
-            identity.isLocal == true && identity.networkRaw == target
+            identity.wallet != nil && identity.networkRaw == target
         }
     }
 
