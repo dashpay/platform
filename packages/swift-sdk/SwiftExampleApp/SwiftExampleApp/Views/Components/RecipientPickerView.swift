@@ -67,7 +67,7 @@ struct RecipientPickerView: View {
         self.exclude = exclude
         self._localIdentities = Query(
             filter: PersistentIdentity.localIdentitiesPredicate(network: network),
-            sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.identityIdString)]
+            sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
         )
     }
 

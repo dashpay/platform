@@ -661,12 +661,12 @@ struct TokenActionPermissionsView: View {
         if let resolvedNetwork {
             self._localIdentities = Query(
                 filter: PersistentIdentity.localIdentitiesPredicate(network: resolvedNetwork),
-                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.identityIdString)]
+                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
             )
         } else {
             self._localIdentities = Query(
                 filter: PersistentIdentity.localIdentitiesPredicate,
-                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.identityIdString)]
+                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
             )
         }
     }
