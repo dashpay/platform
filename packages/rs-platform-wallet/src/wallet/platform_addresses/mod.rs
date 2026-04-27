@@ -16,7 +16,7 @@ mod withdrawal;
 pub use provider::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
 };
-pub use wallet::{AddressDerivationInfo, PlatformAddressWallet};
+pub use wallet::PlatformAddressWallet;
 
 /// Specifies how input addresses are selected for a transaction.
 pub enum InputSelection {

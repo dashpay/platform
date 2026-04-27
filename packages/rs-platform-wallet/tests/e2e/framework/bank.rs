@@ -85,11 +85,14 @@ impl BankWallet {
         }
         // bip39's `Mnemonic::parse` accepts every BIP-39 wordlist
         // automatically; key-wallet's typed loader is then handled
-        // inside `create_wallet_from_mnemonic`.
-        let _validated: Bip39Mnemonic =
+        // inside `create_wallet_from_mnemonic`. We also derive the
+        // 64-byte seed here so the seed-backed address signer can
+        // pre-derive its key cache in [`Self::build_signer`].
+        let validated: Bip39Mnemonic =
             config.bank_mnemonic.parse().map_err(|err: bip39::Error| {
                 FrameworkError::Bank(format!("invalid BIP-39 mnemonic: {err}"))
             })?;
+        let seed_bytes = validated.to_seed("");
 
         let network = parse_network(&config.network)?;
         let wallet = manager
@@ -149,7 +152,7 @@ impl BankWallet {
             );
         }
 
-        let signer = SeedBackedPlatformAddressSigner::new(Arc::clone(&wallet));
+        let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
         Ok(Self {
             wallet,
             signer,

@@ -95,7 +95,7 @@ impl TestWallet {
         // `next_unused_address` without surprise lazy work inside the
         // test body.
         wallet.platform().initialize().await;
-        let signer = SeedBackedPlatformAddressSigner::new(Arc::clone(&wallet));
+        let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
         Ok(Self {
             seed_bytes,
             wallet,

@@ -1,144 +1,153 @@
 //! Seed-backed `Signer<PlatformAddress>` adapter.
 //!
-//! Bridges DPP's [`Signer`] trait to a `platform_wallet::PlatformWallet`
-//! by:
+//! At construction time the signer eagerly derives every key in the
+//! `account=0, key_class=0` (clear-funds) gap window from the
+//! provided seed bytes via the DIP-17 path
+//! `m/9'/coin_type'/17'/account'/key_class'/index`, computes each
+//! address (RIPEMD160(SHA256(compressed pubkey))), and stores the
+//! 32-byte ECDSA secret keyed by 20-byte address hash. Signing
+//! requests then become a synchronous map lookup — no wallet round
+//! trip, no async derivation in the hot path, and `can_sign_with`
+//! reports honestly (it's a real cache check, not a permissive
+//! `true`).
 //!
-//! 1. Looking up `(account_index, key_class, key_index)` for an
-//!    address via
-//!    [`PlatformAddressWallet::address_derivation_info`] (the
-//!    accessor added in Wave 1).
-//! 2. Deriving the matching ECDSA private key from the wallet's
-//!    seed at the DIP-17 path
-//!    `m/9'/coin_type'/17'/account'/key_class'/index`.
-//! 3. Caching the 32-byte secret in an internal map keyed by
-//!    20-byte address hash so subsequent `sign` calls skip the
-//!    derivation walk.
-//!
-//! Wave 3a delivers the full implementation. Wave 4 wires
-//! `wallet_factory::TestWallet::address_signer` to return `&Self`.
+//! Keeping the keying material entirely on the test-framework side
+//! also keeps the upstream `rs-platform-wallet` production surface
+//! free of any test-only convenience accessors — the wallet doesn't
+//! expose seed bytes or per-address derivation info, and the
+//! framework doesn't need it to sign.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dpp::dashcore::signer as core_signer;
 use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
+use dpp::util::hash::ripemd160_sha256;
 use dpp::ProtocolError;
-use key_wallet::{AccountType, ChildNumber};
+use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+use key_wallet::{AccountType, ChildNumber, Network};
 use parking_lot::Mutex;
-use platform_wallet::PlatformWallet;
-use std::collections::HashMap;
 
-/// Cached signer that derives ECDSA private keys on demand from the
-/// wallet's seed. The wallet itself is the source of truth for
-/// derivation paths and seed material — the signer just walks DIP-17
-/// to materialise per-address secrets.
+use super::{FrameworkError, FrameworkResult};
+
+/// DIP-17 default account / key-class for clear-funds platform
+/// payments. Mirrors `WalletAccountCreationOptions::Default` which
+/// the e2e bank and test wallets both use.
+const DEFAULT_ACCOUNT_INDEX: u32 = 0;
+const DEFAULT_KEY_CLASS: u32 = 0;
+
+/// Default gap window pre-derived at construction. 20 keys is the
+/// `key-wallet` `DIP17_GAP_LIMIT` and matches the e2e harness's
+/// per-account address pool default. The current test scope uses
+/// at most 2 fresh receive addresses per wallet — 20 is comfortably
+/// above the working set.
+pub const DEFAULT_GAP_LIMIT: u32 = 20;
+
+/// Pre-derived address keymap. Values are 32-byte secp256k1 secret
+/// keys keyed by the 20-byte P2PKH address hash. The map is built
+/// once in [`SeedBackedPlatformAddressSigner::new`]; signing
+/// requests then become a synchronous `HashMap::get` away from a
+/// real ECDSA signature.
+type AddressKeyMap = HashMap<[u8; 20], [u8; 32]>;
+
+/// Signer that resolves `Signer<PlatformAddress>::sign` against a
+/// seed-derived key cache.
 ///
-/// Cloning the signer is cheap (`Arc<PlatformWallet>` clone + a
-/// shared cache), so test flows that need multiple in-flight signers
-/// for the same wallet share one cache by cloning.
+/// Construction is fallible (the seed must produce a valid root
+/// extended private key + DIP-17 derivation path); after that the
+/// signer is fully synchronous on the hot path.
 #[derive(Clone)]
 pub struct SeedBackedPlatformAddressSigner {
-    /// The wallet whose seed material backs this signer.
-    wallet: Arc<PlatformWallet>,
-    /// Cache: address hash -> 32-byte secp256k1 secret. Populated
-    /// lazily by [`SeedBackedPlatformAddressSigner::ensure_key`]; a
-    /// `parking_lot::Mutex` is used because the critical section
-    /// is purely synchronous (lookup + memcpy).
-    cache: Arc<Mutex<HashMap<[u8; 20], [u8; 32]>>>,
+    /// `Arc` so the signer can be cloned cheaply (e.g. one bank
+    /// signer + N test-wallet signers all share the same backing
+    /// map type without re-keying it). The map itself is read-only
+    /// after construction; the `Mutex` is just here so we can
+    /// extend it later if a future test exceeds the gap window.
+    cache: Arc<Mutex<AddressKeyMap>>,
 }
 
 impl SeedBackedPlatformAddressSigner {
-    /// Build a new signer backed by `wallet`'s seed material.
-    pub fn new(wallet: Arc<PlatformWallet>) -> Self {
-        Self {
-            wallet,
-            cache: Arc::new(Mutex::new(HashMap::new())),
-        }
+    /// Build a new signer by pre-deriving every clear-funds address
+    /// in the gap window for `seed_bytes` on `network`.
+    ///
+    /// `gap_limit` controls how many leaf indices `0..gap_limit`
+    /// are pre-derived. [`DEFAULT_GAP_LIMIT`] (20) is plenty for
+    /// the current test scope; bump it via [`Self::new_with_gap`]
+    /// if a future test needs a wider window.
+    pub fn new(seed_bytes: &[u8; 64], network: Network) -> FrameworkResult<Self> {
+        Self::new_with_gap(seed_bytes, network, DEFAULT_GAP_LIMIT)
     }
 
-    /// Ensure the cache holds the secret for `addr`, deriving it
-    /// from the seed if necessary.
-    ///
-    /// Returns `Ok(secret)` after either a cache hit or a successful
-    /// derivation; `Err` propagates as a [`ProtocolError`] so the
-    /// `Signer<PlatformAddress>` trait shape stays clean.
-    async fn ensure_key(&self, addr: &PlatformAddress) -> Result<[u8; 32], ProtocolError> {
-        let hash = match addr {
-            PlatformAddress::P2pkh(h) => *h,
-            PlatformAddress::P2sh(_) => {
-                return Err(ProtocolError::Generic(
-                    "SeedBackedPlatformAddressSigner: P2SH addresses are not supported".into(),
-                ));
-            }
-        };
+    /// Same as [`Self::new`] but with an explicit gap-window size.
+    pub fn new_with_gap(
+        seed_bytes: &[u8; 64],
+        network: Network,
+        gap_limit: u32,
+    ) -> FrameworkResult<Self> {
+        let root_priv = RootExtendedPrivKey::new_master(seed_bytes).map_err(|err| {
+            FrameworkError::Wallet(format!(
+                "SeedBackedPlatformAddressSigner: invalid seed for root xpriv: {err}"
+            ))
+        })?;
+        let root_xpriv = root_priv.to_extended_priv_key(network);
 
-        // Fast path — hit while holding the lock for as little as
-        // possible. The HashMap access is lock-free w.r.t. async, so
-        // we never `await` while holding the parking_lot mutex.
-        if let Some(secret) = self.cache.lock().get(&hash).copied() {
-            return Ok(secret);
+        let account_path = AccountType::PlatformPayment {
+            account: DEFAULT_ACCOUNT_INDEX,
+            key_class: DEFAULT_KEY_CLASS,
         }
+        .derivation_path(network)
+        .map_err(|err| {
+            FrameworkError::Wallet(format!(
+                "SeedBackedPlatformAddressSigner: derivation path: {err}"
+            ))
+        })?;
 
-        // Cold path: resolve derivation coords, walk the path
-        // against the wallet's root key, cache and return.
-        let info = self
-            .wallet
-            .platform()
-            .address_derivation_info(addr)
-            .await
-            .ok_or_else(|| {
-                ProtocolError::Generic(format!(
-                    "SeedBackedPlatformAddressSigner: address {:?} not owned by wallet {}",
-                    addr,
-                    hex::encode(self.wallet.wallet_id())
+        let secp = Secp256k1::new();
+        let mut cache = AddressKeyMap::with_capacity(gap_limit as usize);
+        for index in 0..gap_limit {
+            let leaf = ChildNumber::from_normal_idx(index).map_err(|err| {
+                FrameworkError::Wallet(format!(
+                    "SeedBackedPlatformAddressSigner: invalid leaf index {index}: {err}"
                 ))
             })?;
+            // `DerivationPath::extend` returns a fresh path with
+            // the leaf appended; the account path is reused
+            // across iterations (it has no mutating accessor).
+            let leaf_path = account_path.extend([leaf]);
+            let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
+                FrameworkError::Wallet(format!(
+                    "SeedBackedPlatformAddressSigner: derive_priv at index {index}: {err}"
+                ))
+            })?;
+            let secret: SecretKey = xpriv.private_key;
+            let pubkey: PublicKey = PublicKey::from_secret_key(&secp, &secret);
+            // 33-byte compressed public key → RIPEMD160(SHA256(.))
+            // → 20-byte P2PKH address hash. Matches dashcore's
+            // `PrivateKey::public_key().pubkey_hash()` shape used
+            // by `simple-signer` and the SDK's address-funds path.
+            let pkh = ripemd160_sha256(&pubkey.serialize());
+            cache.insert(pkh, secret.secret_bytes());
+        }
+        Ok(Self {
+            cache: Arc::new(Mutex::new(cache)),
+        })
+    }
 
-        let network = self.wallet.sdk().network;
-        let secret = {
-            let wm = self.wallet.wallet_manager().read().await;
-            let wallet = wm.get_wallet(&self.wallet.wallet_id()).ok_or_else(|| {
-                ProtocolError::Generic(format!(
-                    "SeedBackedPlatformAddressSigner: wallet {} not in WalletManager",
-                    hex::encode(self.wallet.wallet_id())
-                ))
-            })?;
-            let mut path = AccountType::PlatformPayment {
-                account: info.account_index,
-                key_class: info.key_class,
-            }
-            .derivation_path(network)
-            .map_err(|err| {
-                ProtocolError::Generic(format!(
-                    "SeedBackedPlatformAddressSigner: derivation path: {err}"
-                ))
-            })?;
-            // DIP-17 leaves are non-hardened.
-            path.push(ChildNumber::from_normal_idx(info.key_index).map_err(|err| {
-                ProtocolError::Generic(format!(
-                    "SeedBackedPlatformAddressSigner: invalid leaf index {}: {err}",
-                    info.key_index
-                ))
-            })?);
-            let key = wallet.derive_private_key(&path).map_err(|err| {
-                ProtocolError::Generic(format!(
-                    "SeedBackedPlatformAddressSigner: derive_private_key: {err}"
-                ))
-            })?;
-            key.secret_bytes()
-        };
-
-        self.cache.lock().insert(hash, secret);
-        Ok(secret)
+    /// Number of pre-derived keys currently in the cache. Useful
+    /// for diagnostic logs and for tests that want to assert on
+    /// the gap window without poking at the internals.
+    pub fn cached_key_count(&self) -> usize {
+        self.cache.lock().len()
     }
 }
 
 impl std::fmt::Debug for SeedBackedPlatformAddressSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SeedBackedPlatformAddressSigner")
-            .field("wallet_id", &hex::encode(self.wallet.wallet_id()))
             .field("cache_size", &self.cache.lock().len())
             .finish()
     }
@@ -147,7 +156,7 @@ impl std::fmt::Debug for SeedBackedPlatformAddressSigner {
 #[async_trait]
 impl Signer<PlatformAddress> for SeedBackedPlatformAddressSigner {
     async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        let secret = self.ensure_key(key).await?;
+        let secret = lookup_secret(&self.cache, key)?;
         let signature = core_signer::sign(data, &secret)?;
         Ok(signature.to_vec().into())
     }
@@ -167,19 +176,37 @@ impl Signer<PlatformAddress> for SeedBackedPlatformAddressSigner {
     }
 
     fn can_sign_with(&self, key: &PlatformAddress) -> bool {
-        // Trait is sync; `address_derivation_info` is async. Treat
-        // the signer as universally capable of signing P2PKH and
-        // let `sign` itself surface ownership errors — the SDK
-        // still proceeds correctly because it delegates to `sign`
-        // for the actual proof. Cached entries short-circuit.
         match key {
-            PlatformAddress::P2pkh(hash) => {
-                if self.cache.lock().contains_key(hash) {
-                    return true;
-                }
-                true
-            }
+            PlatformAddress::P2pkh(hash) => self.cache.lock().contains_key(hash),
             PlatformAddress::P2sh(_) => false,
         }
     }
+}
+
+/// Resolve a [`PlatformAddress`] to its pre-derived 32-byte secret
+/// key, or surface a [`ProtocolError`] naming the missing address.
+///
+/// `ProtocolError` is large (`clippy::result_large_err`) but the
+/// crate as a whole already allows it (`#![allow(clippy::result_large_err)]`
+/// in `src/lib.rs`); the test binary doesn't share that root attr,
+/// so we silence the lint locally rather than box every call site.
+#[allow(clippy::result_large_err)]
+fn lookup_secret(
+    cache: &Mutex<AddressKeyMap>,
+    addr: &PlatformAddress,
+) -> Result<[u8; 32], ProtocolError> {
+    let hash = match addr {
+        PlatformAddress::P2pkh(h) => h,
+        PlatformAddress::P2sh(_) => {
+            return Err(ProtocolError::Generic(
+                "SeedBackedPlatformAddressSigner: P2SH addresses are not supported".into(),
+            ));
+        }
+    };
+    cache.lock().get(hash).copied().ok_or_else(|| {
+        ProtocolError::Generic(format!(
+            "SeedBackedPlatformAddressSigner: address {} not in pre-derived gap window",
+            hex::encode(hash)
+        ))
+    })
 }

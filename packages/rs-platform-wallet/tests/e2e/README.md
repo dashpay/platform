@@ -267,8 +267,8 @@ async fn transfer_between_two_platform_addresses() {
         .unwrap();
 
     let addr_2 = s.test_wallet.next_unused_address().await.unwrap();
-    let cs = s.test_wallet
-        .transfer(std::iter::once((addr_2.clone(), 10_000_000)).collect())
+    s.test_wallet
+        .transfer(std::iter::once((addr_2, 10_000_000)).collect())
         .await
         .unwrap();
 
@@ -276,9 +276,15 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .unwrap();
 
+    // The production wallet does not surface a `fee_paid` accessor;
+    // derive it from the balance delta. `received + remaining + fee
+    // == funded`, so `fee = funded - received - remaining`.
     let balances = s.test_wallet.balances().await;
-    assert_eq!(balances[&addr_2], 10_000_000);
-    assert_eq!(balances[&addr_1], 50_000_000 - 10_000_000 - cs.fee_paid());
+    let received = balances.get(&addr_2).copied().unwrap_or(0);
+    let remaining = balances.get(&addr_1).copied().unwrap_or(0);
+    let fee = 50_000_000_u64.saturating_sub(received).saturating_sub(remaining);
+    assert_eq!(received, 10_000_000);
+    assert!(fee > 0 && fee < 10_000_000);
 
     s.teardown().await.expect("teardown failed");
 }

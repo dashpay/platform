@@ -22,8 +22,11 @@
 //!    `next_unused_address` twice back-to-back before any sync
 //!    would return the same address. (Discovered live in Wave 8.)
 //! 4. Test wallet self-transfers 10_000_000 credits to `addr_2`.
-//! 5. Assert balances against the changeset's reported `fee_paid`
-//!    (the public accessor added in Wave 1, commit `b5ed6e45d7`).
+//! 5. Assert balances and derive the fee from the balance delta
+//!    `FUNDING_CREDITS - received - remaining` (the production
+//!    wallet does not surface a `fee_paid` accessor — keeping the
+//!    test verification on observed balances mirrors what a real
+//!    consumer would do on-chain).
 //! 6. `setup_guard.teardown()` sweeps remaining funds back to the
 //!    bank and removes the registry entry.
 //!
@@ -116,14 +119,10 @@ async fn transfer_between_two_platform_addresses() {
 
     // Step 4: self-transfer addr_1 -> addr_2.
     let outputs: BTreeMap<_, _> = std::iter::once((addr_2, TRANSFER_CREDITS)).collect();
-    let cs = s
-        .test_wallet
+    s.test_wallet
         .transfer(outputs)
         .await
         .expect("self-transfer");
-
-    let fee = cs.fee_paid();
-    assert!(fee > 0, "transfer should report a non-zero fee (got {fee})");
 
     wait_for_balance(&s.test_wallet, &addr_2, TRANSFER_CREDITS, STEP_TIMEOUT)
         .await
@@ -132,24 +131,48 @@ async fn transfer_between_two_platform_addresses() {
     // Step 5: assert final balances. Re-sync once more so the
     // cached view reflects the post-transfer state across BOTH
     // addresses (the wait above only blocked on addr_2 reaching
-    // its target).
+    // its target). Then derive the fee from the balance delta
+    // (FUNDING_CREDITS - received - remaining): the production
+    // wallet does not surface a `fee_paid` accessor, so reading
+    // it from observed balances keeps the assertion close to what
+    // a real consumer would verify on-chain.
     s.test_wallet
         .sync_balances()
         .await
         .expect("post-transfer sync");
     let balances = s.test_wallet.balances().await;
-    let addr_2_balance = balances.get(&addr_2).copied().unwrap_or(0);
-    let addr_1_balance = balances.get(&addr_1).copied().unwrap_or(0);
+    let received = balances.get(&addr_2).copied().unwrap_or(0);
+    let remaining = balances.get(&addr_1).copied().unwrap_or(0);
+    let fee = FUNDING_CREDITS
+        .saturating_sub(received)
+        .saturating_sub(remaining);
+    tracing::info!(
+        target: "platform_wallet::e2e::cases::transfer",
+        ?addr_1,
+        ?addr_2,
+        funded = FUNDING_CREDITS,
+        received,
+        remaining,
+        fee,
+        "post-transfer balance snapshot"
+    );
 
     assert_eq!(
-        addr_2_balance, TRANSFER_CREDITS,
+        received, TRANSFER_CREDITS,
         "addr_2 must hold exactly the transferred amount"
     );
-    assert_eq!(
-        addr_1_balance,
-        FUNDING_CREDITS - TRANSFER_CREDITS - fee,
-        "addr_1 must equal funded - transferred - fee (fee={fee})"
+    assert!(
+        fee > 0,
+        "transfer must charge a non-zero fee (received={received}, remaining={remaining})"
     );
+    assert!(
+        fee < TRANSFER_CREDITS,
+        "fee implausibly high: {fee} >= TRANSFER_CREDITS ({TRANSFER_CREDITS})"
+    );
+    // `remaining == FUNDING_CREDITS - TRANSFER_CREDITS - fee` falls
+    // out of the fee derivation by construction once the two
+    // assertions above hold; explicitly stating it would be a
+    // tautology, so we don't.
 
     // Step 6: explicit teardown. Sweeps remaining funds back to the
     // bank and removes the registry entry.

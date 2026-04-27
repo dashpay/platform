@@ -138,7 +138,7 @@ async fn sweep_one(
         .sync_balances(None)
         .await
         .map_err(wallet_err)?;
-    let signer = SeedBackedPlatformAddressSigner::new(Arc::clone(&wallet));
+    let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
 
     let total = wallet.platform().total_credits().await;
     if total <= SWEEP_DUST_THRESHOLD.saturating_add(SWEEP_FEE_ESTIMATE) {
