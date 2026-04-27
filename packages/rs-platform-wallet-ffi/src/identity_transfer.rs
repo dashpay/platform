@@ -1,8 +1,6 @@
 //! FFI bindings for identity → identity credit transfer + identity →
 //! platform-address credit transfer driven by an external `SignerHandle`.
 //!
-//! Replaces the panic-prone `IdentitySigner` path on
-//! [`IdentityWallet::transfer_credits`](platform_wallet::IdentityWallet::transfer_credits).
 //! Every identity-state-transition signature crosses the FFI through
 //! the supplied `signer_handle` (typically the iOS-side `KeychainSigner`),
 //! so the wallet's own seed never participates Rust-side. This unblocks

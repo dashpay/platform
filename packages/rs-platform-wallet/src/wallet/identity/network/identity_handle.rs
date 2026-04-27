@@ -40,7 +40,6 @@ use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::wallet::signer::IdentitySigner;
 
 /// Default gap limit for identity discovery scanning.
 ///
@@ -302,20 +301,6 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Create an [`IdentitySigner`] for the given identity index.
-    ///
-    /// The returned signer implements `Signer<IdentityPublicKey>` and derives
-    /// private keys on-the-fly from the wallet using the DIP-9 identity
-    /// authentication path.
-    pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
-        IdentitySigner::new(
-            self.wallet_manager.clone(),
-            self.wallet_id,
-            self.sdk.network,
-            identity_index,
-        )
-    }
-
     /// Build the DIP-9 identity authentication derivation path.
     ///
     /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`
@@ -431,8 +416,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Derive the ECDH private key for the given identity's encryption
     /// key (DashPay ECDH).
     ///
-    /// Uses the same DIP-9 derivation as [`IdentitySigner`] but returns
-    /// the raw `secp256k1::SecretKey` needed for ECDH with a contact.
+    /// Uses the DIP-9 identity-authentication derivation path and
+    /// returns the raw `secp256k1::SecretKey` needed for ECDH with a
+    /// contact.
     ///
     /// The encryption key must be `ECDSA_SECP256K1` or `ECDSA_HASH160`;
     /// other key types are not supported for ECDH derivation.

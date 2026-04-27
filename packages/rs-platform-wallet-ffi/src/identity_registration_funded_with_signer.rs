@@ -1,9 +1,6 @@
 //! Asset-lock-funded identity registration driven by an external
 //! `SignerHandle`.
 //!
-//! Replaces the panic-prone `IdentitySigner` path on
-//! [`IdentityWallet::register_identity_with_funding`](platform_wallet::IdentityWallet::register_identity_with_funding).
-//!
 //! The single entry point —
 //! [`platform_wallet_register_identity_with_funding_signer`] — wraps
 //! [`IdentityWallet::register_identity_with_funding_external_signer`](platform_wallet::IdentityWallet::register_identity_with_funding_external_signer)

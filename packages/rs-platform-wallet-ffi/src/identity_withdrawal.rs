@@ -1,8 +1,6 @@
 //! FFI bindings for identity → Core address withdrawal driven by an
 //! external `SignerHandle`.
 //!
-//! Replaces the panic-prone `IdentitySigner` path on
-//! [`IdentityWallet::withdraw_credits`](platform_wallet::IdentityWallet::withdraw_credits).
 //! The withdrawal state-transition signature crosses the FFI through
 //! the supplied `signer_handle` (typically the iOS-side `KeychainSigner`).
 

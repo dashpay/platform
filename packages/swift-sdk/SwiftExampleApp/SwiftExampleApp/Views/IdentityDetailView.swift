@@ -1205,11 +1205,8 @@ struct DashPayProfileEditorView: View {
                 // Construct a fresh `KeychainSigner` for this submit
                 // pass the same way `RegisterNameView.registerName()`
                 // does. Routes the document state-transition signature
-                // through the iOS Keychain instead of the legacy
-                // wallet-internal `IdentitySigner`, so watch-only
-                // wallets are unblocked end-to-end and the Tokio
-                // worker no longer risks the inner-lock-deadlock the
-                // legacy path hit.
+                // through the iOS Keychain so watch-only wallets work
+                // end-to-end.
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 let saved: DashPayProfile
                 if isCreating {

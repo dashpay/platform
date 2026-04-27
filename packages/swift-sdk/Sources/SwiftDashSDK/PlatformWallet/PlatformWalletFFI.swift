@@ -374,9 +374,9 @@ func platform_wallet_update_dashpay_profile(
 /// `IdentityWallet::create_profile_with_external_signer`; `false`
 /// calls `update_profile_with_external_signer`. Both route the
 /// document state-transition signature through the supplied
-/// `signer_handle` (typically `KeychainSigner.handle`) instead of an
-/// internal `IdentitySigner`. Required for watch-only wallets and
-/// the architecturally correct path per `swift-sdk/CLAUDE.md`.
+/// `signer_handle` (typically `KeychainSigner.handle`). Required for
+/// watch-only wallets and the architecturally correct path per
+/// `swift-sdk/CLAUDE.md`.
 @_silgen_name("platform_wallet_create_or_update_dashpay_profile_with_signer")
 func platform_wallet_create_or_update_dashpay_profile_with_signer(
     _ wallet_handle: Handle,
@@ -596,12 +596,10 @@ func platform_wallet_register_dpns_name(
 /// Mirrors `platform_wallet_register_dpns_name_with_signer` from Rust
 /// (`packages/rs-platform-wallet-ffi/src/dpns.rs`).
 ///
-/// Same as `platform_wallet_register_dpns_name` but signing is routed
-/// through the supplied `signer_handle` (typically `KeychainSigner.handle`)
-/// instead of through a wallet-derived `IdentitySigner`. Required for
-/// watch-only wallets and the path that avoids the inner-lock-deadlock
-/// the legacy variant hit when its derivation path tried to
-/// `blocking_read` the wallet manager from inside a Tokio worker.
+/// Signing is routed through the supplied `signer_handle` (typically
+/// `KeychainSigner.handle`). Required for watch-only wallets where
+/// the seed lives in iOS Keychain rather than the in-process
+/// `WalletManager`.
 ///
 /// The wallet handle is still required so Rust can look up the
 /// identity from the in-process `IdentityManager` and pick the
@@ -898,10 +896,8 @@ func platform_wallet_send_dashpay_payment(
 ) -> PlatformWalletFFIResult
 
 /// Mirrors `platform_wallet_send_contact_request_with_signer` from
-/// Rust. Same shape as `platform_wallet_send_contact_request` but the
-/// document state-transition signature is routed through
-/// `signer_handle` (typically `KeychainSigner.handle`) instead of an
-/// internal `IdentitySigner`.
+/// Rust. The document state-transition signature is routed through
+/// `signer_handle` (typically `KeychainSigner.handle`).
 @_silgen_name("platform_wallet_send_contact_request_with_signer")
 func platform_wallet_send_contact_request_with_signer(
     _ wallet_handle: Handle,
