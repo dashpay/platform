@@ -6,7 +6,9 @@ use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransitionStructureValidation;
+use crate::state_transition::{
+    first_consensus_error_as_protocol_error, StateTransitionStructureValidation,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
@@ -56,9 +58,8 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         // Validate structure before .into() conversion and signing, since this transition
         // uses sign_external on the StateTransition rather than setting witnesses on the V0 struct.
         let validation_result = transition_v0.validate_structure(platform_version);
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         let mut transition: StateTransition = transition_v0.into();

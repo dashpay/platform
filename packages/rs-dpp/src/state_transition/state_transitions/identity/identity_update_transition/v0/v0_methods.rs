@@ -29,7 +29,10 @@ use crate::state_transition::identity_update_transition::v0::IdentityUpdateTrans
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
+use crate::state_transition::{
+    first_consensus_error_as_protocol_error, GetDataContractSecurityLevelRequirementFn,
+    StateTransition,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
 use crate::{
@@ -66,10 +69,8 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
                 false, // not in create_identity context
                 platform_version,
             )?;
-        if !validation_result.is_valid() {
-            // Return the first validation error as a ProtocolError
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         let mut identity_update_transition = IdentityUpdateTransitionV0 {

@@ -924,6 +924,12 @@ pub async fn create_identity_credit_transfer_transition(
 /// This function transfers credits from the sender's identity to newly created addresses.
 /// The total amount is distributed evenly among the specified number of output addresses.
 ///
+/// Each recipient output must be at least
+/// `platform_version.dpp.state_transitions.address_funds.min_output_amount`
+/// (client-side validation rejects smaller outputs). The requested `output_count`
+/// is therefore capped by `total_amount / min_output_amount`, and `None` is
+/// returned if `total_amount < min_output_amount` (no valid output is possible).
+///
 /// # Parameters
 /// - `identity`: The identity sending the credits.
 /// - `identity_nonce_counter`: A mutable reference to track nonces for each identity.
@@ -933,9 +939,9 @@ pub async fn create_identity_credit_transfer_transition(
 /// - `rng`: A mutable reference to a random number generator.
 ///
 /// # Returns
-/// A tuple containing:
-/// 1. `StateTransition`: The signed state transition.
-/// 2. `BTreeMap<PlatformAddress, u64>`: The recipient addresses and their amounts.
+/// `Some((transition, recipient_addresses))` on success, or `None` if
+/// `total_amount` is below the per-output minimum and no valid transition can
+/// be constructed.
 ///
 /// # Panics
 /// This function may panic if:
@@ -951,12 +957,27 @@ pub async fn create_identity_credit_transfer_to_addresses_transition(
     output_count: usize,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
-) -> (StateTransition, BTreeMap<PlatformAddress, u64>) {
+) -> Option<(StateTransition, BTreeMap<PlatformAddress, u64>)> {
+    let min_output_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_output_amount;
+
+    // Without enough credits to fund a single valid output, the constructor
+    // would reject the transition. Skip rather than build an invalid one.
+    if total_amount < min_output_amount {
+        return None;
+    }
+
+    // Cap requested output count so each output is at least min_output_amount.
+    let max_outputs_by_amount = (total_amount / min_output_amount) as usize;
+    let output_count = output_count.max(1).min(max_outputs_by_amount);
+
     let nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *nonce += 1;
 
     // Create output addresses and distribute funds evenly
-    let output_count = output_count.max(1);
     let amount_per_output = total_amount / output_count as u64;
     let mut recipient_addresses = BTreeMap::new();
 
@@ -979,12 +1000,19 @@ pub async fn create_identity_credit_transfer_to_addresses_transition(
     .await
     .expect("expected to create transfer to addresses transition");
 
-    (transition, recipient_addresses)
+    Some((transition, recipient_addresses))
 }
 
 /// Creates a state transition to transfer credits from an identity to specific addresses.
 ///
 /// This function transfers credits from the sender's identity to pre-specified addresses.
+///
+/// Each recipient output must be at least
+/// `platform_version.dpp.state_transitions.address_funds.min_output_amount`
+/// (client-side validation rejects smaller outputs). If `recipient_addresses`
+/// is empty or any output amount is below the per-output minimum, this
+/// function returns `None` rather than constructing an invalid transition
+/// that the constructor would reject.
 ///
 /// # Parameters
 /// - `identity`: The identity sending the credits.
@@ -994,7 +1022,8 @@ pub async fn create_identity_credit_transfer_to_addresses_transition(
 /// - `platform_version`: The platform version.
 ///
 /// # Returns
-/// The signed state transition.
+/// `Some(transition)` on success, or `None` if any output amount is below the
+/// per-output minimum (and therefore no valid transition can be constructed).
 ///
 /// # Panics
 /// This function may panic if:
@@ -1006,11 +1035,27 @@ pub async fn create_identity_credit_transfer_to_addresses_transition_with_output
     signer: &mut SimpleSigner,
     recipient_addresses: BTreeMap<PlatformAddress, u64>,
     platform_version: &PlatformVersion,
-) -> StateTransition {
+) -> Option<StateTransition> {
+    let min_output_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_output_amount;
+
+    // Mirror the random-output helper: reject inputs the constructor would
+    // reject, returning `None` instead of panicking via `.expect(...)`.
+    if recipient_addresses.is_empty()
+        || recipient_addresses
+            .values()
+            .any(|amount| *amount < min_output_amount)
+    {
+        return None;
+    }
+
     let nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *nonce += 1;
 
-    IdentityCreditTransferToAddressesTransition::try_from_identity(
+    let transition = IdentityCreditTransferToAddressesTransition::try_from_identity(
         identity,
         recipient_addresses,
         0, // user_fee_increase
@@ -1021,7 +1066,9 @@ pub async fn create_identity_credit_transfer_to_addresses_transition_with_output
         None, // version
     )
     .await
-    .expect("expected to create transfer to addresses transition")
+    .expect("expected to create transfer to addresses transition");
+
+    Some(transition)
 }
 
 /// Generates a specified number of new identities and their corresponding state transitions.

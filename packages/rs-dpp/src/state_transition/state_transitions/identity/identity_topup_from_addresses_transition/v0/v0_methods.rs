@@ -18,8 +18,7 @@ use {
         identity::{accessors::IdentityGettersV0, signer::Signer, Identity},
         prelude::{AddressNonce, UserFeeIncrease},
         serialization::Signable,
-        state_transition::StateTransition,
-        state_transition::StateTransitionStructureValidation,
+        state_transition::{first_consensus_error_as_protocol_error, StateTransition},
         version::FeatureVersion,
         ProtocolError,
     },
@@ -49,6 +48,15 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
                 input_witnesses: vec![],
             };
 
+        // Pre-signing structure check: validate everything except the witness
+        // count, so structural errors fail fast before performing any async
+        // signer work.
+        let pre_validation_result = identity_top_up_from_addresses_transition
+            .validate_structure_without_input_witnesses(platform_version);
+        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+            return Err(error);
+        }
+
         let state_transition: StateTransition =
             identity_top_up_from_addresses_transition.clone().into();
 
@@ -60,12 +68,12 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         }
         identity_top_up_from_addresses_transition.input_witnesses = input_witnesses;
 
-        // Validate the fully-constructed transition structure
+        // After signing, only the witness count needs (re-)validation; the rest
+        // of the structure was already verified above.
         let validation_result =
-            identity_top_up_from_addresses_transition.validate_structure(platform_version);
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+            identity_top_up_from_addresses_transition.validate_input_witnesses_count();
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         Ok(identity_top_up_from_addresses_transition.into())

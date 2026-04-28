@@ -14,7 +14,7 @@ use crate::serialization::Signable;
 use crate::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransitionStructureValidation;
+use crate::state_transition::first_consensus_error_as_protocol_error;
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
@@ -59,6 +59,15 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
             input_witnesses: Vec::new(),
         };
 
+        // Pre-signing structure check: validate everything except the witness
+        // count, so structural errors fail fast before performing any async
+        // signer work.
+        let pre_validation_result = address_credit_withdrawal_transition
+            .validate_structure_without_input_witnesses(platform_version);
+        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+            return Err(error);
+        }
+
         let state_transition: StateTransition = address_credit_withdrawal_transition.clone().into();
 
         let signable_bytes = state_transition.signable_bytes()?;
@@ -69,12 +78,12 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         }
         address_credit_withdrawal_transition.input_witnesses = input_witnesses;
 
-        // Validate the fully-constructed transition structure
+        // After signing, only the witness count needs (re-)validation; the rest
+        // of the structure was already verified above.
         let validation_result =
-            address_credit_withdrawal_transition.validate_structure(platform_version);
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+            address_credit_withdrawal_transition.validate_input_witnesses_count();
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");

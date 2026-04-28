@@ -20,7 +20,7 @@ use crate::state_transition::StateTransitionType;
 // Crate: Feature-Gated (state-transition-signing)
 // ============================
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransitionStructureValidation;
+use crate::state_transition::first_consensus_error_as_protocol_error;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     address_funds::AddressFundsFeeStrategy,
@@ -79,12 +79,20 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 true, // in create_identity context
                 platform_version,
             )?;
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         identity_create_from_addresses_transition.set_public_keys(public_keys);
+
+        // Pre-signing structure check: validate everything except the witness
+        // count, so structural errors fail fast before performing any async
+        // signer work.
+        let pre_validation_result = identity_create_from_addresses_transition
+            .validate_structure_without_input_witnesses(platform_version);
+        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+            return Err(error);
+        }
 
         // Get signable bytes for the state transition
         let state_transition: StateTransition =
@@ -116,12 +124,12 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         }
         identity_create_from_addresses_transition.input_witnesses = input_witnesses;
 
-        // Validate the fully-constructed transition structure
+        // After signing, only the witness count needs (re-)validation; the rest
+        // of the structure was already verified above.
         let validation_result =
-            identity_create_from_addresses_transition.validate_structure(platform_version);
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+            identity_create_from_addresses_transition.validate_input_witnesses_count();
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         Ok(identity_create_from_addresses_transition.into())

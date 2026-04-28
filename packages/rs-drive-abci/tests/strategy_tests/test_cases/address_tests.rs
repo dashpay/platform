@@ -881,21 +881,23 @@ mod tests {
         // The root hash should be valid (32 bytes)
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
 
-        // Verify trunk query results
-        assert!(
-            trunk_result.elements.len() >= 16,
-            "trunk query should return at least 16 elements, got {}",
-            trunk_result.elements.len()
+        // Verify trunk query results.
+        // Deterministic with seed=15 and the strategy above, after the
+        // client-side validation min_per_input fix.
+        assert_eq!(
+            trunk_result.elements.len(),
+            40,
+            "trunk query should return 40 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
             0,
             "trunk query should return 0 leaf keys"
         );
-        assert!(
-            trunk_result.chunk_depths.len() == 1 && trunk_result.chunk_depths[0] >= 5,
-            "trunk query chunk_depths should have 1 element >= 5, got {:?}",
-            trunk_result.chunk_depths
+        assert_eq!(
+            trunk_result.chunk_depths,
+            vec![7],
+            "trunk query should have chunk_depths [7]"
         );
     }
 
@@ -1079,21 +1081,23 @@ mod tests {
         // The root hash should be valid (32 bytes)
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
 
-        // Verify trunk query results match expected values
-        assert!(
-            trunk_result.elements.len() >= 16,
-            "trunk query should return at least 16 elements after restart, got {}",
-            trunk_result.elements.len()
+        // Verify trunk query results match expected values.
+        // Deterministic with seed=15 and the strategy above, after the
+        // client-side validation min_per_input fix.
+        assert_eq!(
+            trunk_result.elements.len(),
+            40,
+            "trunk query should return 40 elements after restart"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
             0,
             "trunk query should return 0 leaf keys after restart"
         );
-        assert!(
-            trunk_result.chunk_depths.len() == 1 && trunk_result.chunk_depths[0] >= 5,
-            "trunk query chunk_depths should have 1 element >= 5 after restart, got {:?}",
-            trunk_result.chunk_depths
+        assert_eq!(
+            trunk_result.chunk_depths,
+            vec![7],
+            "trunk query should have chunk_depths [7] after restart"
         );
     }
 
@@ -2250,21 +2254,23 @@ mod tests {
             "trunk query should use checkpoint at height 12"
         );
 
-        // Verify trunk query results
-        assert!(
-            trunk_result.elements.len() >= 16,
-            "trunk query should return at least 16 elements, got {}",
-            trunk_result.elements.len()
+        // Verify trunk query results.
+        // Deterministic with seed=15 and the strategy above, after the
+        // client-side validation min_per_input fix.
+        assert_eq!(
+            trunk_result.elements.len(),
+            40,
+            "trunk query should return 40 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
             0,
             "trunk query should return 0 leaf keys"
         );
-        assert!(
-            trunk_result.chunk_depths.len() == 1 && trunk_result.chunk_depths[0] >= 5,
-            "trunk query chunk_depths should have 1 element >= 5, got {:?}",
-            trunk_result.chunk_depths
+        assert_eq!(
+            trunk_result.chunk_depths,
+            vec![7],
+            "trunk query should have chunk_depths [7]"
         );
 
         // Verify the proof has valid quorum info
@@ -3897,8 +3903,8 @@ mod tests {
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
         assert_eq!(
             trunk_data.elements.len(),
-            32,
-            "phase 1: trunk should return 32 elements"
+            36,
+            "phase 1: trunk should return 36 elements"
         );
 
         // Record addresses known so far from state transitions

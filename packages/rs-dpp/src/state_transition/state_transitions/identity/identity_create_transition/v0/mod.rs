@@ -373,4 +373,157 @@ mod test {
         .expect("try_from_identity");
         assert!(t.public_keys.is_empty());
     }
+
+    /// Verifies that `try_from_identity_with_signer` rejects an identity that
+    /// contains an invalid TRANSFER+HIGH public key via the structural
+    /// public-key validation, returning
+    /// `ProtocolError::ConsensusError(InvalidIdentityPublicKeySecurityLevelError)`
+    /// before any signing or BLS work is attempted.
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_identity_with_signer_rejects_transfer_high_key() {
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
+        use async_trait::async_trait;
+        use std::collections::BTreeMap;
+
+        /// A signer that should never be invoked: pre-signing validation must
+        /// fail before any signing is attempted.
+        #[derive(Debug)]
+        struct UnreachableSigner;
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for UnreachableSigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!(
+                    "UnreachableSigner::sign must not be called when pre-signing \
+                     validation rejects the transition"
+                );
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!(
+                    "UnreachableSigner::sign_create_witness must not be called \
+                     when pre-signing validation rejects the transition"
+                );
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                false
+            }
+        }
+
+        /// A BLS module that should never be invoked.
+        struct UnreachableBls;
+
+        impl BlsModule for UnreachableBls {
+            fn validate_public_key(&self, _pk: &[u8]) -> Result<(), PublicKeyValidationError> {
+                panic!("UnreachableBls::validate_public_key must not be called");
+            }
+
+            fn verify_signature(
+                &self,
+                _signature: &[u8],
+                _data: &[u8],
+                _public_key: &[u8],
+            ) -> Result<bool, ProtocolError> {
+                panic!("UnreachableBls::verify_signature must not be called");
+            }
+
+            fn private_key_to_public_key(
+                &self,
+                _private_key: &[u8],
+            ) -> Result<Vec<u8>, ProtocolError> {
+                panic!("UnreachableBls::private_key_to_public_key must not be called");
+            }
+
+            fn sign(&self, _data: &[u8], _private_key: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+                panic!("UnreachableBls::sign must not be called");
+            }
+        }
+
+        let platform_version = PlatformVersion::latest();
+
+        // Required master key so that the identity satisfies the master-key
+        // presence requirement; the failure must come specifically from the
+        // invalid TRANSFER+HIGH key below.
+        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        // Invalid combination: TRANSFER purpose only allows CRITICAL security level.
+        let invalid_transfer_high_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::from([(0, master_key), (1, invalid_transfer_high_key)]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        let result = IdentityCreateTransitionV0::try_from_identity_with_signer(
+            &identity,
+            chain_proof(),
+            &[0u8; 32],
+            &UnreachableSigner,
+            &UnreachableBls,
+            0,
+            platform_version,
+        )
+        .await;
+
+        match result {
+            Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::BasicError(
+                    BasicError::InvalidIdentityPublicKeySecurityLevelError(err),
+                ) => {
+                    assert_eq!(err.purpose(), Purpose::TRANSFER);
+                    assert_eq!(err.security_level(), SecurityLevel::HIGH);
+                }
+                other => panic!(
+                    "expected InvalidIdentityPublicKeySecurityLevelError, got {:?}",
+                    other
+                ),
+            },
+            other => panic!(
+                "expected ConsensusError(InvalidIdentityPublicKeySecurityLevelError), got {:?}",
+                other
+            ),
+        }
+    }
 }

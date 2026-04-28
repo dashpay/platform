@@ -28,7 +28,7 @@ use crate::identity::IdentityPublicKey;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransition;
+use crate::state_transition::{first_consensus_error_as_protocol_error, StateTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
@@ -58,9 +58,8 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
                 true, // in create_identity context
                 platform_version,
             )?;
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         let mut identity_create_transition = IdentityCreateTransitionV0 {

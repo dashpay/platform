@@ -12,7 +12,7 @@ use crate::serialization::Signable;
 use crate::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransitionStructureValidation;
+use crate::state_transition::first_consensus_error_as_protocol_error;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     prelude::{AddressNonce, UserFeeIncrease},
@@ -48,6 +48,15 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
             input_witnesses: Vec::new(),
         };
 
+        // Pre-signing structure check: validate everything except the witness
+        // count, so structural errors fail fast before performing any async
+        // signer work.
+        let pre_validation_result =
+            address_funds_transition.validate_structure_without_input_witnesses(platform_version);
+        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+            return Err(error);
+        }
+
         let state_transition: StateTransition = address_funds_transition.clone().into();
 
         let signable_bytes = state_transition.signable_bytes()?;
@@ -58,11 +67,11 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
         }
         address_funds_transition.input_witnesses = input_witnesses;
 
-        // Validate the fully-constructed transition structure
-        let validation_result = address_funds_transition.validate_structure(platform_version);
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
-            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        // After signing, only the witness count needs (re-)validation; the rest
+        // of the structure was already verified above.
+        let validation_result = address_funds_transition.validate_input_witnesses_count();
+        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+            return Err(error);
         }
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");

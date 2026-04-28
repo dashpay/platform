@@ -333,4 +333,177 @@ mod tests {
             IdentityCreateFromAddressesTransition::V0(_)
         ));
     }
+
+    /// Verifies that `try_from_inputs_with_signer` rejects an identity whose
+    /// public keys violate purpose/security-level constraints (TRANSFER + HIGH)
+    /// via the structural public-key validation, returning
+    /// `ProtocolError::ConsensusError(InvalidIdentityPublicKeySecurityLevelError)`
+    /// before any signer is invoked.
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_inputs_with_signer_rejects_transfer_high_key() {
+        use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, SecurityLevel};
+        use crate::prelude::Identifier;
+        use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use async_trait::async_trait;
+
+        /// A signer over `IdentityPublicKey` that should never be invoked.
+        #[derive(Debug)]
+        struct UnreachableIdentityKeySigner;
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for UnreachableIdentityKeySigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!(
+                    "UnreachableIdentityKeySigner::sign must not be called when \
+                     pre-signing validation rejects the transition"
+                );
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!(
+                    "UnreachableIdentityKeySigner::sign_create_witness must not \
+                     be called when pre-signing validation rejects the transition"
+                );
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                false
+            }
+        }
+
+        /// A signer over `PlatformAddress` that should never be invoked.
+        #[derive(Debug)]
+        struct UnreachableAddressSigner;
+
+        #[async_trait]
+        impl Signer<PlatformAddress> for UnreachableAddressSigner {
+            async fn sign(
+                &self,
+                _key: &PlatformAddress,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!(
+                    "UnreachableAddressSigner::sign must not be called when \
+                     pre-signing validation rejects the transition"
+                );
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &PlatformAddress,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!(
+                    "UnreachableAddressSigner::sign_create_witness must not be \
+                     called when pre-signing validation rejects the transition"
+                );
+            }
+
+            fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+                false
+            }
+        }
+
+        let platform_version = PlatformVersion::latest();
+
+        // Required master key so that the identity satisfies the master-key
+        // presence requirement; the failure must come specifically from the
+        // invalid TRANSFER+HIGH key below.
+        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: crate::identity::Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        // Invalid combination: TRANSFER purpose only allows CRITICAL security level.
+        let invalid_transfer_high_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: crate::identity::Purpose::TRANSFER,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::from([(0, master_key), (1, invalid_transfer_high_key)]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        // Inputs themselves are structurally valid; pre-signing validation must
+        // still fail because of the invalid public key on the identity.
+        let min_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let min_funding = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_identity_funding_amount;
+        let mut inputs = BTreeMap::new();
+        inputs.insert(
+            PlatformAddress::P2pkh([1u8; 20]),
+            (1u32, min_input.max(min_funding) * 2),
+        );
+
+        let result = IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
+            &identity,
+            inputs,
+            None,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            &UnreachableIdentityKeySigner,
+            &UnreachableAddressSigner,
+            0,
+            platform_version,
+        )
+        .await;
+
+        match result {
+            Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::BasicError(
+                    BasicError::InvalidIdentityPublicKeySecurityLevelError(err),
+                ) => {
+                    assert_eq!(err.purpose(), crate::identity::Purpose::TRANSFER);
+                    assert_eq!(err.security_level(), SecurityLevel::HIGH);
+                }
+                other => panic!(
+                    "expected InvalidIdentityPublicKeySecurityLevelError, got {:?}",
+                    other
+                ),
+            },
+            other => panic!(
+                "expected ConsensusError(InvalidIdentityPublicKeySecurityLevelError), got {:?}",
+                other
+            ),
+        }
+    }
 }
