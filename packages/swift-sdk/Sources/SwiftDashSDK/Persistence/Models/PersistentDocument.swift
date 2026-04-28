@@ -36,7 +36,16 @@ public final class PersistentDocument {
     public var transferredAtCoreBlockHeight: Int64?
 
     // Network
-    public var network: String
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // Deletion flag
     public var isDeleted: Bool = false
@@ -90,7 +99,13 @@ public final class PersistentDocument {
         parts.append("Type: \(documentType)")
         parts.append("Rev: \(revision)")
 
+        // Pin to Gregorian so the `createdAt` year stays CE even
+        // when the device is configured for a non-Gregorian
+        // calendar (e.g. Thai region → Buddhist era). The SDK
+        // doesn't depend on the app's `AppDate` helper, so we
+        // configure the formatter inline.
         let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateStyle = .short
         parts.append("Created: \(formatter.string(from: createdAt))")
 
@@ -104,7 +119,7 @@ public final class PersistentDocument {
         data: Data,
         contractId: String,
         ownerId: String,
-        network: String = "testnet"
+        network: AppNetwork
     ) {
         self.documentId = documentId
         self.documentType = documentType
@@ -114,7 +129,7 @@ public final class PersistentDocument {
         self.ownerId = ownerId
         self.contractIdData = Data.identifier(fromBase58: contractId) ?? Data()
         self.ownerIdData = Data.identifier(fromBase58: ownerId) ?? Data()
-        self.network = network
+        self.networkRaw = network.rawValue
         self.createdAt = Date()
         self.updatedAt = Date()
         self.localCreatedAt = Date()
@@ -144,9 +159,13 @@ public final class PersistentDocument {
         }
     }
 
-    public static func predicate(contractId: String, network: String) -> Predicate<PersistentDocument> {
-        #Predicate<PersistentDocument> { doc in
-            doc.contractId == contractId && doc.network == network && doc.isDeleted == false
+    public static func predicate(contractId: String, network: AppNetwork) -> Predicate<PersistentDocument> {
+        // See `PersistentIdentity.predicate(network:)` — Foundation's
+        // predicate engine can't capture `AppNetwork`, so we filter on
+        // the Int-backed `networkRaw` shadow field.
+        let target = network.rawValue
+        return #Predicate<PersistentDocument> { doc in
+            doc.contractId == contractId && doc.networkRaw == target && doc.isDeleted == false
         }
     }
 
@@ -179,46 +198,6 @@ public final class PersistentDocument {
     }
 }
 
-// MARK: - Conversion Methods
-
-extension PersistentDocument {
-    /// Create a PersistentDocument from a DocumentModel
-    public static func from(_ document: DocumentModel) -> PersistentDocument {
-        let dataToStore = (try? JSONSerialization.data(withJSONObject: document.data, options: [])) ?? Data()
-
-        let persistent = PersistentDocument(
-            documentId: document.id,
-            documentType: document.documentType,
-            revision: Int32(document.revision),
-            data: dataToStore,
-            contractId: document.contractId,
-            ownerId: document.ownerId.toBase58String()
-        )
-
-        if let createdAt = document.createdAt {
-            persistent.createdAt = createdAt
-        }
-        if let updatedAt = document.updatedAt {
-            persistent.updatedAt = updatedAt
-        }
-
-        return persistent
-    }
-
-    /// Convert to a DocumentModel
-    public func toDocumentModel() -> DocumentModel {
-        let dataDict: [String: Any] = properties ?? [:]
-
-        return DocumentModel(
-            id: documentId,
-            contractId: contractId,
-            documentType: documentType,
-            ownerId: ownerIdData,
-            data: dataDict,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            dppDocument: nil,
-            revision: Revision(revision)
-        )
-    }
-}
+// The legacy `DocumentModel` value-type bridge has been removed.
+// Callers construct `PersistentDocument` directly and read the JSON
+// payload via `properties`.

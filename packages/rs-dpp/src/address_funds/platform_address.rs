@@ -105,8 +105,6 @@ impl PlatformAddress {
         match network {
             Network::Mainnet => PLATFORM_HRP_MAINNET,
             Network::Testnet | Network::Devnet | Network::Regtest => PLATFORM_HRP_TESTNET,
-            // For any other networks, default to testnet HRP
-            _ => PLATFORM_HRP_TESTNET,
         }
     }
 

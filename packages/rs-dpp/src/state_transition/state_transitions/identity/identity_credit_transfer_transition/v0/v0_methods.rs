@@ -21,7 +21,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_identity_with_identifier: Identifier,
         amount: u64,
@@ -83,11 +83,13 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
             }
         };
 
-        transition.sign_external(
-            identity_public_key,
-            &signer,
-            None::<GetDataContractSecurityLevelRequirementFn>,
-        )?;
+        transition
+            .sign_external(
+                identity_public_key,
+                &signer,
+                None::<GetDataContractSecurityLevelRequirementFn>,
+            )
+            .await?;
 
         Ok(transition)
     }

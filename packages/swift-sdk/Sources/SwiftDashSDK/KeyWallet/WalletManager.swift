@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    internal let handle: UnsafeMutablePointer<FFIWalletManager>
+    private let handle: UnsafeMutablePointer<FFIWalletManager>
     internal let network: KeyWalletNetwork
     private let ownsHandle: Bool
 
@@ -351,59 +351,51 @@ public class WalletManager {
         return (confirmed: confirmed, unconfirmed: unconfirmed)
     }
 
-    /// Build a signed transaction
+    // MARK: - Transaction Processing
+
+    /// Process a transaction through all wallets
     /// - Parameters:
-    ///   - accIndex: The account index to use
-    ///   - outputs: The transaction outputs
-    /// - Returns: The signed transaction bytes and the fee
-    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [TxOutput]) throws -> (Data, UInt64) {
-        guard !outputs.isEmpty else {
-            throw KeyWalletError.invalidInput("Transaction must have at least one output")
-        }
-
+    ///   - transactionData: The transaction bytes
+    ///   - contextDetails: Transaction context details
+    ///   - updateStateIfFound: Whether to update wallet state if transaction is relevant
+    /// - Returns: True if transaction was relevant to at least one wallet
+    @discardableResult
+    public func processTransaction(_ transactionData: Data,
+                                  contextDetails: TransactionContextDetails,
+                                  updateStateIfFound: Bool = true) throws -> Bool {
         var error = FFIError()
-        var txBytesPtr: UnsafeMutablePointer<UInt8>?
-        var txLen: size_t = 0
-
-        var fee: UInt64 = 0
-
-        guard let wallet = try self.getWallet(id: wallet.walletId) else {
-            throw KeyWalletError.walletError("Wallet not found in manager")
+        // Build FFITransactionContext from TransactionContextDetails
+        var ffiContext = FFITransactionContext()
+        ffiContext.context_type = FFITransactionContextType(rawValue: contextDetails.context.rawValue)
+        ffiContext.block_info.height = contextDetails.height
+        ffiContext.block_info.timestamp = contextDetails.timestamp
+        if let hash = contextDetails.blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &ffiContext.block_info.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
         }
 
-        let ffiOutputs = outputs.map { $0.toFFI() }
-
-        let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
-            wallet_build_and_sign_transaction(
-                self.handle,
-                wallet.ffiHandle,
-                accIndex,
-                outputsPtr.baseAddress,
-                outputs.count,
-                1000,
-                &fee,
-                &txBytesPtr,
-                &txLen,
-                &error)
+        let success = transactionData.withUnsafeBytes { txBytes in
+            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
+            return wallet_manager_process_transaction(
+                handle, txPtr, transactionData.count,
+                &ffiContext,
+                updateStateIfFound, &error)
         }
 
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
-            if let ptr = txBytesPtr {
-                transaction_bytes_free(ptr)
-            }
         }
 
-        guard success, let ptr = txBytesPtr else {
+        guard success else {
             throw KeyWalletError(ffiError: error)
         }
 
-        // Copy the transaction data before freeing
-        let txData = Data(bytes: ptr, count: txLen)
-
-        return (txData, fee)
+        return success
     }
 
     // MARK: - Block Height Management

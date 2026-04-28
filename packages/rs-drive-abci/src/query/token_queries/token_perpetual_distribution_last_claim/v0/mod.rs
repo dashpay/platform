@@ -415,4 +415,175 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    fn test_invalid_identity_id_with_contract_info() {
+        // Identity id validation fires before contract_info is touched.
+        let (platform, state, version, contract_id, token_ids, _) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: contract_id.to_vec(),
+                token_contract_position: 0,
+            }),
+            identity_id: vec![0; 7],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("identity_id")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_token_id_with_proof() {
+        // Even with prove=true the token_id check fires first.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: vec![0; 31],
+            contract_info: None,
+            identity_id: vec![0; 32],
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("token_id")
+        ));
+    }
+
+    #[test]
+    fn test_token_position_at_u16_boundary_not_rejected_for_size() {
+        // u16::MAX is the *boundary*; only `> u16::MAX as u32` is rejected.
+        // Passing exactly u16::MAX should *not* hit the
+        // "token_contract_position must be less than u16::MAX" error. It may
+        // hit some other InvalidArgument variant (bad position), but not the
+        // size rejection.
+        let (platform, state, version, contract_id, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: contract_id.to_vec(),
+                token_contract_position: u16::MAX as u32,
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // There must NOT be a "token_contract_position must be less than
+        // u16::MAX" validation error at the boundary.
+        let has_size_err = result.errors.iter().any(|e| {
+            matches!(e,
+                QueryError::InvalidArgument(msg)
+                    if msg.contains("token_contract_position must be less than")
+            )
+        });
+        assert!(
+            !has_size_err,
+            "u16::MAX should not trigger the size validation: errors={:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_nonexistent_token_position_on_existing_contract() {
+        // Contract exists but requested position does not → handler currently
+        // surfaces a protocol error via `QueryError::Protocol`.
+        let (platform, state, version, contract_id, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: contract_id.to_vec(),
+                token_contract_position: 999,
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            !result.errors.is_empty(),
+            "expected some error for unknown token position"
+        );
+    }
+
+    #[test]
+    fn test_query_with_contract_info_returns_block_height_paid_at() {
+        // Happy path with contract_info that *does* have perpetual
+        // distribution rules: the handler takes the typed-moment branch.
+        let (platform, state, version, contract_id, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: contract_id.to_vec(),
+                token_contract_position: 0,
+            }),
+            identity_id: identity_ids[1].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let data = result.data.unwrap();
+        assert!(matches!(
+            data.result,
+            Some(get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(_))
+        ));
+        assert!(data.metadata.is_some());
+    }
+
+    #[test]
+    fn test_invalid_contract_id_bytes_length_zero() {
+        // contract_id with zero length should fail the 32-byte identifier
+        // check inside the contract_info branch.
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: vec![],
+                token_contract_position: 0,
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id")
+        ));
+    }
 }

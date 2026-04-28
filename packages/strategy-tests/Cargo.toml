@@ -39,3 +39,4 @@ platform-version = { path = "../rs-platform-version" }
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
+tokio = { version = "1.45", features = ["macros", "rt"] }

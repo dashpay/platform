@@ -66,7 +66,6 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
         dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
         dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
         dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
-        _ => "unknown",
     };
 
     rt.block_on(async move {

@@ -184,7 +184,8 @@ impl TokenFreezeTransitionBuilder {
             signer,
             platform_version,
             self.state_transition_creation_options,
-        )?;
+        )
+        .await?;
 
         // Validate the transition structure before returning
         validate_batch_base_structure(&state_transition, platform_version)?;

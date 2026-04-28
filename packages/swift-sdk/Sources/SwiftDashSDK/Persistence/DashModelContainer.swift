@@ -16,7 +16,15 @@ public enum DashModelContainer {
             PersistentDocumentType.self,
             PersistentIndex.self,
             PersistentProperty.self,
-            PersistentTokenHistoryEvent.self
+            PersistentTokenHistoryEvent.self,
+            PersistentPlatformAddress.self,
+            PersistentPlatformAddressesSyncState.self,
+            PersistentWallet.self,
+            PersistentAccount.self,
+            PersistentCoreAddress.self,
+            PersistentTransaction.self,
+            PersistentUtxo.self,
+            PersistentWalletManagerMetadata.self
         ]
     }
 
@@ -42,8 +50,13 @@ public enum DashModelContainer {
             cloudKitDatabase: cloudKit ? .automatic : .none
         )
 
+        // Wire the migration plan even though V1 is the only shipped
+        // schema — future schema bumps just have to add a stage to
+        // `DashMigrationPlan.stages` without also having to remember
+        // to thread the plan into the container construction call.
         return try ModelContainer(
             for: schema,
+            migrationPlan: DashMigrationPlan.self,
             configurations: [modelConfiguration]
         )
     }
@@ -58,6 +71,7 @@ public enum DashModelContainer {
 
         return try ModelContainer(
             for: schema,
+            migrationPlan: DashMigrationPlan.self,
             configurations: [modelConfiguration]
         )
     }
@@ -75,6 +89,9 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 }
 
 /// Version 1 of the Dash Platform schema
+/// Includes `PersistentCoreAddress` to match the example app's former container schema.
+/// The model is additive with optional relationships, so existing narrower stores can
+/// use SwiftData's lightweight migration path.
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(1, 0, 0)

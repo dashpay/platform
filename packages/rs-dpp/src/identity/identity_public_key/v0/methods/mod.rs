@@ -241,6 +241,209 @@ mod tests {
             .unwrap());
     }
 
+    // -- public_key_hash error paths --
+
+    #[test]
+    fn test_public_key_hash_empty_data_errors() {
+        use platform_value::BinaryData;
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: BinaryData::new(vec![]),
+            read_only: false,
+            disabled_at: None,
+        };
+        let err = key.public_key_hash().unwrap_err();
+        assert!(matches!(err, ProtocolError::EmptyPublicKeyDataError));
+    }
+
+    #[test]
+    fn test_public_key_hash_ecdsa_wrong_length_errors() {
+        use platform_value::BinaryData;
+        // ECDSA_SECP256K1 accepts only 33 or 65 bytes. 32 should fail with ParsingError.
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: BinaryData::new(vec![1u8; 32]),
+            read_only: false,
+            disabled_at: None,
+        };
+        let err = key.public_key_hash().unwrap_err();
+        match err {
+            ProtocolError::ParsingError(msg) => assert!(msg.contains("key length is invalid")),
+            other => panic!("expected ParsingError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_public_key_hash_bls_wrong_length_errors() {
+        use platform_value::BinaryData;
+        // BLS12_381 expects exactly 48 bytes.
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::BLS12_381,
+            data: BinaryData::new(vec![1u8; 40]),
+            read_only: false,
+            disabled_at: None,
+        };
+        let err = key.public_key_hash().unwrap_err();
+        match err {
+            ProtocolError::ParsingError(msg) => assert!(msg.contains("48 bytes for bls key")),
+            other => panic!("expected ParsingError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_public_key_hash_bls_returns_ripemd160_sha256_of_data() {
+        use crate::util::hash::ripemd160_sha256;
+        use platform_value::BinaryData;
+        let data = vec![7u8; 48];
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::BLS12_381,
+            data: BinaryData::new(data.clone()),
+            read_only: false,
+            disabled_at: None,
+        };
+        let hash = key
+            .public_key_hash()
+            .expect("expected hash for 48-byte bls");
+        assert_eq!(hash, ripemd160_sha256(data.as_slice()));
+    }
+
+    #[test]
+    fn test_public_key_hash_ecdsa_hash160_returns_data_itself() {
+        use platform_value::BinaryData;
+        let data = vec![9u8; 20];
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            data: BinaryData::new(data.clone()),
+            read_only: false,
+            disabled_at: None,
+        };
+        let hash = key.public_key_hash().expect("expected hash");
+        assert_eq!(hash.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn test_public_key_hash_bip13_script_hash_returns_data_itself() {
+        use platform_value::BinaryData;
+        let data = vec![3u8; 20];
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::BIP13_SCRIPT_HASH,
+            data: BinaryData::new(data.clone()),
+            read_only: false,
+            disabled_at: None,
+        };
+        let hash = key.public_key_hash().expect("expected hash");
+        assert_eq!(hash.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn test_public_key_hash_hash160_wrong_length_errors() {
+        use platform_value::BinaryData;
+        // Non-ECDSA hash variants route through Bytes20::from_vec, which should reject != 20.
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            data: BinaryData::new(vec![0u8; 19]),
+            read_only: false,
+            disabled_at: None,
+        };
+        assert!(key.public_key_hash().is_err());
+    }
+
+    // -- validate_private_key_bytes: BIP13 is unsupported and always errors --
+    #[test]
+    fn test_validate_private_key_bytes_bip13_script_hash_is_unsupported() {
+        use platform_value::BinaryData;
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::BIP13_SCRIPT_HASH,
+            data: BinaryData::new(vec![0u8; 20]),
+            read_only: false,
+            disabled_at: None,
+        };
+        let err = key
+            .validate_private_key_bytes(&[0u8; 32], Network::Testnet)
+            .unwrap_err();
+        match err {
+            ProtocolError::NotSupported(msg) => {
+                assert!(msg.contains("script hash"));
+            }
+            other => panic!("expected NotSupported, got {:?}", other),
+        }
+    }
+
+    // -- validate_private_key_bytes for ECDSA: bad secret key bytes are handled (Ok(false)) --
+    #[test]
+    fn test_validate_private_key_bytes_ecdsa_secret_key_parse_error_returns_false() {
+        use platform_value::BinaryData;
+        // All-zeroes is not a valid secp256k1 secret key; the code maps that
+        // to Ok(false) rather than Err.
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            // The actual stored public key is irrelevant here because we never get past
+            // the secret-key parse step.
+            data: BinaryData::new(vec![0u8; 33]),
+            read_only: false,
+            disabled_at: None,
+        };
+        let ok = key
+            .validate_private_key_bytes(&[0u8; 32], Network::Testnet)
+            .unwrap();
+        assert!(!ok);
+    }
+
+    #[test]
+    fn test_validate_private_key_bytes_ecdsa_hash160_secret_key_parse_error_returns_false() {
+        use platform_value::BinaryData;
+        let key = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            data: BinaryData::new(vec![0u8; 20]),
+            read_only: false,
+            disabled_at: None,
+        };
+        let ok = key
+            .validate_private_key_bytes(&[0u8; 32], Network::Testnet)
+            .unwrap();
+        assert!(!ok);
+    }
+
     #[cfg(all(feature = "random-public-keys", feature = "ed25519-dalek"))]
     #[test]
     fn test_validate_private_key_bytes_with_random_keys_eddsa_25519_hash160() {

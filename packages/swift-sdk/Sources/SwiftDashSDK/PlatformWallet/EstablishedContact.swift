@@ -1,8 +1,11 @@
 import Foundation
 import DashSDKFFI
 
-/// Established Contact representing a bidirectional friendship in DashPay
-public class EstablishedContact {
+/// Established Contact representing a bidirectional friendship in DashPay.
+///
+/// `@unchecked Sendable`: immutable `Handle` + Rust-side lock —
+/// same pattern as `ContactRequest` / `ManagedPlatformWallet`.
+public final class EstablishedContact: @unchecked Sendable {
     internal let handle: Handle
 
     internal init(handle: Handle) {
@@ -10,20 +13,22 @@ public class EstablishedContact {
     }
 
     deinit {
-        established_contact_destroy(handle)
+        _ = established_contact_destroy(handle)
     }
 
     /// Get the contact's identity ID
     public func getContactIdentityId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = established_contact_get_contact_identity_id(handle, &ffiId, &error)
-        guard result == Success else {
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            established_contact_get_contact_identity_id(handle, bp.baseAddress!, &error)
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI( ffiId)
+        return Data(buf)
     }
 
     /// Get the contact's alias
@@ -33,11 +38,11 @@ public class EstablishedContact {
 
         let result = established_contact_get_alias(handle, &aliasPtr, &error)
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -60,7 +65,7 @@ public class EstablishedContact {
         let aliasCStr = (alias as NSString).utf8String
 
         let result = established_contact_set_alias(handle, aliasCStr, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -70,7 +75,7 @@ public class EstablishedContact {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_clear_alias(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -82,11 +87,11 @@ public class EstablishedContact {
 
         let result = established_contact_get_note(handle, &notePtr, &error)
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -109,7 +114,7 @@ public class EstablishedContact {
         let noteCStr = (note as NSString).utf8String
 
         let result = established_contact_set_note(handle, noteCStr, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -119,7 +124,7 @@ public class EstablishedContact {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_clear_note(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -130,7 +135,7 @@ public class EstablishedContact {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_is_hidden(handle, &hidden, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -142,7 +147,7 @@ public class EstablishedContact {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_hide(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -152,7 +157,7 @@ public class EstablishedContact {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_unhide(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }

@@ -45,15 +45,21 @@ public enum AccountType: UInt32 {
     case providerOwnerKeys = 8
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
-    case dashPayReceivingFunds = 11
-    case dashPayExternalAccount = 12
-    case platformPayment = 13
 
-    var ffiValue: FFIAccountType {
-        FFIAccountType(rawValue: self.rawValue)
+    /// Convert to the upstream FFI discriminant enum.
+    ///
+    /// Upstream renamed the FFI account discriminant from `FFIAccountType`
+    /// (the old enum) to `FFIAccountKind` (the new enum) and reused the
+    /// `FFIAccountType` name for a richer struct that bundles the
+    /// discriminant with index / Dashpay-pointer / key-class fields.
+    /// The Swift `AccountType` enum here only models the discriminant
+    /// case — Dashpay and PlatformPayment variants need richer
+    /// construction paths and aren't surfaced through this type today.
+    var ffiValue: FFIAccountKind {
+        FFIAccountKind(rawValue: self.rawValue)
     }
 
-    init(ffiType: FFIAccountType) {
+    init(ffiType: FFIAccountKind) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }
 }
@@ -234,6 +240,22 @@ public struct TransactionCheckResult {
         self.totalReceived = ffiResult.total_received
         self.totalSent = ffiResult.total_sent
         self.affectedAccountsCount = ffiResult.affected_accounts_count
+    }
+}
+
+/// Transaction context details (wraps FFITransactionContext + FFIBlockInfo)
+public struct TransactionContextDetails {
+    public let context: TransactionContextType
+    public let height: UInt32
+    public let blockHash: Data?
+    public let timestamp: UInt32
+
+    init(ffiContext: FFITransactionContext) {
+        self.context = TransactionContextType(ffiContext: ffiContext.context_type)
+        self.height = ffiContext.block_info.height
+        self.timestamp = ffiContext.block_info.timestamp
+        let hashBytes = withUnsafeBytes(of: ffiContext.block_info.block_hash) { Data($0) }
+        self.blockHash = hashBytes.allSatisfy({ $0 == 0 }) ? nil : hashBytes
     }
 }
 

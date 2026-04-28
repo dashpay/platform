@@ -2,21 +2,48 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
+import LocalAuthentication
 
 struct WalletDetailView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
+    @EnvironmentObject var appUIState: AppUIState
     @Environment(\.dismiss) private var dismiss
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
+
+    // Badge count for "View All Transactions". Backed by a
+    // bounded FetchDescriptor against the `(walletId, firstSeen)`
+    // compound index on `PersistentTransaction` — SQLite resolves
+    // it as an index-only scan. `propertiesToFetch = [\.walletId]`
+    // keeps SwiftData from hydrating `transactionData` / `label` /
+    // etc. just to produce a count; we only ever read `.count`.
+    //
+    // Previous approach queried `PersistentAccount` and reduced
+    // `accounts.reduce(0) { $0 + $1.transactions.count }`, which
+    // fault-loaded every transaction across every account just to
+    // count them — O(N) main-thread work on every render.
+    @Query private var walletTransactions: [PersistentTransaction]
+
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        descriptor.propertiesToFetch = [\.walletId]
+        _walletTransactions = Query(descriptor)
+    }
+
+    private var transactionCount: Int { walletTransactions.count }
 
     var body: some View {
         VStack(spacing: 0) {
             // Network indicator
             HStack {
-                Label(unifiedAppState.platformState.currentNetwork.displayName, systemImage: "network")
+                Label(platformState.currentNetwork.displayName, systemImage: "network")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 12)
@@ -66,8 +93,6 @@ struct WalletDetailView: View {
 
                 NavigationLink {
                     TransactionListView(wallet: wallet)
-                        .environmentObject(walletService)
-                        .environmentObject(unifiedAppState)
                 } label: {
                     HStack {
                         Label("View All Transactions", systemImage: "list.bullet.rectangle")
@@ -75,8 +100,6 @@ struct WalletDetailView: View {
 
                         Spacer()
 
-                        let transactions = walletService.walletManager.getTransactions(for: wallet)
-                        let transactionCount = transactions.count
                         if transactionCount > 0 {
                             Text("\(transactionCount)")
                                 .font(.caption)
@@ -114,7 +137,6 @@ struct WalletDetailView: View {
 
             // Account List
             AccountListView(wallet: wallet)
-                .environmentObject(walletService)
         }
         .navigationTitle(wallet.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -125,37 +147,30 @@ struct WalletDetailView: View {
                 } label: {
                     Image(systemName: "info.circle")
                 }
+                .accessibilityIdentifier("walletDetail.infoButton")
             }
         }
         .sheet(isPresented: $showReceiveAddress) {
             ReceiveAddressView(wallet: wallet)
-                .environmentObject(walletService)
-                .environmentObject(unifiedAppState)
-                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showSendTransaction) {
             SendTransactionView(wallet: wallet)
-                .environmentObject(walletService)
-                .environmentObject(unifiedAppState)
-                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showWalletInfo) {
             WalletInfoView(wallet: wallet) {
                 dismiss()
             }
-            .environmentObject(walletService)
         }
-        .onAppear { unifiedAppState.showWalletsSyncDetails = false }
+        .onAppear { appUIState.showWalletsSyncDetails = false }
     }
 }
 
 // MARK: - Wallet Info View
 
 struct WalletInfoView: View {
-    @EnvironmentObject var walletService: WalletService
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
-    let wallet: HDWallet
+    let wallet: PersistentWallet
     var onWalletDeleted: () -> Void = {}
 
     @State private var editedName: String = ""
@@ -172,6 +187,20 @@ struct WalletInfoView: View {
     @State private var mainnetAccountCount: Int? = nil
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
+
+    // "View Seed Phrase" flow.
+    @State private var isAuthorizingSeedPhrase = false
+    @State private var revealedMnemonic: String?
+
+    // Account counts come from SwiftData now.
+    @Query private var accounts: [PersistentAccount]
+
+    init(wallet: PersistentWallet, onWalletDeleted: @escaping () -> Void = {}) {
+        self.wallet = wallet
+        self.onWalletDeleted = onWalletDeleted
+        let walletId = wallet.walletId
+        _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet?.walletId == walletId })
+    }
 
     var body: some View {
         NavigationView {
@@ -278,7 +307,7 @@ struct WalletInfoView: View {
                     HStack {
                         Text("Created")
                         Spacer()
-                        Text(wallet.createdAt, style: .date)
+                        Text(AppDate.formatted(wallet.createdAt, dateStyle: .abbreviated, timeStyle: .omitted))
                             .foregroundColor(.secondary)
                     }
 
@@ -318,6 +347,27 @@ struct WalletInfoView: View {
                     }
                 }
 
+                // View Seed Phrase Section — above Delete so the
+                // destructive action stays at the bottom.
+                Section {
+                    Button(action: {
+                        Task { await authorizeAndRevealMnemonic() }
+                    }) {
+                        HStack {
+                            Spacer()
+                            if isAuthorizingSeedPhrase {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                            } else {
+                                Label("View Seed Phrase", systemImage: "eye")
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(isAuthorizingSeedPhrase)
+                }
+
                 // Delete Wallet Section
                 Section {
                     Button(action: {
@@ -337,6 +387,7 @@ struct WalletInfoView: View {
                         }
                     }
                     .disabled(isDeleting)
+                    .accessibilityIdentifier("walletInfo.deleteWalletButton")
                     .listRowBackground(Color.red)
                 }
             }
@@ -351,7 +402,10 @@ struct WalletInfoView: View {
             }
             .onAppear {
                 loadNetworkStates()
-                Task { await loadAccountCounts() }
+                loadAccountCounts()
+            }
+            .onChange(of: accounts.count) { _, _ in
+                loadAccountCounts()
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") { }
@@ -368,50 +422,86 @@ struct WalletInfoView: View {
             } message: {
                 Text("Are you sure you want to delete this wallet? This action cannot be undone and you will lose access to all funds unless you have backed up your recovery phrase.")
             }
+            .sheet(
+                isPresented: Binding(
+                    get: { revealedMnemonic != nil },
+                    set: { if !$0 { revealedMnemonic = nil } }
+                )
+            ) {
+                if let phrase = revealedMnemonic {
+                    SeedPhraseRevealSheet(mnemonic: phrase)
+                }
+            }
+        }
+    }
+
+    /// Prompt the user via biometric / passcode, then pull the
+    /// wallet's mnemonic out of the keychain for display. On failure
+    /// surfaces the error via `errorMessage`/`showError`.
+    @MainActor
+    private func authorizeAndRevealMnemonic() async {
+        guard !isAuthorizingSeedPhrase else { return }
+        isAuthorizingSeedPhrase = true
+        defer { isAuthorizingSeedPhrase = false }
+
+        let context = LAContext()
+        context.localizedCancelTitle = "Cancel"
+        var policyError: NSError?
+        guard context.canEvaluatePolicy(
+            .deviceOwnerAuthentication,
+            error: &policyError
+        ) else {
+            errorMessage = "Authentication is unavailable on this device: "
+                + (policyError?.localizedDescription ?? "unknown")
+            showError = true
+            return
+        }
+
+        do {
+            let authorized = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Reveal your wallet's recovery phrase."
+            )
+            guard authorized else { return }
+        } catch {
+            errorMessage = "Authorization failed: \(error.localizedDescription)"
+            showError = true
+            return
+        }
+
+        do {
+            revealedMnemonic = try WalletStorage().retrieveMnemonic(for: wallet.walletId)
+        } catch {
+            errorMessage = "This wallet's recovery phrase isn't stored on this device."
+            showError = true
         }
     }
 
     private func loadNetworkStates() {
-        // TODO: Probably not needed this way anymore?
-        switch wallet.network {
+        switch wallet.network ?? .testnet {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
             testnetEnabled = true
         case .regtest:
-            // TODO: Handle this properly in the UI or somehow ignore it.
             regtestEnabled = true
         case .devnet:
             devnetEnabled = true
         }
     }
 
-    private func loadAccountCounts() async {
-        // TODO: This can probably be refactored now with with single network manager?
-        let count = walletService.walletManager.getAccounts(for: wallet).count
-
-        if mainnetEnabled {
-            mainnetAccountCount = count
-        } else { mainnetAccountCount = nil }
-
-        if testnetEnabled {
-            testnetAccountCount = count
-        } else { testnetAccountCount = nil }
-
-        if devnetEnabled {
-            devnetAccountCount = count
-        } else { devnetAccountCount = nil }
-    }
-
-    // Format a block height with thousands separators
-    private func formatHeight(_ h: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: h)) ?? "\(h)"
+    private func loadAccountCounts() {
+        let count = accounts.count
+        mainnetAccountCount = mainnetEnabled ? count : nil
+        testnetAccountCount = testnetEnabled ? count : nil
+        devnetAccountCount = devnetEnabled ? count : nil
     }
 
     private func saveWalletName() {
-        wallet.label = editedName
+        // `label` is a computed fallback; the writable backing
+        // field is `name`. Empty-string means "unnamed"; the
+        // computed `label` then falls back to the hex fingerprint.
+        wallet.name = editedName.isEmpty ? nil : editedName
         do {
             try modelContext.save()
             isEditingName = false
@@ -425,20 +515,12 @@ struct WalletInfoView: View {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
+        // TODO(platform-wallet): Proper multi-network wallet support once the
+        // Rust side exposes add-network. For now we only refresh UI state.
         do {
-
-            // TODO: This needs some love after single wallet refactoring.
-
-            // Save to Core Data
             try modelContext.save()
-
-            // Reload network states
             loadNetworkStates()
-            await loadAccountCounts()
-
-            // TODO: Call FFI to actually add the network to the wallet
-            // This would involve reinitializing the wallet with the new networks
-
+            loadAccountCounts()
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to enable network: \(error.localizedDescription)"
@@ -448,44 +530,105 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
-        // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
-        // This prevents "Never access a full future backing data" crash
+        let walletId = wallet.walletId
+
+        await MainActor.run { isDeleting = true }
+
+        // Cascade-delete rules on `accounts` / `identities` null out
+        // or cascade the children automatically.
+        modelContext.delete(wallet)
+        do {
+            try modelContext.save()
+            try WalletStorage().deleteMnemonic(for: walletId)
+        } catch {
+            modelContext.rollback()
+            SDKLogger.error(
+                "Failed to fully delete wallet: \(error.localizedDescription)"
+            )
+            await MainActor.run {
+                errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
+                showError = true
+                isDeleting = false
+            }
+            return
+        }
+
         await MainActor.run {
+            isDeleting = false
             dismiss()
             onWalletDeleted()
         }
-
-        try! await walletService.walletManager.deleteWallet(wallet)
+        // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
+        // so the Rust side also drops the in-memory handle.
     }
 }
 
 struct BalanceCardView: View {
-    let wallet: HDWallet
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
-    @EnvironmentObject var walletService: WalletService
+    let wallet: PersistentWallet
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
 
+    /// Per-wallet platform-address balance rows. SwiftData drives
+    /// the sum directly so every wallet's card reflects its own
+    /// funds — the previous code read
+    /// `platformBalanceSyncService.totalPlatformBalance`, a
+    /// singleton tied to whichever wallet was most recently
+    /// configured, which caused every wallet's balance to show the
+    /// last-synced wallet's total.
+    @Query private var addressBalances: [PersistentPlatformAddress]
+    /// Network-scoped BLAST sync watermark. One row per network —
+    /// shared across every wallet on that network — so this query
+    /// filters by `network` rather than `walletId`. Used only to
+    /// distinguish "synced with zero balance" from "never synced".
+    @Query private var syncStates: [PersistentPlatformAddressesSyncState]
+
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        // `PersistentPlatformAddressesSyncState.network` is a required AppNetwork;
+        // `.testnet` is a harmless sentinel for wallets that haven't
+        // had their network stamped yet — they won't have a matching
+        // sync state row either, so the query naturally returns empty.
+        // Filter against `networkRaw` (the Int-backed shadow field) —
+        // Foundation's predicate engine can't capture `AppNetwork`.
+        let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
+        _addressBalances = Query(
+            filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+        _syncStates = Query(
+            filter: #Predicate<PersistentPlatformAddressesSyncState> { $0.networkRaw == walletNetworkRaw }
+        )
+    }
+
+    private var confirmedBalance: UInt64 {
+        wallet.balanceConfirmed
+    }
+
+    private var unconfirmedBalance: UInt64 {
+        wallet.balanceUnconfirmed
+    }
+
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
     var platformBalance: UInt64 {
-        let blastBalance = platformBalanceSyncService.totalPlatformBalance
-        if blastBalance > 0 || platformBalanceSyncService.lastSyncTime != nil {
+        let blastBalance = addressBalances.reduce(0) { $0 + $1.balance }
+        let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
+            ?? false
+        if blastBalance > 0 || hasSynced {
             return blastBalance
         }
-        // Fallback to identity-based sum if BLAST sync hasn't run yet
-        return unifiedAppState.platformState.identities
-            .filter { identity in
-                identity.walletId == wallet.walletId &&
-                identity.network == wallet.network.rawValue
-            }
-            .reduce(0) { sum, identity in
-                sum + identity.balance
-            }
+        // Fall back to summing credits across the wallet's
+        // identities (via the SwiftData relationship). Pre-BLAST-
+        // sync state shows approximate credit balance aggregated
+        // from the on-chain identities we know about.
+        return wallet.identities.reduce(UInt64(0)) { sum, identity in
+            sum + UInt64(bitPattern: identity.balance)
+        }
     }
 
     var body: some View {
-        let balance = walletService.walletManager.getBalance(for: wallet)
-        let allZero = balance.total == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
+        let totalCore = confirmedBalance + unconfirmedBalance
+        let allZero = totalCore == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
 
         VStack(spacing: 12) {
             if allZero {
@@ -496,9 +639,10 @@ struct BalanceCardView: View {
                 // Core Balance row
                 WalletBalanceRow(
                     label: "Core Balance",
-                    amount: balance.confirmed,
-                    incoming: balance.unconfirmed,
-                    color: .primary
+                    amount: confirmedBalance,
+                    incoming: unconfirmedBalance,
+                    color: .primary,
+                    unit: .duffs
                 )
 
                 // Platform Balance row
@@ -506,6 +650,7 @@ struct BalanceCardView: View {
                     label: "Platform Balance",
                     amount: platformBalance,
                     color: .blue,
+                    unit: .credits,
                     showSyncIndicator: platformBalanceSyncService.isSyncing
                 )
 
@@ -514,6 +659,7 @@ struct BalanceCardView: View {
                     label: "Shielded Balance",
                     amount: shieldedService.shieldedBalance,
                     color: .purple,
+                    unit: .credits,
                     showSyncIndicator: shieldedService.isSyncing
                 )
             }
@@ -525,11 +671,17 @@ struct BalanceCardView: View {
 }
 
 /// A single balance row showing label, amount, and optional incoming amount.
+private enum WalletBalanceUnit {
+    case duffs
+    case credits
+}
+
 private struct WalletBalanceRow: View {
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
     var color: Color
+    var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
 
     var body: some View {
@@ -567,7 +719,13 @@ private struct WalletBalanceRow: View {
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
+        let dashDivisor: Double = switch unit {
+        case .duffs:
+            100_000_000.0
+        case .credits:
+            100_000_000_000.0
+        }
+        let dash = Double(amount) / dashDivisor
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
@@ -578,5 +736,82 @@ private struct WalletBalanceRow: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+}
+
+// MARK: - Seed Phrase Reveal Sheet
+
+/// Read-only reveal of the mnemonic, gated by biometric auth on the
+/// caller side. Renders the 12-word phrase in a numbered grid with a
+/// copy-to-clipboard convenience and a warning banner.
+private struct SeedPhraseRevealSheet: View {
+    let mnemonic: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+
+    private var words: [String] {
+        mnemonic.split(separator: " ").map(String.init)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Label(
+                        "Never share this phrase. Anyone who sees it can spend your funds.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red)
+                    .cornerRadius(10)
+
+                    let columns = [GridItem(.flexible()), GridItem(.flexible())]
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(Array(words.enumerated()), id: \.offset) { idx, word in
+                            HStack(spacing: 8) {
+                                Text(String(format: "%2d.", idx + 1))
+                                    .font(.body.monospacedDigit())
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 28, alignment: .trailing)
+                                Text(word)
+                                    .font(.body)
+                                    .textSelection(.enabled)
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(8)
+                        }
+                    }
+
+                    Button {
+                        UIPasteboard.general.string = mnemonic
+                        copied = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            copied = false
+                        }
+                    } label: {
+                        Label(
+                            copied ? "Copied!" : "Copy to Clipboard",
+                            systemImage: copied ? "checkmark" : "doc.on.doc"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
+            }
+            .navigationTitle("Recovery Phrase")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }

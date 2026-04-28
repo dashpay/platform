@@ -2405,4 +2405,209 @@ mod tests {
             "displayName should have been updated to Bob"
         );
     }
+
+    // ---------- Error-path tests (added for coverage) ----------
+
+    #[test]
+    fn test_update_document_for_contract_id_nonexistent_contract_returns_error() {
+        // `update_document_for_contract_id` resolves the contract by id.
+        // A nonexistent id must yield DocumentError::DataContractNotFound.
+        use crate::error::document::DocumentError;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Arbitrary serialized bytes - we never reach the deserialize step
+        // because the contract lookup fails first.
+        let dummy_serialized = vec![0u8; 32];
+        let nonexistent_contract_id: [u8; 32] = random();
+
+        let err = drive
+            .update_document_for_contract_id(
+                &dummy_serialized,
+                nonexistent_contract_id,
+                "profile",
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected update_document_for_contract_id to fail");
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_update_document_for_contract_id_invalid_document_type_returns_error() {
+        // The contract exists, but the document_type_name does not. This
+        // exercises the `contract.document_type_for_name(...)?` error branch
+        // in update_document_for_contract_id_v0.
+        let (drive, contract) = setup_dashpay("update-by-id-bad-type", true);
+        let platform_version = PlatformVersion::latest();
+
+        let dummy_serialized = vec![0u8; 32];
+
+        let err = drive
+            .update_document_for_contract_id(
+                &dummy_serialized,
+                contract.id().to_buffer(),
+                "not_a_real_document_type",
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected update_document_for_contract_id with bad type to fail");
+
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a document-type error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_update_document_for_contract_id_malformed_serialized_returns_error() {
+        // Contract & document type exist, but the serialized bytes are not a
+        // valid document. This exercises the `Document::from_bytes(...)?`
+        // error branch in update_document_for_contract_id_v0.
+        let (drive, contract) = setup_dashpay("update-by-id-bad-bytes", true);
+        let platform_version = PlatformVersion::latest();
+
+        // Definitively malformed: all zeros won't be a valid serialized doc.
+        let malformed = vec![0xFFu8; 8];
+
+        let err = drive
+            .update_document_for_contract_id(
+                &malformed,
+                contract.id().to_buffer(),
+                "profile",
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected update_document_for_contract_id with malformed bytes to fail");
+
+        // Should NOT be a contract-not-found error - the contract is valid.
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a deserialization error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_update_document_with_serialization_for_contract_invalid_document_type() {
+        // Exercises the `contract.document_type_for_name(...)?` error branch in
+        // update_document_with_serialization_for_contract_v0.
+        let (drive, contract) = setup_dashpay("update-ser-bad-type", true);
+        let platform_version = PlatformVersion::latest();
+
+        // Build a valid document & serialization against the real profile type
+        // so that we reach `document_type_for_name` with a bad name, not fail
+        // earlier elsewhere.
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let owner_id: Identifier = random::<[u8; 32]>().into();
+
+        let document = document_type
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                owner_id,
+                random(),
+                random(),
+                random(),
+                platform_version,
+            )
+            .expect("should create document");
+
+        let serialized = DocumentPlatformConversionMethodsV0::serialize(
+            &document,
+            document_type,
+            &contract,
+            platform_version,
+        )
+        .expect("expected to serialize");
+
+        let err = drive
+            .update_document_with_serialization_for_contract(
+                &document,
+                &serialized,
+                &contract,
+                "not_a_real_document_type",
+                Some(owner_id.to_buffer()),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect_err(
+                "expected update_document_with_serialization_for_contract with bad type to fail",
+            );
+
+        // Make sure this is not a DataContractNotFound - the contract is valid.
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a document-type error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_update_document_for_contract_id_v0_without_apply_dry_run_nonexistent_contract() {
+        // Exercises the estimation-costs branch (apply=false) combined with a
+        // nonexistent contract to verify the branch ordering: contract lookup
+        // occurs before estimation path setup matters, so we still get
+        // DataContractNotFound even with apply=false.
+        use crate::error::document::DocumentError;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let dummy_serialized = vec![0u8; 32];
+        let nonexistent_contract_id: [u8; 32] = random();
+
+        let err = drive
+            .update_document_for_contract_id(
+                &dummy_serialized,
+                nonexistent_contract_id,
+                "profile",
+                None,
+                BlockInfo::default(),
+                false, // apply=false ⇒ estimated costs path
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected update_document_for_contract_id (dry run) to fail");
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
 }

@@ -109,6 +109,6 @@ class ShieldedService: ObservableObject {
 
     private static func dbPath(for network: AppNetwork) -> String {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("shielded_\(network.rawValue).sqlite").path
+        return docs.appendingPathComponent("shielded_\(network.networkName).sqlite").path
     }
 }
