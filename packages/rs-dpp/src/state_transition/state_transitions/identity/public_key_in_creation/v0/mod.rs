@@ -350,3 +350,135 @@ impl TryFrom<&IdentityPublicKeyInCreationV0> for Value {
         platform_value::to_value(value)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::state_transition::public_key_in_creation::accessors::{
+        IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+    };
+    use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
+
+    fn make_key_v0() -> IdentityPublicKeyInCreationV0 {
+        IdentityPublicKeyInCreationV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::new(vec![0u8; 65]),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let key = IdentityPublicKeyInCreationV0::default();
+        assert_eq!(key.id, 0);
+        assert!(key.data.is_empty());
+        assert!(key.signature.is_empty());
+    }
+
+    #[test]
+    fn test_getters() {
+        let key = make_key_v0();
+        assert_eq!(key.id(), 0);
+        assert_eq!(key.key_type(), KeyType::ECDSA_SECP256K1);
+        assert_eq!(key.purpose(), Purpose::AUTHENTICATION);
+        assert_eq!(key.security_level(), SecurityLevel::MASTER);
+        assert!(!key.read_only());
+        assert_eq!(key.data().len(), 33);
+        assert_eq!(key.signature().len(), 65);
+        assert!(key.contract_bounds().is_none());
+    }
+
+    #[test]
+    fn test_setters() {
+        let mut key = make_key_v0();
+        key.set_id(5);
+        assert_eq!(key.id(), 5);
+        key.set_type(KeyType::BLS12_381);
+        assert_eq!(key.key_type(), KeyType::BLS12_381);
+        key.set_purpose(Purpose::TRANSFER);
+        assert_eq!(key.purpose(), Purpose::TRANSFER);
+        key.set_security_level(SecurityLevel::CRITICAL);
+        assert_eq!(key.security_level(), SecurityLevel::CRITICAL);
+        key.set_read_only(true);
+        assert!(key.read_only());
+        key.set_data(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(key.data().as_slice(), &[1, 2, 3]);
+        key.set_signature(BinaryData::new(vec![4, 5]));
+        assert_eq!(key.signature().as_slice(), &[4, 5]);
+        key.set_contract_bounds(None);
+        assert!(key.contract_bounds().is_none());
+    }
+
+    #[test]
+    fn test_into_identity_public_key() {
+        let key = make_key_v0();
+        let pk = key.clone().into_identity_public_key();
+        assert_eq!(pk.id(), key.id);
+        assert_eq!(pk.purpose(), key.purpose);
+        assert_eq!(pk.security_level(), key.security_level);
+        assert_eq!(pk.key_type(), key.key_type);
+    }
+
+    #[test]
+    fn test_from_identity_public_key() {
+        let key = make_key_v0();
+        let pk: IdentityPublicKey = key.clone().into();
+        let back: IdentityPublicKeyInCreationV0 = pk.into();
+        assert_eq!(back.id, key.id);
+        assert_eq!(back.purpose, key.purpose);
+        assert_eq!(back.security_level, key.security_level);
+        assert_eq!(back.key_type, key.key_type);
+        assert_eq!(back.data, key.data);
+        assert!(back.signature.is_empty()); // signature is cleared on conversion
+    }
+
+    #[test]
+    fn test_from_identity_public_key_ref() {
+        let key = make_key_v0();
+        let pk: IdentityPublicKey = key.clone().into();
+        let back: IdentityPublicKeyInCreationV0 = (&pk).into();
+        assert_eq!(back.id, key.id);
+    }
+
+    #[test]
+    fn test_from_ref_into_identity_public_key() {
+        let key = make_key_v0();
+        let pk: IdentityPublicKey = (&key).into();
+        assert_eq!(pk.id(), key.id);
+    }
+
+    #[test]
+    fn test_try_from_value_roundtrip() {
+        let key = make_key_v0();
+        let value: Value = (&key).try_into().expect("should convert to value");
+        let restored: IdentityPublicKeyInCreationV0 =
+            value.try_into().expect("should convert from value");
+        assert_eq!(key, restored);
+    }
+
+    #[test]
+    fn test_try_from_value_owned() {
+        let key = make_key_v0();
+        let value: Value = key.clone().try_into().expect("should convert to value");
+        let restored: IdentityPublicKeyInCreationV0 =
+            value.try_into().expect("should convert from value");
+        assert_eq!(key, restored);
+    }
+
+    #[test]
+    fn test_is_master() {
+        let key = make_key_v0();
+        assert!(key.is_master());
+        let non_master = IdentityPublicKeyInCreationV0 {
+            security_level: SecurityLevel::HIGH,
+            ..make_key_v0()
+        };
+        assert!(!non_master.is_master());
+    }
+}

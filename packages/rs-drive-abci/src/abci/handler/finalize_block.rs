@@ -77,7 +77,7 @@ where
     // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
     let config = &app.platform().config;
 
-    if app.platform().config.network == Network::Dash
+    if app.platform().config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
         && block_height < 33000
     {

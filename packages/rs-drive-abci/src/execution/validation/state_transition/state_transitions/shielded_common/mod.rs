@@ -47,7 +47,15 @@ pub fn warmup_shielded_verifying_key() {
 const EPK_SIZE: usize = 32;
 const ENC_CIPHERTEXT_SIZE: usize = 104;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
-const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 216
+
+// Import the canonical constant from DPP (single source of truth).
+use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
+
+// Compile-time check: component sizes must sum to the canonical constant.
+const _: () = assert!(
+    EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE == ENCRYPTED_NOTE_SIZE,
+    "component sizes diverged from ENCRYPTED_NOTE_SIZE"
+);
 
 /// Reconstructs an orchard `Bundle<Authorized, i64, DashMemo>` from the serialized fields
 /// of a shielded state transition and verifies the Halo 2 ZK proof along with
@@ -249,6 +257,14 @@ pub fn validate_nullifiers(
         }
     }
     // Phase 2: Check against state via Drive method
+    //
+    // SAFETY: No cross-transaction double-spend risk within a block. State
+    // transitions are processed sequentially: each transition's nullifier
+    // insertions are applied to the GroveDB transaction (via apply_batch)
+    // before the next transition's validation runs. GroveDB supports
+    // read-your-own-writes, so this lookup sees nullifiers from all prior
+    // transitions in the same block. The insert_only_known_to_not_already_exist_op
+    // provides an additional safety net at batch application time.
     for nullifier in nullifiers {
         let exists = drive
             .has_nullifier(nullifier, transaction, drive_operations, platform_version)

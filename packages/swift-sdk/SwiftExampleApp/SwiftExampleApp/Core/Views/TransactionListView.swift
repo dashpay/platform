@@ -3,26 +3,30 @@ import SwiftData
 import SwiftDashSDK
 
 struct TransactionListView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
-    let wallet: HDWallet
+    let wallet: PersistentWallet
 
-    @State private var transactions: [WalletTransaction] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var showError = false
-    @State private var selectedTransaction: WalletTransaction?
+    @Query private var transactions: [PersistentTransaction]
+    @State private var selectedTransaction: PersistentTransaction?
 
-    private var sortedTransactions: [WalletTransaction] {
-        transactions.sorted { $0.timestamp > $1.timestamp }
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        // Use the denormalized `PersistentTransaction.walletId`
+        // column rather than chaining `tx.account?.wallet?.walletId`.
+        // SwiftData's predicate compiler can't lower a double
+        // optional-relationship chain to SQLite and crashes with
+        // `Unsupported function expression TERNARY(...).walletId`.
+        _transactions = Query(
+            filter: #Predicate<PersistentTransaction> { tx in
+                tx.walletId == walletId
+            },
+            sort: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
+        )
     }
 
     var body: some View {
         ZStack {
-            if isLoading {
-                ProgressView("Loading transactions...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if transactions.isEmpty {
+            if transactions.isEmpty {
                 emptyStateView
             } else {
                 transactionsList
@@ -30,19 +34,8 @@ struct TransactionListView: View {
         }
         .navigationTitle("Transactions")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "Unknown error occurred")
-        }
         .sheet(item: $selectedTransaction) { transaction in
             TransactionDetailView(transaction: transaction)
-        }
-        .task {
-            await loadTransactions()
-        }
-        .refreshable {
-            await loadTransactions()
         }
     }
 
@@ -52,12 +45,12 @@ struct TransactionListView: View {
                 .font(.system(size: 60))
                 .foregroundColor(.gray)
 
-            Text("No Transactions Yet")
+            Text("No transactions found.")
                 .font(.headline)
 
             Text("Transactions will appear here once you send or receive Dash")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
         }
@@ -66,7 +59,7 @@ struct TransactionListView: View {
 
     private var transactionsList: some View {
         List {
-            ForEach(sortedTransactions, id: \.txid) { transaction in
+            ForEach(transactions, id: \.txid) { transaction in
                 Button {
                     selectedTransaction = transaction
                 } label: {
@@ -77,89 +70,76 @@ struct TransactionListView: View {
         }
         .listStyle(.insetGrouped)
     }
-
-    private func loadTransactions() async {
-        isLoading = true
-        defer { isLoading = false }
-
-        // Get transactions from the wallet manager
-        let fetchedTransactions = walletService.walletManager.getTransactions(for: wallet)
-
-        await MainActor.run {
-            self.transactions = fetchedTransactions
-        }
-    }
 }
 
 // MARK: - Transaction Row View
 
 struct TransactionRowView: View {
-    let transaction: WalletTransaction
+    let transaction: PersistentTransaction
 
     private var typeIcon: String {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "arrow.down.circle.fill"
-        case "sent":
+        case let amount where amount < 0:
             return "arrow.up.circle.fill"
-        case "self":
-            return "arrow.triangle.2.circlepath"
         default:
-            return "questionmark.circle"
+            return "arrow.triangle.2.circlepath"
         }
     }
 
     private var typeColor: Color {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return .green
-        case "sent":
+        case let amount where amount < 0:
             return .red
-        case "self":
-            return .blue
         default:
-            return .gray
+            return .blue
         }
+    }
+
+    private var isConfirmed: Bool {
+        // context: 0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock
+        transaction.context >= 2
+    }
+
+    private var truncatedTxid: String {
+        let txid = transaction.txid
+        guard txid.count > 16 else { return txid }
+        return "\(txid.prefix(8))…\(txid.suffix(8))"
+    }
+
+    private var transactionDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(transaction.firstSeen))
     }
 
     @ViewBuilder
     private var confirmationBadge: some View {
-        if transaction.confirmations == 0 {
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                    Text("Pending")
-                        .font(.caption2)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.2))
-                .foregroundColor(.orange)
-                .cornerRadius(4)
-            } else if transaction.confirmations < 6 {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.caption2)
-                    Text("\(transaction.confirmations)")
-                        .font(.caption2)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.blue.opacity(0.2))
-                .foregroundColor(.blue)
-                .cornerRadius(4)
-            } else {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.caption2)
-                    Text("Confirmed")
-                        .font(.caption2)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.green.opacity(0.2))
-                .foregroundColor(.green)
-                .cornerRadius(4)
+        if !isConfirmed {
+            HStack(spacing: 4) {
+                Image(systemName: "clock")
+                    .font(.caption2)
+                Text("Pending")
+                    .font(.caption2)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.orange.opacity(0.2))
+            .foregroundColor(.orange)
+            .cornerRadius(4)
+        } else {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2)
+                Text("Confirmed")
+                    .font(.caption2)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.green.opacity(0.2))
+            .foregroundColor(.green)
+            .cornerRadius(4)
         }
     }
 
@@ -172,36 +152,44 @@ struct TransactionRowView: View {
                 .frame(width: 40)
 
             VStack(alignment: .leading, spacing: 4) {
-                // Transaction ID (truncated)
-                Text(transaction.truncatedTxid)
-                    .font(.system(.subheadline, design: .monospaced))
-                    .foregroundColor(.primary)
+                // Transaction ID (truncated) and timestamp
+                HStack {
+                    Text(truncatedTxid)
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundColor(.primary)
 
-                // Date and confirmation
-                HStack(spacing: 8) {
-                    Text(transaction.date, style: .relative)
+                    Spacer()
+
+                    Text(transactionDate, style: .relative)
                         .font(.caption)
                         .foregroundColor(.secondary)
-
-                    confirmationBadge
                 }
-            }
 
-            Spacer()
+                // confirmation and amount
+                HStack {
+                    confirmationBadge
 
-            // Amount
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(transaction.formattedAmount)
-                    .font(.headline)
-                    .foregroundColor(typeColor)
+                    Spacer()
 
-                if let fee = transaction.formattedFee, transaction.type == "sent" {
-                    Text("Fee: \(fee)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(transaction.formattedAmount)
+                            .font(.headline)
+                            .foregroundColor(typeColor)
+
+                        if let fee = transaction.fee, transaction.netAmount < 0 {
+                            Text("Fee: \(formatFee(fee))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func formatFee(_ fee: UInt64) -> String {
+        let dash = Double(fee) / 100_000_000.0
+        return String(format: "%.8f DASH", dash)
     }
 }

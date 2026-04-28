@@ -92,7 +92,7 @@ mod tests {
             let epoch_info = mid_epoch(5);
             // Same version for original and new => None
             let result =
-                consensus_params_update(Network::Dash, platform_v1, platform_v1, &epoch_info);
+                consensus_params_update(Network::Mainnet, platform_v1, platform_v1, &epoch_info);
             assert!(result.is_ok());
             assert!(result.unwrap().is_none());
         }
@@ -112,7 +112,7 @@ mod tests {
             let epoch_info = mid_epoch(5);
             // Same version for original and new => None
             let result =
-                consensus_params_update(Network::Dash, platform_v3, platform_v3, &epoch_info);
+                consensus_params_update(Network::Mainnet, platform_v3, platform_v3, &epoch_info);
             assert!(result.is_ok());
             assert!(result.unwrap().is_none());
         }
@@ -130,7 +130,7 @@ mod tests {
 
             let epoch_info = mid_epoch(5);
             let result = consensus_params_update(
-                Network::Dash,
+                Network::Mainnet,
                 PlatformVersion::first(),
                 &bad_version,
                 &epoch_info,
@@ -165,9 +165,9 @@ mod tests {
             let epoch_info = epoch_change_to(3);
 
             let result =
-                consensus_params_update_v0(Network::Dash, platform_v1, platform_v1, &epoch_info);
+                consensus_params_update_v0(Network::Mainnet, platform_v1, platform_v1, &epoch_info);
 
-            let params = result.expect("should return Some for Dash epoch 3");
+            let params = result.expect("should return Some for Mainnet epoch 3");
             let version = params.version.expect("should have version params");
             assert_eq!(version.app_version, platform_v1.protocol_version as u64);
             assert_eq!(version.consensus_version, 1);
@@ -187,9 +187,9 @@ mod tests {
             let epoch_info = epoch_change_to(3);
 
             let result =
-                consensus_params_update_v0(Network::Dash, platform_v1, platform_v3, &epoch_info);
+                consensus_params_update_v0(Network::Mainnet, platform_v1, platform_v3, &epoch_info);
 
-            let params = result.expect("should return Some for Dash epoch 3");
+            let params = result.expect("should return Some for Mainnet epoch 3");
             let version = params.version.unwrap();
             // The app_version should come from new_platform_version, not original
             assert_eq!(version.app_version, platform_v3.protocol_version as u64);
@@ -202,7 +202,7 @@ mod tests {
 
             // Same versions => None
             let result =
-                consensus_params_update_v0(Network::Dash, platform_v1, platform_v1, &epoch_info);
+                consensus_params_update_v0(Network::Mainnet, platform_v1, platform_v1, &epoch_info);
             assert!(result.is_none());
         }
 
@@ -213,7 +213,7 @@ mod tests {
             let epoch_info = mid_epoch(3);
 
             let result =
-                consensus_params_update_v0(Network::Dash, platform_v1, platform_v1, &epoch_info);
+                consensus_params_update_v0(Network::Mainnet, platform_v1, platform_v1, &epoch_info);
             assert!(result.is_none());
         }
 
@@ -331,7 +331,7 @@ mod tests {
             let epoch_info = epoch_change_to(3);
 
             let result =
-                consensus_params_update_v0(Network::Dash, platform_v2, platform_v3, &epoch_info);
+                consensus_params_update_v0(Network::Mainnet, platform_v2, platform_v3, &epoch_info);
 
             let params = result.expect("should return Some for emergency update");
             let version = params.version.unwrap();
@@ -355,9 +355,9 @@ mod tests {
             let epoch_info = epoch_change_to(3);
 
             let result =
-                consensus_params_update_v1(Network::Dash, platform_v3, platform_v3, &epoch_info);
+                consensus_params_update_v1(Network::Mainnet, platform_v3, platform_v3, &epoch_info);
 
-            let params = result.expect("should return Some for Dash epoch 3");
+            let params = result.expect("should return Some for Mainnet epoch 3");
             let version = params.version.expect("should have version params");
             assert_eq!(version.app_version, platform_v3.protocol_version as u64);
             assert_eq!(version.consensus_version, 1);
@@ -485,7 +485,7 @@ mod tests {
             let epoch_info = epoch_change_to(3);
 
             let result =
-                consensus_params_update_v1(Network::Dash, platform_v2, platform_v3, &epoch_info);
+                consensus_params_update_v1(Network::Mainnet, platform_v2, platform_v3, &epoch_info);
 
             let params = result.expect("emergency update should fire");
             let version = params.version.unwrap();
@@ -498,7 +498,7 @@ mod tests {
             let epoch_info = mid_epoch(3);
 
             let result =
-                consensus_params_update_v1(Network::Dash, platform_v3, platform_v3, &epoch_info);
+                consensus_params_update_v1(Network::Mainnet, platform_v3, platform_v3, &epoch_info);
             assert!(result.is_none());
         }
 
@@ -526,7 +526,7 @@ mod tests {
             let epoch_info = epoch_change_to(3);
 
             let result =
-                consensus_params_update(Network::Dash, platform_v1, platform_v1, &epoch_info)
+                consensus_params_update(Network::Mainnet, platform_v1, platform_v1, &epoch_info)
                     .expect("should not error");
 
             assert!(result.is_some());

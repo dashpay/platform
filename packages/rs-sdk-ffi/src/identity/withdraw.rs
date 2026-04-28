@@ -89,7 +89,8 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
     // and points to a live Identity. We cannot detect dangling pointers without a handle
     // registry; null checks are the only sound validation available.
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
+    let signer =
+        crate::signer::VTableSignerRef(&*(signer_handle as *const crate::signer::VTableSigner));
 
     debug!("dash_sdk_identity_withdraw: handles dereferenced successfully");
     debug!(id = ?identity.id(), balance = identity.balance(), keys = identity.public_keys().len(), "dash_sdk_identity_withdraw: identity summary");
@@ -192,7 +193,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
         debug!("dash_sdk_identity_withdraw: trait imported");
 
-        debug!(?withdraw_address, amount, ?core_fee, has_signing_key = signing_key.is_some(), signer_ptr = ?(signer as *const _), "dash_sdk_identity_withdraw: calling withdraw method");
+        debug!(?withdraw_address, amount, ?core_fee, has_signing_key = signing_key.is_some(), signer_ptr = ?(signer.0 as *const _), "dash_sdk_identity_withdraw: calling withdraw method");
 
         // Log signing key details for diagnostics
         if let Some(key) = signing_key {
@@ -216,7 +217,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
                 amount,
                 core_fee,
                 signing_key,
-                *signer,
+                signer,
                 settings,
             )
             .await
@@ -305,7 +306,7 @@ mod tests {
         let result = unsafe {
             dash_sdk_identity_withdraw(
                 std::ptr::null_mut(), // null SDK handle
-                0x1 as *const IdentityHandle,
+                std::ptr::dangling::<IdentityHandle>(),
                 address,
                 1000,
                 0,

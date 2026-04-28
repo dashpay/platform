@@ -46,11 +46,20 @@ public enum AccountType: UInt32 {
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
 
-    var ffiValue: FFIAccountType {
-        FFIAccountType(rawValue: self.rawValue)
+    /// Convert to the upstream FFI discriminant enum.
+    ///
+    /// Upstream renamed the FFI account discriminant from `FFIAccountType`
+    /// (the old enum) to `FFIAccountKind` (the new enum) and reused the
+    /// `FFIAccountType` name for a richer struct that bundles the
+    /// discriminant with index / Dashpay-pointer / key-class fields.
+    /// The Swift `AccountType` enum here only models the discriminant
+    /// case — Dashpay and PlatformPayment variants need richer
+    /// construction paths and aren't surfaced through this type today.
+    var ffiValue: FFIAccountKind {
+        FFIAccountKind(rawValue: self.rawValue)
     }
 
-    init(ffiType: FFIAccountType) {
+    init(ffiType: FFIAccountKind) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }
 }
@@ -69,23 +78,6 @@ public enum AddressPoolType: UInt32 {
 
     init(ffiType: FFIAddressPoolType) {
         self = AddressPoolType(rawValue: ffiType.rawValue) ?? .external
-    }
-}
-
-// MARK: - Transaction Context
-
-/// Transaction context for checking
-public enum TransactionContext: UInt32 {
-    case mempool = 0
-    case inBlock = 1
-    case inChainLockedBlock = 2
-
-    var ffiValue: FFITransactionContext {
-        FFITransactionContext(rawValue: self.rawValue)
-    }
-
-    init(ffiContext: FFITransactionContext) {
-        self = TransactionContext(rawValue: ffiContext.rawValue) ?? .mempool
     }
 }
 
@@ -251,26 +243,19 @@ public struct TransactionCheckResult {
     }
 }
 
-/// Transaction context details
+/// Transaction context details (wraps FFITransactionContext + FFIBlockInfo)
 public struct TransactionContextDetails {
-    public let context: TransactionContext
+    public let context: TransactionContextType
     public let height: UInt32
     public let blockHash: Data?
     public let timestamp: UInt32
 
-    func toFFI() -> FFITransactionContextDetails {
-        var details = FFITransactionContextDetails()
-        details.context_type = context.ffiValue
-        details.height = height
-        details.timestamp = timestamp
-
-        if let hash = blockHash {
-            hash.withUnsafeBytes { bytes in
-                details.block_hash = bytes.bindMemory(to: UInt8.self).baseAddress
-            }
-        }
-
-        return details
+    init(ffiContext: FFITransactionContext) {
+        self.context = TransactionContextType(ffiContext: ffiContext.context_type)
+        self.height = ffiContext.block_info.height
+        self.timestamp = ffiContext.block_info.timestamp
+        let hashBytes = withUnsafeBytes(of: ffiContext.block_info.block_hash) { Data($0) }
+        self.blockHash = hashBytes.allSatisfy({ $0 == 0 }) ? nil : hashBytes
     }
 }
 

@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
@@ -65,7 +66,7 @@ mod tests {
 
     /// Builds a `ShieldTransitionV0` and signs it with the provided signer.
     /// The transition will have valid witnesses for all inputs.
-    fn create_signed_shield_transition(
+    async fn create_signed_shield_transition(
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
@@ -91,14 +92,14 @@ mod tests {
         let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
 
         // Sign each input with the signer
-        let witnesses: Vec<AddressWitness> = inputs
-            .keys()
-            .map(|address| {
-                signer
-                    .sign_create_witness(address, &signable_bytes)
-                    .expect("should sign")
-            })
-            .collect();
+        let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            let witness = signer
+                .sign_create_witness(address, &signable_bytes)
+                .await
+                .expect("should sign");
+            witnesses.push(witness);
+        }
 
         // Inject witnesses
         if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
@@ -109,7 +110,7 @@ mod tests {
 
     /// Shorthand for creating a structurally valid (but cryptographically invalid) signed shield
     /// transition with a single input address. The ZK proof data is random/dummy.
-    fn create_default_signed_shield_transition(
+    async fn create_default_signed_shield_transition(
         signer: &TestAddressSigner,
         input_address: PlatformAddress,
         input_nonce: AddressNonce,
@@ -127,6 +128,7 @@ mod tests {
             [0u8; 64],      // dummy binding signature
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
         )
+        .await
     }
 
     // (Orchard ProvingKey and serialize_authorized_bundle are now shared
@@ -139,8 +141,8 @@ mod tests {
     mod structure_validation {
         use super::*;
 
-        #[test]
-        fn test_empty_actions_returns_error() {
+        #[tokio::test]
+        async fn test_empty_actions_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -163,7 +165,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -175,8 +178,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_inputs_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
@@ -203,8 +206,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_witness_count_mismatch_returns_error() {
+        #[tokio::test]
+        async fn test_witness_count_mismatch_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -218,7 +221,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             // Add an extra dummy witness to cause mismatch (1 input, 2 witnesses)
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
@@ -239,8 +243,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_input_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -261,7 +265,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -273,18 +278,18 @@ mod tests {
             );
         }
 
-        /// Tests validate_structure directly because 101 actions exceed the
-        /// max_state_transition_size (20KB) before reaching the actions count check
-        /// in the full pipeline.
+        /// Tests `validate_structure` directly to exercise the
+        /// `max_shielded_transition_actions` check in isolation, without
+        /// depending on the full transition-processing pipeline.
         #[test]
         fn test_too_many_actions_returns_error() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
 
-            // 101 actions exceeds max_shielded_transition_actions (100)
+            // 17 actions exceeds max_shielded_transition_actions (16)
             let actions: Vec<SerializedAction> =
-                (0..101).map(|_| create_dummy_serialized_action()).collect();
+                (0..17).map(|_| create_dummy_serialized_action()).collect();
 
             let transition = ShieldTransitionV0 {
                 inputs: BTreeMap::new(),
@@ -310,8 +315,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_amount_exceeding_i64_max_returns_error() {
+        #[tokio::test]
+        async fn test_amount_exceeding_i64_max_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -332,7 +337,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -344,8 +350,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_zero_value_balance_returns_error() {
+        #[tokio::test]
+        async fn test_zero_value_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -366,7 +372,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -378,8 +385,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_proof_returns_error() {
+        #[tokio::test]
+        async fn test_empty_proof_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -400,7 +407,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -412,8 +420,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_fee_strategy_returns_error() {
+        #[tokio::test]
+        async fn test_empty_fee_strategy_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -432,7 +440,8 @@ mod tests {
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![]), // Empty fee strategy
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -444,8 +453,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_too_many_steps_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_too_many_steps_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -471,7 +480,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(3),
                     AddressFundsFeeStrategyStep::DeductFromInput(4),
                 ]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -483,8 +493,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_duplicate_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_duplicate_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -506,7 +516,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0), // Duplicate
                 ]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -526,8 +537,8 @@ mod tests {
     mod witness_validation {
         use super::*;
 
-        #[test]
-        fn test_invalid_witness_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_witness_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -541,7 +552,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             // Tamper the witness signature
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
@@ -567,8 +579,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_key_witness_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_key_witness_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -595,7 +607,8 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             // Replace the valid witness with one signed by a different key
             let signable_bytes = transition
@@ -603,6 +616,7 @@ mod tests {
                 .expect("should compute signable bytes");
             let wrong_witness = wrong_signer
                 .sign_create_witness(&_wrong_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
@@ -629,8 +643,8 @@ mod tests {
     mod address_state_validation {
         use super::*;
 
-        #[test]
-        fn test_address_not_found_returns_error() {
+        #[tokio::test]
+        async fn test_address_not_found_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
@@ -643,7 +657,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -655,8 +670,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -671,7 +686,8 @@ mod tests {
                 input_address,
                 5, // Wrong nonce — state has 0, expected next is 1
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -683,8 +699,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -699,7 +715,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(1.0), // Way more than 0.001 Dash balance
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -719,8 +736,8 @@ mod tests {
     mod proof_verification {
         use super::*;
 
-        #[test]
-        fn test_invalid_proof_returns_shielded_proof_error() {
+        #[tokio::test]
+        async fn test_invalid_proof_returns_shielded_proof_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -736,7 +753,8 @@ mod tests {
                 input_address,
                 1,
                 dash_to_credits!(0.5),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
@@ -752,8 +770,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_valid_shield_proof_succeeds() {
+        #[tokio::test]
+        async fn test_valid_shield_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -825,14 +843,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
@@ -846,8 +864,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_encrypted_note_size_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_encrypted_note_size_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -872,16 +890,19 @@ mod tests {
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
-            );
+            )
+            .await;
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // The encrypted_note size check happens in reconstruct_and_verify_bundle,
-            // which now runs at the processor level before state validation.
+            // The encrypted_note size check now happens in DPP structure validation
+            // (before reaching proof verification), returning a BasicError.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }
@@ -897,8 +918,8 @@ mod tests {
         /// Zero anchor is rejected at structure validation.
         /// Tests validate_structure directly because witness verification runs before
         /// structure validation in the full pipeline.
-        #[test]
-        fn test_zero_anchor_returns_error() {
+        #[tokio::test]
+        async fn test_zero_anchor_returns_error() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
@@ -939,8 +960,8 @@ mod tests {
         /// value_balance from -5000 to -100000 was accepted. Now with
         /// BatchValidator, the changed value_balance produces a different
         /// bundle commitment (sighash), causing signature verification to fail.
-        #[test]
-        fn test_valid_proof_with_mutated_value_balance_is_rejected() {
+        #[tokio::test]
+        async fn test_valid_proof_with_mutated_value_balance_is_rejected() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -1010,14 +1031,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
@@ -1046,8 +1067,8 @@ mod tests {
         /// With the fix, the transition is rejected at structure validation.
         ///
         /// Based on reproducer by pasta (commit a85f4b74).
-        #[test]
-        fn test_rejects_shield_when_inputs_less_than_amount() {
+        #[tokio::test]
+        async fn test_rejects_shield_when_inputs_less_than_amount() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
 
@@ -1117,14 +1138,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
@@ -1159,8 +1180,8 @@ mod tests {
         };
         use rand::rngs::OsRng;
 
-        #[test]
-        fn test_shield_prove_and_verify_address_balances() {
+        #[tokio::test]
+        async fn test_shield_prove_and_verify_address_balances() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let mut rng = OsRng;
@@ -1231,14 +1252,14 @@ mod tests {
             }));
 
             let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let witnesses: Vec<AddressWitness> = inputs
-                .keys()
-                .map(|address| {
-                    signer
-                        .sign_create_witness(address, &signable_bytes)
-                        .expect("should sign")
-                })
-                .collect();
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
 
             if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;

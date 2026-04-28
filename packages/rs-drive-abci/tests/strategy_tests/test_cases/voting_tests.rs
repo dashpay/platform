@@ -41,9 +41,9 @@ mod tests {
 
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_temporarily_disabled_contested_documents() {
+    #[test]
+    async fn run_chain_with_temporarily_disabled_contested_documents() {
         let epoch_time_length_s = 60;
 
         let config = PlatformConfig {
@@ -91,6 +91,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -184,7 +185,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform_state = abci_app.platform.state.load();
 
@@ -243,7 +245,8 @@ mod tests {
             NetworkStrategy::default(),
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let platform_state = abci_app.platform.state.load();
 
@@ -310,7 +313,8 @@ mod tests {
             strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let state_transitions_block_6 = state_transition_results_per_block
             .get(&6)
@@ -328,9 +332,9 @@ mod tests {
         assert_eq!(execution_result.code, 0);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block_version_8(
+    #[test]
+    async fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block_version_8(
     ) {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
@@ -380,6 +384,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -492,7 +497,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -602,9 +608,9 @@ mod tests {
         assert_eq!(second_contender.vote_count, Some(0));
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_on_conflicting_index_just_abstain_votes() {
+    #[test]
+    async fn run_chain_with_voting_on_conflicting_index_just_abstain_votes() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -652,6 +658,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -778,7 +785,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -871,7 +879,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -955,9 +964,9 @@ mod tests {
         assert_eq!(abstain_vote_tally, Some(124));
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_on_conflicting_index_various_votes() {
+    #[test]
+    async fn run_chain_with_voting_on_conflicting_index_various_votes() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1005,6 +1014,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1131,7 +1141,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -1229,7 +1240,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -1319,9 +1331,9 @@ mod tests {
         assert_eq!(finished_vote_info, None);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution() {
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1370,6 +1382,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1495,7 +1508,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -1606,7 +1620,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -1717,9 +1732,9 @@ mod tests {
         assert_eq!(processing_fees, 50_000_000);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution() {
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1767,6 +1782,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1892,7 +1908,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2003,7 +2020,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
 
@@ -2118,9 +2136,9 @@ mod tests {
         assert_eq!(processing_fees, 39_860_000_000);
     }
 
-    #[test]
     #[stack_size(STACK_SIZE)]
-    fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution_until_version_8(
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_no_specialized_funds_distribution_until_version_8(
     ) {
         // In this test the goal is to verify that when we hit version 8 that the specialized balances
         // that hadn't been properly distributed are distributed.
@@ -2173,6 +2191,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -2304,7 +2323,8 @@ mod tests {
             15,
             &mut voting_signer,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2430,7 +2450,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2628,7 +2649,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9203),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
 
@@ -2756,7 +2778,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9203),
-        );
+        )
+        .await;
 
         block_start += 1;
 
@@ -2808,7 +2831,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(9203),
-        );
+        )
+        .await;
 
         let platform = outcome.abci_app.platform;
         platform

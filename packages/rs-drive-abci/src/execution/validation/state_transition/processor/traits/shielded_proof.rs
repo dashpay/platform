@@ -129,15 +129,31 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 // Storage fee per action: 312 bytes (280 BulkAppendTree + 32 nullifier)
                 // × (storage_disk_usage_credit_per_byte + storage_processing_credit_per_byte)
                 let storage_costs = &platform_version.fee_version.storage;
-                let storage_fee_per_action = SHIELDED_STORAGE_BYTES_PER_ACTION
-                    * (storage_costs.storage_disk_usage_credit_per_byte
-                        + storage_costs.storage_processing_credit_per_byte);
+                let storage_fee_per_action = storage_costs
+                    .storage_disk_usage_credit_per_byte
+                    .checked_add(storage_costs.storage_processing_credit_per_byte)
+                    .and_then(|sum| SHIELDED_STORAGE_BYTES_PER_ACTION.checked_mul(sum))
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "storage fee per action overflow in shielded fee calculation",
+                    )))?;
 
                 // min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
-                let per_action_fee =
-                    constants.shielded_per_action_processing_fee + storage_fee_per_action;
-                let minimum_shielded_fee =
-                    constants.shielded_proof_verification_fee + num_actions as u64 * per_action_fee;
+                let per_action_fee = constants
+                    .shielded_per_action_processing_fee
+                    .checked_add(storage_fee_per_action)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "per-action fee overflow in shielded fee calculation",
+                    )))?;
+                let minimum_shielded_fee = (num_actions as u64)
+                    .checked_mul(per_action_fee)
+                    .and_then(|actions_fee| {
+                        constants
+                            .shielded_proof_verification_fee
+                            .checked_add(actions_fee)
+                    })
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "minimum shielded fee overflow in shielded fee calculation",
+                    )))?;
 
                 if (fee as u64) < minimum_shielded_fee {
                     Ok(SimpleConsensusValidationResult::new_with_error(

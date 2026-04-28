@@ -23,7 +23,7 @@ pub trait DataContractUpdateTransitionMethodsV0 {
     /// * `Result<Self, ProtocolError>` - If successful, returns an instance of `DataContractUpdateTransition`.
     ///   In case of any error, a relevant `ProtocolError` is returned.
     #[allow(clippy::too_many_arguments)]
-    fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
+    async fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,

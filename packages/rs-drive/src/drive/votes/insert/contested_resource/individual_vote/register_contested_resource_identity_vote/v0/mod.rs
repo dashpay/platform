@@ -170,3 +170,84 @@ impl Drive {
         Ok(drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use platform_version::version::PlatformVersion;
+
+    fn dpns_vote_poll(
+        document_type_name: &str,
+        index_name: &str,
+    ) -> ContestedDocumentResourceVotePollWithContractInfo {
+        let pv = PlatformVersion::latest();
+        let data_contract =
+            get_dpns_data_contract_fixture(None, 0, pv.protocol_version).data_contract_owned();
+        ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(data_contract),
+            document_type_name: document_type_name.to_string(),
+            index_name: index_name.to_string(),
+            index_values: vec![],
+        }
+    }
+
+    /// When vote_poll references an index that doesn't exist, the operations
+    /// generation path surfaces the ContestedIndexNotFound error and does NOT
+    /// apply anything to GroveDB.
+    #[test]
+    fn register_operations_rejects_missing_index() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let poll = dpns_vote_poll("domain", "bogus_index");
+
+        let err = drive
+            .register_contested_resource_identity_vote_operations_v0(
+                [7u8; 32],
+                1,
+                poll,
+                ResourceVoteChoice::Abstain,
+                None,
+                None,
+                platform_version,
+            )
+            .expect_err("missing index must propagate");
+        match err {
+            Error::Drive(DriveError::ContestedIndexNotFound(_)) => {}
+            other => panic!("expected ContestedIndexNotFound, got {:?}", other),
+        }
+    }
+
+    /// When the document type does not exist on the contract, operations
+    /// generation surfaces a DataContractError via Error::Protocol — guarding
+    /// against silent mis-routing of votes.
+    #[test]
+    fn register_operations_rejects_missing_document_type() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let poll = dpns_vote_poll("bogus_doc_type", "parentNameAndLabel");
+
+        let err = drive
+            .register_contested_resource_identity_vote_operations_v0(
+                [7u8; 32],
+                4,
+                poll,
+                ResourceVoteChoice::Abstain,
+                None,
+                None,
+                platform_version,
+            )
+            .expect_err("missing doc type must propagate");
+        match err {
+            Error::Drive(_) | Error::Protocol(_) => {}
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+}

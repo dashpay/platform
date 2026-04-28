@@ -107,7 +107,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
     // Parse configuration
     let network = match config.network {
-        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
         DashSDKNetwork::SDKTestnet => Network::Testnet,
         DashSDKNetwork::SDKRegtest => Network::Regtest,
         DashSDKNetwork::SDKDevnet => Network::Devnet,
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
     // Parse configuration
     let network = match base_config.network {
-        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
         DashSDKNetwork::SDKTestnet => Network::Testnet,
         DashSDKNetwork::SDKRegtest => Network::Regtest,
         DashSDKNetwork::SDKDevnet => Network::Devnet,
@@ -310,7 +310,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 
     // Parse configuration
     let network = match config.network {
-        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
         DashSDKNetwork::SDKTestnet => Network::Testnet,
         DashSDKNetwork::SDKRegtest => Network::Regtest,
         DashSDKNetwork::SDKDevnet => Network::Devnet,
@@ -331,21 +331,47 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     );
 
     // Create trusted context provider
-    let trusted_provider = match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
-        network,
-        None,                                      // Use default quorum lookup endpoints
-        std::num::NonZeroUsize::new(100).unwrap(), // Cache size
-    ) {
-        Ok(provider) => {
-            info!("dash_sdk_create_trusted: trusted context provider created");
-            Arc::new(provider)
+    // For local/regtest, use the quorum sidecar at localhost:22444 (dashmate Docker default)
+    let is_local = matches!(
+        config.network,
+        DashSDKNetwork::SDKLocal | DashSDKNetwork::SDKRegtest
+    );
+    let trusted_provider = if is_local {
+        info!("dash_sdk_create_trusted: using local quorum sidecar for regtest");
+        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            network,
+            "http://127.0.0.1:22444".to_string(),
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ) {
+            Ok(provider) => {
+                info!("dash_sdk_create_trusted: local trusted context provider created");
+                Arc::new(provider)
+            }
+            Err(e) => {
+                error!(error = %e, "dash_sdk_create_trusted: failed to create local context provider");
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    format!("Failed to create local context provider: {}", e),
+                ));
+            }
         }
-        Err(e) => {
-            error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Failed to create trusted context provider: {}", e),
-            ));
+    } else {
+        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
+            network,
+            None,                                      // Use default quorum lookup endpoints
+            std::num::NonZeroUsize::new(100).unwrap(), // Cache size
+        ) {
+            Ok(provider) => {
+                info!("dash_sdk_create_trusted: trusted context provider created");
+                Arc::new(provider)
+            }
+            Err(e) => {
+                error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    format!("Failed to create trusted context provider: {}", e),
+                ));
+            }
         }
     };
 
@@ -355,15 +381,37 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         // Use default addresses for the network
         match network {
             Network::Testnet => {
-                // Use testnet addresses from WASM SDK
+                // Fixed testnet DAPI addresses (hp-masternodes 1-29)
                 let default_addresses = [
-                    "https://52.12.176.90:1443",
-                    "https://35.82.197.197:1443",
-                    "https://44.240.98.102:1443",
-                    "https://52.34.144.50:1443",
-                    "https://44.239.39.153:1443",
-                    "https://35.164.23.245:1443",
-                    "https://54.149.33.167:1443",
+                    "https://68.67.122.1:1443",
+                    "https://68.67.122.2:1443",
+                    "https://68.67.122.3:1443",
+                    "https://68.67.122.4:1443",
+                    "https://68.67.122.5:1443",
+                    "https://68.67.122.6:1443",
+                    "https://68.67.122.7:1443",
+                    "https://68.67.122.8:1443",
+                    "https://68.67.122.9:1443",
+                    "https://68.67.122.10:1443",
+                    "https://68.67.122.11:1443",
+                    "https://68.67.122.12:1443",
+                    "https://68.67.122.13:1443",
+                    "https://68.67.122.14:1443",
+                    "https://68.67.122.15:1443",
+                    "https://68.67.122.16:1443",
+                    "https://68.67.122.17:1443",
+                    "https://68.67.122.18:1443",
+                    "https://68.67.122.19:1443",
+                    "https://68.67.122.20:1443",
+                    "https://68.67.122.21:1443",
+                    "https://68.67.122.22:1443",
+                    "https://68.67.122.23:1443",
+                    "https://68.67.122.24:1443",
+                    "https://68.67.122.25:1443",
+                    "https://68.67.122.26:1443",
+                    "https://68.67.122.27:1443",
+                    "https://68.67.122.28:1443",
+                    "https://68.67.122.29:1443",
                 ]
                 .join(",");
 
@@ -383,7 +431,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                 };
                 SdkBuilder::new(address_list).with_network(network)
             }
-            Network::Dash => {
+            Network::Mainnet => {
                 // Use mainnet addresses from WASM SDK
                 let default_addresses = [
                     "https://149.28.241.190:443",
@@ -524,6 +572,24 @@ pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
     }
 }
 
+/// Get a raw pointer to the inner SDK struct from an SDK handle.
+///
+/// Returns an opaque pointer valid as long as the SDK handle is alive.
+/// Used by platform-wallet-ffi to create a `PlatformWalletManager`.
+///
+/// # Safety
+/// - `handle` must be a valid, non-null SDK handle.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
+    handle: *const SDKHandle,
+) -> *const std::os::raw::c_void {
+    if handle.is_null() {
+        return std::ptr::null();
+    }
+    let wrapper = &*(handle as *const SDKWrapper);
+    &wrapper.sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void
+}
+
 /// Register global context provider callbacks
 ///
 /// This must be called before creating an SDK instance that needs Core SDK functionality.
@@ -631,11 +697,10 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashS
 
     let wrapper = &*(handle as *const SDKWrapper);
     match wrapper.sdk.network {
-        Network::Dash => DashSDKNetwork::SDKMainnet,
+        Network::Mainnet => DashSDKNetwork::SDKMainnet,
         Network::Testnet => DashSDKNetwork::SDKTestnet,
         Network::Regtest => DashSDKNetwork::SDKRegtest,
         Network::Devnet => DashSDKNetwork::SDKDevnet,
-        _ => DashSDKNetwork::SDKLocal, // Fallback for any other network types
     }
 }
 

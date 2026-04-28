@@ -130,6 +130,7 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::drive::Drive;
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -146,5 +147,143 @@ mod tests {
             .calculate_total_credits_balance(Some(&db_transaction), &platform_version.drive)
             .expect("expected to get the result of the verification");
         assert!(credits_match_expected.ok().expect("no overflow"));
+    }
+
+    mod path_helpers {
+        use super::*;
+
+        #[test]
+        fn total_credits_path_is_two_elements() {
+            let p = total_credits_path();
+            assert_eq!(p.len(), 2);
+            assert_eq!(p[1], TOTAL_SYSTEM_CREDITS_STORAGE_KEY);
+        }
+
+        #[test]
+        fn total_credits_path_vec_matches_array_form() {
+            let arr = total_credits_path();
+            let v = total_credits_path_vec();
+            assert_eq!(v.len(), arr.len());
+            for (a, b) in arr.iter().zip(v.iter()) {
+                assert_eq!(*a, b.as_slice());
+            }
+        }
+
+        #[test]
+        fn total_credits_on_platform_path_query_single_key() {
+            let q = total_credits_on_platform_path_query();
+            assert_eq!(q.path.len(), 1);
+            assert_eq!(q.query.limit, Some(1));
+            assert!(q.query.offset.is_none());
+        }
+
+        #[test]
+        fn total_tokens_root_supply_path_is_two_elements() {
+            let p = total_tokens_root_supply_path();
+            assert_eq!(p.len(), 2);
+            assert_eq!(p[1], TOTAL_TOKEN_SUPPLIES_STORAGE_KEY);
+        }
+
+        #[test]
+        fn total_tokens_root_supply_path_vec_matches_array() {
+            let arr = total_tokens_root_supply_path();
+            let v = total_tokens_root_supply_path_vec();
+            assert_eq!(v.len(), arr.len());
+            for (a, b) in arr.iter().zip(v.iter()) {
+                assert_eq!(*a, b.as_slice());
+            }
+        }
+
+        #[test]
+        fn total_token_supply_paths_include_token_id() {
+            let token_id = [7u8; 32];
+            let p = total_token_supply_path(&token_id);
+            assert_eq!(p.len(), 3);
+            assert_eq!(p[2], &token_id);
+
+            let v = total_token_supply_path_vec(token_id);
+            assert_eq!(v.len(), 3);
+            assert_eq!(v[2], token_id.to_vec());
+        }
+
+        #[test]
+        fn total_supply_for_token_path_query_uses_token_id() {
+            let token_id = [0xAAu8; 32];
+            let q = total_supply_for_token_on_platform_path_query(token_id);
+            assert_eq!(q.path.len(), 2);
+            assert_eq!(q.query.limit, Some(1));
+        }
+
+        #[test]
+        fn balance_path_has_single_segment() {
+            let bp = balance_path();
+            assert_eq!(bp.len(), 1);
+            let bpv = balance_path_vec();
+            assert_eq!(bpv.len(), 1);
+            assert_eq!(bp[0], bpv[0].as_slice());
+        }
+    }
+
+    mod add_remove_credits {
+        use super::*;
+
+        #[test]
+        fn add_then_remove_roundtrip() {
+            let drive: Drive = setup_drive_with_initial_state_structure(None);
+            let tx = drive.grove.start_transaction();
+            let pv = PlatformVersion::latest();
+
+            // Snapshot before
+            let before = drive
+                .calculate_total_credits_balance(Some(&tx), &pv.drive)
+                .expect("calc before");
+            let before_total = before.total_credits_in_platform;
+
+            // Add 1_000_000 credits
+            drive
+                .add_to_system_credits(1_000_000, Some(&tx), pv)
+                .expect("add credits");
+
+            let after_add = drive
+                .calculate_total_credits_balance(Some(&tx), &pv.drive)
+                .expect("calc after add");
+            assert_eq!(
+                after_add.total_credits_in_platform,
+                before_total + 1_000_000
+            );
+
+            // Remove them again
+            drive
+                .remove_from_system_credits(1_000_000, Some(&tx), pv)
+                .expect("remove credits");
+
+            let after_remove = drive
+                .calculate_total_credits_balance(Some(&tx), &pv.drive)
+                .expect("calc after remove");
+            assert_eq!(after_remove.total_credits_in_platform, before_total);
+        }
+
+        #[test]
+        fn add_zero_credits_is_noop() {
+            let drive: Drive = setup_drive_with_initial_state_structure(None);
+            let tx = drive.grove.start_transaction();
+            let pv = PlatformVersion::latest();
+
+            let before = drive
+                .calculate_total_credits_balance(Some(&tx), &pv.drive)
+                .expect("before");
+
+            drive
+                .add_to_system_credits(0, Some(&tx), pv)
+                .expect("add zero");
+
+            let after = drive
+                .calculate_total_credits_balance(Some(&tx), &pv.drive)
+                .expect("after");
+            assert_eq!(
+                before.total_credits_in_platform,
+                after.total_credits_in_platform
+            );
+        }
     }
 }

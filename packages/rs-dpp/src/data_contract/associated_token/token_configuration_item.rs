@@ -291,3 +291,462 @@ impl fmt::Display for TokenConfigurationChangeItem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// Helper: build one instance of every variant using default inner values.
+    fn all_variants() -> Vec<TokenConfigurationChangeItem> {
+        let aat = AuthorizedActionTakers::NoOne;
+        vec![
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            TokenConfigurationChangeItem::Conventions(
+                TokenConfigurationConvention::V0(
+                    crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0::default(),
+                ),
+            ),
+            TokenConfigurationChangeItem::ConventionsControlGroup(aat),
+            TokenConfigurationChangeItem::ConventionsAdminGroup(aat),
+            TokenConfigurationChangeItem::MaxSupply(None),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat),
+            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistribution(None),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(None),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(false),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualMinting(aat),
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualBurning(aat),
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat),
+            TokenConfigurationChangeItem::Freeze(aat),
+            TokenConfigurationChangeItem::FreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::Unfreeze(aat),
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFunds(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat),
+            TokenConfigurationChangeItem::EmergencyAction(aat),
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::default()),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat),
+            TokenConfigurationChangeItem::MainControlGroup(None),
+        ]
+    }
+
+    // ---- u8_item_index returns unique values 0..=31 ----
+
+    #[test]
+    fn u8_item_index_values_are_unique() {
+        let variants = all_variants();
+        let indices: Vec<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
+        let unique: BTreeSet<u8> = indices.iter().cloned().collect();
+        assert_eq!(
+            indices.len(),
+            unique.len(),
+            "Duplicate u8_item_index values found: {:?}",
+            indices
+        );
+    }
+
+    #[test]
+    fn u8_item_index_covers_0_through_31() {
+        let variants = all_variants();
+        let indices: BTreeSet<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
+        for i in 0u8..=31 {
+            assert!(indices.contains(&i), "Missing u8_item_index value: {}", i);
+        }
+    }
+
+    #[test]
+    fn u8_item_index_all_within_range() {
+        let variants = all_variants();
+        for v in &variants {
+            let idx = v.u8_item_index();
+            assert!(idx <= 31, "Index {} exceeds expected max of 31", idx);
+        }
+    }
+
+    #[test]
+    fn u8_item_index_specific_known_values() {
+        assert_eq!(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange.u8_item_index(),
+            0
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MaxSupply(Some(100)).u8_item_index(),
+            4
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne)
+                .u8_item_index(),
+            16
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MainControlGroup(Some(5)).u8_item_index(),
+            31
+        );
+    }
+
+    #[test]
+    fn u8_item_index_variant_count() {
+        // We expect exactly 32 variants (indices 0..=31)
+        let variants = all_variants();
+        assert_eq!(variants.len(), 32);
+    }
+
+    // --- payload_serialization ---
+
+    #[test]
+    fn payload_serialization_no_change_is_none() {
+        let item = TokenConfigurationChangeItem::TokenConfigurationNoChange;
+        assert!(item.payload_serialization().unwrap().is_none());
+    }
+
+    #[test]
+    fn payload_serialization_max_supply_none_is_none() {
+        let item = TokenConfigurationChangeItem::MaxSupply(None);
+        assert!(item.payload_serialization().unwrap().is_none());
+    }
+
+    #[test]
+    fn payload_serialization_max_supply_some_encodes_be_bytes() {
+        let amount: u64 = 0x0102_0304_0506_0708;
+        let item = TokenConfigurationChangeItem::MaxSupply(Some(amount));
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert_eq!(bytes, amount.to_be_bytes().to_vec());
+        assert_eq!(bytes.len(), 8);
+    }
+
+    #[test]
+    fn payload_serialization_new_tokens_destination_identity_none_is_none() {
+        let item = TokenConfigurationChangeItem::NewTokensDestinationIdentity(None);
+        assert!(item.payload_serialization().unwrap().is_none());
+    }
+
+    #[test]
+    fn payload_serialization_new_tokens_destination_identity_some_is_32_bytes() {
+        let id = Identifier::from([0x77u8; 32]);
+        let item = TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(id));
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert_eq!(bytes.len(), 32);
+        assert_eq!(bytes, vec![0x77u8; 32]);
+    }
+
+    #[test]
+    fn payload_serialization_perpetual_distribution_none_is_none() {
+        let item = TokenConfigurationChangeItem::PerpetualDistribution(None);
+        assert!(item.payload_serialization().unwrap().is_none());
+    }
+
+    #[test]
+    fn payload_serialization_main_control_group_none_is_none() {
+        let item = TokenConfigurationChangeItem::MainControlGroup(None);
+        assert!(item.payload_serialization().unwrap().is_none());
+    }
+
+    #[test]
+    fn payload_serialization_main_control_group_some_is_two_be_bytes() {
+        let pos: u16 = 0xABCD;
+        let item = TokenConfigurationChangeItem::MainControlGroup(Some(pos));
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert_eq!(bytes, pos.to_be_bytes().to_vec());
+        assert_eq!(bytes.len(), 2);
+    }
+
+    #[test]
+    fn payload_serialization_minting_allow_choosing_destination_true() {
+        let item = TokenConfigurationChangeItem::MintingAllowChoosingDestination(true);
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert_eq!(bytes, vec![1]);
+    }
+
+    #[test]
+    fn payload_serialization_minting_allow_choosing_destination_false() {
+        let item = TokenConfigurationChangeItem::MintingAllowChoosingDestination(false);
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert_eq!(bytes, vec![0]);
+    }
+
+    #[test]
+    fn payload_serialization_authorized_action_takers_variants_use_to_bytes() {
+        // The big match arm has 23 variants that all serialize via AuthorizedActionTakers::to_bytes
+        // Sanity-check a few representative variants produce the expected tag bytes.
+        let aat = AuthorizedActionTakers::ContractOwner;
+        let expected = aat.to_bytes();
+
+        let variants = [
+            TokenConfigurationChangeItem::ConventionsControlGroup(aat),
+            TokenConfigurationChangeItem::ConventionsAdminGroup(aat),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat),
+            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualMinting(aat),
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat),
+            TokenConfigurationChangeItem::ManualBurning(aat),
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat),
+            TokenConfigurationChangeItem::Freeze(aat),
+            TokenConfigurationChangeItem::FreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::Unfreeze(aat),
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFunds(aat),
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat),
+            TokenConfigurationChangeItem::EmergencyAction(aat),
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat),
+        ];
+        for v in &variants {
+            let bytes = v.payload_serialization().unwrap().unwrap();
+            assert_eq!(bytes, expected, "mismatch for variant {:?}", v);
+        }
+    }
+
+    #[test]
+    fn payload_serialization_conventions_roundtrips_via_bincode() {
+        // We don't assert the exact bytes (bincode-dependent) but we assert
+        // (1) Some(..) is returned and (2) it decodes back to the same convention.
+        use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+        let convention = TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+            localizations: Default::default(),
+            decimals: 5,
+        });
+        let item = TokenConfigurationChangeItem::Conventions(convention.clone());
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert!(!bytes.is_empty());
+        let (decoded, _): (TokenConfigurationConvention, _) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap();
+        assert_eq!(decoded, convention);
+    }
+
+    #[test]
+    fn payload_serialization_marketplace_trade_mode_produces_bytes() {
+        let item = TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::NotTradeable);
+        let bytes = item.payload_serialization().unwrap().unwrap();
+        assert!(!bytes.is_empty());
+        // Roundtrip decode
+        let (decoded, _): (TokenTradeMode, _) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap();
+        assert_eq!(decoded, TokenTradeMode::NotTradeable);
+    }
+
+    // --- Display ---
+
+    #[test]
+    fn display_no_change() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::TokenConfigurationNoChange
+        );
+        assert_eq!(s, "No Change in Token Configuration");
+    }
+
+    #[test]
+    fn display_max_supply_some_vs_none() {
+        let some = format!("{}", TokenConfigurationChangeItem::MaxSupply(Some(500)));
+        let none = format!("{}", TokenConfigurationChangeItem::MaxSupply(None));
+        assert!(some.contains("500"));
+        assert!(none.contains("No Limit"));
+    }
+
+    #[test]
+    fn display_perpetual_distribution_none_uses_none_marker() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::PerpetualDistribution(None)
+        );
+        assert!(s.contains("None"));
+    }
+
+    #[test]
+    fn display_new_tokens_destination_identity_none_uses_none_marker() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(None)
+        );
+        assert!(s.contains("None"));
+    }
+
+    #[test]
+    fn display_new_tokens_destination_identity_some_includes_id() {
+        let id = Identifier::from([3u8; 32]);
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(id))
+        );
+        assert!(s.contains("New Tokens Destination Identity"));
+    }
+
+    #[test]
+    fn display_main_control_group_none_uses_none_marker() {
+        let s = format!("{}", TokenConfigurationChangeItem::MainControlGroup(None));
+        assert!(s.contains("None"));
+    }
+
+    #[test]
+    fn display_main_control_group_some_contains_position() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MainControlGroup(Some(7))
+        );
+        assert!(s.contains("7"));
+    }
+
+    #[test]
+    fn display_minting_allow_choosing_destination_contains_value() {
+        let s_true = format!(
+            "{}",
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(true)
+        );
+        let s_false = format!(
+            "{}",
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(false)
+        );
+        assert!(s_true.contains("true"));
+        assert!(s_false.contains("false"));
+    }
+
+    #[test]
+    fn display_marketplace_trade_mode_uses_debug() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::NotTradeable)
+        );
+        assert!(s.contains("NotTradeable"));
+    }
+
+    #[test]
+    fn display_action_takers_group_variants() {
+        // Exercise a handful of action-taker-carrying variants to confirm each
+        // writes its label.
+        let aat = AuthorizedActionTakers::ContractOwner;
+        let cases = vec![
+            (
+                format!("{}", TokenConfigurationChangeItem::ManualMinting(aat)),
+                "Manual Minting",
+            ),
+            (
+                format!(
+                    "{}",
+                    TokenConfigurationChangeItem::ManualMintingAdminGroup(aat)
+                ),
+                "Manual Minting Admin Group",
+            ),
+            (
+                format!("{}", TokenConfigurationChangeItem::ManualBurning(aat)),
+                "Manual Burning",
+            ),
+            (
+                format!("{}", TokenConfigurationChangeItem::Freeze(aat)),
+                "Freeze",
+            ),
+            (
+                format!("{}", TokenConfigurationChangeItem::Unfreeze(aat)),
+                "Unfreeze",
+            ),
+            (
+                format!("{}", TokenConfigurationChangeItem::DestroyFrozenFunds(aat)),
+                "Destroy Frozen Funds",
+            ),
+            (
+                format!("{}", TokenConfigurationChangeItem::EmergencyAction(aat)),
+                "Emergency Action",
+            ),
+            (
+                format!(
+                    "{}",
+                    TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat)
+                ),
+                "Marketplace Trade Mode Control Group",
+            ),
+            (
+                format!(
+                    "{}",
+                    TokenConfigurationChangeItem::ConventionsControlGroup(aat)
+                ),
+                "Conventions Control Group",
+            ),
+        ];
+        for (output, expected_prefix) in cases {
+            assert!(
+                output.contains(expected_prefix),
+                "expected {:?} in {:?}",
+                expected_prefix,
+                output
+            );
+        }
+    }
+
+    // --- Equality ---
+
+    #[test]
+    fn equality_same_variant_same_data() {
+        let a = TokenConfigurationChangeItem::MaxSupply(Some(42));
+        let b = TokenConfigurationChangeItem::MaxSupply(Some(42));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn equality_same_variant_different_data_unequal() {
+        let a = TokenConfigurationChangeItem::MaxSupply(Some(42));
+        let b = TokenConfigurationChangeItem::MaxSupply(Some(43));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn equality_different_variants_unequal() {
+        let a = TokenConfigurationChangeItem::MaxSupply(None);
+        let b = TokenConfigurationChangeItem::MainControlGroup(None);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn equality_authorized_action_takers_sensitivity() {
+        let a = TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne);
+        let b = TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::ContractOwner);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn equality_bool_variant_distinguishes_values() {
+        let a = TokenConfigurationChangeItem::MintingAllowChoosingDestination(true);
+        let b = TokenConfigurationChangeItem::MintingAllowChoosingDestination(false);
+        assert_ne!(a, b);
+    }
+
+    // --- Default + Clone ---
+
+    #[test]
+    fn default_is_no_change() {
+        let d: TokenConfigurationChangeItem = Default::default();
+        assert_eq!(d, TokenConfigurationChangeItem::TokenConfigurationNoChange);
+    }
+
+    #[test]
+    fn clone_preserves_variant_and_data() {
+        let aat = AuthorizedActionTakers::Identity(Identifier::from([5u8; 32]));
+        let a = TokenConfigurationChangeItem::Freeze(aat);
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    // --- Debug ---
+
+    #[test]
+    fn debug_trait_contains_variant_name() {
+        let a = TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne);
+        let dbg = format!("{:?}", a);
+        assert!(dbg.contains("ManualMinting"));
+    }
+}

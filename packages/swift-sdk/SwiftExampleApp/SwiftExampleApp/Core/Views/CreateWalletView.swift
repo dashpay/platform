@@ -1,11 +1,12 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
 
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
@@ -35,7 +36,7 @@ struct CreateWalletView: View {
     }
 
     var currentNetwork: AppNetwork {
-        unifiedAppState.platformState.currentNetwork
+        platformState.currentNetwork
     }
 
     // Only show devnet option if currently on devnet
@@ -50,6 +51,7 @@ struct CreateWalletView: View {
                     .textInputAutocapitalization(.words)
                     .focused($focusedField, equals: .walletName)
                     .submitLabel(.next)
+                    .accessibilityIdentifier("createWallet.walletNameField")
                     .onSubmit {
                         focusedField = .pin
                     }
@@ -113,6 +115,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .pin)
+                        .accessibilityIdentifier("createWallet.pinField")
                 }
 
                 HStack {
@@ -123,6 +126,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .confirmPin)
+                        .accessibilityIdentifier("createWallet.confirmPinField")
                 }
             } header: {
                 Text("Security")
@@ -181,6 +185,7 @@ struct CreateWalletView: View {
                     onCreateTapped()
                 }
                 .disabled(!canCreateWallet)
+                .accessibilityIdentifier("createWallet.createButton")
             }
         }
         .disabled(isCreating)
@@ -269,8 +274,8 @@ struct CreateWalletView: View {
         Task {
             do {
                 print("=== STARTING WALLET CREATION ===")
-                
-                let mnemonic = (showImportOption ? importMnemonic : mnemonic)
+
+                let mnemonicPhrase = (showImportOption ? importMnemonic : mnemonic)
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
@@ -282,22 +287,74 @@ struct CreateWalletView: View {
                 ].compactMap { $0 }
 
                 guard let primaryNetwork = selectedNetworks.first else {
-                    throw WalletError.walletError("No network selected")
+                    struct MissingNetwork: LocalizedError {
+                        var errorDescription: String? { "No network selected" }
+                    }
+                    throw MissingNetwork()
                 }
 
-                // Create exactly one wallet in the SDK; do not append network to label
-                _ = try await walletService.walletManager.createWallet(
-                    label: walletLabel,
-                    mnemonic: mnemonic,
-                    pin: walletPin,
-                    isImport: showImportOption
-                )
+                let platformNetwork: PlatformNetwork = {
+                    switch primaryNetwork {
+                    case .mainnet: return .mainnet
+                    case .testnet: return .testnet
+                    case .devnet: return .devnet
+                    case .regtest: return .testnet
+                    }
+                }()
 
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
-
-                await MainActor.run {
+                // Create exactly one wallet via PlatformWalletManager.
+                // The Rust-side wallet creation emits
+                // `persistWalletMetadata` + `setWalletName`, which
+                // the persister callback translates into a
+                // `PersistentWallet` SwiftData row — no separate
+                // HDWallet mirror to maintain. We only have to
+                // patch `isImported` after-the-fact because that
+                // flag is UI-cosmetic and the persister doesn't
+                // know about it.
+                try await MainActor.run {
+                    let managed = try walletManager.createWallet(
+                        mnemonic: mnemonicPhrase,
+                        network: platformNetwork,
+                        name: walletLabel
+                    )
+                    // Persist the mnemonic in the iOS Keychain keyed
+                    // by walletId so multiple wallets coexist and the
+                    // recovery flow can enumerate all of them on
+                    // launch. Best-effort — failure here doesn't
+                    // block wallet creation.
+                    do {
+                        try WalletStorage().storeMnemonic(
+                            mnemonicPhrase,
+                            for: managed.walletId
+                        )
+                    } catch {
+                        SDKLogger.error(
+                            "Failed to persist mnemonic to keychain: \(error.localizedDescription)"
+                        )
+                    }
+                    // Stamp the `isImported` flag on the
+                    // just-created PersistentWallet row. The
+                    // persister callback runs synchronously from
+                    // `walletManager.createWallet` via the
+                    // background context; SwiftData's
+                    // `autosaveEnabled = true` on that context
+                    // propagates the row into the main context
+                    // before this fetch runs. If the row somehow
+                    // isn't there yet, the flag stays `false`
+                    // (the default on `PersistentWallet`) — a
+                    // cosmetic miss, not a correctness issue.
+                    let walletIdMatch = managed.walletId
+                    let descriptor = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletIdMatch }
+                    )
+                    if let row = try? modelContext.fetch(descriptor).first {
+                        row.isImported = showImportOption
+                        try? modelContext.save()
+                    }
                     dismiss()
                 }
+
+                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")

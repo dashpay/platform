@@ -11,7 +11,6 @@ import Foundation
 /// - Address pool management with gap limits
 /// - Transaction building and signing
 /// - Provider key generation for masternodes
-/// - BIP38 encryption/decryption
 /// - Multi-wallet management
 ///
 /// ## Usage Example:
@@ -55,5 +54,4 @@ public typealias KeyWalletManager = WalletManager
 public typealias KeyWalletMnemonic = Mnemonic
 public typealias KeyWalletTransaction = Transaction
 public typealias KeyWalletAddress = Address
-// public typealias KeyWalletBIP38 = BIP38  // BIP38 functions not available in current FFI
 public typealias KeyWalletDerivation = KeyDerivation

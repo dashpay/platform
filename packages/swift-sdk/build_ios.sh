@@ -1,110 +1,239 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
+IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
+IPHONESIMULATOR_DEPLOYMENT_TARGET="${IPHONESIMULATOR_DEPLOYMENT_TARGET:-17.0}"
+export IPHONEOS_DEPLOYMENT_TARGET
+export IPHONESIMULATOR_DEPLOYMENT_TARGET
 
-# Pass --clean through to rs-sdk-ffi if requested
-EXTRA_ARGS=""
-for arg in "$@"; do
-  case $arg in
-    --clean) EXTRA_ARGS="$EXTRA_ARGS --clean" ;;
+# -------------------------------
+# Colors
+# -------------------------------
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+NC="\033[0m"
+
+# -------------------------------
+# Paths & package
+# -------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$SCRIPT_DIR/../../"
+TARGET_DIR="$ROOT_DIR/target"
+PACKAGE="rs-unified-sdk-ffi"
+XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
+PROFILE="dev" # Rust doesn't allow us to use "debug" for some reason, the profile name internally is dev
+
+# -------------------------------
+# Flags
+# -------------------------------
+BUILD_IOS=false
+BUILD_SIM=false
+BUILD_MAC=false
+BUILD_INTEL_MAC=false
+CLEAN=false
+
+log_info() { echo -e "${GREEN}$1${NC}"; }
+log_error() { echo -e "${RED}$1${NC}"; }
+
+# -------------------------------
+# Help
+# -------------------------------
+show_help() {
+  echo "Usage: $0 --target <ios|sim|mac> [--profile <dev|release>]"
+  echo ""
+  echo "Targets:"
+  echo "  ios         -> iPhone device"
+  echo "  sim         -> auto-detected iOS simulator"
+  echo "  mac         -> Apple Silicon Mac"
+  echo "  all         -> all targets"
+  echo ""
+  echo "Profile:"
+  echo "  dev (default)"
+  echo "  release"
+  echo ""
+  echo "Examples:"
+  echo "  $0 --target sim --profile release"
+  exit 1
+}
+
+# -------------------------------
+# Parse flags
+# -------------------------------
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --clean)
+      CLEAN=true
+      shift
+      ;;
+    --target)
+      case $2 in
+        ios) BUILD_IOS=true ;;
+        sim) BUILD_SIM=true ;;
+        mac) BUILD_MAC=true ;;
+        all) BUILD_IOS=true; BUILD_SIM=true; BUILD_MAC=true ;;
+        *) log_error "Unknown target $2"; show_help ;;
+      esac
+      shift 2
+      ;;
+    --profile)
+      PROFILE="$2"
+
+      if [ ! "$PROFILE" = "dev" ] && [ ! "$PROFILE" = "release" ]; then
+        log_error "Unknown profile $2"; show_help
+      fi
+
+      shift 2
+      ;;
+    --help)
+      show_help
+      ;;
+    *)
+      log_error "Unknown flag $1"; show_help ;;
   esac
 done
 
-echo "=== SwiftDashSDK iOS Build (Unified) ==="
-
-echo "1) Building Rust FFI (rs-sdk-ffi)"
-pushd "$REPO_ROOT/packages/rs-sdk-ffi" >/dev/null
-if [[ ! -x ./build_ios.sh ]]; then
-  echo "❌ Missing rs-sdk-ffi/build_ios.sh"
-  exit 1
+if $CLEAN; then
+  log_info "Cleaning all build artifacts..."
+  rm -rf "$TARGET_DIR"
+  rm -rf "$XCFRAMEWORK"
 fi
-./build_ios.sh $EXTRA_ARGS
-popd >/dev/null
 
-# Expected output from rs-sdk-ffi
-UNIFIED_DIR="$REPO_ROOT/packages/rs-sdk-ffi/build/DashUnifiedSDK.xcframework"
-SDKFFI_DIR="$REPO_ROOT/packages/rs-sdk-ffi/build/DashSDKFFI.xcframework"
-if [[ -d "$UNIFIED_DIR" ]]; then
-  SRC_XCFRAMEWORK_DIR="$UNIFIED_DIR"
-elif [[ -d "$SDKFFI_DIR" ]]; then
-  SRC_XCFRAMEWORK_DIR="$SDKFFI_DIR"
+# -------------------------------
+# Validation
+# -------------------------------
+if ! $BUILD_IOS && ! $BUILD_SIM && ! $BUILD_MAC && ! $BUILD_INTEL_MAC; then
+  log_error "You must specify at least one --target"
+  show_help
+fi
+
+log_info "Package: $PACKAGE"
+log_info "Profile: $PROFILE"
+
+# Rust writes the "dev" profile output to the "debug" directory
+if [ "$PROFILE" = "dev" ]; then
+  OUTPUT_DIR="debug"
 else
-  echo "❌ rs-sdk-ffi build did not produce an XCFramework (expected DashUnifiedSDK.xcframework or DashSDKFFI.xcframework)"
-  exit 1
+  OUTPUT_DIR="$PROFILE"
 fi
 
-echo "2) Installing XCFramework into Swift package"
-DEST_XCFRAMEWORK_DIR="$SCRIPT_DIR/DashSDKFFI.xcframework"
-rm -rf "$DEST_XCFRAMEWORK_DIR"
-cp -R "$SRC_XCFRAMEWORK_DIR" "$DEST_XCFRAMEWORK_DIR"
+# -------------------------------
+# Build commands
+# -------------------------------
 
-# Verify required SPV symbols are present in the binary
-# Look for combined lib first (merged with SPV), then fallback to standalone
-if [[ -f "$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libDashSDKFFI_combined.a" ]]; then
-  LIB_SIM_MAIN="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libDashSDKFFI_combined.a"
-elif [[ -f "$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/librs_sdk_ffi.a" ]]; then
-  LIB_SIM_MAIN="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/librs_sdk_ffi.a"
-else
-  echo "❌ Missing simulator library in $DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/"
-  exit 1
-fi
-LIB_SIM_SPV="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libdash_spv_ffi.a"
-echo "   - Verifying required SPV symbols are present in XCFramework libs"
-# Prefer ripgrep if available; fall back to grep for portability
-# Avoid -q with pipefail, which can cause nm to SIGPIPE and fail the check.
-if command -v rg >/dev/null 2>&1; then
-  SEARCH_CMD=(rg -F)    # fixed-string match
-else
-  SEARCH_CMD=(grep -F)  # fixed-string match
+inject_modulemap() {
+  local HEADERS_DIR="$1"
+
+  # Create umbrella header that includes all FFI headers in dependency order
+  cat > "$HEADERS_DIR/DashSDKFFI.h" << 'EOF'
+#ifndef DASHSDKFFI_H
+#define DASHSDKFFI_H
+
+#include "dash-network/dash-network.h"
+#include "key-wallet-ffi/key-wallet-ffi.h"
+#include "dash-spv-ffi/dash-spv-ffi.h"
+#include "rs-sdk-ffi/rs-sdk-ffi.h"
+#include "platform-wallet-ffi/platform-wallet-ffi.h"
+
+#endif
+EOF
+
+  cat > "$HEADERS_DIR/module.modulemap" << 'EOF'
+module DashSDKFFI {
+    umbrella header "DashSDKFFI.h"
+    export *
+}
+EOF
+  log_info "  → module.modulemap + umbrella header injected in $HEADERS_DIR"
+
+  # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
+  # Skip types that already have a full definition in another header to avoid redefinition.
+  local defined
+  defined=$(grep -oh 'typedef struct [A-Za-z_][A-Za-z_0-9]* {' "$HEADERS_DIR"/*/*.h 2>/dev/null \
+    | sed 's/typedef struct \([^ ]*\) {/\1/' | sort -u | paste -sd'|' - || true)
+  for h in "$HEADERS_DIR"/*/*.h; do
+    if [ -n "$defined" ]; then
+      perl -i -pe "s/^typedef struct (\w+) \1;\$/
+        my \$n=\$1; \$n=~m{^($defined)\$} ? \$_ : \"typedef struct \$n { uint8_t _opaque; } \$n;\n\"/e" "$h"
+    else
+      perl -i -pe 's/^typedef struct (\w+) \1;$/typedef struct $1 { uint8_t _opaque; } $1;/' "$h"
+    fi
+  done
+}
+
+# iOS device
+if $BUILD_IOS; then
+  IOS_TARGET="aarch64-apple-ios"
+  log_info "Building iOS device ($IOS_TARGET)..."
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET"
+  IOS_LIB="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
+  IOS_HEADERS="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/include"
+  inject_modulemap "$IOS_HEADERS"
 fi
 
-CHECK_OK=1
-# Use nm -g (global symbols) and grep. Disable pipefail for this check to avoid SIGPIPE issues with large archives.
-set +o pipefail
-if nm -g "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
-  :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -g "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
-  :
-else
-  echo "❌ Missing symbol: dash_spv_ffi_config_add_peer (in both main and spv libs)"
-  CHECK_OK=0
+# iOS simulator
+if $BUILD_SIM; then
+  SIM_TARGET="aarch64-apple-ios-sim"
+  log_info "Building iOS simulator ($SIM_TARGET)..."
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET"
+  SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
+  SIM_HEADERS="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/include"
+  inject_modulemap "$SIM_HEADERS"
 fi
 
-if nm -g "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
-  :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -g "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
-  :
-else
-  echo "❌ Missing symbol: dash_spv_ffi_config_set_restrict_to_configured_peers (in both main and spv libs)"
-  CHECK_OK=0
-fi
-set -o pipefail
-
-if [[ $CHECK_OK -ne 1 ]]; then
-  echo "   Please ensure dash-spv-ffi exports these symbols and is included in the XCFramework."
-  exit 1
+# macOS
+if $BUILD_MAC; then
+  MAC_TARGET="aarch64-apple-darwin"
+  log_info "Building macOS ($MAC_TARGET)..."
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET"
+  MAC_LIB="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
+  MAC_HEADERS="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/include"
+  inject_modulemap "$MAC_HEADERS"
 fi
 
-echo "3) Verifying Swift builds (if Xcode available)"
+# -------------------------------
+# Create XCFramework
+# -------------------------------
+log_info "Generating DashSDKFFI.xcframework "
+rm -rf "$XCFRAMEWORK"
+
+xcodebuild -create-xcframework \
+  ${IOS_LIB:+-library "$IOS_LIB" -headers "$IOS_HEADERS"} \
+  ${MAC_LIB:+-library "$MAC_LIB" -headers "$MAC_HEADERS"} \
+  ${SIM_LIB:+-library "$SIM_LIB" -headers "$SIM_HEADERS"} \
+  -output "$XCFRAMEWORK"
+
+log_info "XCFramework created: $XCFRAMEWORK"
+
+# -------------------------------
+# Build Swift SDK
+# -------------------------------
+SWIFT_PROJECT="$SCRIPT_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj"
+SWIFT_SCHEME="SwiftExampleApp"
+SWIFT_DESTINATION="generic/platform=iOS Simulator"
+EXCLUDED_ARCHS="x86_64"
+
+OTHER_SWIFT_FLAGS="-warnings-as-errors"
+SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+SWIFT_SUPPRESS_WARNINGS=NO
+
 if command -v xcodebuild >/dev/null 2>&1; then
-  set +e
-  xcodebuild -project "$SCRIPT_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj" \
-             -scheme SwiftExampleApp \
-             -sdk iphonesimulator \
-             -destination 'generic/platform=iOS Simulator' \
-             EXCLUDED_ARCHS=x86_64 \
-             -quiet build
-  XC_STATUS=$?
-  set -e
-  if [[ $XC_STATUS -ne 0 ]]; then
-    echo "❌ Xcode build failed"
-    exit $XC_STATUS
-  fi
-  echo "✅ Xcode build succeeded"
+    set +e
+    xcodebuild -project "$SWIFT_PROJECT" \
+               -scheme "$SWIFT_SCHEME" \
+               -sdk iphonesimulator \
+               -destination "$SWIFT_DESTINATION" \
+               EXCLUDED_ARCHS="$EXCLUDED_ARCHS" \
+               OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
+               SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
+               SWIFT_SUPPRESS_WARNINGS=$SWIFT_SUPPRESS_WARNINGS \
+               build
+    XC_STATUS=$?
+    set -e
+    if [[ $XC_STATUS -ne 0 ]]; then
+        log_error "Swift/Xcode build failed"
+        exit $XC_STATUS
+    fi
+    log_info "Swift/Xcode build succeeded"
 else
-  echo "⚠️  xcodebuild not found; skipping local build. Run this script on a macOS host with Xcode to fully verify."
+    echo "xcodebuild not found; skipping Swift verification."
 fi
-
-echo "✅ Done. XCFramework installed at $DEST_XCFRAMEWORK_DIR"

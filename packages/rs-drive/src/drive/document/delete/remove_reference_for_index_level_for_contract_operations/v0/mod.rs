@@ -59,13 +59,19 @@ impl Drive {
         {
             key_info_path.push(KnownKey(vec![0]));
 
+            let reference_tree_type = if index_type.countable {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
+
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             DEFAULT_HASH_SIZE_U8,

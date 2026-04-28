@@ -19,15 +19,21 @@ dash-sdk = { path = "../rs-sdk", features = [
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = [
     "dpns-contract",
+    "dashpay-contract",
+    "withdrawals-contract",
+    "wallet-utils-contract",
+    "token-history-contract",
+    "keywords-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
+async-trait = { version = "0.1.83" }
+dash-async = { path = "../rs-dash-async" }
 
-
-# Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { workspace = true, optional = true }
-
-# Platform Wallet integration for DashPay support
-platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
+# Used by `dash_sdk_sign_with_mnemonic_and_path` to derive an
+# ECDSA key from `(mnemonic, path)` for one-shot signing without
+# any FFI key export. `Mnemonic`, `bip32::*`, `Network` come from
+# this crate.
+key-wallet = { workspace = true }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -35,13 +41,14 @@ serde_json = "1.0"
 bincode = { version = "=2.0.1", features = ["serde"] }
 
 # Async runtime
-tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
 # Error handling
 thiserror = "2.0"
 
 # Logging
 tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 
 # Encoding
 bs58 = "0.5"
@@ -82,10 +89,7 @@ serde_json = "1.0"
 log = "0.4"
 
 [features]
-default = ["dash_spv"]
-
-# Enable linking with dash-spv-ffi (Core SDK integration)
-dash_spv = ["dep:dash-spv-ffi"]
+default = []
 
 # Optional mocks for development/testing; maps to dash-sdk's mocks
 mocks = ["dash-sdk/mocks"]

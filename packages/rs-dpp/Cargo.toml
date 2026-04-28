@@ -25,7 +25,6 @@ chrono = { version = "0.4.35", default-features = false, features = [
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 dashcore = { workspace = true, features = [
-  "std",
   "secp-recovery",
   "rand",
   "signer",
@@ -72,7 +71,7 @@ strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
 tracing = { version = "0.1.41" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "dd99ed1db0350e5f39127573808dd172c6bc2346", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "8f25b20d04bfc0e8bdfb3870676d647a0d74918b", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }
@@ -138,6 +137,7 @@ dash-sdk-features = [
   "client",
   "platform-value-cbor",
   "core_rpc_client",
+  "core_key_wallet",
 ]
 all_features_without_client = [
   "json-conversion",

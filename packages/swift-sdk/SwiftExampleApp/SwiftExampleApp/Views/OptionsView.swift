@@ -3,14 +3,47 @@ import SwiftDashSDK
 
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var showingContracts = false
     @State private var isSwitchingNetwork = false
+    @State private var sdkStatus: SDKStatus?
+    @State private var isLoadingStatus = false
+
+    // Bind the SPV peer-override settings directly to the same
+    // UserDefaults keys that CoreContentView reads when starting SPV
+    // (`useLocalhostCore`, `localCorePeers`). This re-exposes the
+    // pre-rewrite "connect SPV to a local rust-dashcore" capability on
+    // testnet/mainnet/devnet — regtest still uses the Docker toggle
+    // above, which sets these same keys via AppState.useDockerSetup.
+    @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
+    @AppStorage("localCorePeers") private var customSpvPeers: String = ""
+
+    /// Default localhost peer string for a given network. Used to
+    /// pre-populate the peers text field when the user enables the
+    /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
+    /// so the default must include the network's standard P2P port.
+    private func defaultSpvPeers(for network: AppNetwork) -> String {
+        switch network {
+        case .mainnet: return "127.0.0.1:9999"
+        case .testnet: return "127.0.0.1:19999"
+        case .devnet:  return "127.0.0.1:29999"
+        case .regtest: return "127.0.0.1:19899"
+        }
+    }
 
     var body: some View {
-        NavigationView {
+        // `NavigationStack` (iOS 16+) instead of the deprecated
+        // `NavigationView`. With `NavigationView`, `NavigationLink`s
+        // embedded in a `List` (e.g. under Settings → Storage /
+        // Keychain Explorer, whose detail views themselves list
+        // NavigationLinks) push-then-immediately-pop on iOS 16+ —
+        // visible to users as "I tap a row and it bounces me out."
+        // `NavigationStack` has reliable push semantics.
+        NavigationStack {
             Form {
                 Section("Network") {
                     Picker("Current Network", selection: Binding(
@@ -19,11 +52,20 @@ struct OptionsView: View {
                             if newNetwork != appState.currentNetwork {
                                 isSwitchingNetwork = true
                                 Task {
+                                    // Auto-disable Docker when leaving Local
+                                    if newNetwork != .regtest && appState.useDockerSetup {
+                                        appState.useDockerSetup = false
+                                    }
+
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
 
-                                    // Also update wallet service
-                                    await unifiedAppState.handleNetworkSwitch(to: newNetwork)
+                                    // Reset per-network services. TODO(platform-wallet):
+                                    // Once PlatformWalletManager supports network
+                                    // switching cleanly, call into it here.
+                                    try? walletManager.stopSpv()
+                                    platformBalanceSyncService.reset()
+                                    shieldedService.reset()
 
                                     await MainActor.run {
                                         isSwitchingNetwork = false
@@ -39,21 +81,50 @@ struct OptionsView: View {
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isSwitchingNetwork)
 
-                    Toggle("Use Local DAPI (Platform)", isOn: $appState.useLocalPlatform)
-                        .onChange(of: appState.useLocalPlatform) { _, _ in
-                            isSwitchingNetwork = true
-                            Task {
-                                await appState.switchNetwork(to: appState.currentNetwork)
-                                await MainActor.run { isSwitchingNetwork = false }
+                    if appState.currentNetwork == .regtest {
+                        Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
+                            .onChange(of: appState.useDockerSetup) { _, _ in
+                                isSwitchingNetwork = true
+                                Task {
+                                    await appState.switchNetwork(to: appState.currentNetwork)
+                                    await MainActor.run { isSwitchingNetwork = false }
+                                }
                             }
-                        }
-                        .help("When enabled, Platform requests use local DAPI at 127.0.0.1:1443 (override via 'platformDAPIAddresses').")
+                            .help("Connect to local dashmate Docker network.")
 
-                    Toggle("Use Local Core (SPV)", isOn: $appState.useLocalCore)
-                        .onChange(of: appState.useLocalCore) { _, _ in
-                            // Core override will be applied when SPV peer overrides are supported
+                        if appState.useDockerSetup {
+                            TextField("Faucet RPC Password", text: Binding(
+                                get: { UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "" },
+                                set: { UserDefaults.standard.set($0, forKey: "faucetRPCPassword") }
+                            ))
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
                         }
-                        .help("When enabled, Core (SPV) connects only to configured peers (default 127.0.0.1 with network port). Override via 'corePeerAddresses'.")
+                    } else {
+                        Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
+                            .onChange(of: customSpvPeersEnabled) { _, isOn in
+                                // When enabling, seed the peers field with
+                                // the network's localhost default if the
+                                // user hasn't entered anything (or has the
+                                // legacy port-less "127.0.0.1" the FFI
+                                // would otherwise drop).
+                                if isOn && (customSpvPeers.isEmpty || !customSpvPeers.contains(":")) {
+                                    customSpvPeers = defaultSpvPeers(for: appState.currentNetwork)
+                                }
+                                // Stop SPV so the next start picks up the
+                                // new peer config in CoreContentView.
+                                try? walletManager.stopSpv()
+                            }
+                            .help("Connect Core SPV to specific peers (e.g. a local rust-dashcore) instead of the public seed nodes. Restart SPV from the Wallet tab to apply.")
+
+                        if customSpvPeersEnabled {
+                            TextField(defaultSpvPeers(for: appState.currentNetwork), text: $customSpvPeers)
+                                .font(.system(.body, design: .monospaced))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                    }
 
                     HStack {
                         Text("Network Status")
@@ -76,9 +147,22 @@ struct OptionsView: View {
                                 .foregroundColor(.red)
                         }
                     }
+
                 }
 
                 Section("Data") {
+                    NavigationLink(destination: StorageExplorerView()) {
+                        Label("Storage Explorer", systemImage: "cylinder.split.1x2")
+                    }
+
+                    NavigationLink(destination: KeychainExplorerView()) {
+                        Label("Keychain Explorer", systemImage: "key.viewfinder")
+                    }
+
+                    NavigationLink(destination: WalletMemoryExplorerView()) {
+                        Label("Wallet Memory Explorer", systemImage: "memorychip")
+                    }
+
                     NavigationLink(destination: ContractsView()) {
                         Label("Browse Contracts", systemImage: "doc.plaintext")
                     }
@@ -121,20 +205,63 @@ struct OptionsView: View {
                     }
                 }
 
-                Section("Developer") {
-                    Toggle("Show Test Data", isOn: .constant(false))
-                        .disabled(true)
-
-                    Toggle("Enable Debug Logging", isOn: .constant(false))
-                        .disabled(true)
-
-                    Button(action: {
-                        Task {
-                            await appState.loadSampleIdentities()
-                        }
-                    }) {
-                        Label("Load Sample Identities", systemImage: "person.badge.plus")
+                Section(header: Text("Platform")) {
+                    NavigationLink(destination: PlatformQueriesView()) {
+                        Label("Queries", systemImage: "magnifyingglass")
                     }
+
+                    NavigationLink(destination: PlatformStateTransitionsView()) {
+                        Label("State Transitions", systemImage: "arrow.up.arrow.down")
+                    }
+
+                    HStack {
+                        Text("SDK Initialized")
+                        Spacer()
+                        Image(systemName: appState.sdk != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(appState.sdk != nil ? .green : .red)
+                    }
+
+                    if let status = sdkStatus {
+                        HStack {
+                            Text("Version")
+                            Spacer()
+                            Text(status.version)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Network")
+                            Spacer()
+                            Text(status.network.capitalized)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Mode")
+                            Spacer()
+                            Text(status.mode.uppercased())
+                                .foregroundColor(status.mode == "trusted" ? .blue : .orange)
+                        }
+
+                        HStack {
+                            Text("Quorums in Memory")
+                            Spacer()
+                            Text("\(status.quorumCount)")
+                                .foregroundColor(status.quorumCount > 0 ? .green : .red)
+                        }
+                    }
+
+                    Button(action: loadSDKStatus) {
+                        HStack {
+                            Label("Refresh SDK Status", systemImage: "arrow.clockwise")
+                            Spacer()
+                            if isLoadingStatus {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                        }
+                    }
+                    .disabled(isLoadingStatus)
                 }
 
                 Section("About") {
@@ -166,6 +293,7 @@ struct OptionsView: View {
             .navigationTitle("Options")
             .task {
                 await loadDataStatistics()
+                loadSDKStatus()
             }
             .sheet(isPresented: $showingDataManagement) {
                 DataManagementView()
@@ -184,6 +312,30 @@ struct OptionsView: View {
             }
         }
     }
+
+    /// Fetch the SDK version / network / mode / quorum count for
+    /// display in the Platform section. Called once on appear and
+    /// on demand via the refresh button.
+    private func loadSDKStatus() {
+        guard let sdk = appState.sdk else { return }
+
+        isLoadingStatus = true
+
+        Task {
+            do {
+                let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
+                await MainActor.run {
+                    self.sdkStatus = status
+                    self.isLoadingStatus = false
+                }
+            } catch {
+                print("Failed to get SDK status: \(error)")
+                await MainActor.run {
+                    self.isLoadingStatus = false
+                }
+            }
+        }
+    }
 }
 
 struct DataManagementView: View {
@@ -192,7 +344,7 @@ struct DataManagementView: View {
     @State private var showingClearConfirmation = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Clear Data by Type") {
                     Button(role: .destructive, action: {
@@ -254,7 +406,7 @@ struct AboutView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     Image(systemName: "app.fill")

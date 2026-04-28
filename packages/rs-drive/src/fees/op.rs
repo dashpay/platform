@@ -648,3 +648,812 @@ impl DriveCost for OperationCost {
             .ok_or_else(|| get_overflow_error("ephemeral cost addition overflow"))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::identity_op)]
+mod tests {
+    use super::*;
+    use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
+    use grovedb_costs::storage_cost::StorageCost;
+    use platform_version::version::fee::storage::FeeStorageVersion;
+    use platform_version::version::fee::FeeVersion;
+
+    /// Helper to get the canonical fee version used across these tests.
+    fn fee_version() -> &'static FeeVersion {
+        FeeVersion::first()
+    }
+
+    // ---------------------------------------------------------------
+    // 1. BaseOp::cost() — spot-check several opcodes
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn base_op_stop_costs_zero() {
+        assert_eq!(BaseOp::Stop.cost(), 0);
+    }
+
+    #[test]
+    fn base_op_add_costs_12() {
+        assert_eq!(BaseOp::Add.cost(), 12);
+    }
+
+    #[test]
+    fn base_op_mul_costs_20() {
+        assert_eq!(BaseOp::Mul.cost(), 20);
+    }
+
+    #[test]
+    fn base_op_signextend_costs_20() {
+        assert_eq!(BaseOp::Signextend.cost(), 20);
+    }
+
+    #[test]
+    fn base_op_addmod_costs_32() {
+        assert_eq!(BaseOp::Addmod.cost(), 32);
+    }
+
+    #[test]
+    fn base_op_mulmod_costs_32() {
+        assert_eq!(BaseOp::Mulmod.cost(), 32);
+    }
+
+    #[test]
+    fn base_op_byte_costs_12() {
+        assert_eq!(BaseOp::Byte.cost(), 12);
+    }
+
+    #[test]
+    fn base_op_sub_costs_12() {
+        assert_eq!(BaseOp::Sub.cost(), 12);
+    }
+
+    #[test]
+    fn base_op_div_costs_20() {
+        assert_eq!(BaseOp::Div.cost(), 20);
+    }
+
+    #[test]
+    fn base_op_comparison_ops_all_cost_12() {
+        for op in [
+            BaseOp::Lt,
+            BaseOp::Gt,
+            BaseOp::Slt,
+            BaseOp::Sgt,
+            BaseOp::Eq,
+            BaseOp::Iszero,
+        ] {
+            assert_eq!(op.cost(), 12, "comparison op {:?} should cost 12", op);
+        }
+    }
+
+    #[test]
+    fn base_op_bitwise_ops_all_cost_12() {
+        for op in [BaseOp::And, BaseOp::Or, BaseOp::Xor, BaseOp::Not] {
+            assert_eq!(op.cost(), 12, "bitwise op {:?} should cost 12", op);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // 2. HashFunction — block_size / rounds / block_cost / base_cost
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn hash_function_block_size_all_64() {
+        // All four hash functions currently have a 64-byte block size.
+        assert_eq!(HashFunction::Sha256.block_size(), 64);
+        assert_eq!(HashFunction::Sha256_2.block_size(), 64);
+        assert_eq!(HashFunction::Blake3.block_size(), 64);
+        assert_eq!(HashFunction::Sha256RipeMD160.block_size(), 64);
+    }
+
+    #[test]
+    fn hash_function_rounds() {
+        assert_eq!(HashFunction::Sha256.rounds(), 1);
+        assert_eq!(HashFunction::Sha256_2.rounds(), 2);
+        assert_eq!(HashFunction::Blake3.rounds(), 1);
+        assert_eq!(HashFunction::Sha256RipeMD160.rounds(), 1);
+    }
+
+    #[test]
+    fn hash_function_block_cost_sha256_variants_use_sha256_per_block() {
+        let fv = fee_version();
+        let expected = fv.hashing.sha256_per_block;
+        assert_eq!(HashFunction::Sha256.block_cost(fv), expected);
+        assert_eq!(HashFunction::Sha256_2.block_cost(fv), expected);
+        assert_eq!(HashFunction::Sha256RipeMD160.block_cost(fv), expected);
+    }
+
+    #[test]
+    fn hash_function_block_cost_blake3_uses_blake3_per_block() {
+        let fv = fee_version();
+        assert_eq!(
+            HashFunction::Blake3.block_cost(fv),
+            fv.hashing.blake3_per_block
+        );
+    }
+
+    #[test]
+    fn hash_function_base_cost_sha256() {
+        let fv = fee_version();
+        assert_eq!(
+            HashFunction::Sha256.base_cost(fv),
+            fv.hashing.single_sha256_base
+        );
+    }
+
+    #[test]
+    fn hash_function_base_cost_sha256_2_uses_single_sha256_base() {
+        let fv = fee_version();
+        // Sha256_2 intentionally uses single_sha256_base (extra rounds handle the double hash).
+        assert_eq!(
+            HashFunction::Sha256_2.base_cost(fv),
+            fv.hashing.single_sha256_base
+        );
+    }
+
+    #[test]
+    fn hash_function_base_cost_blake3() {
+        let fv = fee_version();
+        assert_eq!(HashFunction::Blake3.base_cost(fv), fv.hashing.blake3_base);
+    }
+
+    #[test]
+    fn hash_function_base_cost_sha256_ripe_md160() {
+        let fv = fee_version();
+        assert_eq!(
+            HashFunction::Sha256RipeMD160.base_cost(fv),
+            fv.hashing.sha256_ripe_md160_base
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 3. FunctionOp::new_with_byte_count — verify blocks/rounds calc
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn function_op_new_with_byte_count_small_sha256() {
+        // 32 bytes => blocks = 32/64 + 1 = 1, rounds = 1 + 1 - 1 = 1
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256, 32);
+        assert_eq!(op.rounds, 1);
+        assert_eq!(op.hash, HashFunction::Sha256);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_exact_block_boundary_sha256() {
+        // 64 bytes => blocks = 64/64 + 1 = 2, rounds = 2 + 1 - 1 = 2
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256, 64);
+        assert_eq!(op.rounds, 2);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_large_sha256() {
+        // 200 bytes => blocks = 200/64 + 1 = 3 + 1 = 4, rounds = 4 + 1 - 1 = 4
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256, 200);
+        assert_eq!(op.rounds, 4);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_sha256_2_has_extra_round() {
+        // 32 bytes => blocks = 32/64 + 1 = 1, rounds = 1 + 2 - 1 = 2
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256_2, 32);
+        assert_eq!(op.rounds, 2);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_sha256_2_large() {
+        // 200 bytes => blocks = 200/64 + 1 = 4, rounds = 4 + 2 - 1 = 5
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256_2, 200);
+        assert_eq!(op.rounds, 5);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_blake3_small() {
+        // 10 bytes => blocks = 10/64 + 1 = 1, rounds = 1 + 1 - 1 = 1
+        let op = FunctionOp::new_with_byte_count(HashFunction::Blake3, 10);
+        assert_eq!(op.rounds, 1);
+        assert_eq!(op.hash, HashFunction::Blake3);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_blake3_large() {
+        // 500 bytes => blocks = 500/64 + 1 = 7 + 1 = 8, rounds = 8 + 1 - 1 = 8
+        let op = FunctionOp::new_with_byte_count(HashFunction::Blake3, 500);
+        assert_eq!(op.rounds, 8);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_zero_bytes() {
+        // 0 bytes => blocks = 0/64 + 1 = 1, rounds = 1 + 1 - 1 = 1
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256, 0);
+        assert_eq!(op.rounds, 1);
+    }
+
+    #[test]
+    fn function_op_new_with_byte_count_sha256_ripemd160() {
+        // 20 bytes => blocks = 20/64 + 1 = 1, rounds = 1 + 1 - 1 = 1
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256RipeMD160, 20);
+        assert_eq!(op.rounds, 1);
+        assert_eq!(op.hash, HashFunction::Sha256RipeMD160);
+    }
+
+    // ---------------------------------------------------------------
+    // 4. FunctionOp::cost — verify rounds * block_cost + base_cost
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn function_op_cost_sha256_one_round() {
+        let fv = fee_version();
+        let op = FunctionOp::new_with_round_count(HashFunction::Sha256, 1);
+        // cost = base + rounds * block_cost = 100 + 1 * 5000 = 5100
+        let expected = fv.hashing.single_sha256_base + 1 * fv.hashing.sha256_per_block;
+        assert_eq!(op.cost(fv), expected);
+    }
+
+    #[test]
+    fn function_op_cost_sha256_2_two_rounds() {
+        let fv = fee_version();
+        let op = FunctionOp::new_with_round_count(HashFunction::Sha256_2, 2);
+        // cost = base + rounds * block_cost = 100 + 2 * 5000 = 10100
+        let expected = fv.hashing.single_sha256_base + 2 * fv.hashing.sha256_per_block;
+        assert_eq!(op.cost(fv), expected);
+    }
+
+    #[test]
+    fn function_op_cost_blake3_one_round() {
+        let fv = fee_version();
+        let op = FunctionOp::new_with_round_count(HashFunction::Blake3, 1);
+        // cost = blake3_base + 1 * blake3_per_block = 100 + 300 = 400
+        let expected = fv.hashing.blake3_base + 1 * fv.hashing.blake3_per_block;
+        assert_eq!(op.cost(fv), expected);
+    }
+
+    #[test]
+    fn function_op_cost_zero_rounds() {
+        let fv = fee_version();
+        let op = FunctionOp::new_with_round_count(HashFunction::Blake3, 0);
+        // cost = blake3_base + 0 * blake3_per_block = blake3_base
+        assert_eq!(op.cost(fv), fv.hashing.blake3_base);
+    }
+
+    #[test]
+    fn function_op_cost_from_byte_count_matches_manual_calc() {
+        let fv = fee_version();
+        // 128 bytes of SHA256: blocks = 128/64 + 1 = 3, rounds = 3 + 1 - 1 = 3
+        let op = FunctionOp::new_with_byte_count(HashFunction::Sha256, 128);
+        assert_eq!(op.rounds, 3);
+        let expected = fv.hashing.single_sha256_base + 3 * fv.hashing.sha256_per_block;
+        assert_eq!(op.cost(fv), expected);
+    }
+
+    #[test]
+    fn function_op_cost_sha256_ripemd160() {
+        let fv = fee_version();
+        let op = FunctionOp::new_with_round_count(HashFunction::Sha256RipeMD160, 1);
+        let expected = fv.hashing.sha256_ripe_md160_base + 1 * fv.hashing.sha256_per_block;
+        assert_eq!(op.cost(fv), expected);
+    }
+
+    #[test]
+    fn function_op_cost_saturating_mul_does_not_panic_on_large_rounds() {
+        let fv = fee_version();
+        let op = FunctionOp::new_with_round_count(HashFunction::Sha256, u32::MAX);
+        // u32::MAX as u64 * sha256_per_block (5000) fits in u64 without overflow,
+        // so cost = base + rounds * block_cost, computed via saturating ops.
+        let expected_block_cost = (u32::MAX as u64).saturating_mul(fv.hashing.sha256_per_block);
+        let expected = fv
+            .hashing
+            .single_sha256_base
+            .saturating_add(expected_block_cost);
+        assert_eq!(op.cost(fv), expected);
+    }
+
+    #[test]
+    fn function_op_cost_saturates_to_max_with_extreme_fee_version() {
+        // Construct a fee version where block_cost is large enough that
+        // u32::MAX * block_cost overflows u64, triggering saturation.
+        let mut fv = fee_version().clone();
+        fv.hashing.sha256_per_block = u64::MAX;
+        let op = FunctionOp::new_with_round_count(HashFunction::Sha256, 2);
+        // 2 * u64::MAX saturates to u64::MAX, then base.saturating_add(u64::MAX) = u64::MAX.
+        assert_eq!(op.cost(&fv), u64::MAX);
+    }
+
+    // ---------------------------------------------------------------
+    // 5. operation_cost() — test all 4 match arms
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn operation_cost_calculated_cost_operation_returns_cost() {
+        let cost = OperationCost {
+            seek_count: 3,
+            storage_cost: StorageCost {
+                added_bytes: 100,
+                replaced_bytes: 50,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 200,
+            hash_node_calls: 5,
+            sinsemilla_hash_calls: 0,
+        };
+        let op = CalculatedCostOperation(cost.clone());
+        let result = op.operation_cost().expect("should return Ok");
+        assert_eq!(result, cost);
+    }
+
+    #[test]
+    fn operation_cost_grove_operation_returns_error() {
+        let grove_op = LowLevelDriveOperation::insert_for_known_path_key_element(
+            vec![vec![1, 2, 3]],
+            vec![4, 5, 6],
+            Element::empty_tree(),
+        );
+        let result = grove_op.operation_cost();
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("grove operations must be executed"),
+            "unexpected error: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn operation_cost_pre_calculated_fee_result_returns_error() {
+        let fee = FeeResult {
+            storage_fee: 100,
+            processing_fee: 200,
+            ..Default::default()
+        };
+        let op = PreCalculatedFeeResult(fee);
+        let result = op.operation_cost();
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("pre calculated fees should not be requested"),
+            "unexpected error: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn operation_cost_function_operation_returns_error() {
+        let func_op = FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Blake3, 1));
+        let result = func_op.operation_cost();
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("function operations should not be requested"),
+            "unexpected error: {}",
+            err_msg
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 6. combine_cost_operations — filter and sum
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn combine_cost_operations_sums_calculated_costs_only() {
+        let cost1 = OperationCost {
+            seek_count: 2,
+            storage_cost: StorageCost {
+                added_bytes: 10,
+                replaced_bytes: 0,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 50,
+            hash_node_calls: 1,
+            sinsemilla_hash_calls: 0,
+        };
+        let cost2 = OperationCost {
+            seek_count: 3,
+            storage_cost: StorageCost {
+                added_bytes: 20,
+                replaced_bytes: 5,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 100,
+            hash_node_calls: 2,
+            sinsemilla_hash_calls: 1,
+        };
+
+        let operations = vec![
+            CalculatedCostOperation(cost1.clone()),
+            // This FunctionOperation should be ignored by combine_cost_operations
+            FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Sha256, 1)),
+            CalculatedCostOperation(cost2.clone()),
+            // PreCalculatedFeeResult should also be ignored
+            PreCalculatedFeeResult(FeeResult::default()),
+        ];
+
+        let combined = LowLevelDriveOperation::combine_cost_operations(&operations);
+        assert_eq!(combined.seek_count, 2 + 3);
+        assert_eq!(combined.storage_cost.added_bytes, 10 + 20);
+        assert_eq!(combined.storage_cost.replaced_bytes, 0 + 5);
+        assert_eq!(combined.storage_loaded_bytes, 50 + 100);
+        assert_eq!(combined.hash_node_calls, 1 + 2);
+        assert_eq!(combined.sinsemilla_hash_calls, 0 + 1);
+    }
+
+    #[test]
+    fn combine_cost_operations_empty_list_returns_default() {
+        let combined = LowLevelDriveOperation::combine_cost_operations(&[]);
+        assert_eq!(combined, OperationCost::default());
+    }
+
+    #[test]
+    fn combine_cost_operations_no_calculated_costs_returns_default() {
+        let operations = vec![
+            FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Blake3, 2)),
+            PreCalculatedFeeResult(FeeResult {
+                processing_fee: 999,
+                ..Default::default()
+            }),
+        ];
+        let combined = LowLevelDriveOperation::combine_cost_operations(&operations);
+        assert_eq!(combined, OperationCost::default());
+    }
+
+    // ---------------------------------------------------------------
+    // 7. grovedb_operations_batch / _consume / _consume_with_leftovers
+    // ---------------------------------------------------------------
+
+    /// Helper: creates a GroveOperation variant (insert_or_replace).
+    fn make_grove_op(key_byte: u8) -> LowLevelDriveOperation {
+        LowLevelDriveOperation::insert_for_known_path_key_element(
+            vec![vec![0]],
+            vec![key_byte],
+            Element::new_item(vec![key_byte]),
+        )
+    }
+
+    fn make_mixed_ops() -> Vec<LowLevelDriveOperation> {
+        vec![
+            make_grove_op(1),
+            FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Sha256, 1)),
+            make_grove_op(2),
+            CalculatedCostOperation(OperationCost::default()),
+            make_grove_op(3),
+        ]
+    }
+
+    #[test]
+    fn grovedb_operations_batch_filters_grove_ops_from_ref() {
+        let ops = make_mixed_ops();
+        let batch = LowLevelDriveOperation::grovedb_operations_batch(&ops);
+        assert_eq!(batch.len(), 3);
+    }
+
+    #[test]
+    fn grovedb_operations_batch_empty_input() {
+        let batch = LowLevelDriveOperation::grovedb_operations_batch(&[]);
+        assert!(batch.is_empty());
+    }
+
+    #[test]
+    fn grovedb_operations_batch_no_grove_ops() {
+        let ops = vec![
+            FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Blake3, 1)),
+            CalculatedCostOperation(OperationCost::default()),
+        ];
+        let batch = LowLevelDriveOperation::grovedb_operations_batch(&ops);
+        assert!(batch.is_empty());
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_filters_grove_ops() {
+        let ops = make_mixed_ops();
+        let batch = LowLevelDriveOperation::grovedb_operations_batch_consume(ops);
+        assert_eq!(batch.len(), 3);
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_empty_input() {
+        let batch = LowLevelDriveOperation::grovedb_operations_batch_consume(vec![]);
+        assert!(batch.is_empty());
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_with_leftovers_partitions_correctly() {
+        let ops = make_mixed_ops();
+        let (batch, leftovers) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(ops);
+        assert_eq!(batch.len(), 3);
+        assert_eq!(leftovers.len(), 2);
+
+        // Verify leftovers contain the non-grove operations.
+        for leftover in &leftovers {
+            assert!(
+                !matches!(leftover, GroveOperation(_)),
+                "leftovers should not contain GroveOperation variants"
+            );
+        }
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_with_leftovers_all_grove() {
+        let ops = vec![make_grove_op(10), make_grove_op(20)];
+        let (batch, leftovers) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(ops);
+        assert_eq!(batch.len(), 2);
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_with_leftovers_no_grove() {
+        let ops = vec![
+            CalculatedCostOperation(OperationCost::default()),
+            FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Sha256, 1)),
+        ];
+        let (batch, leftovers) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(ops);
+        assert!(batch.is_empty());
+        assert_eq!(leftovers.len(), 2);
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_with_leftovers_empty() {
+        let (batch, leftovers) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(vec![]);
+        assert!(batch.is_empty());
+        assert!(leftovers.is_empty());
+    }
+
+    // ---------------------------------------------------------------
+    // 8. DriveCost::ephemeral_cost — various scenarios
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn ephemeral_cost_zero_operation() {
+        let fv = fee_version();
+        let cost = OperationCost::default();
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn ephemeral_cost_seek_only() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 5,
+            storage_cost: StorageCost::default(),
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let expected = 5u64 * fv.storage.storage_seek_cost;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_storage_added_bytes() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost {
+                added_bytes: 100,
+                replaced_bytes: 0,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let expected = 100u64 * fv.storage.storage_processing_credit_per_byte;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_storage_replaced_bytes() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost {
+                added_bytes: 0,
+                replaced_bytes: 50,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let expected = 50u64 * fv.storage.storage_processing_credit_per_byte;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_storage_removed_bytes_basic() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost {
+                added_bytes: 0,
+                replaced_bytes: 0,
+                removed_bytes: StorageRemovedBytes::BasicStorageRemoval(75),
+            },
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let expected = 75u64 * fv.storage.storage_processing_credit_per_byte;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_loaded_bytes() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost::default(),
+            storage_loaded_bytes: 300,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let expected = 300u64 * fv.storage.storage_load_credit_per_byte;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_hash_node_calls() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost::default(),
+            storage_loaded_bytes: 0,
+            hash_node_calls: 10,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let blake3_total = fv.hashing.blake3_base + fv.hashing.blake3_per_block;
+        let expected = blake3_total * 10;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_sinsemilla_hash_calls() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost::default(),
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 3,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+        let expected = fv.hashing.sinsemilla_base * 3;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_all_components_combined() {
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: 2,
+            storage_cost: StorageCost {
+                added_bytes: 10,
+                replaced_bytes: 20,
+                removed_bytes: StorageRemovedBytes::BasicStorageRemoval(30),
+            },
+            storage_loaded_bytes: 40,
+            hash_node_calls: 5,
+            sinsemilla_hash_calls: 1,
+        };
+        let result = cost.ephemeral_cost(fv).expect("should not overflow");
+
+        let seek_cost = 2u64 * fv.storage.storage_seek_cost;
+        let processing_per_byte = fv.storage.storage_processing_credit_per_byte;
+        let added_cost = 10u64 * processing_per_byte;
+        let replaced_cost = 20u64 * processing_per_byte;
+        let removed_cost = 30u64 * processing_per_byte;
+        let loaded_cost = 40u64 * fv.storage.storage_load_credit_per_byte;
+        let blake3_total = fv.hashing.blake3_base + fv.hashing.blake3_per_block;
+        let hash_cost = blake3_total * 5;
+        let sinsemilla_cost = fv.hashing.sinsemilla_base * 1;
+
+        let expected = seek_cost
+            + added_cost
+            + replaced_cost
+            + loaded_cost
+            + removed_cost
+            + hash_cost
+            + sinsemilla_cost;
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn ephemeral_cost_overflow_seek_cost() {
+        let fv = &FeeVersion {
+            storage: FeeStorageVersion {
+                storage_seek_cost: u64::MAX,
+                ..fee_version().storage.clone()
+            },
+            ..fee_version().clone()
+        };
+        let cost = OperationCost {
+            seek_count: 2, // 2 * u64::MAX overflows
+            storage_cost: StorageCost::default(),
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv);
+        assert!(result.is_err(), "expected overflow error for seek cost");
+    }
+
+    #[test]
+    fn ephemeral_cost_overflow_storage_written_bytes() {
+        let fv = &FeeVersion {
+            storage: FeeStorageVersion {
+                storage_processing_credit_per_byte: u64::MAX,
+                ..fee_version().storage.clone()
+            },
+            ..fee_version().clone()
+        };
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost {
+                added_bytes: 2, // 2 * u64::MAX overflows
+                replaced_bytes: 0,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv);
+        assert!(
+            result.is_err(),
+            "expected overflow error for storage written bytes"
+        );
+    }
+
+    #[test]
+    fn ephemeral_cost_overflow_loaded_bytes() {
+        let fv = &FeeVersion {
+            storage: FeeStorageVersion {
+                storage_load_credit_per_byte: u64::MAX,
+                ..fee_version().storage.clone()
+            },
+            ..fee_version().clone()
+        };
+        let cost = OperationCost {
+            seek_count: 0,
+            storage_cost: StorageCost::default(),
+            storage_loaded_bytes: 2, // 2 * u64::MAX overflows
+            hash_node_calls: 0,
+            sinsemilla_hash_calls: 0,
+        };
+        let result = cost.ephemeral_cost(fv);
+        assert!(
+            result.is_err(),
+            "expected overflow error for loaded bytes cost"
+        );
+    }
+
+    #[test]
+    fn ephemeral_cost_overflow_in_addition_chain() {
+        // Use values that individually do not overflow but whose sum does.
+        let fv = fee_version();
+        let cost = OperationCost {
+            seek_count: u32::MAX,
+            storage_cost: StorageCost {
+                added_bytes: u32::MAX,
+                replaced_bytes: u32::MAX,
+                removed_bytes: StorageRemovedBytes::BasicStorageRemoval(u32::MAX),
+            },
+            storage_loaded_bytes: u64::MAX,
+            hash_node_calls: u32::MAX,
+            sinsemilla_hash_calls: u32::MAX,
+        };
+        let result = cost.ephemeral_cost(fv);
+        assert!(
+            result.is_err(),
+            "expected overflow error when summing large components"
+        );
+    }
+}

@@ -66,7 +66,8 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             new_masternode_voting_nonce,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
@@ -105,7 +106,8 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             new_masternode_voting_nonce,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
         // TODO: Implement retry logic

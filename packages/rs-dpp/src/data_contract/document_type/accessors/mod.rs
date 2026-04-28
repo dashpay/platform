@@ -763,3 +763,449 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+    use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+    use crate::document::transfer::Transferable;
+    use crate::nft::TradeMode;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_version::version::PlatformVersion;
+
+    fn get_test_document_type() -> DocumentType {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let doc_types = data_contract.document_types();
+        // Use "indexedDocument" because it has the most properties and indices
+        doc_types
+            .get("indexedDocument")
+            .expect("indexedDocument should exist")
+            .clone()
+    }
+
+    // DocumentTypeV0Getters on DocumentType
+
+    #[test]
+    fn name_returns_document_type_name() {
+        let doc_type = get_test_document_type();
+        assert_eq!(doc_type.name(), "indexedDocument");
+    }
+
+    #[test]
+    fn schema_returns_value() {
+        let doc_type = get_test_document_type();
+        let schema = doc_type.schema();
+        // Schema should be a non-null Value
+        assert!(!schema.is_null());
+    }
+
+    #[test]
+    fn schema_owned_returns_value() {
+        let doc_type = get_test_document_type();
+        let schema = doc_type.schema_owned();
+        assert!(!schema.is_null());
+    }
+
+    #[test]
+    fn indexes_returns_indices() {
+        let doc_type = get_test_document_type();
+        let indexes = doc_type.indexes();
+        // indexedDocument has 6 indices defined in the fixture
+        assert_eq!(indexes.len(), 6);
+        assert!(indexes.contains_key("index1"));
+        assert!(indexes.contains_key("index2"));
+    }
+
+    #[test]
+    fn find_contested_index_returns_none_for_normal_type() {
+        let doc_type = get_test_document_type();
+        // The fixture's indexedDocument has no contested index
+        assert!(doc_type.find_contested_index().is_none());
+    }
+
+    #[test]
+    fn index_structure_returns_index_level() {
+        let doc_type = get_test_document_type();
+        let _structure = doc_type.index_structure();
+        // Just ensure it does not panic
+    }
+
+    #[test]
+    fn flattened_properties_contains_expected_fields() {
+        let doc_type = get_test_document_type();
+        let props = doc_type.flattened_properties();
+        assert!(props.contains_key("firstName"));
+        assert!(props.contains_key("lastName"));
+    }
+
+    #[test]
+    fn properties_contains_expected_fields() {
+        let doc_type = get_test_document_type();
+        let props = doc_type.properties();
+        assert!(props.contains_key("firstName"));
+        assert!(props.contains_key("lastName"));
+    }
+
+    #[test]
+    fn required_fields_contains_expected_fields() {
+        let doc_type = get_test_document_type();
+        let required = doc_type.required_fields();
+        assert!(required.contains("firstName"));
+        assert!(required.contains("lastName"));
+    }
+
+    #[test]
+    fn transient_fields_returns_set() {
+        let doc_type = get_test_document_type();
+        let _transient = doc_type.transient_fields();
+        // The fixture does not define transient fields, so it should be empty
+        assert!(doc_type.transient_fields().is_empty());
+    }
+
+    #[test]
+    fn identifier_paths_returns_set() {
+        let doc_type = get_test_document_type();
+        let _paths = doc_type.identifier_paths();
+        // Should not panic
+    }
+
+    #[test]
+    fn binary_paths_returns_set() {
+        let doc_type = get_test_document_type();
+        let _paths = doc_type.binary_paths();
+        // Should not panic
+    }
+
+    #[test]
+    fn documents_keep_history_returns_bool() {
+        let doc_type = get_test_document_type();
+        // Default is false for the fixture
+        let _keep = doc_type.documents_keep_history();
+    }
+
+    #[test]
+    fn documents_mutable_returns_bool() {
+        let doc_type = get_test_document_type();
+        // Default is true for the fixture
+        assert!(doc_type.documents_mutable());
+    }
+
+    #[test]
+    fn documents_can_be_deleted_returns_bool() {
+        let doc_type = get_test_document_type();
+        assert!(doc_type.documents_can_be_deleted());
+    }
+
+    #[test]
+    fn documents_transferable_returns_value() {
+        let doc_type = get_test_document_type();
+        assert_eq!(doc_type.documents_transferable(), Transferable::Never);
+    }
+
+    #[test]
+    fn trade_mode_returns_value() {
+        let doc_type = get_test_document_type();
+        assert_eq!(doc_type.trade_mode(), TradeMode::None);
+    }
+
+    #[test]
+    fn creation_restriction_mode_returns_value() {
+        let doc_type = get_test_document_type();
+        assert_eq!(
+            doc_type.creation_restriction_mode(),
+            CreationRestrictionMode::NoRestrictions
+        );
+    }
+
+    #[test]
+    fn data_contract_id_returns_identifier() {
+        let doc_type = get_test_document_type();
+        let id = doc_type.data_contract_id();
+        // Should be a valid non-zero identifier set by the fixture
+        assert_ne!(id, Identifier::default());
+    }
+
+    #[test]
+    fn requires_identity_encryption_bounded_key_returns_option() {
+        let doc_type = get_test_document_type();
+        // The fixture's indexedDocument does not require encryption key
+        assert_eq!(
+            doc_type.requires_identity_encryption_bounded_key(),
+            None::<StorageKeyRequirements>
+        );
+    }
+
+    #[test]
+    fn requires_identity_decryption_bounded_key_returns_option() {
+        let doc_type = get_test_document_type();
+        assert_eq!(
+            doc_type.requires_identity_decryption_bounded_key(),
+            None::<StorageKeyRequirements>
+        );
+    }
+
+    #[test]
+    fn security_level_requirement_returns_level() {
+        let doc_type = get_test_document_type();
+        let _level = doc_type.security_level_requirement();
+        // Should not panic; default is HIGH
+    }
+
+    // DocumentTypeV0Setters on DocumentType
+
+    #[test]
+    fn set_data_contract_id_updates_id() {
+        let mut doc_type = get_test_document_type();
+        let new_id = Identifier::from([42u8; 32]);
+        doc_type.set_data_contract_id(new_id);
+        assert_eq!(doc_type.data_contract_id(), new_id);
+    }
+
+    // DocumentTypeV0Getters on DocumentTypeRef
+
+    #[test]
+    fn document_type_ref_getters_work() {
+        let doc_type = get_test_document_type();
+        let doc_ref = doc_type.as_ref();
+
+        assert_eq!(doc_ref.name(), "indexedDocument");
+        assert!(!doc_ref.schema().is_null());
+        assert!(!doc_ref.indexes().is_empty());
+        assert!(doc_ref.find_contested_index().is_none());
+        let _structure = doc_ref.index_structure();
+        assert!(!doc_ref.flattened_properties().is_empty());
+        assert!(!doc_ref.properties().is_empty());
+        let _id_paths = doc_ref.identifier_paths();
+        let _bin_paths = doc_ref.binary_paths();
+        assert!(!doc_ref.required_fields().is_empty());
+        assert!(doc_ref.transient_fields().is_empty());
+        assert!(doc_ref.documents_mutable());
+        assert!(doc_ref.documents_can_be_deleted());
+        assert_eq!(doc_ref.documents_transferable(), Transferable::Never);
+        assert_eq!(doc_ref.trade_mode(), TradeMode::None);
+        assert_eq!(
+            doc_ref.creation_restriction_mode(),
+            CreationRestrictionMode::NoRestrictions
+        );
+        assert_ne!(doc_ref.data_contract_id(), Identifier::default());
+        assert_eq!(
+            doc_ref.requires_identity_encryption_bounded_key(),
+            None::<StorageKeyRequirements>
+        );
+        assert_eq!(
+            doc_ref.requires_identity_decryption_bounded_key(),
+            None::<StorageKeyRequirements>
+        );
+        let _sec_level = doc_ref.security_level_requirement();
+    }
+
+    #[test]
+    fn document_type_ref_schema_owned() {
+        let doc_type = get_test_document_type();
+        let doc_ref = doc_type.as_ref();
+        let schema = doc_ref.schema_owned();
+        assert!(!schema.is_null());
+    }
+
+    // DocumentTypeV0MutGetters on DocumentType
+
+    #[test]
+    fn schema_mut_allows_modification() {
+        let mut doc_type = get_test_document_type();
+        let schema = doc_type.schema_mut();
+        // Just verify it returns a mutable reference without panicking
+        assert!(!schema.is_null());
+    }
+
+    // DocumentTypeV0Getters on DocumentTypeMutRef
+
+    #[test]
+    fn document_type_mut_ref_getters_work() {
+        let mut doc_type = get_test_document_type();
+        let doc_mut_ref = doc_type.as_mut_ref();
+
+        assert_eq!(doc_mut_ref.name(), "indexedDocument");
+        assert!(!doc_mut_ref.schema().is_null());
+        assert!(!doc_mut_ref.indexes().is_empty());
+        assert!(doc_mut_ref.find_contested_index().is_none());
+        let _structure = doc_mut_ref.index_structure();
+        assert!(!doc_mut_ref.flattened_properties().is_empty());
+        assert!(!doc_mut_ref.properties().is_empty());
+        let _id_paths = doc_mut_ref.identifier_paths();
+        let _bin_paths = doc_mut_ref.binary_paths();
+        assert!(!doc_mut_ref.required_fields().is_empty());
+        assert!(doc_mut_ref.transient_fields().is_empty());
+        assert!(doc_mut_ref.documents_mutable());
+        assert!(doc_mut_ref.documents_can_be_deleted());
+        assert_eq!(doc_mut_ref.documents_transferable(), Transferable::Never);
+        assert_eq!(doc_mut_ref.trade_mode(), TradeMode::None);
+        assert_eq!(
+            doc_mut_ref.creation_restriction_mode(),
+            CreationRestrictionMode::NoRestrictions
+        );
+        assert_ne!(doc_mut_ref.data_contract_id(), Identifier::default());
+        assert_eq!(
+            doc_mut_ref.requires_identity_encryption_bounded_key(),
+            None::<StorageKeyRequirements>
+        );
+        assert_eq!(
+            doc_mut_ref.requires_identity_decryption_bounded_key(),
+            None::<StorageKeyRequirements>
+        );
+        let _sec_level = doc_mut_ref.security_level_requirement();
+    }
+
+    #[test]
+    fn document_type_mut_ref_schema_owned() {
+        let mut doc_type = get_test_document_type();
+        let doc_mut_ref = doc_type.as_mut_ref();
+        let schema = doc_mut_ref.schema_owned();
+        assert!(!schema.is_null());
+    }
+
+    // DocumentTypeV0Setters on DocumentTypeMutRef
+
+    #[test]
+    fn document_type_mut_ref_set_data_contract_id() {
+        let mut doc_type = get_test_document_type();
+        let mut doc_mut_ref = doc_type.as_mut_ref();
+        let new_id = Identifier::from([99u8; 32]);
+        doc_mut_ref.set_data_contract_id(new_id);
+        assert_eq!(doc_mut_ref.data_contract_id(), new_id);
+    }
+
+    // DocumentTypeV1Getters on DocumentType (V0 variant returns None/defaults)
+
+    #[test]
+    fn v1_getters_on_v0_document_type_return_none() {
+        let doc_type = get_test_document_type();
+        // The fixture creates V0 document types
+        assert!(doc_type.document_creation_token_cost().is_none());
+        assert!(doc_type.document_replacement_token_cost().is_none());
+        assert!(doc_type.document_deletion_token_cost().is_none());
+        assert!(doc_type.document_transfer_token_cost().is_none());
+        assert!(doc_type.document_update_price_token_cost().is_none());
+        assert!(doc_type.document_purchase_token_cost().is_none());
+        assert!(doc_type.all_document_token_costs().is_empty());
+        assert!(doc_type
+            .all_external_token_costs_contract_tokens()
+            .is_empty());
+    }
+
+    // DocumentTypeV1Getters on DocumentTypeRef (V0 variant returns None/defaults)
+
+    #[test]
+    fn v1_getters_on_v0_document_type_ref_return_none() {
+        let doc_type = get_test_document_type();
+        let doc_ref = doc_type.as_ref();
+
+        assert!(doc_ref.document_creation_token_cost().is_none());
+        assert!(doc_ref.document_replacement_token_cost().is_none());
+        assert!(doc_ref.document_deletion_token_cost().is_none());
+        assert!(doc_ref.document_transfer_token_cost().is_none());
+        assert!(doc_ref.document_update_price_token_cost().is_none());
+        assert!(doc_ref.document_purchase_token_cost().is_none());
+        assert!(doc_ref.all_document_token_costs().is_empty());
+        assert!(doc_ref
+            .all_external_token_costs_contract_tokens()
+            .is_empty());
+    }
+
+    // DocumentTypeV1Getters on DocumentTypeMutRef (V0 variant returns None/defaults)
+
+    #[test]
+    fn v1_getters_on_v0_document_type_mut_ref_return_none() {
+        let mut doc_type = get_test_document_type();
+        let doc_mut_ref = doc_type.as_mut_ref();
+
+        assert!(doc_mut_ref.document_creation_token_cost().is_none());
+        assert!(doc_mut_ref.document_replacement_token_cost().is_none());
+        assert!(doc_mut_ref.document_deletion_token_cost().is_none());
+        assert!(doc_mut_ref.document_transfer_token_cost().is_none());
+        assert!(doc_mut_ref.document_update_price_token_cost().is_none());
+        assert!(doc_mut_ref.document_purchase_token_cost().is_none());
+        assert!(doc_mut_ref.all_document_token_costs().is_empty());
+        assert!(doc_mut_ref
+            .all_external_token_costs_contract_tokens()
+            .is_empty());
+    }
+
+    // DocumentTypeV1Setters on DocumentType (V0 variant is no-op)
+
+    #[test]
+    fn v1_setters_on_v0_document_type_are_noop() {
+        let mut doc_type = get_test_document_type();
+        // These should not panic on V0 variants
+        doc_type.set_document_creation_token_cost(None);
+        doc_type.set_document_replacement_token_cost(None);
+        doc_type.set_document_deletion_token_cost(None);
+        doc_type.set_document_transfer_token_cost(None);
+        doc_type.set_document_price_update_token_cost(None);
+        doc_type.set_document_purchase_token_cost(None);
+    }
+
+    // Test with different document types from the fixture
+
+    #[test]
+    fn no_time_document_type_getters() {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let doc_types = data_contract.document_types();
+
+        let no_time = doc_types
+            .get("noTimeDocument")
+            .expect("noTimeDocument should exist");
+
+        assert_eq!(no_time.name(), "noTimeDocument");
+        assert!(no_time.indexes().is_empty());
+        assert!(no_time.documents_mutable());
+    }
+
+    #[test]
+    fn with_byte_arrays_document_type_has_binary_paths() {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let doc_types = data_contract.document_types();
+
+        let byte_doc = doc_types
+            .get("withByteArrays")
+            .expect("withByteArrays should exist");
+
+        assert_eq!(byte_doc.name(), "withByteArrays");
+        // This document type has byte array fields
+        assert!(!byte_doc.binary_paths().is_empty() || !byte_doc.identifier_paths().is_empty());
+        assert!(!byte_doc.indexes().is_empty());
+    }
+
+    #[test]
+    fn nice_document_type_required_fields() {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let doc_types = data_contract.document_types();
+
+        let nice = doc_types
+            .get("niceDocument")
+            .expect("niceDocument should exist");
+
+        assert_eq!(nice.name(), "niceDocument");
+        // niceDocument requires $createdAt
+        assert!(nice.required_fields().contains("$createdAt"));
+    }
+
+    #[test]
+    fn to_owned_document_type_from_ref() {
+        let doc_type = get_test_document_type();
+        let doc_ref = doc_type.as_ref();
+
+        let owned = doc_ref.to_owned_document_type();
+        assert_eq!(owned.name(), doc_type.name());
+        assert_eq!(owned.data_contract_id(), doc_type.data_contract_id());
+    }
+}

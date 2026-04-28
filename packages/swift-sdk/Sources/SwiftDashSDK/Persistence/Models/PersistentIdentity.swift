@@ -28,14 +28,60 @@ public final class PersistentIdentity {
     public var lastSyncedAt: Date?
 
     // MARK: - Network
-    public var network: String
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. Foundation's
+    /// predicate engine rejects captured non-primitive types — even
+    /// Codable raw-value enums crash at evaluation with
+    /// "Unsupported Predicate: Captured/constant values of type
+    /// 'AppNetwork' are not supported". The `network` computed
+    /// accessor below keeps the public API type-safe; only predicates
+    /// that need to filter by network reach for `networkRaw`.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Reads fall back to
+    /// `.testnet` if the stored raw value ever drifts out of the
+    /// `AppNetwork` range (shouldn't happen — writers only go through
+    /// this setter which uses `AppNetwork.rawValue`).
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // MARK: - Wallet Association
-    public var walletId: Data?
+    //
+    // Cardinality: an identity belongs to 0 or 1 wallet. A wallet
+    // holds N identities (see `PersistentWallet.identities`). When
+    // the wallet is deleted, `wallet` nulls out (deleteRule:
+    // `.nullify`) and the identity row survives orphaned.
+    //
+    // The `wallet` reference is the single source of truth — there
+    // is no denormalized scalar `walletId`. Callers that want the
+    // 32-byte wallet id read `identity.wallet?.walletId`;
+    // predicates filter with `$0.wallet?.walletId == target`.
+    // `@Relationship` is declared on the `PersistentWallet` side
+    // (`identities`, with `inverse: \PersistentIdentity.wallet`),
+    // so this is a plain stored property.
+    public var wallet: PersistentWallet?
+    /// DIP-9 identity index within the owning wallet. Mirrors the
+    /// `identity_index` carried on `IdentityEntryFFI` from Rust.
+    /// Only meaningful when `wallet != nil`; defaults to 0
+    /// otherwise. Used to stable-sort identities within a wallet
+    /// (e.g. when grouping public keys by identity).
+    public var identityIndex: UInt32 = 0
 
     // MARK: - Relationships
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) public var tokenBalances: [PersistentTokenBalance]
+
+    // Contracts in the local store that name this identity as their
+    // owner. `.nullify` so deleting the identity leaves the contract
+    // rows alive (with `ownerIdentity` nulled) — matches the user's
+    // intent that contracts persist independently of whether the owner
+    // identity happens to be loaded.
+    // The `@Relationship` macro is declared on the contract side
+    // (`PersistentDataContract.ownerIdentity`) so this is a plain
+    // stored property — see `wallet` above for the same pattern.
+    public var ownedDataContracts: [PersistentDataContract]
 
     // MARK: - Initialization
     public init(
@@ -50,8 +96,8 @@ public final class PersistentIdentity {
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
-        network: String = "testnet",
-        walletId: Data? = nil
+        network: AppNetwork,
+        identityIndex: UInt32 = 0
     ) {
         self.identityId = identityId
         self.balance = balance
@@ -64,11 +110,12 @@ public final class PersistentIdentity {
         self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
         self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
         self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
-        self.network = network
-        self.walletId = walletId
+        self.networkRaw = network.rawValue
+        self.identityIndex = identityIndex
         self.publicKeys = []
         self.documents = []
         self.tokenBalances = []
+        self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
@@ -86,6 +133,32 @@ public final class PersistentIdentity {
     public var formattedBalance: String {
         let dashAmount = Double(balance) / 100_000_000_000
         return String(format: "%.8f DASH", dashAmount)
+    }
+
+    /// Projected DPP `IdentityPublicKey` view of `publicKeys`.
+    /// Views that deal in DPP types (key signing, state
+    /// transitions, crypto helpers) get their input here without
+    /// having to thread `PersistentPublicKey` → DPP conversions
+    /// themselves. Recomputed on each access — cheap.
+    public var identityPublicKeys: [IdentityPublicKey] {
+        publicKeys.compactMap { $0.toIdentityPublicKey() }
+    }
+
+    /// User-facing short name. Priority: `alias` → `mainDpnsName`
+    /// → `dpnsName` → truncated hex id. Mirrors the old
+    /// `IdentityModel.displayName` extension so views that read
+    /// this don't change behavior post-migration.
+    public var displayName: String {
+        if let alias = alias, !alias.isEmpty {
+            return alias
+        }
+        if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
+            return mainDpnsName
+        }
+        if let dpnsName = dpnsName, !dpnsName.isEmpty {
+            return dpnsName
+        }
+        return String(identityIdString.prefix(12)) + "..."
     }
 
     public var identityTypeEnum: IdentityType {
@@ -133,9 +206,20 @@ extension PersistentIdentity {
         }
     }
 
-    public static var localIdentitiesPredicate: Predicate<PersistentIdentity> {
+    /// Identities owned by *some* wallet on this device — i.e. ones
+    /// the persister attached to a `PersistentWallet` via the
+    /// `wallet` relationship. Use this for views that should only
+    /// surface identities the user can act as / sign for.
+    ///
+    /// Distinct from the `isLocal` flag — that drives the
+    /// "Local Only" / "On Network" UI badge (Platform-confirmed vs
+    /// pending broadcast). Wallet ownership is orthogonal: an
+    /// identity can be wallet-owned and `isLocal` (just registered,
+    /// not yet confirmed), wallet-owned and on-network (confirmed),
+    /// or out-of-wallet (DashPay contact / payment recipient).
+    public static var walletOwnedIdentitiesPredicate: Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
-            identity.isLocal == true
+            identity.wallet != nil
         }
     }
 
@@ -152,68 +236,102 @@ extension PersistentIdentity {
         }
     }
 
-    public static func predicate(network: String) -> Predicate<PersistentIdentity> {
-        #Predicate<PersistentIdentity> { identity in
-            identity.network == network
+    public static func predicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
+        // Compare against the Int-backed `networkRaw` because Foundation's
+        // predicate evaluator can't capture non-primitive types like
+        // `AppNetwork` (the computed `network` accessor is invisible to
+        // SwiftData — it can't see through `\.network.rawValue` either).
+        let target = network.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.networkRaw == target
         }
     }
 
-    public static func localIdentitiesPredicate(network: String) -> Predicate<PersistentIdentity> {
-        #Predicate<PersistentIdentity> { identity in
-            identity.isLocal == true && identity.network == network
+    /// Network-scoped variant of [`walletOwnedIdentitiesPredicate`].
+    /// Used by the recipient pickers, the "Acting as" picker, and any
+    /// view that needs to restrict to identities the user controls on
+    /// a specific network.
+    public static func walletOwnedIdentitiesPredicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
+        let target = network.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.wallet != nil && identity.networkRaw == target
         }
+    }
+
+    /// Fetch a single `PersistentIdentity` by its raw 32-byte id.
+    /// Returns `nil` if the row doesn't exist or the fetch throws.
+    public static func fetch(
+        in context: ModelContext,
+        identityId: Data
+    ) -> PersistentIdentity? {
+        let target = identityId
+        let descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == target }
+        )
+        return try? context.fetch(descriptor).first
     }
 }
 
-// MARK: - Conversion Methods
+// MARK: - Mutation helpers
+//
+// Deliberately small surface: only the fields views actually
+// mutate from inside SwiftUI. Every helper fetches by identityId,
+// applies the change, bumps `lastUpdated`, and leaves `save()` to
+// the caller (or to the atomic-round bracket on the persister
+// handler). `@discardableResult` on all of them because most
+// call sites don't care whether the row existed.
 
 extension PersistentIdentity {
-    /// Create a PersistentIdentity from an IdentityModel
-    public static func from(_ identity: IdentityModel, network: AppNetwork) -> PersistentIdentity {
-        let persistent = PersistentIdentity(
-            identityId: identity.id,
-            balance: Int64(identity.balance),
-            revision: 0,
-            isLocal: identity.isLocal,
-            alias: identity.alias,
-            dpnsName: identity.dpnsName,
-            mainDpnsName: identity.mainDpnsName,
-            identityType: identity.type,
-            network: network.rawValue,
-            walletId: identity.walletId
-        )
-
-        // Add public keys
-        for publicKey in identity.publicKeys {
-            if let persistentKey = PersistentPublicKey.from(publicKey, identityId: identity.idString) {
-                persistent.addPublicKey(persistentKey)
-            }
-        }
-
-        return persistent
+    @discardableResult
+    public static func updateBalance(
+        in context: ModelContext,
+        identityId: Data,
+        balance: UInt64
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.balance = Int64(bitPattern: balance)
+        row.lastUpdated = Date()
+        return true
     }
 
-    /// Convert to an IdentityModel
-    /// Note: This method does not load private keys from keychain. Use separate async methods to load keys if needed.
-    public func toIdentityModel() -> IdentityModel {
-        // Convert public keys
-        let publicKeyModels = publicKeys.compactMap { $0.toIdentityPublicKey() }
+    @discardableResult
+    public static func updateDpnsName(
+        in context: ModelContext,
+        identityId: Data,
+        dpnsName: String?
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.dpnsName = dpnsName
+        row.lastUpdated = Date()
+        return true
+    }
 
-        return IdentityModel(
-            id: identityId,
-            balance: UInt64(balance),
-            isLocal: isLocal,
-            alias: alias,
-            type: identityTypeEnum,
-            privateKeys: [],  // Keys are loaded separately via KeychainManager
-            votingPrivateKey: nil,
-            ownerPrivateKey: nil,
-            payoutPrivateKey: nil,
-            dpnsName: dpnsName,
-            mainDpnsName: mainDpnsName,
-            publicKeys: publicKeyModels,
-            walletId: walletId,
-            network: network
-        )
+    @discardableResult
+    public static func updateMainDpnsName(
+        in context: ModelContext,
+        identityId: Data,
+        mainDpnsName: String?
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.mainDpnsName = mainDpnsName
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func remove(
+        in context: ModelContext,
+        identityId: Data
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        context.delete(row)
+        return true
     }
 }
+
+// `PersistentIdentity` used to round-trip through the legacy
+// `IdentityModel` value-type via `from(_:network:)` /
+// `toIdentityModel()`. Both sides of that bridge are gone now —
+// views read and mutate `PersistentIdentity` rows directly, and the
+// DPP projection for key crypto lives under `identityPublicKeys`
+// above.

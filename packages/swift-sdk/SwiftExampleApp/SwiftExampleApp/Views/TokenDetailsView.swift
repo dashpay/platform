@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct TokenDetailsView: View {
     let token: PersistentToken
@@ -7,6 +8,13 @@ struct TokenDetailsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // Action launcher — navigates to
+                // TokenActionPermissionsView with an identity Picker
+                // so the user can ask "what can I do with this token
+                // as <identity>?". Per-action state-transition flows
+                // hang off that view's rows.
+                actionsEntrySection
+
                 // Basic Information
                 basicInfoSection
 
@@ -42,6 +50,34 @@ struct TokenDetailsView: View {
     }
 
     // MARK: - Section Views
+
+    @ViewBuilder
+    private var actionsEntrySection: some View {
+        NavigationLink(destination: TokenActionPermissionsView(token: token)) {
+            HStack(spacing: 12) {
+                Image(systemName: "wand.and.stars")
+                    .font(.title3)
+                    .foregroundColor(.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("View Actions")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text("See what you can do with this token")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(Color(UIColor.secondarySystemBackground))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
 
     @ViewBuilder
     private var basicInfoSection: some View {

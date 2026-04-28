@@ -1,10 +1,15 @@
 use crate::consensus::basic::state_transition::{
-    ShieldedEmptyProofError, ShieldedNoActionsError, ShieldedTooManyActionsError,
-    ShieldedZeroAnchorError,
+    ShieldedEmptyProofError, ShieldedEncryptedNoteSizeMismatchError, ShieldedNoActionsError,
+    ShieldedTooManyActionsError, ShieldedZeroAnchorError,
 };
 use crate::consensus::basic::BasicError;
 use crate::shielded::SerializedAction;
 use crate::validation::SimpleConsensusValidationResult;
+
+/// Expected size of the encrypted_note field in each SerializedAction.
+/// This is epk (32) + enc_ciphertext (104) + out_ciphertext (80) = 216 bytes.
+/// Canonical source of truth — drive-abci imports this constant.
+pub const ENCRYPTED_NOTE_SIZE: usize = 216;
 
 /// Validate that the actions list is not empty and does not exceed the maximum.
 pub fn validate_actions_count(
@@ -48,6 +53,28 @@ pub fn validate_anchor_not_zero(anchor: &[u8; 32]) -> SimpleConsensusValidationR
     } else {
         SimpleConsensusValidationResult::new()
     }
+}
+
+/// Defense-in-depth: validate that every action's `encrypted_note` field is exactly
+/// `ENCRYPTED_NOTE_SIZE` (216) bytes. This rejects malformed data early at the DPP
+/// layer before it reaches the ABCI bundle reconstruction, saving network bandwidth.
+pub fn validate_encrypted_note_sizes(
+    actions: &[SerializedAction],
+) -> SimpleConsensusValidationResult {
+    for action in actions {
+        if action.encrypted_note.len() != ENCRYPTED_NOTE_SIZE {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                    ShieldedEncryptedNoteSizeMismatchError::new(
+                        ENCRYPTED_NOTE_SIZE as u32,
+                        action.encrypted_note.len() as u32,
+                    ),
+                )
+                .into(),
+            );
+        }
+    }
+    SimpleConsensusValidationResult::new()
 }
 
 #[cfg(test)]
@@ -168,6 +195,106 @@ mod tests {
         assert!(
             result.is_valid(),
             "Expected valid, got: {:?}",
+            result.errors
+        );
+    }
+
+    // --- validate_encrypted_note_sizes ---
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_accept_correct_size() {
+        let actions = vec![dummy_action()];
+        let result = validate_encrypted_note_sizes(&actions);
+        assert!(
+            result.is_valid(),
+            "Expected valid, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_accept_multiple_correct_actions() {
+        let actions = vec![dummy_action(); 3];
+        let result = validate_encrypted_note_sizes(&actions);
+        assert!(
+            result.is_valid(),
+            "Expected valid, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_reject_too_short() {
+        let mut action = dummy_action();
+        action.encrypted_note = vec![4u8; 100]; // Too short
+        let actions = vec![action];
+        let result = validate_encrypted_note_sizes(&actions);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(e)
+            )] => {
+                assert_eq!(e.expected_size(), ENCRYPTED_NOTE_SIZE as u32);
+                assert_eq!(e.actual_size(), 100);
+            }
+        );
+    }
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_reject_too_long() {
+        let mut action = dummy_action();
+        action.encrypted_note = vec![4u8; 300]; // Too long
+        let actions = vec![action];
+        let result = validate_encrypted_note_sizes(&actions);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(e)
+            )] => {
+                assert_eq!(e.expected_size(), ENCRYPTED_NOTE_SIZE as u32);
+                assert_eq!(e.actual_size(), 300);
+            }
+        );
+    }
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_reject_empty() {
+        let mut action = dummy_action();
+        action.encrypted_note = vec![]; // Empty
+        let actions = vec![action];
+        let result = validate_encrypted_note_sizes(&actions);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(e)
+            )] => {
+                assert_eq!(e.expected_size(), ENCRYPTED_NOTE_SIZE as u32);
+                assert_eq!(e.actual_size(), 0);
+            }
+        );
+    }
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_reject_second_invalid_action() {
+        let good_action = dummy_action();
+        let mut bad_action = dummy_action();
+        bad_action.encrypted_note = vec![4u8; 100];
+        let actions = vec![good_action, bad_action];
+        let result = validate_encrypted_note_sizes(&actions);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn validate_encrypted_note_sizes_should_accept_empty_actions_list() {
+        let result = validate_encrypted_note_sizes(&[]);
+        assert!(
+            result.is_valid(),
+            "Expected valid for empty actions list, got: {:?}",
             result.errors
         );
     }

@@ -4,6 +4,7 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::KeyType;
 use std::ffi::{c_char, CStr};
+use zeroize::Zeroizing;
 
 /// Validate that a private key corresponds to a public key using DPP's public_key_data_from_private_key_data
 ///
@@ -65,7 +66,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
         }
     };
 
-    let mut key_array = [0u8; 32];
+    let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(&private_key_bytes);
 
     // Parse key type
@@ -82,7 +83,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
     let network = if is_testnet {
         Network::Testnet
     } else {
-        Network::Dash
+        Network::Mainnet
     };
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key
@@ -173,10 +174,10 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
     let network = if is_testnet {
         Network::Testnet
     } else {
-        Network::Dash
+        Network::Mainnet
     };
 
-    let mut key_array = [0u8; 32];
+    let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(&private_key_bytes);
     match dash_sdk::dpp::dashcore::PrivateKey::from_byte_array(&key_array, network) {
         Ok(private_key) => {
@@ -244,7 +245,7 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
         }
     };
 
-    let mut key_array = [0u8; 32];
+    let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(&private_key_bytes);
 
     // Parse key type
@@ -261,7 +262,7 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
     let network = if is_testnet {
         Network::Testnet
     } else {
-        Network::Dash
+        Network::Mainnet
     };
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key

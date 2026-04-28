@@ -70,6 +70,12 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
                 f, min_fee
             )));
         }
+        Some(f) if f > min_fee.saturating_mul(1000) => {
+            return Err(ProtocolError::ShieldedBuildError(format!(
+                "fee {} exceeds 1000x the minimum fee {}",
+                f, min_fee
+            )));
+        }
         Some(f) => f,
         None => min_fee,
     };
@@ -88,8 +94,11 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // ShieldedWithdrawal extra_data = output_script.as_bytes()
-    let extra_sighash_data = output_script.as_bytes().to_vec();
+    // ShieldedWithdrawal extra_data = output_script || value_balance (le bytes)
+    // value_balance = withdrawal_amount + fee, becomes v0.unshielding_amount in the state transition
+    // Must match server-side sighash in shielded_proof.rs
+    let mut extra_sighash_data = output_script.as_bytes().to_vec();
+    extra_sighash_data.extend_from_slice(&required.to_le_bytes());
 
     let bundle = build_spend_bundle(
         spends,
@@ -164,6 +173,49 @@ mod tests {
     }
 
     #[test]
+    fn test_shielded_withdrawal_fee_above_upper_bound() {
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32])
+            .expect("valid spending key bytes");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        // Compute the minimum fee so we can exceed the 1000x bound
+        let num_actions = 1usize;
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+        let excessive_fee = min_fee.saturating_mul(1000) + 1;
+
+        let result = build_shielded_withdrawal_transition(
+            spends,
+            100,
+            CoreScript::new_p2pkh([1u8; 20]),
+            1,
+            Pooling::Never,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(excessive_fee),
+            platform_version,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds 1000x the minimum fee"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
     fn test_shielded_withdrawal_insufficient_funds() {
         let platform_version = PlatformVersion::latest();
         let change_address = test_orchard_address();
@@ -192,6 +244,173 @@ mod tests {
             platform_version,
         );
 
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds total spendable value"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    // --------------------------------------------------------------
+    // Extra coverage — upper-bound / overflow / default branches
+    // --------------------------------------------------------------
+
+    #[test]
+    fn test_shielded_withdrawal_amount_exceeds_i64_max_errors() {
+        // `withdrawal_amount > i64::MAX as u64` is the first check and has
+        // its own error branch.
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_shielded_withdrawal_transition(
+            spends,
+            (i64::MAX as u64) + 1, // exceeds the i64 limit
+            CoreScript::new_p2pkh([1u8; 20]),
+            1,
+            Pooling::Never,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds maximum allowed value"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_shielded_withdrawal_fee_at_exact_upper_bound_accepted() {
+        // Boundary test: fee == 1000x the minimum is the *accepted* upper
+        // limit (strictly > is rejected). The builder should proceed past
+        // the fee validation and only fail later at add_spend.
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(1, platform_version);
+        let fee_at_boundary = min_fee.saturating_mul(1000);
+
+        let result = build_shielded_withdrawal_transition(
+            spends,
+            100,
+            CoreScript::new_p2pkh([1u8; 20]),
+            1,
+            Pooling::Never,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(fee_at_boundary),
+            platform_version,
+        );
+        // Boundary value passes the validation, so it must NOT fail with
+        // "exceeds 1000x". A successful build is also acceptable; only a
+        // later-stage failure (anchor/add_spend) should surface — and never
+        // as the upper-bound error.
+        if let Err(err) = result {
+            let err = err.to_string();
+            assert!(
+                !err.contains("exceeds 1000x"),
+                "boundary value should not trigger upper-bound error: {}",
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_shielded_withdrawal_fee_at_exact_min_accepted() {
+        // Boundary test: fee == min_fee should be accepted (strictly `<`
+        // is rejected).
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+
+        let note = test_spendable_note(1_000_000);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(1, platform_version);
+
+        let result = build_shielded_withdrawal_transition(
+            spends,
+            100,
+            CoreScript::new_p2pkh([1u8; 20]),
+            1,
+            Pooling::Never,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(min_fee),
+            platform_version,
+        );
+        // Fee == min_fee is accepted by validation; a successful build is
+        // fine. Only a later-stage failure should surface — and never with
+        // the "below minimum required fee" message.
+        if let Err(err) = result {
+            let err = err.to_string();
+            assert!(
+                !err.contains("below minimum required fee"),
+                "fee at min must not trip the lower bound: {}",
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_shielded_withdrawal_zero_spends_errors() {
+        // Empty spends vec → total_spent = 0 and num_actions = 1 (max).
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        let result = build_shielded_withdrawal_transition(
+            vec![],
+            1,
+            CoreScript::new_p2pkh([1u8; 20]),
+            1,
+            Pooling::Never,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            None,
+            platform_version,
+        );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(

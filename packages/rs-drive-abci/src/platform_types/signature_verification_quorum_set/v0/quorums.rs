@@ -225,3 +225,313 @@ impl SigningQuorum {
         Ok(BLSSignature::from(signature.as_raw_value().to_compressed()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore_rpc::json::QuorumType;
+
+    /// Helper: generate a deterministic BLS public key from a seed byte.
+    fn make_public_key(seed: u8) -> ThresholdBlsPublicKey<Bls12381G2Impl> {
+        let mut key_bytes = [0u8; 32];
+        key_bytes[0] = seed;
+        key_bytes[31] = 1; // ensure nonzero
+        let sk = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes)
+            .expect("expected a valid secret key from test bytes");
+        sk.public_key()
+    }
+
+    fn make_verification_quorum(seed: u8, index: Option<u32>) -> VerificationQuorum {
+        VerificationQuorum {
+            index,
+            public_key: make_public_key(seed),
+        }
+    }
+
+    fn make_classic_config() -> QuorumConfig {
+        QuorumConfig {
+            quorum_type: QuorumType::Llmq100_67,
+            active_signers: 24,
+            rotation: false,
+            window: 24,
+        }
+    }
+
+    fn make_rotating_config(active_signers: u16) -> QuorumConfig {
+        QuorumConfig {
+            quorum_type: QuorumType::Llmq60_75,
+            active_signers,
+            rotation: true,
+            window: 24,
+        }
+    }
+
+    // ---- Quorums default and construction ----
+
+    #[test]
+    fn quorums_default_is_empty() {
+        let q: Quorums<VerificationQuorum> = Quorums::default();
+        assert!(q.is_empty());
+        assert_eq!(q.len(), 0);
+    }
+
+    #[test]
+    fn quorums_from_iter_collects_entries() {
+        let hash1 = QuorumHash::from_byte_array([1u8; 32]);
+        let hash2 = QuorumHash::from_byte_array([2u8; 32]);
+        let q: Quorums<VerificationQuorum> = vec![
+            (hash1, make_verification_quorum(10, None)),
+            (hash2, make_verification_quorum(20, None)),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(q.len(), 2);
+        assert!(q.contains_key(&hash1));
+        assert!(q.contains_key(&hash2));
+    }
+
+    #[test]
+    fn quorums_into_iter_yields_all_entries() {
+        let hash1 = QuorumHash::from_byte_array([3u8; 32]);
+        let hash2 = QuorumHash::from_byte_array([4u8; 32]);
+        let q: Quorums<VerificationQuorum> = vec![
+            (hash1, make_verification_quorum(30, None)),
+            (hash2, make_verification_quorum(40, None)),
+        ]
+        .into_iter()
+        .collect();
+        let entries: Vec<_> = q.into_iter().collect();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn quorums_from_btreemap() {
+        let mut map = BTreeMap::new();
+        map.insert(
+            QuorumHash::from_byte_array([5u8; 32]),
+            make_verification_quorum(50, None),
+        );
+        let q: Quorums<VerificationQuorum> = Quorums::from(map);
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn quorums_deref_and_deref_mut() {
+        let hash = QuorumHash::from_byte_array([6u8; 32]);
+        let mut q: Quorums<VerificationQuorum> = Quorums::default();
+        // DerefMut: insert via BTreeMap method
+        q.insert(hash, make_verification_quorum(60, None));
+        assert_eq!(q.len(), 1);
+        // Deref: get via BTreeMap method
+        assert!(q.get(&hash).is_some());
+    }
+
+    // ---- choose_quorum: classic (DIP8) ----
+
+    #[test]
+    fn choose_classic_quorum_empty_returns_none() {
+        let q: Quorums<VerificationQuorum> = Quorums::default();
+        let config = make_classic_config();
+        let request_id = [0u8; 32];
+        assert!(q.choose_quorum(&config, &request_id).is_none());
+    }
+
+    #[test]
+    fn choose_classic_quorum_single_returns_that_quorum() {
+        let hash = QuorumHash::from_byte_array([7u8; 32]);
+        let q: Quorums<VerificationQuorum> = vec![(hash, make_verification_quorum(70, None))]
+            .into_iter()
+            .collect();
+        let config = make_classic_config();
+        let request_id = [0u8; 32];
+        let result = q.choose_quorum(&config, &request_id);
+        assert!(result.is_some());
+        let (chosen_hash, _) = result.unwrap();
+        assert_eq!(chosen_hash, hash);
+    }
+
+    #[test]
+    fn choose_classic_quorum_deterministic() {
+        let hash1 = QuorumHash::from_byte_array([8u8; 32]);
+        let hash2 = QuorumHash::from_byte_array([9u8; 32]);
+        let q: Quorums<VerificationQuorum> = vec![
+            (hash1, make_verification_quorum(80, None)),
+            (hash2, make_verification_quorum(90, None)),
+        ]
+        .into_iter()
+        .collect();
+        let config = make_classic_config();
+        let request_id = [42u8; 32];
+
+        let result1 = q.choose_quorum(&config, &request_id);
+        let result2 = q.choose_quorum(&config, &request_id);
+        assert_eq!(result1.unwrap().0, result2.unwrap().0);
+    }
+
+    #[test]
+    fn choose_classic_quorum_different_request_ids_may_differ() {
+        let hash1 = QuorumHash::from_byte_array([10u8; 32]);
+        let hash2 = QuorumHash::from_byte_array([11u8; 32]);
+        let hash3 = QuorumHash::from_byte_array([12u8; 32]);
+        let q: Quorums<VerificationQuorum> = vec![
+            (hash1, make_verification_quorum(1, None)),
+            (hash2, make_verification_quorum(2, None)),
+            (hash3, make_verification_quorum(3, None)),
+        ]
+        .into_iter()
+        .collect();
+        let config = make_classic_config();
+
+        // Try many request IDs; at least two distinct choices should appear
+        let mut chosen = std::collections::HashSet::new();
+        for i in 0u8..=255 {
+            let mut rid = [0u8; 32];
+            rid[0] = i;
+            if let Some((h, _)) = q.choose_quorum(&config, &rid) {
+                chosen.insert(h);
+            }
+        }
+        assert!(
+            chosen.len() > 1,
+            "classic quorum selection should distribute across quorums"
+        );
+    }
+
+    // ---- choose_quorum: rotating (DIP24) ----
+
+    #[test]
+    fn choose_rotating_quorum_empty_returns_none() {
+        let q: Quorums<VerificationQuorum> = Quorums::default();
+        let config = make_rotating_config(32);
+        let request_id = [0u8; 32];
+        assert!(q.choose_quorum(&config, &request_id).is_none());
+    }
+
+    #[test]
+    fn choose_rotating_quorum_finds_matching_index() {
+        // active_signers = 32, so n = 5 (since 2^5 = 32), mask = 31
+        // We need to control request_id so the computed signer index matches an existing quorum.
+        let config = make_rotating_config(32);
+
+        // Build quorums with indices 0..31
+        let quorums: Quorums<VerificationQuorum> = (0u32..32)
+            .map(|i| {
+                let mut hash_bytes = [0u8; 32];
+                hash_bytes[0] = i as u8;
+                (
+                    QuorumHash::from_byte_array(hash_bytes),
+                    make_verification_quorum(i as u8, Some(i)),
+                )
+            })
+            .collect();
+
+        let request_id = [0u8; 32];
+        let result = quorums.choose_quorum(&config, &request_id);
+        assert!(
+            result.is_some(),
+            "rotating quorum should find a matching index"
+        );
+        let (_, chosen_quorum) = result.unwrap();
+        assert!(chosen_quorum.index.is_some());
+    }
+
+    #[test]
+    fn choose_rotating_quorum_no_matching_index_returns_none() {
+        // Create a quorum with an index that will likely not match the computed signer
+        let config = make_rotating_config(32);
+        // Only one quorum with index 999 (out of range for mask = 31)
+        let q: Quorums<VerificationQuorum> = vec![(
+            QuorumHash::from_byte_array([1u8; 32]),
+            make_verification_quorum(1, Some(999)),
+        )]
+        .into_iter()
+        .collect();
+
+        let request_id = [0u8; 32];
+        let result = q.choose_quorum(&config, &request_id);
+        assert!(
+            result.is_none(),
+            "no quorum should match index 999 when mask is 31"
+        );
+    }
+
+    #[test]
+    fn choose_quorum_routes_by_config_rotation_flag() {
+        let hash = QuorumHash::from_byte_array([20u8; 32]);
+        let quorum = make_verification_quorum(20, Some(0));
+        let q: Quorums<VerificationQuorum> = vec![(hash, quorum)].into_iter().collect();
+
+        let request_id = [0u8; 32];
+
+        // Non-rotating config should use classic selection
+        let classic_config = make_classic_config();
+        let classic_result = q.choose_quorum(&classic_config, &request_id);
+        assert!(classic_result.is_some());
+
+        // Rotating config may or may not find a match depending on the computed signer
+        let rotating_config = make_rotating_config(1);
+        let _rotating_result = q.choose_quorum(&rotating_config, &request_id);
+        // We just verify it does not panic; result depends on signer calculation
+    }
+
+    // ---- Quorum trait implementations ----
+
+    #[test]
+    fn verification_quorum_index_trait() {
+        let vq_none = make_verification_quorum(1, None);
+        assert_eq!(Quorum::index(&vq_none), None);
+
+        let vq_some = make_verification_quorum(2, Some(42));
+        assert_eq!(Quorum::index(&vq_some), Some(42));
+    }
+
+    #[test]
+    fn signing_quorum_index_trait() {
+        let sq = SigningQuorum {
+            index: Some(7),
+            private_key: [0u8; 32],
+        };
+        assert_eq!(Quorum::index(&sq), Some(7));
+
+        let sq_none = SigningQuorum {
+            index: None,
+            private_key: [0u8; 32],
+        };
+        assert_eq!(Quorum::index(&sq_none), None);
+    }
+
+    // ---- Debug implementations ----
+
+    #[test]
+    fn verification_quorum_debug_format() {
+        let vq = make_verification_quorum(1, Some(5));
+        let debug_str = format!("{:?}", vq);
+        assert!(debug_str.contains("VerificationQuorum"));
+        assert!(debug_str.contains("index"));
+        assert!(debug_str.contains("public_key"));
+    }
+
+    #[test]
+    fn quorums_debug_format() {
+        let hash = QuorumHash::from_byte_array([1u8; 32]);
+        let q: Quorums<VerificationQuorum> = vec![(hash, make_verification_quorum(1, None))]
+            .into_iter()
+            .collect();
+        let debug_str = format!("{:?}", q);
+        // Should use debug_map format with quorum hash strings as keys
+        assert!(!debug_str.is_empty());
+    }
+
+    #[test]
+    fn signing_quorum_debug_format() {
+        let sq = SigningQuorum {
+            index: Some(3),
+            private_key: [0u8; 32],
+        };
+        let debug_str = format!("{:?}", sq);
+        assert!(debug_str.contains("SigningQuorum"));
+        assert!(debug_str.contains("index"));
+    }
+}

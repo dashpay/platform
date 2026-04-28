@@ -62,11 +62,10 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
 
     // Get network
     let network_str = match sdk.network {
-        dash_sdk::dpp::dashcore::Network::Dash => "mainnet",
+        dash_sdk::dpp::dashcore::Network::Mainnet => "mainnet",
         dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
         dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
         dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
-        _ => "unknown",
     };
 
     rt.block_on(async move {

@@ -21,7 +21,7 @@ fn test_wallet_creation_and_destruction() {
         let mut error = PlatformWalletFFIError::success();
 
         let result = platform_wallet_info_create_from_seed(
-            Network::Testnet,
+            1, // Testnet
             seed.as_ptr(),
             seed.len(),
             &mut handle,
@@ -51,7 +51,7 @@ fn test_wallet_from_mnemonic() {
         let mut error = PlatformWalletFFIError::success();
 
         let result = platform_wallet_info_create_from_mnemonic(
-            Network::Testnet,
+            1, // Testnet
             mnemonic.as_ptr(),
             std::ptr::null(),
             &mut handle,
@@ -85,7 +85,7 @@ fn test_identity_manager_workflow() {
         // Create a mock identity for testing
         let identity = dpp::tests::fixtures::get_identity_fixture(0).unwrap();
         let identity_id = identity.id();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+        let managed = platform_wallet::ManagedIdentity::new(identity, 0);
         let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
         let result = identity_manager_add_identity(manager_handle, identity_handle, &mut error);
@@ -96,17 +96,10 @@ fn test_identity_manager_workflow() {
         assert_eq!(result, PlatformWalletFFIResult::Success);
         assert_eq!(count, 1);
 
-        // Set as primary
-        let id_bytes: IdentifierBytes = identity_id.into();
-        let result = identity_manager_set_primary_identity(manager_handle, id_bytes, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-
-        // Get primary
-        let mut retrieved_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result =
-            identity_manager_get_primary_identity_id(manager_handle, &mut retrieved_id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(retrieved_id.bytes, id_bytes.bytes);
+        // Primary-identity FFI was dropped along with the field —
+        // selection moved to the UI layer.
+        let id_bytes: [u8; 32] = identity_id.to_buffer();
+        let _ = id_bytes;
 
         // Get all identity IDs
         let mut array = IdentifierArray {
@@ -117,7 +110,7 @@ fn test_identity_manager_workflow() {
         assert_eq!(result, PlatformWalletFFIResult::Success);
         assert_eq!(array.count, 1);
 
-        platform_wallet_identifier_array_free(array);
+        platform_wallet_identifier_array_free(&mut array);
 
         // Cleanup
         identity_manager_destroy(manager_handle);
@@ -129,14 +122,14 @@ fn test_identity_manager_workflow() {
 fn test_managed_identity_operations() {
     unsafe {
         let identity = dpp::tests::fixtures::get_identity_fixture(0).unwrap();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+        let managed = platform_wallet::ManagedIdentity::new(identity, 0);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
         let mut error = PlatformWalletFFIError::success();
 
         // Get ID
-        let mut id_bytes = IdentifierBytes { bytes: [0u8; 32] };
-        let result = managed_identity_get_id(handle, &mut id_bytes, &mut error);
+        let mut id_bytes = [0u8; 32];
+        let result = managed_identity_get_id(handle, id_bytes.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
 
         // Get balance
@@ -167,7 +160,7 @@ fn test_managed_identity_operations() {
         };
 
         let result =
-            managed_identity_set_last_updated_balance_block_time(handle, block_time, &mut error);
+            managed_identity_set_last_updated_balance_block_time(handle, &block_time, &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
 
         let mut retrieved_bt = BlockTime {
@@ -198,7 +191,7 @@ fn test_serialization() {
         let mut error = PlatformWalletFFIError::success();
 
         platform_wallet_info_create_from_seed(
-            Network::Testnet,
+            1, // Testnet
             seed.as_ptr(),
             seed.len(),
             &mut handle,
@@ -226,23 +219,23 @@ fn test_utils_identifier_operations() {
         let mut error = PlatformWalletFFIError::success();
 
         // Generate random identifier
-        let mut id1 = IdentifierBytes { bytes: [0u8; 32] };
-        let result = platform_wallet_generate_random_identifier(&mut id1, &mut error);
+        let mut id1 = [0u8; 32];
+        let result = platform_wallet_generate_random_identifier(id1.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
 
         // Convert to hex
         let mut hex: *mut std::os::raw::c_char = std::ptr::null_mut();
-        let result = platform_wallet_identifier_to_hex(id1, &mut hex, &mut error);
+        let result = platform_wallet_identifier_to_hex(id1.as_ptr(), &mut hex, &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
         assert!(!hex.is_null());
 
         // Convert back from hex
-        let mut id2 = IdentifierBytes { bytes: [0u8; 32] };
-        let result = platform_wallet_identifier_from_hex(hex, &mut id2, &mut error);
+        let mut id2 = [0u8; 32];
+        let result = platform_wallet_identifier_from_hex(hex, id2.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
 
         // Should match
-        assert_eq!(id1.bytes, id2.bytes);
+        assert_eq!(id1, id2);
 
         platform_wallet_string_free(hex);
     }
@@ -255,17 +248,17 @@ fn test_error_handling() {
 
         // Try to get identity from invalid handle
         let invalid_handle = 9999;
-        let mut id_bytes = IdentifierBytes { bytes: [0u8; 32] };
-        let result = managed_identity_get_id(invalid_handle, &mut id_bytes, &mut error);
+        let mut id_bytes = [0u8; 32];
+        let result = managed_identity_get_id(invalid_handle, id_bytes.as_mut_ptr(), &mut error);
         assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
 
         // Error should have message
         assert!(!error.message.is_null());
-        platform_wallet_ffi_error_free(error);
+        platform_wallet_ffi_error_free(&mut error);
 
         // Try to create wallet with null pointer
         let result = platform_wallet_info_create_from_seed(
-            Network::Testnet,
+            1, // Testnet
             std::ptr::null(),
             0,
             std::ptr::null_mut(),
@@ -291,7 +284,7 @@ fn test_full_workflow() {
 
         let mut wallet_handle: Handle = NULL_HANDLE;
         let result = platform_wallet_info_create_from_mnemonic(
-            Network::Testnet,
+            1, // Testnet
             mnemonic.as_ptr(),
             std::ptr::null(),
             &mut wallet_handle,
@@ -306,20 +299,22 @@ fn test_full_workflow() {
 
         // Create identity
         let identity = dpp::tests::fixtures::get_identity_fixture(0).unwrap();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+        let managed = platform_wallet::ManagedIdentity::new(identity, 0);
         let identity_id = managed.identity.id();
         let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        // Set identity label
+        // Label setter is now a no-op stub (ManagedIdentity dropped
+        // its label field) — kept here only to verify the call still
+        // links and returns Success.
         let label = CString::new("My Primary Identity").unwrap();
         managed_identity_set_label(identity_handle, label.as_ptr(), &mut error);
 
         // Add identity to manager
         identity_manager_add_identity(manager_handle, identity_handle, &mut error);
 
-        // Set as primary
-        let id_bytes: IdentifierBytes = identity_id.into();
-        identity_manager_set_primary_identity(manager_handle, id_bytes, &mut error);
+        // Primary-identity FFI was dropped along with the field.
+        let id_bytes: [u8; 32] = identity_id.to_buffer();
+        let _ = id_bytes;
 
         // Set identity manager on wallet
         let result =

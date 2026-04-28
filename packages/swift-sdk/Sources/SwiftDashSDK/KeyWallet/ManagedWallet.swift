@@ -301,7 +301,7 @@ public class ManagedWallet {
     ///   - updateState: Whether to update wallet state if transaction is relevant
     /// - Returns: Transaction check result
     public func checkTransaction(wallet: Wallet, transactionData: Data,
-                                context: TransactionContext = .mempool,
+                                context: TransactionContextType = .mempool,
                                 blockHeight: UInt32 = 0,
                                 blockHash: Data? = nil,
                                 timestamp: UInt32 = 0,
@@ -309,26 +309,29 @@ public class ManagedWallet {
         var error = FFIError()
         var result = FFITransactionCheckResult()
 
+        // Build FFIBlockInfo
+        var blockInfo = FFIBlockInfo()
+        blockInfo.height = blockHeight
+        blockInfo.timestamp = timestamp
+        if let hash = blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &blockInfo.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
+
+        let contextType = FFITransactionContextType(rawValue: context.rawValue)
+
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
 
-            if let hash = blockHash {
-                return hash.withUnsafeBytes { hashBytes in
-                    let hashPtr = hashBytes.bindMemory(to: UInt8.self).baseAddress
-
-                    return managed_wallet_check_transaction(
-                        handle, wallet.ffiHandle,
-                        txPtr, transactionData.count,
-                        context.ffiValue, blockHeight, hashPtr,
-                        UInt64(timestamp), updateState, &result, &error)
-                }
-            } else {
-                return managed_wallet_check_transaction(
-                    handle, wallet.ffiHandle,
-                    txPtr, transactionData.count,
-                    context.ffiValue, blockHeight, nil,
-                    UInt64(timestamp), updateState, &result, &error)
-            }
+            return managed_wallet_check_transaction(
+                handle, wallet.ffiHandle,
+                txPtr, transactionData.count,
+                contextType, blockInfo,
+                nil, 0, // islock_data, islock_len
+                updateState, &result, &error)
         }
 
         defer {

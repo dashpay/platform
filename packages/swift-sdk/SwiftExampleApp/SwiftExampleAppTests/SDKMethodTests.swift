@@ -60,7 +60,8 @@ final class SDKMethodTests: XCTestCase {
       let signerResult = key.withUnsafeBytes { keyBytes in
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-          UInt(key.count)
+          UInt(key.count),
+          DashSDKNetwork(rawValue: 1)
         )
       }
 
@@ -75,11 +76,12 @@ final class SDKMethodTests: XCTestCase {
         dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
       }
 
+      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
       _ = try await sdk.transferCredits(
         from: identity,
         toIdentityId: toId,
         amount: amount,
-        signer: OpaquePointer(signer)
+        signer: signerPtr
       )
       XCTFail("transferCredits should fail with dummy data")
     } catch {

@@ -758,3 +758,540 @@ impl fmt::Display for DistributionFunction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    mod construction {
+        use super::*;
+
+        #[test]
+        fn fixed_amount_construction() {
+            let dist = DistributionFunction::FixedAmount { amount: 42 };
+            match dist {
+                DistributionFunction::FixedAmount { amount } => assert_eq!(amount, 42),
+                _ => panic!("Expected FixedAmount variant"),
+            }
+        }
+
+        #[test]
+        fn random_construction() {
+            let dist = DistributionFunction::Random { min: 10, max: 100 };
+            match dist {
+                DistributionFunction::Random { min, max } => {
+                    assert_eq!(min, 10);
+                    assert_eq!(max, 100);
+                }
+                _ => panic!("Expected Random variant"),
+            }
+        }
+
+        #[test]
+        fn step_decreasing_amount_construction() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(5),
+                max_interval_count: Some(128),
+                distribution_start_amount: 1000,
+                trailing_distribution_interval_amount: 50,
+                min_value: Some(10),
+            };
+            match dist {
+                DistributionFunction::StepDecreasingAmount {
+                    step_count,
+                    decrease_per_interval_numerator,
+                    decrease_per_interval_denominator,
+                    start_decreasing_offset,
+                    max_interval_count,
+                    distribution_start_amount,
+                    trailing_distribution_interval_amount,
+                    min_value,
+                } => {
+                    assert_eq!(step_count, 10);
+                    assert_eq!(decrease_per_interval_numerator, 1);
+                    assert_eq!(decrease_per_interval_denominator, 2);
+                    assert_eq!(start_decreasing_offset, Some(5));
+                    assert_eq!(max_interval_count, Some(128));
+                    assert_eq!(distribution_start_amount, 1000);
+                    assert_eq!(trailing_distribution_interval_amount, 50);
+                    assert_eq!(min_value, Some(10));
+                }
+                _ => panic!("Expected StepDecreasingAmount variant"),
+            }
+        }
+
+        #[test]
+        fn stepwise_construction() {
+            let mut steps = BTreeMap::new();
+            steps.insert(0, 100);
+            steps.insert(10, 50);
+            steps.insert(20, 25);
+            let dist = DistributionFunction::Stepwise(steps.clone());
+            match dist {
+                DistributionFunction::Stepwise(s) => {
+                    assert_eq!(s.len(), 3);
+                    assert_eq!(s[&0], 100);
+                    assert_eq!(s[&10], 50);
+                    assert_eq!(s[&20], 25);
+                }
+                _ => panic!("Expected Stepwise variant"),
+            }
+        }
+
+        #[test]
+        fn linear_construction() {
+            let dist = DistributionFunction::Linear {
+                a: -5,
+                d: 2,
+                start_step: Some(100),
+                starting_amount: 500,
+                min_value: Some(10),
+                max_value: Some(1000),
+            };
+            match dist {
+                DistributionFunction::Linear {
+                    a,
+                    d,
+                    start_step,
+                    starting_amount,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, -5);
+                    assert_eq!(d, 2);
+                    assert_eq!(start_step, Some(100));
+                    assert_eq!(starting_amount, 500);
+                    assert_eq!(min_value, Some(10));
+                    assert_eq!(max_value, Some(1000));
+                }
+                _ => panic!("Expected Linear variant"),
+            }
+        }
+
+        #[test]
+        fn polynomial_construction() {
+            let dist = DistributionFunction::Polynomial {
+                a: 3,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 0,
+                start_moment: Some(0),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
+            match dist {
+                DistributionFunction::Polynomial {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 3);
+                    assert_eq!(d, 1);
+                    assert_eq!(m, 2);
+                    assert_eq!(n, 1);
+                    assert_eq!(o, 0);
+                    assert_eq!(start_moment, Some(0));
+                    assert_eq!(b, 10);
+                    assert!(min_value.is_none());
+                    assert!(max_value.is_none());
+                }
+                _ => panic!("Expected Polynomial variant"),
+            }
+        }
+
+        #[test]
+        fn exponential_construction() {
+            let dist = DistributionFunction::Exponential {
+                a: 100,
+                d: 10,
+                m: 2,
+                n: 50,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(100000),
+            };
+            match dist {
+                DistributionFunction::Exponential {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 100);
+                    assert_eq!(d, 10);
+                    assert_eq!(m, 2);
+                    assert_eq!(n, 50);
+                    assert_eq!(o, 0);
+                    assert_eq!(start_moment, Some(0));
+                    assert_eq!(b, 5);
+                    assert_eq!(min_value, Some(1));
+                    assert_eq!(max_value, Some(100000));
+                }
+                _ => panic!("Expected Exponential variant"),
+            }
+        }
+
+        #[test]
+        fn logarithmic_construction() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(0),
+                b: 50,
+                min_value: None,
+                max_value: Some(200),
+            };
+            match dist {
+                DistributionFunction::Logarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 10);
+                    assert_eq!(d, 1);
+                    assert_eq!(m, 1);
+                    assert_eq!(n, 1);
+                    assert_eq!(o, 1);
+                    assert_eq!(start_moment, Some(0));
+                    assert_eq!(b, 50);
+                    assert!(min_value.is_none());
+                    assert_eq!(max_value, Some(200));
+                }
+                _ => panic!("Expected Logarithmic variant"),
+            }
+        }
+
+        #[test]
+        fn inverted_logarithmic_construction() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 10000,
+                d: 1,
+                m: 1,
+                n: 5000,
+                o: 0,
+                start_moment: None,
+                b: 0,
+                min_value: Some(0),
+                max_value: None,
+            };
+            match dist {
+                DistributionFunction::InvertedLogarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 10000);
+                    assert_eq!(d, 1);
+                    assert_eq!(m, 1);
+                    assert_eq!(n, 5000);
+                    assert_eq!(o, 0);
+                    assert!(start_moment.is_none());
+                    assert_eq!(b, 0);
+                    assert_eq!(min_value, Some(0));
+                    assert!(max_value.is_none());
+                }
+                _ => panic!("Expected InvertedLogarithmic variant"),
+            }
+        }
+    }
+
+    mod display {
+        use super::*;
+
+        #[test]
+        fn fixed_amount_display() {
+            let dist = DistributionFunction::FixedAmount { amount: 42 };
+            let s = format!("{}", dist);
+            assert!(s.contains("FixedAmount"));
+            assert!(s.contains("42"));
+        }
+
+        #[test]
+        fn random_display() {
+            let dist = DistributionFunction::Random { min: 10, max: 100 };
+            let s = format!("{}", dist);
+            assert!(s.contains("Random"));
+            assert!(s.contains("10"));
+            assert!(s.contains("100"));
+        }
+
+        #[test]
+        fn step_decreasing_display_with_all_options() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(5),
+                max_interval_count: Some(64),
+                distribution_start_amount: 1000,
+                trailing_distribution_interval_amount: 50,
+                min_value: Some(10),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("StepDecreasingAmount"));
+            assert!(s.contains("1000"));
+            assert!(s.contains("period 5"));
+            assert!(s.contains("64 intervals"));
+            assert!(s.contains("50 tokens"));
+            assert!(s.contains("minimum emission 10"));
+        }
+
+        #[test]
+        fn step_decreasing_display_defaults() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: None,
+                max_interval_count: None,
+                distribution_start_amount: 1000,
+                trailing_distribution_interval_amount: 50,
+                min_value: None,
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("128 intervals (default)"));
+        }
+
+        #[test]
+        fn stepwise_display() {
+            let mut steps = BTreeMap::new();
+            steps.insert(0, 100);
+            steps.insert(10, 50);
+            let dist = DistributionFunction::Stepwise(steps);
+            let s = format!("{}", dist);
+            assert!(s.contains("Stepwise"));
+            assert!(s.contains("Step 0"));
+            assert!(s.contains("100 tokens"));
+            assert!(s.contains("Step 10"));
+            assert!(s.contains("50 tokens"));
+        }
+
+        #[test]
+        fn linear_display_with_start() {
+            let dist = DistributionFunction::Linear {
+                a: 5,
+                d: 2,
+                start_step: Some(10),
+                starting_amount: 100,
+                min_value: Some(1),
+                max_value: Some(200),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Linear"));
+            assert!(s.contains("min: 1"));
+            assert!(s.contains("max: 200"));
+        }
+
+        #[test]
+        fn linear_display_without_start() {
+            let dist = DistributionFunction::Linear {
+                a: 5,
+                d: 2,
+                start_step: None,
+                starting_amount: 100,
+                min_value: None,
+                max_value: None,
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Linear"));
+            assert!(!s.contains("min:"));
+            assert!(!s.contains("max:"));
+        }
+
+        #[test]
+        fn polynomial_display() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 3,
+                n: 2,
+                o: 1,
+                start_moment: Some(5),
+                b: 10,
+                min_value: None,
+                max_value: Some(100),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Polynomial"));
+            assert!(s.contains("max: 100"));
+        }
+
+        #[test]
+        fn exponential_display() {
+            let dist = DistributionFunction::Exponential {
+                a: 100,
+                d: 10,
+                m: 2,
+                n: 50,
+                o: 3,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(1000),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Exponential"));
+            assert!(s.contains("min: 1"));
+            assert!(s.contains("max: 1000"));
+        }
+
+        #[test]
+        fn logarithmic_display() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: None,
+                b: 50,
+                min_value: None,
+                max_value: None,
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Logarithmic"));
+        }
+
+        #[test]
+        fn inverted_logarithmic_display() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("InvertedLogarithmic"));
+            assert!(s.contains("min: 1"));
+            assert!(s.contains("max: 50"));
+        }
+    }
+
+    mod equality_and_clone {
+        use super::*;
+
+        #[test]
+        fn fixed_amount_equality() {
+            let a = DistributionFunction::FixedAmount { amount: 100 };
+            let b = DistributionFunction::FixedAmount { amount: 100 };
+            let c = DistributionFunction::FixedAmount { amount: 200 };
+            assert_eq!(a, b);
+            assert_ne!(a, c);
+        }
+
+        #[test]
+        fn clone_preserves_all_fields() {
+            let dist = DistributionFunction::Polynomial {
+                a: 3,
+                d: 2,
+                m: 4,
+                n: 5,
+                o: -1,
+                start_moment: Some(100),
+                b: 50,
+                min_value: Some(5),
+                max_value: Some(500),
+            };
+            let cloned = dist.clone();
+            assert_eq!(dist, cloned);
+        }
+
+        #[test]
+        fn partial_ord_between_variants() {
+            let fixed = DistributionFunction::FixedAmount { amount: 100 };
+            let random = DistributionFunction::Random { min: 10, max: 100 };
+            assert!(fixed < random);
+        }
+    }
+
+    mod constants {
+        use super::*;
+
+        #[test]
+        fn max_distribution_param_is_u48_max() {
+            assert_eq!(MAX_DISTRIBUTION_PARAM, (1u64 << 48) - 1);
+        }
+
+        #[test]
+        fn max_distribution_cycles_param_is_u15_max() {
+            assert_eq!(MAX_DISTRIBUTION_CYCLES_PARAM, (1u64 << 15) - 1);
+        }
+
+        #[test]
+        fn default_step_decreasing_max_cycles() {
+            assert_eq!(
+                DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+                128
+            );
+        }
+
+        #[test]
+        fn linear_slope_bounds() {
+            assert_eq!(MAX_LINEAR_SLOPE_A_PARAM, 256);
+            assert_eq!(MIN_LINEAR_SLOPE_A_PARAM, -255);
+        }
+
+        #[test]
+        #[allow(clippy::assertions_on_constants)]
+        fn polynomial_bounds() {
+            assert_eq!(MIN_POL_M_PARAM, -8);
+            assert_eq!(MAX_POL_M_PARAM, 8);
+            assert_eq!(MAX_POL_N_PARAM, 32);
+            assert!(MIN_POL_A_PARAM < 0);
+            assert!(MAX_POL_A_PARAM > 0);
+        }
+
+        #[test]
+        fn exponential_bounds() {
+            assert_eq!(MAX_EXP_A_PARAM, 256);
+            assert_eq!(MAX_EXP_M_PARAM, 8);
+            assert_eq!(MIN_EXP_M_PARAM, -8);
+            assert_eq!(MAX_EXP_N_PARAM, 32);
+        }
+
+        #[test]
+        fn log_bounds() {
+            assert_eq!(MIN_LOG_A_PARAM, -32_766);
+            assert_eq!(MAX_LOG_A_PARAM, 32_767);
+        }
+    }
+}
