@@ -99,3 +99,7 @@ wasm-sdk:
   - packages/wasm-sdk/src/**
   - packages/wasm-sdk/Cargo.toml
   - *sdk
+
+rs-platform-wallet:
+  - packages/rs-platform-wallet/**
+  - *sdk
