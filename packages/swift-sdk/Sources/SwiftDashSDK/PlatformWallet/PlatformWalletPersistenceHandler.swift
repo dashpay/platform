@@ -432,6 +432,7 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_account_addresses_fn = persistAccountAddressesCallback
         cb.on_persist_identities_fn = persistIdentitiesCallback
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
+        cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         return cb
     }
 
@@ -523,6 +524,13 @@ public class PlatformWalletPersistenceHandler {
                 // restamps the network on return anyway).
                 let resolvedWalletId = entry.walletId ?? walletId
                 let network = walletNetwork(walletId: resolvedWalletId) ?? .testnet
+                // `isLocal` is the "Local Only" badge in the UI —
+                // identities the user created locally but Platform
+                // hasn't confirmed yet. The persister fires *after*
+                // Platform has confirmed, so any row created here
+                // is by definition on-network. Wallet ownership
+                // travels on `row.wallet` (the relationship set
+                // below), not on this flag.
                 row = PersistentIdentity(
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
@@ -720,6 +728,132 @@ public class PlatformWalletPersistenceHandler {
         // derivation branch above, so it's no longer a dead
         // parameter. No save() — bracketed by
         // changesetBegin/End.
+    }
+
+    // MARK: - Token balance persistence
+
+    /// Apply a `TokenBalanceChangeSet` upsert/removal pair to
+    /// `PersistentTokenBalance` rows.
+    ///
+    /// Mapping:
+    /// - Each upsert is keyed by `(tokenId, identityId)` — the same
+    ///   composite the Rust side uses on its `BTreeMap`. The 32-byte
+    ///   token id from Rust is rendered as base58 to match
+    ///   `PersistentTokenBalance.tokenId` (string column, the same
+    ///   shape the rest of the app uses for token id strings).
+    /// - Each removal deletes the matching row.
+    ///
+    /// Token metadata (name, symbol, decimals) is owned by
+    /// `PersistentToken` and joined at read time — we don't replicate
+    /// it here. The `PersistentTokenBalance.token` relationship is
+    /// linked when the matching `PersistentToken` row exists; rows
+    /// inserted before the contract has been parsed locally simply
+    /// link later when SwiftUI re-queries.
+    func persistTokenBalances(
+        walletId: Data,
+        upserts: [TokenBalanceUpsertSnapshot],
+        removals: [TokenBalanceRemovalSnapshot]
+    ) {
+        let network = walletNetwork(walletId: walletId) ?? .testnet
+
+        for entry in upserts {
+            let tokenIdBase58 = entry.tokenId.toBase58String()
+            let identityIdData = entry.identityId
+            let descriptor = FetchDescriptor<PersistentTokenBalance>(
+                predicate: #Predicate {
+                    $0.tokenId == tokenIdBase58 && $0.identityId == identityIdData
+                }
+            )
+            let row: PersistentTokenBalance
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                row = existing
+            } else {
+                row = PersistentTokenBalance(
+                    tokenId: tokenIdBase58,
+                    identityId: entry.identityId,
+                    balance: 0,
+                    network: network
+                )
+                backgroundContext.insert(row)
+                linkTokenBalanceRelations(
+                    row: row,
+                    identityId: entry.identityId,
+                    tokenIdData: entry.tokenId
+                )
+            }
+            row.updateBalance(Int64(bitPattern: entry.balance))
+            row.markAsSynced()
+            // Re-link on every upsert too so a balance row that
+            // pre-existed before its parent identity / token row
+            // landed gets stitched into the relationship graph on the
+            // next sync round.
+            if row.identity == nil || row.token == nil {
+                linkTokenBalanceRelations(
+                    row: row,
+                    identityId: entry.identityId,
+                    tokenIdData: entry.tokenId
+                )
+            }
+        }
+
+        for entry in removals {
+            let tokenIdBase58 = entry.tokenId.toBase58String()
+            let identityIdData = entry.identityId
+            let descriptor = FetchDescriptor<PersistentTokenBalance>(
+                predicate: #Predicate {
+                    $0.tokenId == tokenIdBase58 && $0.identityId == identityIdData
+                }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                backgroundContext.delete(existing)
+            }
+        }
+
+        // No save() — bracketed by changesetBegin/End from the Rust
+        // store() round.
+    }
+
+    /// Stitch a freshly-inserted `PersistentTokenBalance` into the
+    /// relationship graph: link the owning `PersistentIdentity` (when
+    /// present locally) and the matching `PersistentToken` (looked up
+    /// by its 32-byte canonical id, which `PersistentToken.id`
+    /// stores). Either side may legitimately be missing if the row
+    /// is being inserted before the contract has been parsed locally
+    /// — the next sync round re-links via the upsert-path nil-check.
+    private func linkTokenBalanceRelations(
+        row: PersistentTokenBalance,
+        identityId: Data,
+        tokenIdData: Data
+    ) {
+        let identityDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityId }
+        )
+        if let parent = try? backgroundContext.fetch(identityDescriptor).first {
+            row.identity = parent
+        }
+        let tokenDescriptor = FetchDescriptor<PersistentToken>(
+            predicate: #Predicate { $0.id == tokenIdData }
+        )
+        if let token = try? backgroundContext.fetch(tokenDescriptor).first {
+            row.token = token
+        }
+    }
+
+    /// Owned snapshot of a `TokenBalanceUpsertFFI` row. Same
+    /// rationale as `IdentityEntrySnapshot`: callbacks copy out the
+    /// raw FFI struct fields before the trampoline returns, so the
+    /// handler runs against pure-Swift values regardless of when the
+    /// Rust-side allocation gets reclaimed.
+    struct TokenBalanceUpsertSnapshot {
+        let identityId: Data
+        let tokenId: Data
+        let balance: UInt64
+    }
+
+    /// Owned snapshot of a `TokenBalanceRemovalFFI` row.
+    struct TokenBalanceRemovalSnapshot {
+        let identityId: Data
+        let tokenId: Data
     }
 
     // MARK: - Identity private-key derivation
@@ -2058,6 +2192,57 @@ private func persistIdentityKeysCallback(
     }
 
     handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
+    return 0
+}
+
+/// C shim for `on_persist_token_balances_fn`. Same snapshot + cast
+/// pattern as the identities callback — copies every
+/// `TokenBalanceUpsertFFI` / `TokenBalanceRemovalFFI` into an owned
+/// Swift snapshot before invoking the handler so the callback can
+/// return immediately even if the receiver dispatches asynchronously.
+private func persistTokenBalancesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsPtr: UnsafePointer<TokenBalanceUpsertFFI>?,
+    upsertsCount: UInt,
+    removedPtr: UnsafePointer<TokenBalanceRemovalFFI>?,
+    removedCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.TokenBalanceUpsertSnapshot] = []
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
+            let e = upsertsPtr[i]
+            upserts.append(.init(
+                identityId: dataFromTuple32(e.identity_id),
+                tokenId: dataFromTuple32(e.token_id),
+                balance: e.balance
+            ))
+        }
+    }
+
+    var removals: [PlatformWalletPersistenceHandler.TokenBalanceRemovalSnapshot] = []
+    if removedCount > 0, let removedPtr = removedPtr {
+        removals.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
+            let r = removedPtr[i]
+            removals.append(.init(
+                identityId: dataFromTuple32(r.identity_id),
+                tokenId: dataFromTuple32(r.token_id)
+            ))
+        }
+    }
+
+    handler.persistTokenBalances(walletId: walletId, upserts: upserts, removals: removals)
     return 0
 }
 
