@@ -168,6 +168,8 @@ jobs:
             -scheme SwiftExampleApp \
             -destination "platform=iOS Simulator,id=$SIM_UDID" \
             -only-testing:SwiftExampleAppUITests/SwiftExampleAppUITests/testCreateGeneratedWalletFlow \
+            -only-testing:SwiftExampleAppUITests/WalletPersistenceTests/testWalletPersistsAcrossRelaunch \
+            -only-testing:SwiftExampleAppUITests/WalletPersistenceTests/testWalletDeletionCleanupSurvivesRelaunch \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -resultBundlePath "$RESULT_BUNDLE_PATH"
