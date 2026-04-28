@@ -6,27 +6,30 @@
 //!
 //! # Shape
 //!
-//! `PlatformWalletChangeSet` embeds [`key_wallet::changeset::WalletChangeSet`]
-//! verbatim in its `core` field — that sub-changeset carries every
-//! core-wallet delta (chain, accounts, UTXOs, transactions, balance) in the
-//! BDK-style per-account bucketing defined by key-wallet. Platform-specific
-//! state that doesn't exist in key-wallet lives in dedicated sub-changesets:
-//! identities, contacts, platform addresses, asset locks, and token balances.
+//! `PlatformWalletChangeSet` carries a [`CoreChangeSet`] in its `core`
+//! field — a platform-owned projection of the data that upstream's
+//! `WalletEvent` bus delivers (transaction records + UTXO deltas + heights
+//! + InstantSend locks). Platform-specific state that doesn't exist in
+//! key-wallet lives in dedicated sub-changesets: identities, contacts,
+//! platform addresses, asset locks, and token balances.
 //!
-//! Earlier revisions of this file defined its own `ChainChangeSet`,
-//! `TransactionChangeSet`, `UtxoChangeSet`, and `AccountChangeSet`. Those
-//! were stand-ins from before key-wallet had its own changeset module and
-//! used lossy flattened entries (e.g. `BTreeMap<OutPoint, u64>` for UTXOs,
-//! losing address/script/is_coinbase/confirmation state). They are all
-//! deleted; the `core` field replaces them with native `key-wallet` types.
+//! Earlier revisions of this file used `key_wallet::changeset::WalletChangeSet`
+//! verbatim in the `core` field. That upstream type was deleted in favour
+//! of an event-bus model (see PR #696 in rust-dashcore). Platform-wallet
+//! subscribes to the event bus, projects each event into a `CoreChangeSet`,
+//! and routes it through this changeset's `core` slot — keeping the
+//! per-domain merge / apply shape downstream consumers already know.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
+use dashcore::ephemerealdata::instant_lock::InstantLock;
+use dashcore::Txid;
 
 use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::prelude::AssetLockProof;
-use key_wallet::PlatformP2PKHAddress;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::{PlatformP2PKHAddress, Utxo};
 
 use crate::wallet::platform_wallet::WalletId;
 
@@ -46,23 +49,115 @@ use crate::wallet::identity::state::managed_identity::{
 use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 
 // ---------------------------------------------------------------------------
-// Bridge: key_wallet::changeset::WalletChangeSet -> platform-wallet Merge
+// Core wallet changeset — projection of upstream `WalletEvent` data
 // ---------------------------------------------------------------------------
-//
-// platform-wallet has its own `Merge` trait that is semantically
-// richer than key-wallet's (recursive merge on `BTreeMap<K, V: Merge>`),
-// so we can't just import key-wallet's trait wholesale. This one-off
-// impl delegates to the key-wallet `Merge` implementation that ships
-// with `WalletChangeSet` so that
-// `Option<key_wallet::changeset::WalletChangeSet>` satisfies
-// `crate::changeset::merge::Merge` via the blanket impl.
-impl Merge for key_wallet::changeset::WalletChangeSet {
+
+/// Platform-owned projection of the core-wallet deltas that upstream's
+/// `WalletEvent` bus delivers.
+///
+/// Built by the platform-wallet event adapter from `WalletEvent` variants
+/// emitted by `WalletManager`. Every field is purely additive — the
+/// merge implementation uses last-write-wins for the height watermarks
+/// (monotonic-max), `extend` for the records / utxos vecs, and
+/// last-write-wins for the IS-lock map.
+///
+/// # Why a projection instead of the upstream type
+///
+/// Upstream `key_wallet::changeset::WalletChangeSet` was deleted in favour
+/// of `WalletEvent`. Forking that deleted type would re-introduce the
+/// merge-ordering hazards the upstream PR removed. This projection
+/// captures exactly what the persister needs (records to write, UTXOs to
+/// add/remove, height checkpoints, IS-lock updates) without inheriting
+/// the merge complexity of the deleted upstream type.
+///
+/// Not `PartialEq` — `TransactionRecord` upstream is `Debug + Clone` only,
+/// so structural equality on `records` would require us to fork the
+/// upstream type. Tests that need to inspect a changeset's contents
+/// reach into individual fields directly.
+#[derive(Debug, Clone, Default)]
+pub struct CoreChangeSet {
+    /// Transaction records produced by this batch.
+    ///
+    /// Includes records first stored (`TransactionDetected`,
+    /// `BlockProcessed.inserted`), records whose context advanced
+    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed),
+    /// and coinbase records that crossed the maturity threshold
+    /// (`BlockProcessed.matured`). All persisted; the persister's
+    /// `txid` uniqueness constraint handles dedup on replay.
+    pub records: Vec<TransactionRecord>,
+
+    /// UTXOs to remove — outpoints that records in this batch spent.
+    /// The full `Utxo` is carried (not just `OutPoint`) so a persister
+    /// audit trail / spent-output history can keep the original metadata
+    /// without a follow-up read.
+    pub spent_utxos: Vec<Utxo>,
+
+    /// UTXOs to add — outputs created by records in this batch that pay
+    /// to one of our addresses (i.e. `OutputRole::Received` or
+    /// `OutputRole::Change` per the upstream `TransactionRecord`).
+    pub new_utxos: Vec<Utxo>,
+
+    /// InstantSend locks observed for records that are NOT yet in a
+    /// chain-locked block (i.e. records still in `Mempool`,
+    /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
+    /// is excluded since chain-lock finality already supersedes IS).
+    ///
+    /// Populated from `WalletEvent::TransactionInstantLocked`. The
+    /// persister applies these by looking up the matching record and
+    /// updating its `context` to `TransactionContext::InstantSend(..)`.
+    /// Chain-locked records skip this map entirely — by the time a
+    /// transaction is chain-locked it's final, and IS-lock state is
+    /// no longer informative.
+    pub instant_locks_for_non_final_records: BTreeMap<Txid, InstantLock>,
+
+    /// From `WalletEvent::BlockProcessed.height` — advance the wallet's
+    /// `last_processed_height` to this value. Monotonic-max on merge.
+    pub last_processed_height: Option<u32>,
+
+    /// From `WalletEvent::SyncHeightAdvanced.height` — advance the
+    /// durable filter-batch sync checkpoint to this value. Monotonic-max
+    /// on merge.
+    pub synced_height: Option<u32>,
+}
+
+impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        <Self as key_wallet::changeset::Merge>::merge(self, other)
+        // Records / utxo deltas: append-only. The event adapter never
+        // produces duplicates within a single batch (each event covers
+        // a distinct moment); cross-batch dedup is the persister's
+        // responsibility (txid uniqueness for records, outpoint
+        // uniqueness for utxos).
+        self.records.extend(other.records);
+        self.spent_utxos.extend(other.spent_utxos);
+        self.new_utxos.extend(other.new_utxos);
+
+        // IS-lock map: last-write-wins per txid. A second IS-lock for
+        // the same txid (e.g. a follow-up event re-confirming the lock)
+        // overwrites — the lock object itself is canonical.
+        self.instant_locks_for_non_final_records
+            .extend(other.instant_locks_for_non_final_records);
+
+        // Height watermarks: monotonic-max. A later changeset can only
+        // advance the watermark, never roll it back. `None` means
+        // "no update in this batch".
+        if let Some(h) = other.last_processed_height {
+            self.last_processed_height = Some(
+                self.last_processed_height
+                    .map_or(h, |existing| existing.max(h)),
+            );
+        }
+        if let Some(h) = other.synced_height {
+            self.synced_height = Some(self.synced_height.map_or(h, |existing| existing.max(h)));
+        }
     }
 
     fn is_empty(&self) -> bool {
-        <Self as key_wallet::changeset::Merge>::is_empty(self)
+        self.records.is_empty()
+            && self.spent_utxos.is_empty()
+            && self.new_utxos.is_empty()
+            && self.instant_locks_for_non_final_records.is_empty()
+            && self.last_processed_height.is_none()
+            && self.synced_height.is_none()
     }
 }
 
@@ -629,20 +724,23 @@ impl Merge for TokenBalanceChangeSet {
 
 /// Delta of all wallet state changes from a single operation.
 ///
-/// `core` carries the full `key_wallet::changeset::WalletChangeSet` — chain,
-/// balance, account_keys, and per-account buckets (UTXOs, transactions,
-/// addresses used, highest-used index). Platform-specific deltas (identities,
-/// contacts, platform addresses, asset locks, token balances) live in
-/// dedicated sub-changesets.
+/// `core` carries a [`CoreChangeSet`] — the platform-owned projection of
+/// `WalletEvent` data delivered by upstream's event bus (records, UTXO
+/// deltas, height checkpoints, IS-lock updates). Platform-specific deltas
+/// (identities, contacts, platform addresses, asset locks, token balances)
+/// live in dedicated sub-changesets.
 ///
 /// Composed of optional sub-changesets — `None` means no change in that
 /// area. Use [`Merge::merge`] to combine multiple deltas before persisting.
-#[derive(Debug, Clone, Default, PartialEq)]
+///
+/// Not `PartialEq` because [`CoreChangeSet`] isn't (its `records` carry
+/// `TransactionRecord`, which is `Debug + Clone` only upstream).
+#[derive(Debug, Clone, Default)]
 pub struct PlatformWalletChangeSet {
-    /// Core wallet state from key-wallet: chain, balance, account keys,
-    /// and per-account buckets (UTXOs, transactions, addresses used,
-    /// highest-used index).
-    pub core: Option<key_wallet::changeset::WalletChangeSet>,
+    /// Core-wallet deltas projected from upstream `WalletEvent`s:
+    /// transaction records, UTXO add/remove, height checkpoints, IS-lock
+    /// updates for non-final records.
+    pub core: Option<CoreChangeSet>,
     /// Identity changes (registered, updated).
     pub identities: Option<IdentityChangeSet>,
     /// Identity key changes (public keys + private-key storage) keyed
@@ -728,9 +826,8 @@ impl From<TokenBalanceChangeSet> for PlatformWalletChangeSet {
 
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
-        // `key_wallet::changeset::WalletChangeSet` implements `Merge`
-        // itself; delegate via the `Option<T>: Merge` blanket impl from
-        // this crate's merge module.
+        // `CoreChangeSet` implements `Merge`; delegate via the
+        // `Option<T>: Merge` blanket impl from this crate's merge module.
         self.core.merge(other.core);
         self.identities.merge(other.identities);
         self.identity_keys.merge(other.identity_keys);

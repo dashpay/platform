@@ -7,10 +7,12 @@ mod wallet_lifecycle;
 use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock};
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{CorePersistenceBridge, PlatformWalletPersistence};
+use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::platform_address_sync::PlatformAddressSyncManager;
 use crate::spv::SpvRuntime;
@@ -39,6 +41,11 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// Not auto-started — call `start` after wallets are registered.
     pub(super) platform_address_sync: Arc<PlatformAddressSyncManager>,
     pub(super) persister: Arc<P>,
+    /// Cancellation token + join handle for the wallet-event adapter
+    /// task. Held so [`shutdown`] can stop it cleanly when the manager
+    /// is torn down.
+    pub(super) event_adapter_cancel: CancellationToken,
+    pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -52,18 +59,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        // `PlatformWallet` / `CorePersistenceBridge` / `WalletPersister`
-        // still take `Arc<dyn PlatformWalletPersistence>`; coerce once
-        // here and pass clones along instead of re-erasing at every
-        // call site.
+        // `PlatformWallet` / `WalletPersister` and the new wallet-event
+        // adapter all consume `Arc<dyn PlatformWalletPersistence>`;
+        // coerce once here and pass clones along instead of re-erasing
+        // at every call site.
         let dyn_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&persister) as _;
-        let core_bridge = Arc::new(CorePersistenceBridge::new(Arc::clone(&dyn_persister)));
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::new_with_persister(
-            sdk.network,
-            core_bridge,
-        )));
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
+
+        // Spawn the wallet-event adapter that translates upstream
+        // `WalletEvent`s into `CoreChangeSet`s and forwards them to
+        // the persister. Replaces the old `CorePersistenceBridge`
+        // pattern (upstream `WalletPersistence` callback was deleted
+        // in favour of an event bus — see rust-dashcore PR #696).
+        let event_adapter_cancel = CancellationToken::new();
+        let event_adapter_join = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&dyn_persister),
+            event_adapter_cancel.clone(),
+        );
 
         // Build handler list: app handler + internal handlers.
         // BalanceUpdateHandler holds a clone of the wallets map (a
@@ -95,6 +110,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             spv,
             platform_address_sync,
             persister,
+            event_adapter_cancel,
+            event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
+        }
+    }
+
+    /// Stop the wallet-event adapter task and wait for it to exit.
+    ///
+    /// Idempotent. After this returns, no further `WalletEvent`s will
+    /// be projected to the persister. Call before dropping the manager
+    /// when a clean shutdown is required (e.g. on app termination); a
+    /// dirty drop simply leaks the task until the runtime exits.
+    pub async fn shutdown(&self) {
+        self.event_adapter_cancel.cancel();
+        if let Some(handle) = self.event_adapter_join.lock().await.take() {
+            if let Err(e) = handle.await {
+                tracing::warn!(error = ?e, "Wallet event adapter task join error");
+            }
         }
     }
 }

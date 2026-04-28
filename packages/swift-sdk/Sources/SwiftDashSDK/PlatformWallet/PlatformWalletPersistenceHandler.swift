@@ -351,13 +351,31 @@ public class PlatformWalletPersistenceHandler {
         if let existing = try? backgroundContext.fetch(descriptor).first {
             record = existing
         } else {
+            // Look up the containing transaction. Upstream sends the
+            // transaction record before its UTXOs in the same flush,
+            // so it should already be in the context. If not, create
+            // a stub keyed by txid so the cascade-delete invariant
+            // (UTXO cannot exist without its transaction) holds; the
+            // real record will overwrite the stub when it arrives.
+            let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == txidHex }
+            )
+            let parentTx: PersistentTransaction
+            if let existingTx = try? backgroundContext.fetch(txDescriptor).first {
+                parentTx = existingTx
+            } else {
+                parentTx = PersistentTransaction(txid: txidHex)
+                parentTx.account = account
+                backgroundContext.insert(parentTx)
+            }
+
             let script: Data = {
                 guard let p = utxo.script_pubkey, utxo.script_pubkey_len > 0 else { return Data() }
                 return Data(bytes: p, count: Int(utxo.script_pubkey_len))
             }()
             let addressStr = utxo.address.map { String(cString: $0) } ?? ""
             record = PersistentUtxo(
-                txid: txidHex,
+                transaction: parentTx,
                 vout: utxo.outpoint.vout,
                 amount: utxo.amount,
                 address: addressStr,

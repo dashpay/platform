@@ -104,7 +104,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             })?;
 
             let change_addr = change_account
-                .next_change_address(Some(&xpub))
+                .next_change_address(Some(&xpub), true)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             builder = builder.set_change_address(change_addr);

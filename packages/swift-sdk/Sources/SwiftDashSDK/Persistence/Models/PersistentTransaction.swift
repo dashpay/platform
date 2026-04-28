@@ -59,6 +59,15 @@ public final class PersistentTransaction {
     /// Parent account.
     public var account: PersistentAccount?
 
+    /// UTXOs created by this transaction's outputs.
+    ///
+    /// Cascade-deletes the matching `PersistentUtxo` rows when the
+    /// transaction is removed — UTXOs cannot meaningfully exist
+    /// without their containing transaction (the outpoint, script,
+    /// amount, and address are all derived from it).
+    @Relationship(deleteRule: .cascade, inverse: \PersistentUtxo.transaction)
+    public var utxos: [PersistentUtxo] = []
+
     public init(
         txid: String,
         walletId: Data = Data(),
