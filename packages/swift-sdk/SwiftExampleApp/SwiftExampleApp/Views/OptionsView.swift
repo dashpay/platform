@@ -58,6 +58,7 @@ struct OptionsView: View {
                     }
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isSwitchingNetwork)
+                    .accessibilityIdentifier("options.networkPicker")
 
                     if appState.currentNetwork == .regtest {
                         Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
@@ -84,23 +85,29 @@ struct OptionsView: View {
                     HStack {
                         Text("Network Status")
                         Spacer()
-                        if isSwitchingNetwork {
-                            HStack(spacing: 4) {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Switching...")
+                        Group {
+                            if isSwitchingNetwork {
+                                HStack(spacing: 4) {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Switching...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } else if appState.sdk != nil {
+                                Label("Connected", systemImage: "checkmark.circle.fill")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.green)
+                            } else {
+                                Label("Disconnected", systemImage: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
                             }
-                        } else if appState.sdk != nil {
-                            Label("Connected", systemImage: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        } else {
-                            Label("Disconnected", systemImage: "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.red)
                         }
+                        // Tests wait on this label transitioning to "Connected"
+                        // after a network switch (signal-based, not sleep-based).
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("options.networkStatusLabel")
                     }
 
                 }

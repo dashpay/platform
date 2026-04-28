@@ -147,6 +147,7 @@ struct SearchWalletsForIdentitiesView: View {
                 }
                 .pickerStyle(.menu)
                 .disabled(isSearching || hdWallets.count < 1)
+                .accessibilityIdentifier("searchWallets.walletPicker")
             }
         }
     }
@@ -169,6 +170,7 @@ struct SearchWalletsForIdentitiesView: View {
                 Text("+\(finding.foundCount)")
                     .fontWeight(.semibold)
                     .foregroundColor(finding.foundCount > 0 ? .green : .secondary)
+                    .accessibilityIdentifier("searchWallets.foundCountLabel")
             }
             if let err = finding.error {
                 // No `.lineLimit` — identity-derivation errors can
@@ -298,6 +300,7 @@ struct SearchWalletsForIdentitiesView: View {
                     || selectedWalletId == nil
                     || selectedManagedWallet == nil
             )
+            .accessibilityIdentifier("searchWallets.searchButton")
             if selectedWalletId != nil && selectedManagedWallet == nil {
                 Text("This wallet isn't loaded in the wallet manager yet. "
                     + "Restore it from the Wallets tab and try again.")

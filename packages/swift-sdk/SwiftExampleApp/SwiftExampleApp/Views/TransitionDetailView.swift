@@ -158,6 +158,7 @@ struct TransitionDetailView: View {
           ForEach(identities, id: \.identityIdBase58) { identity in
             Text(identity.displayName)
               .tag(identity.identityIdBase58)
+              .accessibilityIdentifier("transition.senderIdentityOption.\(identity.identityIdBase58)")
           }
         }
         .pickerStyle(MenuPickerStyle())
@@ -165,6 +166,7 @@ struct TransitionDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.gray.opacity(0.1))
         .cornerRadius(8)
+        .accessibilityIdentifier("transition.senderIdentityPicker")
       }
     }
   }
@@ -188,6 +190,7 @@ struct TransitionDetailView: View {
     .foregroundColor(.white)
     .cornerRadius(10)
     .disabled(!enabled)
+    .accessibilityIdentifier("transition.executeButton")
   }
 
   private var resultView: some View {
@@ -197,6 +200,7 @@ struct TransitionDetailView: View {
           .foregroundColor(isError ? .red : .green)
         Text(isError ? "Error" : "Success")
           .font(.headline)
+          .accessibilityIdentifier("transition.resultStatusLabel")
         Spacer()
         Button("Copy") {
           UIPasteboard.general.string = resultText

@@ -136,9 +136,11 @@ struct IdentitiesContentView: View {
                     } label: {
                         Label("Search Wallets for Identities", systemImage: "magnifyingglass")
                     }
+                    .accessibilityIdentifier("identities.searchWalletsMenuItem")
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityIdentifier("identities.addMenu")
             }
         }
         .sheet(isPresented: $showingLoadIdentity) {
