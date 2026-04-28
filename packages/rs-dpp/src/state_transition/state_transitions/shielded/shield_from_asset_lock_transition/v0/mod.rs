@@ -14,6 +14,7 @@ use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,
     Clone,
@@ -43,10 +44,6 @@ pub struct ShieldFromAssetLockTransitionV0 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
-    #[cfg_attr(
-        feature = "serde-conversion",
-        serde(with = "crate::serialization::serde_bytes_64")
-    )]
     pub binding_signature: [u8; 64],
     /// ECDSA signature over the signable bytes (excluded from sig hash)
     #[platform_signable(exclude_from_sig_hash)]

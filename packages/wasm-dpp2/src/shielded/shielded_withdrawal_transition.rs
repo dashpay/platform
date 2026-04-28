@@ -1,8 +1,15 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::identity::transitions::pooling::PoolingWasm;
+use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
+use crate::shielded::{MAX_CORE_SCRIPT_BYTES, MAX_HALO2_PROOF_BYTES};
+use crate::utils::try_from_options;
+use crate::utils::{check_max_len, try_vec_to_fixed_bytes};
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use dpp::identity::core_script::CoreScript;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+use dpp::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -10,17 +17,35 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * ShieldedWithdrawalTransition serialized as a plain object.
+ * Options for constructing a ShieldedWithdrawalTransition.
+ *
+ * `pooling` accepts the `Pooling` enum, the lower-case name string
+ * ("never" / "ifavailable" / "standard"), or the numeric value (0/1/2) — same
+ * shape as IdentityCreditWithdrawalTransition.
  */
-export interface ShieldedWithdrawalTransitionObject {
-    $formatVersion: string;
+export interface ShieldedWithdrawalTransitionOptions {
     actions: SerializedOrchardAction[];
     unshieldingAmount: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
     bindingSignature: Uint8Array;
     coreFeePerByte: number;
-    pooling: number;
+    pooling: CreditWithdrawalTransitionPoolingLike;
+    outputScript: Uint8Array;
+}
+
+/**
+ * ShieldedWithdrawalTransition serialized as a plain object.
+ */
+export interface ShieldedWithdrawalTransitionObject {
+    $formatVersion: string;
+    actions: SerializedOrchardActionObject[];
+    unshieldingAmount: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+    coreFeePerByte: number;
+    pooling: CreditWithdrawalTransitionPooling;
     outputScript: Uint8Array;
 }
 
@@ -35,18 +60,35 @@ export interface ShieldedWithdrawalTransitionJSON {
     proof: string;
     bindingSignature: string;
     coreFeePerByte: number;
-    pooling: number;
+    pooling: string;
     outputScript: string;
 }
 "#;
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "ShieldedWithdrawalTransitionOptions")]
+    pub type ShieldedWithdrawalTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "ShieldedWithdrawalTransitionObject")]
     pub type ShieldedWithdrawalTransitionObjectJs;
 
     #[wasm_bindgen(typescript_type = "ShieldedWithdrawalTransitionJSON")]
     pub type ShieldedWithdrawalTransitionJSONJs;
+}
+
+/// Non-WASM-instance fields extracted from the constructor options via serde.
+/// `pooling` is extracted separately via `try_from_options` so it accepts the
+/// flexible `PoolingLikeJs` shape (enum / string / number).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShieldedWithdrawalTransitionSimpleFields {
+    unshielding_amount: u64,
+    anchor: Vec<u8>,
+    proof: Vec<u8>,
+    binding_signature: Vec<u8>,
+    core_fee_per_byte: u32,
+    output_script: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -70,11 +112,33 @@ impl From<ShieldedWithdrawalTransitionWasm> for ShieldedWithdrawalTransition {
 impl ShieldedWithdrawalTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        value: ShieldedWithdrawalTransitionObjectJs,
+        options: ShieldedWithdrawalTransitionOptionsJs,
     ) -> WasmDppResult<ShieldedWithdrawalTransitionWasm> {
-        let inner: ShieldedWithdrawalTransition = serde_wasm_bindgen::from_value(value.into())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(ShieldedWithdrawalTransitionWasm(inner))
+        let actions = actions_from_js_options(options.as_ref(), "actions")?;
+        let pooling: PoolingWasm = try_from_options(options.as_ref(), "pooling")?;
+
+        let fields: ShieldedWithdrawalTransitionSimpleFields =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let anchor: [u8; 32] = try_vec_to_fixed_bytes(fields.anchor, "anchor")?;
+        let binding_signature: [u8; 64] =
+            try_vec_to_fixed_bytes(fields.binding_signature, "bindingSignature")?;
+        check_max_len(&fields.proof, MAX_HALO2_PROOF_BYTES, "proof")?;
+        check_max_len(&fields.output_script, MAX_CORE_SCRIPT_BYTES, "outputScript")?;
+
+        Ok(ShieldedWithdrawalTransitionWasm(
+            ShieldedWithdrawalTransition::V0(ShieldedWithdrawalTransitionV0 {
+                actions: actions.into_iter().map(Into::into).collect(),
+                unshielding_amount: fields.unshielding_amount,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+                core_fee_per_byte: fields.core_fee_per_byte,
+                pooling: pooling.into(),
+                output_script: CoreScript::from(fields.output_script),
+            }),
+        ))
     }
 
     #[wasm_bindgen(js_name = getType)]
@@ -82,13 +146,17 @@ impl ShieldedWithdrawalTransitionWasm {
         self.0.state_transition_type() as u8
     }
 
-    /// Returns the serialized Orchard actions as a JS array.
+    /// Returns the serialized Orchard actions.
     #[wasm_bindgen(js_name = getActions)]
-    pub fn get_actions(&self) -> WasmDppResult<JsValue> {
-        let inner = match &self.0 {
-            ShieldedWithdrawalTransition::V0(v0) => &v0.actions,
-        };
-        serde_wasm_bindgen::to_value(inner).map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_actions(&self) -> Vec<SerializedOrchardActionWasm> {
+        match &self.0 {
+            ShieldedWithdrawalTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .cloned()
+                .map(SerializedOrchardActionWasm::from)
+                .collect(),
+        }
     }
 
     /// Returns the unshielding amount.
@@ -131,11 +199,12 @@ impl ShieldedWithdrawalTransitionWasm {
         }
     }
 
-    /// Returns the pooling strategy as a u8.
+    /// Returns the pooling strategy as a name string ("never" / "ifavailable" / "standard").
+    /// Matches the shape of `IdentityCreditWithdrawalTransition.pooling`.
     #[wasm_bindgen(js_name = getPooling)]
-    pub fn get_pooling(&self) -> u8 {
+    pub fn get_pooling(&self) -> String {
         match &self.0 {
-            ShieldedWithdrawalTransition::V0(v0) => v0.pooling as u8,
+            ShieldedWithdrawalTransition::V0(v0) => PoolingWasm::from(v0.pooling).into(),
         }
     }
 

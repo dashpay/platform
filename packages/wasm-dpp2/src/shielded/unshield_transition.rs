@@ -1,8 +1,14 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::platform_address::PlatformAddressWasm;
+use crate::shielded::MAX_HALO2_PROOF_BYTES;
+use crate::utils::{check_max_len, try_vec_to_fixed_bytes};
+use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
+use crate::utils::try_from_options;
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::unshield_transition::UnshieldTransition;
+use dpp::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -10,12 +16,26 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
+ * Options for constructing an UnshieldTransition.
+ */
+export interface UnshieldTransitionOptions {
+    outputAddress: PlatformAddressLike;
+    actions: SerializedOrchardAction[];
+    unshieldingAmount: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+}
+
+/**
  * UnshieldTransition serialized as a plain object.
+ *
+ * `outputAddress` is a hex-encoded PlatformAddress (21 bytes: type byte + 20-byte hash).
  */
 export interface UnshieldTransitionObject {
     $formatVersion: string;
-    outputAddress: object;
-    actions: SerializedOrchardAction[];
+    outputAddress: string;
+    actions: SerializedOrchardActionObject[];
     unshieldingAmount: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
@@ -27,7 +47,7 @@ export interface UnshieldTransitionObject {
  */
 export interface UnshieldTransitionJSON {
     $formatVersion: string;
-    outputAddress: object;
+    outputAddress: string;
     actions: SerializedOrchardActionJSON[];
     unshieldingAmount: number | string;
     anchor: string;
@@ -38,11 +58,24 @@ export interface UnshieldTransitionJSON {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "UnshieldTransitionOptions")]
+    pub type UnshieldTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "UnshieldTransitionObject")]
     pub type UnshieldTransitionObjectJs;
 
     #[wasm_bindgen(typescript_type = "UnshieldTransitionJSON")]
     pub type UnshieldTransitionJSONJs;
+}
+
+/// Non-WASM-instance fields extracted from the constructor options via serde.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnshieldTransitionSimpleFields {
+    unshielding_amount: u64,
+    anchor: Vec<u8>,
+    proof: Vec<u8>,
+    binding_signature: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -65,10 +98,30 @@ impl From<UnshieldTransitionWasm> for UnshieldTransition {
 #[wasm_bindgen(js_class = UnshieldTransition)]
 impl UnshieldTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: UnshieldTransitionObjectJs) -> WasmDppResult<UnshieldTransitionWasm> {
-        let inner: UnshieldTransition = serde_wasm_bindgen::from_value(value.into())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(UnshieldTransitionWasm(inner))
+    pub fn new(options: UnshieldTransitionOptionsJs) -> WasmDppResult<UnshieldTransitionWasm> {
+        let js_opts: &JsValue = options.as_ref();
+
+        let output_address: PlatformAddressWasm = try_from_options(js_opts, "outputAddress")?;
+        let actions = actions_from_js_options(js_opts, "actions")?;
+
+        let fields: UnshieldTransitionSimpleFields = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let anchor: [u8; 32] = try_vec_to_fixed_bytes(fields.anchor, "anchor")?;
+        let binding_signature: [u8; 64] =
+            try_vec_to_fixed_bytes(fields.binding_signature, "bindingSignature")?;
+        check_max_len(&fields.proof, MAX_HALO2_PROOF_BYTES, "proof")?;
+
+        Ok(UnshieldTransitionWasm(UnshieldTransition::V0(
+            UnshieldTransitionV0 {
+                output_address: output_address.into(),
+                actions: actions.into_iter().map(Into::into).collect(),
+                unshielding_amount: fields.unshielding_amount,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+            },
+        )))
     }
 
     #[wasm_bindgen(js_name = getType)]
@@ -76,22 +129,25 @@ impl UnshieldTransitionWasm {
         self.0.state_transition_type() as u8
     }
 
-    /// Returns the output address as a JS value (serialized PlatformAddress).
+    /// Returns the output address receiving the unshielded funds.
     #[wasm_bindgen(js_name = getOutputAddress)]
-    pub fn get_output_address(&self) -> WasmDppResult<JsValue> {
-        let addr = match &self.0 {
-            UnshieldTransition::V0(v0) => &v0.output_address,
-        };
-        serde_wasm_bindgen::to_value(addr).map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_output_address(&self) -> PlatformAddressWasm {
+        match &self.0 {
+            UnshieldTransition::V0(v0) => PlatformAddressWasm::from(v0.output_address),
+        }
     }
 
-    /// Returns the serialized Orchard actions as a JS array.
+    /// Returns the serialized Orchard actions.
     #[wasm_bindgen(js_name = getActions)]
-    pub fn get_actions(&self) -> WasmDppResult<JsValue> {
-        let inner = match &self.0 {
-            UnshieldTransition::V0(v0) => &v0.actions,
-        };
-        serde_wasm_bindgen::to_value(inner).map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_actions(&self) -> Vec<SerializedOrchardActionWasm> {
+        match &self.0 {
+            UnshieldTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .cloned()
+                .map(SerializedOrchardActionWasm::from)
+                .collect(),
+        }
     }
 
     /// Returns the unshielding amount.

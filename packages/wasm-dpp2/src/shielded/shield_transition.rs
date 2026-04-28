@@ -1,8 +1,19 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::platform_address::{
+    FeeStrategyStepWasm, PlatformAddressInputWasm, fee_strategy_from_js_options,
+    fee_strategy_from_steps_or_default, inputs_from_js_options,
+};
+use crate::shielded::address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
+use crate::shielded::MAX_HALO2_PROOF_BYTES;
+use crate::utils::{check_max_len, try_vec_to_fixed_bytes};
+use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
+use crate::utils::{try_from_options_optional_with, try_to_u16};
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -10,64 +21,28 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * Fee strategy step: defines how fees are paid from inputs or outputs.
- * Externally-tagged enum: exactly one key present per object.
+ * Options for constructing a ShieldTransition.
+ * Uses WASM instance types for complex fields.
  */
-export type FeeStrategyStepObject =
-    | { deductFromInput: number }
-    | { reduceOutput: number };
-
-/**
- * Address witness for P2PKH spending.
- */
-export interface AddressWitnessP2pkhObject {
-    type: "p2pkh";
-    signature: Uint8Array;
+export interface ShieldTransitionOptions {
+    inputs: PlatformAddressInput[];
+    actions: SerializedOrchardAction[];
+    amount: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+    feeStrategy?: FeeStrategyStep[];
+    userFeeIncrease?: number;
+    inputWitnesses: AddressWitness[];
 }
-
-/**
- * Address witness for P2SH spending.
- */
-export interface AddressWitnessP2shObject {
-    type: "p2sh";
-    signatures: Uint8Array[];
-    redeemScript: Uint8Array;
-}
-
-/**
- * Address witness (P2PKH or P2SH) in Object form.
- */
-export type AddressWitnessObject = AddressWitnessP2pkhObject | AddressWitnessP2shObject;
-
-/**
- * Address witness for P2PKH spending (JSON form).
- */
-export interface AddressWitnessP2pkhJSON {
-    type: "p2pkh";
-    signature: string;
-}
-
-/**
- * Address witness for P2SH spending (JSON form).
- */
-export interface AddressWitnessP2shJSON {
-    type: "p2sh";
-    signatures: string[];
-    redeemScript: string;
-}
-
-/**
- * Address witness (P2PKH or P2SH) in JSON form.
- */
-export type AddressWitnessJSON = AddressWitnessP2pkhJSON | AddressWitnessP2shJSON;
 
 /**
  * ShieldTransition serialized as a plain object.
  */
 export interface ShieldTransitionObject {
     $formatVersion: string;
-    inputs: Record<string, [number, bigint]>;
-    actions: SerializedOrchardAction[];
+    inputs: PlatformAddressInputObject[];
+    actions: SerializedOrchardActionObject[];
     amount: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
@@ -82,13 +57,13 @@ export interface ShieldTransitionObject {
  */
 export interface ShieldTransitionJSON {
     $formatVersion: string;
-    inputs: Record<string, [number, number]>;
+    inputs: PlatformAddressInputJSON[];
     actions: SerializedOrchardActionJSON[];
     amount: number | string;
     anchor: string;
     proof: string;
     bindingSignature: string;
-    feeStrategy: FeeStrategyStepObject[];
+    feeStrategy: FeeStrategyStepJSON[];
     userFeeIncrease: number;
     inputWitnesses: AddressWitnessJSON[];
 }
@@ -96,11 +71,27 @@ export interface ShieldTransitionJSON {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "ShieldTransitionOptions")]
+    pub type ShieldTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "ShieldTransitionObject")]
     pub type ShieldTransitionObjectJs;
 
     #[wasm_bindgen(typescript_type = "ShieldTransitionJSON")]
     pub type ShieldTransitionJSONJs;
+}
+
+/// Non-WASM-instance fields extracted from the constructor options via serde.
+///
+/// The complex fields (`inputs`, `actions`, `feeStrategy`, `inputWitnesses`) are
+/// extracted separately as WASM class instances.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShieldTransitionSimpleFields {
+    amount: u64,
+    anchor: Vec<u8>,
+    proof: Vec<u8>,
+    binding_signature: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -123,10 +114,45 @@ impl From<ShieldTransitionWasm> for ShieldTransition {
 #[wasm_bindgen(js_class = ShieldTransition)]
 impl ShieldTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: ShieldTransitionObjectJs) -> WasmDppResult<ShieldTransitionWasm> {
-        let inner: ShieldTransition = serde_wasm_bindgen::from_value(value.into())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(ShieldTransitionWasm(inner))
+    pub fn new(options: ShieldTransitionOptionsJs) -> WasmDppResult<ShieldTransitionWasm> {
+        let js_opts: &JsValue = options.as_ref();
+
+        // Extract WASM class instances (borrow &options)
+        let inputs = inputs_from_js_options(js_opts, "inputs")?;
+        let actions = actions_from_js_options(js_opts, "actions")?;
+        let input_witnesses = input_witnesses_from_js_options(js_opts, "inputWitnesses")?;
+        let fee_strategy = fee_strategy_from_js_options(js_opts, "feeStrategy")?;
+        let user_fee_increase: UserFeeIncrease =
+            try_from_options_optional_with(js_opts, "userFeeIncrease", |v| {
+                try_to_u16(v, "userFeeIncrease")
+            })?
+            .unwrap_or(0);
+
+        // Extract simple fields via serde (consumes options)
+        let fields: ShieldTransitionSimpleFields = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let anchor: [u8; 32] = try_vec_to_fixed_bytes(fields.anchor, "anchor")?;
+        let binding_signature: [u8; 64] =
+            try_vec_to_fixed_bytes(fields.binding_signature, "bindingSignature")?;
+        check_max_len(&fields.proof, MAX_HALO2_PROOF_BYTES, "proof")?;
+
+        let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
+        let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
+
+        Ok(ShieldTransitionWasm(ShieldTransition::V0(
+            ShieldTransitionV0 {
+                inputs: inputs_map,
+                actions: actions.into_iter().map(Into::into).collect(),
+                amount: fields.amount,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+                fee_strategy,
+                user_fee_increase,
+                input_witnesses: input_witnesses.into_iter().map(Into::into).collect(),
+            },
+        )))
     }
 
     #[wasm_bindgen(js_name = getType)]
@@ -134,22 +160,31 @@ impl ShieldTransitionWasm {
         self.0.state_transition_type() as u8
     }
 
-    /// Returns the inputs map as a JS object.
+    /// Returns the input addresses funding the shield (with their nonces and amounts).
     #[wasm_bindgen(js_name = getInputs)]
-    pub fn get_inputs(&self) -> WasmDppResult<JsValue> {
-        let inner = match &self.0 {
-            ShieldTransition::V0(v0) => &v0.inputs,
-        };
-        serde_wasm_bindgen::to_value(inner).map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_inputs(&self) -> Vec<PlatformAddressInputWasm> {
+        match &self.0 {
+            ShieldTransition::V0(v0) => v0
+                .inputs
+                .iter()
+                .map(|(address, (nonce, amount))| {
+                    PlatformAddressInputWasm::new(*address, *nonce, *amount)
+                })
+                .collect(),
+        }
     }
 
-    /// Returns the serialized Orchard actions as a JS array.
+    /// Returns the serialized Orchard actions.
     #[wasm_bindgen(js_name = getActions)]
-    pub fn get_actions(&self) -> WasmDppResult<JsValue> {
-        let inner = match &self.0 {
-            ShieldTransition::V0(v0) => &v0.actions,
-        };
-        serde_wasm_bindgen::to_value(inner).map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_actions(&self) -> Vec<SerializedOrchardActionWasm> {
+        match &self.0 {
+            ShieldTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .cloned()
+                .map(SerializedOrchardActionWasm::from)
+                .collect(),
+        }
     }
 
     /// Returns the shield amount (credits entering the pool).
@@ -184,14 +219,17 @@ impl ShieldTransitionWasm {
         }
     }
 
-    /// Returns the fee strategy as a JS value.
+    /// Returns the fee strategy steps.
     #[wasm_bindgen(js_name = getFeeStrategy)]
-    pub fn get_fee_strategy(&self) -> WasmDppResult<JsValue> {
-        let strategy = match &self.0 {
-            ShieldTransition::V0(v0) => &v0.fee_strategy,
-        };
-        serde_wasm_bindgen::to_value(strategy)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_fee_strategy(&self) -> Vec<FeeStrategyStepWasm> {
+        match &self.0 {
+            ShieldTransition::V0(v0) => v0
+                .fee_strategy
+                .iter()
+                .cloned()
+                .map(FeeStrategyStepWasm::from)
+                .collect(),
+        }
     }
 
     /// Returns the user fee increase multiplier.
@@ -202,14 +240,17 @@ impl ShieldTransitionWasm {
         }
     }
 
-    /// Returns the input witnesses as a JS value.
+    /// Returns the input witnesses (signatures authorising each input).
     #[wasm_bindgen(js_name = getInputWitnesses)]
-    pub fn get_input_witnesses(&self) -> WasmDppResult<JsValue> {
-        let witnesses = match &self.0 {
-            ShieldTransition::V0(v0) => &v0.input_witnesses,
-        };
-        serde_wasm_bindgen::to_value(witnesses)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_input_witnesses(&self) -> Vec<AddressWitnessWasm> {
+        match &self.0 {
+            ShieldTransition::V0(v0) => v0
+                .input_witnesses
+                .iter()
+                .cloned()
+                .map(AddressWitnessWasm::from)
+                .collect(),
+        }
     }
 
     #[wasm_bindgen(js_name = getModifiedDataIds)]

@@ -9,7 +9,6 @@ mod value_conversion;
 mod version;
 
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
@@ -27,8 +26,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase"),
-    serde(try_from = "IdentityCreateFromAddressesTransitionV0Inner")
+    serde(rename_all = "camelCase")
 )]
 // There is a problem deriving bincode for a borrowed vector
 // Hence we set to do it somewhat manually inside the PlatformSignable proc macro
@@ -39,52 +37,19 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_input_map")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output to send remaining credits to an address
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_output_singular")
+    )]
     pub output: Option<(PlatformAddress, Credits)>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,
-}
-
-#[cfg_attr(
-    feature = "serde-conversion",
-    derive(Deserialize),
-    serde(rename_all = "camelCase")
-)]
-struct IdentityCreateFromAddressesTransitionV0Inner {
-    // Own ST fields
-    public_keys: Vec<IdentityPublicKeyInCreation>,
-    inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    output: Option<(PlatformAddress, Credits)>,
-    fee_strategy: AddressFundsFeeStrategy,
-    user_fee_increase: UserFeeIncrease,
-    input_witnesses: Vec<AddressWitness>,
-}
-
-impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
-    for IdentityCreateFromAddressesTransitionV0
-{
-    type Error = ProtocolError;
-
-    fn try_from(value: IdentityCreateFromAddressesTransitionV0Inner) -> Result<Self, Self::Error> {
-        let IdentityCreateFromAddressesTransitionV0Inner {
-            public_keys,
-            inputs,
-            output,
-            fee_strategy,
-            user_fee_increase,
-            input_witnesses,
-        } = value;
-
-        Ok(Self {
-            public_keys,
-            inputs,
-            output,
-            fee_strategy,
-            user_fee_increase,
-            input_witnesses,
-        })
-    }
 }

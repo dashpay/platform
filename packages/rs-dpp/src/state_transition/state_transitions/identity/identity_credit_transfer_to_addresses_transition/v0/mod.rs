@@ -48,9 +48,7 @@ pub struct IdentityCreditTransferToAddressesTransitionV0 {
     pub identity_id: Identifier,
     #[cfg_attr(
         feature = "json-conversion",
-        serde(
-            with = "crate::serialization::json::safe_integer_map::json_safe_generic_u64_value_map"
-        )
+        serde(with = "crate::address_funds::serde_helpers::address_output_map_required_amount")
     )]
     pub recipient_addresses: BTreeMap<PlatformAddress, Credits>,
     pub nonce: IdentityNonce,

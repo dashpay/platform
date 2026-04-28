@@ -44,12 +44,20 @@ mod property_names {
 pub struct AddressFundingFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
     /// Inputs from existing platform addresses (optional, for combining funds)
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_input_map")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Outputs to fund platform addresses.
     /// - `Some(credits)` = explicit amount to send to this address
     /// - `None` = this address receives everything remaining after explicit outputs and fees
     ///   Exactly one output must be `None` to receive the remainder
     ///   (ensures full asset lock consumption).
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_output_map_optional_amount")
+    )]
     pub outputs: BTreeMap<PlatformAddress, Option<Credits>>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,

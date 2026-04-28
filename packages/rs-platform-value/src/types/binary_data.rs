@@ -35,6 +35,15 @@ impl<'de> Deserialize<'de> for BinaryData {
     where
         D: serde::Deserializer<'de>,
     {
+        // Both visitors accept strings AND bytes regardless of the deserializer's
+        // human-readable flag. Mirrors the same pattern used by `Identifier` /
+        // `Bytes32` / etc.: serde's `ContentDeserializer` (used for internally
+        // tagged enums like `#[serde(tag = "$version")]`) always reports
+        // `is_human_readable: true`, so bytes can arrive through the string path
+        // and vice versa. Without this, transitions whose Object form emits a
+        // `Uint8Array` for a `BinaryData` field (e.g. `signature`) fail to
+        // round-trip through `fromObject`.
+
         if deserializer.is_human_readable() {
             struct StringVisitor;
 
@@ -42,7 +51,7 @@ impl<'de> Deserialize<'de> for BinaryData {
                 type Value = BinaryData;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a base64-encoded string")
+                    formatter.write_str("a base64-encoded string or byte array")
                 }
 
                 fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -54,6 +63,20 @@ impl<'de> Deserialize<'de> for BinaryData {
                     })?;
                     Ok(BinaryData(bytes))
                 }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    Ok(BinaryData(v.to_vec()))
+                }
+
+                fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    Ok(BinaryData(v))
+                }
             }
 
             deserializer.deserialize_string(StringVisitor)
@@ -64,7 +87,7 @@ impl<'de> Deserialize<'de> for BinaryData {
                 type Value = BinaryData;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a byte array with length 32")
+                    formatter.write_str("a byte array or base64-encoded string")
                 }
 
                 fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
@@ -72,6 +95,23 @@ impl<'de> Deserialize<'de> for BinaryData {
                     E: serde::de::Error,
                 {
                     Ok(BinaryData(v.to_vec()))
+                }
+
+                fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    Ok(BinaryData(v))
+                }
+
+                fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    let bytes = BASE64_STANDARD.decode(v).map_err(|e| {
+                        E::custom(format!("expected base64 for binary data: {}", e))
+                    })?;
+                    Ok(BinaryData(bytes))
                 }
             }
 

@@ -12,6 +12,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,
     Clone,
@@ -40,10 +41,6 @@ pub struct UnshieldTransitionV0 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
-    #[cfg_attr(
-        feature = "serde-conversion",
-        serde(with = "crate::serialization::serde_bytes_64")
-    )]
     pub binding_signature: [u8; 64],
 }
 

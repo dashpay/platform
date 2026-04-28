@@ -157,34 +157,47 @@ impl<'de> Deserialize<'de> for CoreScript {
     where
         D: serde::Deserializer<'de>,
     {
-        if deserializer.is_human_readable() {
-            let data: String = Deserialize::deserialize(deserializer)?;
+        // Both visitors accept strings AND bytes regardless of the deserializer's
+        // human-readable flag — same pattern as `BinaryData` / `Identifier`. This
+        // covers the case where serde-wasm-bindgen emits a `Uint8Array` for the
+        // Object form (which the deserializer reports as human-readable), and the
+        // case where a JSON consumer sends a base64 string through the binary path.
 
-            Self::from_string(&data, Encoding::Base64).map_err(|e| {
-                serde::de::Error::custom(format!(
-                    "expected to be able to deserialize core script from string: {}",
-                    e
-                ))
-            })
-        } else {
-            struct BytesVisitor;
+        struct CoreScriptVisitor;
 
-            impl Visitor<'_> for BytesVisitor {
-                type Value = CoreScript;
+        impl Visitor<'_> for CoreScriptVisitor {
+            type Value = CoreScript;
 
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a byte array")
-                }
-
-                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-                where
-                    E: serde::de::Error,
-                {
-                    Ok(CoreScript::from_bytes(v.to_vec()))
-                }
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a byte array or base64-encoded string")
             }
 
-            deserializer.deserialize_bytes(BytesVisitor)
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                CoreScript::from_string(v, Encoding::Base64).map_err(|e| {
+                    E::custom(format!(
+                        "expected to be able to deserialize core script from string: {}",
+                        e
+                    ))
+                })
+            }
+
+            fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
+                self.visit_str(&v)
+            }
+
+            fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                Ok(CoreScript::from_bytes(v.to_vec()))
+            }
+
+            fn visit_byte_buf<E: serde::de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+                Ok(CoreScript::from_bytes(v))
+            }
+        }
+
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_string(CoreScriptVisitor)
+        } else {
+            deserializer.deserialize_bytes(CoreScriptVisitor)
         }
     }
 }

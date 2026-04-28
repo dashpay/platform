@@ -1,8 +1,12 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::shielded::MAX_HALO2_PROOF_BYTES;
+use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
+use crate::utils::{check_max_len, try_vec_to_fixed_bytes};
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -10,11 +14,22 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
+ * Options for constructing a ShieldedTransferTransition.
+ */
+export interface ShieldedTransferTransitionOptions {
+    actions: SerializedOrchardAction[];
+    valueBalance: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+}
+
+/**
  * ShieldedTransferTransition serialized as a plain object.
  */
 export interface ShieldedTransferTransitionObject {
     $formatVersion: string;
-    actions: SerializedOrchardAction[];
+    actions: SerializedOrchardActionObject[];
     valueBalance: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
@@ -36,11 +51,24 @@ export interface ShieldedTransferTransitionJSON {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "ShieldedTransferTransitionOptions")]
+    pub type ShieldedTransferTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "ShieldedTransferTransitionObject")]
     pub type ShieldedTransferTransitionObjectJs;
 
     #[wasm_bindgen(typescript_type = "ShieldedTransferTransitionJSON")]
     pub type ShieldedTransferTransitionJSONJs;
+}
+
+/// Non-WASM-instance fields extracted from the constructor options via serde.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShieldedTransferTransitionSimpleFields {
+    value_balance: u64,
+    anchor: Vec<u8>,
+    proof: Vec<u8>,
+    binding_signature: Vec<u8>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -64,11 +92,28 @@ impl From<ShieldedTransferTransitionWasm> for ShieldedTransferTransition {
 impl ShieldedTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        value: ShieldedTransferTransitionObjectJs,
+        options: ShieldedTransferTransitionOptionsJs,
     ) -> WasmDppResult<ShieldedTransferTransitionWasm> {
-        let inner: ShieldedTransferTransition = serde_wasm_bindgen::from_value(value.into())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(ShieldedTransferTransitionWasm(inner))
+        let actions = actions_from_js_options(options.as_ref(), "actions")?;
+
+        let fields: ShieldedTransferTransitionSimpleFields =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let anchor: [u8; 32] = try_vec_to_fixed_bytes(fields.anchor, "anchor")?;
+        let binding_signature: [u8; 64] =
+            try_vec_to_fixed_bytes(fields.binding_signature, "bindingSignature")?;
+        check_max_len(&fields.proof, MAX_HALO2_PROOF_BYTES, "proof")?;
+
+        Ok(ShieldedTransferTransitionWasm(
+            ShieldedTransferTransition::V0(ShieldedTransferTransitionV0 {
+                actions: actions.into_iter().map(Into::into).collect(),
+                value_balance: fields.value_balance,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+            }),
+        ))
     }
 
     #[wasm_bindgen(js_name = getType)]
@@ -76,13 +121,17 @@ impl ShieldedTransferTransitionWasm {
         self.0.state_transition_type() as u8
     }
 
-    /// Returns the serialized Orchard actions as a JS array.
+    /// Returns the serialized Orchard actions.
     #[wasm_bindgen(js_name = getActions)]
-    pub fn get_actions(&self) -> WasmDppResult<JsValue> {
-        let inner = match &self.0 {
-            ShieldedTransferTransition::V0(v0) => &v0.actions,
-        };
-        serde_wasm_bindgen::to_value(inner).map_err(|e| WasmDppError::serialization(e.to_string()))
+    pub fn get_actions(&self) -> Vec<SerializedOrchardActionWasm> {
+        match &self.0 {
+            ShieldedTransferTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .cloned()
+                .map(SerializedOrchardActionWasm::from)
+                .collect(),
+        }
     }
 
     /// Returns the value balance (fee amount leaving the pool).
