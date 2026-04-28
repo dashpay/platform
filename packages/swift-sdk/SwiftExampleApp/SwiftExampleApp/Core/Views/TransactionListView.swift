@@ -16,12 +16,30 @@ struct TransactionListView: View {
         // SwiftData's predicate compiler can't lower a double
         // optional-relationship chain to SQLite and crashes with
         // `Unsupported function expression TERNARY(...).walletId`.
-        _transactions = Query(
-            filter: #Predicate<PersistentTransaction> { tx in
-                tx.walletId == walletId
-            },
-            sort: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
+        //
+        // `propertiesToFetch` matters: without it, a wallet with
+        // ~1.5k transactions stalls the navigation push for several
+        // seconds because SwiftData hydrates the full row — including
+        // the `transactionData` raw-bytes blob — for every match on
+        // the main thread before the List can render. Restricting
+        // the fetch to the columns the row actually reads
+        // (`TransactionRowView` only touches txid / netAmount /
+        // firstSeen / context / fee, plus walletId for the predicate)
+        // keeps SQLite on an index-only scan against the
+        // `(walletId, firstSeen)` compound index and skips the blob.
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { tx in tx.walletId == walletId },
+            sortBy: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
         )
+        descriptor.propertiesToFetch = [
+            \.txid,
+            \.netAmount,
+            \.firstSeen,
+            \.context,
+            \.fee,
+            \.walletId,
+        ]
+        _transactions = Query(descriptor)
     }
 
     var body: some View {
@@ -58,15 +76,19 @@ struct TransactionListView: View {
     }
 
     private var transactionsList: some View {
-        List {
-            ForEach(transactions, id: \.txid) { transaction in
-                Button {
-                    selectedTransaction = transaction
-                } label: {
-                    TransactionRowView(transaction: transaction)
-                }
-                .buttonStyle(.plain)
+        // Use SwiftData's built-in PersistentIdentifier as the row
+        // identity (via `List(transactions)`) instead of `id: \.txid`.
+        // The Storage Explorer's transaction list uses the same shape
+        // and renders instantly; keying on `txid` forces SwiftUI to
+        // read the unique-string column from every row for diffing
+        // even when SwiftData already has a stable identity for free.
+        List(transactions) { transaction in
+            Button {
+                selectedTransaction = transaction
+            } label: {
+                TransactionRowView(transaction: transaction)
             }
+            .buttonStyle(.plain)
         }
         .listStyle(.insetGrouped)
     }
