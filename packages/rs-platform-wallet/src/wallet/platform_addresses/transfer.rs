@@ -768,6 +768,94 @@ mod auto_select_tests {
         );
     }
 
+    /// Protocol-level reproduction of the CodeRabbit bug. Constructs the
+    /// exact `inputs` map the pre-fix `select_inputs` would have returned
+    /// for the original example (candidates (20M, 50M), total_output 30M,
+    /// `DeductFromInput(0)`), feeds it through the live dpp fee-deduction
+    /// code path, and asserts `fee_fully_covered == false` — i.e. the
+    /// transition would have been rejected with `AddressesNotEnoughFundsError`.
+    ///
+    /// This is the smoking gun: not just a unit test of our selector, but
+    /// proof that the unfixed selector's output is structurally invalid
+    /// at the protocol layer (not merely "we agreed it should look
+    /// different"). The fixed selector is verified independently by
+    /// `fee_target_keeps_remaining_for_fee_deduction`.
+    ///
+    /// Reference:
+    /// - dpp deduction:
+    ///   `packages/rs-dpp/src/address_funds/fee_strategy/deduct_fee_from_inputs_and_outputs/v0/mod.rs`
+    /// - drive enforcement:
+    ///   `packages/rs-drive-abci/src/execution/platform_events/state_transition_processing/validate_fees_of_event/v0/mod.rs:209`
+    ///   (rejects when `!fee_fully_covered`).
+    #[test]
+    fn pre_fix_buggy_selector_output_is_rejected_by_protocol_fee_deduction() {
+        use dpp::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::deduct_fee_from_outputs_or_remaining_balance_of_inputs;
+        use dpp::prelude::AddressNonce;
+
+        // CodeRabbit's example.
+        let addr_a = p2pkh(0x01); // lex-smallest → DeductFromInput(0) target
+        let addr_b = p2pkh(0x02);
+        let target = p2pkh(0xFF);
+        let total_output = 30_000_000u64;
+        let addr_a_balance = 20_000_000u64;
+        let addr_b_balance = 50_000_000u64;
+        let outputs = outputs_for(target, total_output);
+        let fee_strategy: AddressFundsFeeStrategy =
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        // The OLD selector would produce: addr_a fully consumed (20M),
+        // addr_b trimmed to 10M. Σ = 30M = total_output ✓ aggregate, but
+        // addr_a is fully drained.
+        let mut buggy_inputs_consumed: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        buggy_inputs_consumed.insert(addr_a, 20_000_000);
+        buggy_inputs_consumed.insert(addr_b, 10_000_000);
+
+        // Drive computes `input_current_balances[addr] = original_balance - consumed`
+        // and feeds *that* (with the address nonce) into the fee-deduction code.
+        // Reproducing that step here.
+        let mut input_current_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
+            BTreeMap::new();
+        input_current_balances.insert(addr_a, (0, addr_a_balance - 20_000_000)); // 0 remaining
+        input_current_balances.insert(addr_b, (0, addr_b_balance - 10_000_000)); // 40M remaining
+
+        // Use a representative fee that's small enough to be plausible
+        // but large enough that any non-zero remaining balance on an
+        // input could absorb it (so we know the failure isn't "fee too
+        // large" but specifically "fee target has zero remaining").
+        let fee: Credits = 1_000_000;
+
+        let added_to_outputs: BTreeMap<PlatformAddress, Credits> = outputs.clone();
+
+        let result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
+            input_current_balances.clone(),
+            added_to_outputs,
+            &fee_strategy,
+            fee,
+            pv,
+        )
+        .expect("deduction call must succeed (the rejection is expressed via fee_fully_covered)");
+
+        assert!(
+            !result.fee_fully_covered,
+            "Pre-fix selector's output was supposed to be rejected by the protocol's \
+             fee deduction (DeductFromInput(0) targets addr_a which has 0 remaining \
+             after full consumption), but `fee_fully_covered` came back true. The \
+             reproduction is broken or the protocol semantics changed; investigate."
+        );
+
+        // Cross-check: addr_b alone would have been able to absorb the
+        // fee (40M remaining ≫ 1M fee). The bug is specifically that the
+        // strategy targets the WRONG input — the one with no headroom.
+        assert!(
+            addr_b_balance - 10_000_000 >= fee,
+            "sanity: addr_b's remaining ({}) covers the fee ({}); the bug is not \
+             a global shortage but a misdirected fee strategy",
+            addr_b_balance - 10_000_000,
+            fee,
+        );
+    }
+
     /// When the lex-smallest candidate is too small to retain fee
     /// headroom AND the remaining inputs cannot absorb enough of
     /// `total_output` to keep its consumption ≥ `min_input_amount`
