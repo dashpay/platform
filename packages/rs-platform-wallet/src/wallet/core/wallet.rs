@@ -92,7 +92,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             })?;
 
         account
-            .next_receive_address(Some(&xpub))
+            .next_receive_address(Some(&xpub), true)
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 
@@ -133,7 +133,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             })?;
 
         account
-            .next_receive_address(Some(&xpub))
+            .next_receive_address(Some(&xpub), true)
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 
@@ -174,7 +174,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             })?;
 
         account
-            .next_change_address(Some(&xpub))
+            .next_change_address(Some(&xpub), true)
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 
@@ -215,7 +215,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             })?;
 
         account
-            .next_change_address(Some(&xpub))
+            .next_change_address(Some(&xpub), true)
             .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 

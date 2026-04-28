@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::sync::SyncProgress;
-use dash_spv::{ClientConfig, DashSpvClient, Hash};
+use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
 
@@ -19,12 +19,8 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-type SpvClient = DashSpvClient<
-    WalletManager<PlatformWalletInfo>,
-    PeerNetworkManager,
-    DiskStorageManager,
-    PlatformEventManager,
->;
+type SpvClient =
+    DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
 
 /// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
@@ -70,12 +66,19 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
+        // PlatformEventManager implements `EventHandler`; pass it as the
+        // sole entry in the SPV client's handler vec. Additional dyn
+        // handlers can be added here if other components need to observe
+        // raw SPV events directly (today everything routes through the
+        // platform event manager's own handler list).
+        let event_handlers: Vec<Arc<dyn EventHandler>> =
+            vec![Arc::clone(&self.event_manager) as Arc<dyn EventHandler>];
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
             storage_manager,
             Arc::clone(&self.wallet_manager),
-            Arc::clone(&self.event_manager),
+            event_handlers,
         )
         .await
         .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
