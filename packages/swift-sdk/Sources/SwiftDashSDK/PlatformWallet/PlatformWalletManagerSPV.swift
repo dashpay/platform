@@ -17,7 +17,7 @@ public enum PlatformSpvSyncState: UInt32, Sendable {
 }
 
 /// Progress for one of the SPV sub-managers (headers, filters, masternodes, etc.).
-public struct PlatformSpvSubProgress: Sendable {
+public struct PlatformSpvSubProgress: Sendable, Equatable {
     public let state: PlatformSpvSyncState
     public let currentHeight: UInt32
     public let targetHeight: UInt32
@@ -25,7 +25,7 @@ public struct PlatformSpvSubProgress: Sendable {
 }
 
 /// Aggregate SPV sync progress snapshot.
-public struct PlatformSpvSyncProgress: Sendable {
+public struct PlatformSpvSyncProgress: Sendable, Equatable {
     public let overallState: PlatformSpvSyncState
     public let overallPercentage: Double
 
