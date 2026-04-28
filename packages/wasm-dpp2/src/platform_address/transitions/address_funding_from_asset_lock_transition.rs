@@ -163,10 +163,7 @@ impl AddressFundingFromAssetLockTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(
-        &mut self,
-        inputs: Vec<PlatformAddressInputWasm>,
-    ) -> WasmDppResult<()> {
+    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) -> WasmDppResult<()> {
         let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         match &mut self.0 {
             AddressFundingFromAssetLockTransition::V0(v0) => {
@@ -186,10 +183,7 @@ impl AddressFundingFromAssetLockTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "outputs")]
-    pub fn set_outputs(
-        &mut self,
-        outputs: Vec<PlatformAddressOutputWasm>,
-    ) -> WasmDppResult<()> {
+    pub fn set_outputs(&mut self, outputs: Vec<PlatformAddressOutputWasm>) -> WasmDppResult<()> {
         let outputs_map = crate::platform_address::outputs_to_optional_btree_map(outputs)?;
         self.0.set_outputs(outputs_map);
         Ok(())

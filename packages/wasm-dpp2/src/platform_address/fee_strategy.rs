@@ -145,4 +145,3 @@ pub fn fee_strategy_from_js_options(
             .collect()
     })
 }
-

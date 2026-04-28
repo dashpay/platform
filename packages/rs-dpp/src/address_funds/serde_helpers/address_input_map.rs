@@ -87,9 +87,7 @@ mod tests {
 
     /// Newtype wrapper so we can drive the helper through a serde derive.
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    struct Wrapper(
-        #[serde(with = "super")] BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    );
+    struct Wrapper(#[serde(with = "super")] BTreeMap<PlatformAddress, (AddressNonce, Credits)>);
 
     #[test]
     fn empty_round_trips() {

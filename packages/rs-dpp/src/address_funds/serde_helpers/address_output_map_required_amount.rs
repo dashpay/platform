@@ -30,9 +30,7 @@ where
     seq.end()
 }
 
-pub fn deserialize<'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<PlatformAddress, Credits>, D::Error>
+pub fn deserialize<'de, D>(deserializer: D) -> Result<BTreeMap<PlatformAddress, Credits>, D::Error>
 where
     D: Deserializer<'de>,
 {

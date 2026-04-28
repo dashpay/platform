@@ -24,9 +24,7 @@ where
     }
 }
 
-pub fn deserialize<'de, D>(
-    deserializer: D,
-) -> Result<Option<(PlatformAddress, Credits)>, D::Error>
+pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<(PlatformAddress, Credits)>, D::Error>
 where
     D: Deserializer<'de>,
 {

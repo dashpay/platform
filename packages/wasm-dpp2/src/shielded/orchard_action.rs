@@ -95,9 +95,8 @@ impl SerializedOrchardActionWasm {
         })?;
         let rk: [u8; 32] =
             try_from_options_with(opts, "rk", |v| try_to_fixed_bytes::<32>(v.clone(), "rk"))?;
-        let cmx: [u8; 32] = try_from_options_with(opts, "cmx", |v| {
-            try_to_fixed_bytes::<32>(v.clone(), "cmx")
-        })?;
+        let cmx: [u8; 32] =
+            try_from_options_with(opts, "cmx", |v| try_to_fixed_bytes::<32>(v.clone(), "cmx"))?;
         let encrypted_note: Vec<u8> = try_from_options_with(opts, "encryptedNote", |v| {
             try_to_bytes(v.clone(), "encryptedNote")
         })?;

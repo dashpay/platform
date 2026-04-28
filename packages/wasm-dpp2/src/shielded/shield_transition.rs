@@ -4,10 +4,10 @@ use crate::platform_address::{
     FeeStrategyStepWasm, PlatformAddressInputWasm, fee_strategy_from_js_options,
     fee_strategy_from_steps_or_default, inputs_from_js_options,
 };
-use crate::shielded::address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
 use crate::shielded::MAX_HALO2_PROOF_BYTES;
-use crate::utils::{check_max_len, try_vec_to_fixed_bytes};
+use crate::shielded::address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
+use crate::utils::{check_max_len, try_vec_to_fixed_bytes};
 use crate::utils::{try_from_options_optional_with, try_to_u16};
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::prelude::UserFeeIncrease;
@@ -129,8 +129,9 @@ impl ShieldTransitionWasm {
             .unwrap_or(0);
 
         // Extract simple fields via serde (consumes options)
-        let fields: ShieldTransitionSimpleFields = serde_wasm_bindgen::from_value(options.into())
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+        let fields: ShieldTransitionSimpleFields =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let anchor: [u8; 32] = try_vec_to_fixed_bytes(fields.anchor, "anchor")?;
         let binding_signature: [u8; 64] =

@@ -168,10 +168,7 @@ impl AddressCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(
-        &mut self,
-        inputs: Vec<PlatformAddressInputWasm>,
-    ) -> WasmDppResult<()> {
+    pub fn set_inputs(&mut self, inputs: Vec<PlatformAddressInputWasm>) -> WasmDppResult<()> {
         let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         match &mut self.0 {
             AddressCreditWithdrawalTransition::V0(v0) => {
