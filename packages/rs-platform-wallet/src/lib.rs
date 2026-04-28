@@ -14,6 +14,7 @@
 
 pub mod broadcaster;
 pub mod changeset;
+pub mod diagnostics;
 pub mod error;
 pub mod events;
 pub mod manager;

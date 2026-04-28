@@ -5,11 +5,11 @@ use std::sync::Arc;
 use super::balance::WalletBalance;
 
 use dashcore::Address as DashAddress;
-use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;
 
 use crate::broadcaster::TransactionBroadcaster;
+use crate::diagnostics::InstrumentedRwLock;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -24,7 +24,7 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// through a `dyn` vtable.
 pub struct CoreWallet<B: TransactionBroadcaster + ?Sized> {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(crate) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     pub(crate) wallet_id: WalletId,
     /// Injected broadcaster — delegates to SPV or DAPI depending on how
     /// the wallet was constructed by `PlatformWalletManager`.
@@ -36,7 +36,7 @@ pub struct CoreWallet<B: TransactionBroadcaster + ?Sized> {
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         broadcaster: Arc<B>,
         balance: Arc<WalletBalance>,

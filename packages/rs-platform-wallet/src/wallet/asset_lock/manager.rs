@@ -6,10 +6,11 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::Notify;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::diagnostics::InstrumentedRwLock;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -30,7 +31,7 @@ pub(super) const DEFAULT_FEE_PER_KB: u64 = 1000;
 pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) sdk: Arc<dash_sdk::Sdk>,
     /// The shared wallet manager lock for all mutable wallet state.
-    pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(super) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     pub(super) wallet_id: WalletId,
     /// Notified on InstantLock / ChainLock events by SpvEventForwarder.
@@ -64,7 +65,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Create a new `AssetLockManager`.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         lock_notify: Arc<Notify>,
         broadcaster: Arc<B>,

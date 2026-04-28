@@ -47,6 +47,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Security
 zeroize = "1"
 
+# Sync primitives used by the optional `lock-stats` feature for the
+# per-tag breakdown map. Plain `parking_lot::Mutex` (sync, fast) is the
+# right shape here — the per-tag map is touched on the lock acquire /
+# release path, never across an `.await`.
+parking_lot = { version = "0.12", optional = true }
+
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "8f25b20d04bfc0e8bdfb3870676d647a0d74918b", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
@@ -62,3 +68,12 @@ default = ["bls", "eddsa"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
+
+# Off by default. When enabled, the per-wallet `wallet_manager` RwLock is
+# wrapped with an `InstrumentedRwLock` that records acquisition counts,
+# wait time, and hold time per call site (using `read_at("tag")` /
+# `write_at("tag")`). With the feature off the wrapper is a transparent
+# type alias for `tokio::sync::RwLock` and there is zero runtime cost.
+# See `crate::diagnostics::instrumented_lock` for the API and
+# `LockStats` for the snapshot shape.
+lock-stats = ["dep:parking_lot"]

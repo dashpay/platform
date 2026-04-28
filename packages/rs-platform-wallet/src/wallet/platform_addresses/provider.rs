@@ -30,12 +30,12 @@ use key_wallet::PlatformP2PKHAddress;
 use async_trait::async_trait;
 use key_wallet_manager::WalletManager;
 
+use crate::diagnostics::InstrumentedRwLock;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressProvider, AddressSyncResult,
 };
-use tokio::sync::RwLock;
 
 /// DIP-17 address coordinates used as both the pending-bimap key and
 /// the SDK sync engine's `Tag`. Having the SDK carry these three
@@ -151,7 +151,7 @@ pub(crate) type PerWalletInSyncPlatformAddressState =
 /// view of pending addresses spanning all wallets.
 pub(crate) struct PlatformPaymentAddressProvider {
     /// Shared wallet manager for gap-limit extension.
-    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     /// Committed per-wallet tracked state — xpub + `addresses` bimap
     /// + `found` + `absent` from the last successful sync. `found`
     /// here is what [`current_balances`](Self::current_balances)
@@ -185,7 +185,7 @@ impl PlatformPaymentAddressProvider {
     /// no key derivation happens here. `wallet_ids` not found in the
     /// wallet manager are silently skipped.
     pub(crate) async fn from_wallets(
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_ids: impl IntoIterator<Item = WalletId>,
     ) -> Result<Self, PlatformWalletError> {
         let mut per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState> = BTreeMap::new();
@@ -268,7 +268,7 @@ impl PlatformPaymentAddressProvider {
     /// of sync and the caller needs to reconcile rather than silently
     /// continue with stale data.
     pub async fn from_persisted(
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         per_wallet: BTreeMap<WalletId, PerWalletPlatformAddressState>,
         sync_height: u64,
         sync_timestamp: u64,

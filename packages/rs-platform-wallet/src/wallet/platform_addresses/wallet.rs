@@ -6,6 +6,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use tokio::sync::RwLock;
 
+use crate::diagnostics::InstrumentedRwLock;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
@@ -19,7 +20,7 @@ use super::provider::PlatformPaymentAddressProvider;
 pub struct PlatformAddressWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     /// The shared wallet manager lock for all mutable wallet state.
-    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(crate) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
     /// Single provider covering every platform payment account on the
@@ -37,7 +38,7 @@ impl PlatformAddressWallet {
     /// Call [`initialize`] afterwards to build the unified provider.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         persister: WalletPersister,
     ) -> Self {

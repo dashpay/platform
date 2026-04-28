@@ -18,12 +18,12 @@ use std::sync::Arc;
 
 use dpp::balances::credits::TokenAmount;
 use dpp::prelude::Identifier;
-use tokio::sync::RwLock;
 
 use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 use dash_sdk::platform::FetchMany;
 
 use crate::changeset::{Merge, TokenBalanceChangeSet};
+use crate::diagnostics::InstrumentedRwLock;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
@@ -40,7 +40,7 @@ type IdentityTokenKey = (Identifier, Identifier);
 pub struct TokenWallet {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     /// The shared wallet manager lock for all mutable wallet state.
-    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(crate) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this sub-wallet operates on.
     pub(crate) wallet_id: WalletId,
     /// Per-wallet persistence handle for queuing changesets.
@@ -51,7 +51,7 @@ impl TokenWallet {
     /// Create a new TokenWallet.
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         persister: crate::wallet::persister::WalletPersister,
     ) -> Self {

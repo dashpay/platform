@@ -33,10 +33,10 @@ use key_wallet::dip9::{
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use key_wallet_manager::WalletManager;
-use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
+use crate::diagnostics::{InstrumentedRwLock, ReadGuard, WriteGuard};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -257,7 +257,7 @@ pub(crate) fn derive_identity_auth_key_hash(
 pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     /// Shared wallet manager holding key material and wallet info.
-    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(crate) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifier for the wallet within the wallet manager.
     pub(crate) wallet_id: WalletId,
     /// Shared asset lock manager for building, broadcasting, and tracking
@@ -381,9 +381,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Access wallet info via `wm.get_wallet_info(&wallet_id)` and key material
     /// via `wm.get_wallet(&wallet_id)` on the returned guard. The identity
     /// manager is on the wallet info: `info.identity_manager`.
-    pub async fn wallet_manager_read(
-        &self,
-    ) -> tokio::sync::RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+    pub async fn wallet_manager_read(&self) -> ReadGuard<'_, WalletManager<PlatformWalletInfo>> {
         self.wallet_manager.read().await
     }
 
@@ -392,9 +390,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Access wallet info via `wm.get_wallet_info_mut(&wallet_id)` on the
     /// returned guard. This allows callers to mutate managed identities (e.g.
     /// adding or updating identities from an external persistence layer).
-    pub async fn wallet_manager_write(
-        &self,
-    ) -> tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>> {
+    pub async fn wallet_manager_write(&self) -> WriteGuard<'_, WalletManager<PlatformWalletInfo>> {
         self.wallet_manager.write().await
     }
 
@@ -404,7 +400,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Useful for synchronous callers that cannot await.
     pub fn try_wallet_manager_write(
         &self,
-    ) -> Option<tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>>> {
+    ) -> Option<WriteGuard<'_, WalletManager<PlatformWalletInfo>>> {
         self.wallet_manager.try_write().ok()
     }
 

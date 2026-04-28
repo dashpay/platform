@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use key_wallet_manager::WalletManager;
 
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+use crate::diagnostics::InstrumentedRwLock;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::platform_address_sync::PlatformAddressSyncManager;
 use crate::spv::SpvRuntime;
@@ -27,7 +28,7 @@ use crate::wallet::PlatformWallet;
 /// [`PlatformEventHandler`]s by reference (no cloning).
 pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) sdk: Arc<dash_sdk::Sdk>,
-    pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(super) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     /// Map of registered wallets. Held in an `Arc` so the
     /// `BalanceUpdateHandler` can hold a clone and look up wallets to
     /// update their lock-free balance atomics from event-handler
@@ -64,7 +65,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // coerce once here and pass clones along instead of re-erasing
         // at every call site.
         let dyn_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&persister) as _;
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let wallet_manager = Arc::new(InstrumentedRwLock::new(WalletManager::new(sdk.network)));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
 

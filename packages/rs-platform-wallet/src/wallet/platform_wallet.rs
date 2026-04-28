@@ -10,7 +10,10 @@ use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet_manager::WalletManager;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+use crate::diagnostics::{
+    InstrumentedRwLock, ReadGuard as InstrumentedReadGuard, WriteGuard as InstrumentedWriteGuard,
+};
 
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
@@ -60,7 +63,7 @@ pub struct PlatformWalletInfo {
 pub struct PlatformWallet {
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
-    pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    pub(crate) wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     // Sub-wallets that hold a broadcaster are monomorphized with
     // `SpvBroadcaster` — the only production broadcaster in use.
     // Swapping this out to another broadcaster is a three-line flip
@@ -121,7 +124,7 @@ impl PlatformWallet {
     }
 
     /// Get a reference to the shared wallet manager lock.
-    pub fn wallet_manager(&self) -> &Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
+    pub fn wallet_manager(&self) -> &Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>> {
         &self.wallet_manager
     }
 
@@ -214,7 +217,7 @@ impl PlatformWallet {
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_id: WalletId,
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         balance: Arc<WalletBalance>,
         lock_notify: Arc<tokio::sync::Notify>,
         persister: Arc<dyn PlatformWalletPersistence>,
@@ -424,7 +427,7 @@ impl std::fmt::Debug for PlatformWallet {
 /// Read guard that locks `WalletManager` and derefs to this wallet's
 /// `PlatformWalletInfo`. Also provides `.wallet()` for key material access.
 pub struct WalletStateReadGuard<'a> {
-    guard: RwLockReadGuard<'a, WalletManager<PlatformWalletInfo>>,
+    guard: InstrumentedReadGuard<'a, WalletManager<PlatformWalletInfo>>,
     wallet_id: WalletId,
 }
 
@@ -449,7 +452,7 @@ impl Deref for WalletStateReadGuard<'_> {
 /// Write guard that locks `WalletManager` and derefs to this wallet's
 /// `PlatformWalletInfo` (with `DerefMut`). Also provides `.wallet()`.
 pub struct WalletStateWriteGuard<'a> {
-    guard: RwLockWriteGuard<'a, WalletManager<PlatformWalletInfo>>,
+    guard: InstrumentedWriteGuard<'a, WalletManager<PlatformWalletInfo>>,
     wallet_id: WalletId,
 }
 

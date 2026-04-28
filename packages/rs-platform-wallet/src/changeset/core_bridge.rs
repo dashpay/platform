@@ -29,12 +29,17 @@ use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
+// `InstrumentedRwLockExt` is unused when `lock-stats` is on — the
+// wrapper has the same methods inherent and method resolution prefers
+// inherent over trait. Suppress the warning so the call sites can
+// import the trait unconditionally.
+#[allow(unused_imports)]
+use crate::diagnostics::{InstrumentedRwLock, InstrumentedRwLockExt};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Spawn the wallet-event subscriber task.
@@ -45,13 +50,17 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires
 /// or the upstream broadcast channel closes.
 pub fn spawn_wallet_event_adapter(
-    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Arc<dyn PlatformWalletPersistence>,
     cancel: CancellationToken,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut receiver = {
-            let guard = wallet_manager.read().await;
+            // Subscribe-time read; happens once at task start. Tagged
+            // so the `lock-stats` feature can confirm the one-shot
+            // nature of this acquisition vs. the per-event probe in
+            // `is_chain_locked`.
+            let guard = wallet_manager.read_at("event_adapter::subscribe").await;
             guard.subscribe_events()
         };
         tracing::debug!("WalletEventAdapter task started");
@@ -108,7 +117,7 @@ pub fn spawn_wallet_event_adapter(
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
 /// for atomic persistence.
 async fn build_core_changeset(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager: &Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
 ) -> CoreChangeSet {
     match event {
@@ -172,11 +181,18 @@ async fn build_core_changeset(
 /// Returns `true` when the wallet's stored record for `txid` is in a
 /// chain-locked block. Used to gate IS-lock projection.
 async fn is_chain_locked(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager: &Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
 ) -> bool {
-    let guard = wallet_manager.read().await;
+    // Tagged so the `lock-stats` feature can attribute this site's
+    // contribution to wallet-manager contention. The event adapter
+    // touches this lock once per `TransactionInstantLocked` event;
+    // tagging lets a perf audit distinguish the IS-lock finality
+    // probe from generic identity / token / address-sync reads.
+    let guard = wallet_manager
+        .read_at("event_adapter::is_chain_locked")
+        .await;
     let Some(info) = guard.get_wallet_info(wallet_id) else {
         return false;
     };

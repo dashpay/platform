@@ -15,6 +15,11 @@ use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
 
+// `InstrumentedArcExt` is unused when `lock-stats` is on — the wrapper
+// has `raw_arc()` inherent and method resolution prefers it.
+// Suppress the warning so the import line stays uniform across modes.
+#[allow(unused_imports)]
+use crate::diagnostics::{InstrumentedArcExt, InstrumentedRwLock};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -28,7 +33,7 @@ type SpvClient =
 /// handlers by reference (no cloning).
 pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
-    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
     /// Cancel token for the `run()` task when it was spawned via
     /// [`spawn_in_background`]. [`stop`] fires this token and joins
@@ -39,7 +44,7 @@ pub struct SpvRuntime {
 impl SpvRuntime {
     /// Create a new SPV runtime.
     pub fn new(
-        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
         event_manager: Arc<PlatformEventManager>,
     ) -> Self {
         Self {
@@ -73,11 +78,16 @@ impl SpvRuntime {
         // platform event manager's own handler list).
         let event_handlers: Vec<Arc<dyn EventHandler>> =
             vec![Arc::clone(&self.event_manager) as Arc<dyn EventHandler>];
+        // Upstream takes `Arc<tokio::sync::RwLock<W>>` literally; hand
+        // it the inner Arc that lives inside our `InstrumentedRwLock`
+        // wrapper. SPV's own acquisitions go through this Arc directly
+        // and are not seen by the wrapper's stats — see the wrapper's
+        // type-level docs for the rationale.
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
             storage_manager,
-            Arc::clone(&self.wallet_manager),
+            self.wallet_manager.raw_arc(),
             event_handlers,
         )
         .await
