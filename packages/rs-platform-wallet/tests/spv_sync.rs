@@ -71,11 +71,7 @@ impl PlatformWalletPersistence for RecordingPersister {
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), platform_wallet::changeset::PersistenceError> {
         let has_core = changeset.core.is_some();
-        let synced_height = changeset
-            .core
-            .as_ref()
-            .and_then(|c| c.chain.as_ref())
-            .and_then(|ch| ch.synced_height);
+        let synced_height = changeset.core.as_ref().and_then(|c| c.synced_height);
         self.records
             .lock()
             .unwrap()
