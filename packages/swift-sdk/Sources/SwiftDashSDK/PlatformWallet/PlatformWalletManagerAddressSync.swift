@@ -16,8 +16,8 @@ public struct PlatformAddressWalletSyncResult: Sendable {
         var walletId = ffi.wallet_id
         self.walletId = withUnsafeBytes(of: &walletId) { Data($0) }
         self.success = ffi.success
-        self.foundCount = ffi.found_count
-        self.absentCount = ffi.absent_count
+        self.foundCount = Int(ffi.found_count)
+        self.absentCount = Int(ffi.absent_count)
         self.checkpointHeight = ffi.checkpoint_height
         self.newSyncHeight = ffi.new_sync_height
         self.newSyncTimestamp = ffi.new_sync_timestamp
@@ -53,8 +53,8 @@ final class PlatformWalletEventHandler {
 
 private func platformAddressSyncCompletedCallback(
     context: UnsafeMutableRawPointer?,
-    resultsRaw: UnsafeRawPointer?,
-    count: Int,
+    resultsPtr: UnsafePointer<PlatformAddressSyncWalletResultFFI>?,
+    count: UInt,
     syncUnixSeconds: UInt64
 ) {
     guard let context else { return }
@@ -64,10 +64,9 @@ private func platformAddressSyncCompletedCallback(
         .takeUnretainedValue()
 
     var results: [PlatformAddressWalletSyncResult] = []
-    if let resultsRaw, count > 0 {
-        let resultsPtr = resultsRaw.assumingMemoryBound(to: PlatformAddressSyncWalletResultFFI.self)
-        results.reserveCapacity(count)
-        for i in 0..<count {
+    if let resultsPtr, count > 0 {
+        results.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
             results.append(PlatformAddressWalletSyncResult(ffi: resultsPtr[i]))
         }
     }
@@ -118,7 +117,7 @@ extension PlatformWalletManager {
 
         var error = PlatformWalletFFIError()
         let result = platform_wallet_manager_platform_address_sync_start(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -130,7 +129,7 @@ extension PlatformWalletManager {
 
         var error = PlatformWalletFFIError()
         let result = platform_wallet_manager_platform_address_sync_stop(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -147,7 +146,7 @@ extension PlatformWalletManager {
             &running,
             &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return running
@@ -165,7 +164,7 @@ extension PlatformWalletManager {
             &syncing,
             &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return syncing
@@ -183,7 +182,7 @@ extension PlatformWalletManager {
             &lastSyncUnixSeconds,
             &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return lastSyncUnixSeconds
@@ -200,7 +199,7 @@ extension PlatformWalletManager {
             seconds,
             &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -226,7 +225,7 @@ extension PlatformWalletManager {
             result = platform_wallet_manager_platform_address_sync_set_config(handle, nil, &error)
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -240,7 +239,7 @@ extension PlatformWalletManager {
         try await Task.detached(priority: .userInitiated) {
             var error = PlatformWalletFFIError()
             let result = platform_wallet_manager_platform_address_sync_sync_now(handle, &error)
-            guard result == Success else {
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
                 throw PlatformWalletError(result: result, error: error)
             }
         }.value

@@ -955,6 +955,33 @@ struct IdentityDetailView: View {
                 return
             }
 
+            // Persist balances into `PersistentTokenBalance` via the
+            // platform-wallet token-watch + sync pipeline. We watch
+            // every (identity, token) pair this view cares about,
+            // sync, and let the Rust persister fire the
+            // `on_persist_token_balances_fn` callback — the Swift
+            // handler maps that onto SwiftData rows that the rest of
+            // the app reads via @Query (recipient pickers, Burn /
+            // Transfer / DestroyFrozen views). Failures here are
+            // non-fatal: the display fetch below still surfaces the
+            // numbers, and the next reload tries again.
+            if let walletId = identity.wallet?.walletId,
+               let wallet = walletManager.wallet(for: walletId) {
+                let identityBytes = identity.identityId
+                let pairs: [(identityId: Identifier, tokenId: Identifier)] =
+                    idToToken.keys.compactMap { tokenIdBase58 in
+                        guard let tokenIdBytes = Data.identifier(fromBase58: tokenIdBase58) else {
+                            return nil
+                        }
+                        return (identityId: identityBytes, tokenId: tokenIdBytes)
+                    }
+                do {
+                    try await wallet.watchAndSyncTokenBalances(pairs: pairs)
+                } catch {
+                    print("⚠️ token watch+sync failed: \(error)")
+                }
+            }
+
             do {
                 let balances = try await sdk.getIdentityTokenBalances(
                     identityId: identity.identityIdBase58,
@@ -1205,11 +1232,8 @@ struct DashPayProfileEditorView: View {
                 // Construct a fresh `KeychainSigner` for this submit
                 // pass the same way `RegisterNameView.registerName()`
                 // does. Routes the document state-transition signature
-                // through the iOS Keychain instead of the legacy
-                // wallet-internal `IdentitySigner`, so watch-only
-                // wallets are unblocked end-to-end and the Tokio
-                // worker no longer risks the inner-lock-deadlock the
-                // legacy path hit.
+                // through the iOS Keychain so watch-only wallets work
+                // end-to-end.
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 let saved: DashPayProfile
                 if isCreating {

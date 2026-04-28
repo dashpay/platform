@@ -1,5 +1,5 @@
 //! Event handler that updates lock-free `WalletBalance` atomics
-//! when `WalletEvent::BalanceUpdated` fires.
+//! when an upstream `WalletEvent` carries a fresh balance snapshot.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -11,18 +11,24 @@ use crate::events::{PlatformEventHandler, WalletEvent};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
-/// Updates `PlatformWallet`'s lock-free `WalletBalance` atomics on
-/// `BalanceUpdated` events.
+/// Updates `PlatformWallet`'s lock-free `WalletBalance` atomics when an
+/// upstream `WalletEvent` carries a balance snapshot.
 ///
-/// Registered in `PlatformWalletManager` handler list. The handler
+/// Upstream's atomic event design embeds the post-change `WalletCoreBalance`
+/// in every variant that mutates balance — `TransactionDetected`,
+/// `TransactionInstantLocked`, and `BlockProcessed`. `SyncHeightAdvanced`
+/// alone has no balance (it's a checkpoint marker, not a state change).
+/// This handler routes each balance-bearing event into the per-wallet
+/// `WalletBalance` atomics so SwiftUI subscribers see the new totals.
+///
+/// Registered in `PlatformWalletManager`'s handler list. The handler
 /// holds an `Arc` clone of the manager's `wallets` map (a *separate*
 /// lock from the heavily-contended `wallet_manager` SPV write lock).
 /// SPV holds the wallet-manager write lock for the entire duration of
 /// block processing — looking the balance up through *that* lock would
 /// silently lose every event during initial sync. The wallets map is
 /// only written by manager lifecycle methods (`create_wallet_from_*`,
-/// `remove_wallet`), so a `try_read()` here essentially never
-/// contends.
+/// `remove_wallet`), so a `try_read()` here essentially never contends.
 pub struct BalanceUpdateHandler {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
@@ -35,28 +41,37 @@ impl BalanceUpdateHandler {
 
 impl EventHandler for BalanceUpdateHandler {
     fn on_wallet_event(&self, event: &WalletEvent) {
-        if let WalletEvent::BalanceUpdated {
-            wallet_id,
-            confirmed,
-            unconfirmed,
-            immature,
-            locked,
-        } = event
-        {
-            // try_read on the wallets map (NOT the wallet_manager
-            // SPV-contended lock). The map is only written by manager
-            // lifecycle methods, so this almost never contends.
-            let Ok(wallets) = self.wallets.try_read() else {
-                tracing::debug!(
-                    wallet = %hex::encode(wallet_id),
-                    "BalanceUpdated dropped: wallets-map lock contended"
-                );
-                return;
-            };
-            if let Some(pw) = wallets.get(wallet_id) {
-                pw.balance()
-                    .set(*confirmed, *unconfirmed, *immature, *locked);
+        let (wallet_id, balance) = match event {
+            WalletEvent::TransactionDetected {
+                wallet_id, balance, ..
             }
+            | WalletEvent::TransactionInstantLocked {
+                wallet_id, balance, ..
+            }
+            | WalletEvent::BlockProcessed {
+                wallet_id, balance, ..
+            } => (wallet_id, balance),
+            // No balance on SyncHeightAdvanced — checkpoint advance only.
+            WalletEvent::SyncHeightAdvanced { .. } => return,
+        };
+
+        // try_read on the wallets map (NOT the wallet_manager
+        // SPV-contended lock). The map is only written by manager
+        // lifecycle methods, so this almost never contends.
+        let Ok(wallets) = self.wallets.try_read() else {
+            tracing::debug!(
+                wallet = %hex::encode(wallet_id),
+                "Wallet balance update dropped: wallets-map lock contended"
+            );
+            return;
+        };
+        if let Some(pw) = wallets.get(wallet_id) {
+            pw.balance().set(
+                balance.confirmed(),
+                balance.unconfirmed(),
+                balance.immature(),
+                balance.locked(),
+            );
         }
     }
 }

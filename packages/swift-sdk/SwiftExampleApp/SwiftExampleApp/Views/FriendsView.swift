@@ -11,6 +11,7 @@ struct FriendsView: View {
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
     @StateObject private var dashPayService = ObservableDashPayService()
     @State private var contacts: [DashPayContact] = []
     @State private var incomingRequests: [DashPayContactRequest] = []
@@ -252,7 +253,8 @@ struct FriendsView: View {
                     errorMessage = "Incoming request from \(request.senderId.toHexString().prefix(12))… not in local state"
                     return
                 }
-                _ = try await wallet.acceptContactRequest(contactRequest)
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                _ = try await wallet.acceptContactRequest(contactRequest, signer: signer)
                 errorMessage = nil
                 loadFriends()
             } catch {

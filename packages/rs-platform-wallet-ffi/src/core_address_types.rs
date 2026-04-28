@@ -7,9 +7,7 @@
 //! (`PersistentCoreAddress`) so the Storage Explorer can render
 //! derivation paths + pubkeys reactively via `@Query`.
 
-use std::os::raw::{c_char, c_void};
-
-use crate::wallet_restore_types::AccountSpecFFI;
+use std::os::raw::c_char;
 
 /// Pool-type discriminant matching `key_wallet::managed_account::AddressPoolType`.
 /// Kept stable across releases — it lands in SwiftData rows.
@@ -51,18 +49,3 @@ pub struct CoreAddressEntryFFI {
 // itself carries no state that outlives the call.
 unsafe impl Send for CoreAddressEntryFFI {}
 unsafe impl Sync for CoreAddressEntryFFI {}
-
-/// Fires once per account whose address pool needs persisting. The
-/// `account` pointer identifies which `PersistentAccount` row to link
-/// the addresses to (Swift matches by the same key used in
-/// `on_persist_account_fn`). The addresses slice is contiguous.
-///
-/// Returns 0 on success, non-zero to surface an error; Rust logs and
-/// continues regardless.
-pub type PersistAccountAddressesFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    account: *const AccountSpecFFI,
-    addresses: *const CoreAddressEntryFFI,
-    count: usize,
-) -> i32;

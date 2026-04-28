@@ -17,7 +17,7 @@ public enum PlatformSpvSyncState: UInt32, Sendable {
 }
 
 /// Progress for one of the SPV sub-managers (headers, filters, masternodes, etc.).
-public struct PlatformSpvSubProgress: Sendable {
+public struct PlatformSpvSubProgress: Sendable, Equatable {
     public let state: PlatformSpvSyncState
     public let currentHeight: UInt32
     public let targetHeight: UInt32
@@ -25,7 +25,7 @@ public struct PlatformSpvSubProgress: Sendable {
 }
 
 /// Aggregate SPV sync progress snapshot.
-public struct PlatformSpvSyncProgress: Sendable {
+public struct PlatformSpvSyncProgress: Sendable, Equatable {
     public let overallState: PlatformSpvSyncState
     public let overallPercentage: Double
 
@@ -149,7 +149,7 @@ extension PlatformWalletManager {
         )
         var error = PlatformWalletFFIError()
         let result = platform_wallet_manager_sync_progress(handle, &ffi, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return PlatformSpvSyncProgress(ffi)
@@ -160,7 +160,7 @@ extension PlatformWalletManager {
         var running: Bool = false
         var error = PlatformWalletFFIError()
         let result = platform_wallet_manager_spv_is_running(handle, &running, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
         return running
@@ -191,7 +191,7 @@ extension PlatformWalletManager {
                     config.network.rawValue,
                     userAgentPtr,
                     peersPtr,
-                    peerCStrings.count,
+                    UInt(peerCStrings.count),
                     config.restrictToConfiguredPeers,
                     config.startFromHeight,
                     config.masternodeSyncEnabled,
@@ -200,7 +200,7 @@ extension PlatformWalletManager {
             }
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -209,7 +209,7 @@ extension PlatformWalletManager {
     public func stopSpv() throws {
         var error = PlatformWalletFFIError()
         let result = platform_wallet_manager_spv_stop(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -220,7 +220,7 @@ extension PlatformWalletManager {
     public func clearSpvStorage() throws {
         var error = PlatformWalletFFIError()
         let result = platform_wallet_manager_spv_clear_storage(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }

@@ -373,7 +373,7 @@ struct TopUpIdentityView: View {
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
         allAccounts
             .filter { account in
-                guard account.wallet?.walletId == walletId else { return false }
+                guard account.wallet.walletId == walletId else { return false }
                 guard account.accountType == 14 else { return false }
                 return account.platformAddresses.contains { $0.balance > 0 }
             }

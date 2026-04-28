@@ -58,92 +58,10 @@ where
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Withdraw credits from an identity to a Dash address.
-    ///
-    /// Submits an `IdentityCreditWithdrawalTransition` to Platform that moves
-    /// the specified amount (in platform credits) from the identity back to
-    /// a Core chain address.
-    ///
-    /// # Superseded — prefer [`Self::withdraw_credits_with_external_signer`]
-    ///
-    /// Same rationale as the `transfer_credits` deprecation: the
-    /// internal `IdentitySigner` path dies on watch-only wallets and
-    /// can deadlock the Tokio worker. New callers should pass an
-    /// external `&S: Signer<IdentityPublicKey>`.
-    ///
-    /// # Arguments
-    ///
-    /// * `identity_id` - The identifier of the identity to withdraw from.
-    /// * `amount` - Amount of credits to withdraw.
-    /// * `to_address` - The Dash P2PKH address to receive the withdrawal.
-    pub async fn withdraw_credits(
-        &self,
-        identity_id: &Identifier,
-        amount: u64,
-        to_address: &DashAddress,
-        settings: Option<PutSettings>,
-    ) -> Result<(), PlatformWalletError> {
-        // Retrieve the identity and its HD index from the manager.
-        let (identity, identity_index) = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            let manager = &info.identity_manager;
-            let identity = manager
-                .identity(identity_id)
-                .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager
-                .identity_index(identity_id)
-                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
-            (identity, index)
-        };
-
-        let signer = self.signer_for_identity(identity_index);
-
-        let new_balance = identity
-            .withdraw(
-                &self.sdk,
-                Some(to_address.clone()),
-                amount,
-                None, // core_fee_per_byte
-                None, // signing_withdrawal_key_to_use
-                signer,
-                settings,
-            )
-            .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to withdraw credits: {}",
-                    e
-                ))
-            })?;
-
-        // Update the identity's balance in the local manager.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let info_guard = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info_guard.identity_manager.identity_mut(identity_id) {
-                managed.identity.set_balance(new_balance);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Withdraw credits using an externally-supplied signer.
     ///
-    /// Same shape as [`Self::withdraw_credits`] but signing is routed
-    /// through the supplied `&S: Signer<IdentityPublicKey>` instead
-    /// of the wallet's own `IdentitySigner`. Required for
-    /// external-signable wallets (no seed Rust-side) and the
+    /// Signing is routed through the supplied `&S: Signer<IdentityPublicKey>`.
+    /// Required for external-signable wallets (no seed Rust-side) and the
     /// architecturally correct path per `swift-sdk/CLAUDE.md`.
     ///
     /// The identity is still looked up from the in-process
@@ -192,7 +110,6 @@ impl IdentityWallet {
                 ))
             })?;
 
-        // Mirror the local-state bookkeeping in `withdraw_credits`.
         {
             let mut wm = self.wallet_manager.write().await;
             let info_guard = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
@@ -217,7 +134,7 @@ impl IdentityWallet {
 
     /// Withdraw credits using an externally-provided identity and signer.
     ///
-    /// Unlike [`withdraw_credits`](Self::withdraw_credits), this method does
+    /// Unlike [`Self::withdraw_credits_with_external_signer`], this method does
     /// **not** look up the identity in the internal `IdentityManager`. Instead,
     /// the caller supplies the `Identity` object and a `Signer` implementation
     /// directly. This is useful when the caller manages identities outside of

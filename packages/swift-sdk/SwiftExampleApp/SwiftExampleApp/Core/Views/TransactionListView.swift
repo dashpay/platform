@@ -3,25 +3,34 @@ import SwiftData
 import SwiftDashSDK
 
 struct TransactionListView: View {
-    let wallet: PersistentWallet
-
+    /// Per-wallet transaction list. Queries `PersistentTransaction`
+    /// directly with a relationship-traversal predicate — a tx
+    /// belongs to the wallet iff one of its `outputs` or `inputs`
+    /// has `walletId == walletId`. SwiftData lowers `.contains` to
+    /// SQLite, so the fetch is a single sorted query, no Swift
+    /// dedupe, no fault chain.
+    ///
+    /// Reached via value-based navigation (see
+    /// `WalletsContentView`'s `.navigationDestination` modifiers).
+    /// Closure-based `NavigationLink { Destination }` is unusable on
+    /// iOS 26 here — the eager destination construction stalls the
+    /// push when the destination has any meaningful `init` or
+    /// `@Query`. Value-based push only constructs the destination
+    /// at navigate time.
+    let walletId: Data
     @Query private var transactions: [PersistentTransaction]
     @State private var selectedTransaction: PersistentTransaction?
 
-    init(wallet: PersistentWallet) {
-        self.wallet = wallet
-        let walletId = wallet.walletId
-        // Use the denormalized `PersistentTransaction.walletId`
-        // column rather than chaining `tx.account?.wallet?.walletId`.
-        // SwiftData's predicate compiler can't lower a double
-        // optional-relationship chain to SQLite and crashes with
-        // `Unsupported function expression TERNARY(...).walletId`.
-        _transactions = Query(
-            filter: #Predicate<PersistentTransaction> { tx in
-                tx.walletId == walletId
+    init(walletId: Data) {
+        self.walletId = walletId
+        let descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { tx in
+                tx.outputs.contains { $0.walletId == walletId }
+                    || tx.inputs.contains { $0.walletId == walletId }
             },
-            sort: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
+            sortBy: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
         )
+        _transactions = Query(descriptor)
     }
 
     var body: some View {
@@ -58,15 +67,13 @@ struct TransactionListView: View {
     }
 
     private var transactionsList: some View {
-        List {
-            ForEach(transactions, id: \.txid) { transaction in
-                Button {
-                    selectedTransaction = transaction
-                } label: {
-                    TransactionRowView(transaction: transaction)
-                }
-                .buttonStyle(.plain)
+        List(transactions) { transaction in
+            Button {
+                selectedTransaction = transaction
+            } label: {
+                TransactionRowView(transaction: transaction)
             }
+            .buttonStyle(.plain)
         }
         .listStyle(.insetGrouped)
     }
@@ -105,7 +112,7 @@ struct TransactionRowView: View {
     }
 
     private var truncatedTxid: String {
-        let txid = transaction.txid
+        let txid = transaction.txidHex
         guard txid.count > 16 else { return txid }
         return "\(txid.prefix(8))…\(txid.suffix(8))"
     }

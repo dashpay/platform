@@ -202,6 +202,7 @@ struct ContractDetailView: View {
 
 struct FetchContractView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
     @State private var contractIdToFetch = ""
     @State private var isLoading = false
@@ -236,8 +237,8 @@ struct FetchContractView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Fetch") {
                         Task {
-                            await fetchContract()
-                            if !isLoading {
+                            let didFetch = await fetchContract()
+                            if didFetch {
                                 dismiss()
                             }
                         }
@@ -249,28 +250,129 @@ struct FetchContractView: View {
     }
 
     @MainActor
-    private func fetchContract() async {
+    private func fetchContract() async -> Bool {
         guard let sdk = appState.sdk else {
             appState.showError(message: "SDK not initialized")
-            return
+            return false
         }
 
         do {
             isLoading = true
+            defer { isLoading = false }
 
-            // In a real app, we would use the SDK's contract fetching functionality
-            if (try await sdk.getDataContract(id: contractIdToFetch)) != nil {
-                // Convert SDK contract to our model
-                // For now, we'll show a success message
-                appState.showError(message: "Contract fetched successfully")
-            } else {
-                appState.showError(message: "Contract not found")
-            }
-
-            isLoading = false
+            let trimmedId = contractIdToFetch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let contractData = try await sdk.dataContractGet(id: trimmedId)
+            try persistFetchedContract(contractData, requestedId: trimmedId)
+            return true
         } catch {
             appState.showError(message: "Failed to fetch contract: \(error.localizedDescription)")
-            isLoading = false
+            return false
+        }
+    }
+
+    private func persistFetchedContract(_ contractData: [String: Any], requestedId: String) throws {
+        let serializedContract = try JSONSerialization.data(withJSONObject: contractData, options: [])
+        let contractId = try resolveContractId(from: contractData, fallbackId: requestedId)
+
+        let descriptor = FetchDescriptor<PersistentDataContract>(
+            predicate: #Predicate { $0.id == contractId }
+        )
+        if try modelContext.fetch(descriptor).first != nil {
+            throw FetchContractError.contractAlreadySaved
+        }
+
+        let documents = contractDocuments(from: contractData)
+        let tokens = contractData["tokens"] as? [String: Any] ?? [:]
+        let ownerId = (contractData["ownerId"] as? String).flatMap {
+            Data.identifier(fromBase58: $0) ?? Data(hexString: $0)
+        }
+
+        let persistentContract = PersistentDataContract(
+            id: contractId,
+            name: contractName(from: contractData, documents: documents, tokens: tokens, fallbackId: requestedId),
+            serializedContract: serializedContract,
+            version: contractData["version"] as? Int,
+            ownerId: ownerId,
+            schema: documents,
+            documentTypesList: documents.keys.sorted(),
+            keywords: contractData["keywords"] as? [String] ?? [],
+            description: contractData["description"] as? String,
+            hasTokens: !tokens.isEmpty,
+            network: appState.currentNetwork
+        )
+
+        modelContext.insert(persistentContract)
+        try modelContext.save()
+
+        try DataContractParser.parseDataContract(
+            contractData: contractData,
+            contractId: contractId,
+            modelContext: modelContext
+        )
+        try modelContext.save()
+    }
+
+    private func resolveContractId(from contractData: [String: Any], fallbackId: String) throws -> Data {
+        let idString = (contractData["id"] as? String) ?? fallbackId
+        if let id = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
+            return id
+        }
+        throw FetchContractError.invalidContractId
+    }
+
+    private func contractDocuments(from contractData: [String: Any]) -> [String: Any] {
+        contractData["documents"] as? [String: Any]
+            ?? contractData["documentSchemas"] as? [String: Any]
+            ?? [:]
+    }
+
+    private func contractName(
+        from contractData: [String: Any],
+        documents: [String: Any],
+        tokens: [String: Any],
+        fallbackId: String
+    ) -> String {
+        if let name = contractData["name"] as? String,
+           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return name
+        }
+
+        if documents.isEmpty,
+           tokens.count == 1,
+           let tokenData = tokens.values.first as? [String: Any],
+           let tokenName = tokenName(from: tokenData) {
+            return "\(tokenName) Token Contract"
+        }
+
+        if let documentType = documents.keys.sorted().first {
+            return "Contract with \(documentType)"
+        }
+
+        return "Contract \(fallbackId.prefix(8))..."
+    }
+
+    private func tokenName(from tokenData: [String: Any]) -> String? {
+        if let conventions = tokenData["conventions"] as? [String: Any],
+           let localizations = conventions["localizations"] as? [String: Any],
+           let english = localizations["en"] as? [String: Any],
+           let singularForm = english["singularForm"] as? String {
+            return singularForm
+        }
+
+        return tokenData["description"] as? String ?? tokenData["name"] as? String
+    }
+}
+
+private enum FetchContractError: LocalizedError {
+    case invalidContractId
+    case contractAlreadySaved
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidContractId:
+            return "Could not extract contract ID from response"
+        case .contractAlreadySaved:
+            return "This contract is already saved locally"
         }
     }
 }
