@@ -113,13 +113,18 @@ async fn build_core_changeset(
 ) -> CoreChangeSet {
     match event {
         WalletEvent::TransactionDetected { record, .. } => {
-            let mut cs = CoreChangeSet::default();
             // Derive UTXO deltas BEFORE moving the record into `records`
-            // so we still have the per-record borrows.
-            cs.new_utxos = derive_new_utxos(record);
-            cs.spent_utxos = derive_spent_utxos(record);
-            cs.records.push((**record).clone());
-            cs
+            // so we still have the per-record borrows. Use a struct
+            // literal so clippy's `field_reassign_with_default` is
+            // happy under `-D warnings`.
+            let new_utxos = derive_new_utxos(record);
+            let spent_utxos = derive_spent_utxos(record);
+            CoreChangeSet {
+                new_utxos,
+                spent_utxos,
+                records: vec![(**record).clone()],
+                ..CoreChangeSet::default()
+            }
         }
         WalletEvent::TransactionInstantLocked {
             wallet_id,
