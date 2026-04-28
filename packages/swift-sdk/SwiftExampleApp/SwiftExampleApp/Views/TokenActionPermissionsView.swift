@@ -639,32 +639,31 @@ struct TokenActionPermissionsView: View {
         self.token = token
         self.initialIdentity = identity
         self._pickedIdentity = State(initialValue: identity)
-        // Filter to local identities on the same network as this
-        // token's parent contract; falls back to "all local" if the
-        // contract isn't loaded.
+        // Filter to wallet-owned identities on the same network as
+        // this token's parent contract; falls back to "any
+        // wallet-owned" if the contract isn't loaded.
         //
         // Routes through the SDK-side
-        // `PersistentIdentity.localIdentitiesPredicate(network:)`
+        // `PersistentIdentity.walletOwnedIdentitiesPredicate(network:)`
         // helper rather than a hand-rolled `#Predicate` block. The
         // bespoke predicate that lived here referenced a captured
         // local `networkRaw: Int` whose name shadowed the model's
-        // `identity.networkRaw` property, and SwiftData's
-        // predicate translator chokes on the resulting ambiguity
-        // mid-fetch — surfaces as a `_swift_runtime_on_report` /
-        // `_assertionFailure` crash from `ModelContext.fetch`
-        // (the `@Query` getter is the visible frame). The helper
-        // captures the raw Int by a unique name so the
-        // translator stays unambiguous.
+        // `identity.networkRaw` property, and SwiftData's predicate
+        // translator chokes on the resulting ambiguity mid-fetch —
+        // surfaces as a `_swift_runtime_on_report` / `_assertionFailure`
+        // crash from `ModelContext.fetch` (the `@Query` getter is the
+        // visible frame). The helper captures the raw Int by a unique
+        // name so the translator stays unambiguous.
         let resolvedNetwork: AppNetwork? = token.dataContract
             .flatMap { AppNetwork(rawValue: $0.networkRaw) }
         if let resolvedNetwork {
             self._localIdentities = Query(
-                filter: PersistentIdentity.localIdentitiesPredicate(network: resolvedNetwork),
+                filter: PersistentIdentity.walletOwnedIdentitiesPredicate(network: resolvedNetwork),
                 sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
             )
         } else {
             self._localIdentities = Query(
-                filter: PersistentIdentity.localIdentitiesPredicate,
+                filter: PersistentIdentity.walletOwnedIdentitiesPredicate,
                 sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
             )
         }
