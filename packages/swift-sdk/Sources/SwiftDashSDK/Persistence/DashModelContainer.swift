@@ -18,7 +18,7 @@ public enum DashModelContainer {
             PersistentProperty.self,
             PersistentTokenHistoryEvent.self,
             PersistentPlatformAddress.self,
-            PersistentSyncState.self,
+            PersistentPlatformAddressesSyncState.self,
             PersistentWallet.self,
             PersistentAccount.self,
             PersistentCoreAddress.self,

@@ -408,10 +408,10 @@ struct KeywordStorageDetailView: View {
     }
 }
 
-// MARK: - PersistentSyncState
+// MARK: - PersistentPlatformAddressesSyncState
 
-struct SyncStateStorageDetailView: View {
-    let record: PersistentSyncState
+struct PlatformAddressesSyncStateStorageDetailView: View {
+    let record: PersistentPlatformAddressesSyncState
 
     private var blockDate: Date? {
         record.syncTimestamp > 0
@@ -445,7 +445,7 @@ struct SyncStateStorageDetailView: View {
                 FieldRow(label: "Record Updated", value: dateString(record.lastUpdated))
             }
         }
-        .navigationTitle("Sync State")
+        .navigationTitle("Platform Addresses Sync State")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

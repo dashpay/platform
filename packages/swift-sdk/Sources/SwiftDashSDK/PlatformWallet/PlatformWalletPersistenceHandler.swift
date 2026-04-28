@@ -147,7 +147,7 @@ public class PlatformWalletPersistenceHandler {
                 return
             }
             let scopeId = syncStateScopeId(for: network)
-            let descriptor = FetchDescriptor<PersistentSyncState>(
+            let descriptor = FetchDescriptor<PersistentPlatformAddressesSyncState>(
                 predicate: #Predicate { $0.walletId == scopeId }
             )
 
@@ -158,7 +158,7 @@ public class PlatformWalletPersistenceHandler {
                 existing.lastKnownRecentBlock = lastKnownRecentBlock
                 existing.lastUpdated = Date()
             } else {
-                let record = PersistentSyncState(
+                let record = PersistentPlatformAddressesSyncState(
                     walletId: scopeId,
                     network: network,
                     syncHeight: syncHeight,
@@ -194,7 +194,7 @@ public class PlatformWalletPersistenceHandler {
     /// recursing into `onQueue`, which would deadlock.
     private func loadCachedSyncStateOnQueue(network: AppNetwork) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
         let scopeId = syncStateScopeId(for: network)
-        let descriptor = FetchDescriptor<PersistentSyncState>(
+        let descriptor = FetchDescriptor<PersistentPlatformAddressesSyncState>(
             predicate: #Predicate { $0.walletId == scopeId }
         )
 
@@ -1821,7 +1821,7 @@ public class PlatformWalletPersistenceHandler {
     }
 
     /// Build the 32-byte synthetic walletId used as the uniqueness
-    /// key for the per-network `PersistentSyncState` row. The content
+    /// key for the per-network `PersistentPlatformAddressesSyncState` row. The content
     /// is "platform-sync:<networkName>" zero-padded to 32 bytes.
     private func syncStateScopeId(for network: AppNetwork) -> Data {
         let scopeString = "platform-sync:\(network.networkName)"
