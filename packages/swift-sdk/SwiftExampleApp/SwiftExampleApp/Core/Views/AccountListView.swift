@@ -13,7 +13,7 @@ struct AccountListView: View {
         let walletId = wallet.walletId
         _accounts = Query(
             filter: #Predicate<PersistentAccount> { acc in
-                acc.wallet?.walletId == walletId
+                acc.wallet.walletId == walletId
             }
         )
     }

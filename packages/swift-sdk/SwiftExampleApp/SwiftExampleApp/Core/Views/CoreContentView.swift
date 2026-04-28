@@ -770,12 +770,6 @@ struct WalletRowView: View {
                 HStack(spacing: 6) {
                     Text(wallet.label)
                         .font(.headline)
-                    if wallet.isWatchOnly {
-                        Image(systemName: "eye")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                            .help("Watch-only")
-                    }
                     if wallet.isImported {
                         Image(systemName: "tray.and.arrow.down")
                             .font(.caption)

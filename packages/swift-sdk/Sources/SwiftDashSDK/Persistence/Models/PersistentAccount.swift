@@ -4,9 +4,18 @@ import SwiftData
 /// SwiftData model for persisting a wallet account.
 ///
 /// Each account represents an HD derivation path (BIP44, CoinJoin,
-/// Identity, Platform Payment, etc.) with its own address pools,
-/// transactions, and UTXOs. Cascade-deletes transactions and UTXOs
-/// when the account is removed.
+/// Identity, Platform Payment, etc.) with its own address pools.
+///
+/// Note: an account does **not** own a list of transactions or TXOs
+/// directly anymore. A single transaction can produce outputs into
+/// several accounts (or even several wallets), and TXOs hang off the
+/// per-address `PersistentCoreAddress.txos` collection so the
+/// account ↔ TXO link flows naturally through the address pool.
+/// Per-account TXOs are derived as
+/// `coreAddresses.flatMap(\.txos)`; per-account transactions are
+/// the union of those TXOs' `transaction` (creating tx) and
+/// `spendingTransaction` (spending tx). Account scope flows
+/// through addresses; nothing is denormalized on this side.
 @Model
 public final class PersistentAccount {
     /// Account type identifier — matches the `AccountTypeTagFFI`
@@ -22,8 +31,6 @@ public final class PersistentAccount {
     public var accountIndex: UInt32
     /// Human-readable account type name.
     public var accountTypeName: String
-    /// Whether this is a watch-only account.
-    public var isWatchOnly: Bool
     /// Per-account confirmed balance in duffs.
     public var balanceConfirmed: UInt64
     /// Per-account unconfirmed balance in duffs.
@@ -55,21 +62,17 @@ public final class PersistentAccount {
     public var createdAt: Date
     public var lastUpdated: Date
 
-    /// Parent wallet.
-    public var wallet: PersistentWallet?
-
-    /// Transactions in this account.
-    @Relationship(deleteRule: .cascade, inverse: \PersistentTransaction.account)
-    public var transactions: [PersistentTransaction]
-
-    /// Unspent transaction outputs in this account.
-    @Relationship(deleteRule: .cascade, inverse: \PersistentUtxo.account)
-    public var utxos: [PersistentUtxo]
+    /// Parent wallet. Every account currently belongs to a wallet. If
+    /// standalone non-wallet accounts are introduced later, this
+    /// becomes optional again.
+    public var wallet: PersistentWallet
 
     /// Addresses from this account's address pools (external +
     /// internal, or a single Absent pool for degenerate types). Holds
     /// Core-chain (base58check) addresses only — PlatformPayment
     /// accounts keep their addresses in `platformAddresses`.
+    /// Per-account TXOs flow through this collection
+    /// (`coreAddresses.flatMap(\.txos)`).
     @Relationship(deleteRule: .cascade, inverse: \PersistentCoreAddress.account)
     public var coreAddresses: [PersistentCoreAddress]
 
@@ -80,15 +83,15 @@ public final class PersistentAccount {
     public var platformAddresses: [PersistentPlatformAddress]
 
     public init(
+        wallet: PersistentWallet,
         accountType: UInt32,
         accountIndex: UInt32,
-        accountTypeName: String,
-        isWatchOnly: Bool = false
+        accountTypeName: String
     ) {
+        self.wallet = wallet
         self.accountType = accountType
         self.accountIndex = accountIndex
         self.accountTypeName = accountTypeName
-        self.isWatchOnly = isWatchOnly
         self.balanceConfirmed = 0
         self.balanceUnconfirmed = 0
         self.externalHighestUsed = -1
@@ -101,8 +104,6 @@ public final class PersistentAccount {
         self.accountExtendedPubKeyBytes = Data()
         self.createdAt = Date()
         self.lastUpdated = Date()
-        self.transactions = []
-        self.utxos = []
         self.coreAddresses = []
         self.platformAddresses = []
     }

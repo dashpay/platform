@@ -3,42 +3,33 @@ import SwiftData
 import SwiftDashSDK
 
 struct TransactionListView: View {
-    let wallet: PersistentWallet
-
+    /// Per-wallet transaction list. Queries `PersistentTransaction`
+    /// directly with a relationship-traversal predicate — a tx
+    /// belongs to the wallet iff one of its `outputs` or `inputs`
+    /// has `walletId == walletId`. SwiftData lowers `.contains` to
+    /// SQLite, so the fetch is a single sorted query, no Swift
+    /// dedupe, no fault chain.
+    ///
+    /// Reached via value-based navigation (see
+    /// `WalletsContentView`'s `.navigationDestination` modifiers).
+    /// Closure-based `NavigationLink { Destination }` is unusable on
+    /// iOS 26 here — the eager destination construction stalls the
+    /// push when the destination has any meaningful `init` or
+    /// `@Query`. Value-based push only constructs the destination
+    /// at navigate time.
+    let walletId: Data
     @Query private var transactions: [PersistentTransaction]
     @State private var selectedTransaction: PersistentTransaction?
 
-    init(wallet: PersistentWallet) {
-        self.wallet = wallet
-        let walletId = wallet.walletId
-        // Use the denormalized `PersistentTransaction.walletId`
-        // column rather than chaining `tx.account?.wallet?.walletId`.
-        // SwiftData's predicate compiler can't lower a double
-        // optional-relationship chain to SQLite and crashes with
-        // `Unsupported function expression TERNARY(...).walletId`.
-        //
-        // `propertiesToFetch` matters: without it, a wallet with
-        // ~1.5k transactions stalls the navigation push for several
-        // seconds because SwiftData hydrates the full row — including
-        // the `transactionData` raw-bytes blob — for every match on
-        // the main thread before the List can render. Restricting
-        // the fetch to the columns the row actually reads
-        // (`TransactionRowView` only touches txid / netAmount /
-        // firstSeen / context / fee, plus walletId for the predicate)
-        // keeps SQLite on an index-only scan against the
-        // `(walletId, firstSeen)` compound index and skips the blob.
-        var descriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { tx in tx.walletId == walletId },
+    init(walletId: Data) {
+        self.walletId = walletId
+        let descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { tx in
+                tx.outputs.contains { $0.walletId == walletId }
+                    || tx.inputs.contains { $0.walletId == walletId }
+            },
             sortBy: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
         )
-        descriptor.propertiesToFetch = [
-            \.txid,
-            \.netAmount,
-            \.firstSeen,
-            \.context,
-            \.fee,
-            \.walletId,
-        ]
         _transactions = Query(descriptor)
     }
 
@@ -76,12 +67,6 @@ struct TransactionListView: View {
     }
 
     private var transactionsList: some View {
-        // Use SwiftData's built-in PersistentIdentifier as the row
-        // identity (via `List(transactions)`) instead of `id: \.txid`.
-        // The Storage Explorer's transaction list uses the same shape
-        // and renders instantly; keying on `txid` forces SwiftUI to
-        // read the unique-string column from every row for diffing
-        // even when SwiftData already has a stable identity for free.
         List(transactions) { transaction in
             Button {
                 selectedTransaction = transaction
@@ -127,7 +112,7 @@ struct TransactionRowView: View {
     }
 
     private var truncatedTxid: String {
-        let txid = transaction.txid
+        let txid = transaction.txidHex
         guard txid.count > 16 else { return txid }
         return "\(txid.prefix(8))…\(txid.suffix(8))"
     }

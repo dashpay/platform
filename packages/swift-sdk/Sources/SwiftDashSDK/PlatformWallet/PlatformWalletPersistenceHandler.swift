@@ -288,7 +288,7 @@ public class PlatformWalletPersistenceHandler {
         let walletId = walletRecord.walletId
         let accountDescriptor = FetchDescriptor<PersistentAccount>(
             predicate: #Predicate {
-                $0.wallet?.walletId == walletId
+                $0.wallet.walletId == walletId
                     && $0.accountTypeName == typeName
                     && $0.accountIndex == accountIndex
             }
@@ -299,11 +299,11 @@ public class PlatformWalletPersistenceHandler {
             account.lastUpdated = Date()
         } else {
             account = PersistentAccount(
+                wallet: walletRecord,
                 accountType: 0,
                 accountIndex: accountIndex,
                 accountTypeName: typeName
             )
-            account.wallet = walletRecord
             backgroundContext.insert(account)
         }
 
@@ -345,31 +345,24 @@ public class PlatformWalletPersistenceHandler {
     }
 
     private func upsertTransaction(account: PersistentAccount, tx: TransactionRecordFFI) {
-        let txidHex = hashHex(tx.txid)
+        // `account` is intentionally consumed only by the TXO upsert
+        // pass that follows this method's call site. The transaction
+        // row itself is account-agnostic — a single tx can land in
+        // multiple accounts (or wallets), and per-wallet membership
+        // is recovered through the TXO graph (`outputs` / `inputs`)
+        // rather than a denormalized column on the transaction.
+        _ = account
+        let txidData = hashData(tx.txid)
         let descriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { $0.txid == txidHex }
+            predicate: #Predicate { $0.txid == txidData }
         )
-        // Pull the denormalized walletId from the account's parent
-        // wallet relationship. Both hops are optional on the model,
-        // but in regular (non-predicate) Swift code the chain is
-        // cheap — and defaulting to `Data()` for orphaned rows is
-        // harmless because such rows won't be matched by any
-        // per-wallet query anyway.
-        let resolvedWalletId: Data = account.wallet?.walletId ?? Data()
 
         let record: PersistentTransaction
         if let existing = try? backgroundContext.fetch(descriptor).first {
             record = existing
-            // Backfill for rows created before the `walletId`
-            // column existed (lightweight migration defaulted them
-            // to empty Data).
-            if record.walletId.isEmpty, !resolvedWalletId.isEmpty {
-                record.walletId = resolvedWalletId
-            }
         } else {
             record = PersistentTransaction(
-                txid: txidHex,
-                walletId: resolvedWalletId,
+                txid: txidData,
                 context: tx.context,
                 blockHeight: tx.block_height,
                 direction: tx.direction,
@@ -377,7 +370,6 @@ public class PlatformWalletPersistenceHandler {
                 netAmount: tx.net_amount,
                 firstSeen: tx.first_seen
             )
-            record.account = account
             backgroundContext.insert(record)
         }
 
@@ -403,30 +395,44 @@ public class PlatformWalletPersistenceHandler {
     }
 
     private func upsertUtxo(account: PersistentAccount, utxo: UtxoEntryFFI) {
-        let txidHex = hashHex(utxo.outpoint.txid)
-        let outpoint = "\(txidHex):\(utxo.outpoint.vout)"
-        let descriptor = FetchDescriptor<PersistentUtxo>(
+        // Pull the per-account wallet id once. Used both for the new
+        // `PersistentTxo.walletId` denorm (so per-wallet predicates
+        // can hit a single column) and for stub-tx routing below.
+        let resolvedWalletId: Data = account.wallet.walletId
+
+        let txidData = hashData(utxo.outpoint.txid)
+        let outpoint = PersistentTxo.makeOutpoint(txid: txidData, vout: utxo.outpoint.vout)
+        let descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
-        let record: PersistentUtxo
+        let record: PersistentTxo
         if let existing = try? backgroundContext.fetch(descriptor).first {
             record = existing
+            // Backfill if the account or wallet linkage is missing —
+            // the per-wallet query path filters on TXO.walletId, so
+            // an empty value would silently hide the row.
+            if record.account == nil { record.account = account }
+            if record.walletId.isEmpty, !resolvedWalletId.isEmpty {
+                record.walletId = resolvedWalletId
+            }
         } else {
             // Look up the containing transaction. Upstream sends the
-            // transaction record before its UTXOs in the same flush,
+            // transaction record before its TXOs in the same flush,
             // so it should already be in the context. If not, create
             // a stub keyed by txid so the cascade-delete invariant
-            // (UTXO cannot exist without its transaction) holds; the
-            // real record will overwrite the stub when it arrives.
+            // (TXO cannot exist without its creating transaction)
+            // holds; the real record will overwrite the stub when it
+            // arrives. Note we no longer set `parentTx.account` —
+            // transactions don't carry account linkage anymore (they
+            // can span multiple accounts).
             let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == txidHex }
+                predicate: #Predicate { $0.txid == txidData }
             )
             let parentTx: PersistentTransaction
             if let existingTx = try? backgroundContext.fetch(txDescriptor).first {
                 parentTx = existingTx
             } else {
-                parentTx = PersistentTransaction(txid: txidHex)
-                parentTx.account = account
+                parentTx = PersistentTransaction(txid: txidData)
                 backgroundContext.insert(parentTx)
             }
 
@@ -435,7 +441,7 @@ public class PlatformWalletPersistenceHandler {
                 return Data(bytes: p, count: Int(utxo.script_pubkey_len))
             }()
             let addressStr = utxo.address.map { String(cString: $0) } ?? ""
-            record = PersistentUtxo(
+            record = PersistentTxo(
                 transaction: parentTx,
                 vout: utxo.outpoint.vout,
                 amount: utxo.amount,
@@ -444,6 +450,7 @@ public class PlatformWalletPersistenceHandler {
                 height: utxo.height
             )
             record.account = account
+            record.walletId = resolvedWalletId
             backgroundContext.insert(record)
         }
 
@@ -454,27 +461,50 @@ public class PlatformWalletPersistenceHandler {
         record.isInstantLocked = utxo.is_instantlocked
         record.isLocked = utxo.is_locked
         record.lastUpdated = Date()
+
+        // Attach the `PersistentCoreAddress` row, if we have one. The
+        // address-emit pass typically runs ahead of the SPV-utxo pass
+        // within a flush, so the row should exist; if it doesn't (TXO
+        // paid to an address outside our pool, or out-of-order flush),
+        // leave the relationship nil — `record.address` stays as the
+        // authoritative identifier.
+        if record.coreAddress == nil, !record.address.isEmpty {
+            let addressLookup = record.address
+            let coreAddressDescriptor = FetchDescriptor<PersistentCoreAddress>(
+                predicate: #Predicate { $0.address == addressLookup }
+            )
+            if let coreAddr = try? backgroundContext.fetch(coreAddressDescriptor).first {
+                record.coreAddress = coreAddr
+            }
+        }
     }
 
     private func markUtxoSpent(_ op: OutPointFFI) {
-        let outpoint = "\(hashHex(op.txid)):\(op.vout)"
-        let descriptor = FetchDescriptor<PersistentUtxo>(
+        let outpoint = PersistentTxo.makeOutpoint(txid: hashData(op.txid), vout: op.vout)
+        let descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
-        if let utxo = try? backgroundContext.fetch(descriptor).first {
-            utxo.isSpent = true
-            utxo.lastUpdated = Date()
+        if let txo = try? backgroundContext.fetch(descriptor).first {
+            txo.isSpent = true
+            // The FFI's spent-utxo notification only carries the
+            // outpoint, not the spending tx — so we cannot populate
+            // `txo.spendingTransaction` here. `isSpent = true` with
+            // `spendingTransaction == nil` is the steady-state we
+            // reach for now; future work: have the FFI emit the
+            // spending txid alongside each spent outpoint and link
+            // them up here.
+            txo.lastUpdated = Date()
         }
     }
 
     private func markUtxoInstantLocked(_ op: OutPointFFI) {
-        let outpoint = "\(hashHex(op.txid)):\(op.vout)"
-        let descriptor = FetchDescriptor<PersistentUtxo>(
+        let outpoint = PersistentTxo.makeOutpoint(txid: hashData(op.txid), vout: op.vout)
+        let descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
-        if let utxo = try? backgroundContext.fetch(descriptor).first {
-            utxo.isInstantLocked = true
-            utxo.lastUpdated = Date()
+        if let txo = try? backgroundContext.fetch(descriptor).first {
+            txo.isInstantLocked = true
+            txo.lastUpdated = Date()
         }
     }
 
@@ -1315,7 +1345,7 @@ public class PlatformWalletPersistenceHandler {
         let index = key.index
         let descriptor = FetchDescriptor<PersistentAccount>(
             predicate: #Predicate {
-                $0.wallet?.walletId == walletId
+                $0.wallet.walletId == walletId
                     && $0.accountType == typeTag
                     && $0.accountIndex == index
             }
@@ -1413,7 +1443,7 @@ public class PlatformWalletPersistenceHandler {
         // and verify the richer fields in Swift.
         let descriptor = FetchDescriptor<PersistentAccount>(
             predicate: #Predicate {
-                $0.wallet?.walletId == walletId
+                $0.wallet.walletId == walletId
                     && $0.accountType == typeTag
                     && $0.accountIndex == index
             }
@@ -1436,6 +1466,7 @@ public class PlatformWalletPersistenceHandler {
             account = match
         } else {
             account = PersistentAccount(
+                wallet: wallet,
                 accountType: typeTag,
                 accountIndex: index,
                 accountTypeName: accountTypeName(
@@ -1443,7 +1474,6 @@ public class PlatformWalletPersistenceHandler {
                     standardTag: spec.standard_tag
                 )
             )
-            account.wallet = wallet
             backgroundContext.insert(account)
         }
         account.standardTag = spec.standard_tag
