@@ -4,6 +4,20 @@ import SwiftData
 import DashSDKFFI
 import LocalAuthentication
 
+/// Routes for value-based navigation from the wallets tab. All
+/// pushes go through `.navigationDestination(for:)` modifiers
+/// on the stack root (see `WalletsContentView`) — this avoids
+/// closure-based `NavigationLink { Destination }` which on iOS 26
+/// (a) eagerly constructs the destination on every parent body
+/// invocation, stalling the click when the destination has any
+/// meaningful `init`, and (b) when mixed with value-based pushes
+/// further down the stack, makes SwiftUI animate-then-pop the
+/// inner destination because the stack identity is split across
+/// paradigms. Going value-based all the way fixes both.
+struct TransactionsRoute: Hashable {
+    let walletId: Data
+}
+
 struct WalletDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
@@ -14,30 +28,33 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
 
-    // Badge count for "View All Transactions". Backed by a
-    // bounded FetchDescriptor against the `(walletId, firstSeen)`
-    // compound index on `PersistentTransaction` — SQLite resolves
-    // it as an index-only scan. `propertiesToFetch = [\.walletId]`
-    // keeps SwiftData from hydrating `transactionData` / `label` /
-    // etc. just to produce a count; we only ever read `.count`.
-    //
-    // Previous approach queried `PersistentAccount` and reduced
-    // `accounts.reduce(0) { $0 + $1.transactions.count }`, which
-    // fault-loaded every transaction across every account just to
-    // count them — O(N) main-thread work on every render.
-    @Query private var walletTransactions: [PersistentTransaction]
+    // Badge count for "View All Transactions". Transactions are no
+    // longer wallet-scoped (the same on-chain tx can land in
+    // multiple accounts / wallets), so we can't filter
+    // `PersistentTransaction` by walletId directly. We query the
+    // wallet's TXOs instead and count the distinct creating-or-
+    // spending transactions in the body — same union the list view
+    // uses.
+    @Query private var walletTxos: [PersistentTxo]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        var descriptor = FetchDescriptor<PersistentTransaction>(
+        var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         descriptor.propertiesToFetch = [\.walletId]
-        _walletTransactions = Query(descriptor)
+        _walletTxos = Query(descriptor)
     }
 
-    private var transactionCount: Int { walletTransactions.count }
+    private var transactionCount: Int {
+        var seen: Set<Data> = []
+        for txo in walletTxos {
+            if let tx = txo.transaction { seen.insert(tx.txid) }
+            if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+        }
+        return seen.count
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,9 +108,7 @@ struct WalletDetailView: View {
                 }
                 .padding(.horizontal)
 
-                NavigationLink {
-                    TransactionListView(wallet: wallet)
-                } label: {
+                NavigationLink(value: TransactionsRoute(walletId: wallet.walletId)) {
                     HStack {
                         Label("View All Transactions", systemImage: "list.bullet.rectangle")
                             .font(.subheadline)
@@ -199,7 +214,7 @@ struct WalletInfoView: View {
         self.wallet = wallet
         self.onWalletDeleted = onWalletDeleted
         let walletId = wallet.walletId
-        _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet?.walletId == walletId })
+        _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet.walletId == walletId })
     }
 
     var body: some View {

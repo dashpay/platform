@@ -46,6 +46,13 @@ public final class PersistentCoreAddress {
     /// Parent account.
     public var account: PersistentAccount?
 
+    /// TXOs paid to this address. `.nullify` on delete so dropping
+    /// an address row (e.g. pool rebuild) doesn't take its
+    /// historical TXOs with it — `PersistentTxo.address` (the
+    /// Base58Check string) remains the authoritative identifier.
+    @Relationship(deleteRule: .nullify, inverse: \PersistentTxo.coreAddress)
+    public var txos: [PersistentTxo] = []
+
     public init(
         address: String,
         publicKey: Data = Data(),
