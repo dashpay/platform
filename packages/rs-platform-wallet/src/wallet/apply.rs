@@ -95,17 +95,18 @@ impl PlatformWalletInfo {
             dashpay_payments_overlay,
         } = cs;
 
-        // 1. Core wallet state — chain, accounts, UTXOs, transactions,
-        //    addresses used, highest_used. Must run first so the per-
-        //    account buckets exist before anything platform-side
-        //    references them. The core changeset is moved by value
-        //    into key-wallet's apply path; key-wallet itself drains
-        //    the per-account buckets without clones.
-        if let Some(core) = core {
-            self.core_wallet
-                .apply_changeset(wallet, core)
-                .map_err(|e| ApplyError::CoreApply(e.to_string()))?;
-        }
+        // 1. Core wallet state. In the new event-bus model, a
+        //    `CoreChangeSet` flows OUT (event adapter → persister) but
+        //    is never replayed back IN through this apply path —
+        //    upstream `key_wallet`'s `process_block` keeps the
+        //    in-memory `ManagedWalletInfo` up to date at runtime, and
+        //    boot-time state restoration goes through
+        //    `ClientStartState` (the persister's `load()` payload),
+        //    not through changeset replay. The core field on `cs` is
+        //    therefore informational here and intentionally not
+        //    applied; we drop it explicitly so future readers don't
+        //    expect a re-application path that no longer exists.
+        drop(core);
 
         // 2. Identities.
         if let Some(id_cs) = identities {

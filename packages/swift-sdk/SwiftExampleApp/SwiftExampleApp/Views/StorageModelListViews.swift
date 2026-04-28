@@ -445,15 +445,15 @@ struct KeywordStorageListView: View {
     }
 }
 
-// MARK: - PersistentSyncState
+// MARK: - PersistentPlatformAddressesSyncState
 
-struct SyncStateStorageListView: View {
-    @Query(sort: \PersistentSyncState.lastUpdated, order: .reverse)
-    private var records: [PersistentSyncState]
+struct PlatformAddressesSyncStateStorageListView: View {
+    @Query(sort: \PersistentPlatformAddressesSyncState.lastUpdated, order: .reverse)
+    private var records: [PersistentPlatformAddressesSyncState]
 
     var body: some View {
         List(records) { record in
-            NavigationLink(destination: SyncStateStorageDetailView(record: record)) {
+            NavigationLink(destination: PlatformAddressesSyncStateStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.network.displayName)
                         .font(.body)
@@ -466,7 +466,7 @@ struct SyncStateStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Sync State (\(records.count))")
+        .navigationTitle("Platform Addresses Sync State (\(records.count))")
         .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.triangle.2.circlepath") } }
     }
 }

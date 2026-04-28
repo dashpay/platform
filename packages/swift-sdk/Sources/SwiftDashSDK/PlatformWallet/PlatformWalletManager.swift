@@ -379,15 +379,22 @@ public class PlatformWalletManager: ObservableObject {
     }
 
     /// Starts the SPV progress polling loop. Cancelled on deinit.
+    ///
+    /// `@Published` assignments are gated on inequality so that identical
+    /// snapshots don't trigger SwiftUI re-evaluation. A naive 1 Hz reassignment
+    /// of a non-Equatable struct caused every observer (sync screens, memory
+    /// explorer, global indicator) to re-evaluate every second, accreting
+    /// SwiftUI attribute-graph state and burning CPU long after sync settled.
     private func startProgressPolling() {
         progressPollTask?.cancel()
         progressPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { return }
-                if let progress = try? self.syncProgress() {
+                if let progress = try? self.syncProgress(), progress != self.spvProgress {
                     self.spvProgress = progress
                 }
-                if let isSyncing = try? self.isPlatformAddressSyncing() {
+                if let isSyncing = try? self.isPlatformAddressSyncing(),
+                   isSyncing != self.platformAddressSyncIsSyncing {
                     self.platformAddressSyncIsSyncing = isSyncing
                 }
                 try? await Task.sleep(for: .seconds(1))

@@ -48,8 +48,8 @@ struct StorageExplorerView: View {
             ) {
                 PlatformAddressStorageListView()
             }
-            modelRow("Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentSyncState.self) {
-                SyncStateStorageListView()
+            modelRow("Platform Addresses Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentPlatformAddressesSyncState.self) {
+                PlatformAddressesSyncStateStorageListView()
             }
             modelRow("Wallets", icon: "wallet.pass", type: PersistentWallet.self) {
                 WalletStorageListView()
@@ -142,7 +142,7 @@ struct StorageExplorerView: View {
         count(PersistentIndex.self)
         count(PersistentProperty.self)
         count(PersistentKeyword.self)
-        count(PersistentSyncState.self)
+        count(PersistentPlatformAddressesSyncState.self)
         count(PersistentWallet.self)
         count(PersistentAccount.self)
         count(PersistentTransaction.self)

@@ -581,12 +581,12 @@ struct BalanceCardView: View {
     /// shared across every wallet on that network — so this query
     /// filters by `network` rather than `walletId`. Used only to
     /// distinguish "synced with zero balance" from "never synced".
-    @Query private var syncStates: [PersistentSyncState]
+    @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        // `PersistentSyncState.network` is a required AppNetwork;
+        // `PersistentPlatformAddressesSyncState.network` is a required AppNetwork;
         // `.testnet` is a harmless sentinel for wallets that haven't
         // had their network stamped yet — they won't have a matching
         // sync state row either, so the query naturally returns empty.
@@ -597,7 +597,7 @@ struct BalanceCardView: View {
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
         )
         _syncStates = Query(
-            filter: #Predicate<PersistentSyncState> { $0.networkRaw == walletNetworkRaw }
+            filter: #Predicate<PersistentPlatformAddressesSyncState> { $0.networkRaw == walletNetworkRaw }
         )
     }
 

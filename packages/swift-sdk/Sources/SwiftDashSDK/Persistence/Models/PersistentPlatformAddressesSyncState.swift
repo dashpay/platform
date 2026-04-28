@@ -7,7 +7,7 @@ import SwiftData
 /// can resume from where it left off on app restart instead of doing
 /// a full trunk/branch/compact rescan.
 @Model
-public final class PersistentSyncState {
+public final class PersistentPlatformAddressesSyncState {
     /// Stable 32-byte scope key for this sync-state row.
     ///
     /// Kept as `walletId` for schema compatibility, but the persisted
