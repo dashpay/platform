@@ -502,18 +502,8 @@ struct AccountStorageListView: View {
     @Query(sort: \PersistentWallet.createdAt, order: .reverse)
     private var wallets: [PersistentWallet]
 
-    /// Catch any accounts whose `wallet` inverse is nil (shouldn't
-    /// happen in steady state — the write path always links them —
-    /// but shown so the explorer doesn't silently hide them).
-    @Query(sort: \PersistentAccount.createdAt, order: .reverse)
-    private var allAccounts: [PersistentAccount]
-
-    private var orphanAccounts: [PersistentAccount] {
-        allAccounts.filter { $0.wallet == nil }
-    }
-
     private var totalAccountCount: Int {
-        wallets.reduce(0) { $0 + $1.accounts.count } + orphanAccounts.count
+        wallets.reduce(0) { $0 + $1.accounts.count }
     }
 
     var body: some View {
@@ -528,15 +518,6 @@ struct AccountStorageListView: View {
                             NavigationLink(destination: AccountStorageDetailView(record: account)) {
                                 accountRow(account)
                             }
-                        }
-                    }
-                }
-            }
-            if !orphanAccounts.isEmpty {
-                Section(header: Text("Unlinked")) {
-                    ForEach(orphanAccounts) { account in
-                        NavigationLink(destination: AccountStorageDetailView(record: account)) {
-                            accountRow(account)
                         }
                     }
                 }

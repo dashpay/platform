@@ -141,9 +141,12 @@ public final class PersistentTxo {
         transaction?.txid ?? Data()
     }
 
-    /// Hex-encoded txid for UI / log sites.
+    /// Hex-encoded txid for UI / log sites. Delegates to
+    /// `PersistentTransaction.txidHex` (which reverses bytes for
+    /// canonical block-explorer display) — keeping that flip in
+    /// one place avoids the two sides drifting out of sync.
     public var txidHex: String {
-        txid.map { String(format: "%02x", $0) }.joined()
+        transaction?.txidHex ?? ""
     }
 
     /// Human-readable outpoint (`<txid hex>:<vout>`) for UI / log

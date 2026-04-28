@@ -101,9 +101,15 @@ public final class PersistentTransaction {
     // MARK: - Display Helpers
 
     /// Hex-encoded txid for UI / log sites. The on-disk row stores
-    /// raw bytes; this is computed on read.
+    /// the raw 32 bytes in wire/internal order (matches what
+    /// `dashcore::Txid::as_ref()` hands the FFI). The canonical
+    /// Bitcoin/Dash display convention is the *reverse* of those
+    /// bytes (the `Txid: Display` impl in dashcore-rust does the
+    /// same flip), so block-explorer hex matches what users see
+    /// here. Storage stays unflipped — predicate fetches compare
+    /// wire-order `Data` directly without re-encoding.
     public var txidHex: String {
-        txid.map { String(format: "%02x", $0) }.joined()
+        txid.reversed().map { String(format: "%02x", $0) }.joined()
     }
 
     public var contextName: String {
