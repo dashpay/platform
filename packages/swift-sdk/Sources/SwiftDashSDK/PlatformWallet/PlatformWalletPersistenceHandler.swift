@@ -11,12 +11,48 @@ public class PlatformWalletPersistenceHandler {
     let modelContainer: ModelContainer
 
     /// Background context for writing from callback threads.
+    ///
+    /// `ModelContext` is not thread-safe — touching it from the
+    /// Tokio worker threads that drive the Rust persistence
+    /// callbacks corrupts SwiftData's internal state and crashes
+    /// inside `fetch`/`save`. The context is therefore confined to
+    /// `serialQueue`: every public entry point wraps its body in
+    /// `onQueue { … }`, and internal helpers (`upsertTransaction`,
+    /// `markUtxoSpent`, …) assume they are already on the queue.
     private let backgroundContext: ModelContext
+
+    /// Serial queue that owns `backgroundContext` and any other
+    /// non-Sendable handler state (`loadAllocations`). All public
+    /// entry points — both the FFI callback shims and the
+    /// app-facing accessors — funnel through `onQueue` so the
+    /// context is only ever touched on this queue.
+    private let serialQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.persistence",
+        qos: .userInitiated
+    )
 
     public init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
+    }
+
+    /// Synchronously run `body` on `serialQueue`.
+    ///
+    /// All public methods that read or write `backgroundContext`
+    /// (or `loadAllocations`) must call through this helper.
+    /// `sync` matches the synchronous FFI contract — the C shims
+    /// need a return value before yielding back to Rust — and
+    /// turns the queue into the handler's de-facto actor: only
+    /// one thread runs SwiftData operations at a time.
+    ///
+    /// Do not call `onQueue` from another method that already
+    /// runs on the queue; `DispatchQueue.sync` will deadlock on
+    /// recursive entry. The internal helpers in this file all
+    /// assume they are already on the queue and call
+    /// `backgroundContext` directly.
+    private func onQueue<T>(_ body: () -> T) -> T {
+        serialQueue.sync(execute: body)
     }
 
     // MARK: - Platform Address Balances
@@ -37,26 +73,28 @@ public class PlatformWalletPersistenceHandler {
         walletId: Data,
         entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)]
     ) {
-        for (_, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
-            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
-                predicate: #Predicate { $0.addressHash == addressHash }
-            )
-            guard let existing = try? backgroundContext.fetch(descriptor).first else {
-                continue
+        onQueue {
+            for (_, addressHash, balance, nonce, accountIndex, addressIndex) in entries {
+                let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                    predicate: #Predicate { $0.addressHash == addressHash }
+                )
+                guard let existing = try? backgroundContext.fetch(descriptor).first else {
+                    continue
+                }
+                existing.accountIndex = accountIndex
+                existing.addressIndex = addressIndex
+                existing.balance = balance
+                existing.nonce = nonce
+                if balance > 0 || nonce > 0 {
+                    existing.isUsed = true
+                }
+                existing.lastUpdated = Date()
             }
-            existing.accountIndex = accountIndex
-            existing.addressIndex = addressIndex
-            existing.balance = balance
-            existing.nonce = nonce
-            if balance > 0 || nonce > 0 {
-                existing.isUsed = true
-            }
-            existing.lastUpdated = Date()
-        }
 
-        // No save() here — this handler runs inside the Rust-side
-        // changeset round, which is bracketed by changesetBegin /
-        // changesetEnd; the atomic save fires in endChangeset.
+            // No save() here — this handler runs inside the Rust-side
+            // changeset round, which is bracketed by changesetBegin /
+            // changesetEnd; the atomic save fires in endChangeset.
+        }
     }
 
     /// Load all cached platform-address balances for a wallet. Tuple
@@ -64,6 +102,14 @@ public class PlatformWalletPersistenceHandler {
     /// the load-wallet-list path can re-seed the provider on startup
     /// without a full rescan.
     public func loadCachedBalances(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32)] {
+        onQueue { loadCachedBalancesOnQueue(walletId: walletId) }
+    }
+
+    /// Implementation for `loadCachedBalances` that assumes it is
+    /// already running on `serialQueue`. Lets internal on-queue
+    /// callers (`loadWalletList`) reuse the body without recursing
+    /// through `onQueue`, which would deadlock.
+    private func loadCachedBalancesOnQueue(walletId: Data) -> [(UInt8, [UInt8], UInt64, UInt32, UInt32, UInt32)] {
         let descriptor = FetchDescriptor<PersistentPlatformAddress>(
             predicate: PersistentPlatformAddress.predicate(walletId: walletId)
         )
@@ -96,44 +142,57 @@ public class PlatformWalletPersistenceHandler {
         syncTimestamp: UInt64,
         lastKnownRecentBlock: UInt64
     ) {
-        guard let network = walletNetwork(walletId: walletId) else {
-            return
-        }
-        let scopeId = syncStateScopeId(for: network)
-        let descriptor = FetchDescriptor<PersistentSyncState>(
-            predicate: #Predicate { $0.walletId == scopeId }
-        )
-
-        if let existing = try? backgroundContext.fetch(descriptor).first {
-            existing.network = network
-            existing.syncHeight = syncHeight
-            existing.syncTimestamp = syncTimestamp
-            existing.lastKnownRecentBlock = lastKnownRecentBlock
-            existing.lastUpdated = Date()
-        } else {
-            let record = PersistentSyncState(
-                walletId: scopeId,
-                network: network,
-                syncHeight: syncHeight,
-                syncTimestamp: syncTimestamp,
-                lastKnownRecentBlock: lastKnownRecentBlock
+        onQueue {
+            guard let network = walletNetwork(walletId: walletId) else {
+                return
+            }
+            let scopeId = syncStateScopeId(for: network)
+            let descriptor = FetchDescriptor<PersistentSyncState>(
+                predicate: #Predicate { $0.walletId == scopeId }
             )
-            backgroundContext.insert(record)
+
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                existing.network = network
+                existing.syncHeight = syncHeight
+                existing.syncTimestamp = syncTimestamp
+                existing.lastKnownRecentBlock = lastKnownRecentBlock
+                existing.lastUpdated = Date()
+            } else {
+                let record = PersistentSyncState(
+                    walletId: scopeId,
+                    network: network,
+                    syncHeight: syncHeight,
+                    syncTimestamp: syncTimestamp,
+                    lastKnownRecentBlock: lastKnownRecentBlock
+                )
+                backgroundContext.insert(record)
+            }
+            // No save() — bracketed by changesetBegin/End from the
+            // Rust store() round.
         }
-        // No save() — bracketed by changesetBegin/End from the
-        // Rust store() round.
     }
 
     /// Load cached sync state for a wallet's network.
     public func loadCachedSyncState(walletId: Data) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
-        guard let network = walletNetwork(walletId: walletId) else {
-            return nil
+        onQueue {
+            guard let network = walletNetwork(walletId: walletId) else {
+                return nil
+            }
+            return loadCachedSyncStateOnQueue(network: network)
         }
-        return loadCachedSyncState(network: network)
     }
 
     /// Load cached sync state for a specific network.
     public func loadCachedSyncState(network: AppNetwork) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+        onQueue { loadCachedSyncStateOnQueue(network: network) }
+    }
+
+    /// Implementation for `loadCachedSyncState` that assumes it is
+    /// already running on `serialQueue`. Both public overloads
+    /// route through this so the `(walletId:)` variant can resolve
+    /// the network and read the row in a single queue hop without
+    /// recursing into `onQueue`, which would deadlock.
+    private func loadCachedSyncStateOnQueue(network: AppNetwork) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
         let scopeId = syncStateScopeId(for: network)
         let descriptor = FetchDescriptor<PersistentSyncState>(
             predicate: #Predicate { $0.walletId == scopeId }
@@ -154,38 +213,40 @@ public class PlatformWalletPersistenceHandler {
     /// wallet state changes. Upserts PersistentAccount / Transaction /
     /// Utxo records so views observing via `@Query` update automatically.
     func persistWalletChangeset(walletId: Data, changeset: UnsafePointer<WalletChangeSetFFI>) {
-        let cs = changeset.pointee
+        onQueue {
+            let cs = changeset.pointee
 
-        // Ensure PersistentWallet exists (lightweight upsert).
-        let wallet = ensureWalletRecord(walletId: walletId)
+            // Ensure PersistentWallet exists (lightweight upsert).
+            let wallet = ensureWalletRecord(walletId: walletId)
 
-        // Chain update.
-        if cs.has_chain {
-            if cs.chain.has_synced_height {
-                wallet.syncedHeight = cs.chain.synced_height
+            // Chain update.
+            if cs.has_chain {
+                if cs.chain.has_synced_height {
+                    wallet.syncedHeight = cs.chain.synced_height
+                }
+                wallet.lastUpdated = Date()
             }
-            wallet.lastUpdated = Date()
-        }
 
-        // Balance delta — apply signed changes to cached totals.
-        if cs.has_balance {
-            let b = cs.balance
-            wallet.balanceConfirmed = addDelta(wallet.balanceConfirmed, b.confirmed_delta)
-            wallet.balanceUnconfirmed = addDelta(wallet.balanceUnconfirmed, b.unconfirmed_delta)
-            wallet.balanceImmature = addDelta(wallet.balanceImmature, b.immature_delta)
-            wallet.balanceLocked = addDelta(wallet.balanceLocked, b.locked_delta)
-            wallet.lastUpdated = Date()
-        }
-
-        // Per-account: transactions, UTXOs, pool state.
-        if cs.accounts_count > 0, let accountsPtr = cs.accounts {
-            for i in 0..<Int(cs.accounts_count) {
-                let acc = accountsPtr[i]
-                applyAccountChangeset(walletRecord: wallet, acc: acc)
+            // Balance delta — apply signed changes to cached totals.
+            if cs.has_balance {
+                let b = cs.balance
+                wallet.balanceConfirmed = addDelta(wallet.balanceConfirmed, b.confirmed_delta)
+                wallet.balanceUnconfirmed = addDelta(wallet.balanceUnconfirmed, b.unconfirmed_delta)
+                wallet.balanceImmature = addDelta(wallet.balanceImmature, b.immature_delta)
+                wallet.balanceLocked = addDelta(wallet.balanceLocked, b.locked_delta)
+                wallet.lastUpdated = Date()
             }
-        }
 
-        // No save() — bracketed by changesetBegin/End.
+            // Per-account: transactions, UTXOs, pool state.
+            if cs.accounts_count > 0, let accountsPtr = cs.accounts {
+                for i in 0..<Int(cs.accounts_count) {
+                    let acc = accountsPtr[i]
+                    applyAccountChangeset(walletRecord: wallet, acc: acc)
+                }
+            }
+
+            // No save() — bracketed by changesetBegin/End.
+        }
     }
 
     /// Find or create the `PersistentWallet` record for this wallet id.
@@ -467,7 +528,9 @@ public class PlatformWalletPersistenceHandler {
     /// a named hook so future work (explicit transaction scoping,
     /// instrumented timing, etc.) has an obvious seam.
     func beginChangeset(walletId: Data) {
-        _ = walletId  // reserved for future wallet-scope batching
+        onQueue {
+            _ = walletId  // reserved for future wallet-scope batching
+        }
     }
 
     /// Closes a persistence round. Commits all per-kind writes
@@ -481,21 +544,23 @@ public class PlatformWalletPersistenceHandler {
     /// perspective: a crash between callbacks leaves the store in
     /// its pre-round state rather than half-applied.
     func endChangeset(walletId: Data, success: Bool) {
-        _ = walletId
-        if success {
-            do {
-                try backgroundContext.save()
-            } catch {
-                // The context still has the pending changes on
-                // its dirty list after a failed save; drop them so
-                // the next round starts clean. SQLite's WAL will
-                // only have committed data prior to this save, so
-                // the user-visible store is consistent.
-                print("⚠️ endChangeset: save failed: \(error.localizedDescription)")
+        onQueue {
+            _ = walletId
+            if success {
+                do {
+                    try backgroundContext.save()
+                } catch {
+                    // The context still has the pending changes on
+                    // its dirty list after a failed save; drop them so
+                    // the next round starts clean. SQLite's WAL will
+                    // only have committed data prior to this save, so
+                    // the user-visible store is consistent.
+                    print("⚠️ endChangeset: save failed: \(error.localizedDescription)")
+                    backgroundContext.rollback()
+                }
+            } else {
                 backgroundContext.rollback()
             }
-        } else {
-            backgroundContext.rollback()
         }
     }
 
@@ -523,6 +588,7 @@ public class PlatformWalletPersistenceHandler {
         upserts: [IdentityEntrySnapshot],
         removed: [Data]
     ) {
+        onQueue {
         for entry in upserts {
             let identityId = entry.identityId
             let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -623,6 +689,7 @@ public class PlatformWalletPersistenceHandler {
         }
 
         // No save() — bracketed by changesetBegin/End.
+        }  // onQueue
     }
 
     // MARK: - Identity keys persistence
@@ -650,6 +717,7 @@ public class PlatformWalletPersistenceHandler {
         upserts: [IdentityKeyEntrySnapshot],
         removed: [(identityId: Data, keyId: UInt32)]
     ) {
+        onQueue {
         for entry in upserts {
             // PersistentPublicKey is keyed on (identity, keyId) via
             // its parent relationship; fetch by keyId + identityId
@@ -746,6 +814,7 @@ public class PlatformWalletPersistenceHandler {
         // derivation branch above, so it's no longer a dead
         // parameter. No save() — bracketed by
         // changesetBegin/End.
+        }  // onQueue
     }
 
     // MARK: - Token balance persistence
@@ -772,6 +841,7 @@ public class PlatformWalletPersistenceHandler {
         upserts: [TokenBalanceUpsertSnapshot],
         removals: [TokenBalanceRemovalSnapshot]
     ) {
+        onQueue {
         let network = walletNetwork(walletId: walletId) ?? .testnet
 
         for entry in upserts {
@@ -829,6 +899,7 @@ public class PlatformWalletPersistenceHandler {
 
         // No save() — bracketed by changesetBegin/End from the Rust
         // store() round.
+        }  // onQueue
     }
 
     /// Stitch a freshly-inserted `PersistentTokenBalance` into the
@@ -1062,6 +1133,7 @@ public class PlatformWalletPersistenceHandler {
         accountKey: AccountLookupKey,
         entries: [CoreAddressEntrySnapshot]
     ) {
+        onQueue {
         guard let account = fetchAccount(walletId: walletId, key: accountKey) else {
             return
         }
@@ -1112,6 +1184,7 @@ public class PlatformWalletPersistenceHandler {
         }
 
         try? backgroundContext.save()
+        }  // onQueue
     }
 
     /// Upsert PlatformPayment entries into `PersistentPlatformAddress`.
@@ -1264,11 +1337,13 @@ public class PlatformWalletPersistenceHandler {
     /// contribute but Swift can't easily recompute (network is on the
     /// manager's SDK; birth height is SPV's confirmed tip at creation).
     func persistWalletMetadata(walletId: Data, networkTag: UInt8, birthHeight: UInt32) {
-        let wallet = ensureWalletRecord(walletId: walletId)
-        wallet.network = appNetwork(for: networkTag)
-        wallet.birthHeight = birthHeight
-        wallet.lastUpdated = Date()
-        try? backgroundContext.save()
+        onQueue {
+            let wallet = ensureWalletRecord(walletId: walletId)
+            wallet.network = appNetwork(for: networkTag)
+            wallet.birthHeight = birthHeight
+            wallet.lastUpdated = Date()
+            try? backgroundContext.save()
+        }
     }
 
     /// Set the user-facing name on the `PersistentWallet` row.
@@ -1276,10 +1351,12 @@ public class PlatformWalletPersistenceHandler {
     /// returns a wallet id; only Swift knows the name, so it doesn't
     /// travel through a Rust-side callback.
     public func setWalletName(walletId: Data, name: String) {
-        let wallet = ensureWalletRecord(walletId: walletId)
-        wallet.name = name
-        wallet.lastUpdated = Date()
-        try? backgroundContext.save()
+        onQueue {
+            let wallet = ensureWalletRecord(walletId: walletId)
+            wallet.name = name
+            wallet.lastUpdated = Date()
+            try? backgroundContext.save()
+        }
     }
 
     /// Reverse of the tag convention used by
@@ -1305,6 +1382,7 @@ public class PlatformWalletPersistenceHandler {
     /// key_class, user_identity_id, friend_identity_id)` — everything
     /// that uniquely identifies an account across variants.
     func persistAccount(walletId: Data, spec: AccountSpecFFI) {
+        onQueue {
         let wallet = ensureWalletRecord(walletId: walletId)
         let typeTag = UInt32(spec.type_tag)
         let index = spec.index
@@ -1376,6 +1454,7 @@ public class PlatformWalletPersistenceHandler {
         account.accountExtendedPubKeyBytes = xpubBytes
         account.lastUpdated = Date()
         try? backgroundContext.save()
+        }  // onQueue
     }
 
     // MARK: - Watch-only Restore: Load
@@ -1396,6 +1475,7 @@ public class PlatformWalletPersistenceHandler {
     ///
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int) {
+        onQueue {
         let walletDescriptor = FetchDescriptor<PersistentWallet>()
         guard let wallets = try? backgroundContext.fetch(walletDescriptor) else {
             return (nil, 0)
@@ -1448,7 +1528,7 @@ public class PlatformWalletPersistenceHandler {
                 allocation.accountArrays.append((buf, sortedAccounts.count))
             }
 
-            let cachedBalances = loadCachedBalances(walletId: w.walletId)
+            let cachedBalances = loadCachedBalancesOnQueue(walletId: w.walletId)
             let addressBalancesBuffer: UnsafeMutablePointer<AddressBalanceEntryFFI>?
             if cachedBalances.isEmpty {
                 addressBalancesBuffer = nil
@@ -1485,7 +1565,7 @@ public class PlatformWalletPersistenceHandler {
                 allocation.addressBalanceArrays.append((buf, cachedBalances.count))
             }
 
-            let syncState = w.network.flatMap { loadCachedSyncState(network: $0) }
+            let syncState = w.network.flatMap { loadCachedSyncStateOnQueue(network: $0) }
 
             // Identity slice. Sorted by `identityIndex` then
             // `identityId` so the rehydrated `IndexMap` order is
@@ -1524,6 +1604,7 @@ public class PlatformWalletPersistenceHandler {
         let typed = UnsafePointer(entriesPtr)
         loadAllocations[UnsafeRawPointer(typed)] = allocation
         return (typed, restorable.count)
+        }  // onQueue
     }
 
     /// Allocate a contiguous `[IdentityRestoreEntryFFI]` buffer for
@@ -1665,21 +1746,26 @@ public class PlatformWalletPersistenceHandler {
     /// succeeds so it can fetch a Swift-side handle for each wallet
     /// Rust just reconstructed.
     public func restorableWalletIds() -> [Data] {
-        let descriptor = FetchDescriptor<PersistentWallet>()
-        guard let wallets = try? backgroundContext.fetch(descriptor) else {
-            return []
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentWallet>()
+            guard let wallets = try? backgroundContext.fetch(descriptor) else {
+                return []
+            }
+            return wallets
+                .filter { w in w.accounts.contains { !$0.accountExtendedPubKeyBytes.isEmpty } }
+                .map { $0.walletId }
         }
-        return wallets
-            .filter { w in w.accounts.contains { !$0.accountExtendedPubKeyBytes.isEmpty } }
-            .map { $0.walletId }
     }
 
     /// Release all allocations for a given load-callback result.
     func loadWalletListFree(entries: UnsafeRawPointer?) {
-        guard let entries = entries, let allocation = loadAllocations.removeValue(forKey: entries) else {
-            return
+        onQueue {
+            guard let entries = entries,
+                  let allocation = loadAllocations.removeValue(forKey: entries) else {
+                return
+            }
+            allocation.release()
         }
-        allocation.release()
     }
 
     /// Outstanding load-call allocations keyed by the entries pointer
