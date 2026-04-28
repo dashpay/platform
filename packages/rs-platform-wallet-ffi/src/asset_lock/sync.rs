@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use std::time::Duration;
 
 fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
@@ -30,55 +31,30 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     out_proof_bytes: *mut *mut u8,
     out_proof_len: *mut usize,
     out_private_key: *mut [u8; 32],
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if txid.is_null()
-        || out_proof_bytes.is_null()
-        || out_proof_len.is_null()
-        || out_private_key.is_null()
-    {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(txid);
+    check_ptr!(out_proof_bytes);
+    check_ptr!(out_proof_len);
+    check_ptr!(out_private_key);
 
     let out_point = parse_outpoint(txid, vout);
     let timeout = Duration::from_secs(timeout_secs);
 
-    ASSET_LOCK_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            match runtime().block_on(manager.resume_asset_lock(&out_point, timeout)) {
-                Ok((proof, key)) => {
-                    match dpp::bincode::encode_to_vec(&proof, dpp::bincode::config::standard()) {
-                        Ok(bytes) => {
-                            let len = bytes.len();
-                            let boxed = bytes.into_boxed_slice();
-                            *out_proof_bytes = Box::into_raw(boxed) as *mut u8;
-                            *out_proof_len = len;
-                            *out_private_key = key.inner.secret_bytes();
-                            PlatformWalletFFIResult::Success
-                        }
-                        Err(e) => {
-                            if !out_error.is_null() {
-                                *out_error = PlatformWalletFFIError::new(
-                                    PlatformWalletFFIResult::ErrorSerialization,
-                                    format!("Failed to serialize proof: {}", e),
-                                );
-                            }
-                            PlatformWalletFFIResult::ErrorSerialization
-                        }
-                    }
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            e.to_string(),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.resume_asset_lock(&out_point, timeout))
+    });
+    let result = unwrap_option_or_return!(option);
+    let (proof, key) = unwrap_result_or_return!(result);
+    let bytes = unwrap_result_or_return!(dpp::bincode::encode_to_vec(
+        &proof,
+        dpp::bincode::config::standard()
+    ));
+    let len = bytes.len();
+    let boxed = bytes.into_boxed_slice();
+    *out_proof_bytes = Box::into_raw(boxed) as *mut u8;
+    *out_proof_len = len;
+    *out_private_key = key.inner.secret_bytes();
+    PlatformWalletFfiResult::ok()
 }
 
 /// Recover a tracked asset lock from a serialized transaction.
@@ -100,73 +76,42 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
     vout: u32,
     proof_bytes: *const u8,
     proof_len: usize,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if tx_bytes.is_null() || txid.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(tx_bytes);
+    check_ptr!(txid);
 
     // Parse transaction
     let tx_data = std::slice::from_raw_parts(tx_bytes, tx_bytes_len);
-    let tx: dashcore::Transaction = match dashcore::consensus::deserialize(tx_data) {
-        Ok(t) => t,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorDeserialization,
-                    format!("Failed to deserialize transaction: {}", e),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorDeserialization;
-        }
-    };
+    let tx: dashcore::Transaction =
+        unwrap_result_or_return!(dashcore::consensus::deserialize(tx_data));
 
-    let funding = match super::build::parse_funding_type(funding_type) {
-        Some(f) => f,
-        None => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!("Unknown funding type: {}", funding_type),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let funding = unwrap_option_or_return!(super::build::parse_funding_type(funding_type));
 
     let out_point = parse_outpoint(txid, vout);
 
     // Parse optional proof
     let proof = if !proof_bytes.is_null() && proof_len > 0 {
         let data = std::slice::from_raw_parts(proof_bytes, proof_len);
-        match dpp::bincode::decode_from_slice(data, dpp::bincode::config::standard()) {
-            Ok((p, _)) => Some(p),
-            Err(e) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorDeserialization,
-                        format!("Failed to deserialize proof: {}", e),
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorDeserialization;
-            }
-        }
+        let (p, _) = unwrap_result_or_return!(dpp::bincode::decode_from_slice(
+            data,
+            dpp::bincode::config::standard()
+        ));
+        Some(p)
     } else {
         None
     };
 
-    ASSET_LOCK_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            manager.recover_asset_lock_blocking(
-                tx,
-                amount_duffs,
-                account_index,
-                funding,
-                identity_index,
-                out_point,
-                proof,
-            );
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.recover_asset_lock_blocking(
+            tx,
+            amount_duffs,
+            account_index,
+            funding,
+            identity_index,
+            out_point,
+            proof,
+        );
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }

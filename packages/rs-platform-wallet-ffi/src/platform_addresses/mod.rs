@@ -23,6 +23,10 @@ use crate::runtime::runtime;
 
 /// Parse an `InputSelectionType` + raw arrays into a Rust `InputSelection`.
 ///
+/// On error, returns the populated `PlatformWalletFfiResult` so the caller
+/// can early-return it directly:
+/// `let sel = unwrap_result_or_return!(parse_input_selection(...));`
+///
 /// # Safety
 /// Pointers must be valid for their respective counts.
 pub(crate) unsafe fn parse_input_selection(
@@ -31,36 +35,25 @@ pub(crate) unsafe fn parse_input_selection(
     explicit_inputs_count: usize,
     nonce_inputs: *const ExplicitInputWithNonceFFI,
     nonce_inputs_count: usize,
-    out_error: *mut PlatformWalletFFIError,
-) -> Result<InputSelection, PlatformWalletFFIResult> {
+) -> Result<InputSelection, PlatformWalletFfiResult> {
     match input_type {
         InputSelectionType::Auto => Ok(InputSelection::Auto),
         InputSelectionType::Explicit => {
             match parse_explicit_inputs(explicit_inputs, explicit_inputs_count) {
                 Ok(m) => Ok(InputSelection::Explicit(m)),
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorInvalidParameter,
-                            e,
-                        );
-                    }
-                    Err(PlatformWalletFFIResult::ErrorInvalidParameter)
-                }
+                Err(e) => Err(PlatformWalletFfiResult::err(
+                    PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                    e,
+                )),
             }
         }
         InputSelectionType::ExplicitWithNonces => {
             match parse_explicit_inputs_with_nonces(nonce_inputs, nonce_inputs_count) {
                 Ok(m) => Ok(InputSelection::ExplicitWithNonces(m)),
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorInvalidParameter,
-                            e,
-                        );
-                    }
-                    Err(PlatformWalletFFIResult::ErrorInvalidParameter)
-                }
+                Err(e) => Err(PlatformWalletFfiResult::err(
+                    PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                    e,
+                )),
             }
         }
     }

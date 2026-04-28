@@ -35,6 +35,7 @@ use platform_wallet::{derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_K
 
 use crate::error::*;
 use crate::handle::*;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// One identity-registration-key preview row.
 ///
@@ -132,32 +133,18 @@ impl IdentityKeyPreviewsFFI {
 ///   array. Release with
 ///   [`platform_wallet_preview_identity_registration_keys_free`]. On
 ///   error the struct is left at the empty zero state.
-/// - `out_error` — populated on failure with the usual
-///   [`PlatformWalletFFIError`] detail.
 ///
 /// # Safety
 /// `wallet_handle` must come from the platform-wallet handle
 /// registry. `out_previews` must be a valid, writable pointer.
-/// `out_error` may be null.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     wallet_handle: Handle,
     start_index: u32,
     count_or_neg1: i32,
     out_previews: *mut IdentityKeyPreviewsFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_previews.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_previews is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_previews);
 
     // Pre-clear so partial failures don't leave the caller staring
     // at uninitialized memory.
@@ -172,77 +159,44 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     if count == 0 {
         // Empty preview is a valid result — early-out before
         // touching the wallet manager.
-        return PlatformWalletFFIResult::Success;
+        return PlatformWalletFfiResult::ok();
     }
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            // Synchronous read of the wallet manager — same pattern
-            // `platform_wallet_get_dashpay_profile` and
-            // `platform_wallet_get_managed_identity` use, since FFI
-            // callers come in on non-tokio threads.
-            let wm = wallet.wallet_manager().blocking_read();
-            let key_wallet = match wm.get_wallet(&wallet.wallet_id()) {
-                Some(w) => w,
-                None => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorInvalidHandle,
-                                "Wallet not found in wallet manager",
-                            );
-                        }
-                    }
-                    return PlatformWalletFFIResult::ErrorInvalidHandle;
-                }
-            };
-            let network = key_wallet.network;
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        // Synchronous read of the wallet manager — FFI callers come
+        // in on non-tokio threads.
+        let wm = wallet.wallet_manager().blocking_read();
+        let key_wallet = wm.get_wallet(&wallet.wallet_id()).ok_or_else(|| {
+            PlatformWalletFfiResult::err(
+                PlatformWalletFfiResultCode::ErrorInvalidHandle,
+                "Wallet not found in wallet manager",
+            )
+        })?;
+        let network = key_wallet.network;
 
-            // Build the row vec up-front so an error on row N
-            // doesn't leak rows 0..N — the `Drop` on the typed
-            // `Vec<IdentityKeyPreviewFFI>` would skip the
-            // CStrings/Box buffers we hand out raw, so we hand-roll
-            // cleanup on failure.
-            let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(count as usize);
-
-            let mut error_pair: Option<(PlatformWalletFFIResult, String)> = None;
-            for offset in 0..count {
-                // Saturating add: the discovery scan caps identity
-                // indices well below u32::MAX in practice; if a
-                // caller intentionally passes near-max values we
-                // simply repeat the cap rather than wrap.
-                let identity_index = start_index.saturating_add(offset);
-
-                let (path, ext_priv, public_key) = match derive_identity_auth_keypair(
+        // Build a single row. All fallible work runs first; raw-
+        // pointer detachment (`into_raw`, `mem::forget`) happens at
+        // the very end so an early `?` cleans up via Drop.
+        let build_row =
+            |identity_index: u32| -> Result<IdentityKeyPreviewFFI, PlatformWalletFfiResult> {
+                let (path, ext_priv, public_key) = derive_identity_auth_keypair(
                     key_wallet,
                     network,
                     identity_index,
                     MASTER_KEY_INDEX,
-                ) {
-                    Ok(triple) => triple,
-                    Err(e) => {
-                        error_pair = Some((
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!(
-                                "preview_identity_registration_keys derivation failed at \
-                                 identity_index {identity_index}: {e}"
-                            ),
-                        ));
-                        break;
-                    }
-                };
+                )?;
 
-                let path_string = path.to_string();
-                let path_cstring = match CString::new(path_string) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error_pair = Some((
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            format!("derivation path contained NUL byte: {e}"),
-                        ));
-                        break;
-                    }
+                let path_cstring = CString::new(path.to_string())?;
+
+                // WIF: network-aware (mainnet → 0xCC, testnet/devnet/
+                // regtest → 0xEF) and compressed. Same construction
+                // `key_wallet::derive_private_key_as_wif` performs.
+                let dash_private = DashPrivateKey {
+                    compressed: true,
+                    network,
+                    inner: ext_priv.private_key,
                 };
+                let wif_cstring = CString::new(dash_private.to_wif())?;
 
                 // Compressed secp256k1 pubkey is always 33 bytes.
                 let pub_bytes: [u8; 33] = public_key.serialize();
@@ -251,83 +205,51 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                 let pub_len = pub_box.len();
                 std::mem::forget(pub_box);
 
-                // WIF: network-aware (mainnet → 0xCC, testnet/
-                // devnet/regtest → 0xEF) and compressed. Same
-                // construction `key_wallet::derive_private_key_as_wif`
-                // performs internally.
-                let dash_private = DashPrivateKey {
-                    compressed: true,
-                    network,
-                    inner: ext_priv.private_key,
-                };
-                let wif_string = dash_private.to_wif();
-                let wif_cstring = match CString::new(wif_string) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        // Path C-string + pubkey buffer were
-                        // already detached — clean them up before
-                        // bailing.
-                        unsafe {
-                            drop(Vec::from_raw_parts(pub_ptr, pub_len, pub_len));
-                        }
-                        drop(path_cstring);
-                        error_pair = Some((
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            format!("WIF string contained NUL byte: {e}"),
-                        ));
-                        break;
-                    }
-                };
-
-                rows.push(IdentityKeyPreviewFFI {
+                Ok(IdentityKeyPreviewFFI {
                     identity_index,
                     derivation_path: path_cstring.into_raw(),
                     public_key: pub_ptr,
                     public_key_len: pub_len,
                     private_key_wif: wif_cstring.into_raw(),
                     private_key_bytes: ext_priv.private_key.secret_bytes(),
-                });
-            }
+                })
+            };
 
-            if let Some((code, msg)) = error_pair {
-                // Free everything we've successfully appended so
-                // far — we never hand a partial array back.
-                free_rows(rows);
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(code, msg);
-                    }
-                }
-                return code;
-            }
-
-            // Hand the row array off as a raw heap allocation. The
-            // matching free walks the slice and reclaims each row's
-            // owned strings + pubkey buffer.
-            let mut boxed_items = rows.into_boxed_slice();
-            let items_ptr = boxed_items.as_mut_ptr();
-            let items_count = boxed_items.len();
-            std::mem::forget(boxed_items);
-
-            unsafe {
-                *out_previews = IdentityKeyPreviewsFFI {
-                    items: items_ptr,
-                    count: items_count,
-                };
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
+        let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(count as usize);
+        for offset in 0..count {
+            // Saturating add: the discovery scan caps identity
+            // indices well below u32::MAX in practice; if a caller
+            // intentionally passes near-max values we simply repeat
+            // the cap rather than wrap.
+            let identity_index = start_index.saturating_add(offset);
+            match build_row(identity_index) {
+                Ok(row) => rows.push(row),
+                Err(e) => {
+                    // Free everything we've successfully appended so
+                    // far — we never hand a partial array back.
+                    // TODO: Implement Drop instead of manually drop so ? op is usable
+                    free_rows(rows);
+                    return Err(e);
                 }
             }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+        }
+        Ok(rows)
+    });
+    let result = unwrap_option_or_return!(option);
+    let rows = unwrap_result_or_return!(result);
+
+    let mut boxed_items = rows.into_boxed_slice();
+    let items_ptr = boxed_items.as_mut_ptr();
+    let items_count = boxed_items.len();
+    std::mem::forget(boxed_items);
+
+    unsafe {
+        *out_previews = IdentityKeyPreviewsFFI {
+            items: items_ptr,
+            count: items_count,
+        };
+    }
+    PlatformWalletFfiResult::ok()
 }
 
 /// Release an [`IdentityKeyPreviewsFFI`] previously populated by

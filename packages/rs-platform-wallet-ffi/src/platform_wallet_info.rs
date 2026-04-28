@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::Network;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::PlatformWalletInfo;
@@ -16,19 +17,9 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     seed_bytes: *const c_uchar,
     seed_len: usize,
     out_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if seed_bytes.is_null() || out_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(seed_bytes);
+    check_ptr!(out_handle);
 
     let network = match network {
         0 => Network::Mainnet,
@@ -36,29 +27,19 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
         2 => Network::Devnet,
         3 => Network::Regtest,
         _ => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidNetwork,
-                        format!("Unknown network: {}", network),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidNetwork;
+            return PlatformWalletFfiResult::err(
+                PlatformWalletFfiResultCode::ErrorInvalidNetwork,
+                format!("Unknown network: {network}"),
+            );
         }
     };
 
     // Validate seed length (should be 64 bytes for BIP39)
     if seed_len != 64 {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!("Invalid seed length: expected 64 bytes, got {}", seed_len),
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorInvalidParameter;
+        return PlatformWalletFfiResult::err(
+            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            format!("Invalid seed length: expected 64 bytes, got {seed_len}"),
+        );
     }
 
     let seed_slice = unsafe { std::slice::from_raw_parts(seed_bytes, seed_len) };
@@ -67,59 +48,31 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     let mut seed_array = [0u8; 64];
     seed_array.copy_from_slice(seed_slice);
 
-    // Create wallet from seed
-    let wallet = match key_wallet::Wallet::from_seed_bytes(
+    let wallet = unwrap_result_or_return!(key_wallet::Wallet::from_seed_bytes(
         seed_array,
         network,
-        WalletAccountCreationOptions::None, // No accounts initially
-    ) {
-        Ok(w) => w,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorWalletOperation,
-                        format!("Failed to create wallet from seed: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorWalletOperation;
-        }
-    };
+        WalletAccountCreationOptions::None,
+    ));
 
-    // Create PlatformWalletInfo from the wallet
     let platform_wallet = PlatformWalletInfo::from_wallet(&wallet, 0);
 
     // Store in handle storage
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFFIResult::Success
+    PlatformWalletFfiResult::ok()
 }
 
 /// Create a new PlatformWalletInfo from mnemonic.
-///
-/// `network` encoding matches other entry points in this crate:
-/// 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     network: u32,
     mnemonic: *const c_char,
     passphrase: *const c_char,
     out_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if mnemonic.is_null() || out_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(mnemonic);
+    check_ptr!(out_handle);
 
     let network = match network {
         0 => Network::Mainnet,
@@ -127,111 +80,40 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
         2 => Network::Devnet,
         3 => Network::Regtest,
         _ => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidNetwork,
-                        format!("Unknown network: {}", network),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidNetwork;
+            return PlatformWalletFfiResult::err(
+                PlatformWalletFfiResultCode::ErrorInvalidNetwork,
+                format!("Unknown network: {network}"),
+            );
         }
     };
 
-    let mnemonic_str = unsafe {
-        match std::ffi::CStr::from_ptr(mnemonic).to_str() {
-            Ok(s) => s,
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        "Invalid UTF-8 in mnemonic",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
-            }
-        }
-    };
+    let mnemonic_str =
+        unwrap_result_or_return!(unsafe { std::ffi::CStr::from_ptr(mnemonic).to_str() });
 
     let passphrase_str = if passphrase.is_null() {
         None
     } else {
-        unsafe {
-            match std::ffi::CStr::from_ptr(passphrase).to_str() {
-                Ok(s) => Some(s),
-                Err(_) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            "Invalid UTF-8 in passphrase",
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                }
-            }
-        }
+        Some(unwrap_result_or_return!(unsafe {
+            std::ffi::CStr::from_ptr(passphrase).to_str()
+        }))
     };
 
-    // Parse mnemonic string
-    let mnemonic_obj = match mnemonic_str.parse::<key_wallet::Mnemonic>() {
-        Ok(m) => m,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        format!("Failed to parse mnemonic: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let mnemonic_obj = unwrap_result_or_return!(mnemonic_str.parse::<key_wallet::Mnemonic>());
 
     // Create wallet from mnemonic with or without passphrase
     let wallet = if let Some(pass) = passphrase_str {
-        match key_wallet::Wallet::from_mnemonic_with_passphrase(
+        unwrap_result_or_return!(key_wallet::Wallet::from_mnemonic_with_passphrase(
             mnemonic_obj,
             pass.to_string(),
             network,
-            WalletAccountCreationOptions::None, // No accounts initially
-        ) {
-            Ok(w) => w,
-            Err(e) => {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!(
-                                "Failed to create wallet from mnemonic with passphrase: {}",
-                                e
-                            ),
-                        );
-                    }
-                }
-                return PlatformWalletFFIResult::ErrorWalletOperation;
-            }
-        }
+            WalletAccountCreationOptions::None,
+        ))
     } else {
-        match key_wallet::Wallet::from_mnemonic(
+        unwrap_result_or_return!(key_wallet::Wallet::from_mnemonic(
             mnemonic_obj,
             network,
-            WalletAccountCreationOptions::None, // No accounts initially
-        ) {
-            Ok(w) => w,
-            Err(e) => {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("Failed to create wallet from mnemonic: {}", e),
-                        );
-                    }
-                }
-                return PlatformWalletFFIResult::ErrorWalletOperation;
-            }
-        }
+            WalletAccountCreationOptions::None,
+        ))
     };
 
     // Create PlatformWalletInfo from the wallet
@@ -241,7 +123,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFFIResult::Success
+    PlatformWalletFfiResult::ok()
 }
 
 /// Get the identity manager
@@ -249,37 +131,16 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
 pub unsafe extern "C" fn platform_wallet_info_get_identity_manager(
     wallet_handle: Handle,
     out_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_handle);
 
-    WALLET_INFO_STORAGE
-        .with_item(wallet_handle, |wallet_info| {
-            let handle = IDENTITY_MANAGER_STORAGE.insert(wallet_info.identity_manager.clone());
-            unsafe { *out_handle = handle };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = WALLET_INFO_STORAGE.with_item(wallet_handle, |wallet_info| {
+        wallet_info.identity_manager.clone()
+    });
+    let manager = unwrap_option_or_return!(option);
+    let handle = IDENTITY_MANAGER_STORAGE.insert(manager);
+    unsafe { *out_handle = handle };
+    PlatformWalletFfiResult::ok()
 }
 
 /// Set the identity manager
@@ -287,112 +148,53 @@ pub unsafe extern "C" fn platform_wallet_info_get_identity_manager(
 pub unsafe extern "C" fn platform_wallet_info_set_identity_manager(
     wallet_handle: Handle,
     manager_handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    let manager_result =
+) -> PlatformWalletFfiResult {
+    let manager_option =
         IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| manager.clone());
+    let manager = unwrap_option_or_return!(manager_option);
 
-    let manager = match manager_result {
-        Some(m) => m,
-        None => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid identity manager handle",
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidHandle;
-        }
-    };
-
-    WALLET_INFO_STORAGE
-        .with_item_mut(wallet_handle, |wallet_info| {
-            wallet_info.identity_manager = manager;
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
-/// Serialize PlatformWalletInfo to JSON
-/// TODO: Requires serde support on PlatformWalletInfo
-#[allow(dead_code)]
-fn platform_wallet_info_to_json(
-    _wallet_handle: Handle,
-    out_json: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_json.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
-    // TODO: Implement once PlatformWalletInfo has Serialize derived
-    if !out_error.is_null() {
-        unsafe {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorSerialization,
-                "Serialization not yet implemented",
-            );
-        }
-    }
-    PlatformWalletFFIResult::ErrorSerialization
+    let option = WALLET_INFO_STORAGE.with_item_mut(wallet_handle, |wallet_info| {
+        wallet_info.identity_manager = manager;
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Destroy PlatformWalletInfo and free resources
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_destroy(
     wallet_handle: Handle,
-) -> PlatformWalletFFIResult {
+) -> PlatformWalletFfiResult {
     if WALLET_INFO_STORAGE.remove(wallet_handle).is_some() {
-        PlatformWalletFFIResult::Success
+        PlatformWalletFfiResult::ok()
     } else {
-        PlatformWalletFFIResult::ErrorInvalidHandle
+        PlatformWalletFfiResult::err(
+            PlatformWalletFfiResultCode::ErrorInvalidHandle,
+            "Invalid wallet handle",
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform_wallet_string_free;
 
     #[test]
     fn test_create_from_seed() {
         unsafe {
             let seed = [0u8; 64];
             let mut handle: Handle = NULL_HANDLE;
-            let mut error = PlatformWalletFFIError::success();
 
             let result = platform_wallet_info_create_from_seed(
                 1, // Testnet
                 seed.as_ptr(),
                 seed.len(),
                 &mut handle,
-                &mut error,
             );
 
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
             assert_ne!(handle, NULL_HANDLE);
 
-            // Cleanup
             platform_wallet_info_destroy(handle);
         }
     }
@@ -401,52 +203,21 @@ mod tests {
     fn test_create_from_mnemonic() {
         unsafe {
             let mnemonic = std::ffi::CString::new(
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        ).unwrap();
+                "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+            ).unwrap();
 
             let mut handle: Handle = NULL_HANDLE;
-            let mut error = PlatformWalletFFIError::success();
 
             let result = platform_wallet_info_create_from_mnemonic(
                 1, // Testnet
                 mnemonic.as_ptr(),
                 std::ptr::null(),
                 &mut handle,
-                &mut error,
             );
 
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
             assert_ne!(handle, NULL_HANDLE);
 
-            // Cleanup
-            platform_wallet_info_destroy(handle);
-        }
-    }
-
-    #[test]
-    #[ignore] // Stubbed - requires serde support on PlatformWalletInfo
-    fn test_to_json() {
-        unsafe {
-            let seed = [0u8; 64];
-            let mut handle: Handle = NULL_HANDLE;
-            let mut error = PlatformWalletFFIError::success();
-
-            platform_wallet_info_create_from_seed(
-                1, // Testnet
-                seed.as_ptr(),
-                seed.len(),
-                &mut handle,
-                &mut error,
-            );
-
-            let mut json_ptr: *mut c_char = std::ptr::null_mut();
-            let result = platform_wallet_info_to_json(handle, &mut json_ptr, &mut error);
-
-            assert_eq!(result, PlatformWalletFFIResult::Success);
-            assert!(!json_ptr.is_null());
-
-            // Cleanup
-            platform_wallet_string_free(json_ptr);
             platform_wallet_info_destroy(handle);
         }
     }
@@ -455,7 +226,7 @@ mod tests {
     fn test_destroy_invalid_handle() {
         unsafe {
             let result = platform_wallet_info_destroy(9999);
-            assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
+            assert_eq!(result.code, PlatformWalletFfiResultCode::ErrorInvalidHandle);
         }
     }
 }

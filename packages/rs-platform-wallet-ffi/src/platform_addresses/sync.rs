@@ -1,8 +1,10 @@
 //! FFI bindings for platform address sync operations.
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::*;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 use super::runtime;
 
@@ -19,11 +21,8 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
     has_config: bool,
     config: *const AddressSyncConfigFFI,
     out_result: *mut AddressSyncResultFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_result.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_result);
 
     let config_opt = if has_config && !config.is_null() {
         Some(dash_sdk::platform::address_sync::AddressSyncConfig::from(
@@ -33,23 +32,11 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
         None
     };
 
-    PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            match runtime().block_on(wallet.sync_balances(config_opt)) {
-                Ok(result) => {
-                    *out_result = AddressSyncResultFFI::from(&result);
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            e.to_string(),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.sync_balances(config_opt))
+    });
+    let result = unwrap_option_or_return!(option);
+    let sync = unwrap_result_or_return!(result);
+    *out_result = AddressSyncResultFFI::from(&sync);
+    PlatformWalletFfiResult::ok()
 }

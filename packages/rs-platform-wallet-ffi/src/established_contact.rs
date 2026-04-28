@@ -5,6 +5,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::EstablishedContact;
 
 // Storage for established contacts
@@ -19,67 +20,21 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
     identity_handle: Handle,
     contact_id: *const u8,
     out_contact_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_contact_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_contact_handle);
 
-    let contact_identifier = match unsafe { read_identifier(contact_id) } {
-        Ok(id) => id,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identifier: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let contact_identifier = unwrap_result_or_return!(unsafe { read_identifier(contact_id) });
 
-    MANAGED_IDENTITY_STORAGE
-        .with_item(identity_handle, |identity| {
-            match identity.established_contacts.get(&contact_identifier) {
-                Some(contact) => {
-                    let handle = ESTABLISHED_CONTACT_STORAGE.insert(contact.clone());
-                    unsafe { *out_contact_handle = handle };
-                    PlatformWalletFFIResult::Success
-                }
-                None => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorContactNotFound,
-                                "Established contact not found",
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorContactNotFound
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid identity handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
+        identity
+            .established_contacts
+            .get(&contact_identifier)
+            .cloned()
+    });
+    let inner = unwrap_option_or_return!(option);
+    let contact = unwrap_option_or_return!(inner);
+    unsafe { *out_contact_handle = ESTABLISHED_CONTACT_STORAGE.insert(contact) };
+    PlatformWalletFfiResult::ok()
 }
 
 /// Get the contact identity ID from an established contact into a
@@ -88,36 +43,14 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
 pub unsafe extern "C" fn established_contact_get_contact_id(
     contact_handle: Handle,
     out_id: *mut u8,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_id.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_id);
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| {
-            unsafe { write_identifier(out_id, &contact.contact_identity_id) };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.contact_identity_id);
+    let id = unwrap_option_or_return!(option);
+    unsafe { write_identifier(out_id, &id) };
+    PlatformWalletFfiResult::ok()
 }
 
 /// Get a handle to the outgoing contact request from an established contact
@@ -125,38 +58,16 @@ pub unsafe extern "C" fn established_contact_get_contact_id(
 pub unsafe extern "C" fn established_contact_get_outgoing_request(
     contact_handle: Handle,
     out_request_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_request_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_request_handle);
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| {
-            let handle = crate::contact_request::CONTACT_REQUEST_STORAGE
-                .insert(contact.outgoing_request.clone());
-            unsafe { *out_request_handle = handle };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.outgoing_request.clone());
+    let req = unwrap_option_or_return!(option);
+    unsafe {
+        *out_request_handle = crate::contact_request::CONTACT_REQUEST_STORAGE.insert(req);
+    }
+    PlatformWalletFfiResult::ok()
 }
 
 /// Get a handle to the incoming contact request from an established contact
@@ -164,38 +75,16 @@ pub unsafe extern "C" fn established_contact_get_outgoing_request(
 pub unsafe extern "C" fn established_contact_get_incoming_request(
     contact_handle: Handle,
     out_request_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_request_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_request_handle);
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| {
-            let handle = crate::contact_request::CONTACT_REQUEST_STORAGE
-                .insert(contact.incoming_request.clone());
-            unsafe { *out_request_handle = handle };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.incoming_request.clone());
+    let req = unwrap_option_or_return!(option);
+    unsafe {
+        *out_request_handle = crate::contact_request::CONTACT_REQUEST_STORAGE.insert(req);
+    }
+    PlatformWalletFfiResult::ok()
 }
 
 /// Get the contact identity ID from an established contact (alias
@@ -205,9 +94,8 @@ pub unsafe extern "C" fn established_contact_get_incoming_request(
 pub unsafe extern "C" fn established_contact_get_contact_identity_id(
     contact_handle: Handle,
     out_id: *mut u8,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    unsafe { established_contact_get_contact_id(contact_handle, out_id, out_error) }
+) -> PlatformWalletFfiResult {
+    unsafe { established_contact_get_contact_id(contact_handle, out_id) }
 }
 
 /// Get the alias for an established contact
@@ -215,49 +103,17 @@ pub unsafe extern "C" fn established_contact_get_contact_identity_id(
 pub unsafe extern "C" fn established_contact_get_alias(
     contact_handle: Handle,
     out_alias: *mut *mut std::os::raw::c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_alias.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_alias);
+    *out_alias = std::ptr::null_mut();
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| {
-            if let Some(alias) = &contact.alias {
-                match std::ffi::CString::new(alias.clone()) {
-                    Ok(c_str) => {
-                        unsafe { *out_alias = c_str.into_raw() };
-                        PlatformWalletFFIResult::Success
-                    }
-                    Err(_) => {
-                        unsafe { *out_alias = std::ptr::null_mut() };
-                        PlatformWalletFFIResult::ErrorUtf8Conversion
-                    }
-                }
-            } else {
-                unsafe { *out_alias = std::ptr::null_mut() };
-                PlatformWalletFFIResult::Success
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option =
+        ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.alias.clone());
+    let option = unwrap_option_or_return!(option);
+    let alias = unwrap_option_or_return!(option);
+    let c_str = unwrap_result_or_return!(std::ffi::CString::new(alias));
+    unsafe { *out_alias = c_str.into_raw() };
+    PlatformWalletFfiResult::ok()
 }
 
 /// Set the alias for an established contact
@@ -265,69 +121,34 @@ pub unsafe extern "C" fn established_contact_get_alias(
 pub unsafe extern "C" fn established_contact_set_alias(
     contact_handle: Handle,
     alias: *const std::os::raw::c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
+) -> PlatformWalletFfiResult {
     let alias_str = if alias.is_null() {
         None
     } else {
         unsafe {
-            match std::ffi::CStr::from_ptr(alias).to_str() {
-                Ok(s) => Some(s.to_string()),
-                Err(_) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            "Invalid UTF-8 in alias",
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                }
-            }
+            Some(unwrap_result_or_return!(std::ffi::CStr::from_ptr(alias).to_str()).to_string())
         }
     };
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item_mut(contact_handle, |contact| {
-            if let Some(a) = alias_str {
-                contact.set_alias(a);
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
+        if let Some(a) = alias_str {
+            contact.set_alias(a);
+        }
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Clear the alias for an established contact
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_clear_alias(
     contact_handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item_mut(contact_handle, |contact| {
-            contact.clear_alias();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+) -> PlatformWalletFfiResult {
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
+        contact.clear_alias();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Get the note for an established contact
@@ -335,49 +156,16 @@ pub unsafe extern "C" fn established_contact_clear_alias(
 pub unsafe extern "C" fn established_contact_get_note(
     contact_handle: Handle,
     out_note: *mut *mut std::os::raw::c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_note.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_note);
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| {
-            if let Some(note) = &contact.note {
-                match std::ffi::CString::new(note.clone()) {
-                    Ok(c_str) => {
-                        unsafe { *out_note = c_str.into_raw() };
-                        PlatformWalletFFIResult::Success
-                    }
-                    Err(_) => {
-                        unsafe { *out_note = std::ptr::null_mut() };
-                        PlatformWalletFFIResult::ErrorUtf8Conversion
-                    }
-                }
-            } else {
-                unsafe { *out_note = std::ptr::null_mut() };
-                PlatformWalletFFIResult::Success
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option =
+        ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.note.clone());
+    let option = unwrap_option_or_return!(option);
+    let note = unwrap_option_or_return!(option);
+    let c_str = unwrap_result_or_return!(std::ffi::CString::new(note));
+    unsafe { *out_note = c_str.into_raw() };
+    PlatformWalletFfiResult::ok()
 }
 
 /// Set the note for an established contact
@@ -385,69 +173,34 @@ pub unsafe extern "C" fn established_contact_get_note(
 pub unsafe extern "C" fn established_contact_set_note(
     contact_handle: Handle,
     note: *const std::os::raw::c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
+) -> PlatformWalletFfiResult {
     let note_str = if note.is_null() {
         None
     } else {
         unsafe {
-            match std::ffi::CStr::from_ptr(note).to_str() {
-                Ok(s) => Some(s.to_string()),
-                Err(_) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            "Invalid UTF-8 in note",
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                }
-            }
+            Some(unwrap_result_or_return!(std::ffi::CStr::from_ptr(note).to_str()).to_string())
         }
     };
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item_mut(contact_handle, |contact| {
-            if let Some(n) = note_str {
-                contact.set_note(n);
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
+        if let Some(n) = note_str {
+            contact.set_note(n);
+        }
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Clear the note for an established contact
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_clear_note(
     contact_handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item_mut(contact_handle, |contact| {
-            contact.clear_note();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+) -> PlatformWalletFfiResult {
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
+        contact.clear_note();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Check if an established contact is hidden
@@ -455,96 +208,46 @@ pub unsafe extern "C" fn established_contact_clear_note(
 pub unsafe extern "C" fn established_contact_is_hidden(
     contact_handle: Handle,
     out_is_hidden: *mut bool,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_is_hidden.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_is_hidden);
 
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| {
-            unsafe { *out_is_hidden = contact.is_hidden };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.is_hidden);
+    *out_is_hidden = unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Hide an established contact from the contact list
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_hide(
     contact_handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item_mut(contact_handle, |contact| {
-            contact.hide();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+) -> PlatformWalletFfiResult {
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
+        contact.hide();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Unhide an established contact
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_unhide(
     contact_handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    ESTABLISHED_CONTACT_STORAGE
-        .with_item_mut(contact_handle, |contact| {
-            contact.unhide();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid contact handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+) -> PlatformWalletFfiResult {
+    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
+        contact.unhide();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 /// Destroy an established contact handle and free resources
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_destroy(
     contact_handle: Handle,
-) -> PlatformWalletFFIResult {
-    if ESTABLISHED_CONTACT_STORAGE.remove(contact_handle).is_some() {
-        PlatformWalletFFIResult::Success
-    } else {
-        PlatformWalletFFIResult::ErrorInvalidHandle
-    }
+) -> PlatformWalletFfiResult {
+    let option = ESTABLISHED_CONTACT_STORAGE.remove(contact_handle);
+    let _ = unwrap_option_or_return!(option);
+    PlatformWalletFfiResult::ok()
 }
 
 // Tests for this module are in tests/comprehensive_tests.rs

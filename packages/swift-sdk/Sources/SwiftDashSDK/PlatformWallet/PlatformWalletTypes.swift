@@ -22,87 +22,6 @@ extension Identifier {
 
 typealias NetworkType = UInt32
 
-/// Platform Wallet error types
-public enum PlatformWalletError: LocalizedError {
-    case nullPointer
-    case invalidHandle
-    case invalidParameter
-    case invalidIdentifier
-    case invalidNetwork
-    case walletOperation(String)
-    case identityNotFound
-    case contactNotFound
-    case utf8Conversion
-    case serialization(String)
-    case deserialization(String)
-    case memoryAllocation
-    case unknown(String)
-
-    public var errorDescription: String? {
-        switch self {
-        case .nullPointer: return "Null pointer"
-        case .invalidHandle: return "Invalid handle"
-        case .invalidParameter: return "Invalid parameter"
-        case .invalidIdentifier: return "Invalid identifier"
-        case .invalidNetwork: return "Invalid network"
-        case .walletOperation(let msg): return "Wallet operation: \(msg)"
-        case .identityNotFound: return "Identity not found"
-        case .contactNotFound: return "Contact not found"
-        case .utf8Conversion: return "UTF-8 conversion error"
-        case .serialization(let msg): return "Serialization: \(msg)"
-        case .deserialization(let msg): return "Deserialization: \(msg)"
-        case .memoryAllocation: return "Memory allocation error"
-        case .unknown(let msg): return msg
-        }
-    }
-
-    init(result: PlatformWalletFFIResult, error: PlatformWalletFFIError) {
-        // Prefer the Rust-side detail message when one was supplied —
-        // the payload-less enum cases below otherwise drop it on the
-        // floor, which makes alerts like "Null pointer" impossible to
-        // diagnose. When Rust gave us no message we fall back to the
-        // typed bare case (keeps existing behavior for callers that
-        // only compare on the case label).
-        let rustMessage: String? = error.message.map { String(cString: $0) }
-
-        /// Promote a payload-less enum case to `.unknown(detail)`
-        /// when Rust supplied a message; otherwise keep the typed case.
-        func withDetail(_ bare: PlatformWalletError, prefix: String) -> PlatformWalletError {
-            guard let msg = rustMessage, !msg.isEmpty else { return bare }
-            return .unknown("\(prefix): \(msg)")
-        }
-
-        switch result {
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_HANDLE:
-            self = withDetail(.invalidHandle, prefix: "Invalid handle")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_PARAMETER:
-            self = withDetail(.invalidParameter, prefix: "Invalid parameter")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER:
-            self = withDetail(.nullPointer, prefix: "Null pointer")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_SERIALIZATION:
-            self = .serialization(rustMessage ?? "Unknown error")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_DESERIALIZATION:
-            self = .deserialization(rustMessage ?? "Unknown error")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_WALLET_OPERATION:
-            self = .walletOperation(rustMessage ?? "Unknown error")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_IDENTITY_NOT_FOUND:
-            self = withDetail(.identityNotFound, prefix: "Identity not found")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND:
-            self = withDetail(.contactNotFound, prefix: "Contact not found")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_NETWORK:
-            self = withDetail(.invalidNetwork, prefix: "Invalid network")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_IDENTIFIER:
-            self = withDetail(.invalidIdentifier, prefix: "Invalid identifier")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_MEMORY_ALLOCATION:
-            self = withDetail(.memoryAllocation, prefix: "Memory allocation")
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_UTF8_CONVERSION:
-            self = withDetail(.utf8Conversion, prefix: "UTF-8 conversion")
-        default:
-            self = .unknown(rustMessage ?? "Unknown error")
-        }
-    }
-}
-
 /// Network type for Platform wallet
 public enum PlatformNetwork: UInt32 {
     case mainnet = 0
@@ -166,15 +85,9 @@ func identifierFromFFIArray(_ array: IdentifierArray, at index: Int) -> Identifi
 /// Generate a random identifier via the FFI.
 public func generateRandomIdentifier() throws -> Identifier {
     var buf = [UInt8](repeating: 0, count: 32)
-    var error = PlatformWalletFFIError()
-
-    let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
-        platform_wallet_generate_random_identifier(bp.baseAddress!, &error)
+    try buf.withUnsafeMutableBufferPointer { bp in
+        try platform_wallet_generate_random_identifier(bp.baseAddress!).check()
     }
-    guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-        throw PlatformWalletError(result: result, error: error)
-    }
-
     return Data(buf)
 }
 

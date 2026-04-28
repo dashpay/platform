@@ -364,7 +364,7 @@ mod tests {
 
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
-            core_wallet: ManagedWalletInfo::from_wallet(wallet),
+            core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
             balance: std::sync::Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),

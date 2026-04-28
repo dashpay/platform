@@ -24,9 +24,11 @@ use std::ptr;
 
 use platform_wallet::wallet::identity::network::IdentityDiscoveryOptions;
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::block_on_worker;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Heap-allocated array of 32-byte identity ids returned by
 /// [`platform_wallet_discover_identities`]. Release by handing the
@@ -65,37 +67,19 @@ impl DiscoveredIdentityIdsFFI {
 ///   of the newly-discovered identity ids. Release with
 ///   [`platform_wallet_discover_identities_free`]. On error the
 ///   struct is left at its empty-zero state.
-/// - `out_error` — populated on failure with the usual
 ///   [`PlatformWalletFFIError`] detail.
-///
-/// # Returns
-/// [`PlatformWalletFFIResult::Success`] on success (possibly with a
-/// zero-length `out_found` — the scan completed but matched nothing
-/// new), or an error variant.
 ///
 /// # Safety
 /// `wallet_handle` must come from the platform-wallet handle
-/// registry. `out_found` must be a valid, writable pointer. All
-/// other out pointers may be null.
+/// registry. `out_found` must be a valid, writable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_discover_identities(
     wallet_handle: Handle,
     start_index_or_neg1: i64,
     gap_limit: u32,
     out_found: *mut DiscoveredIdentityIdsFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_found.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_found is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_found);
 
     // Pre-clear the out-array so partial failures don't leave the
     // caller staring at uninitialized memory.
@@ -105,8 +89,6 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         start_index: if start_index_or_neg1 < 0 {
             None
         } else {
-            // Clamp to u32 — callers passing something beyond
-            // u32::MAX are already in pathological territory.
             Some(start_index_or_neg1.min(u32::MAX as i64) as u32)
         },
         gap_limit: if gap_limit == 0 {
@@ -116,58 +98,26 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         },
     };
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move { identity.discover(opts).await });
-            match result {
-                Ok(found) => {
-                    if found.is_empty() {
-                        // `out_found` is already the empty sentinel.
-                        return PlatformWalletFFIResult::Success;
-                    }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.discover(opts).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let found = unwrap_result_or_return!(result);
+    if found.is_empty() {
+        return PlatformWalletFfiResult::ok();
+    }
 
-                    // Serialize discovered identity ids into a
-                    // heap-allocated `[[u8; 32]]` buffer paired with
-                    // its length, then hand ownership back to the
-                    // caller via `out_found`.
-                    use dpp::identity::accessors::IdentityGettersV0;
-
-                    let ids: Vec<[u8; 32]> = found.iter().map(|i| *i.id().as_bytes()).collect();
-                    let mut boxed = ids.into_boxed_slice();
-                    let count = boxed.len();
-                    let ptr = boxed.as_mut_ptr();
-                    std::mem::forget(boxed);
-
-                    unsafe {
-                        *out_found = DiscoveredIdentityIdsFFI { ids: ptr, count };
-                    }
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("discover_identities failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    use dpp::identity::accessors::IdentityGettersV0;
+    let ids: Vec<[u8; 32]> = found.iter().map(|i| *i.id().as_bytes()).collect();
+    let mut boxed = ids.into_boxed_slice();
+    let count = boxed.len();
+    let ptr = boxed.as_mut_ptr();
+    std::mem::forget(boxed);
+    unsafe {
+        *out_found = DiscoveredIdentityIdsFFI { ids: ptr, count };
+    }
+    PlatformWalletFfiResult::ok()
 }
 
 /// Release a [`DiscoveredIdentityIdsFFI`] previously populated by

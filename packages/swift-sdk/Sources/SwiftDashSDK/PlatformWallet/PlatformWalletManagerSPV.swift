@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// SPV sync state mirroring Rust's `dash_spv::sync::SyncState`.
 public enum PlatformSpvSyncState: UInt32, Sendable {
@@ -147,22 +148,14 @@ extension PlatformWalletManager {
             masternodes_current: 0, masternodes_target: 0,
             masternodes_percentage: 0
         )
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_sync_progress(handle, &ffi, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_sync_progress(handle, &ffi).check()
         return PlatformSpvSyncProgress(ffi)
     }
 
     /// Whether the SPV client is currently running.
     public func isSpvRunning() throws -> Bool {
         var running: Bool = false
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_spv_is_running(handle, &running, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_spv_is_running(handle, &running).check()
         return running
     }
 
@@ -171,21 +164,19 @@ extension PlatformWalletManager {
     /// Spawns the sync loop on the shared tokio runtime and returns
     /// immediately. Use [`stopSpv`] to cancel.
     public func startSpv(config: PlatformSpvStartConfig) throws {
-        var error = PlatformWalletFFIError()
-
         // Peer array: allocate contiguous C strings.
         let peerCStrings: [UnsafeMutablePointer<CChar>?] = config.peers.map { strdup($0) }
         defer { peerCStrings.forEach { if let p = $0 { free(p) } } }
 
-        let result = config.dataDir.withCString { dataDirPtr -> PlatformWalletFFIResult in
+        try config.dataDir.withCString { dataDirPtr in
             let userAgentPtr = config.userAgent.flatMap { strdup($0) }
             defer { if let p = userAgentPtr { free(p) } }
 
-            return peerCStrings.withUnsafeBufferPointer { peersBuf in
+            try peerCStrings.withUnsafeBufferPointer { peersBuf in
                 let peersPtr: UnsafePointer<UnsafePointer<CChar>?>? = peersBuf.baseAddress.map {
                     UnsafeRawPointer($0).assumingMemoryBound(to: UnsafePointer<CChar>?.self)
                 }
-                return platform_wallet_manager_spv_start(
+                try platform_wallet_manager_spv_start(
                     handle,
                     dataDirPtr,
                     config.network.rawValue,
@@ -194,34 +185,21 @@ extension PlatformWalletManager {
                     UInt(peerCStrings.count),
                     config.restrictToConfiguredPeers,
                     config.startFromHeight,
-                    config.masternodeSyncEnabled,
-                    &error
-                )
+                    config.masternodeSyncEnabled
+                ).check()
             }
-        }
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
         }
     }
 
     /// Stop the SPV client (idempotent).
     public func stopSpv() throws {
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_spv_stop(handle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_spv_stop(handle).check()
     }
 
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
     /// The SPV client must be running.
     public func clearSpvStorage() throws {
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_spv_clear_storage(handle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_spv_clear_storage(handle).check()
     }
 }

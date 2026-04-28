@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
+use crate::{check_ptr, unwrap_option_or_return};
 
 /// C-compatible tracked asset lock entry.
 #[repr(C)]
@@ -28,12 +29,9 @@ pub struct TrackedAssetLockFFI {
 
 /// Destroy an AssetLockManager handle.
 #[no_mangle]
-pub unsafe extern "C" fn asset_lock_manager_destroy(
-    handle: Handle,
-    _out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
+pub unsafe extern "C" fn asset_lock_manager_destroy(handle: Handle) -> PlatformWalletFfiResult {
     ASSET_LOCK_MANAGER_STORAGE.remove(handle);
-    PlatformWalletFFIResult::Success
+    PlatformWalletFfiResult::ok()
 }
 
 /// List all tracked asset locks.
@@ -45,65 +43,54 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
     handle: Handle,
     out_locks: *mut *mut TrackedAssetLockFFI,
     out_count: *mut usize,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_locks.is_null() || out_count.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_locks);
+    check_ptr!(out_count);
+
+    let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
+        use platform_wallet::AssetLockStatus;
+
+        let locks = runtime().block_on(manager.list_tracked_locks());
+        let entries: Vec<TrackedAssetLockFFI> = locks
+            .iter()
+            .map(|lock| {
+                let mut txid = [0u8; 32];
+                txid.copy_from_slice(&lock.out_point.txid[..]);
+                TrackedAssetLockFFI {
+                    txid,
+                    vout: lock.out_point.vout,
+                    account_index: lock.account_index,
+                    funding_type: match lock.funding_type {
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityRegistration => 0,
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp => 1,
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUpNotBound => 2,
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityInvitation => 3,
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::AssetLockAddressTopUp => 4,
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::AssetLockShieldedAddressTopUp => 5,
+                    },
+                    identity_index: lock.identity_index,
+                    amount: lock.amount,
+                    status: match lock.status {
+                        AssetLockStatus::Built => 0,
+                        AssetLockStatus::Broadcast => 1,
+                        AssetLockStatus::InstantSendLocked => 2,
+                        AssetLockStatus::ChainLocked => 3,
+                    },
+                    has_proof: lock.proof.is_some(),
+                }
+            })
+            .collect();
+        entries
+    });
+    let entries = unwrap_option_or_return!(option);
+
+    *out_count = entries.len();
+    if entries.is_empty() {
+        *out_locks = std::ptr::null_mut();
+    } else {
+        *out_locks = Box::into_raw(entries.into_boxed_slice()) as *mut TrackedAssetLockFFI;
     }
-
-    ASSET_LOCK_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            use platform_wallet::AssetLockStatus;
-
-            let locks = runtime().block_on(manager.list_tracked_locks());
-            let entries: Vec<TrackedAssetLockFFI> = locks
-                .iter()
-                .map(|lock| {
-                    let mut txid = [0u8; 32];
-                    txid.copy_from_slice(&lock.out_point.txid[..]);
-                    TrackedAssetLockFFI {
-                        txid,
-                        vout: lock.out_point.vout,
-                        account_index: lock.account_index,
-                        funding_type: match lock.funding_type {
-                            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityRegistration => 0,
-                            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp => 1,
-                            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUpNotBound => 2,
-                            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityInvitation => 3,
-                            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::AssetLockAddressTopUp => 4,
-                            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::AssetLockShieldedAddressTopUp => 5,
-                        },
-                        identity_index: lock.identity_index,
-                        amount: lock.amount,
-                        status: match lock.status {
-                            AssetLockStatus::Built => 0,
-                            AssetLockStatus::Broadcast => 1,
-                            AssetLockStatus::InstantSendLocked => 2,
-                            AssetLockStatus::ChainLocked => 3,
-                        },
-                        has_proof: lock.proof.is_some(),
-                    }
-                })
-                .collect();
-
-            *out_count = entries.len();
-            if entries.is_empty() {
-                *out_locks = std::ptr::null_mut();
-            } else {
-                *out_locks =
-                    Box::into_raw(entries.into_boxed_slice()) as *mut TrackedAssetLockFFI;
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid asset-lock manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    PlatformWalletFfiResult::ok()
 }
 
 /// Free tracked locks array.

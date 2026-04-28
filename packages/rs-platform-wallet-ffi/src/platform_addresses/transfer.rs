@@ -1,8 +1,10 @@
 //! FFI bindings for platform address transfer operations.
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::*;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use super::{parse_input_selection, runtime};
@@ -32,43 +34,19 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
     fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_changeset.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-    if signer_address_handle.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "signer_address_handle is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+) -> PlatformWalletFfiResult {
+    check_ptr!(out_changeset);
+    check_ptr!(signer_address_handle);
 
-    let output_map = match parse_outputs(outputs, outputs_count) {
-        Ok(m) => m,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error =
-                    PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorInvalidParameter, e);
-            }
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let output_map = unwrap_result_or_return!(parse_outputs(outputs, outputs_count));
 
-    let input_selection = match parse_input_selection(
+    let input_selection = unwrap_result_or_return!(parse_input_selection(
         input_type,
         explicit_inputs,
         explicit_inputs_count,
         nonce_inputs,
         nonce_inputs_count,
-        out_error,
-    ) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
+    ));
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
@@ -76,30 +54,18 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
     // non-destroyed handle that outlives this call.
     let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
 
-    PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            match runtime().block_on(wallet.transfer(
-                account_index,
-                input_selection,
-                output_map,
-                fee,
-                None, // platform_version = latest
-                address_signer,
-            )) {
-                Ok(changeset) => {
-                    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            e.to_string(),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.transfer(
+            account_index,
+            input_selection,
+            output_map,
+            fee,
+            None, // platform_version = latest
+            address_signer,
+        ))
+    });
+    let result = unwrap_option_or_return!(option);
+    let changeset = unwrap_result_or_return!(result);
+    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
+    PlatformWalletFfiResult::ok()
 }
