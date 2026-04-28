@@ -221,9 +221,12 @@ unsafe fn emit_json(
 ///   "proposer": "<base58 identity id>",
 ///   "tokenContractPosition": <u16>,
 ///   "closed": <bool>,
-///   "params": { /* per-variant payload, e.g. mint -> { amount, recipient, publicNote } */ }
+///   "params": { ...per-variant payload... }
 /// }
 /// ```
+///
+/// `params` carries the per-variant payload, e.g. for mint:
+/// `{ "amount": "...", "recipient": "...", "publicNote": "..." }`.
 ///
 /// `amount` / `pricePerToken` / `totalCost` are emitted as JSON
 /// strings to dodge JS's 53-bit integer precision cliff. Swift

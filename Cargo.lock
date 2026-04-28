@@ -4966,6 +4966,7 @@ version = "2.1.1"
 dependencies = [
  "bincode",
  "bs58",
+ "cbindgen 0.27.0",
  "dash-sdk",
  "dashcore",
  "dpp",

@@ -24,7 +24,7 @@ public class IdentityManager {
         var error = PlatformWalletFFIError()
 
         let result = identity_manager_create(&handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -36,7 +36,7 @@ public class IdentityManager {
         var error = PlatformWalletFFIError()
 
         let result = identity_manager_add_identity(handle, identity.handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -47,7 +47,7 @@ public class IdentityManager {
         let result = identityId.withFFIBytes { idPtr in
             identity_manager_remove_identity(handle, idPtr, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -60,7 +60,7 @@ public class IdentityManager {
         let result = identityId.withFFIBytes { idPtr in
             identity_manager_get_identity(handle, idPtr, &identityHandle, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -73,7 +73,7 @@ public class IdentityManager {
         var error = PlatformWalletFFIError()
 
         let result = identity_manager_get_all_identity_ids(handle, &array, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -86,8 +86,8 @@ public class IdentityManager {
         }
 
         var identifiers: [Identifier] = []
-        identifiers.reserveCapacity(array.count)
-        for i in 0..<array.count {
+        identifiers.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
             identifiers.append(identifierFromFFIArray(array, at: i))
         }
 
@@ -102,14 +102,14 @@ public class IdentityManager {
 
     /// Get the count of identities
     public func getIdentityCount() throws -> Int {
-        var count: Int = 0
+        var count: UInt = 0
         var error = PlatformWalletFFIError()
 
         let result = identity_manager_get_identity_count(handle, &count, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return count
+        return Int(count)
     }
 }

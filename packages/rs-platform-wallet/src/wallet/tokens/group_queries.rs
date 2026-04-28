@@ -124,7 +124,7 @@ impl TokenWallet {
             limit,
         };
 
-        let rows = GroupAction::fetch_many(&*self.sdk, query)
+        let rows = GroupAction::fetch_many(&self.sdk, query)
             .await
             .map_err(|e| {
                 PlatformWalletError::TokenError(format!("Fetch group actions failed: {}", e))
@@ -236,7 +236,7 @@ impl TokenWallet {
             action_id,
         };
 
-        let rows = GroupMemberPower::fetch_many(&*self.sdk, query)
+        let rows = GroupMemberPower::fetch_many(&self.sdk, query)
             .await
             .map_err(|e| {
                 PlatformWalletError::TokenError(format!("Fetch group action signers failed: {}", e))

@@ -102,7 +102,7 @@ pub unsafe extern "C" fn platform_wallet_token_claim(
         None
     } else {
         match CStr::from_ptr(public_note).to_str() {
-            Ok(s) if s.is_empty() => None,
+            Ok("") => None,
             Ok(s) => Some(s.to_owned()),
             Err(e) => {
                 if !out_error.is_null() {
