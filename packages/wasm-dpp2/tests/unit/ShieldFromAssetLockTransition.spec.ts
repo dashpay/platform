@@ -56,10 +56,10 @@ describe('ShieldFromAssetLockTransition', () => {
   describe('getters', () => {
     it('returns AssetLockProof and typed actions', () => {
       const t = createTransition();
-      expect(t.getAssetLockProof()).to.be.an.instanceof(wasm.AssetLockProof);
-      expect(t.getAssetLockProof().lockType).to.equal('instant');
-      expect(t.getActions()).to.be.an('array').with.lengthOf(1);
-      expect(t.getActions()[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
+      expect(t.assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);
+      expect(t.assetLockProof.lockType).to.equal('instant');
+      expect(t.actions).to.be.an('array').with.lengthOf(1);
+      expect(t.actions[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
     });
   });
 

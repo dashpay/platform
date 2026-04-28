@@ -29,18 +29,18 @@ describe('ShieldedWithdrawalTransition', () => {
     it('accepts pooling as a name string', () => {
       const t = createTransition('never');
       // PoolingWasm::From<...> for String returns CamelCase variant names.
-      expect(t.getPooling().toLowerCase()).to.equal('never');
+      expect(t.pooling.toLowerCase()).to.equal('never');
     });
 
     it('accepts pooling as a numeric value', () => {
       const t = createTransition(1);
-      expect(t.getPooling().toLowerCase()).to.equal('ifavailable');
+      expect(t.pooling.toLowerCase()).to.equal('ifavailable');
     });
 
     it('accepts pooling as a Pooling enum value', () => {
       // wasm-bindgen exports the enum as `PoolingWasm` (Never=0, IfAvailable=1, Standard=2).
       const t = createTransition(wasm.PoolingWasm.Standard);
-      expect(t.getPooling().toLowerCase()).to.equal('standard');
+      expect(t.pooling.toLowerCase()).to.equal('standard');
     });
 
     it('rejects an unknown pooling string', () => {

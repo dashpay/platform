@@ -155,14 +155,9 @@ impl ShieldTransitionWasm {
         )))
     }
 
-    #[wasm_bindgen(js_name = getType)]
-    pub fn get_type(&self) -> u8 {
-        self.0.state_transition_type() as u8
-    }
-
     /// Returns the input addresses funding the shield (with their nonces and amounts).
-    #[wasm_bindgen(js_name = getInputs)]
-    pub fn get_inputs(&self) -> Vec<PlatformAddressInputWasm> {
+    #[wasm_bindgen(getter = "inputs")]
+    pub fn inputs(&self) -> Vec<PlatformAddressInputWasm> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0
                 .inputs
@@ -175,8 +170,8 @@ impl ShieldTransitionWasm {
     }
 
     /// Returns the serialized Orchard actions.
-    #[wasm_bindgen(js_name = getActions)]
-    pub fn get_actions(&self) -> Vec<SerializedOrchardActionWasm> {
+    #[wasm_bindgen(getter = "actions")]
+    pub fn actions(&self) -> Vec<SerializedOrchardActionWasm> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0
                 .actions
@@ -188,40 +183,40 @@ impl ShieldTransitionWasm {
     }
 
     /// Returns the shield amount (credits entering the pool).
-    #[wasm_bindgen(js_name = getAmount)]
-    pub fn get_amount(&self) -> u64 {
+    #[wasm_bindgen(getter = "amount")]
+    pub fn amount(&self) -> u64 {
         match &self.0 {
             ShieldTransition::V0(v0) => v0.amount,
         }
     }
 
     /// Returns the anchor (32-byte Merkle root).
-    #[wasm_bindgen(js_name = getAnchor)]
-    pub fn get_anchor(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "anchor")]
+    pub fn anchor(&self) -> Vec<u8> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0.anchor.to_vec(),
         }
     }
 
     /// Returns the Halo2 proof bytes.
-    #[wasm_bindgen(js_name = getProof)]
-    pub fn get_proof(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "proof")]
+    pub fn proof(&self) -> Vec<u8> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0.proof.clone(),
         }
     }
 
     /// Returns the RedPallas binding signature (64 bytes).
-    #[wasm_bindgen(js_name = getBindingSignature)]
-    pub fn get_binding_signature(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "bindingSignature")]
+    pub fn binding_signature(&self) -> Vec<u8> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0.binding_signature.to_vec(),
         }
     }
 
     /// Returns the fee strategy steps.
-    #[wasm_bindgen(js_name = getFeeStrategy)]
-    pub fn get_fee_strategy(&self) -> Vec<FeeStrategyStepWasm> {
+    #[wasm_bindgen(getter = "feeStrategy")]
+    pub fn fee_strategy(&self) -> Vec<FeeStrategyStepWasm> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0
                 .fee_strategy
@@ -233,16 +228,16 @@ impl ShieldTransitionWasm {
     }
 
     /// Returns the user fee increase multiplier.
-    #[wasm_bindgen(js_name = getUserFeeIncrease)]
-    pub fn get_user_fee_increase(&self) -> u16 {
+    #[wasm_bindgen(getter = "userFeeIncrease")]
+    pub fn user_fee_increase(&self) -> u16 {
         match &self.0 {
             ShieldTransition::V0(v0) => v0.user_fee_increase,
         }
     }
 
     /// Returns the input witnesses (signatures authorising each input).
-    #[wasm_bindgen(js_name = getInputWitnesses)]
-    pub fn get_input_witnesses(&self) -> Vec<AddressWitnessWasm> {
+    #[wasm_bindgen(getter = "inputWitnesses")]
+    pub fn input_witnesses(&self) -> Vec<AddressWitnessWasm> {
         match &self.0 {
             ShieldTransition::V0(v0) => v0
                 .input_witnesses

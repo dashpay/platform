@@ -25,8 +25,8 @@ Wrappers do not invent shapes. Wrappers do not reshape. Wrappers delegate.
 Both shapes are **structurally identical** — same fields, same nesting, same
 discriminators. They differ **only in primitive encoding**:
 
-| | Object form (`toObject`) | JSON form (`toJSON`) |
-|---|---|---|
+|  | Object form (`toObject`) | JSON form (`toJSON`) |
+| --- | --- | --- |
 | Bytes (`[u8; N]`, `Vec<u8>`) | `Uint8Array` | base64 string |
 | Identifiers | `Uint8Array` | base58 string |
 | Addresses | `Uint8Array` | hex string |
@@ -107,10 +107,76 @@ Conversions are wired up via one of two macros (defined in
 
 Both produce `toObject` / `toJSON` / `fromObject` / `fromJSON` with consistent
 behavior. Direct `js_sys::Reflect::set` building of conversion shapes is
-**forbidden** unless the type is a tagged union whose variants delegate to
-their own typed wasm wrappers (the `AssetLockProof` exception). In that case
-the manually built outer shape **must** equal what the rs-dpp serde derive
-would produce, and a Rust unit test must guard against drift.
+**forbidden**: the rs-dpp serde derive defines the shape and the macros
+deliver it transparently.
+
+### Getters and setters
+
+The split: **field-like accessors are properties; verbs are methods.**
+
+In ideal JS conventions, properties are cheap and methods imply work. In
+wasm-bindgen, **every** accessor crosses the wasm boundary — so there is no
+truly "light" property anyway. The codebase reflects this: all field-like
+accessors (including ones that clone Vecs, build maps, or wrap inner types)
+are exposed as properties — `Identity.publicKeys`, `Document.properties`,
+`IdentityCreditWithdrawalTransition.outputScript`, etc. Methods are reserved
+for **actions**: things that take parameters, mutate beyond simple set, or
+genuinely "do" something (`toBytes`, `toStateTransition`, `createIdentityId`).
+
+```rust
+// Good — property style. JS sees `transition.amount`.
+#[wasm_bindgen(getter = "amount")]
+pub fn amount(&self) -> u64 { ... }
+
+#[wasm_bindgen(setter = "amount")]
+pub fn set_amount(&mut self, value: u64) { ... }
+
+// Good — property even though it allocates a Vec (matches Identity.publicKeys).
+#[wasm_bindgen(getter = "actions")]
+pub fn actions(&self) -> Vec<SerializedOrchardActionWasm> { ... }
+
+// Bad — method style for a field. JS sees `transition.getAmount()`.
+#[wasm_bindgen(js_name = getAmount)]
+pub fn get_amount(&self) -> u64 { ... }
+```
+
+The Rust function name should be the same as the field (no `get_` prefix),
+and `getter = "..."` should carry the camelCase JS name. Setters use
+`setter = "..."` with `set_` prefixed Rust fn names.
+
+**Return wasm wrapper types** when one exists for the field. Raw types
+(`Vec<u8>`, primitives) are reserved for opaque crypto blobs (proofs,
+signatures, anchors, encrypted notes) where no wrapper applies:
+
+```rust
+// Good — typed wrappers for fields with wrappers.
+#[wasm_bindgen(getter = "outputScript")]
+pub fn output_script(&self) -> CoreScriptWasm { ... }
+
+#[wasm_bindgen(getter = "assetLockProof")]
+pub fn asset_lock_proof(&self) -> AssetLockProofWasm { ... }
+
+// Good — raw bytes for opaque crypto blobs.
+#[wasm_bindgen(getter = "proof")]
+pub fn proof(&self) -> Vec<u8> { ... } // Halo2 proof bytes
+
+#[wasm_bindgen(getter = "anchor")]
+pub fn anchor(&self) -> Vec<u8> { ... } // Sinsemilla root
+```
+
+For pooling enums and similar small enums that JS sees as named strings,
+wire through the typed wasm enum so the conversion is centralized:
+
+```rust
+#[wasm_bindgen(getter = "pooling")]
+pub fn pooling(&self) -> String {
+    PoolingWasm::from(self.0.pooling()).into()
+}
+```
+
+Don't expose `getType()` / `state_transition_type()` — that field isn't
+exposed on any other transition wrapper, and JS callers can use
+`instanceof` against the wasm class instead.
 
 ### Constructor inputs
 

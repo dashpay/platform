@@ -56,12 +56,12 @@ describe('ShieldedTransferTransition', () => {
   describe('getters', () => {
     it('should expose actions, anchor, proof, bindingSignature, valueBalance', () => {
       const t = createTransition();
-      expect(t.getActions()).to.be.an('array').with.lengthOf(1);
-      expect(t.getActions()[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
-      expect(t.getAnchor()).to.be.instanceOf(Uint8Array);
-      expect(t.getAnchor().length).to.equal(32);
-      expect(t.getBindingSignature().length).to.equal(64);
-      expect(t.getValueBalance()).to.equal(BigInt(0));
+      expect(t.actions).to.be.an('array').with.lengthOf(1);
+      expect(t.actions[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
+      expect(t.anchor).to.be.instanceOf(Uint8Array);
+      expect(t.anchor.length).to.equal(32);
+      expect(t.bindingSignature.length).to.equal(64);
+      expect(t.valueBalance).to.equal(BigInt(0));
     });
   });
 

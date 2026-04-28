@@ -56,12 +56,12 @@ describe('ShieldTransition', () => {
   describe('getters', () => {
     it('returns typed inputs / actions / inputWitnesses / feeStrategy', () => {
       const t = createTransition();
-      expect(t.getInputs()).to.be.an('array').with.lengthOf(1);
-      expect(t.getInputs()[0]).to.be.an.instanceof(wasm.PlatformAddressInput);
-      expect(t.getActions()[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
-      expect(t.getInputWitnesses()[0]).to.be.an.instanceof(wasm.AddressWitness);
-      expect(t.getFeeStrategy()).to.be.an('array');
-      expect(t.getAmount()).to.equal(BigInt(50_000));
+      expect(t.inputs).to.be.an('array').with.lengthOf(1);
+      expect(t.inputs[0]).to.be.an.instanceof(wasm.PlatformAddressInput);
+      expect(t.actions[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
+      expect(t.inputWitnesses[0]).to.be.an.instanceof(wasm.AddressWitness);
+      expect(t.feeStrategy).to.be.an('array');
+      expect(t.amount).to.equal(BigInt(50_000));
     });
   });
 

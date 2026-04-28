@@ -51,19 +51,19 @@ describe('UnshieldTransition', () => {
   describe('getters', () => {
     it('returns typed PlatformAddress for outputAddress', () => {
       const t = createTransition();
-      const addr = t.getOutputAddress();
+      const addr = t.outputAddress;
       expect(addr).to.be.an.instanceof(wasm.PlatformAddress);
       expect(addr.toBytes()).to.deep.equal(addrBytes);
     });
 
     it('returns typed Orchard actions', () => {
       const t = createTransition();
-      expect(t.getActions()[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
+      expect(t.actions[0]).to.be.an.instanceof(wasm.SerializedOrchardAction);
     });
 
     it('returns the unshielding amount', () => {
       const t = createTransition();
-      expect(t.getUnshieldingAmount()).to.equal(BigInt(50_000));
+      expect(t.unshieldingAmount).to.equal(BigInt(50_000));
     });
   });
 

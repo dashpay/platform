@@ -116,14 +116,9 @@ impl ShieldedTransferTransitionWasm {
         ))
     }
 
-    #[wasm_bindgen(js_name = getType)]
-    pub fn get_type(&self) -> u8 {
-        self.0.state_transition_type() as u8
-    }
-
     /// Returns the serialized Orchard actions.
-    #[wasm_bindgen(js_name = getActions)]
-    pub fn get_actions(&self) -> Vec<SerializedOrchardActionWasm> {
+    #[wasm_bindgen(getter = "actions")]
+    pub fn actions(&self) -> Vec<SerializedOrchardActionWasm> {
         match &self.0 {
             ShieldedTransferTransition::V0(v0) => v0
                 .actions
@@ -135,32 +130,32 @@ impl ShieldedTransferTransitionWasm {
     }
 
     /// Returns the value balance (fee amount leaving the pool).
-    #[wasm_bindgen(js_name = getValueBalance)]
-    pub fn get_value_balance(&self) -> u64 {
+    #[wasm_bindgen(getter = "valueBalance")]
+    pub fn value_balance(&self) -> u64 {
         match &self.0 {
             ShieldedTransferTransition::V0(v0) => v0.value_balance,
         }
     }
 
     /// Returns the anchor (32-byte Merkle root).
-    #[wasm_bindgen(js_name = getAnchor)]
-    pub fn get_anchor(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "anchor")]
+    pub fn anchor(&self) -> Vec<u8> {
         match &self.0 {
             ShieldedTransferTransition::V0(v0) => v0.anchor.to_vec(),
         }
     }
 
     /// Returns the Halo2 proof bytes.
-    #[wasm_bindgen(js_name = getProof)]
-    pub fn get_proof(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "proof")]
+    pub fn proof(&self) -> Vec<u8> {
         match &self.0 {
             ShieldedTransferTransition::V0(v0) => v0.proof.clone(),
         }
     }
 
     /// Returns the RedPallas binding signature (64 bytes).
-    #[wasm_bindgen(js_name = getBindingSignature)]
-    pub fn get_binding_signature(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "bindingSignature")]
+    pub fn binding_signature(&self) -> Vec<u8> {
         match &self.0 {
             ShieldedTransferTransition::V0(v0) => v0.binding_signature.to_vec(),
         }
