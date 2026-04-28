@@ -134,28 +134,36 @@ public final class PersistentTxo {
     }
 
     /// Convenience accessor for the containing transaction's txid
-    /// as raw 32-byte `Data`. Returns empty `Data()` if the
-    /// relationship isn't attached (which should only happen
-    /// briefly during construction).
+    /// as raw 32-byte `Data`. Prefers the `transaction` relationship;
+    /// falls back to the first 32 bytes of `outpoint` when the
+    /// inverse is briefly nil during insert (so storage-explorer
+    /// rows still render a stable identifier rather than collapsing
+    /// to empty).
     public var txid: Data {
-        transaction?.txid ?? Data()
+        if let transaction {
+            return transaction.txid
+        }
+        return outpoint.count >= 32 ? Data(outpoint.prefix(32)) : Data()
     }
 
-    /// Hex-encoded txid for UI / log sites. Delegates to
-    /// `PersistentTransaction.txidHex` (which reverses bytes for
-    /// canonical block-explorer display) — keeping that flip in
-    /// one place avoids the two sides drifting out of sync.
+    /// Hex-encoded txid for UI / log sites. Reverses bytes to match
+    /// the canonical block-explorer display (same flip as
+    /// `dashcore::Txid: Display`). Mirrors
+    /// `PersistentTransaction.txidHex` directly so the two stay in
+    /// sync; can't simply forward to it because we want the same
+    /// hex even when `transaction` is briefly unattached.
     public var txidHex: String {
-        transaction?.txidHex ?? ""
+        let rawTxid = txid
+        guard rawTxid.count == 32 else { return "" }
+        return rawTxid.reversed().map { String(format: "%02x", $0) }.joined()
     }
 
     /// Human-readable outpoint (`<txid hex>:<vout>`) for UI / log
-    /// sites. Reconstructs from the parent transaction's txid plus
-    /// `self.vout` rather than re-decoding the stored 36-byte blob,
-    /// which avoids one allocation and matches the legacy display
-    /// format.
+    /// sites. Reconstructs from `txidHex` so the byte-flip stays
+    /// consistent across all display surfaces.
     public var outpointHex: String {
-        "\(txidHex):\(vout)"
+        let hex = txidHex
+        return hex.isEmpty ? "" : "\(hex):\(vout)"
     }
 
     public var formattedAmount: String {
