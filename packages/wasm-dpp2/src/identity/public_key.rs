@@ -87,7 +87,7 @@ export interface IdentityPublicKeyJSON {
     id: number;
     purpose: number;
     securityLevel: number;
-    contractBounds?: object;
+    contractBounds?: ContractBoundsJSON;
     type: number;
     readOnly: boolean;
     data: string;

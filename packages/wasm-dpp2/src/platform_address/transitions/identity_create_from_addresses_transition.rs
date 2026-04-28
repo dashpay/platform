@@ -41,7 +41,7 @@ export interface IdentityCreateFromAddressesTransitionObject {
 }
 
 export interface IdentityCreateFromAddressesTransitionJSON {
-    publicKeys: object[];
+    publicKeys: IdentityPublicKeyInCreationJSON[];
     inputs: PlatformAddressInputJSON[];
     output?: PlatformAddressOutputJSON;
     feeStrategy: FeeStrategyStepJSON[];
