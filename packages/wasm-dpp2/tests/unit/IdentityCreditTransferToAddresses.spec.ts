@@ -200,9 +200,7 @@ describe('IdentityCreditTransferToAddresses', () => {
 
       expect(json.recipientAddresses).to.be.an('array').with.lengthOf(1);
       expect(json.recipientAddresses[0].address).to.be.a('string').with.lengthOf(42);
-      expect(json.recipientAddresses[0].amount).to.satisfy((v: unknown) =>
-        typeof v === 'number' || typeof v === 'string',
-      );
+      expect(json.recipientAddresses[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
     });
 
     it('fromObject(toObject()) round-trips identically', () => {

@@ -39,8 +39,7 @@ describe('ShieldTransition', () => {
     });
 
     it('should reject anchor of wrong length', () => {
-      expect(() =>
-        new wasm.ShieldTransition({
+      expect(() => new wasm.ShieldTransition({
           inputs: [],
           actions: [fakeOrchardAction()],
           amount: BigInt(0),
@@ -48,8 +47,7 @@ describe('ShieldTransition', () => {
           proof: ZERO_PROOF,
           bindingSignature: ZERO_BINDING_SIG,
           inputWitnesses: [],
-        }),
-      ).to.throw();
+        })).to.throw();
     });
   });
 
@@ -102,9 +100,7 @@ describe('ShieldTransition', () => {
 
       expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
       expect(json.inputs[0].nonce).to.equal(0);
-      expect(json.inputs[0].amount).to.satisfy((v: unknown) =>
-        typeof v === 'number' || typeof v === 'string',
-      );
+      expect(json.inputs[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
     });
   });
 

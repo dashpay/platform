@@ -113,13 +113,14 @@ async fn build_core_changeset(
 ) -> CoreChangeSet {
     match event {
         WalletEvent::TransactionDetected { record, .. } => {
-            let mut cs = CoreChangeSet::default();
             // Derive UTXO deltas BEFORE moving the record into `records`
             // so we still have the per-record borrows.
-            cs.new_utxos = derive_new_utxos(record);
-            cs.spent_utxos = derive_spent_utxos(record);
-            cs.records.push((**record).clone());
-            cs
+            CoreChangeSet {
+                new_utxos: derive_new_utxos(record),
+                spent_utxos: derive_spent_utxos(record),
+                records: vec![(**record).clone()],
+                ..CoreChangeSet::default()
+            }
         }
         WalletEvent::TransactionInstantLocked {
             wallet_id,

@@ -244,9 +244,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
       expect(json.inputs[0].address).to.be.a('string');
       expect(json.inputs[0].address).to.have.lengthOf(42); // 21 bytes hex-encoded
       expect(json.inputs[0].nonce).to.equal(0);
-      expect(json.inputs[0].amount).to.satisfy((v: unknown) =>
-        typeof v === 'number' || typeof v === 'string',
-      );
+      expect(json.inputs[0].amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
     });
 
     it('toJSON() emits outputs with hex address and null amount when unset', () => {

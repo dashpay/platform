@@ -29,27 +29,23 @@ describe('ShieldedTransferTransition', () => {
     });
 
     it('should reject anchor of wrong length', () => {
-      expect(() =>
-        new wasm.ShieldedTransferTransition({
+      expect(() => new wasm.ShieldedTransferTransition({
           actions: [fakeOrchardAction()],
           valueBalance: BigInt(0),
           anchor: new Uint8Array(31), // too short
           proof: ZERO_PROOF,
           bindingSignature: ZERO_BINDING_SIG,
-        }),
-      ).to.throw();
+        })).to.throw();
     });
 
     it('should reject bindingSignature of wrong length', () => {
-      expect(() =>
-        new wasm.ShieldedTransferTransition({
+      expect(() => new wasm.ShieldedTransferTransition({
           actions: [fakeOrchardAction()],
           valueBalance: BigInt(0),
           anchor: ZERO_ANCHOR,
           proof: ZERO_PROOF,
           bindingSignature: new Uint8Array(63),
-        }),
-      ).to.throw();
+        })).to.throw();
     });
   });
 

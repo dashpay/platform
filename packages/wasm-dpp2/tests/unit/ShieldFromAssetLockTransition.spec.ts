@@ -40,16 +40,14 @@ describe('ShieldFromAssetLockTransition', () => {
     });
 
     it('should reject missing assetLockProof', () => {
-      expect(() =>
-        new wasm.ShieldFromAssetLockTransition({
+      expect(() => new wasm.ShieldFromAssetLockTransition({
           actions: [fakeOrchardAction()],
           valueBalance: BigInt(0),
           anchor: ZERO_ANCHOR,
           proof: ZERO_PROOF,
           bindingSignature: ZERO_BINDING_SIG,
           signature: new Uint8Array(0),
-        }),
-      ).to.throw();
+        })).to.throw();
     });
   });
 

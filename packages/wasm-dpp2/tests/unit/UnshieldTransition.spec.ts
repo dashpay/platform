@@ -36,15 +36,13 @@ describe('UnshieldTransition', () => {
     });
 
     it('should reject missing outputAddress', () => {
-      expect(() =>
-        new wasm.UnshieldTransition({
+      expect(() => new wasm.UnshieldTransition({
           actions: [fakeOrchardAction()],
           unshieldingAmount: BigInt(0),
           anchor: ZERO_ANCHOR,
           proof: ZERO_PROOF,
           bindingSignature: ZERO_BINDING_SIG,
-        }),
-      ).to.throw();
+        })).to.throw();
     });
   });
 
