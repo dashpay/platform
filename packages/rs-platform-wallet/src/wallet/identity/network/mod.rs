@@ -38,6 +38,10 @@ mod dashpay_sync;
 mod payments;
 mod profile;
 
+// Token state-transition operations (same `IdentityWallet` impl blocks).
+// Bookkeeping (watch / sync / balance) stays on `TokenWallet`.
+mod tokens;
+
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{

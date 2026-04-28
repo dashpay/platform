@@ -24,7 +24,7 @@ public final class EstablishedContact: @unchecked Sendable {
         let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
             established_contact_get_contact_identity_id(handle, bp.baseAddress!, &error)
         }
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -38,11 +38,11 @@ public final class EstablishedContact: @unchecked Sendable {
 
         let result = established_contact_get_alias(handle, &aliasPtr, &error)
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -65,7 +65,7 @@ public final class EstablishedContact: @unchecked Sendable {
         let aliasCStr = (alias as NSString).utf8String
 
         let result = established_contact_set_alias(handle, aliasCStr, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -75,7 +75,7 @@ public final class EstablishedContact: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_clear_alias(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -87,11 +87,11 @@ public final class EstablishedContact: @unchecked Sendable {
 
         let result = established_contact_get_note(handle, &notePtr, &error)
 
-        if result == ErrorContactNotFound {
+        if result == PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND {
             return nil
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -114,7 +114,7 @@ public final class EstablishedContact: @unchecked Sendable {
         let noteCStr = (note as NSString).utf8String
 
         let result = established_contact_set_note(handle, noteCStr, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -124,7 +124,7 @@ public final class EstablishedContact: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_clear_note(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -135,7 +135,7 @@ public final class EstablishedContact: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_is_hidden(handle, &hidden, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -147,7 +147,7 @@ public final class EstablishedContact: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_hide(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }
@@ -157,7 +157,7 @@ public final class EstablishedContact: @unchecked Sendable {
         var error = PlatformWalletFFIError()
 
         let result = established_contact_unhide(handle, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
     }

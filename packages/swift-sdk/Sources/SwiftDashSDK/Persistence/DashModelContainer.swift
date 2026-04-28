@@ -21,6 +21,7 @@ public enum DashModelContainer {
             PersistentSyncState.self,
             PersistentWallet.self,
             PersistentAccount.self,
+            PersistentCoreAddress.self,
             PersistentTransaction.self,
             PersistentUtxo.self,
             PersistentWalletManagerMetadata.self
@@ -88,6 +89,9 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 }
 
 /// Version 1 of the Dash Platform schema
+/// Includes `PersistentCoreAddress` to match the example app's former container schema.
+/// The model is additive with optional relationships, so existing narrower stores can
+/// use SwiftData's lightweight migration path.
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(1, 0, 0)

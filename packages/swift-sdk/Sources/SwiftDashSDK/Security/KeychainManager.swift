@@ -471,7 +471,7 @@ extension KeychainManager {
             guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
             return out.withUnsafeMutableBufferPointer { buf -> Int32 in
                 guard let outBase = buf.baseAddress else { return -1 }
-                return platform_wallet_hash160(base, publicKey.count, outBase)
+                return platform_wallet_hash160(base, UInt(publicKey.count), outBase)
             }
         }
         guard rc == 0 else { return "" }

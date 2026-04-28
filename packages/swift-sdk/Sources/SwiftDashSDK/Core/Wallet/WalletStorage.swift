@@ -85,8 +85,11 @@ public class WalletStorage {
         }
     }
 
-    /// Retrieve a mnemonic keyed by wallet id.
-    public func retrieveMnemonic(for walletId: Data) throws -> String {
+    /// Retrieve the mnemonic UTF-8 bytes keyed by wallet id.
+    ///
+    /// Returning raw bytes lets security-sensitive call sites avoid
+    /// materializing a Swift `String` unless they truly need one.
+    public func retrieveMnemonicUTF8Bytes(for walletId: Data) throws -> Data {
         let account = perWalletMnemonicAccount(for: walletId)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -104,12 +107,37 @@ public class WalletStorage {
         guard status == errSecSuccess else {
             throw WalletStorageError.keychainError(status)
         }
-        guard let data = result as? Data,
-              let mnemonic = String(data: data, encoding: .utf8),
-              !mnemonic.isEmpty else {
+        guard let data = result as? Data, !data.isEmpty else {
+            throw WalletStorageError.mnemonicNotFound
+        }
+        return data
+    }
+
+    /// Retrieve a mnemonic keyed by wallet id.
+    public func retrieveMnemonic(for walletId: Data) throws -> String {
+        let data = try retrieveMnemonicUTF8Bytes(for: walletId)
+        guard let mnemonic = String(data: data, encoding: .utf8), !mnemonic.isEmpty else {
             throw WalletStorageError.mnemonicNotFound
         }
         return mnemonic
+    }
+
+    /// Cheap existence check used by signer preflight paths.
+    ///
+    /// Unlike `retrieveMnemonic(...)`, this does not materialize the
+    /// mnemonic bytes into Swift heap objects.
+    public func hasMnemonic(for walletId: Data) -> Bool {
+        let account = perWalletMnemonicAccount(for: walletId)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return status == errSecSuccess
     }
 
     /// Delete a mnemonic keyed by wallet id. Idempotent.

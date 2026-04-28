@@ -4985,6 +4985,8 @@ name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
  "bincode",
+ "bs58",
+ "cbindgen 0.27.0",
  "dash-sdk",
  "dashcore",
  "dpp",
@@ -4995,6 +4997,7 @@ dependencies = [
  "parking_lot",
  "platform-wallet",
  "rs-sdk-ffi",
+ "serde_json",
  "tempfile",
  "tokio",
  "zeroize",

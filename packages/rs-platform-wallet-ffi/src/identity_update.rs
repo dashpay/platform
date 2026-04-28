@@ -1,8 +1,6 @@
 //! FFI bindings for identity update (add / disable keys) driven by an
 //! external `SignerHandle`.
 //!
-//! Replaces the panic-prone `IdentitySigner` path on
-//! [`IdentityWallet::update_identity`](platform_wallet::IdentityWallet::update_identity).
 //! The MASTER auth key signs the `IdentityUpdateTransition` via the
 //! supplied `signer_handle` (typically the iOS-side `KeychainSigner`).
 

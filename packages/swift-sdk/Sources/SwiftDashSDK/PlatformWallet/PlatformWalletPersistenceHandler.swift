@@ -179,7 +179,7 @@ public class PlatformWalletPersistenceHandler {
 
         // Per-account: transactions, UTXOs, pool state.
         if cs.accounts_count > 0, let accountsPtr = cs.accounts {
-            for i in 0..<cs.accounts_count {
+            for i in 0..<Int(cs.accounts_count) {
                 let acc = accountsPtr[i]
                 applyAccountChangeset(walletRecord: wallet, acc: acc)
             }
@@ -256,28 +256,28 @@ public class PlatformWalletPersistenceHandler {
 
         // Transactions.
         if acc.transactions_count > 0, let txsPtr = acc.transactions {
-            for i in 0..<acc.transactions_count {
+            for i in 0..<Int(acc.transactions_count) {
                 upsertTransaction(account: account, tx: txsPtr[i])
             }
         }
 
         // UTXOs added.
         if acc.utxos_added_count > 0, let utxosPtr = acc.utxos_added {
-            for i in 0..<acc.utxos_added_count {
+            for i in 0..<Int(acc.utxos_added_count) {
                 upsertUtxo(account: account, utxo: utxosPtr[i])
             }
         }
 
         // UTXOs spent — mark them spent (keep for history).
         if acc.utxos_spent_count > 0, let spentPtr = acc.utxos_spent {
-            for i in 0..<acc.utxos_spent_count {
+            for i in 0..<Int(acc.utxos_spent_count) {
                 markUtxoSpent(spentPtr[i])
             }
         }
 
         // UTXOs became InstantSend-locked — update flag.
         if acc.utxos_instant_locked_count > 0, let ilPtr = acc.utxos_instant_locked {
-            for i in 0..<acc.utxos_instant_locked_count {
+            for i in 0..<Int(acc.utxos_instant_locked_count) {
                 markUtxoInstantLocked(ilPtr[i])
             }
         }
@@ -336,7 +336,7 @@ public class PlatformWalletPersistenceHandler {
         }
         record.firstSeen = tx.first_seen
         if let dataPtr = tx.tx_data, tx.tx_data_len > 0 {
-            record.transactionData = Data(bytes: dataPtr, count: tx.tx_data_len)
+            record.transactionData = Data(bytes: dataPtr, count: Int(tx.tx_data_len))
         }
         record.lastUpdated = Date()
     }
@@ -353,7 +353,7 @@ public class PlatformWalletPersistenceHandler {
         } else {
             let script: Data = {
                 guard let p = utxo.script_pubkey, utxo.script_pubkey_len > 0 else { return Data() }
-                return Data(bytes: p, count: utxo.script_pubkey_len)
+                return Data(bytes: p, count: Int(utxo.script_pubkey_len))
             }()
             let addressStr = utxo.address.map { String(cString: $0) } ?? ""
             record = PersistentUtxo(
@@ -432,6 +432,7 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_account_addresses_fn = persistAccountAddressesCallback
         cb.on_persist_identities_fn = persistIdentitiesCallback
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
+        cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         return cb
     }
 
@@ -523,6 +524,13 @@ public class PlatformWalletPersistenceHandler {
                 // restamps the network on return anyway).
                 let resolvedWalletId = entry.walletId ?? walletId
                 let network = walletNetwork(walletId: resolvedWalletId) ?? .testnet
+                // `isLocal` is the "Local Only" badge in the UI —
+                // identities the user created locally but Platform
+                // hasn't confirmed yet. The persister fires *after*
+                // Platform has confirmed, so any row created here
+                // is by definition on-network. Wallet ownership
+                // travels on `row.wallet` (the relationship set
+                // below), not on this flag.
                 row = PersistentIdentity(
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
@@ -722,6 +730,132 @@ public class PlatformWalletPersistenceHandler {
         // changesetBegin/End.
     }
 
+    // MARK: - Token balance persistence
+
+    /// Apply a `TokenBalanceChangeSet` upsert/removal pair to
+    /// `PersistentTokenBalance` rows.
+    ///
+    /// Mapping:
+    /// - Each upsert is keyed by `(tokenId, identityId)` — the same
+    ///   composite the Rust side uses on its `BTreeMap`. The 32-byte
+    ///   token id from Rust is rendered as base58 to match
+    ///   `PersistentTokenBalance.tokenId` (string column, the same
+    ///   shape the rest of the app uses for token id strings).
+    /// - Each removal deletes the matching row.
+    ///
+    /// Token metadata (name, symbol, decimals) is owned by
+    /// `PersistentToken` and joined at read time — we don't replicate
+    /// it here. The `PersistentTokenBalance.token` relationship is
+    /// linked when the matching `PersistentToken` row exists; rows
+    /// inserted before the contract has been parsed locally simply
+    /// link later when SwiftUI re-queries.
+    func persistTokenBalances(
+        walletId: Data,
+        upserts: [TokenBalanceUpsertSnapshot],
+        removals: [TokenBalanceRemovalSnapshot]
+    ) {
+        let network = walletNetwork(walletId: walletId) ?? .testnet
+
+        for entry in upserts {
+            let tokenIdBase58 = entry.tokenId.toBase58String()
+            let identityIdData = entry.identityId
+            let descriptor = FetchDescriptor<PersistentTokenBalance>(
+                predicate: #Predicate {
+                    $0.tokenId == tokenIdBase58 && $0.identityId == identityIdData
+                }
+            )
+            let row: PersistentTokenBalance
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                row = existing
+            } else {
+                row = PersistentTokenBalance(
+                    tokenId: tokenIdBase58,
+                    identityId: entry.identityId,
+                    balance: 0,
+                    network: network
+                )
+                backgroundContext.insert(row)
+                linkTokenBalanceRelations(
+                    row: row,
+                    identityId: entry.identityId,
+                    tokenIdData: entry.tokenId
+                )
+            }
+            row.updateBalance(Int64(bitPattern: entry.balance))
+            row.markAsSynced()
+            // Re-link on every upsert too so a balance row that
+            // pre-existed before its parent identity / token row
+            // landed gets stitched into the relationship graph on the
+            // next sync round.
+            if row.identity == nil || row.token == nil {
+                linkTokenBalanceRelations(
+                    row: row,
+                    identityId: entry.identityId,
+                    tokenIdData: entry.tokenId
+                )
+            }
+        }
+
+        for entry in removals {
+            let tokenIdBase58 = entry.tokenId.toBase58String()
+            let identityIdData = entry.identityId
+            let descriptor = FetchDescriptor<PersistentTokenBalance>(
+                predicate: #Predicate {
+                    $0.tokenId == tokenIdBase58 && $0.identityId == identityIdData
+                }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                backgroundContext.delete(existing)
+            }
+        }
+
+        // No save() — bracketed by changesetBegin/End from the Rust
+        // store() round.
+    }
+
+    /// Stitch a freshly-inserted `PersistentTokenBalance` into the
+    /// relationship graph: link the owning `PersistentIdentity` (when
+    /// present locally) and the matching `PersistentToken` (looked up
+    /// by its 32-byte canonical id, which `PersistentToken.id`
+    /// stores). Either side may legitimately be missing if the row
+    /// is being inserted before the contract has been parsed locally
+    /// — the next sync round re-links via the upsert-path nil-check.
+    private func linkTokenBalanceRelations(
+        row: PersistentTokenBalance,
+        identityId: Data,
+        tokenIdData: Data
+    ) {
+        let identityDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityId }
+        )
+        if let parent = try? backgroundContext.fetch(identityDescriptor).first {
+            row.identity = parent
+        }
+        let tokenDescriptor = FetchDescriptor<PersistentToken>(
+            predicate: #Predicate { $0.id == tokenIdData }
+        )
+        if let token = try? backgroundContext.fetch(tokenDescriptor).first {
+            row.token = token
+        }
+    }
+
+    /// Owned snapshot of a `TokenBalanceUpsertFFI` row. Same
+    /// rationale as `IdentityEntrySnapshot`: callbacks copy out the
+    /// raw FFI struct fields before the trampoline returns, so the
+    /// handler runs against pure-Swift values regardless of when the
+    /// Rust-side allocation gets reclaimed.
+    struct TokenBalanceUpsertSnapshot {
+        let identityId: Data
+        let tokenId: Data
+        let balance: UInt64
+    }
+
+    /// Owned snapshot of a `TokenBalanceRemovalFFI` row.
+    struct TokenBalanceRemovalSnapshot {
+        let identityId: Data
+        let tokenId: Data
+    }
+
     // MARK: - Identity private-key derivation
 
     /// Derive the 32-byte ECDSA scalar for an identity key from the
@@ -762,21 +896,22 @@ public class PlatformWalletPersistenceHandler {
         }
         let network: KeyWalletNetwork = persistentWallet.network?.toKeyWalletNetwork() ?? .testnet
 
-        // 2. Fetch the mnemonic for this wallet from the keychain.
-        //    WalletStorage stores it under `wallet.mnemonic.<hex>`
-        //    in the unified `org.dashfoundation.wallet` service.
-        let mnemonic: String
+        // 2. Fetch the mnemonic UTF-8 bytes for this wallet from the
+        //    keychain. Keep the call site off Swift `String` so the
+        //    plaintext phrase does not live in higher-level heap
+        //    objects longer than necessary.
+        let mnemonicUTF8Bytes: Data
         do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+            mnemonicUTF8Bytes = try WalletStorage().retrieveMnemonicUTF8Bytes(for: walletId)
         } catch {
             print("⚠️ deriveAndStoreIdentityKey: mnemonic missing for wallet \(walletId.prefix(4).toHexString())…: \(error.localizedDescription)")
             return nil
         }
 
-        // 3. Mnemonic → 64-byte BIP39 seed.
+        // 3. Mnemonic UTF-8 bytes → 64-byte BIP39 seed.
         let seed: Data
         do {
-            seed = try Mnemonic.toSeed(mnemonic: mnemonic)
+            seed = try Mnemonic.toSeed(mnemonicUTF8Bytes: mnemonicUTF8Bytes)
         } catch {
             print("⚠️ deriveAndStoreIdentityKey: mnemonic-to-seed failed: \(error.localizedDescription)")
             return nil
@@ -1171,7 +1306,7 @@ public class PlatformWalletPersistenceHandler {
         }
         let xpubBytes: Data
         if let xpubPtr = spec.account_xpub_bytes, spec.account_xpub_bytes_len > 0 {
-            xpubBytes = Data(bytes: xpubPtr, count: spec.account_xpub_bytes_len)
+            xpubBytes = Data(bytes: xpubPtr, count: Int(spec.account_xpub_bytes_len))
         } else {
             xpubBytes = Data()
         }
@@ -1242,7 +1377,7 @@ public class PlatformWalletPersistenceHandler {
     /// array, wallet id from the top-level struct.
     ///
     /// Returns `(nil, 0)` if nothing is restorable.
-    func loadWalletList() -> (entries: UnsafeRawPointer?, count: Int) {
+    func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int) {
         let walletDescriptor = FetchDescriptor<PersistentWallet>()
         guard let wallets = try? backgroundContext.fetch(walletDescriptor) else {
             return (nil, 0)
@@ -1288,7 +1423,7 @@ public class PlatformWalletPersistenceHandler {
                     copyBytes(acc.userIdentityId, into: &spec.user_identity_id)
                     copyBytes(acc.friendIdentityId, into: &spec.friend_identity_id)
                     spec.account_xpub_bytes = UnsafePointer(xpubBuffer)
-                    spec.account_xpub_bytes_len = xpub.count
+                    spec.account_xpub_bytes_len = UInt(xpub.count)
                     buf[j] = spec
                 }
                 accountsBuffer = buf
@@ -1353,14 +1488,14 @@ public class PlatformWalletPersistenceHandler {
             copyBytes(w.walletId, into: &entry.wallet_id)
             entry.network = networkTag(for: w.network)
             entry.accounts = accountsBuffer.map { UnsafePointer($0) }
-            entry.accounts_count = sortedAccounts.count
+            entry.accounts_count = UInt(sortedAccounts.count)
             entry.platform_address_balances = addressBalancesBuffer.map { UnsafePointer($0) }
-            entry.platform_address_balances_count = cachedBalances.count
+            entry.platform_address_balances_count = UInt(cachedBalances.count)
             entry.platform_sync_height = syncState?.syncHeight ?? 0
             entry.platform_sync_timestamp = syncState?.syncTimestamp ?? 0
             entry.platform_last_known_recent_block = syncState?.lastKnownRecentBlock ?? 0
             entry.identities = identitiesBuffer.map { UnsafePointer($0) }
-            entry.identities_count = sortedIdentities.count
+            entry.identities_count = UInt(sortedIdentities.count)
             // Primary-identity selection + gap-limit scan watermark
             // were dropped from the FFI shape — both moved off the
             // Rust manager (UI owns selection now, scan resume is
@@ -1368,9 +1503,9 @@ public class PlatformWalletPersistenceHandler {
             entriesPtr[i] = entry
         }
 
-        let opaque = UnsafeRawPointer(entriesPtr)
-        loadAllocations[opaque] = allocation
-        return (opaque, restorable.count)
+        let typed = UnsafePointer(entriesPtr)
+        loadAllocations[UnsafeRawPointer(typed)] = allocation
+        return (typed, restorable.count)
     }
 
     /// Allocate a contiguous `[IdentityRestoreEntryFFI]` buffer for
@@ -1465,7 +1600,7 @@ public class PlatformWalletPersistenceHandler {
                         let dataBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: len)
                         pk.publicKeyData.copyBytes(to: dataBuf, count: len)
                         row.data = UnsafePointer(dataBuf)
-                        row.data_len = len
+                        row.data_len = UInt(len)
                         allocation.scalarBuffers.append((dataBuf, len))
                     } else {
                         row.data = nil
@@ -1474,7 +1609,7 @@ public class PlatformWalletPersistenceHandler {
                     keyBuf[k] = row
                 }
                 entry.keys = UnsafePointer(keyBuf)
-                entry.keys_count = sortedKeys.count
+                entry.keys_count = UInt(sortedKeys.count)
                 allocation.identityKeyArrays.append((keyBuf, sortedKeys.count))
             }
 
@@ -1687,12 +1822,12 @@ private func copyBytes<T>(_ src: Data, into dst: inout T) {
 private func persistAddressBalancesCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    entriesRaw: UnsafeRawPointer?,
-    count: Int
+    entriesPtr: UnsafePointer<AddressBalanceEntryFFI>?,
+    count: UInt
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr,
-          let entriesRaw = entriesRaw,
+          let entriesPtr = entriesPtr,
           count > 0 else {
         return 0
     }
@@ -1702,12 +1837,11 @@ private func persistAddressBalancesCallback(
         .takeUnretainedValue()
 
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    let entriesPtr = entriesRaw.assumingMemoryBound(to: AddressBalanceEntryFFI.self)
 
     var entries: [(UInt8, Data, UInt64, UInt32, UInt32, UInt32)] = []
-    entries.reserveCapacity(count)
+    entries.reserveCapacity(Int(count))
 
-    for i in 0..<count {
+    for i in 0..<Int(count) {
         let entry = entriesPtr[i]
         let hashData = withUnsafeBytes(of: entry.address.hash) { Data($0) }
         entries.append((
@@ -1727,11 +1861,11 @@ private func persistAddressBalancesCallback(
 private func persistWalletChangesetCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    changesetRaw: UnsafeRawPointer?
+    changesetPtr: UnsafePointer<WalletChangeSetFFI>?
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr,
-          let changesetRaw = changesetRaw else {
+          let changesetPtr = changesetPtr else {
         return 0
     }
 
@@ -1740,7 +1874,6 @@ private func persistWalletChangesetCallback(
         .takeUnretainedValue()
 
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    let changesetPtr = changesetRaw.assumingMemoryBound(to: WalletChangeSetFFI.self)
     handler.persistWalletChangeset(walletId: walletId, changeset: changesetPtr)
     return 0
 }
@@ -1814,26 +1947,25 @@ private func persistSyncStateCallback(
 private func persistAccountCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    specRaw: UnsafeRawPointer?
+    specPtr: UnsafePointer<AccountSpecFFI>?
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr,
-          let specRaw = specRaw else {
+          let specPtr = specPtr else {
         return 0
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    let spec = specRaw.assumingMemoryBound(to: AccountSpecFFI.self).pointee
-    handler.persistAccount(walletId: walletId, spec: spec)
+    handler.persistAccount(walletId: walletId, spec: specPtr.pointee)
     return 0
 }
 
 private func loadWalletListCallback(
     context: UnsafeMutableRawPointer?,
-    outEntries: UnsafeMutablePointer<UnsafeRawPointer?>?,
-    outCount: UnsafeMutablePointer<Int>?
+    outEntries: UnsafeMutablePointer<UnsafePointer<WalletRestoreEntryFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
 ) -> Int32 {
     guard let context = context,
           let outEntries = outEntries,
@@ -1845,33 +1977,32 @@ private func loadWalletListCallback(
         .takeUnretainedValue()
     let (entries, count) = handler.loadWalletList()
     outEntries.pointee = entries
-    outCount.pointee = count
+    outCount.pointee = UInt(count)
     return 0
 }
 
 private func loadWalletListFreeCallback(
     context: UnsafeMutableRawPointer?,
-    entries: UnsafeRawPointer?,
-    _ count: Int
+    entries: UnsafePointer<WalletRestoreEntryFFI>?,
+    _ count: UInt
 ) {
     guard let context = context else { return }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
         .takeUnretainedValue()
-    handler.loadWalletListFree(entries: entries)
+    handler.loadWalletListFree(entries: entries.map(UnsafeRawPointer.init))
 }
 
 private func persistAccountAddressesCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    specRaw: UnsafeRawPointer?,
-    addressesRaw: UnsafeRawPointer?,
-    count: Int
+    specPtr: UnsafePointer<AccountSpecFFI>?,
+    addressesPtr: UnsafePointer<CoreAddressEntryFFI>?,
+    count: UInt
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr,
-          let specRaw = specRaw,
-          count >= 0 else {
+          let specPtr = specPtr else {
         return 0
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
@@ -1879,9 +2010,7 @@ private func persistAccountAddressesCallback(
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
 
-    let spec = specRaw.assumingMemoryBound(to: AccountSpecFFI.self).pointee
-    let addressesPtr: UnsafePointer<CoreAddressEntryFFI>? =
-        addressesRaw?.assumingMemoryBound(to: CoreAddressEntryFFI.self)
+    let spec = specPtr.pointee
     var userIdentityId = Data(count: 32)
     withUnsafeBytes(of: spec.user_identity_id) { src in
         userIdentityId.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
@@ -1903,9 +2032,9 @@ private func persistAccountAddressesCallback(
     // Copy every C-string into a Swift String before leaving the
     // callback — Rust owns the underlying storage only for this window.
     var snapshots: [PlatformWalletPersistenceHandler.CoreAddressEntrySnapshot] = []
-    snapshots.reserveCapacity(count)
+    snapshots.reserveCapacity(Int(count))
     if count > 0, let addressesPtr = addressesPtr {
-        for i in 0..<count {
+        for i in 0..<Int(count) {
             let entry = addressesPtr[i]
             let address = entry.address_base58.map { String(cString: $0) } ?? ""
             let derivationPath = entry.derivation_path.map { String(cString: $0) } ?? ""
@@ -1949,10 +2078,10 @@ private func persistAccountAddressesCallback(
 private func persistIdentitiesCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    upsertsRaw: UnsafeRawPointer?,
-    upsertsCount: Int,
-    removedRaw: UnsafeRawPointer?,
-    removedCount: Int
+    upsertsPtr: UnsafePointer<IdentityEntryFFI>?,
+    upsertsCount: UInt,
+    removedPtr: UnsafePointer<FFIByteTuple32>?,
+    removedCount: UInt
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
@@ -1964,10 +2093,9 @@ private func persistIdentitiesCallback(
     let walletId = Data(bytes: walletIdPtr, count: 32)
 
     var upserts: [PlatformWalletPersistenceHandler.IdentityEntrySnapshot] = []
-    if upsertsCount > 0, let upsertsRaw = upsertsRaw {
-        let upsertsPtr = upsertsRaw.assumingMemoryBound(to: IdentityEntryFFI.self)
-        upserts.reserveCapacity(upsertsCount)
-        for i in 0..<upsertsCount {
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
             let e = upsertsPtr[i]
             let identityId = dataFromTuple32(e.identity_id)
             let walletIdField: Data? = e.wallet_id_is_some ? dataFromTuple32(e.wallet_id) : nil
@@ -1987,10 +2115,9 @@ private func persistIdentitiesCallback(
     }
 
     var removed: [Data] = []
-    if removedCount > 0, let removedRaw = removedRaw {
-        let removedPtr = removedRaw.assumingMemoryBound(to: FFIByteTuple32.self)
-        removed.reserveCapacity(removedCount)
-        for i in 0..<removedCount {
+    if removedCount > 0, let removedPtr = removedPtr {
+        removed.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
             removed.append(dataFromTuple32(removedPtr[i]))
         }
     }
@@ -2008,10 +2135,10 @@ private func persistIdentitiesCallback(
 private func persistIdentityKeysCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    upsertsRaw: UnsafeRawPointer?,
-    upsertsCount: Int,
-    removedRaw: UnsafeRawPointer?,
-    removedCount: Int
+    upsertsPtr: UnsafePointer<IdentityKeyEntryFFI>?,
+    upsertsCount: UInt,
+    removedPtr: UnsafePointer<IdentityKeyRemovalFFI>?,
+    removedCount: UInt
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
@@ -2022,23 +2149,15 @@ private func persistIdentityKeysCallback(
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
 
-    // Fail fast with a clear message if the Rust / Swift struct
-    // layouts have drifted — a subtle field reorder on either side
-    // would otherwise crash in `memmove` deep inside
-    // `Data(bytes:count:)` with garbage pointer bytes, and take
-    // ages to diagnose.
-    assertIdentityKeyEntryLayout()
-
     var upserts: [PlatformWalletPersistenceHandler.IdentityKeyEntrySnapshot] = []
-    if upsertsCount > 0, let upsertsRaw = upsertsRaw {
-        let upsertsPtr = upsertsRaw.assumingMemoryBound(to: IdentityKeyEntryFFI.self)
-        upserts.reserveCapacity(upsertsCount)
-        for i in 0..<upsertsCount {
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
             let e = upsertsPtr[i]
             let identityId = dataFromTuple32(e.identity_id)
             let pubKey: Data
             if let ptr = e.public_key_data_ptr, e.public_key_data_len > 0 {
-                pubKey = Data(bytes: ptr, count: e.public_key_data_len)
+                pubKey = Data(bytes: ptr, count: Int(e.public_key_data_len))
             } else {
                 pubKey = Data()
             }
@@ -2064,16 +2183,66 @@ private func persistIdentityKeysCallback(
     }
 
     var removed: [(identityId: Data, keyId: UInt32)] = []
-    if removedCount > 0, let removedRaw = removedRaw {
-        let removedPtr = removedRaw.assumingMemoryBound(to: IdentityKeyRemovalFFI.self)
-        removed.reserveCapacity(removedCount)
-        for i in 0..<removedCount {
+    if removedCount > 0, let removedPtr = removedPtr {
+        removed.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
             let r = removedPtr[i]
             removed.append((identityId: dataFromTuple32(r.identity_id), keyId: r.key_id))
         }
     }
 
     handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
+    return 0
+}
+
+/// C shim for `on_persist_token_balances_fn`. Same snapshot + cast
+/// pattern as the identities callback — copies every
+/// `TokenBalanceUpsertFFI` / `TokenBalanceRemovalFFI` into an owned
+/// Swift snapshot before invoking the handler so the callback can
+/// return immediately even if the receiver dispatches asynchronously.
+private func persistTokenBalancesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsPtr: UnsafePointer<TokenBalanceUpsertFFI>?,
+    upsertsCount: UInt,
+    removedPtr: UnsafePointer<TokenBalanceRemovalFFI>?,
+    removedCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.TokenBalanceUpsertSnapshot] = []
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
+            let e = upsertsPtr[i]
+            upserts.append(.init(
+                identityId: dataFromTuple32(e.identity_id),
+                tokenId: dataFromTuple32(e.token_id),
+                balance: e.balance
+            ))
+        }
+    }
+
+    var removals: [PlatformWalletPersistenceHandler.TokenBalanceRemovalSnapshot] = []
+    if removedCount > 0, let removedPtr = removedPtr {
+        removals.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
+            let r = removedPtr[i]
+            removals.append(.init(
+                identityId: dataFromTuple32(r.identity_id),
+                tokenId: dataFromTuple32(r.token_id)
+            ))
+        }
+    }
+
+    handler.persistTokenBalances(walletId: walletId, upserts: upserts, removals: removals)
     return 0
 }
 
