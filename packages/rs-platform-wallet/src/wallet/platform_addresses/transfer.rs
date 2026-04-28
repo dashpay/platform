@@ -141,9 +141,21 @@ impl PlatformAddressWallet {
     }
 
     /// Automatically select input addresses from the account,
-    /// consuming addresses from lowest derivation index to highest
-    /// until the total output amount plus the estimated input-side
-    /// fee margin is covered.
+    /// consuming candidates in **balance-descending order** until
+    /// the total output amount plus the estimated input-side fee
+    /// margin is covered.
+    ///
+    /// Sorting candidates largest-balance-first mirrors the
+    /// dash-evo-tool allocator
+    /// (`src/ui/wallets/send_screen.rs:155-157`) and minimises the
+    /// number of inputs picked: when the largest single balance
+    /// already covers `total_output + estimated_fee`, the result
+    /// is a 1-input map and the multi-input fee-headroom logic in
+    /// [`select_inputs`] never fires. For the multi-input case
+    /// (largest balance alone insufficient), `select_inputs` still
+    /// applies the headroom-respecting distribution introduced in
+    /// 9ea9e7033c — this sort change only narrows the set of
+    /// scenarios that reach that branch.
     ///
     /// The selected map's values are the **consumed amount per
     /// address** (what gets moved into outputs) — not the address
@@ -182,12 +194,16 @@ impl PlatformAddressWallet {
                 ))
             })?;
 
-        // Snapshot non-zero-balance addresses in ascending DIP-17
-        // derivation index order — `BTreeMap<u32, _>` iteration is
-        // already ordered. Materialising a `Vec` here lets the
-        // selection loop run as a pure helper (`select_inputs`)
-        // that's amenable to direct unit testing.
-        let candidates: Vec<(PlatformAddress, Credits)> = account
+        // Snapshot non-zero-balance addresses, then sort them by
+        // balance descending so [`select_inputs`] sees the largest
+        // candidates first. Mirrors the dash-evo-tool allocator
+        // (`src/ui/wallets/send_screen.rs:155-157`) and means the
+        // common case — one address holds enough to cover
+        // `total_output + estimated_fee` — bypasses the multi-input
+        // fee-headroom branch entirely. Materialising a `Vec` here
+        // also lets the selection loop run as a pure helper that's
+        // amenable to direct unit testing.
+        let mut candidates: Vec<(PlatformAddress, Credits)> = account
             .addresses
             .addresses
             .values()
@@ -201,6 +217,7 @@ impl PlatformAddressWallet {
                 }
             })
             .collect();
+        candidates.sort_by(|a, b| b.1.cmp(&a.1));
 
         select_inputs(
             candidates,
@@ -286,8 +303,11 @@ fn estimate_fee_for_inputs_pub(
 
 /// Pure input-selection helper.
 ///
-/// Given a `candidates` list of `(address, balance)` pairs in
-/// preferred selection order (DIP-17 derivation order, in practice),
+/// Given a `candidates` list of `(address, balance)` pairs in the
+/// caller's preferred selection order (balance-descending in
+/// practice — see [`PlatformAddressWallet::auto_select_inputs`] —
+/// but `select_inputs` itself is order-agnostic: it walks
+/// `candidates` as-is and picks the smallest covering prefix),
 /// produce an inputs map satisfying TWO invariants demanded by the
 /// validator:
 ///
@@ -319,8 +339,9 @@ fn estimate_fee_for_inputs_pub(
 ///
 /// # Algorithm (single `DeductFromInput(0)` strategy — the production case)
 ///
-/// 1. Pick the smallest prefix of `candidates` (DIP-17 order) such
-///    that `Σ balances ≥ total_output + estimated_fee_for(prefix.len())`.
+/// 1. Pick the smallest prefix of `candidates` (in the order the
+///    caller supplied — balance-descending in practice) such that
+///    `Σ balances ≥ total_output + estimated_fee_for(prefix.len())`.
 ///    Error out if no prefix covers it.
 /// 2. Identify the prospective fee target = lex-smallest address in
 ///    that prefix (this is the address at `BTreeMap` index 0 of the
@@ -343,7 +364,8 @@ fn estimate_fee_for_inputs_pub(
 ///      (always ≥ `min_input_amount`, so always present in the map
 ///      and lex-smallest of the result).
 ///    - Distribute `total_output − fee_target_min` across the other
-///      prefix entries in DIP-17 order (`min(balance, remaining)`).
+///      prefix entries in caller-supplied order
+///      (`min(balance, remaining)`).
 /// 5. Final defensive invariant check.
 ///
 /// For multi-step `fee_strategy` patterns other than a single
@@ -360,8 +382,9 @@ fn select_inputs(
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
     let output_count = outputs.len();
 
-    // Phase 1: pick the smallest DIP-17-ordered prefix whose total
-    // balance covers `total_output + estimated_fee_for(prefix.len())`.
+    // Phase 1: pick the smallest prefix (in caller-supplied order
+    // — balance-descending, in production) whose total balance
+    // covers `total_output + estimated_fee_for(prefix.len())`.
     let mut prefix: Vec<(PlatformAddress, Credits)> = Vec::new();
     let mut accumulated: Credits = 0;
     let mut covered = false;
@@ -461,19 +484,16 @@ fn select_inputs(
     let fee_target_min = std::cmp::max(min_input_amount, total_output.saturating_sub(other_total));
 
     if fee_target_min > fee_target_max {
+        let remaining_after_consumption = fee_target_balance.saturating_sub(fee_target_min);
         return Err(PlatformWalletError::AddressOperation(format!(
-            "Selected inputs cannot reserve fee headroom: fee target {} balance {} \
-             must support both consumption ≥ {} (to reach Σ inputs == {}) and remaining \
-             ≥ estimated fee {}; need at least {} more credits at the fee target or \
-             redistribute balances across additional inputs",
+            "Cannot satisfy fee headroom: fee-target input {} has balance {} but must \
+             consume {} (leaving {} remaining), which is less than the estimated fee {}. \
+             Consider providing more inputs or using a different fee strategy.",
             format_address(&fee_target_addr),
             fee_target_balance,
             fee_target_min,
-            total_output,
+            remaining_after_consumption,
             estimated_fee,
-            fee_target_min
-                .saturating_add(estimated_fee)
-                .saturating_sub(fee_target_balance),
         )));
     }
 
@@ -894,12 +914,67 @@ mod auto_select_tests {
         match err {
             PlatformWalletError::AddressOperation(msg) => {
                 assert!(
-                    msg.contains("fee headroom"),
-                    "expected 'fee headroom' phrasing in error, got {msg:?}",
+                    msg.contains("Cannot satisfy fee headroom"),
+                    "expected 'Cannot satisfy fee headroom' phrasing in error, got {msg:?}",
+                );
+                // The improved message includes the fee-target
+                // address, its balance, the consumption, the
+                // remaining-after-consumption and the estimated
+                // fee — useful debugging breadcrumbs.
+                assert!(
+                    msg.contains("fee-target input"),
+                    "expected fee-target address callout in error, got {msg:?}",
+                );
+                assert!(
+                    msg.contains("estimated fee"),
+                    "expected estimated-fee callout in error, got {msg:?}",
                 );
             }
             other => panic!("expected AddressOperation, got {other:?}"),
         }
+    }
+
+    /// `select_inputs` is order-agnostic: it walks `candidates` as-is and
+    /// picks the smallest covering prefix. The caller (`auto_select_inputs`)
+    /// is responsible for sorting candidates in the desired preference order.
+    ///
+    /// This test asserts that when candidates arrive in balance-descending
+    /// order — the convention `auto_select_inputs` adopts — the largest
+    /// single balance covering `total_output + fee` results in a 1-input
+    /// map. This is the common path that sidesteps the multi-input fee
+    /// headroom logic entirely.
+    #[test]
+    fn descending_order_picks_single_largest_when_sufficient() {
+        let addr_small = p2pkh(0x01);
+        let addr_large = p2pkh(0xFE);
+        let target = p2pkh(0xCC);
+        let total_output = 30_000_000u64;
+        let outputs = outputs_for(target, total_output);
+        // Caller pre-sorts: largest first.
+        let candidates = vec![(addr_large, 100_000_000), (addr_small, 5_000_000)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
+            .expect("selection");
+
+        assert_eq!(
+            selected.len(),
+            1,
+            "single largest covers, no multi-input case"
+        );
+        assert!(
+            selected.contains_key(&addr_large),
+            "the large input is the only one selected"
+        );
+        assert_eq!(selected[&addr_large], total_output);
+
+        // The fee target (lex-smallest of selected = addr_large here, since it's the only entry)
+        // has remaining = 100M - 30M = 70M, far above any plausible fee.
+        let estimated_fee =
+            estimate_fee_for_inputs_pub(selected.len(), outputs.len(), &fee_strategy, &outputs, pv);
+        let remaining = 100_000_000u64 - selected[&addr_large];
+        assert!(remaining >= estimated_fee);
     }
 
     /// Empty candidate list → error rather than panic / silent zero-input transition.
