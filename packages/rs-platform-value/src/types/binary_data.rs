@@ -277,4 +277,70 @@ mod tests {
         let new_id: Identifier = from_value(value).unwrap();
         assert_eq!(id, new_id);
     }
+
+    /// Proves the **non-HR** path: bincode (`is_human_readable() == false`)
+    /// dispatches `deserialize_bytes` → `visit_bytes`. Same path as
+    /// `serde_wasm_bindgen::from_value` via the `dashpay/serde-wasm-bindgen` fork.
+    #[test]
+    fn binary_data_deserializes_bytes_through_non_human_readable_path() {
+        let original = BinaryData::new(vec![0xde, 0xad, 0xbe, 0xef]);
+
+        let bytes = bincode::serde::encode_to_vec(&original, bincode::config::standard())
+            .expect("bincode encode");
+        let (restored, _): (BinaryData, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("bincode decode");
+        assert_eq!(original, restored);
+    }
+
+    /// Proves the **nested-deserializer** path: when `BinaryData` lives inside an
+    /// internally-tagged enum (`#[serde(tag = "type")]`), serde routes the inner
+    /// field through `serde::__private::de::ContentDeserializer`, which reports
+    /// `is_human_readable() == true` regardless of the outer format. So
+    /// `BinaryData::deserialize` takes the HR branch (`deserialize_string`).
+    /// The question: when the inner content is `Content::Bytes(...)` (because
+    /// the source `Value` carries `Value::Bytes`), does `deserialize_string`
+    /// dispatch to `visit_bytes` on `StringVisitor`?
+    ///
+    /// This is the path our wasm-dpp2 `fromObject` runs:
+    /// `JsValue` → `platform_value::Value` (with `Value::Bytes` for byte fields)
+    /// → `platform_value::from_value` → tagged enum `ContentDeserializer` →
+    /// `BinaryData::deserialize` (HR=true) → `deserialize_string(StringVisitor)`.
+    ///
+    /// If CodeRabbit's concern is correct, this test fails.
+    #[test]
+    fn binary_data_deserializes_bytes_through_internally_tagged_enum() {
+        use crate::Value;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        #[serde(tag = "type", rename_all = "camelCase")]
+        enum Wrapper {
+            Variant { signature: BinaryData },
+        }
+
+        // Build the tagged-enum shape by hand with a `Value::Bytes` for the
+        // nested BinaryData field — exactly what platform_value_from_object
+        // produces when a JS Object's byte field is a `Uint8Array`.
+        let value = Value::Map(vec![
+            (Value::Text("type".into()), Value::Text("variant".into())),
+            (
+                Value::Text("signature".into()),
+                Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
+            ),
+        ]);
+
+        let restored: Wrapper = crate::from_value(value).expect(
+            "internally-tagged BinaryData should deserialize from Value::Bytes — \
+             if this fails, CodeRabbit's `deserialize_string` blocks `visit_bytes` concern \
+             is real for nested deserializers (ContentDeserializer reports HR=true).",
+        );
+
+        assert_eq!(
+            restored,
+            Wrapper::Variant {
+                signature: BinaryData::new(vec![0xde, 0xad, 0xbe, 0xef]),
+            }
+        );
+    }
 }
