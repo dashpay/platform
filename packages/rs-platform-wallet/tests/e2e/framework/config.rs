@@ -3,6 +3,9 @@
 //! or constructed programmatically via [`Config::new`].
 
 use std::path::PathBuf;
+use std::str::FromStr;
+
+use dashcore::Network;
 
 use super::{FrameworkError, FrameworkResult};
 
@@ -141,4 +144,19 @@ impl Config {
 /// before slot-fallback.
 fn default_workdir_base() -> PathBuf {
     std::env::temp_dir().join("dash-platform-wallet-e2e")
+}
+
+/// Parse a network string supporting the canonical dashcore names
+/// plus the test-harness `local` alias for regtest and an empty
+/// shorthand for testnet. Delegates the rest to `<Network as FromStr>`.
+pub(super) fn parse_network(s: &str) -> FrameworkResult<Network> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Ok(Network::Testnet);
+    }
+    if trimmed.eq_ignore_ascii_case("local") {
+        return Ok(Network::Regtest);
+    }
+    Network::from_str(trimmed)
+        .map_err(|e| FrameworkError::Config(format!("invalid network {trimmed:?}: {e}")))
 }

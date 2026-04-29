@@ -21,7 +21,7 @@ use platform_wallet::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::config::Config;
+use super::config::{parse_network, Config};
 use super::signer::SeedBackedPlatformAddressSigner;
 use super::wallet_factory::{
     default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB,
@@ -195,25 +195,6 @@ impl BankWallet {
     pub async fn total_credits(&self) -> Credits {
         self.wallet.platform().total_credits().await
     }
-}
-
-/// Case-insensitive network parser; rejects unknown values so
-/// config typos surface loudly.
-fn parse_network(value: &str) -> FrameworkResult<Network> {
-    let normalized = value.trim().to_ascii_lowercase();
-    let net = match normalized.as_str() {
-        "" | "testnet" => Network::Testnet,
-        "mainnet" => Network::Mainnet,
-        "devnet" => Network::Devnet,
-        "regtest" | "local" => Network::Regtest,
-        other => {
-            return Err(FrameworkError::Bank(format!(
-                "unrecognised network {other:?} — expected one of \
-                 testnet/mainnet/devnet/regtest/local"
-            )))
-        }
-    };
-    Ok(net)
 }
 
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {

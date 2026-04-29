@@ -74,6 +74,11 @@ pub enum FrameworkError {
     /// the wallet so the next startup's sweep recovers it.
     #[error("e2e cleanup: {0}")]
     Cleanup(String),
+
+    /// Configuration / env-parsing failure surfaced by helpers in
+    /// [`config`].
+    #[error("e2e config: {0}")]
+    Config(String),
 }
 
 /// Convenience alias used across the harness.

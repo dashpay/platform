@@ -22,7 +22,7 @@ use dash_spv::ClientConfig;
 use dashcore::Network;
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
 
-use super::config::Config;
+use super::config::{parse_network, Config};
 use super::sdk::TESTNET_DAPI_ADDRESSES;
 use super::{FrameworkError, FrameworkResult};
 
@@ -203,21 +203,7 @@ fn log_pipeline_snapshot(
 /// P2P seeds — mirrors `tests/spv_sync.rs` to skip DNS-discovered
 /// peers that lack compact-block-filter support.
 fn build_client_config(config: &Config) -> FrameworkResult<ClientConfig> {
-    let network = match config.network.trim().to_ascii_lowercase().as_str() {
-        "" | "testnet" => Network::Testnet,
-        "mainnet" => Network::Mainnet,
-        "devnet" => Network::Devnet,
-        "regtest" | "local" => Network::Regtest,
-        other => {
-            tracing::error!(
-                target: "platform_wallet::e2e::spv",
-                "unknown network selector {other:?} (expected testnet/mainnet/devnet/regtest/local)"
-            );
-            return Err(FrameworkError::NotImplemented(
-                "spv::build_client_config — unknown network selector (see logs)",
-            ));
-        }
-    };
+    let network = parse_network(&config.network)?;
 
     let storage_path = config.workdir_base.join("spv-data");
     std::fs::create_dir_all(&storage_path).map_err(|e| {

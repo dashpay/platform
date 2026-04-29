@@ -12,7 +12,7 @@ use dash_sdk::{Sdk, SdkBuilder};
 use dashcore::Network;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 
-use super::config::Config;
+use super::config::{parse_network, Config};
 use super::{FrameworkError, FrameworkResult};
 
 /// Default DAPI addresses for testnet — mirrors `tests/spv_sync.rs`
@@ -82,26 +82,6 @@ fn build_trusted_context_provider(
             "sdk::build_trusted_context_provider — TrustedHttpContextProvider failed (see logs)",
         )
     })
-}
-
-/// Network selector → `dashcore::Network`. Accepts
-/// testnet/mainnet/devnet/regtest, plus `local` as a Regtest alias.
-fn parse_network(name: &str) -> FrameworkResult<Network> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "" | "testnet" => Ok(Network::Testnet),
-        "mainnet" => Ok(Network::Mainnet),
-        "devnet" => Ok(Network::Devnet),
-        "regtest" | "local" => Ok(Network::Regtest),
-        other => {
-            tracing::error!(
-                target: "platform_wallet::e2e::sdk",
-                "unknown network selector {other:?} (expected testnet/mainnet/devnet/regtest/local)"
-            );
-            Err(FrameworkError::NotImplemented(
-                "sdk::parse_network — unknown network selector (see logs)",
-            ))
-        }
-    }
 }
 
 /// Resolve the DAPI [`AddressList`]. Honours
