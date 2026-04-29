@@ -24,7 +24,7 @@ export class ShieldedFacade {
     return w.getShieldedPoolState();
   }
 
-  async poolStateWithProof(): Promise<wasm.ProofMetadataResponseTyped<bigint | undefined>> {
+  async poolStateWithProof(): Promise<wasm.ProofMetadataResponseTyped<bigint | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedPoolStateWithProofInfo();
   }
@@ -61,7 +61,7 @@ export class ShieldedFacade {
     return w.getMostRecentShieldedAnchor();
   }
 
-  async mostRecentAnchorWithProof(): Promise<wasm.ProofMetadataResponseTyped<Uint8Array | undefined>> {
+  async mostRecentAnchorWithProof(): Promise<wasm.ProofMetadataResponseTyped<Uint8Array | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getMostRecentShieldedAnchorWithProofInfo();
   }

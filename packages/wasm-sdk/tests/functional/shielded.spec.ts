@@ -41,8 +41,8 @@ describe('Shielded queries', function describeShielded() {
       expect(response).to.be.ok();
       expect(response.metadata).to.be.ok();
       expect(response.proof).to.be.ok();
-      // data is bigint | undefined
-      if (response.data !== undefined) {
+      // data is bigint | null (null preserves the field in JSON.stringify)
+      if (response.data !== null) {
         expect(response.data).to.be.a('bigint');
       }
     });
@@ -112,13 +112,13 @@ describe('Shielded queries', function describeShielded() {
   });
 
   describe('getMostRecentShieldedAnchorWithProofInfo()', () => {
-    it('should return data + metadata + proof (data may be undefined)', async () => {
+    it('should return data + metadata + proof (data may be null)', async () => {
       const response = await client.getMostRecentShieldedAnchorWithProofInfo();
 
       expect(response).to.be.ok();
       expect(response.metadata).to.be.ok();
       expect(response.proof).to.be.ok();
-      if (response.data !== undefined) {
+      if (response.data !== null) {
         expect(response.data).to.be.instanceOf(Uint8Array);
         expect(response.data.length).to.equal(32);
       }

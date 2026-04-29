@@ -100,19 +100,13 @@ fn parse_nullifiers(nullifiers: &js_sys::Array) -> Result<Vec<[u8; 32]>, WasmSdk
 #[wasm_bindgen]
 impl WasmSdk {
     /// Returns the total shielded pool balance as a BigInt, or undefined if not available.
-    #[wasm_bindgen(
-        js_name = "getShieldedPoolState",
-        unchecked_return_type = "bigint | undefined"
-    )]
-    pub async fn get_shielded_pool_state(&self) -> Result<JsValue, WasmSdkError> {
+    #[wasm_bindgen(js_name = "getShieldedPoolState")]
+    pub async fn get_shielded_pool_state(&self) -> Result<Option<u64>, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{NoParamQuery, ShieldedPoolState};
 
         let result = ShieldedPoolState::fetch(self.as_ref(), NoParamQuery {}).await?;
-        match result {
-            Some(s) => Ok(JsValue::from(BigInt::from(s.0))),
-            None => Ok(JsValue::UNDEFINED),
-        }
+        Ok(result.map(|s| s.0))
     }
 
     /// Fetches encrypted notes from the shielded pool, paginated.
@@ -165,19 +159,15 @@ impl WasmSdk {
     }
 
     /// Returns the most recent shielded anchor (32 bytes), or undefined if none exists.
-    #[wasm_bindgen(
-        js_name = "getMostRecentShieldedAnchor",
-        unchecked_return_type = "Uint8Array | undefined"
-    )]
-    pub async fn get_most_recent_shielded_anchor(&self) -> Result<JsValue, WasmSdkError> {
+    #[wasm_bindgen(js_name = "getMostRecentShieldedAnchor")]
+    pub async fn get_most_recent_shielded_anchor(
+        &self,
+    ) -> Result<Option<Uint8Array>, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{MostRecentShieldedAnchor, NoParamQuery};
 
         let result = MostRecentShieldedAnchor::fetch(self.as_ref(), NoParamQuery {}).await?;
-        match result {
-            Some(anchor) => Ok(Uint8Array::from(anchor.0.as_slice()).into()),
-            None => Ok(JsValue::UNDEFINED),
-        }
+        Ok(result.map(|anchor| Uint8Array::from(anchor.0.as_slice())))
     }
 
     /// Checks the spent/unspent status of one or more nullifiers.
@@ -213,7 +203,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getShieldedPoolStateWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | null>"
     )]
     pub async fn get_shielded_pool_state_with_proof_info(
         &self,
@@ -227,7 +217,7 @@ impl WasmSdk {
 
         let data = result
             .map(|s| JsValue::from(BigInt::from(s.0)))
-            .unwrap_or(JsValue::UNDEFINED);
+            .unwrap_or(JsValue::NULL);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -295,7 +285,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getMostRecentShieldedAnchorWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array | undefined>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array | null>"
     )]
     pub async fn get_most_recent_shielded_anchor_with_proof_info(
         &self,
@@ -312,7 +302,7 @@ impl WasmSdk {
 
         let data = result
             .map(|a| JsValue::from(Uint8Array::from(a.0.as_slice())))
-            .unwrap_or(JsValue::UNDEFINED);
+            .unwrap_or(JsValue::NULL);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
