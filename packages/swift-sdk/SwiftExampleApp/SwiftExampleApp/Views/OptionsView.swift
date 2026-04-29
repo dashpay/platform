@@ -9,7 +9,6 @@ struct OptionsView: View {
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var showingContracts = false
-    @State private var isSwitchingNetwork = false
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
 
@@ -28,27 +27,22 @@ struct OptionsView: View {
                         get: { appState.currentNetwork },
                         set: { newNetwork in
                             if newNetwork != appState.currentNetwork {
-                                isSwitchingNetwork = true
-                                Task {
-                                    // Auto-disable Docker when leaving Local
-                                    if newNetwork != .regtest && appState.useDockerSetup {
-                                        appState.useDockerSetup = false
-                                    }
-
-                                    // Update platform state (which will trigger SDK switch)
-                                    appState.currentNetwork = newNetwork
-
-                                    // Reset per-network services. TODO(platform-wallet):
-                                    // Once PlatformWalletManager supports network
-                                    // switching cleanly, call into it here.
-                                    try? walletManager.stopSpv()
-                                    platformBalanceSyncService.reset()
-                                    shieldedService.reset()
-
-                                    await MainActor.run {
-                                        isSwitchingNetwork = false
-                                    }
+                                // Auto-disable Docker when leaving Local
+                                if newNetwork != .regtest && appState.useDockerSetup {
+                                    appState.useDockerSetup = false
                                 }
+
+                                // `currentNetwork.didSet` (in AppState) flips
+                                // `isSwitchingNetwork` for us and awaits the
+                                // SDK rebind, so the status label below stays
+                                // in the switching state across the entire
+                                // async cycle. Reset per-network services
+                                // alongside the switch — these don't gate
+                                // readiness, they just clean up stale UI.
+                                appState.currentNetwork = newNetwork
+                                try? walletManager.stopSpv()
+                                platformBalanceSyncService.reset()
+                                shieldedService.reset()
                             }
                         }
                     )) {
@@ -57,18 +51,14 @@ struct OptionsView: View {
                         }
                     }
                     .pickerStyle(SegmentedPickerStyle())
-                    .disabled(isSwitchingNetwork)
+                    .disabled(appState.isSwitchingNetwork)
                     .accessibilityIdentifier("options.networkPicker")
 
                     if appState.currentNetwork == .regtest {
+                        // `useDockerSetup.didSet` (in AppState) drives the
+                        // SDK rebuild and `isSwitchingNetwork`; no view-side
+                        // onChange is needed.
                         Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
-                            .onChange(of: appState.useDockerSetup) { _, _ in
-                                isSwitchingNetwork = true
-                                Task {
-                                    await appState.switchNetwork(to: appState.currentNetwork)
-                                    await MainActor.run { isSwitchingNetwork = false }
-                                }
-                            }
                             .help("Connect to local dashmate Docker network.")
 
                         if appState.useDockerSetup {
@@ -86,7 +76,7 @@ struct OptionsView: View {
                         Text("Network Status")
                         Spacer()
                         Group {
-                            if isSwitchingNetwork {
+                            if appState.isSwitchingNetwork {
                                 HStack(spacing: 4) {
                                     ProgressView()
                                         .scaleEffect(0.8)

@@ -52,35 +52,4 @@ enum Identifier {
     enum IdentityDetail {
         static let balanceLabel = "identityDetail.balanceLabel"
     }
-
-    enum Transition {
-        static let senderIdentityPicker = "transition.senderIdentityPicker"
-        static let executeButton = "transition.executeButton"
-        static let resultStatusLabel = "transition.resultStatusLabel"
-
-        /// Per-row sender option in the senderIdentityPicker menu.
-        static func senderIdentityOption(_ identityIdBase58: String) -> String {
-            "transition.senderIdentityOption.\(identityIdBase58)"
-        }
-
-        /// Generic input wrapper id — covers `toIdentityId`, `amount`, etc.
-        static func input(_ name: String) -> String {
-            "transition.input.\(name)"
-        }
-
-        /// Recipient picker (multi-identity branch); contains a `Manually Enter Recipient` option.
-        static func recipientPicker(_ inputName: String) -> String {
-            "transition.input.\(inputName).recipientPicker"
-        }
-
-        /// Escape-hatch button shown only when no other identities exist.
-        static func manualEntryButton(_ inputName: String) -> String {
-            "transition.input.\(inputName).manualEntryButton"
-        }
-
-        /// Free-form recipient TextField, visible after either branch hits `useManualEntry = true`.
-        static func manualEntryField(_ inputName: String) -> String {
-            "transition.input.\(inputName).manualEntryField"
-        }
-    }
 }

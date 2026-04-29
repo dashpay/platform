@@ -170,6 +170,7 @@ jobs:
             -only-testing:SwiftExampleAppUITests/SwiftExampleAppUITests/testCreateGeneratedWalletFlow \
             -only-testing:SwiftExampleAppUITests/WalletPersistenceTests/testWalletPersistsAcrossRelaunch \
             -only-testing:SwiftExampleAppUITests/WalletPersistenceTests/testWalletDeletionCleanupSurvivesRelaunch \
+            -only-testing:SwiftExampleAppUITests/CreditTransferTest/testImportWalletAndDiscoverIdentity \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -resultBundlePath "$RESULT_BUNDLE_PATH"

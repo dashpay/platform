@@ -9,11 +9,22 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
+    /// `true` from the moment a network change is requested until the
+    /// new SDK is bound. Spans the full async cycle (didSet → Task →
+    /// `switchNetwork` → `sdk = newSDK`), so consumers can wait on it
+    /// as a real readiness signal. UI bindings should treat
+    /// `appState.sdk != nil && !isSwitchingNetwork` as "connected on
+    /// the current network" — `appState.sdk != nil` alone is true even
+    /// while `switchNetwork` is still tearing down the previous SDK.
+    @Published var isSwitchingNetwork: Bool = false
+
     @Published var currentNetwork: AppNetwork {
         didSet {
             UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
+            isSwitchingNetwork = true
             Task {
                 await switchNetwork(to: currentNetwork)
+                isSwitchingNetwork = false
             }
         }
     }
@@ -27,7 +38,11 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
-            Task { await switchNetwork(to: currentNetwork) }
+            isSwitchingNetwork = true
+            Task {
+                await switchNetwork(to: currentNetwork)
+                isSwitchingNetwork = false
+            }
         }
     }
 

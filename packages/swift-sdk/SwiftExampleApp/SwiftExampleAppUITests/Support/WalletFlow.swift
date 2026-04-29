@@ -462,15 +462,18 @@ func runIdentityDiscovery(
     // computes a `{-1, -1}` hit point on freshly-shown menu items, the
     // auto-retry then taps a stale element, and the sheet never opens.
     // Wrap "open menu, tap item, verify sheet" in a retry loop driven
-    // by the actual signal (Search Wallets nav bar appears).
+    // by the actual signal (Search Wallets nav bar appears). Re-tap
+    // `addMenu` only when the menu item from the previous attempt isn't
+    // still visible — re-tapping while the menu is open *closes* it.
     let searchSheetNavBar = app.navigationBars["Search Wallets"]
     var sheetOpened = false
-    for attempt in 1...3 where !sheetOpened {
-        addMenu.tap()
-
+    for _ in 0..<3 where !sheetOpened {
         let searchMenuItem = app.descendants(matching: .any)
             .matching(identifier: Identifier.Identities.searchWalletsMenuItem)
             .firstMatch
+        if !searchMenuItem.exists {
+            addMenu.tap()
+        }
         if searchMenuItem.waitForExistence(timeout: 3) {
             searchMenuItem.tap()
         } else {
@@ -481,7 +484,6 @@ func runIdentityDiscovery(
             }
         }
         sheetOpened = searchSheetNavBar.waitForExistence(timeout: 5)
-        _ = attempt
     }
     XCTAssertTrue(
         sheetOpened,
@@ -489,21 +491,16 @@ func runIdentityDiscovery(
         file: file, line: line
     )
 
-    // Trust the picker's default-first auto-selection. The
-    // CreditTransferTest deletes any leftover wallet and re-imports a
-    // fresh one before this runs, so exactly one wallet is in the
-    // picker — the one we want. Tapping the menu picker reliably to
-    // pick a non-default option turns out to be flaky in XCUITest
-    // (`pickerStyle(.menu)` keeps the dropdown overlay around long
-    // enough to occlude the Search button below). Verify the picker
-    // currently shows our wallet's label as a sanity check, then tap
-    // Search.
-    // Generous timeout — SearchWalletsForIdentitiesView gates the picker
-    // on `hdWallets.isEmpty`, which is driven by an `@Query` over
-    // PersistentWallet. After a fresh import the SwiftData write
-    // → @Query update → view rerender takes a moment, and during that
-    // window the view shows the "No wallets loaded" branch instead of
-    // the picker. 20s comfortably covers the propagation lag.
+    // Drive the picker explicitly — we can't trust the default-first
+    // auto-selection. SearchWalletsForIdentitiesView's `@Query` over
+    // PersistentWallet is unfiltered and sorted by createdAt, so any
+    // older wallet on the simulator (e.g. one a developer created
+    // outside this test) wins the default selection.
+    //
+    // Generous timeout: the SwiftData write → @Query update → view
+    // rerender takes a moment after a fresh import. During that window
+    // the view shows the "No wallets loaded" branch instead of the
+    // picker. 20s comfortably covers the propagation lag.
     let walletPicker = app.descendants(matching: .any)
         .matching(identifier: Identifier.SearchWallets.walletPicker)
         .firstMatch
@@ -512,9 +509,25 @@ func runIdentityDiscovery(
         "Expected the wallet picker. (Did SwiftData propagate the imported wallet to @Query?)",
         file: file, line: line
     )
+    if !walletPicker.label.contains(walletName) {
+        // Open the .menu popover and tap the row whose accessibility
+        // label starts with our wallet name. `walletPickerRow` renders
+        // `HStack { Text(label), Text(fingerprint) }`, which combines
+        // into `"<walletName> <fingerprint>"` on the row's button.
+        walletPicker.tap()
+        let walletOption = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", walletName))
+            .firstMatch
+        XCTAssertTrue(
+            walletOption.waitForExistence(timeout: 5),
+            "Expected wallet menu option for \(walletName).",
+            file: file, line: line
+        )
+        walletOption.tap()
+    }
     XCTAssertTrue(
         walletPicker.label.contains(walletName),
-        "Picker shows \"\(walletPicker.label)\" but the test imported \(walletName). Was an unrelated wallet selected as default?",
+        "Picker shows \"\(walletPicker.label)\" but the test imported \(walletName).",
         file: file, line: line
     )
 
@@ -615,211 +628,6 @@ func readIdentityBalanceCredits(
         return 0
     }
     return credits
-}
-
-// MARK: - Credit transfer
-
-/// Settings → State Transitions → Identity → Transfer Credits.
-@MainActor
-func navigateToIdentityCreditTransferForm(
-    in app: XCUIApplication,
-    file: StaticString = #filePath,
-    line: UInt = #line
-) {
-    openSettingsTab(in: app, file: file, line: line)
-
-    // OptionsView's Form is lazy — cells below the fold (including the
-    // Platform section's "State Transitions" cell) aren't in the
-    // accessibility tree until we scroll them in.
-    let stateTransitionsCell = app.buttons["State Transitions"]
-    for _ in 0..<8 where !stateTransitionsCell.exists {
-        app.swipeUp()
-    }
-    XCTAssertTrue(
-        stateTransitionsCell.waitForExistence(timeout: 10),
-        "Expected State Transitions cell in Settings.",
-        file: file, line: line
-    )
-    stateTransitionsCell.tap()
-
-    // The category rows in StateTransitionsView render an HStack with
-    // icon + headline + description, so the button's accessibility label
-    // is the composed text — `app.buttons["Identity"]` (exact label
-    // match) fails. Match the description text, which is unique per
-    // category, via CONTAINS.
-    let identityCategory = app.buttons
-        .matching(NSPredicate(format: "label CONTAINS[c] %@", "manage identities"))
-        .firstMatch
-    XCTAssertTrue(
-        identityCategory.waitForExistence(timeout: 10),
-        "Expected Identity category cell.",
-        file: file, line: line
-    )
-    identityCategory.tap()
-
-    // Same shape inside TransitionCategoryView — match by the unique
-    // description "Transfer credits between identities".
-    let transferCredits = app.buttons
-        .matching(NSPredicate(format: "label CONTAINS[c] %@", "Transfer credits between identities"))
-        .firstMatch
-    XCTAssertTrue(
-        transferCredits.waitForExistence(timeout: 10),
-        "Expected Transfer Credits cell.",
-        file: file, line: line
-    )
-    transferCredits.tap()
-
-    XCTAssertTrue(
-        app.navigationBars["Transfer Credits"].waitForExistence(timeout: 10),
-        "Expected Transfer Credits form.",
-        file: file, line: line
-    )
-}
-
-/// Drive a credit-transfer state transition.
-/// Sender selection: tap the senderIdentityPicker, tap the per-row option
-/// matching the sender ID. Recipient handling covers both branches of
-/// `recipientIdentityPicker` (the wallet's identity-only single-identity
-/// case AND the multi-identity-on-simulator case).
-@MainActor
-func executeCreditTransfer(
-    senderIdentityIdBase58: String,
-    recipientIdentityIdBase58: String,
-    amountCredits: UInt64,
-    in app: XCUIApplication,
-    file: StaticString = #filePath,
-    line: UInt = #line
-) {
-    // Sender selection.
-    let senderPicker = app.descendants(matching: .any)
-        .matching(identifier: Identifier.Transition.senderIdentityPicker)
-        .firstMatch
-    XCTAssertTrue(
-        senderPicker.waitForExistence(timeout: 10),
-        "Expected sender identity picker.",
-        file: file, line: line
-    )
-    senderPicker.tap()
-    let senderOptionId = Identifier.Transition.senderIdentityOption(senderIdentityIdBase58)
-    let senderOption = app.descendants(matching: .any)
-        .matching(identifier: senderOptionId)
-        .firstMatch
-    if senderOption.waitForExistence(timeout: 5) {
-        senderOption.tap()
-    } else {
-        // Fallback: match by displayName prefix (first 12 chars + "...")
-        let prefix = String(senderIdentityIdBase58.prefix(12))
-        let labelPredicate = NSPredicate(format: "label BEGINSWITH %@", prefix)
-        let senderByLabel = app.buttons.matching(labelPredicate).firstMatch
-        XCTAssertTrue(
-            senderByLabel.waitForExistence(timeout: 5),
-            "Expected sender option \(senderIdentityIdBase58).",
-            file: file, line: line
-        )
-        senderByLabel.tap()
-    }
-
-    // Wait for the picker's menu overlay to dismiss and the toIdentityId
-    // form input wrapper to render. The menu overlay can occlude
-    // descendants beneath it for a moment after a selection.
-    let toIdentityWrapper = app.descendants(matching: .any)
-        .matching(identifier: Identifier.Transition.input("toIdentityId"))
-        .firstMatch
-    XCTAssertTrue(
-        toIdentityWrapper.waitForExistence(timeout: 15),
-        "Expected toIdentityId input wrapper to render after sender selection. (Did the picker menu overlay get stuck open, or did selectedIdentityId not propagate?)",
-        file: file, line: line
-    )
-
-    // Recipient: reach the manual-entry text field via either of the two
-    // recipientIdentityPicker branches. Match descendants of the wrapper
-    // to avoid picking up unrelated buttons elsewhere on screen.
-    let manualButton = toIdentityWrapper.buttons
-        .matching(identifier: Identifier.Transition.manualEntryButton("toIdentityId"))
-        .firstMatch
-    if manualButton.waitForExistence(timeout: 5) && manualButton.isHittable {
-        manualButton.tap()
-    } else {
-        let recipientPicker = toIdentityWrapper.descendants(matching: .any)
-            .matching(identifier: Identifier.Transition.recipientPicker("toIdentityId"))
-            .firstMatch
-        XCTAssertTrue(
-            recipientPicker.waitForExistence(timeout: 10),
-            "Expected either manual-entry button or recipient picker for toIdentityId.",
-            file: file, line: line
-        )
-        recipientPicker.tap()
-        let manualOption = app.buttons["💳 Manually Enter Recipient"]
-        XCTAssertTrue(
-            manualOption.waitForExistence(timeout: 5),
-            "Expected 'Manually Enter Recipient' option in recipient picker menu.",
-            file: file, line: line
-        )
-        manualOption.tap()
-    }
-
-    let recipientField = app.textFields
-        .matching(identifier: Identifier.Transition.manualEntryField("toIdentityId"))
-        .firstMatch
-    XCTAssertTrue(
-        recipientField.waitForExistence(timeout: 5),
-        "Expected manual-entry recipient field.",
-        file: file, line: line
-    )
-    recipientField.tap()
-    recipientField.typeText(recipientIdentityIdBase58)
-
-    // Amount.
-    let amountWrapper = app.descendants(matching: .any)
-        .matching(identifier: Identifier.Transition.input("amount"))
-        .firstMatch
-    XCTAssertTrue(
-        amountWrapper.waitForExistence(timeout: 5),
-        "Expected amount input wrapper.",
-        file: file, line: line
-    )
-    let amountField = amountWrapper.textFields.firstMatch
-    XCTAssertTrue(
-        amountField.waitForExistence(timeout: 5),
-        "Expected amount TextField.",
-        file: file, line: line
-    )
-    amountField.tap()
-    amountField.typeText(String(amountCredits))
-    app.swipeDown()
-
-    let executeButton = app.buttons
-        .matching(identifier: Identifier.Transition.executeButton)
-        .firstMatch
-    XCTAssertTrue(
-        waitForElementToBeEnabled(executeButton, timeout: 10),
-        "Expected Execute Transition button to enable.",
-        file: file, line: line
-    )
-    executeButton.tap()
-}
-
-@MainActor
-func waitForCreditTransferSuccess(
-    in app: XCUIApplication,
-    timeout: TimeInterval = 30,
-    file: StaticString = #filePath,
-    line: UInt = #line
-) {
-    let resultStatus = app.staticTexts
-        .matching(identifier: Identifier.Transition.resultStatusLabel)
-        .firstMatch
-    XCTAssertTrue(
-        resultStatus.waitForExistence(timeout: timeout),
-        "Expected transition result status label.",
-        file: file, line: line
-    )
-    XCTAssertEqual(
-        resultStatus.label,
-        "Success",
-        "Transition reported Error rather than Success.",
-        file: file, line: line
-    )
 }
 
 // MARK: - Pre-import cleanup
@@ -926,9 +734,10 @@ func scrollToWalletRow(named walletName: String, in app: XCUIApplication) -> XCU
 
 /// Assert a wallet row's presence (or absence) by name. For `exists: true`
 /// this scrolls up to ~16 swipes to find the row, mirroring
-/// `scrollToWalletRow`. For `exists: false` it does not scroll — deleted
-/// wallets disappear in place, so we wait for both the buttons and
-/// staticTexts predicate matches to fail at the current scroll position.
+/// `scrollToWalletRow`. For `exists: false` it scrolls back to the top
+/// and sweeps down — SwiftUI Lists are lazy, and a still-persisted row
+/// off-screen would otherwise let the absence predicate evaluate true
+/// even though deletion or relaunch cleanup actually failed.
 @MainActor
 func assertWalletRowVisible(
     named walletName: String,
@@ -949,12 +758,30 @@ func assertWalletRowVisible(
         return
     }
 
+    // Reset to the top of the list, then sweep down. If the row appears
+    // at any scroll position, fail loudly — its presence anywhere in the
+    // list means deletion didn't actually happen.
+    for _ in 0..<6 { app.swipeDown() }
+
     let buttonRow = app.buttons
         .matching(NSPredicate(format: "label == %@", walletName))
         .firstMatch
     let textRow = app.staticTexts
         .matching(NSPredicate(format: "label == %@", walletName))
         .firstMatch
+
+    for _ in 0..<10 {
+        if buttonRow.exists || textRow.exists {
+            XCTFail(
+                "Expected wallet row \(walletName) to be absent, but found during sweep.",
+                file: file,
+                line: line
+            )
+            return
+        }
+        app.swipeUp()
+    }
+
     let absencePredicate = NSPredicate { _, _ in
         !buttonRow.exists && !textRow.exists
     }
@@ -963,7 +790,7 @@ func assertWalletRowVisible(
     XCTAssertEqual(
         result,
         .completed,
-        "Expected wallet row \(walletName) to be absent.",
+        "Expected wallet row \(walletName) to be absent after sweep.",
         file: file,
         line: line
     )
