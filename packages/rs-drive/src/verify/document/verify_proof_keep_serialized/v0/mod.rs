@@ -142,6 +142,105 @@ mod tests {
         }
     }
 
+    /// Regression test exposing the same proof-mismatch class of bug this PR
+    /// fixes for contested resources, but on the documents path — which this
+    /// PR does NOT address.
+    ///
+    /// Server (`packages/rs-drive-abci/src/query/document_query/v0/mod.rs:124`)
+    /// applies `default_query_limit` when wire `limit == 0`, while the SDK's
+    /// `TryFrom<&DocumentQuery> for DriveDocumentQuery`
+    /// (`packages/rs-sdk/src/platform/documents/document_query.rs:325-329`)
+    /// maps wire `limit == 0` back to `limit: None`. The asymmetric
+    /// `SizedQuery` flowing through `DriveDocumentQuery::construct_path_query`
+    /// (`packages/rs-drive/src/query/mod.rs:1288, 1328, 2113`) then trips
+    /// GroveDB's `verify_query` with the same "Proof is missing data for
+    /// query range" failure that motivated this PR.
+    ///
+    /// `proved_request_limit` introduced in this PR is not applied to the
+    /// document path; that gap should be closed before merge or in a tracked
+    /// follow-up. Until then this test fails CI to keep the regression
+    /// visible.
+    #[test]
+    fn document_proof_with_limit_some_prove_vs_limit_none_verify() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load DPNS contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        // Insert > DEFAULT_QUERY_LIMIT documents so the bounded vs unbounded
+        // queries cannot trivially produce identical proofs.
+        let document_count = 110u64;
+        for seed in 1..=document_count {
+            let document = document_type
+                .random_document(Some(seed), platform_version)
+                .expect("expected a random document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        // Prover applies `default_query_limit` (server side).
+        let prover_query = DriveDocumentQuery::all_items_query(
+            &contract,
+            document_type,
+            Some(crate::config::DEFAULT_QUERY_LIMIT),
+        );
+
+        let (proof, _cost) = prover_query
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query with proof");
+
+        // Verifier reconstructs with `limit: None`, mirroring what the SDK
+        // does today for omitted document-query limits.
+        let verifier_query = DriveDocumentQuery::all_items_query(&contract, document_type, None);
+
+        let (_root, docs) = verifier_query
+            .verify_proof_keep_serialized(proof.as_slice(), platform_version)
+            .expect(
+                "verify with limit=None should succeed against a limit=Some(DEFAULT_QUERY_LIMIT) \
+                 proof; failure here indicates the document path needs the same \
+                 `proved_request_limit` treatment the contested-resource paths receive in this PR",
+            );
+
+        assert_eq!(
+            docs.len(),
+            crate::config::DEFAULT_QUERY_LIMIT as usize,
+            "expected verifier to return DEFAULT_QUERY_LIMIT documents when prover bounded the result set"
+        );
+    }
+
     #[test]
     fn should_prove_and_verify_keep_serialized_empty_result() {
         let drive = setup_drive_with_initial_state_structure(None);
