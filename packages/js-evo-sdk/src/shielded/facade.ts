@@ -31,7 +31,7 @@ export class ShieldedFacade {
 
   // ── Encrypted notes ──────────────────────────────────────────────────
 
-  async encryptedNotes(startIndex: bigint, count: number): Promise<Array<wasm.ShieldedEncryptedNote>> {
+  async encryptedNotes(startIndex: bigint, count: number): Promise<wasm.ShieldedEncryptedNote[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedEncryptedNotes(startIndex, count);
   }
@@ -39,19 +39,19 @@ export class ShieldedFacade {
   async encryptedNotesWithProof(
     startIndex: bigint,
     count: number,
-  ): Promise<wasm.ProofMetadataResponseTyped<Array<wasm.ShieldedEncryptedNote>>> {
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ShieldedEncryptedNote[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedEncryptedNotesWithProofInfo(startIndex, count);
   }
 
   // ── Anchors ──────────────────────────────────────────────────────────
 
-  async anchors(): Promise<Array<Uint8Array>> {
+  async anchors(): Promise<Uint8Array[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedAnchors();
   }
 
-  async anchorsWithProof(): Promise<wasm.ProofMetadataResponseTyped<Array<Uint8Array>>> {
+  async anchorsWithProof(): Promise<wasm.ProofMetadataResponseTyped<Uint8Array[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedAnchorsWithProofInfo();
   }
@@ -72,14 +72,14 @@ export class ShieldedFacade {
    * Each nullifier must be a `Uint8Array` of exactly 32 bytes; otherwise
    * the underlying call rejects with `InvalidArgument`.
    */
-  async nullifiers(nullifiers: Array<Uint8Array>): Promise<Array<wasm.ShieldedNullifierStatus>> {
+  async nullifiers(nullifiers: Uint8Array[]): Promise<wasm.ShieldedNullifierStatus[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedNullifiers(nullifiers);
   }
 
   async nullifiersWithProof(
-    nullifiers: Array<Uint8Array>,
-  ): Promise<wasm.ProofMetadataResponseTyped<Array<wasm.ShieldedNullifierStatus>>> {
+    nullifiers: Uint8Array[],
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ShieldedNullifierStatus[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getShieldedNullifiersWithProofInfo(nullifiers);
   }

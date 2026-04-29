@@ -61,24 +61,6 @@ impl ShieldedNullifierStatusWasm {
 }
 impl_wasm_serde_conversions!(ShieldedNullifierStatusWasm, ShieldedNullifierStatus);
 
-// ── Helpers ───────────────────────────────────────────────────────────
-
-/// Parse a JS `Array<Uint8Array>` of nullifiers into `Vec<[u8; 32]>`.
-///
-/// Each element must be a `Uint8Array` of exactly 32 bytes. `try_to_fixed_bytes`
-/// validates both the type (rejecting plain numbers — `Uint8Array::new(n)` would
-/// otherwise allocate `n` bytes from caller input) and the length.
-fn parse_nullifiers(nullifiers: &js_sys::Array) -> Result<Vec<[u8; 32]>, WasmSdkError> {
-    nullifiers
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            wasm_dpp2::utils::try_to_fixed_bytes::<32>(n, &format!("nullifiers[{}]", i))
-                .map_err(WasmSdkError::from)
-        })
-        .collect()
-}
-
 // ── Query methods ──────────────────────────────────────────────────────
 
 #[wasm_bindgen]
@@ -96,7 +78,7 @@ impl WasmSdk {
     /// Fetches encrypted notes from the shielded pool, paginated.
     #[wasm_bindgen(
         js_name = "getShieldedEncryptedNotes",
-        unchecked_return_type = "Array<ShieldedEncryptedNote>"
+        unchecked_return_type = "ShieldedEncryptedNote[]"
     )]
     pub async fn get_shielded_encrypted_notes(
         &self,
@@ -125,7 +107,7 @@ impl WasmSdk {
     /// Returns all valid anchors for building Orchard spend proofs.
     #[wasm_bindgen(
         js_name = "getShieldedAnchors",
-        unchecked_return_type = "Array<Uint8Array>"
+        unchecked_return_type = "Uint8Array[]"
     )]
     pub async fn get_shielded_anchors(&self) -> Result<Array, WasmSdkError> {
         use dash_sdk::platform::Fetch;
@@ -157,16 +139,23 @@ impl WasmSdk {
     /// Checks the spent/unspent status of one or more nullifiers.
     #[wasm_bindgen(
         js_name = "getShieldedNullifiers",
-        unchecked_return_type = "Array<ShieldedNullifierStatus>"
+        unchecked_return_type = "ShieldedNullifierStatus[]"
     )]
     pub async fn get_shielded_nullifiers(
         &self,
-        nullifiers: js_sys::Array,
+        #[wasm_bindgen(unchecked_param_type = "Uint8Array[]")] nullifiers: js_sys::Array,
     ) -> Result<Array, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
 
-        let nullifier_arrays = parse_nullifiers(&nullifiers)?;
+        let nullifier_arrays: Vec<[u8; 32]> = nullifiers
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                wasm_dpp2::utils::try_to_fixed_bytes::<32>(v, &format!("nullifiers[{}]", i))
+                    .map_err(WasmSdkError::from)
+            })
+            .collect::<Result<_, _>>()?;
 
         let query = ShieldedNullifiersQuery(nullifier_arrays);
         let result = ShieldedNullifierStatuses::fetch(self.as_ref(), query).await?;
@@ -210,7 +199,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getShieldedEncryptedNotesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Array<ShieldedEncryptedNote>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<ShieldedEncryptedNote[]>"
     )]
     pub async fn get_shielded_encrypted_notes_with_proof_info(
         &self,
@@ -243,7 +232,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getShieldedAnchorsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Array<Uint8Array>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array[]>"
     )]
     pub async fn get_shielded_anchors_with_proof_info(
         &self,
@@ -295,16 +284,23 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getShieldedNullifiersWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Array<ShieldedNullifierStatus>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<ShieldedNullifierStatus[]>"
     )]
     pub async fn get_shielded_nullifiers_with_proof_info(
         &self,
-        nullifiers: js_sys::Array,
+        #[wasm_bindgen(unchecked_param_type = "Uint8Array[]")] nullifiers: js_sys::Array,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
 
-        let nullifier_arrays = parse_nullifiers(&nullifiers)?;
+        let nullifier_arrays: Vec<[u8; 32]> = nullifiers
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                wasm_dpp2::utils::try_to_fixed_bytes::<32>(v, &format!("nullifiers[{}]", i))
+                    .map_err(WasmSdkError::from)
+            })
+            .collect::<Result<_, _>>()?;
 
         let query = ShieldedNullifiersQuery(nullifier_arrays);
         let (result, metadata, proof) =
