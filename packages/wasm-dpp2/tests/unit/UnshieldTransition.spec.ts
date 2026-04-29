@@ -75,13 +75,14 @@ describe('UnshieldTransition', () => {
   });
 
   describe('toObject() / toJSON()', () => {
-    it('toObject() carries the outputAddress', () => {
+    it('toObject() emits outputAddress as a 21-byte Uint8Array', () => {
       const t = createTransition();
       const obj = t.toObject();
-      expect(obj.outputAddress).to.exist();
+      expect(obj.outputAddress).to.be.instanceOf(Uint8Array);
+      expect(obj.outputAddress.length).to.equal(21);
     });
 
-    it('toJSON() emits outputAddress as a hex string', () => {
+    it('toJSON() emits outputAddress as a 42-char hex string', () => {
       const t = createTransition();
       const json = t.toJSON();
       expect(json.outputAddress).to.be.a('string').with.lengthOf(42); // 21 bytes hex

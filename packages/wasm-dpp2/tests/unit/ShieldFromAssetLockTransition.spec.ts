@@ -71,17 +71,25 @@ describe('ShieldFromAssetLockTransition', () => {
   });
 
   describe('toObject() / toJSON()', () => {
-    it('toObject() carries the asset lock proof object', () => {
+    it('toObject() emits AssetLockProof in internally-tagged Object form', () => {
       const t = createTransition();
       const obj = t.toObject();
-      expect(obj.assetLockProof).to.exist();
+      // Internally-tagged: { type: "instant" | "chain", ...flattened inner fields }
+      expect(obj.assetLockProof).to.be.an('object');
+      expect(obj.assetLockProof.type).to.be.oneOf(['instant', 'chain']);
       expect(obj.actions).to.be.an('array').with.lengthOf(1);
+      expect(obj.anchor).to.be.instanceOf(Uint8Array).with.lengthOf(32);
+      expect(obj.bindingSignature).to.be.instanceOf(Uint8Array).with.lengthOf(64);
     });
 
-    it('toJSON() emits actions as JSON array', () => {
+    it('toJSON() emits AssetLockProof + byte fields with the JSON shape', () => {
       const t = createTransition();
       const json = t.toJSON();
+      expect(json.assetLockProof).to.be.an('object');
+      expect(json.assetLockProof.type).to.be.oneOf(['instant', 'chain']);
       expect(json.actions).to.be.an('array').with.lengthOf(1);
+      expect(json.anchor).to.be.a('string').with.lengthOf(44); // 32 bytes base64
+      expect(json.bindingSignature).to.be.a('string').with.lengthOf(88); // 64 bytes base64
     });
   });
 

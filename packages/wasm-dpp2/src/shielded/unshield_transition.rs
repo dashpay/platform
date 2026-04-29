@@ -30,11 +30,12 @@ export interface UnshieldTransitionOptions {
 /**
  * UnshieldTransition serialized as a plain object.
  *
- * `outputAddress` is a hex-encoded PlatformAddress (21 bytes: type byte + 20-byte hash).
+ * `outputAddress` is the raw 21 bytes of a PlatformAddress (type byte + 20-byte hash);
+ * the JSON form (below) carries the same value as a hex string.
  */
 export interface UnshieldTransitionObject {
     $formatVersion: string;
-    outputAddress: string;
+    outputAddress: Uint8Array;
     actions: SerializedOrchardActionObject[];
     unshieldingAmount: bigint;
     anchor: Uint8Array;

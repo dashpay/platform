@@ -208,7 +208,7 @@ describe('AddressCreditWithdrawalTransition', () => {
       const transition = createTransition();
       const obj = transition.toObject();
 
-      expect(obj.output).to.exist();
+      expect(obj.output).to.be.an('object');
       expect(obj.output.address).to.be.instanceOf(Uint8Array);
       expect(obj.output.address.length).to.equal(21);
       expect(obj.output.amount).to.equal(BigInt(90000));
@@ -245,7 +245,7 @@ describe('AddressCreditWithdrawalTransition', () => {
       const json = transition.toJSON();
 
       expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
-      expect(json.output).to.exist();
+      expect(json.output).to.be.an('object');
       expect(json.output.address).to.be.a('string').with.lengthOf(42);
       expect(json.output.amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
       expect(json.outputScript).to.be.a('string');

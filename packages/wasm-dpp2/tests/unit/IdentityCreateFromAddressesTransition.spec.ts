@@ -187,7 +187,7 @@ describe('IdentityCreateFromAddressesTransition', () => {
       const transition = createTransition();
       const obj = transition.toObject();
 
-      expect(obj.output).to.exist();
+      expect(obj.output).to.be.an('object');
       expect(obj.output.address).to.be.instanceOf(Uint8Array);
       expect(obj.output.address.length).to.equal(21);
       expect(obj.output.amount).to.equal(BigInt(90000));
@@ -208,7 +208,7 @@ describe('IdentityCreateFromAddressesTransition', () => {
 
       expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
       expect(json.inputs[0].nonce).to.equal(0);
-      expect(json.output).to.exist();
+      expect(json.output).to.be.an('object');
       expect(json.output.address).to.be.a('string').with.lengthOf(42);
       expect(json.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
     });
