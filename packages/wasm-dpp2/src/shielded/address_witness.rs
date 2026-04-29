@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_from_options_with, try_to_array};
-use dpp::address_funds::{AddressWitness, MAX_P2SH_SIGNATURES};
+use dpp::address_funds::AddressWitness;
 use dpp::platform_value::BinaryData;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -90,22 +90,15 @@ impl AddressWitnessWasm {
     /// For a 2-of-3 multisig, `signatures` would be `[OP_0, sig1, sig2]` and
     /// `redeemScript` would be `OP_2 <pub1> <pub2> <pub3> OP_3 OP_CHECKMULTISIG`.
     ///
-    /// Each entry in `signatures` must be a `Uint8Array` and the array must
-    /// contain at most 17 entries (`MAX_P2SH_SIGNATURES`). Invalid types or
-    /// over-sized arrays are rejected at construction so the in-memory witness
-    /// matches what consensus accepts.
+    /// Each entry in `signatures` must be a `Uint8Array`. The signature count is
+    /// validated by DPP (`MAX_P2SH_SIGNATURES = 17`) on serialization; this
+    /// constructor does not duplicate that check.
     #[wasm_bindgen(js_name = "p2sh")]
     pub fn p2sh(
         #[wasm_bindgen(unchecked_param_type = "Uint8Array[]")] signatures: js_sys::Array,
         #[wasm_bindgen(js_name = "redeemScript")] redeem_script: Vec<u8>,
     ) -> WasmDppResult<AddressWitnessWasm> {
         let len = signatures.length() as usize;
-        if len > MAX_P2SH_SIGNATURES {
-            return Err(WasmDppError::invalid_argument(format!(
-                "p2sh signatures must contain at most {} entries, got {}",
-                MAX_P2SH_SIGNATURES, len
-            )));
-        }
         let mut converted = Vec::with_capacity(len);
         for (i, value) in signatures.iter().enumerate() {
             let bytes: js_sys::Uint8Array = value.dyn_into().map_err(|_| {

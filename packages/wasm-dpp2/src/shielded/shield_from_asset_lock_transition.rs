@@ -2,8 +2,7 @@ use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
-use crate::shielded::{MAX_HALO2_PROOF_BYTES, MAX_RECOVERABLE_ECDSA_SIGNATURE_BYTES};
-use crate::utils::{check_max_len, try_from_options, try_vec_to_fixed_bytes};
+use crate::utils::{try_from_options, try_vec_to_fixed_bytes};
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::platform_value::BinaryData;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
@@ -120,12 +119,6 @@ impl ShieldFromAssetLockTransitionWasm {
         let anchor: [u8; 32] = try_vec_to_fixed_bytes(fields.anchor, "anchor")?;
         let binding_signature: [u8; 64] =
             try_vec_to_fixed_bytes(fields.binding_signature, "bindingSignature")?;
-        check_max_len(&fields.proof, MAX_HALO2_PROOF_BYTES, "proof")?;
-        check_max_len(
-            &fields.signature,
-            MAX_RECOVERABLE_ECDSA_SIGNATURE_BYTES,
-            "signature",
-        )?;
 
         Ok(ShieldFromAssetLockTransitionWasm(
             ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {

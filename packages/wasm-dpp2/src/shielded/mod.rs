@@ -18,22 +18,6 @@ use crate::error::WasmDppResult;
 use crate::utils::try_vec_to_fixed_bytes;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-/// Maximum on-the-wire size of an Orchard / Halo2 proof. Real proofs are well
-/// under 10 KB; the cap is generous to absorb future circuit changes while
-/// keeping a malicious caller from triggering GB-scale allocations through
-/// `serde_wasm_bindgen::from_value` before downstream validation runs.
-pub(crate) const MAX_HALO2_PROOF_BYTES: usize = 64 * 1024;
-
-/// Maximum on-the-wire size of a Bitcoin Core output script. Standard scripts
-/// fit in well under this; the cap is the Bitcoin protocol's overall script
-/// size ceiling and prevents memory-exhaustion at the JS / WASM boundary.
-pub(crate) const MAX_CORE_SCRIPT_BYTES: usize = 10_000;
-
-/// Length of a recoverable ECDSA signature (64-byte signature + 1 recovery byte).
-/// Constructors accept an empty `signature` (transitions are typically built
-/// unsigned then signed in a later step) but reject anything longer than this.
-pub(crate) const MAX_RECOVERABLE_ECDSA_SIGNATURE_BYTES: usize = 65;
-
 /// Compute the platform sighash from an Orchard bundle commitment and extra data.
 ///
 /// `sighash = SHA-256("DashPlatformSighash" || bundleCommitment || extraData)`
