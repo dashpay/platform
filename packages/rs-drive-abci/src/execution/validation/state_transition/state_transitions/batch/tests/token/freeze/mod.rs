@@ -5,8 +5,8 @@ mod token_freeze_tests {
 
     mod token_freeze_basic_tests {
         use super::*;
-        #[test]
-        fn test_token_freeze() {
+        #[tokio::test]
+        async fn test_token_freeze() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -58,6 +58,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let freeze_serialized_transition = freeze_transition
@@ -104,8 +105,8 @@ mod token_freeze_tests {
             assert_eq!(token_frozen, Some(true));
         }
 
-        #[test]
-        fn test_token_freeze_identity_does_not_exist() {
+        #[tokio::test]
+        async fn test_token_freeze_identity_does_not_exist() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -156,6 +157,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let freeze_serialized_transition = freeze_transition
@@ -207,8 +209,8 @@ mod token_freeze_tests {
             assert_eq!(token_frozen, None);
         }
 
-        #[test]
-        fn test_token_freeze_and_unfreeze() {
+        #[tokio::test]
+        async fn test_token_freeze_and_unfreeze() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -269,6 +271,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let freeze_serialized_transition = freeze_transition
@@ -329,6 +332,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let unfreeze_serialized_transition = unfreeze_transition
@@ -375,8 +379,8 @@ mod token_freeze_tests {
             assert_eq!(token_frozen, Some(false));
         }
 
-        #[test]
-        fn test_token_unfreeze_success() {
+        #[tokio::test]
+        async fn test_token_unfreeze_success() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -440,6 +444,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create token transfer transition");
 
             let transfer_serialized = token_transfer_transition
@@ -489,6 +494,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create freeze transition");
 
             let freeze_serialized = freeze_transition
@@ -553,6 +559,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create transfer transition");
 
             let send_serialized = send_while_frozen
@@ -607,6 +614,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create unfreeze transition");
 
             let unfreeze_serialized = unfreeze_transition
@@ -671,6 +679,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create transfer transition");
 
             let send_serialized = send_after_unfreeze
@@ -728,8 +737,8 @@ mod token_freeze_tests {
             assert_eq!(balance_identity_2, Some(5000 - 100));
         }
 
-        #[test]
-        fn test_token_frozen_receive_balance_allowed_sending_not_allowed_till_unfrozen() {
+        #[tokio::test]
+        async fn test_token_frozen_receive_balance_allowed_sending_not_allowed_till_unfrozen() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -790,6 +799,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let freeze_serialized_transition = freeze_transition
@@ -852,6 +862,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_transfer_serialized_transition = token_transfer_transition
@@ -928,6 +939,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_transfer_back_serialized_transition = token_transfer_back_transition
@@ -1007,6 +1019,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let unfreeze_serialized_transition = unfreeze_transition
@@ -1069,6 +1082,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_transfer_serialized_transition = token_transfer_transition
@@ -1127,8 +1141,8 @@ mod token_freeze_tests {
             assert_eq!(token_balance, Some(expected_amount));
         }
 
-        #[test]
-        fn test_token_frozen_receive_balance_may_not_be_allowed() {
+        #[tokio::test]
+        async fn test_token_frozen_receive_balance_may_not_be_allowed() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1190,6 +1204,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let freeze_serialized_transition = freeze_transition
@@ -1252,6 +1267,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_transfer_serialized_transition = token_transfer_transition
@@ -1330,8 +1346,8 @@ mod token_freeze_tests {
         //  Owner tries to freeze, but authorization is *group‑only*
         //  and owner does NOT hold enough power alone  →  Error.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_freeze_owner_not_authorized_group_required() {
+        #[tokio::test]
+        async fn test_token_freeze_owner_not_authorized_group_required() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1392,6 +1408,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("create freeze");
 
             let serialized = freeze.serialize_to_bytes().expect("serialize freeze");
@@ -1423,8 +1440,8 @@ mod token_freeze_tests {
         //  Owner alone HAS enough power in the group (5 ≥ required 5)
         //  → freeze succeeds immediately.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_freeze_owner_enough_group_power_without_group_action() {
+        #[tokio::test]
+        async fn test_token_freeze_owner_enough_group_power_without_group_action() {
             let version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1487,6 +1504,7 @@ mod token_freeze_tests {
                 version,
                 None,
             )
+            .await
             .unwrap();
 
             let freeze_ser = freeze.serialize_to_bytes().unwrap();
@@ -1533,8 +1551,8 @@ mod token_freeze_tests {
         //  Owner alone HAS enough power in the group (5 ≥ required 5)
         //  → freeze succeeds immediately.
         // ──────────────────────────────────────────────────────────
-        #[test]
-        fn test_token_freeze_owner_enough_group_power_using_group_action() {
+        #[tokio::test]
+        async fn test_token_freeze_owner_enough_group_power_using_group_action() {
             let version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1597,6 +1615,7 @@ mod token_freeze_tests {
                 version,
                 None,
             )
+            .await
             .unwrap();
 
             let freeze_ser = freeze.serialize_to_bytes().unwrap();
@@ -1639,20 +1658,22 @@ mod token_freeze_tests {
             assert_eq!(frozen, Some(true));
         }
 
-        #[test]
-        fn test_token_freeze_two_member_group_no_keeping_history() {
-            test_token_freeze_two_member_group_with_keeps_history(false);
+        #[tokio::test]
+        async fn test_token_freeze_two_member_group_no_keeping_history() {
+            test_token_freeze_two_member_group_with_keeps_history(false).await;
         }
 
-        #[test]
-        fn test_token_freeze_two_member_group_keeping_history() {
-            test_token_freeze_two_member_group_with_keeps_history(true);
+        #[tokio::test]
+        async fn test_token_freeze_two_member_group_keeping_history() {
+            test_token_freeze_two_member_group_with_keeps_history(true).await;
         }
 
         // ──────────────────────────────────────────────────────────
         //  Two‑signer scenario: proposer + second member complete freeze
         // ──────────────────────────────────────────────────────────
-        fn test_token_freeze_two_member_group_with_keeps_history(keeps_freezing_history: bool) {
+        async fn test_token_freeze_two_member_group_with_keeps_history(
+            keeps_freezing_history: bool,
+        ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1711,6 +1732,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create batch transition");
 
             let token_freeze_serialized_transition = token_freeze_transition
@@ -1814,6 +1836,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .unwrap();
 
             let token_freeze_serialized_transition = token_freeze_confirm_transition
@@ -1899,8 +1922,8 @@ mod token_freeze_tests {
             assert_eq!(frozen, Some(true));
         }
 
-        #[test]
-        fn test_token_freeze_two_member_group_and_destroy_frozen_funds() {
+        #[tokio::test]
+        async fn test_token_freeze_two_member_group_and_destroy_frozen_funds() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1972,6 +1995,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
@@ -2032,6 +2056,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create batch transition");
 
             let token_freeze_serialized_transition = token_freeze_transition
@@ -2094,6 +2119,7 @@ mod token_freeze_tests {
                     platform_version,
                     None,
                 )
+                .await
                 .unwrap();
 
             let token_destroy_frozen_funds_serialized_transition =
@@ -2159,6 +2185,7 @@ mod token_freeze_tests {
                     platform_version,
                     None,
                 )
+                .await
                 .unwrap();
 
             let token_destroy_frozen_funds_serialized_confirm_transition =
@@ -2249,8 +2276,8 @@ mod token_freeze_tests {
             assert_eq!(frozen_identity_balance, Some(0));
         }
 
-        #[test]
-        fn test_token_freeze_two_member_group_and_destroy_frozen_funds_change_target_id_mid_group_action(
+        #[tokio::test]
+        async fn test_token_freeze_two_member_group_and_destroy_frozen_funds_change_target_id_mid_group_action(
         ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -2324,6 +2351,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
@@ -2373,6 +2401,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
@@ -2432,6 +2461,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create batch transition");
 
             let token_freeze_serialized_transition = token_freeze_transition
@@ -2480,6 +2510,7 @@ mod token_freeze_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create batch transition");
 
             let token_freeze_serialized_transition = token_freeze_transition
@@ -2542,6 +2573,7 @@ mod token_freeze_tests {
                     platform_version,
                     None,
                 )
+                .await
                 .unwrap();
 
             let token_destroy_frozen_funds_serialized_transition =
@@ -2608,6 +2640,7 @@ mod token_freeze_tests {
                     platform_version,
                     None,
                 )
+                .await
                 .unwrap();
 
             let token_destroy_frozen_funds_serialized_confirm_transition =

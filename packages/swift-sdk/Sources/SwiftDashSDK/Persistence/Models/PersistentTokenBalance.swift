@@ -21,7 +21,16 @@ public final class PersistentTokenBalance {
     public var tokenDecimals: Int32?
 
     // MARK: - Network
-    public var network: String
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify) public var identity: PersistentIdentity?
@@ -36,7 +45,7 @@ public final class PersistentTokenBalance {
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
         tokenDecimals: Int32? = nil,
-        network: String = "testnet"
+        network: AppNetwork
     ) {
         self.tokenId = tokenId
         self.identityId = identityId
@@ -48,7 +57,7 @@ public final class PersistentTokenBalance {
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
-        self.network = network
+        self.networkRaw = network.rawValue
     }
 
     // MARK: - Computed Properties

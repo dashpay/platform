@@ -344,4 +344,132 @@ mod tests {
             document_1.id().to_vec()
         );
     }
+
+    /// With the withdrawals system data contract installed but no BROADCASTED
+    /// documents, `update_broadcasted_withdrawal_statuses_v0` must short-circuit
+    /// to `Ok(())` on the `is_empty()` branch. This exercises the first
+    /// early-return path and proves we don't invoke the core RPC at all.
+    #[test]
+    fn v0_returns_ok_when_no_broadcasted_documents() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        let block_info = BlockInfo {
+            time_ms: 0,
+            height: 1,
+            core_height: 96,
+            epoch: Default::default(),
+        };
+
+        // No mocking required for core_rpc: the empty-documents guard is hit
+        // before any RPC call. If the guard were skipped, this would panic
+        // because get_asset_unlock_statuses has no expectation registered.
+        platform
+            .update_broadcasted_withdrawal_statuses_v0(&block_info, &transaction, platform_version)
+            .expect("empty broadcasted queue must yield Ok without calling core_rpc");
+    }
+
+    /// When BROADCASTED withdrawal documents exist but none of them would
+    /// transition (core reports Unknown and block height is within
+    /// `core_expiration_blocks`), the function must fall through to the
+    /// `documents_to_update.is_empty()` early-return branch.
+    #[test]
+    fn v0_returns_ok_when_no_documents_need_status_update() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // Core says Unknown for all indices — nothing should transition.
+        let mut mock_rpc_client = MockCoreRPCLike::new();
+        mock_rpc_client
+            .expect_get_asset_unlock_statuses()
+            .returning(move |indices: &[u64], _core_chain_locked_height| {
+                Ok(indices
+                    .iter()
+                    .map(|index| AssetUnlockStatusResult {
+                        index: *index,
+                        status: AssetUnlockStatus::Unknown,
+                    })
+                    .collect())
+            });
+        platform.core_rpc = mock_rpc_client;
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        let owner_id = Identifier::new([2u8; 32]);
+
+        // block_info.core_height - transaction_sign_height must be within
+        // core_expiration_blocks to avoid the EXPIRED transition.
+        let block_info = BlockInfo {
+            time_ms: 0,
+            height: 1,
+            core_height: 100,
+            epoch: Default::default(),
+        };
+
+        let doc = get_withdrawal_document_fixture(
+            &data_contract,
+            owner_id,
+            platform_value!({
+                "amount": 1000u64,
+                "coreFeePerByte": 1u32,
+                "pooling": Pooling::Never as u8,
+                "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                "transactionIndex": 42u64,
+                // sign height equal to core_height => block_height_difference = 0 => skipped
+                "transactionSignHeight": 100,
+            }),
+            None,
+            platform_version.protocol_version,
+        )
+        .expect("fixture");
+
+        let document_type = data_contract
+            .document_type_for_name(withdrawal::NAME)
+            .expect("document type");
+
+        setup_document(
+            &platform.drive,
+            &doc,
+            &data_contract,
+            document_type,
+            Some(&transaction),
+        );
+
+        platform
+            .update_broadcasted_withdrawal_statuses_v0(&block_info, &transaction, platform_version)
+            .expect("no-update path must return Ok");
+
+        // Status must be unchanged (still BROADCASTED).
+        let still_broadcasted = platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                WithdrawalStatus::BROADCASTED.into(),
+                DEFAULT_QUERY_LIMIT,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("fetch");
+        assert_eq!(
+            still_broadcasted.len(),
+            1,
+            "document must remain in BROADCASTED when nothing triggers a transition"
+        );
+    }
 }

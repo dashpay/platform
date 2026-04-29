@@ -26,7 +26,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     for IdentityCreditTransferToAddressesTransition
 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
@@ -52,7 +52,8 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
                     nonce,
                     platform_version,
                     version,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityCreditTransferToAddressesTransition::try_from_identity"

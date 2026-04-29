@@ -288,6 +288,66 @@ public class ManagedWallet {
         }
     }
 
+    // MARK: - Transaction Checking
+
+    /// Check if a transaction belongs to the wallet
+    /// - Parameters:
+    ///   - wallet: The wallet to check against
+    ///   - transactionData: The transaction bytes
+    ///   - context: The transaction context
+    ///   - blockHeight: The block height (0 for mempool)
+    ///   - blockHash: The block hash (nil for mempool)
+    ///   - timestamp: The timestamp
+    ///   - updateState: Whether to update wallet state if transaction is relevant
+    /// - Returns: Transaction check result
+    public func checkTransaction(wallet: Wallet, transactionData: Data,
+                                context: TransactionContextType = .mempool,
+                                blockHeight: UInt32 = 0,
+                                blockHash: Data? = nil,
+                                timestamp: UInt32 = 0,
+                                updateState: Bool = true) throws -> TransactionCheckResult {
+        var error = FFIError()
+        var result = FFITransactionCheckResult()
+
+        // Build FFIBlockInfo
+        var blockInfo = FFIBlockInfo()
+        blockInfo.height = blockHeight
+        blockInfo.timestamp = timestamp
+        if let hash = blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &blockInfo.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
+
+        let contextType = FFITransactionContextType(rawValue: context.rawValue)
+
+        let success = transactionData.withUnsafeBytes { txBytes in
+            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
+
+            return managed_wallet_check_transaction(
+                handle, wallet.ffiHandle,
+                txPtr, transactionData.count,
+                contextType, blockInfo,
+                nil, 0, // islock_data, islock_len
+                updateState, &result, &error)
+        }
+
+        defer {
+            if error.message != nil {
+                error_message_free(error.message)
+            }
+            transaction_check_result_free(&result)
+        }
+
+        guard success else {
+            throw KeyWalletError(ffiError: error)
+        }
+
+        return TransactionCheckResult(ffiResult: result)
+    }
+
     // MARK: - Balance and UTXOs
 
     /// Get the wallet balance from managed wallet info

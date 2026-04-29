@@ -1653,9 +1653,7 @@ mod tests {
             .random_document(Some(42), platform_version)
             .expect("expected random document");
 
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
@@ -1679,9 +1677,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(seed), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -1717,9 +1713,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(99), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -1730,9 +1724,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(99), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -1759,9 +1751,7 @@ mod tests {
         let document = document_type
             .random_document(Some(7), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
             .expect("serialize should succeed");
@@ -1781,9 +1771,7 @@ mod tests {
         let document = document_type
             .random_document(Some(55), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
             .expect("serialize should succeed");
@@ -1807,9 +1795,7 @@ mod tests {
         let document = document_type
             .random_document(Some(1), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let serialized = doc_v0
             .serialize_specific_version(document_type, &contract, 0)
@@ -1834,9 +1820,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(1), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
 
             let result = doc_v0.serialize_specific_version(document_type, &contract, 1);
             assert!(
@@ -1857,9 +1841,7 @@ mod tests {
         let document = document_type
             .random_document(Some(1), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let result = doc_v0.serialize_specific_version(document_type, &contract, 255);
         assert!(
@@ -1975,9 +1957,7 @@ mod tests {
         let document = document_type
             .random_document(Some(100), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         // serialize_v0 should prefix with varint 0
         let bytes = doc_v0
@@ -2012,9 +1992,7 @@ mod tests {
         let document = document_type
             .random_document(Some(42), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let bytes = doc_v0
             .serialize_v0(document_type)
@@ -2053,9 +2031,7 @@ mod tests {
         let document = document_type
             .random_document(Some(99), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
 
         let bytes1 = doc_v0
             .serialize(document_type, &contract, platform_version)
@@ -2082,9 +2058,7 @@ mod tests {
             let document = document_type
                 .random_document(Some(seed), platform_version)
                 .expect("expected random document");
-            let doc_v0 = match &document {
-                crate::document::Document::V0(d) => d,
-            };
+            let crate::document::Document::V0(doc_v0) = &document;
             let serialized = doc_v0
                 .serialize(document_type, &contract, platform_version)
                 .expect("serialize should succeed");
@@ -2110,9 +2084,7 @@ mod tests {
         let document = document_type
             .random_document(Some(77), platform_version)
             .expect("expected random document");
-        let doc_v0 = match &document {
-            crate::document::Document::V0(d) => d,
-        };
+        let crate::document::Document::V0(doc_v0) = &document;
         let serialized = doc_v0
             .serialize(document_type, &contract, platform_version)
             .expect("serialize should succeed");
@@ -2165,6 +2137,435 @@ mod tests {
             result.is_err(),
             "unknown version should produce a ProtocolError, not a consensus error"
         );
+    }
+
+    // ================================================================
+    //  Missing-required-field errors in serialize_v0 / v1 / v2.
+    //  The withdrawal contract requires both $createdAt and $updatedAt,
+    //  so a DocumentV0 lacking those should fail serialization.
+    // ================================================================
+
+    fn doc_with_ids() -> DocumentV0 {
+        DocumentV0 {
+            id: Identifier::new([1u8; 32]),
+            owner_id: Identifier::new([2u8; 32]),
+            properties: BTreeMap::new(),
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+    }
+
+    #[test]
+    fn serialize_v0_missing_created_at_errors_when_required() {
+        let platform_version = PlatformVersion::latest();
+        let contract = withdrawals_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("withdrawal document type");
+
+        // Build a document missing $createdAt. Don't include any user-defined
+        // required properties either — we want to trigger the $createdAt path
+        // before the user-property path.
+        let doc = doc_with_ids();
+
+        let err = doc
+            .serialize_v0(document_type)
+            .expect_err("serialize_v0 should fail for missing $createdAt");
+        match err {
+            ProtocolError::DataContractError(DataContractError::MissingRequiredKey(msg)) => {
+                assert!(
+                    msg.contains("created at"),
+                    "expected missing-created-at message, got: {msg}"
+                );
+            }
+            other => panic!(
+                "expected MissingRequiredKey for created_at, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn serialize_v0_missing_updated_at_errors_when_required() {
+        let platform_version = PlatformVersion::latest();
+        let contract = withdrawals_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("withdrawal document type");
+
+        // Supply $createdAt but not $updatedAt — both are required.
+        let mut doc = doc_with_ids();
+        doc.created_at = Some(1_700_000_000_000);
+
+        let err = doc
+            .serialize_v0(document_type)
+            .expect_err("serialize_v0 should fail for missing $updatedAt");
+        match err {
+            ProtocolError::DataContractError(DataContractError::MissingRequiredKey(msg)) => {
+                assert!(
+                    msg.contains("updated at"),
+                    "expected missing-updated-at message, got: {msg}"
+                );
+            }
+            other => panic!(
+                "expected MissingRequiredKey for updated_at, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn serialize_v1_missing_created_at_errors_when_required() {
+        let platform_version = PlatformVersion::latest();
+        let contract = withdrawals_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("withdrawal document type");
+
+        let doc = doc_with_ids();
+        let err = doc
+            .serialize_v1(document_type)
+            .expect_err("serialize_v1 should fail for missing $createdAt");
+        assert!(matches!(
+            err,
+            ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_))
+        ));
+    }
+
+    #[test]
+    fn serialize_v2_missing_created_at_errors_when_required() {
+        let platform_version = PlatformVersion::latest();
+        let contract = withdrawals_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("withdrawal document type");
+
+        let doc = doc_with_ids();
+        let err = doc
+            .serialize_v2(document_type)
+            .expect_err("serialize_v2 should fail for missing $createdAt");
+        assert!(matches!(
+            err,
+            ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_))
+        ));
+    }
+
+    #[test]
+    fn serialize_v0_missing_required_user_property_errors() {
+        // Family `person` requires `firstName`, `lastName`, `age`.
+        let platform_version = PlatformVersion::first();
+        let contract = family_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("person document type");
+
+        // Document with only ids, no user-defined required properties set.
+        let doc = doc_with_ids();
+
+        let err = doc
+            .serialize_v0(document_type)
+            .expect_err("serialize_v0 should fail for missing required property");
+        match err {
+            ProtocolError::DataContractError(DataContractError::MissingRequiredKey(msg)) => {
+                // The error message includes the field name for user-defined required fields.
+                let any_expected = msg.contains("firstName")
+                    || msg.contains("lastName")
+                    || msg.contains("age")
+                    || msg.contains("required field");
+                assert!(any_expected, "unexpected error message: {msg}");
+            }
+            other => panic!("expected MissingRequiredKey, got {:?}", other),
+        }
+    }
+
+    // ================================================================
+    //  from_bytes: V1 prefix dispatches to from_bytes_v1 directly
+    // ================================================================
+
+    #[test]
+    fn from_bytes_v1_prefix_dispatches_to_v1_path() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(123), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+
+        // Bypass the V0-contract gate by calling serialize_v1 directly: the
+        // resulting varint-1 prefix must round-trip through from_bytes.
+        let bytes = doc_v0.serialize_v1(document_type).expect("serialize_v1");
+        let (ver, _) = u64::decode_var(&bytes).expect("varint");
+        assert_eq!(ver, 1);
+        let recovered = DocumentV0::from_bytes(&bytes, document_type, platform_version)
+            .expect("from_bytes should dispatch to v1");
+        assert_eq!(*doc_v0, recovered);
+    }
+
+    // ================================================================
+    //  from_bytes: V2 prefix round-trip for documents with a creator_id
+    //  (contactRequest is transferable, so v2 records the creator flag).
+    // ================================================================
+
+    #[test]
+    fn from_bytes_v2_non_transferable_type_does_not_persist_creator_id() {
+        // frozen: V0 consensus behavior — contactRequest is non-transferable
+        // with TradeMode::None, so v2 intentionally skips the creator_id byte
+        // in both serialize_v2 and from_bytes_v2. Assigning a creator_id on
+        // the source document is therefore NOT round-tripped.
+        let platform_version = PlatformVersion::latest();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(321), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(mut doc_v0) = document;
+        // Even setting a creator_id here has no on-wire effect for this type.
+        doc_v0.creator_id = Some(Identifier::new([0xAB; 32]));
+
+        let bytes = doc_v0.serialize_v2(document_type).expect("serialize_v2");
+        let (ver, _) = u64::decode_var(&bytes).expect("varint");
+        assert_eq!(ver, 2);
+
+        let recovered = DocumentV0::from_bytes(&bytes, document_type, platform_version)
+            .expect("from_bytes should dispatch to v2");
+        assert_eq!(doc_v0.id, recovered.id);
+        assert_eq!(doc_v0.owner_id, recovered.owner_id);
+        assert_eq!(
+            recovered.creator_id, None,
+            "creator_id is not encoded for non-transferable / TradeMode::None types"
+        );
+    }
+
+    #[test]
+    fn from_bytes_v2_prefix_round_trip_with_none_creator_id() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(999), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(mut doc_v0) = document;
+        // creator_id is None — exercise the else-branch of v2's creator check.
+        doc_v0.creator_id = None;
+
+        let bytes = doc_v0.serialize_v2(document_type).expect("serialize_v2");
+        let recovered =
+            DocumentV0::from_bytes(&bytes, document_type, platform_version).expect("from_bytes v2");
+        assert_eq!(recovered.creator_id, None);
+    }
+
+    // ================================================================
+    //  from_bytes_v1 / v2 directly — too-small buffers should error
+    //  before we read any id / owner id bytes.
+    // ================================================================
+
+    #[test]
+    fn from_bytes_v1_direct_too_small_buffer_errors() {
+        let platform_version = PlatformVersion::first();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let result = DocumentV0::from_bytes_v1(&[0u8; 10], document_type, platform_version);
+        assert!(
+            result.is_err(),
+            "from_bytes_v1 should fail for buffer < 64 bytes"
+        );
+    }
+
+    #[test]
+    fn from_bytes_v2_direct_too_small_buffer_errors() {
+        let platform_version = PlatformVersion::first();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let result = DocumentV0::from_bytes_v2(&[0u8; 10], document_type, platform_version);
+        assert!(
+            result.is_err(),
+            "from_bytes_v2 should fail for buffer < 64 bytes"
+        );
+    }
+
+    #[test]
+    fn from_bytes_v0_direct_too_small_buffer_errors() {
+        let platform_version = PlatformVersion::first();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let result = DocumentV0::from_bytes_v0(&[0u8; 10], document_type, platform_version);
+        assert!(
+            result.is_err(),
+            "from_bytes_v0 should fail for buffer < 64 bytes"
+        );
+    }
+
+    // ================================================================
+    //  from_bytes: V1 prefix with truncated post-id data errors
+    // ================================================================
+
+    #[test]
+    fn from_bytes_v1_truncated_post_ids_errors() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        // V1 varint + 64 bytes (id + owner_id) — nothing after that, so the
+        // revision / timestamp_flags read must fail.
+        let mut buf = 1u64.encode_var_vec();
+        buf.extend_from_slice(&[0xCD; 64]);
+
+        let result = DocumentV0::from_bytes(&buf, document_type, platform_version);
+        assert!(
+            result.is_err(),
+            "v1 with truncated post-ids should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn from_bytes_v2_truncated_post_ids_errors() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let mut buf = 2u64.encode_var_vec();
+        buf.extend_from_slice(&[0xCD; 64]);
+
+        let result = DocumentV0::from_bytes(&buf, document_type, platform_version);
+        assert!(
+            result.is_err(),
+            "v2 with truncated post-ids should fail deserialization"
+        );
+    }
+
+    // ================================================================
+    //  serialize_specific_version: V0 contract + feature_version 0
+    //  should succeed (the V0-gated NotSupported branch is NOT hit).
+    // ================================================================
+
+    #[test]
+    fn serialize_specific_version_v0_contract_feature_version_0_succeeds() {
+        let platform_version = PlatformVersion::first();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(5), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+
+        // feature_version 0 is explicitly allowed for V0 contracts.
+        let bytes = doc_v0
+            .serialize_specific_version(document_type, &contract, 0)
+            .expect("serialize_specific_version v0 should succeed on a V0 contract");
+        let (ver, _) = u64::decode_var(&bytes).expect("varint decode");
+        assert_eq!(ver, 0);
+    }
+
+    // ================================================================
+    //  serialize_specific_version: feature_version 2 with a non-V0
+    //  contract (latest platform version) should succeed.
+    // ================================================================
+
+    #[test]
+    fn serialize_specific_version_rejects_v2_for_v0_contract() {
+        // V0 contracts always force serialize_v0, so feature_version 2 is
+        // rejected with NotSupported before reaching the version dispatch.
+        // Use `PlatformVersion::first()` so the fixture is guaranteed to load
+        // as a V0 contract — without this, the test could pass vacuously if
+        // the dashpay contract began deserializing as a non-V0 variant.
+        let platform_version = PlatformVersion::first();
+        let (contract, type_name) = dashpay_contract_and_type(platform_version);
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(17), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+
+        // Precondition: the fixture must actually be a V0 contract, otherwise
+        // the NotSupported branch we intend to exercise would never be hit.
+        assert!(
+            matches!(&contract, DataContract::V0(_)),
+            "fixture must be a V0 contract to exercise the V0-gated NotSupported branch"
+        );
+
+        let err = doc_v0
+            .serialize_specific_version(document_type, &contract, 2)
+            .expect_err("V0 contract should reject v2");
+        match err {
+            ProtocolError::NotSupported(_) => {}
+            other => panic!("expected NotSupported, got {:?}", other),
+        }
+    }
+
+    // ================================================================
+    //  from_bytes V0-then-V1 fallback: a valid V1 buffer with a V0
+    //  varint prefix should still round-trip via the fallback path.
+    //  Construct bytes by serializing v1 and then overwriting the
+    //  varint prefix to 0.
+    // ================================================================
+
+    #[test]
+    fn from_bytes_v0_falls_back_to_v1_on_decoding_error() {
+        // Use a contract whose properties are all integers so v0 (I64) and v1
+        // (actual type) produce different encoded lengths / types. family's
+        // `person` has one integer field `age`, suitable for fallback testing.
+        let platform_version = PlatformVersion::latest();
+        let contract = family_contract(platform_version);
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("person document type");
+
+        // Random document serialized in v1 format (integers kept as native).
+        let document = document_type
+            .random_document(Some(55), platform_version)
+            .expect("random document");
+        let crate::document::Document::V0(doc_v0) = document;
+
+        // Serialize in v1 explicitly.
+        let mut v1_bytes = doc_v0
+            .serialize_v1(document_type)
+            .expect("serialize_v1 should succeed");
+        // Overwrite the varint-1 prefix with varint-0.
+        v1_bytes[0] = 0;
+
+        // from_bytes dispatches to v0, which fails on the mismatched layout,
+        // then retries via v1 — the fallback must recover the original document.
+        let recovered = DocumentV0::from_bytes(&v1_bytes, document_type, platform_version)
+            .expect("v0-prefixed v1 payload must fall back to v1 deserialization");
+        assert_eq!(recovered, doc_v0);
     }
 
     // ================================================================

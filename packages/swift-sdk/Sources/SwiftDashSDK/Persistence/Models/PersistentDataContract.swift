@@ -30,7 +30,16 @@ public final class PersistentDataContract {
     public var groupsData: Data?
 
     // Network
-    public var network: String
+    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: Int
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: AppNetwork {
+        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // Timestamps
     public var lastUpdated: Date
@@ -56,6 +65,15 @@ public final class PersistentDataContract {
 
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.dataContract)
     public var documents: [PersistentDocument]
+
+    // Owner identity — populated when the owner happens to also live in
+    // the local store. May be nil even when `ownerId` is set, because
+    // most contracts in the local cache will be owned by identities the
+    // user doesn't hold. Back-filled lazily by
+    // `ContractIdentityLinker.linkContractToOwner` when either side is
+    // inserted.
+    @Relationship(deleteRule: .nullify, inverse: \PersistentIdentity.ownedDataContracts)
+    public var ownerIdentity: PersistentIdentity?
 
     // Token support tracking
     public var hasTokens: Bool
@@ -161,7 +179,7 @@ public final class PersistentDataContract {
         keywords: [String] = [],
         description: String? = nil,
         hasTokens: Bool = false,
-        network: String = "testnet"
+        network: AppNetwork
     ) {
         self.id = id
         self.name = name
@@ -189,8 +207,15 @@ public final class PersistentDataContract {
         // Documents
         self.documents = []
 
+        // Owner identity link is back-filled later by
+        // `ContractIdentityLinker`. Initialise explicitly because
+        // SwiftData's auto-init of optional relationships has
+        // historically been flaky enough in this codebase to be
+        // worth the line.
+        self.ownerIdentity = nil
+
         // Network and timestamps
-        self.network = network
+        self.networkRaw = network.rawValue
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
 
@@ -270,56 +295,25 @@ extension PersistentDataContract {
         }
     }
 
-    public static func predicate(network: String) -> Predicate<PersistentDataContract> {
-        #Predicate<PersistentDataContract> { contract in
-            contract.network == network
+    public static func predicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
+        // See `PersistentIdentity.predicate(network:)` — Foundation's
+        // predicate engine can't capture `AppNetwork`, so we filter on
+        // the Int-backed `networkRaw` shadow field.
+        let target = network.rawValue
+        return #Predicate<PersistentDataContract> { contract in
+            contract.networkRaw == target
         }
     }
 
-    public static func contractsWithTokensPredicate(network: String) -> Predicate<PersistentDataContract> {
-        #Predicate<PersistentDataContract> { contract in
-            contract.hasTokens == true && contract.network == network
+    public static func contractsWithTokensPredicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
+        let target = network.rawValue
+        return #Predicate<PersistentDataContract> { contract in
+            contract.hasTokens == true && contract.networkRaw == target
         }
     }
 }
 
-// MARK: - Conversion Methods
-
-extension PersistentDataContract {
-    /// Create a PersistentDataContract from a ContractModel
-    public static func from(_ contract: ContractModel) -> PersistentDataContract {
-        let idData = Data.identifier(fromBase58: contract.id) ?? Data()
-        let serializedContract = (try? JSONSerialization.data(withJSONObject: contract.schema)) ?? Data()
-
-        let persistent = PersistentDataContract(
-            id: idData,
-            name: contract.name,
-            serializedContract: serializedContract,
-            version: contract.version,
-            ownerId: contract.ownerId,
-            schema: contract.schema,
-            documentTypesList: contract.documentTypes,
-            keywords: contract.keywords,
-            description: contract.description,
-            hasTokens: !contract.tokens.isEmpty
-        )
-
-        return persistent
-    }
-
-    /// Convert to a ContractModel
-    public func toContractModel() -> ContractModel {
-        return ContractModel(
-            id: idBase58,
-            name: name,
-            version: version ?? 1,
-            ownerId: ownerId ?? Data(),
-            documentTypes: documentTypesList,
-            schema: schema,
-            dppDataContract: nil,
-            tokens: [],  // Tokens would need to be decoded from tokensData if needed
-            keywords: keywords,
-            description: contractDescription
-        )
-    }
-}
+// The legacy `ContractModel` value-type bridge has been removed.
+// Persistent data contracts are read and mutated directly on the
+// SwiftData row; token rows hang off `tokens` via a cascade-delete
+// relationship, and the contract schema is available as `schema`.

@@ -213,6 +213,7 @@ pub fn cbor_map_into_json_map(
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
     use ciborium::value::Value as CborValue;

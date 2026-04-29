@@ -35,7 +35,7 @@ use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
@@ -62,17 +62,16 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
 
         let key_signable_bytes = state_transition.signable_bytes()?;
 
-        identity_create_transition
+        for (public_key_with_witness, (_, public_key)) in identity_create_transition
             .public_keys
             .iter_mut()
             .zip(identity.public_keys().iter())
-            .try_for_each(|(public_key_with_witness, (_, public_key))| {
-                if public_key.key_type().is_unique_key_type() {
-                    let signature = signer.sign(public_key, &key_signable_bytes)?;
-                    public_key_with_witness.set_signature(signature);
-                }
-                Ok::<(), ProtocolError>(())
-            })?;
+        {
+            if public_key.key_type().is_unique_key_type() {
+                let signature = signer.sign(public_key, &key_signable_bytes).await?;
+                public_key_with_witness.set_signature(signature);
+            }
+        }
 
         let mut state_transition: StateTransition = identity_create_transition.into();
 

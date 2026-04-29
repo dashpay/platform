@@ -385,25 +385,23 @@ impl<C> Platform<C> {
             );
 
         let mut token_configuration_2 = token_configuration.clone();
-        if let TokenConfiguration::V0(ref mut cfg) = token_configuration_2 {
-            if let TokenDistributionRules::V0(ref mut rules) = cfg.distribution_rules {
-                rules.pre_programmed_distribution = Some(TokenPreProgrammedDistribution::V0(
-                    TokenPreProgrammedDistributionV0 {
-                        distributions: BTreeMap::from([
-                            (
-                                1000,
-                                BTreeMap::from([(IDENTITY_ID_1, 500), (IDENTITY_ID_2, 300)]),
-                            ),
-                            (5000, BTreeMap::from([(IDENTITY_ID_1, 1000)])),
-                            (
-                                10000,
-                                BTreeMap::from([(IDENTITY_ID_2, 750), (IDENTITY_ID_3, 250)]),
-                            ),
-                        ]),
-                    },
-                ));
-            }
-        }
+        let TokenConfiguration::V0(ref mut cfg) = token_configuration_2;
+        let TokenDistributionRules::V0(ref mut rules) = cfg.distribution_rules;
+        rules.pre_programmed_distribution = Some(TokenPreProgrammedDistribution::V0(
+            TokenPreProgrammedDistributionV0 {
+                distributions: BTreeMap::from([
+                    (
+                        1000,
+                        BTreeMap::from([(IDENTITY_ID_1, 500), (IDENTITY_ID_2, 300)]),
+                    ),
+                    (5000, BTreeMap::from([(IDENTITY_ID_1, 1000)])),
+                    (
+                        10000,
+                        BTreeMap::from([(IDENTITY_ID_2, 750), (IDENTITY_ID_3, 250)]),
+                    ),
+                ]),
+            },
+        ));
 
         let tokens = [
             (0, token_configuration.clone()),

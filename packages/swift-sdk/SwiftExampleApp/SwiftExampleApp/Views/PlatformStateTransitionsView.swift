@@ -10,7 +10,7 @@ struct PlatformStateTransitionsView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
             PlatformStateTransitionsView()
-                .environmentObject(UnifiedAppState())
+                .environmentObject(AppState())
         }
     }
 }

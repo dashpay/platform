@@ -1,7 +1,18 @@
 import Foundation
 
 // MARK: - Core DPP Type Aliases
-// Note: Some types (KeyID, BinaryData, TimestampMillis, Identifier) are in IdentityTypes.swift
+
+/// Identity public key ID
+public typealias KeyID = UInt32
+
+/// Binary data used by DPP models
+public typealias BinaryData = Data
+
+/// Milliseconds since Unix epoch
+public typealias TimestampMillis = UInt64
+
+/// Platform identifier
+public typealias Identifier = Data
 
 /// Revision number for versioning
 public typealias Revision = UInt64

@@ -26,8 +26,8 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use tenderdash_abci::Application;
 
-    #[test]
-    fn run_chain_nothing_happening() {
+    #[tokio::test]
+    async fn run_chain_nothing_happening() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -76,11 +76,12 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn run_chain_block_signing() {
+    #[tokio::test]
+    async fn run_chain_block_signing() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -130,11 +131,12 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn run_chain_stop_and_restart() {
+    #[tokio::test]
+    async fn run_chain_stop_and_restart() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -198,7 +200,8 @@ mod tests {
             40,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let state = abci_app.platform.state.load();
 
@@ -270,11 +273,12 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn run_chain_stop_and_restart_multiround() {
+    #[tokio::test]
+    async fn run_chain_stop_and_restart_multiround() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -344,7 +348,8 @@ mod tests {
             40,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let state = abci_app.platform.state.load();
 
@@ -416,11 +421,12 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn run_chain_stop_and_restart_with_rotation() {
+    #[tokio::test]
+    async fn run_chain_stop_and_restart_with_rotation() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -501,7 +507,8 @@ mod tests {
             89,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -571,12 +578,13 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(block_start),
-        );
+        )
+        .await;
     }
 
     // Test should filter out transactions exceeding max tx bytes per block
-    #[test]
-    fn run_transactions_exceeding_max_block_size() {
+    #[tokio::test]
+    async fn run_transactions_exceeding_max_block_size() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 identity_inserts: IdentityInsertInfo {
@@ -612,7 +620,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None, &mut None)
+                .await;
         let state_transitions = outcome
             .state_transition_results_per_block
             .get(&1)

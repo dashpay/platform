@@ -260,6 +260,7 @@ fn get_field_type_matching_error() -> ProtocolError {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 

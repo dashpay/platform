@@ -18,8 +18,8 @@ mod token_transfer_tests {
     use dpp::tokens::status::v0::TokenStatusV0;
     use super::*;
 
-    #[test]
-    fn test_token_transfer() {
+    #[tokio::test]
+    async fn test_token_transfer() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -62,6 +62,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -120,8 +121,8 @@ mod token_transfer_tests {
         assert_eq!(token_balance, Some(expected_amount));
     }
 
-    #[test]
-    fn test_token_transfer_to_non_existing_identity() {
+    #[tokio::test]
+    async fn test_token_transfer_to_non_existing_identity() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -163,6 +164,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -224,8 +226,8 @@ mod token_transfer_tests {
         assert_eq!(token_balance, None);
     }
 
-    #[test]
-    fn test_token_transfer_should_fail_if_token_started_paused() {
+    #[tokio::test]
+    async fn test_token_transfer_should_fail_if_token_started_paused() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -279,6 +281,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -363,6 +366,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let resume_transition_transition = resume_transition
@@ -424,6 +428,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -482,8 +487,8 @@ mod token_transfer_tests {
         assert_eq!(token_balance, Some(expected_amount));
     }
 
-    #[test]
-    fn test_token_transfer_should_fail_if_token_becomes_paused() {
+    #[tokio::test]
+    async fn test_token_transfer_should_fail_if_token_becomes_paused() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -535,6 +540,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let resume_transition_transition = resume_transition
@@ -594,6 +600,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -669,6 +676,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let resume_transition_transition = resume_transition
@@ -730,6 +738,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -788,8 +797,8 @@ mod token_transfer_tests {
         assert_eq!(token_balance, Some(expected_amount));
     }
 
-    #[test]
-    fn test_token_transfer_to_ourself_should_fail() {
+    #[tokio::test]
+    async fn test_token_transfer_to_ourself_should_fail() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -830,6 +839,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -877,8 +887,8 @@ mod token_transfer_tests {
         assert_eq!(token_balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_transfer_trying_to_send_more_than_we_have() {
+    #[tokio::test]
+    async fn test_token_transfer_trying_to_send_more_than_we_have() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -921,6 +931,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -983,8 +994,8 @@ mod token_transfer_tests {
         assert_eq!(token_balance, None);
     }
 
-    #[test]
-    fn test_token_transfer_adding_group_info_causes_error() {
+    #[tokio::test]
+    async fn test_token_transfer_adding_group_info_causes_error() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1047,6 +1058,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_mint_serialized_transition = token_mint_transition
@@ -1104,6 +1116,7 @@ mod token_transfer_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         // here we add fake info
@@ -1130,6 +1143,7 @@ mod token_transfer_tests {
                 &signer,
                 None::<GetDataContractSecurityLevelRequirementFn>,
             )
+            .await
             .expect("expected to resign transaction");
 
         let token_transfer_serialized_transition = token_transfer_transition

@@ -33,3 +33,78 @@ impl fmt::Display for ContestedDocumentVotePollWinnerInfo {
 // (not versioned V0/V1).
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for ContestedDocumentVotePollWinnerInfo {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_is_no_winner() {
+        let default: ContestedDocumentVotePollWinnerInfo = Default::default();
+        assert_eq!(default, ContestedDocumentVotePollWinnerInfo::NoWinner);
+    }
+
+    #[test]
+    fn display_no_winner() {
+        let s = ContestedDocumentVotePollWinnerInfo::NoWinner.to_string();
+        assert_eq!(s, "NoWinner");
+    }
+
+    #[test]
+    fn display_locked() {
+        let s = ContestedDocumentVotePollWinnerInfo::Locked.to_string();
+        assert_eq!(s, "Locked");
+    }
+
+    #[test]
+    fn display_won_by_identity() {
+        let id = Identifier::new([5u8; 32]);
+        let s = ContestedDocumentVotePollWinnerInfo::WonByIdentity(id).to_string();
+        assert!(s.starts_with("WonByIdentity("));
+        assert!(s.contains(&format!("{}", id)));
+    }
+
+    #[test]
+    fn equality_and_copy() {
+        let a = ContestedDocumentVotePollWinnerInfo::Locked;
+        let b = a; // Copy
+        assert_eq!(a, b);
+
+        let id1 = Identifier::new([1u8; 32]);
+        let id2 = Identifier::new([2u8; 32]);
+        assert_ne!(
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id1),
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id2)
+        );
+        assert_ne!(
+            ContestedDocumentVotePollWinnerInfo::NoWinner,
+            ContestedDocumentVotePollWinnerInfo::Locked
+        );
+    }
+
+    #[test]
+    fn bincode_roundtrip() {
+        use bincode::config;
+        let cfg = config::standard();
+        for v in [
+            ContestedDocumentVotePollWinnerInfo::NoWinner,
+            ContestedDocumentVotePollWinnerInfo::Locked,
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(Identifier::new([9u8; 32])),
+        ] {
+            let bytes = bincode::encode_to_vec(v, cfg).expect("encode");
+            let (decoded, _): (ContestedDocumentVotePollWinnerInfo, _) =
+                bincode::decode_from_slice(&bytes, cfg).expect("decode");
+            assert_eq!(v, decoded);
+        }
+    }
+
+    #[test]
+    fn serde_roundtrip_won_by_identity() {
+        let id = Identifier::new([3u8; 32]);
+        let value = ContestedDocumentVotePollWinnerInfo::WonByIdentity(id);
+        let json = serde_json::to_string(&value).expect("serialize");
+        let back: ContestedDocumentVotePollWinnerInfo =
+            serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, value);
+    }
+}

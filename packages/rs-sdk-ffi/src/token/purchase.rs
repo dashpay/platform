@@ -215,45 +215,49 @@ mod tests {
     }
 
     // Mock callbacks for signer
+    // Mock async sign callback for the completion-callback signer vtable.
     unsafe extern "C" fn mock_sign_callback(
         _signer: *const std::os::raw::c_void,
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
-        result_len: *mut usize,
-    ) -> *mut u8 {
-        // Return a mock signature (64 bytes for ECDSA) allocated with libc::malloc
+        completion_ctx: *mut std::os::raw::c_void,
+        completion: crate::signer::SignCompletionCallback,
+    ) {
+        // Fake 64-byte signature. Completion is invoked synchronously here;
+        // that's legal — nothing in VTableSigner requires async completion.
         let signature = [0u8; 64];
-        *result_len = signature.len();
-        let ptr = libc::malloc(signature.len()) as *mut u8;
-        if !ptr.is_null() {
-            std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
-        }
-        ptr
+        completion(
+            completion_ctx,
+            signature.as_ptr(),
+            signature.len(),
+            std::ptr::null(),
+        );
     }
 
     unsafe extern "C" fn mock_can_sign_callback(
         _signer: *const std::os::raw::c_void,
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
     ) -> bool {
         true
     }
 
-    // Helper function to create a mock signer
+    // Helper function to create a mock signer.
     fn create_mock_signer() -> Box<crate::signer::VTableSigner> {
-        // Create a mock signer vtable
         let vtable = Box::new(crate::signer::SignerVTable {
-            sign: mock_sign_callback,
+            sign_async: mock_sign_callback,
             can_sign_with: mock_can_sign_callback,
             destroy: mock_destroy_callback,
-            free_result: None,
         });
-
-        Box::new(crate::signer::VTableSigner {
-            signer_ptr: std::ptr::null_mut(),
-            vtable: Box::into_raw(vtable),
+        let vtable_ptr = Box::into_raw(vtable);
+        // SAFETY: vtable_ptr was just produced by Box::into_raw and we take
+        // ownership of it (owns_vtable = true).
+        Box::new(unsafe {
+            crate::signer::VTableSigner::from_callback(std::ptr::null_mut(), vtable_ptr, true)
         })
     }
 

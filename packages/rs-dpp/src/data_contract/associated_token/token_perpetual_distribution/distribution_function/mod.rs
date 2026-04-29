@@ -1271,6 +1271,7 @@ mod tests {
         }
 
         #[test]
+        #[allow(clippy::assertions_on_constants)]
         fn polynomial_bounds() {
             assert_eq!(MIN_POL_M_PARAM, -8);
             assert_eq!(MAX_POL_M_PARAM, 8);

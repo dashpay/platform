@@ -234,6 +234,7 @@ impl TokenUnfreezeTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     use crate::drive::contract::DataContractFetchInfo;
     use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
@@ -362,5 +363,60 @@ mod tests {
             make_action_v0(Identifier::new([1u8; 32]), Some("wipeme")).into();
         wrapped.set_public_note(None);
         assert!(wrapped.public_note().is_none());
+    }
+
+    // -------------------------------------------------------------------
+    // Transformer logic fragment tests — exercising the note merging rule.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn unfreeze_change_note_some_some_wins() {
+        let change_note: Option<Option<String>> = Some(Some("resolved".to_string()));
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("resolved".to_string()));
+    }
+
+    #[test]
+    fn unfreeze_change_note_some_none_clears() {
+        let change_note: Option<Option<String>> = Some(None);
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert!(merged.is_none());
+    }
+
+    #[test]
+    fn unfreeze_change_note_none_keeps_user() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("user".to_string()));
+    }
+
+    #[test]
+    fn unfreeze_borrowed_path_clones_note() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("clone me".to_string());
+        let merged = change_note.unwrap_or(public_note.clone());
+        assert_eq!(merged, Some("clone me".to_string()));
+        assert!(public_note.is_some());
+    }
+
+    #[test]
+    fn unfreeze_borrowed_path_dereferences_frozen_identity_id() {
+        let id = Identifier::new([0xCD; 32]);
+        // Mirror the `frozen_identity_id: *frozen_identity_id` pattern via an
+        // intermediate reference binding. Writing `*&id` directly would trip
+        // `clippy::deref_addrof`.
+        let id_ref: &Identifier = &id;
+        let copied: Identifier = *id_ref;
+        assert_eq!(copied, id);
+    }
+
+    #[test]
+    fn unfreeze_both_notes_none_yields_none() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = None;
+        assert!(change_note.unwrap_or(public_note).is_none());
     }
 }

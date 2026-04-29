@@ -22,6 +22,7 @@ pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTra
             required_asset_lock_duff_balance_for_processing_start_for_address_funding: 50000,
             validate_asset_lock_transaction_structure: 0,
             validate_instant_asset_lock_proof_structure: 0,
+            max_asset_lock_transaction_inputs: u16::MAX,
         },
         credit_withdrawal: IdentityCreditWithdrawalTransitionVersions {
             default_constructor: 0,

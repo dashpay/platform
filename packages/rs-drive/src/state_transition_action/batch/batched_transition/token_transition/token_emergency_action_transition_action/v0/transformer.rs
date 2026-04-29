@@ -234,6 +234,7 @@ impl TokenEmergencyActionTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     use crate::drive::contract::DataContractFetchInfo;
     use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
@@ -373,5 +374,61 @@ mod tests {
         // Sanity check the upstream TokenEmergencyAction helper used by this module.
         assert!(TokenEmergencyAction::Pause.paused());
         assert!(!TokenEmergencyAction::Resume.paused());
+    }
+
+    // -------------------------------------------------------------------
+    // Transformer logic fragment tests — note precedence and Copy semantics of
+    // TokenEmergencyAction (exercised by the `emergency_action: *emergency_action`
+    // pattern in the borrowed transformer).
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn emergency_change_note_some_some_wins() {
+        let change_note: Option<Option<String>> = Some(Some("group-override".to_string()));
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("group-override".to_string()));
+    }
+
+    #[test]
+    fn emergency_change_note_some_none_clears_user_note() {
+        let change_note: Option<Option<String>> = Some(None);
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert!(merged.is_none());
+    }
+
+    #[test]
+    fn emergency_change_note_none_keeps_user_note() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("user".to_string());
+        let merged = change_note.unwrap_or(public_note);
+        assert_eq!(merged, Some("user".to_string()));
+    }
+
+    #[test]
+    fn emergency_borrowed_copies_action_via_star_deref() {
+        // The borrowed transformer writes `emergency_action: *emergency_action`
+        // which relies on `TokenEmergencyAction: Copy`. We mirror that via an
+        // intermediate reference binding (a direct `*&pause` would trip
+        // `clippy::deref_addrof`).
+        let pause = TokenEmergencyAction::Pause;
+        let pause_ref: &TokenEmergencyAction = &pause;
+        let copied: TokenEmergencyAction = *pause_ref;
+        assert_eq!(copied, TokenEmergencyAction::Pause);
+
+        let resume = TokenEmergencyAction::Resume;
+        let resume_ref: &TokenEmergencyAction = &resume;
+        let copied: TokenEmergencyAction = *resume_ref;
+        assert_eq!(copied, TokenEmergencyAction::Resume);
+    }
+
+    #[test]
+    fn emergency_borrowed_path_clones_public_note_without_consuming() {
+        let change_note: Option<Option<String>> = None;
+        let public_note: Option<String> = Some("bound".to_string());
+        let merged = change_note.unwrap_or(public_note.clone());
+        assert_eq!(merged, Some("bound".to_string()));
+        assert!(public_note.is_some());
     }
 }

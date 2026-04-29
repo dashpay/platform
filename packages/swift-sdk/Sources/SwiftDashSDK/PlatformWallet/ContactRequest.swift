@@ -2,7 +2,12 @@ import Foundation
 import DashSDKFFI
 
 /// Contact Request for DashPay
-public class ContactRequest {
+///
+/// `@unchecked Sendable`: the only instance state is an immutable
+/// `Handle` (UInt64). All mutable state behind the handle lives in
+/// the Rust-side `CONTACT_REQUEST_STORAGE` (parking_lot RwLock).
+/// Same rationale as `ManagedPlatformWallet`.
+public final class ContactRequest: @unchecked Sendable {
     internal let handle: Handle
 
     internal init(handle: Handle) {
@@ -26,26 +31,30 @@ public class ContactRequest {
     ) throws -> ContactRequest {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        let ffiSenderId = identifierToFFI(senderId)
-        let ffiRecipientId = identifierToFFI(recipientId)
 
-        let result = encryptedPublicKey.withUnsafeBytes { keyPtr in
-            contact_request_create(
-                ffiSenderId,
-                ffiRecipientId,
-                senderKeyIndex,
-                recipientKeyIndex,
-                accountReference,
-                keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(encryptedPublicKey.count),
-                coreHeightCreatedAt,
-                createdAt,
-                &handle,
-                &error
-            )
+        // Nest the two `withFFIBytes` closures + `withUnsafeBytes`
+        // so all three buffers stay live for the FFI call window.
+        let result = senderId.withFFIBytes { senderPtr -> PlatformWalletFFIResult in
+            recipientId.withFFIBytes { recipientPtr -> PlatformWalletFFIResult in
+                encryptedPublicKey.withUnsafeBytes { keyPtr -> PlatformWalletFFIResult in
+                    contact_request_create(
+                        senderPtr,
+                        recipientPtr,
+                        senderKeyIndex,
+                        recipientKeyIndex,
+                        accountReference,
+                        keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        UInt(encryptedPublicKey.count),
+                        coreHeightCreatedAt,
+                        createdAt,
+                        &handle,
+                        &error
+                    )
+                }
+            }
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -54,28 +63,32 @@ public class ContactRequest {
 
     /// Get the sender identity ID
     public func getSenderId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = contact_request_get_sender_id(handle, &ffiId, &error)
-        guard result == Success else {
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            contact_request_get_sender_id(handle, bp.baseAddress!, &error)
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI(ffiId)
+        return Data(buf)
     }
 
     /// Get the recipient identity ID
     public func getRecipientId() throws -> Identifier {
-        var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        var buf = [UInt8](repeating: 0, count: 32)
         var error = PlatformWalletFFIError()
 
-        let result = contact_request_get_recipient_id(handle, &ffiId, &error)
-        guard result == Success else {
+        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
+            contact_request_get_recipient_id(handle, bp.baseAddress!, &error)
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
-        return identifierFromFFI(ffiId)
+        return Data(buf)
     }
 
     /// Get the sender key index
@@ -84,7 +97,7 @@ public class ContactRequest {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_sender_key_index(handle, &keyIndex, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -97,7 +110,7 @@ public class ContactRequest {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_recipient_key_index(handle, &keyIndex, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -110,7 +123,7 @@ public class ContactRequest {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_account_reference(handle, &accountRef, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -124,7 +137,7 @@ public class ContactRequest {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_encrypted_public_key(handle, &bytesPtr, &length, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -147,7 +160,7 @@ public class ContactRequest {
         var error = PlatformWalletFFIError()
 
         let result = contact_request_get_created_at(handle, &createdAt, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 

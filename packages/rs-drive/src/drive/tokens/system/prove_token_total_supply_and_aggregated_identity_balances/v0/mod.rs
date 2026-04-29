@@ -272,4 +272,139 @@ mod tests {
             "unexpected total balance validation failure"
         );
     }
+
+    #[test]
+    fn should_prove_token_total_supply_when_no_balances_tree_yet() {
+        // Cover the path where the token tree exists but there are no identity balances.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [70u8; 32];
+        let contract_id = dpp::prelude::Identifier::from([71u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        // Seed supply but NOT any individual identity balance (aggregated = 0)
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                5_000,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to seed supply");
+
+        let proof = drive
+            .prove_token_total_supply_and_aggregated_identity_balances_v0(
+                token_id,
+                None,
+                platform_version,
+            )
+            .expect("expected proof generation to succeed");
+
+        let (_root, totals) = Drive::verify_token_total_supply_and_aggregated_identity_balance(
+            proof.as_slice(),
+            token_id,
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
+
+        assert_eq!(totals.token_supply, 5_000);
+        assert_eq!(totals.aggregated_token_account_balances, 0);
+        // ok() is false when supply != aggregated balances
+        assert!(
+            !totals.ok().expect("expected a validation outcome"),
+            "expected supply/aggregated mismatch to be flagged"
+        );
+    }
+
+    #[test]
+    fn should_prove_supply_and_balances_match_after_multiple_mints() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [72u8; 32];
+        let contract_id = dpp::prelude::Identifier::from([73u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        // Drive-level add_to_token_total_supply + add_to_identity_token_balance separately
+        // to keep supply and aggregated in sync manually.
+        for (identity_id, amount) in [([74u8; 32], 100u64), ([75u8; 32], 250), ([76u8; 32], 650)] {
+            drive
+                .add_to_token_total_supply(
+                    token_id,
+                    amount,
+                    false,
+                    false,
+                    true,
+                    &block_info,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to seed supply");
+
+            drive
+                .add_to_identity_token_balance(
+                    token_id,
+                    identity_id,
+                    amount,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to add balance");
+        }
+
+        let proof = drive
+            .prove_token_total_supply_and_aggregated_identity_balances_v0(
+                token_id,
+                None,
+                platform_version,
+            )
+            .expect("expected proof generation to succeed");
+
+        let (_root, totals) = Drive::verify_token_total_supply_and_aggregated_identity_balance(
+            proof.as_slice(),
+            token_id,
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
+
+        assert_eq!(totals.token_supply, 1_000);
+        assert_eq!(totals.aggregated_token_account_balances, 1_000);
+        assert!(totals.ok().expect("expected validation outcome"));
+    }
 }

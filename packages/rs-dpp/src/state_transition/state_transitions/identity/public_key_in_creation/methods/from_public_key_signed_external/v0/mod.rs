@@ -6,7 +6,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::ProtocolError;
 
 impl IdentityPublicKeyInCreation {
-    pub(super) fn from_public_key_signed_external_v0<S: Signer<IdentityPublicKey>>(
+    pub(super) async fn from_public_key_signed_external_v0<S: Signer<IdentityPublicKey>>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,
@@ -15,7 +15,7 @@ impl IdentityPublicKeyInCreation {
         match public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
                 public_key_with_witness
-                    .set_signature(signer.sign(&public_key, state_transition_bytes)?);
+                    .set_signature(signer.sign(&public_key, state_transition_bytes).await?);
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 // don't sign (on purpose)
