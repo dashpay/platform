@@ -8,22 +8,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::serialization::bytes_b64;
 
-// ── TypeScript interface declarations ──────────────────────────────────
-
-#[wasm_bindgen(typescript_custom_section)]
-const TS_SHIELDED: &'static str = r#"
-export interface IShieldedEncryptedNote {
-    readonly cmx: Uint8Array;
-    readonly nullifier: Uint8Array;
-    readonly encryptedNote: Uint8Array;
-}
-
-export interface IShieldedNullifierStatus {
-    readonly nullifier: Uint8Array;
-    readonly isSpent: boolean;
-}
-"#;
-
 // ── Wrapper types ──────────────────────────────────────────────────────
 
 #[wasm_bindgen(js_name = "ShieldedEncryptedNote")]
