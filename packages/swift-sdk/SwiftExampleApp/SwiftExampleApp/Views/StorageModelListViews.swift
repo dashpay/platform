@@ -502,18 +502,8 @@ struct AccountStorageListView: View {
     @Query(sort: \PersistentWallet.createdAt, order: .reverse)
     private var wallets: [PersistentWallet]
 
-    /// Catch any accounts whose `wallet` inverse is nil (shouldn't
-    /// happen in steady state — the write path always links them —
-    /// but shown so the explorer doesn't silently hide them).
-    @Query(sort: \PersistentAccount.createdAt, order: .reverse)
-    private var allAccounts: [PersistentAccount]
-
-    private var orphanAccounts: [PersistentAccount] {
-        allAccounts.filter { $0.wallet == nil }
-    }
-
     private var totalAccountCount: Int {
-        wallets.reduce(0) { $0 + $1.accounts.count } + orphanAccounts.count
+        wallets.reduce(0) { $0 + $1.accounts.count }
     }
 
     var body: some View {
@@ -528,15 +518,6 @@ struct AccountStorageListView: View {
                             NavigationLink(destination: AccountStorageDetailView(record: account)) {
                                 accountRow(account)
                             }
-                        }
-                    }
-                }
-            }
-            if !orphanAccounts.isEmpty {
-                Section(header: Text("Unlinked")) {
-                    ForEach(orphanAccounts) { account in
-                        NavigationLink(destination: AccountStorageDetailView(record: account)) {
-                            accountRow(account)
                         }
                     }
                 }
@@ -567,14 +548,37 @@ struct AccountStorageListView: View {
         }
     }
 
+    /// Per-account transaction count = distinct creating + spending
+    /// txs across this account's TXOs. Derived because the direct
+    /// `account.transactions` relationship is gone — a single tx can
+    /// span multiple accounts and is no longer account-scoped on the
+    /// model side. Walks the address pool now that
+    /// `PersistentAccount.outputs` is gone; the canonical
+    /// account → TXO path is `coreAddresses.flatMap(\.txos)`.
+    private func distinctTxCount(_ record: PersistentAccount) -> Int {
+        var seen: Set<Data> = []
+        for address in record.coreAddresses {
+            for txo in address.txos {
+                if let tx = txo.transaction { seen.insert(tx.txid) }
+                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+            }
+        }
+        return seen.count
+    }
+
+    /// TXO count per account, summed across the address pool.
+    private func txoCount(_ record: PersistentAccount) -> Int {
+        record.coreAddresses.reduce(0) { $0 + $1.txos.count }
+    }
+
     @ViewBuilder
     private func accountRow(_ record: PersistentAccount) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(record.accountTypeName).font(.body).lineLimit(1)
             Text(
                 "Index \(record.accountIndex) · "
-                    + "\(record.transactions.count) txs · "
-                    + "\(record.utxos.count) utxos"
+                    + "\(distinctTxCount(record)) txs · "
+                    + "\(txoCount(record)) txos"
             )
             .font(.caption).foregroundColor(.secondary)
         }
@@ -591,7 +595,7 @@ struct TransactionStorageListView: View {
         List(records) { record in
             NavigationLink(destination: TransactionStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(record.txid)
+                    Text(record.txidHex)
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(1).truncationMode(.middle)
                     HStack {
@@ -846,17 +850,17 @@ struct PlatformAddressStorageListView: View {
     }
 }
 
-// MARK: - PersistentUtxo
+// MARK: - PersistentTxo
 
-struct UtxoStorageListView: View {
-    @Query(sort: \PersistentUtxo.createdAt, order: .reverse)
-    private var records: [PersistentUtxo]
+struct TxoStorageListView: View {
+    @Query(sort: \PersistentTxo.createdAt, order: .reverse)
+    private var records: [PersistentTxo]
 
     var body: some View {
         List(records) { record in
-            NavigationLink(destination: UtxoStorageDetailView(record: record)) {
+            NavigationLink(destination: TxoStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(record.outpoint)
+                    Text(record.outpointHex)
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(1).truncationMode(.middle)
                     HStack {
@@ -871,7 +875,7 @@ struct UtxoStorageListView: View {
                 }
             }
         }
-        .navigationTitle("UTXOs (\(records.count))")
+        .navigationTitle("TXOs (\(records.count))")
         .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle") } }
     }
 }
