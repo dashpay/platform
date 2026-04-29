@@ -1,6 +1,12 @@
 use std::os::raw::c_char;
 
-pub use dashcore::Network;
+// Single source of truth for the network type across the Rust-side
+// wallet stack and the FFI boundary. `Network` is the typed enum;
+// `FFINetwork` is the `#[repr(C)]` mirror cbindgen emits for callers.
+// Every FFI entry point in this crate takes / returns `FFINetwork`;
+// internal Rust code converts via `Network::from(ffi)` / `ffi.into()`.
+pub use dash_network::ffi::FFINetwork;
+pub use dash_network::Network;
 
 /// Block time structure
 #[repr(C)]

@@ -18,9 +18,9 @@ public class ManagedAccount {
     // MARK: - Properties
 
     /// Get the network this account is on
-    public var network: KeyWalletNetwork {
+    public var network: Network {
         let ffiNetwork = managed_core_account_get_network(handle)
-        return KeyWalletNetwork(ffiNetwork: ffiNetwork)
+        return Network(ffiNetwork: ffiNetwork)
     }
 
     /// Get the account type

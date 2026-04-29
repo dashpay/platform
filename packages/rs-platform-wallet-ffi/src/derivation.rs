@@ -19,10 +19,10 @@ use std::str::FromStr;
 use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use key_wallet::mnemonic::{Language, Mnemonic};
-use key_wallet::Network;
 use zeroize::Zeroizing;
 
 use crate::error::*;
+use crate::types::{FFINetwork, Network};
 
 /// Parse a BIP-39 mnemonic against every supported wordlist in turn,
 /// returning the first language that yields a valid mnemonic.
@@ -67,8 +67,7 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
 /// * `mnemonic` — UTF-8 null-terminated BIP-39 mnemonic phrase.
 /// * `passphrase` — optional UTF-8 null-terminated BIP-39 passphrase.
 ///    Pass `null` for no passphrase.
-/// * `network` — `0` = Mainnet, `1` = Testnet, `2` = Devnet, `3` =
-///    Regtest. Drives the xpriv version bytes; the derived secret
+/// * `network` — Drives the xpriv version bytes; the derived secret
 ///    key itself is network-independent but the master key's chain
 ///    code derivation uses the HD seed directly.
 /// * `path_utf8` — UTF-8 null-terminated BIP-32 path string, e.g.
@@ -95,7 +94,7 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
 pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
     mnemonic: *const c_char,
     passphrase: *const c_char,
-    network: u32,
+    network: FFINetwork,
     path_utf8: *const c_char,
     out_secret_key: *mut u8,
     out_chain_code: *mut u8,
@@ -159,21 +158,7 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
         }
     };
 
-    let network = match network {
-        0 => Network::Mainnet,
-        1 => Network::Testnet,
-        2 => Network::Devnet,
-        3 => Network::Regtest,
-        _ => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    "invalid network (expected 0..=3)",
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let network: Network = network.into();
 
     let path = match DerivationPath::from_str(path_str) {
         Ok(p) => p,

@@ -526,7 +526,7 @@ struct WalletInfoView: View {
         }
     }
 
-    private func enableNetwork(_ network: AppNetwork) async {
+    private func enableNetwork(_ network: Network) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 

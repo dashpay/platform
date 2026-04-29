@@ -26,7 +26,7 @@ struct OptionsView: View {
     /// pre-populate the peers text field when the user enables the
     /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
     /// so the default must include the network's standard P2P port.
-    private func defaultSpvPeers(for network: AppNetwork) -> String {
+    private func defaultSpvPeers(for network: Network) -> String {
         switch network {
         case .mainnet: return "127.0.0.1:9999"
         case .testnet: return "127.0.0.1:19999"
@@ -74,7 +74,7 @@ struct OptionsView: View {
                             }
                         }
                     )) {
-                        ForEach(AppNetwork.allCases, id: \.self) { network in
+                        ForEach(Network.allCases, id: \.self) { network in
                             Text(network.displayName).tag(network)
                         }
                     }

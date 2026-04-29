@@ -154,7 +154,7 @@ public class PlatformWalletManager: ObservableObject {
     @discardableResult
     public func createWallet(
         mnemonic: String,
-        network: PlatformNetwork,
+        network: Network,
         name: String? = nil,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
@@ -173,7 +173,7 @@ public class PlatformWalletManager: ObservableObject {
             platform_wallet_manager_create_wallet_from_mnemonic(
                 handle,
                 mnemonicPtr,
-                network.rawValue,
+                network.ffiValue,
                 accountOptions,
                 &walletHandle,
                 &walletId,
@@ -198,7 +198,7 @@ public class PlatformWalletManager: ObservableObject {
     @discardableResult
     public func createWallet(
         seed: Data,
-        network: PlatformNetwork,
+        network: Network,
         name: String? = nil,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
@@ -220,7 +220,7 @@ public class PlatformWalletManager: ObservableObject {
         let result = seed.withUnsafeBytes { seedPtr in
             platform_wallet_manager_create_wallet_from_seed(
                 handle,
-                network.rawValue,
+                network.ffiValue,
                 seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 UInt(seed.count),
                 accountOptions,

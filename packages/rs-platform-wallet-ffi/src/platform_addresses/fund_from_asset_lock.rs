@@ -117,7 +117,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
         }
     };
     let private_key =
-        match dashcore::PrivateKey::from_byte_array(key_array, dashcore::Network::Mainnet) {
+        match dashcore::PrivateKey::from_byte_array(key_array, crate::types::Network::Mainnet) {
             Ok(k) => k,
             Err(e) => {
                 if !out_error.is_null() {

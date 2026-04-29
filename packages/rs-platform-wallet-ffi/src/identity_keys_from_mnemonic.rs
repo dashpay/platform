@@ -45,12 +45,12 @@ use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
 use key_wallet::mnemonic::{Language, Mnemonic};
-use rs_sdk_ffi::DashSDKNetwork;
 use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
+use crate::types::{FFINetwork, Network};
 
 /// Parse a BIP-39 mnemonic against every supported wordlist.
 ///
@@ -81,20 +81,6 @@ pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'st
     Err("phrase does not match any supported BIP-39 wordlist")
 }
 
-/// Map the C-ABI `DashSDKNetwork` enum to `key_wallet::Network`.
-///
-/// `Local` collapses to `Regtest` to match the rest of the FFI surface
-/// (`dash_sdk_signer_create_from_private_key`, `dash_sdk_sign_with_mnemonic_and_path`).
-pub(crate) fn map_network(network: DashSDKNetwork) -> key_wallet::Network {
-    match network {
-        DashSDKNetwork::SDKMainnet => key_wallet::Network::Mainnet,
-        DashSDKNetwork::SDKTestnet => key_wallet::Network::Testnet,
-        DashSDKNetwork::SDKRegtest => key_wallet::Network::Regtest,
-        DashSDKNetwork::SDKDevnet => key_wallet::Network::Devnet,
-        DashSDKNetwork::SDKLocal => key_wallet::Network::Regtest,
-    }
-}
-
 /// Build the DIP-9 identity-authentication derivation path
 /// `m/9'/coin'/5'/0'/0'/identity_index'/key_index'`.
 ///
@@ -109,12 +95,12 @@ pub(crate) fn map_network(network: DashSDKNetwork) -> key_wallet::Network {
 /// `platform_wallet::identity_auth_derivation_path` is `pub(crate)` and
 /// this entry point sits outside that crate.
 pub(crate) fn identity_auth_derivation_path(
-    network: key_wallet::Network,
+    network: Network,
     identity_index: u32,
     key_index: u32,
 ) -> Result<DerivationPath, String> {
     let base_path: DerivationPath = match network {
-        key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+        Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
         _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
     }
     .into();
@@ -191,7 +177,7 @@ pub(crate) fn identity_auth_derivation_path(
 pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
     mnemonic_cstr: *const std::os::raw::c_char,
     passphrase_cstr: *const std::os::raw::c_char,
-    network: DashSDKNetwork,
+    network: FFINetwork,
     identity_index: u32,
     key_count: u32,
     out_rows: *mut IdentityRegistrationKeyDerivationsFFI,
@@ -278,7 +264,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
 
     // ---- Master xpriv --------------------------------------------------------
-    let kw_network = map_network(network);
+    let kw_network: Network = network.into();
     let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
         Ok(m) => m,
         Err(e) => {
@@ -513,7 +499,7 @@ mod tests {
             dash_sdk_derive_identity_keys_from_mnemonic(
                 mnemonic.as_ptr(),
                 std::ptr::null(), // empty passphrase
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 7,
                 3,
                 &mut out,
@@ -574,7 +560,7 @@ mod tests {
             dash_sdk_derive_identity_keys_from_mnemonic(
                 mnemonic.as_ptr(),
                 std::ptr::null(),
-                DashSDKNetwork::SDKMainnet,
+                FFINetwork::Mainnet,
                 0,
                 1,
                 &mut out,
@@ -606,7 +592,7 @@ mod tests {
             dash_sdk_derive_identity_keys_from_mnemonic(
                 mnemonic.as_ptr(),
                 std::ptr::null(),
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 0,
                 0,
                 &mut out,
@@ -634,7 +620,7 @@ mod tests {
             dash_sdk_derive_identity_keys_from_mnemonic(
                 mnemonic.as_ptr(),
                 std::ptr::null(),
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 0,
                 3,
                 &mut out,

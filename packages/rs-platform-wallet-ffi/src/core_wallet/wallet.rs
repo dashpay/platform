@@ -2,6 +2,7 @@
 
 use crate::error::*;
 use crate::handle::*;
+use crate::types::FFINetwork;
 
 /// Destroy a CoreWallet handle.
 #[no_mangle]
@@ -46,12 +47,10 @@ pub unsafe extern "C" fn core_wallet_get_balance(
 }
 
 /// Get the network this wallet operates on.
-///
-/// Returns: 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_get_network(
     handle: Handle,
-    out_network: *mut u32,
+    out_network: *mut FFINetwork,
     _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     if out_network.is_null() {
@@ -60,12 +59,7 @@ pub unsafe extern "C" fn core_wallet_get_network(
 
     CORE_WALLET_STORAGE
         .with_item(handle, |wallet| {
-            *out_network = match wallet.network() {
-                key_wallet::Network::Mainnet => 0,
-                key_wallet::Network::Testnet => 1,
-                key_wallet::Network::Devnet => 2,
-                key_wallet::Network::Regtest => 3,
-            };
+            *out_network = wallet.network().into();
             PlatformWalletFFIResult::Success
         })
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)

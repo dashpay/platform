@@ -12,8 +12,10 @@ use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::{AddressInfo, Network};
+use key_wallet::AddressInfo;
 use parking_lot::RwLock;
+
+use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -177,7 +179,7 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             wallet_id: *const u8,
-            network: u8,
+            network: FFINetwork,
             birth_height: u32,
         ) -> i32,
     >,
@@ -329,12 +331,11 @@ impl PlatformWalletPersistence for FFIPersister {
         // `wallet_metadata: None` so no callback fires).
         if let Some(meta) = changeset.wallet_metadata.as_ref() {
             if let Some(cb) = self.callbacks.on_persist_wallet_metadata_fn {
-                let network_tag = network_tag_for(meta.network);
                 let result = unsafe {
                     cb(
                         self.callbacks.context,
                         wallet_id.as_ptr(),
-                        network_tag,
+                        meta.network.into(),
                         meta.birth_height,
                     )
                 };
@@ -855,18 +856,6 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 }
 
-/// Reverse of [`network_from_tag`] — keeps the discriminant in sync
-/// with `platform_wallet_manager_create_wallet_from_seed` (0 = Mainnet,
-/// 1 = Testnet, 2 = Devnet, 3 = Regtest).
-fn network_tag_for(network: Network) -> u8 {
-    match network {
-        Network::Mainnet => 0,
-        Network::Testnet => 1,
-        Network::Devnet => 2,
-        Network::Regtest => 3,
-    }
-}
-
 /// Flatten an `AccountType` + encoded xpub into the C-flat
 /// [`AccountSpecFFI`] layout.
 ///
@@ -1165,7 +1154,7 @@ fn build_wallet_start_state(
     ),
     PersistenceError,
 > {
-    let network = network_from_tag(entry.network)?;
+    let network: Network = entry.network.into();
 
     // Build the per-account collection from the typed spec array.
     let mut accounts = AccountCollection::new();
@@ -1454,16 +1443,6 @@ fn identity_status_from_tag(tag: u8) -> IdentityStatus {
         3 => IdentityStatus::FailedCreation,
         4 => IdentityStatus::NotFound,
         _ => IdentityStatus::Unknown,
-    }
-}
-
-fn network_from_tag(tag: u8) -> Result<Network, PersistenceError> {
-    match tag {
-        0 => Ok(Network::Mainnet),
-        1 => Ok(Network::Testnet),
-        2 => Ok(Network::Devnet),
-        3 => Ok(Network::Regtest),
-        other => Err(format!("unknown network tag {}", other).into()),
     }
 }
 
