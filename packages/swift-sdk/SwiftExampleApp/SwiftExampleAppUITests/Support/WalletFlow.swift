@@ -404,11 +404,30 @@ func switchAppNetworkToTestnet(
         file: file, line: line
     )
 
-    if testnetButton.isSelected {
-        // Already on Testnet; status should already be Connected.
-    } else {
+    if !testnetButton.isSelected {
         testnetButton.tap()
     }
+
+    // Belt-and-braces: the AppState change makes the status label
+    // honest about the rebind-in-progress window, but if the segmented-
+    // control tap itself never landed (animation interrupted, picker
+    // disabled mid-frame), `appState.currentNetwork` never changes,
+    // `isSwitchingNetwork` stays false, and the label keeps reading
+    // "Connected" against the *previous* network's SDK. Wait for the
+    // segment to latch before trusting the connected predicate below.
+    let selectedResult = XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: testnetButton
+        )],
+        timeout: 10
+    )
+    XCTAssertEqual(
+        selectedResult,
+        .completed,
+        "Testnet segment did not latch as selected within 10s. Did the segmented-control tap miss?",
+        file: file, line: line
+    )
 
     let statusLabel = app.descendants(matching: .any)
         .matching(identifier: Identifier.Options.networkStatusLabel)
@@ -513,10 +532,12 @@ func runIdentityDiscovery(
         // Open the .menu popover and tap the row whose accessibility
         // label starts with our wallet name. `walletPickerRow` renders
         // `HStack { Text(label), Text(fingerprint) }`, which combines
-        // into `"<walletName> <fingerprint>"` on the row's button.
+        // into `"<walletName> <fingerprint>"` on the row's button. Match
+        // with a trailing space so a longer wallet name that shares a
+        // prefix can't accidentally win firstMatch.
         walletPicker.tap()
         let walletOption = app.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", walletName))
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "\(walletName) "))
             .firstMatch
         XCTAssertTrue(
             walletOption.waitForExistence(timeout: 5),
@@ -649,21 +670,35 @@ func readIdentityBalanceCredits(
 /// failed runs — re-importing the same mnemonic otherwise hits
 /// `Wallet operation: Wallet already exists` because walletId is
 /// deterministic from the mnemonic.
+///
+/// Sweeps the entire wallets list (not just the current viewport): a
+/// developer with N accumulated `ImportTransfer-*` wallets from prior
+/// runs has some sitting below the fold, where `firstMatch` of an
+/// unrooted predicate query won't see them.
 @MainActor
 func cleanupWalletsByPrefix(_ prefix: String, in app: XCUIApplication) {
     let walletsScreen = element(Identifier.walletsScreen, in: app)
     guard walletsScreen.waitForExistence(timeout: 10) else { return }
 
     let predicate = NSPredicate(format: "label BEGINSWITH %@", prefix)
-    var iteration = 0
-    while iteration < 8 {
-        iteration += 1
+
+    // Reset toward the top so the sweep starts at a known position.
+    for _ in 0..<6 { app.swipeDown() }
+
+    // Each iteration: if a matching row is visible, delete it (which
+    // navigates away) and reset back to the wallets list, then continue
+    // from the top. If nothing visible, scroll up to expose more rows.
+    // 20 iterations = up to ~10 deletions + ~10 swipes worth of list.
+    for _ in 0..<20 {
         let row = app.buttons.matching(predicate).firstMatch
-        if !row.waitForExistence(timeout: 2) {
-            return
+        if row.exists {
+            let name = row.label
+            bestEffortDeleteWallet(named: name, in: app)
+            openWalletsTab(in: app)
+            for _ in 0..<6 { app.swipeDown() }
+            continue
         }
-        let name = row.label
-        bestEffortDeleteWallet(named: name, in: app)
+        app.swipeUp()
     }
 }
 
