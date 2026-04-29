@@ -484,6 +484,27 @@ pub struct PlatformAddressChangeSet {
     /// Last block height with recent address changes (compaction marker).
     /// `None` means "no change".
     pub last_known_recent_block: Option<u64>,
+    /// Fee paid by the transfer that produced this changeset, in
+    /// credits. `0` for changesets not produced by `transfer()`
+    /// (e.g. sync-only changesets). See [`Self::fee_paid`].
+    pub fee: Credits,
+}
+
+impl PlatformAddressChangeSet {
+    /// Fee paid by the transfer that produced this changeset, in
+    /// credits.
+    ///
+    /// Returns `0` for changesets that didn't originate from a
+    /// `transfer()` call — e.g. sync-only changesets, or changesets
+    /// constructed via `Default::default()`. The value is computed by
+    /// `transfer()` from the transition's input/output counts via
+    /// `AddressFundsTransferTransition::estimate_min_fee`, then
+    /// adjusted by the configured `fee_strategy` so the returned
+    /// number reflects the portion of the fee charged to the
+    /// fee-bearing input's remaining balance.
+    pub fn fee_paid(&self) -> Credits {
+        self.fee
+    }
 }
 
 impl Merge for PlatformAddressChangeSet {
@@ -508,6 +529,11 @@ impl Merge for PlatformAddressChangeSet {
                     .map_or(r, |existing| existing.max(r)),
             );
         }
+        // Fee: last-non-zero-wins. Sync-only merges (which carry
+        // `fee == 0`) preserve a transfer's recorded fee; merging
+        // two transfer changesets sums the fees, matching the
+        // "total fee paid across operations in this batch" intent.
+        self.fee = self.fee.saturating_add(other.fee);
     }
 
     fn is_empty(&self) -> bool {
@@ -515,6 +541,7 @@ impl Merge for PlatformAddressChangeSet {
             && self.sync_height.is_none()
             && self.sync_timestamp.is_none()
             && self.last_known_recent_block.is_none()
+            && self.fee == 0
     }
 }
 

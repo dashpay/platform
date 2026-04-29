@@ -421,6 +421,18 @@ impl PlatformPaymentAddressProvider {
         self.last_known_recent_block = result.last_known_recent_block;
     }
 
+    /// Current `last_known_recent_block` watermark.
+    ///
+    /// Read-only mirror of the field used by the trait
+    /// implementation; exposed `pub` so wallet-level helpers
+    /// (notably [`super::wallet::PlatformAddressWallet::sync_watermark`])
+    /// can return the value to callers without going through the
+    /// `AddressProvider` trait. Monotonic non-decreasing across
+    /// `sync_finished` calls.
+    pub fn last_known_recent_block(&self) -> u64 {
+        self.last_known_recent_block
+    }
+
     /// Restore incremental-sync watermark from persisted state.
     pub(crate) fn set_stored_sync_state(
         &mut self,

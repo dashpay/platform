@@ -45,16 +45,25 @@ impl PlatformAddressWallet {
 
         let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
 
-        let address_infos = match input_selection {
+        // Capture (input_count, output_count) so we can compute the
+        // fee paid after broadcast for `PlatformAddressChangeSet::fee`.
+        // The output map is consumed by the SDK call below; the
+        // input map is materialized (`Auto`) or is the caller's
+        // (`Explicit*`).
+        let output_count = outputs.len();
+        let (address_infos, input_count) = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
                     return Err(PlatformWalletError::AddressOperation(
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk
+                let n = inputs.len();
+                let infos = self
+                    .sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await?;
+                (infos, n)
             }
             InputSelection::ExplicitWithNonces(inputs) => {
                 if inputs.is_empty() {
@@ -62,7 +71,9 @@ impl PlatformAddressWallet {
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk
+                let n = inputs.len();
+                let infos = self
+                    .sdk
                     .transfer_address_funds_with_nonce(
                         inputs,
                         outputs,
@@ -70,7 +81,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await?;
+                (infos, n)
             }
             InputSelection::Auto => {
                 // Auto-select supports `[DeductFromInput(0)]` and
@@ -89,11 +101,22 @@ impl PlatformAddressWallet {
                 let inputs = self
                     .auto_select_inputs(account_index, &outputs, &fee_strategy, version)
                     .await?;
-                self.sdk
+                let n = inputs.len();
+                let infos = self
+                    .sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await?;
+                (infos, n)
             }
         };
+
+        // Estimated fee = the same min-fee formula the protocol uses
+        // for validation. With `DeductFromInput(_)` (the canonical
+        // strategy used everywhere in this crate) the entire fee is
+        // charged to the targeted input's remaining balance, so this
+        // value matches the on-chain debit.
+        let fee_paid =
+            AddressFundsTransferTransition::estimate_min_fee(input_count, output_count, version);
 
         // Get the cached key source from the unified provider for gap
         // limit maintenance.
@@ -106,7 +129,10 @@ impl PlatformAddressWallet {
 
         // Update balances in the ManagedPlatformAccount.
         let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
+        let mut cs = PlatformAddressChangeSet {
+            fee: fee_paid,
+            ..Default::default()
+        };
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             if let Some(account) = info
                 .core_wallet
