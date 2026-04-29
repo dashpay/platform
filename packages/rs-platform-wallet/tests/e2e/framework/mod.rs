@@ -128,3 +128,83 @@ pub async fn setup() -> FrameworkResult<SetupGuard> {
         teardown_called: false,
     })
 }
+
+/// Multi-identity counterpart of [`setup`]. Builds a fresh test
+/// wallet, funds `n` distinct platform addresses from the bank, and
+/// registers an identity at DIP-9 indices `0..n` on each.
+///
+/// Returns a [`MultiIdentitySetupGuard`] wrapping the original
+/// [`SetupGuard`] plus the `Vec<RegisteredIdentity>` so test
+/// authors can drive multi-identity flows (DP-002 contact requests,
+/// ID-003 transfers) without re-deriving the registration boilerplate.
+///
+/// Funding policy: every identity is registered with `funding_per`
+/// credits charged to a freshly-derived address, so each call costs
+/// `n * (funding_per + register_fee)` credits from the bank. Tests
+/// with tight balance windows should pass conservative values —
+/// `30_000_000` per identity is the reference; the bank's
+/// `min_bank_credits` floor must cover `n * funding_per` plus
+/// per-tx fees.
+pub async fn setup_with_n_identities(
+    n: u32,
+    funding_per: dpp::fee::Credits,
+) -> FrameworkResult<MultiIdentitySetupGuard> {
+    use std::time::Duration;
+
+    use super::framework::wait::wait_for_balance;
+
+    let base = setup().await?;
+    let mut identities = Vec::with_capacity(n as usize);
+
+    // Each identity gets a distinct funding address so the bank's
+    // FUNDING_MUTEX serialises funding without contending on the
+    // same destination. We fund + observe before registration so
+    // `register_from_addresses` finds the credits already
+    // committed to platform.
+    for identity_index in 0..n {
+        let funding_addr = base.test_wallet.next_unused_address().await?;
+        base.ctx
+            .bank()
+            .fund_address(&funding_addr, funding_per)
+            .await?;
+        wait_for_balance(
+            &base.test_wallet,
+            &funding_addr,
+            funding_per,
+            Duration::from_secs(60),
+        )
+        .await?;
+
+        let registered = base
+            .test_wallet
+            .register_identity_from_addresses(funding_addr, funding_per, identity_index)
+            .await?;
+        identities.push(registered);
+    }
+
+    Ok(MultiIdentitySetupGuard { base, identities })
+}
+
+/// Guard returned by [`setup_with_n_identities`]. Wraps the base
+/// [`SetupGuard`] plus the freshly-registered identities.
+///
+/// Calling [`MultiIdentitySetupGuard::teardown`] consumes the
+/// guard and forwards to the inner [`SetupGuard::teardown`] —
+/// identity-side cleanup is implicit (their funds drain back to
+/// the bank during the wallet sweep).
+pub struct MultiIdentitySetupGuard {
+    /// Inner single-wallet guard. Holds the [`E2eContext`] and the
+    /// shared [`wallet_factory::TestWallet`] every identity is
+    /// derived from.
+    pub base: SetupGuard,
+    /// Identities registered during setup, ordered by DIP-9 index
+    /// `0..n`.
+    pub identities: Vec<wallet_factory::RegisteredIdentity>,
+}
+
+impl MultiIdentitySetupGuard {
+    /// Forward to the inner [`SetupGuard::teardown`].
+    pub async fn teardown(self) -> FrameworkResult<()> {
+        self.base.teardown().await
+    }
+}
