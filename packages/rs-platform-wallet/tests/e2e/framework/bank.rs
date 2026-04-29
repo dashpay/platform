@@ -11,9 +11,12 @@ use std::sync::Arc;
 
 use bip39::Mnemonic as Bip39Mnemonic;
 use dpp::address_funds::PlatformAddress;
+use dpp::dashcore::secp256k1::{PublicKey, Secp256k1};
 use dpp::fee::Credits;
+use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
-use key_wallet::Network;
+use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+use key_wallet::{AccountType, ChildNumber, Network};
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{
@@ -93,18 +96,17 @@ impl BankWallet {
             .await
             .map_err(wallet_err)?;
 
-        // Capture the receive address before the funded-floor check
-        // so the under-funded panic message can name a top-up target.
-        let primary_receive_address = wallet
-            .platform()
-            .next_unused_receive_address(
-                key_wallet::account::account_collection::PlatformPaymentAccountKey {
-                    account: DEFAULT_ACCOUNT_INDEX_PUB,
-                    key_class: DEFAULT_KEY_CLASS_PUB,
-                },
-            )
-            .await
-            .map_err(wallet_err)?;
+        // Pin the bank's sweep target to DIP-17 index 0 deterministically
+        // so the same address absorbs sweep-back funds across every test
+        // run. `next_unused_receive_address` would otherwise advance past
+        // index 0 once it gets marked used, accumulating empty addresses.
+        let primary_receive_address = derive_platform_address_at_index(
+            &seed_bytes,
+            network,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            DEFAULT_KEY_CLASS_PUB,
+            0,
+        )?;
 
         let total = wallet.platform().total_credits().await;
         if total < config.min_bank_credits {
@@ -199,4 +201,36 @@ impl BankWallet {
 
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+/// Derive the DIP-17 platform-payment address at `index` from `seed`
+/// using path `m/9'/coin_type'/17'/account'/key_class'/index`.
+///
+/// Bank-only helper: lets us pin the bank's sweep target to index 0
+/// without going through the address pool's "next unused" cursor.
+fn derive_platform_address_at_index(
+    seed_bytes: &[u8; 64],
+    network: Network,
+    account: u32,
+    key_class: u32,
+    index: u32,
+) -> FrameworkResult<PlatformAddress> {
+    let root_priv = RootExtendedPrivKey::new_master(seed_bytes)
+        .map_err(|err| FrameworkError::Bank(format!("seed -> root xpriv: {err}")))?;
+    let root_xpriv = root_priv.to_extended_priv_key(network);
+
+    let account_path = AccountType::PlatformPayment { account, key_class }
+        .derivation_path(network)
+        .map_err(|err| FrameworkError::Bank(format!("DIP-17 account path: {err}")))?;
+    let leaf = ChildNumber::from_normal_idx(index)
+        .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
+    let leaf_path = account_path.extend([leaf]);
+
+    let secp = Secp256k1::new();
+    let xpriv = root_xpriv
+        .derive_priv(&secp, &leaf_path)
+        .map_err(|err| FrameworkError::Bank(format!("derive_priv at index {index}: {err}")))?;
+    let pubkey = PublicKey::from_secret_key(&secp, &xpriv.private_key);
+    let pkh = ripemd160_sha256(&pubkey.serialize());
+    Ok(PlatformAddress::P2pkh(pkh))
 }
