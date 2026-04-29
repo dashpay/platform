@@ -66,8 +66,8 @@ extension ContestVoteState {
 
         var contenders: [ContestContender] = []
         if let ptr = ffi.contenders_ptr, ffi.contenders_count > 0 {
-            contenders.reserveCapacity(ffi.contenders_count)
-            for i in 0..<ffi.contenders_count {
+            contenders.reserveCapacity(Int(ffi.contenders_count))
+            for i in 0..<Int(ffi.contenders_count) {
                 let c = ptr[i]
                 var tuple = c.identity_id
                 let identityId = Swift.withUnsafeBytes(of: &tuple) { Data($0) }

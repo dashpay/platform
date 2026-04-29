@@ -43,19 +43,36 @@ struct WalletsContentView: View {
                                 .background(Color.blue)
                                 .cornerRadius(8)
                         }
+                        .accessibilityIdentifier("wallets.empty.createWalletButton")
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
                 } else {
                     ForEach(wallets) { wallet in
-                        NavigationLink {
-                            WalletDetailView(wallet: wallet)
-                        } label: {
+                        NavigationLink(value: wallet) {
                             WalletRowView(wallet: wallet)
                         }
+                        .accessibilityIdentifier("wallets.walletRow.\(wallet.walletId.toHexString())")
+                        .accessibilityLabel(wallet.label)
                     }
                 }
             }
+        }
+        .accessibilityIdentifier("wallets.screen")
+        // All navigation pushes from this stack are value-based —
+        // closure-based pushes eagerly construct their destination on
+        // every parent body invocation (which fires constantly during
+        // sync) and stall the click on iOS 26. Value-based push only
+        // builds the destination on actual navigate. Both routes have
+        // to be declared on the stack root (here) — declaring on a
+        // pushed view is unreliable and mixing paradigms (closure
+        // outer + value inner) makes the inner destination
+        // animate-then-pop.
+        .navigationDestination(for: PersistentWallet.self) { wallet in
+            WalletDetailView(wallet: wallet)
+        }
+        .navigationDestination(for: TransactionsRoute.self) { route in
+            TransactionListView(walletId: route.walletId)
         }
         .navigationTitle("Wallets")
         .toolbar {
@@ -65,6 +82,7 @@ struct WalletsContentView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityIdentifier("wallets.addWalletButton")
             }
         }
         .sheet(isPresented: $showingCreateWallet) {

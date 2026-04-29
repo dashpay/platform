@@ -408,10 +408,10 @@ struct KeywordStorageDetailView: View {
     }
 }
 
-// MARK: - PersistentSyncState
+// MARK: - PersistentPlatformAddressesSyncState
 
-struct SyncStateStorageDetailView: View {
-    let record: PersistentSyncState
+struct PlatformAddressesSyncStateStorageDetailView: View {
+    let record: PersistentPlatformAddressesSyncState
 
     private var blockDate: Date? {
         record.syncTimestamp > 0
@@ -445,7 +445,7 @@ struct SyncStateStorageDetailView: View {
                 FieldRow(label: "Record Updated", value: dateString(record.lastUpdated))
             }
         }
-        .navigationTitle("Sync State")
+        .navigationTitle("Platform Addresses Sync State")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -555,13 +555,37 @@ struct AccountStorageDetailView: View {
         )
     }
 
+    /// Distinct transactions this account participates in: union of
+    /// every TXO's creating tx (`transaction`) and spending tx
+    /// (`spendingTransaction`). Mirrors the AccountDetailView helper
+    /// — `PersistentTransaction` no longer carries an account link,
+    /// so the per-account set has to be derived on read. Walks the
+    /// address pool because `PersistentAccount.outputs` is gone;
+    /// the canonical account → TXO path is now
+    /// `coreAddresses.flatMap(\.txos)`.
+    private var distinctTransactionCount: Int {
+        var seen: Set<Data> = []
+        for address in record.coreAddresses {
+            for txo in address.txos {
+                if let tx = txo.transaction { seen.insert(tx.txid) }
+                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+            }
+        }
+        return seen.count
+    }
+
+    /// Total TXO count for the account, summed across the address
+    /// pool. Cheap because the pool is bounded (~gap limit).
+    private var txoCount: Int {
+        record.coreAddresses.reduce(0) { $0 + $1.txos.count }
+    }
+
     var body: some View {
         Form {
             Section("Core") {
                 FieldRow(label: "Type", value: record.accountTypeName)
                 FieldRow(label: "Type ID", value: "\(record.accountType)")
                 FieldRow(label: "Index", value: "\(record.accountIndex)")
-                FieldRow(label: "Watch Only", value: record.isWatchOnly ? "Yes" : "No")
                 FieldRow(
                     label: "Extended Public Key",
                     value: accountXpubString ?? "—"
@@ -576,10 +600,14 @@ struct AccountStorageDetailView: View {
                 FieldRow(label: "Internal Highest Used", value: "\(record.internalHighestUsed)")
             }
             Section("Relationships") {
-                FieldRow(label: "Transactions", value: "\(record.transactions.count)")
-                FieldRow(label: "UTXOs", value: "\(record.utxos.count)")
+                // Per-account transaction count = union of creating
+                // and spending txs across this account's TXOs.
+                // `PersistentTransaction` is no longer
+                // account-scoped, so this has to be derived in Swift.
+                FieldRow(label: "Transactions", value: "\(distinctTransactionCount)")
+                FieldRow(label: "TXOs", value: "\(txoCount)")
                 FieldRow(label: "Addresses", value: "\(record.coreAddresses.count)")
-                FieldRow(label: "Wallet", value: record.wallet?.name ?? record.wallet.map { hexString($0.walletId) } ?? "None")
+                FieldRow(label: "Wallet", value: record.wallet.name ?? hexString(record.wallet.walletId))
             }
             ForEach(addressSections(), id: \.0) { poolName, addresses in
                 Section("\(poolName) Addresses (\(addresses.count))") {
@@ -667,6 +695,10 @@ struct CoreAddressDetailView: View {
                     value: record.lastSeenHeight == 0 ? "—" : "\(record.lastSeenHeight)"
                 )
             }
+            Section("Relationships") {
+                FieldRow(label: "Account", value: record.account?.accountTypeName ?? "—")
+                FieldRow(label: "TXOs", value: "\(record.txos.count)")
+            }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
                 FieldRow(label: "Updated", value: dateString(record.lastUpdated))
@@ -685,7 +717,7 @@ struct TransactionStorageDetailView: View {
     var body: some View {
         Form {
             Section("Core") {
-                FieldRow(label: "TXID", value: record.txid)
+                FieldRow(label: "TXID", value: record.txidHex)
                 FieldRow(label: "Direction", value: record.directionName)
                 FieldRow(label: "Type", value: record.transactionType)
                 FieldRow(label: "Net Amount", value: record.formattedAmount)
@@ -709,7 +741,11 @@ struct TransactionStorageDetailView: View {
                 }
             }
             Section("Relationships") {
-                FieldRow(label: "Account", value: record.account?.accountTypeName ?? "None")
+                // Transactions are no longer account-scoped. We
+                // surface the participating accounts (if any)
+                // indirectly via the output / input TXOs.
+                FieldRow(label: "Outputs", value: "\(record.outputs.count)")
+                FieldRow(label: "Inputs", value: "\(record.inputs.count)")
             }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
@@ -721,16 +757,16 @@ struct TransactionStorageDetailView: View {
     }
 }
 
-// MARK: - PersistentUtxo
+// MARK: - PersistentTxo
 
-struct UtxoStorageDetailView: View {
-    let record: PersistentUtxo
+struct TxoStorageDetailView: View {
+    let record: PersistentTxo
 
     var body: some View {
         Form {
             Section("Core") {
-                FieldRow(label: "Outpoint", value: record.outpoint)
-                FieldRow(label: "TXID", value: record.txid)
+                FieldRow(label: "Outpoint", value: record.outpointHex)
+                FieldRow(label: "TXID", value: record.txidHex)
                 FieldRow(label: "Vout", value: "\(record.vout)")
                 FieldRow(label: "Amount", value: record.formattedAmount)
                 FieldRow(label: "Address", value: record.address)
@@ -744,14 +780,33 @@ struct UtxoStorageDetailView: View {
                 FieldRow(label: "Spent", value: record.isSpent ? "Yes" : "No")
             }
             Section("Relationships") {
-                FieldRow(label: "Account", value: record.account?.accountTypeName ?? "None")
+                // Prefer the canonical `coreAddress.account` path;
+                // fall back to the one-way `account` field for TXOs
+                // whose address row hasn't been linked yet.
+                FieldRow(
+                    label: "Account",
+                    value: (record.coreAddress?.account ?? record.account)?.accountTypeName ?? "—"
+                )
+                FieldRow(
+                    label: "Address Row",
+                    value: record.coreAddress?.address ?? "—"
+                )
+                FieldRow(label: "Wallet ID", value: record.walletId.isEmpty ? "—" : hexString(record.walletId))
+                FieldRow(
+                    label: "Created By",
+                    value: record.transaction?.txidHex ?? "—"
+                )
+                FieldRow(
+                    label: "Spent By",
+                    value: record.spendingTransaction?.txidHex ?? "—"
+                )
             }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
                 FieldRow(label: "Updated", value: dateString(record.lastUpdated))
             }
         }
-        .navigationTitle("UTXO")
+        .navigationTitle("TXO")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

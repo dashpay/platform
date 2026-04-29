@@ -44,7 +44,7 @@ public class ManagedCoreWallet {
         let result = core_wallet_get_balance(
             handle, &confirmed, &unconfirmed, &immature, &locked, &error
         )
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -62,7 +62,7 @@ public class ManagedCoreWallet {
         var error = PlatformWalletFFIError()
 
         let result = core_wallet_get_network(handle, &networkValue, &error)
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -77,7 +77,7 @@ public class ManagedCoreWallet {
         var error = PlatformWalletFFIError()
 
         let result = core_wallet_next_receive_address(handle, accountIndex, &addressPtr, &error)
-        guard result == Success, let ptr = addressPtr else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS, let ptr = addressPtr else {
             throw PlatformWalletError(result: result, error: error)
         }
         defer { core_wallet_free_address(ptr) }
@@ -91,7 +91,7 @@ public class ManagedCoreWallet {
         var error = PlatformWalletFFIError()
 
         let result = core_wallet_next_change_address(handle, accountIndex, &addressPtr, &error)
-        guard result == Success, let ptr = addressPtr else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS, let ptr = addressPtr else {
             throw PlatformWalletError(result: result, error: error)
         }
         defer { core_wallet_free_address(ptr) }
@@ -116,7 +116,7 @@ public class ManagedCoreWallet {
         recipients: [(address: String, amountDuffs: UInt64)]
     ) throws -> Data {
         var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var txLen: Int = 0
+        var txLen: UInt = 0
         var error = PlatformWalletFFIError()
 
         // Build C string array
@@ -131,7 +131,7 @@ public class ManagedCoreWallet {
                     accountIndex,
                     addrBuf.baseAddress,
                     amountBuf.baseAddress,
-                    recipients.count,
+                    UInt(recipients.count),
                     &txBytesPtr,
                     &txLen,
                     &error
@@ -139,12 +139,12 @@ public class ManagedCoreWallet {
             }
         }
 
-        guard result == Success, let ptr = txBytesPtr, txLen > 0 else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS, let ptr = txBytesPtr, txLen > 0 else {
             throw PlatformWalletError(result: result, error: error)
         }
         defer { core_wallet_free_tx_bytes(ptr, txLen) }
 
-        return Data(bytes: ptr, count: txLen)
+        return Data(bytes: ptr, count: Int(txLen))
     }
 
     /// Broadcast a raw signed transaction.
@@ -158,13 +158,13 @@ public class ManagedCoreWallet {
             core_wallet_broadcast_transaction(
                 handle,
                 txBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                txData.count,
+                UInt(txData.count),
                 &txidPtr,
                 &error
             )
         }
 
-        guard result == Success, let ptr = txidPtr else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS, let ptr = txidPtr else {
             throw PlatformWalletError(result: result, error: error)
         }
         defer { core_wallet_free_address(ptr) } // same free for C strings

@@ -128,20 +128,11 @@ inject_modulemap() {
 #ifndef DASHSDKFFI_H
 #define DASHSDKFFI_H
 
-// dash-network defines FFINetwork (referenced by key-wallet-ffi and
-// dash-spv-ffi) so it must come first.
 #include "dash-network/dash-network.h"
 #include "key-wallet-ffi/key-wallet-ffi.h"
 #include "dash-spv-ffi/dash-spv-ffi.h"
 #include "rs-sdk-ffi/rs-sdk-ffi.h"
-// dashcore/dashcore.h is deliberately excluded via the module map — it
-// duplicates the FFINetwork enum defined in dash-network/dash-network.h
-// with a differently-named (anonymous) underlying enum tag, which
-// triggers typedef-redefinition errors when both are visible.
-// platform-wallet-ffi is also excluded: Swift declares its own
-// platform-wallet symbols via @_silgen_name in PlatformWalletFFI.swift,
-// and exposing the generated C header alongside those would produce
-// duplicate declarations (see upstream PR #3500 for the migration).
+#include "platform-wallet-ffi/platform-wallet-ffi.h"
 
 #endif
 EOF
@@ -149,7 +140,6 @@ EOF
   cat > "$HEADERS_DIR/module.modulemap" << 'EOF'
 module DashSDKFFI {
     umbrella header "DashSDKFFI.h"
-    exclude header "dashcore/dashcore.h"
     export *
 }
 EOF

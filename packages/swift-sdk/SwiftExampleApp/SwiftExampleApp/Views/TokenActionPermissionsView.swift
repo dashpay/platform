@@ -53,6 +53,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
     case resume
     case claim
     case directPurchase
+    case setDirectPurchasePrice
     case setConventions
     case updateMaxSupply
     case changeDistribution
@@ -71,6 +72,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
         case .resume: return "Resume"
         case .claim: return "Claim"
         case .directPurchase: return "Direct Purchase"
+        case .setDirectPurchasePrice: return "Set Direct Purchase Price"
         case .setConventions: return "Set / Change Conventions"
         case .updateMaxSupply: return "Update Max Supply"
         case .changeDistribution: return "Change Distribution Rules"
@@ -89,6 +91,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
         case .resume: return "Resume operations after a pause"
         case .claim: return "Claim distribution rewards"
         case .directPurchase: return "Buy tokens at the listed price"
+        case .setDirectPurchasePrice: return "Configure or disable the price for direct purchase"
         case .setConventions: return "Update token name / localizations"
         case .updateMaxSupply: return "Change the maximum supply"
         case .changeDistribution: return "Change perpetual / pre-programmed distribution"
@@ -107,6 +110,7 @@ enum TokenActionKind: String, CaseIterable, Identifiable {
         case .resume: return "play.circle"
         case .claim: return "gift"
         case .directPurchase: return "cart"
+        case .setDirectPurchasePrice: return "dollarsign.circle"
         case .setConventions: return "textformat"
         case .updateMaxSupply: return "chart.line.uptrend.xyaxis"
         case .changeDistribution: return "slider.horizontal.3"
@@ -459,6 +463,29 @@ enum TokenActionResolver {
         )
         rows.append(ResolvedTokenAction(kind: .directPurchase, permission: directPurchase))
 
+        // Set direct-purchase price. Visible whenever the contract
+        // configures pricing-change rules — that's the same proxy we
+        // use for `directPurchase` above, just from the seller side.
+        // Hidden when no rule exists; otherwise authorization comes
+        // straight from `changeDirectPurchasePricingRules`.
+        if let pricingRule = token.distributionChangeRules?.changeDirectPurchasePricingRules {
+            rows.append(ResolvedTokenAction(
+                kind: .setDirectPurchasePrice,
+                permission: TokenActionEvaluator.evaluate(
+                    rule: pricingRule,
+                    feature: "Direct purchase pricing",
+                    identity: identity,
+                    contract: contract,
+                    token: token
+                )
+            ))
+        } else {
+            rows.append(ResolvedTokenAction(
+                kind: .setDirectPurchasePrice,
+                permission: .hidden
+            ))
+        }
+
         // Conventions
         rows.append(ResolvedTokenAction(
             kind: .setConventions,
@@ -493,7 +520,6 @@ enum TokenActionResolver {
         let distributionRule = token.distributionChangeRules?.perpetualDistributionRules
             ?? token.distributionChangeRules?.newTokensDestinationIdentityRules
             ?? token.distributionChangeRules?.mintingAllowChoosingDestinationRules
-            ?? token.distributionChangeRules?.changeDirectPurchasePricingRules
         rows.append(ResolvedTokenAction(
             kind: .changeDistribution,
             permission: TokenActionEvaluator.evaluate(
@@ -575,16 +601,19 @@ enum TokenActionResolver {
         if !hasPricingRules {
             return .hidden
         }
-        // We don't model a current "for sale" price on PersistentToken,
-        // so we can't decide whether the token is *currently* for sale.
-        // Leave the row visible with a TODO so the gap is obvious.
-        // TODO: surface direct-purchase price on PersistentToken and gate this row on it.
         if token.isPaused {
             return .denied(reason: "Token is paused")
         }
+        // PersistentToken doesn't yet model the current "for sale"
+        // price, so we can't reject up front when the token isn't
+        // actively listed. Defer that check to Platform — the
+        // purchase form sends a sentinel `expectedTotalCost` and the
+        // server returns a readable error if the schedule is unset.
+        // TODO: surface direct-purchase price on PersistentToken and
+        // gate this row on it (and pre-fill the form's total cost).
         _ = identity
         _ = contract
-        return .denied(reason: "Direct purchase pricing not yet surfaced")
+        return .allowed
     }
 }
 
@@ -610,33 +639,32 @@ struct TokenActionPermissionsView: View {
         self.token = token
         self.initialIdentity = identity
         self._pickedIdentity = State(initialValue: identity)
-        // Filter to local identities on the same network as this
-        // token's parent contract; falls back to "all local" if the
-        // contract isn't loaded.
+        // Filter to wallet-owned identities on the same network as
+        // this token's parent contract; falls back to "any
+        // wallet-owned" if the contract isn't loaded.
         //
         // Routes through the SDK-side
-        // `PersistentIdentity.localIdentitiesPredicate(network:)`
+        // `PersistentIdentity.walletOwnedIdentitiesPredicate(network:)`
         // helper rather than a hand-rolled `#Predicate` block. The
         // bespoke predicate that lived here referenced a captured
         // local `networkRaw: Int` whose name shadowed the model's
-        // `identity.networkRaw` property, and SwiftData's
-        // predicate translator chokes on the resulting ambiguity
-        // mid-fetch — surfaces as a `_swift_runtime_on_report` /
-        // `_assertionFailure` crash from `ModelContext.fetch`
-        // (the `@Query` getter is the visible frame). The helper
-        // captures the raw Int by a unique name so the
-        // translator stays unambiguous.
+        // `identity.networkRaw` property, and SwiftData's predicate
+        // translator chokes on the resulting ambiguity mid-fetch —
+        // surfaces as a `_swift_runtime_on_report` / `_assertionFailure`
+        // crash from `ModelContext.fetch` (the `@Query` getter is the
+        // visible frame). The helper captures the raw Int by a unique
+        // name so the translator stays unambiguous.
         let resolvedNetwork: AppNetwork? = token.dataContract
             .flatMap { AppNetwork(rawValue: $0.networkRaw) }
         if let resolvedNetwork {
             self._localIdentities = Query(
-                filter: PersistentIdentity.localIdentitiesPredicate(network: resolvedNetwork),
-                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.identityIdString)]
+                filter: PersistentIdentity.walletOwnedIdentitiesPredicate(network: resolvedNetwork),
+                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
             )
         } else {
             self._localIdentities = Query(
-                filter: PersistentIdentity.localIdentitiesPredicate,
-                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.identityIdString)]
+                filter: PersistentIdentity.walletOwnedIdentitiesPredicate,
+                sort: [SortDescriptor(\.identityIndex), SortDescriptor(\.alias)]
             )
         }
     }
@@ -691,6 +719,32 @@ struct TokenActionPermissionsView: View {
                 }
             }
 
+            // Pending group-action proposals — only surface when the
+            // token's rules reference at least one group, so tokens
+            // with no group governance don't render an empty section.
+            if let identity = resolvedIdentity, hasGroupCapableRule {
+                Section {
+                    NavigationLink {
+                        PendingGroupActionsView(token: token, identity: identity)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.3.sequence")
+                                .font(.title3)
+                                .frame(width: 28)
+                                .foregroundColor(.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Pending Group Actions")
+                                    .font(.body)
+                                Text("Review and co-sign open proposals")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+
             // Action rows
             if let identity = resolvedIdentity {
                 Section("Actions") {
@@ -733,18 +787,76 @@ struct TokenActionPermissionsView: View {
             .filter { !$0.permission.isHidden }
     }
 
+    /// Whether any of this token's rules name a group as the
+    /// authorized taker. Drives the "Pending Group Actions" section's
+    /// visibility — there's nothing to surface for tokens with
+    /// no group governance configured.
+    private var hasGroupCapableRule: Bool {
+        !TokenGroupRuleResolver.relevantGroupPositions(for: token).isEmpty
+    }
+
     @ViewBuilder
     private func actionRow(_ row: ResolvedTokenAction) -> some View {
-        // Each enabled row navigates to a placeholder destination;
-        // the actual state-transition flows are deliberately out of
-        // scope for this PR. See TODOs in TokenActionResolver.
-        if row.permission.isAllowed {
-            NavigationLink(destination: TokenActionPlaceholderView(kind: row.kind)) {
+        // Allowed rows navigate to the per-action form. Wave 1 wires
+        // `.transfer` and `.burn`; the rest still fall through to the
+        // placeholder until their waves land. The router lives in
+        // `actionDestination` so future waves replace one case at a
+        // time without churning this row builder.
+        if row.permission.isAllowed, let identity = resolvedIdentity {
+            NavigationLink(destination: actionDestination(row, identity: identity)) {
+                actionRowContent(row)
+            }
+        } else if row.permission.isAllowed {
+            // Should not happen — `actionRow` is only called when
+            // `resolvedIdentity` is non-nil because that's what gates
+            // the Actions section in `body`. Render the placeholder
+            // defensively so the type checker stays happy.
+            NavigationLink(destination: TokenActionPlaceholderView(kind: row.kind, status: .comingSoon)) {
                 actionRowContent(row)
             }
         } else {
             actionRowContent(row)
                 .opacity(0.55)
+        }
+    }
+
+    @ViewBuilder
+    private func actionDestination(
+        _ row: ResolvedTokenAction,
+        identity: PersistentIdentity
+    ) -> some View {
+        switch row.kind {
+        case .transfer:
+            TokenTransferActionView(token: token, identity: identity)
+        case .burn:
+            TokenBurnActionView(token: token, identity: identity)
+        case .mint:
+            TokenMintActionView(token: token, identity: identity)
+        case .claim:
+            TokenClaimActionView(token: token, identity: identity)
+        case .freeze:
+            TokenFreezeActionView(token: token, identity: identity)
+        case .unfreeze:
+            TokenUnfreezeActionView(token: token, identity: identity)
+        case .destroyFrozenFunds:
+            TokenDestroyFrozenFundsActionView(token: token, identity: identity)
+        case .pause:
+            TokenPauseActionView(token: token, identity: identity)
+        case .resume:
+            TokenResumeActionView(token: token, identity: identity)
+        case .directPurchase:
+            TokenPurchaseActionView(token: token, identity: identity)
+        case .setDirectPurchasePrice:
+            TokenSetPriceActionView(token: token, identity: identity)
+        case .updateMaxSupply:
+            TokenUpdateMaxSupplyActionView(token: token, identity: identity)
+        case .setConventions, .changeDistribution:
+            // Set Conventions / Change Distribution editors are out of
+            // scope for the current wave — full localization tables
+            // and distribution-schedule editors aren't ready yet.
+            // Surface that explicitly so the row doesn't read like a
+            // bug.
+            TokenActionPlaceholderView(kind: row.kind, status: .deferredToFutureRelease)
         }
     }
 
@@ -796,6 +908,24 @@ struct TokenActionPermissionsView: View {
 
 // MARK: - Placeholder Destination
 
+/// Distinguishes "this action's wiring is in flight" from "this
+/// action has been intentionally pushed to a later release." The
+/// router picks the right status per `TokenActionKind` so the user
+/// gets a truthful signal rather than a generic "coming soon."
+enum TokenActionPlaceholderStatus {
+    case comingSoon
+    case deferredToFutureRelease
+
+    var message: String {
+        switch self {
+        case .comingSoon:
+            return "Action coming soon"
+        case .deferredToFutureRelease:
+            return "This action is deferred to a future release"
+        }
+    }
+}
+
 /// Stub destination for tappable rows. The actual mint/burn/transfer
 /// flows live behind their own state-transition entry points; this
 /// view intentionally just confirms which action was selected so the
@@ -803,6 +933,7 @@ struct TokenActionPermissionsView: View {
 /// transition pipeline.
 private struct TokenActionPlaceholderView: View {
     let kind: TokenActionKind
+    let status: TokenActionPlaceholderStatus
 
     var body: some View {
         VStack(spacing: 16) {
@@ -812,10 +943,10 @@ private struct TokenActionPlaceholderView: View {
             Text(kind.title)
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("Action coming soon")
+            Text(status.message)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            // TODO: route to the real state-transition flow for `kind`.
+                .multilineTextAlignment(.center)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)

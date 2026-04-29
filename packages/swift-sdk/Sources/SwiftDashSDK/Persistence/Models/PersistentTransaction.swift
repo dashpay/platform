@@ -5,20 +5,30 @@ import SwiftData
 ///
 /// Stores the full transaction record including context (mempool,
 /// confirmed, chain-locked), direction, amounts, and fee.
+///
+/// A transaction is intentionally **not** scoped to a single wallet
+/// or account. The same on-chain tx can have outputs into account A
+/// and account B inside one wallet (or — for cross-wallet flows —
+/// into accounts under different wallets), and the transaction row
+/// is shared across all of them. Per-wallet membership is recovered
+/// by joining through the TXOs (`outputs` + `inputs`); see
+/// `PersistentTxo.walletId` for the per-row denorm that makes those
+/// joins index-friendly.
 @Model
 public final class PersistentTransaction {
-    /// Compound index covering `TransactionListView`'s per-wallet
-    /// query: `walletId == ?` predicate + `firstSeen` descending
-    /// sort. Putting `walletId` first lets SQLite descend the
-    /// index straight to the matching segment; the trailing
-    /// `firstSeen` column delivers the sort order for free. Without
-    /// this index the filter degrades to a full-table scan and the
-    /// sort to an in-memory O(N log N) pass, both on the main
-    /// thread.
-    #Index<PersistentTransaction>([\.walletId, \.firstSeen])
+    /// Index on `firstSeen` so per-wallet queries — which fetch
+    /// `PersistentTxo` rows by `walletId` then sort their parent
+    /// transactions by `firstSeen` — get a sorted scan instead of
+    /// an in-memory O(N log N) pass. The unique `txid` index covers
+    /// point-lookups; this one covers the timeline.
+    #Index<PersistentTransaction>([\.firstSeen])
 
-    /// Transaction ID (32-byte hash, stored as hex for indexing).
-    @Attribute(.unique) public var txid: String
+    /// Transaction ID (32-byte hash, raw little-endian wire bytes —
+    /// the same orientation Rust hands us via the FFI `[u8; 32]`).
+    /// Stored as raw `Data` so the unique index covers 32 bytes
+    /// instead of a 64-char hex string, and the persistence
+    /// handler avoids a hex round-trip on every write.
+    @Attribute(.unique) public var txid: Data
     /// Raw transaction bytes.
     public var transactionData: Data?
     /// Context: 0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock.
@@ -45,23 +55,29 @@ public final class PersistentTransaction {
     public var createdAt: Date
     public var lastUpdated: Date
 
-    /// 32-byte wallet ID that owns this transaction. Denormalized
-    /// from `account?.wallet?.walletId` so per-wallet `@Query`
-    /// predicates can filter with a single equality check instead
-    /// of chaining two optional relationships — SwiftData's
-    /// predicate compiler can't translate that nested chain into
-    /// SQLite and crashes with
-    /// `Unsupported function expression TERNARY(...).walletId`.
-    /// Empty `Data()` for rows migrated from older schema; the
-    /// next sync pass will populate it.
-    public var walletId: Data = Data()
+    /// Transaction outputs created by this transaction.
+    ///
+    /// Cascade-deletes the matching `PersistentTxo` rows when the
+    /// transaction is removed — outputs cannot meaningfully exist
+    /// without their containing transaction (the outpoint, script,
+    /// amount, and address are all derived from it).
+    @Relationship(deleteRule: .cascade, inverse: \PersistentTxo.transaction)
+    public var outputs: [PersistentTxo] = []
 
-    /// Parent account.
-    public var account: PersistentAccount?
+    /// Transaction outputs spent *by* this transaction.
+    ///
+    /// Inverse of `PersistentTxo.spendingTransaction`. Default
+    /// `.nullify` delete rule (do not pass `.cascade`!) — those TXOs
+    /// are owned by their *creating* transaction, not this one.
+    /// Cascading from the spending side would let a recent tx wipe
+    /// outputs of an older tx on delete: a data-loss bug. Removing
+    /// this transaction merely detaches the spend-link and the TXOs
+    /// flip back to "unspent" until something else claims them.
+    @Relationship(inverse: \PersistentTxo.spendingTransaction)
+    public var inputs: [PersistentTxo] = []
 
     public init(
-        txid: String,
-        walletId: Data = Data(),
+        txid: Data,
         context: UInt32 = 0,
         blockHeight: UInt32 = 0,
         direction: UInt32 = 0,
@@ -70,7 +86,6 @@ public final class PersistentTransaction {
         firstSeen: UInt64 = 0
     ) {
         self.txid = txid
-        self.walletId = walletId
         self.context = context
         self.blockHeight = blockHeight
         self.blockTimestamp = 0
@@ -84,6 +99,18 @@ public final class PersistentTransaction {
     }
 
     // MARK: - Display Helpers
+
+    /// Hex-encoded txid for UI / log sites. The on-disk row stores
+    /// the raw 32 bytes in wire/internal order (matches what
+    /// `dashcore::Txid::as_ref()` hands the FFI). The canonical
+    /// Bitcoin/Dash display convention is the *reverse* of those
+    /// bytes (the `Txid: Display` impl in dashcore-rust does the
+    /// same flip), so block-explorer hex matches what users see
+    /// here. Storage stays unflipped — predicate fetches compare
+    /// wire-order `Data` directly without re-encoding.
+    public var txidHex: String {
+        txid.reversed().map { String(format: "%02x", $0) }.joined()
+    }
 
     public var contextName: String {
         switch context {

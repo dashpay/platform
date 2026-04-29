@@ -10,18 +10,28 @@ use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 use platform_wallet::PlatformWalletManager;
+use std::os::raw::c_void;
 use std::sync::Arc;
 
 /// Create a new PlatformWalletManager.
 ///
-/// `sdk_ptr` must point to a valid `Sdk` instance (the FFI caller is
-/// responsible for keeping it alive). The Sdk is cloned and wrapped in Arc.
+/// `sdk_ptr` must point to a valid `dash_sdk::Sdk` instance — typically
+/// obtained from `dash_sdk_get_inner_sdk_ptr` in `rs-sdk-ffi`, which
+/// hands back a `*const c_void` pointing at the live `Sdk` field of the
+/// wrapper. The FFI caller is responsible for keeping that `Sdk` alive
+/// for the duration of this call. The Sdk is cloned and wrapped in Arc
+/// before being stored on the manager.
+///
+/// We deliberately accept `*const c_void` here rather than `*const Sdk`
+/// so that this header is self-contained — `Sdk` is a `dash-sdk` type
+/// that cbindgen cannot expose without dragging the entire crate's
+/// internal layout into the C ABI.
 ///
 /// `persistence` and `event_handler` are callback vtables whose `context`
 /// pointers must remain valid for the lifetime of the manager.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_create(
-    sdk_ptr: *const Sdk,
+    sdk_ptr: *const c_void,
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     out_handle: *mut Handle,
@@ -35,10 +45,20 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let sdk = Arc::new((*sdk_ptr).clone());
+    let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
     let persister = Arc::new(FFIPersister::new(std::ptr::read(persistence)));
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
         Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
+
+    // `PlatformWalletManager::new` spawns the wallet-event adapter
+    // task on construction (the subscriber that translates upstream
+    // `WalletEvent`s into `PlatformWalletChangeSet`s). `tokio::spawn`
+    // panics if no runtime is in scope, which is the default state on
+    // the FFI thread — Swift calls us synchronously, no reactor
+    // attached. Enter the FFI's shared runtime for the duration of
+    // the constructor so the spawn lands on it; the guard drops on
+    // return and leaves the spawned task running on that runtime.
+    let _runtime_guard = runtime().enter();
 
     let manager = PlatformWalletManager::new(sdk, persister, handler);
     let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);

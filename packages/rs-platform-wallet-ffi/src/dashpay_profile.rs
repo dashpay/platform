@@ -14,10 +14,11 @@
 //!    `runtime::block_on_worker`) because proof verification recurses
 //!    deeply.
 //!
-//! 3. **Platform write** — `platform_wallet_create_dashpay_profile` /
-//!    `platform_wallet_update_dashpay_profile` broadcast a `profile`
-//!    document create / replace transition, then refresh the local
-//!    cache. Also block + run on the worker.
+//! 3. **Platform write** —
+//!    `platform_wallet_create_or_update_dashpay_profile_with_signer`
+//!    broadcasts a `profile` document create / replace transition
+//!    via the supplied signer, then refreshes the local cache. Also
+//!    blocks + runs on the worker.
 //!
 //! Optional C-string inputs (`display_name`, `public_message`,
 //! `avatar_url`) accept `null` for "field not provided". Avatar bytes
@@ -406,201 +407,14 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
         })
 }
 
-/// Shared body for `create` / `update`. `do_create` picks between the
-/// two operation paths on `IdentityWallet`. On success the caller owns
-/// strings inside `out_profile` and must free them with
-/// [`dashpay_profile_ffi_free`].
-#[allow(clippy::too_many_arguments)]
-unsafe fn create_or_update_profile(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    display_name: *const c_char,
-    public_message: *const c_char,
-    avatar_url: *const c_char,
-    avatar_bytes: *const u8,
-    avatar_bytes_len: usize,
-    do_create: bool,
-    out_profile: *mut DashPayProfileFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    if out_profile.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_profile is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
-    let id = match unsafe { read_identifier(identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-
-    // Decode the three optional C strings up-front so we can bail with
-    // ErrorUtf8Conversion before touching the wallet handle.
-    let display_name = match unsafe { decode_opt_c_str(display_name, "display_name") } {
-        Ok(v) => v,
-        Err(msg) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        msg,
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorUtf8Conversion;
-        }
-    };
-    let public_message = match unsafe { decode_opt_c_str(public_message, "public_message") } {
-        Ok(v) => v,
-        Err(msg) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        msg,
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorUtf8Conversion;
-        }
-    };
-    let avatar_url = match unsafe { decode_opt_c_str(avatar_url, "avatar_url") } {
-        Ok(v) => v,
-        Err(msg) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        msg,
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorUtf8Conversion;
-        }
-    };
-
-    // `(null, 0)` is the canonical "no avatar" encoding. A non-null
-    // pointer with a non-zero length copies the bytes into an owned
-    // `Vec<u8>` so the FFI can safely hand it to the async worker.
-    let avatar_bytes_vec: Option<Vec<u8>> = if avatar_bytes.is_null() || avatar_bytes_len == 0 {
-        None
-    } else {
-        Some(unsafe { std::slice::from_raw_parts(avatar_bytes, avatar_bytes_len) }.to_vec())
-    };
-
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, move |wallet| {
-            let identity = wallet.identity().clone();
-            let input = ProfileUpdate {
-                display_name,
-                public_message,
-                avatar_url,
-                avatar_bytes: avatar_bytes_vec,
-            };
-
-            let result = block_on_worker(async move {
-                if do_create {
-                    identity.create_profile(&id, input).await
-                } else {
-                    identity.update_profile(&id, input).await
-                }
-            });
-
-            match result {
-                Ok(profile) => {
-                    unsafe {
-                        *out_profile = DashPayProfileFFI::from_profile(&profile);
-                    }
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            let tag = if do_create { "create" } else { "update" };
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("{tag}_dashpay_profile failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
-}
-
-/// Create a new DashPay profile document on Platform and refresh the
-/// local cache with the result.
-///
-/// See [`create_or_update_profile`] for parameter semantics. Returns
-/// `ErrorWalletOperation` when a profile already exists for the
-/// identity — the caller should use
-/// [`platform_wallet_update_dashpay_profile`] in that case.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_create_dashpay_profile(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    display_name: *const c_char,
-    public_message: *const c_char,
-    avatar_url: *const c_char,
-    avatar_bytes: *const u8,
-    avatar_bytes_len: usize,
-    out_profile: *mut DashPayProfileFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    unsafe {
-        create_or_update_profile(
-            wallet_handle,
-            identity_id,
-            display_name,
-            public_message,
-            avatar_url,
-            avatar_bytes,
-            avatar_bytes_len,
-            /* do_create = */ true,
-            out_profile,
-            out_error,
-        )
-    }
-}
-
 /// Create or update a DashPay profile using an externally-supplied
 /// signer.
 ///
-/// Mirrors [`platform_wallet_create_dashpay_profile`] /
-/// [`platform_wallet_update_dashpay_profile`] but the document
-/// state-transition signature crosses the FFI through the supplied
-/// `signer_handle` (typically `KeychainSigner.handle`) instead of
-/// through a wallet-derived `IdentitySigner`. Required for
-/// external-signable wallets and the architecturally correct path
-/// per `swift-sdk/CLAUDE.md`.
+/// The document state-transition signature crosses the FFI through
+/// the supplied `signer_handle` (typically `KeychainSigner.handle`).
+/// Required for external-signable wallets and the architecturally
+/// correct path per `swift-sdk/CLAUDE.md` — the wallet's own seed
+/// never participates in document signing.
 ///
 /// `do_create` picks between the two operation paths on the Rust
 /// side: `true` calls `create_profile_with_external_signer` (errors
@@ -608,8 +422,11 @@ pub unsafe extern "C" fn platform_wallet_create_dashpay_profile(
 /// `update_profile_with_external_signer` (errors when no profile
 /// is on Platform yet).
 ///
+/// On success the caller owns strings inside `out_profile` and must
+/// free them with [`dashpay_profile_ffi_free`].
+///
 /// # Safety
-/// Same null/lifetime rules as the legacy variants. Additionally
+/// Standard FFI null/lifetime rules apply to all input pointers.
 /// `signer_handle` must be a valid, non-destroyed handle produced by
 /// `dash_sdk_signer_create_with_ctx`. Caller retains ownership.
 #[no_mangle]
@@ -747,38 +564,6 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
             }
             PlatformWalletFFIResult::ErrorInvalidHandle
         })
-}
-
-/// Update an existing DashPay profile document. Returns
-/// `ErrorWalletOperation` when no profile is on Platform yet — the
-/// caller should use [`platform_wallet_create_dashpay_profile`] in
-/// that case.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_update_dashpay_profile(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    display_name: *const c_char,
-    public_message: *const c_char,
-    avatar_url: *const c_char,
-    avatar_bytes: *const u8,
-    avatar_bytes_len: usize,
-    out_profile: *mut DashPayProfileFFI,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    unsafe {
-        create_or_update_profile(
-            wallet_handle,
-            identity_id,
-            display_name,
-            public_message,
-            avatar_url,
-            avatar_bytes,
-            avatar_bytes_len,
-            /* do_create = */ false,
-            out_profile,
-            out_error,
-        )
-    }
 }
 
 #[cfg(test)]

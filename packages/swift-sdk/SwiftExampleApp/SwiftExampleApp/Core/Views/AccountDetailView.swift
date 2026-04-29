@@ -15,6 +15,33 @@ struct AccountDetailView: View {
     @State private var showingPINPrompt = false
     @State private var pinInput = ""
 
+    /// Distinct on-chain transactions this account participates in:
+    /// the union of every TXO's creating tx and spending tx. Lives
+    /// here rather than on the model because `PersistentTransaction`
+    /// is no longer account-scoped (a single tx can produce outputs
+    /// into multiple accounts), so the per-account set has to be
+    /// derived on demand. Walks the address pool — the canonical
+    /// account → TXO path is `coreAddresses.flatMap(\.txos)` now
+    /// that `PersistentAccount.outputs` is gone.
+    private var distinctTransactionCount: Int {
+        var seen: Set<Data> = []
+        for address in account.coreAddresses {
+            for txo in address.txos {
+                if let tx = txo.transaction { seen.insert(tx.txid) }
+                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+            }
+        }
+        return seen.count
+    }
+
+    /// Total TXO count for the account, summed across address
+    /// buckets. Avoids materializing a single big array since the
+    /// address pool is bounded (~gap limit) and txos-per-address
+    /// is small.
+    private var txoCount: Int {
+        account.coreAddresses.reduce(0) { $0 + $1.txos.count }
+    }
+
     var body: some View {
         ScrollView {
             if let error = errorMessage {
@@ -111,14 +138,6 @@ struct AccountDetailView: View {
                         .foregroundColor(.secondary)
                     Spacer()
                     Text(wallet.network?.displayName ?? "Unknown")
-                        .fontWeight(.medium)
-                }
-
-                HStack {
-                    Text("Watch Only:")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(account.isWatchOnly ? "Yes" : "No")
                         .fontWeight(.medium)
                 }
             }
@@ -277,14 +296,18 @@ struct AccountDetailView: View {
                 Text("Transactions:")
                     .foregroundColor(.secondary)
                 Spacer()
-                Text("\(account.transactions.count)")
+                // Per-account transaction count = distinct creating
+                // and spending txs across this account's TXOs. The
+                // per-tx wallet/account columns are gone; the union
+                // is computed in Swift each time the card renders.
+                Text("\(distinctTransactionCount)")
                     .fontWeight(.medium)
             }
             HStack {
-                Text("UTXOs:")
+                Text("TXOs:")
                     .foregroundColor(.secondary)
                 Spacer()
-                Text("\(account.utxos.count)")
+                Text("\(txoCount)")
                     .fontWeight(.medium)
             }
         }

@@ -46,11 +46,20 @@ public enum AccountType: UInt32 {
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
 
-    var ffiValue: FFIAccountType {
-        FFIAccountType(rawValue: self.rawValue)
+    /// Convert to the upstream FFI discriminant enum.
+    ///
+    /// Upstream renamed the FFI account discriminant from `FFIAccountType`
+    /// (the old enum) to `FFIAccountKind` (the new enum) and reused the
+    /// `FFIAccountType` name for a richer struct that bundles the
+    /// discriminant with index / Dashpay-pointer / key-class fields.
+    /// The Swift `AccountType` enum here only models the discriminant
+    /// case — Dashpay and PlatformPayment variants need richer
+    /// construction paths and aren't surfaced through this type today.
+    var ffiValue: FFIAccountKind {
+        FFIAccountKind(rawValue: self.rawValue)
     }
 
-    init(ffiType: FFIAccountType) {
+    init(ffiType: FFIAccountKind) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }
 }

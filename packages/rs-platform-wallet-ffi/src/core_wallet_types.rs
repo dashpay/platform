@@ -128,18 +128,47 @@ pub struct WalletChangeSetFFI {
 // ---------------------------------------------------------------------------
 
 impl WalletChangeSetFFI {
-    pub fn from_changeset(cs: &key_wallet::changeset::WalletChangeSet) -> Self {
-        use key_wallet::managed_account::address_pool::AddressPoolType;
+    /// Convert a platform-wallet [`CoreChangeSet`] into the C-ABI struct
+    /// the Swift persister consumes.
+    ///
+    /// Buckets the changeset's flat `records` list by `record.account_type`,
+    /// then derives per-account UTXO deltas at the time of conversion
+    /// (using each record's `input_details` / `output_details`). The
+    /// changeset's own `spent_utxos` / `new_utxos` vecs aren't read here:
+    /// they're informationally redundant with the records themselves
+    /// (the records are authoritative), and re-deriving keeps the
+    /// per-account routing self-contained.
+    ///
+    /// `chain` carries `synced_height` from the changeset's
+    /// `synced_height` field; `block_hash` is omitted because
+    /// `WalletEvent::SyncHeightAdvanced` doesn't carry it (the upstream
+    /// event is just a height watermark). `balance` is left absent —
+    /// the new event-bus model derives balance from per-event balance
+    /// snapshots delivered through the `BalanceUpdateHandler`, not as
+    /// a delta on the persistence path.
+    ///
+    /// TODO(events): wire `instant_locks_for_non_final_records` through
+    /// the FFI surface. Today the Swift side learns about IS-lock state
+    /// only when a re-emitted `TransactionRecord` flows through `records`
+    /// with `context = InstantSend(..)`. The standalone IS-lock map is
+    /// dropped here. Acceptable as long as the event adapter re-emits
+    /// affected records (it currently does for `TransactionDetected`
+    /// and `BlockProcessed` but NOT for `TransactionInstantLocked`).
+    /// When the standalone IS-lock event needs to flow to Swift, add
+    /// a `BTreeMap`-shaped FFI field here and populate it.
+    pub fn from_changeset(cs: &platform_wallet::changeset::CoreChangeSet) -> Self {
+        use key_wallet::account::AccountType;
         use std::ffi::CString;
 
-        let (has_chain, chain) = match cs.chain {
-            Some(ref c) => (
+        // Chain — only synced_height flows through SyncHeightAdvanced.
+        let (has_chain, chain) = match cs.synced_height {
+            Some(h) => (
                 true,
                 ChainChangeSetFFI {
-                    has_synced_height: c.synced_height.is_some(),
-                    synced_height: c.synced_height.unwrap_or(0),
-                    has_block_hash: c.block_hash.is_some(),
-                    block_hash: c.block_hash.map(|h| *h.as_ref()).unwrap_or([0u8; 32]),
+                    has_synced_height: true,
+                    synced_height: h,
+                    has_block_hash: false,
+                    block_hash: [0u8; 32],
                 },
             ),
             None => (
@@ -153,84 +182,69 @@ impl WalletChangeSetFFI {
             ),
         };
 
-        let (has_balance, balance) = match cs.balance {
-            Some(ref b) => (
-                true,
-                BalanceChangeSetFFI {
-                    confirmed_delta: b.confirmed_delta,
-                    unconfirmed_delta: b.unconfirmed_delta,
-                    immature_delta: b.immature_delta,
-                    locked_delta: b.locked_delta,
-                },
-            ),
-            None => (
-                false,
-                BalanceChangeSetFFI {
-                    confirmed_delta: 0,
-                    unconfirmed_delta: 0,
-                    immature_delta: 0,
-                    locked_delta: 0,
-                },
-            ),
-        };
+        // Balance is no longer carried as a delta on the persistence
+        // path; the BalanceUpdateHandler keeps wallet atomics current
+        // from the post-event balance snapshot upstream embeds in each
+        // event variant.
+        let (has_balance, balance) = (
+            false,
+            BalanceChangeSetFFI {
+                confirmed_delta: 0,
+                unconfirmed_delta: 0,
+                immature_delta: 0,
+                locked_delta: 0,
+            },
+        );
 
-        let mut ffi_accounts = Vec::new();
-        for (account_type, account_cs) in &cs.per_account {
-            let type_name_str = format!("{:?}", account_type);
-            let type_name =
-                CString::new(type_name_str).unwrap_or_else(|_| CString::new("Unknown").unwrap());
-            let account_index = account_type.index().unwrap_or(0);
+        // Bucket records by account_type. Record sequence is preserved
+        // within each bucket so the persister sees them in arrival
+        // order (matters for the `inserted` -> `updated` transition
+        // ordering inside a single BlockProcessed event).
+        //
+        // `AccountType` doesn't implement `Ord` upstream (the
+        // 256-bit `[u8; 32]` fields on the Dashpay variants would make
+        // a derived ordering arbitrary), so a `Vec<(key, bucket)>`
+        // with a linear "find or insert" walk is the path of least
+        // resistance. Wallets typically have well under a hundred
+        // accounts, so the linear search is cheap.
+        let mut by_account: Vec<(
+            AccountType,
+            Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
+        )> = Vec::new();
+        for rec in &cs.records {
+            if let Some(bucket) = by_account
+                .iter_mut()
+                .find(|(at, _)| at == &rec.account_type)
+            {
+                bucket.1.push(rec);
+            } else {
+                by_account.push((rec.account_type, vec![rec]));
+            }
+        }
 
-            // UTXOs added
-            let utxos_added: Vec<UtxoEntryFFI> = account_cs
-                .utxos_added
-                .values()
-                .map(|utxo| {
-                    let addr = CString::new(utxo.address.to_string())
-                        .unwrap_or_else(|_| CString::new("").unwrap());
-                    let script = utxo.txout.script_pubkey.as_bytes().to_vec();
-                    let script_len = script.len();
-                    let script_ptr = vec_to_ptr_u8(script, script_len);
+        let mut ffi_accounts = Vec::with_capacity(by_account.len());
+        for (account_type, recs) in by_account {
+            let type_name = CString::new(format!("{:?}", account_type))
+                .unwrap_or_else(|_| CString::new("Unknown").unwrap());
+            let account_index = account_index_of(&account_type);
 
-                    UtxoEntryFFI {
-                        outpoint: outpoint_to_ffi(&utxo.outpoint),
-                        amount: utxo.txout.value,
-                        address: addr.into_raw(),
-                        script_pubkey: script_ptr,
-                        script_pubkey_len: script_len,
-                        height: utxo.height,
-                        is_coinbase: utxo.is_coinbase,
-                        is_confirmed: utxo.is_confirmed,
-                        is_instantlocked: utxo.is_instantlocked,
-                        is_locked: utxo.is_locked,
-                    }
-                })
-                .collect();
+            // Derive UTXO add/spend lists from this account's records.
+            // Each record carries its own input_details and
+            // output_details; we walk them once per record to project
+            // the UTXOs the persister should add or remove.
+            let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
+            let mut utxos_spent: Vec<OutPointFFI> = Vec::new();
+            for rec in &recs {
+                utxos_added.extend(record_new_utxos_ffi(rec));
+                utxos_spent.extend(record_spent_outpoints_ffi(rec));
+            }
 
-            // UTXOs spent
-            let utxos_spent: Vec<OutPointFFI> =
-                account_cs.utxos_spent.iter().map(outpoint_to_ffi).collect();
-
-            // UTXOs instant-locked
-            let utxos_il: Vec<OutPointFFI> = account_cs
-                .utxos_instant_locked
-                .iter()
-                .map(outpoint_to_ffi)
-                .collect();
-
-            // Transactions
-            let transactions: Vec<TransactionRecordFFI> = account_cs
-                .transactions
-                .values()
-                .map(tx_record_to_ffi)
-                .collect();
-
-            let ext_hu = account_cs.highest_used.get(&AddressPoolType::External);
-            let int_hu = account_cs.highest_used.get(&AddressPoolType::Internal);
+            // Transactions for this account.
+            let transactions: Vec<TransactionRecordFFI> =
+                recs.into_iter().map(tx_record_to_ffi).collect();
 
             let utxos_added_count = utxos_added.len();
             let utxos_spent_count = utxos_spent.len();
-            let utxos_il_count = utxos_il.len();
             let transactions_count = transactions.len();
 
             ffi_accounts.push(AccountChangeSetFFI {
@@ -240,14 +254,21 @@ impl WalletChangeSetFFI {
                 utxos_added_count,
                 utxos_spent: vec_to_ptr(utxos_spent),
                 utxos_spent_count,
-                utxos_instant_locked: vec_to_ptr(utxos_il),
-                utxos_instant_locked_count: utxos_il_count,
+                // IS-locked outpoints aren't carried as a separate
+                // bucket on the new path — see TODO above.
+                utxos_instant_locked: std::ptr::null_mut(),
+                utxos_instant_locked_count: 0,
                 transactions: vec_to_ptr(transactions),
                 transactions_count,
-                external_highest_used: ext_hu.map(|&v| v as i32).unwrap_or(-1),
-                has_external_highest_used: ext_hu.is_some(),
-                internal_highest_used: int_hu.map(|&v| v as i32).unwrap_or(-1),
-                has_internal_highest_used: int_hu.is_some(),
+                // Highest-used pool indices were a feature of the
+                // deleted upstream changeset's per-account bucket.
+                // The new event-bus model doesn't surface them; the
+                // persister can derive them from monitored addresses
+                // if needed.
+                external_highest_used: -1,
+                has_external_highest_used: false,
+                internal_highest_used: -1,
+                has_internal_highest_used: false,
             });
         }
 
@@ -263,13 +284,100 @@ impl WalletChangeSetFFI {
     }
 }
 
-fn outpoint_to_ffi(op: &dashcore::OutPoint) -> OutPointFFI {
-    let mut txid = [0u8; 32];
-    txid.copy_from_slice(op.txid.as_ref());
-    OutPointFFI {
-        txid,
-        vout: op.vout,
+/// Returns the account "index" the FFI surfaces in `account_index`.
+///
+/// For variants with a natural index field (`Standard`, `CoinJoin`,
+/// `IdentityTopUp`, `DashpayReceivingFunds`, `DashpayExternalAccount`,
+/// `PlatformPayment`), returns that field. For singleton variants
+/// (`IdentityRegistration`, `IdentityInvitation`, etc.), returns 0.
+/// Matches the pre-event-bus behaviour where `AccountType::index()`
+/// returned `Option<u32>` and singletons mapped to `None` → 0.
+fn account_index_of(at: &key_wallet::account::AccountType) -> u32 {
+    use key_wallet::account::AccountType;
+    match at {
+        AccountType::Standard { index, .. }
+        | AccountType::CoinJoin { index }
+        | AccountType::DashpayReceivingFunds { index, .. }
+        | AccountType::DashpayExternalAccount { index, .. } => *index,
+        AccountType::IdentityTopUp { registration_index } => *registration_index,
+        AccountType::PlatformPayment { account, .. } => *account,
+        _ => 0,
     }
+}
+
+/// Project the "ours" outputs of a `TransactionRecord` into FFI UTXO
+/// entries. Mirrors `derive_new_utxos` in
+/// `platform_wallet::changeset::core_bridge` but stops one layer
+/// further down the stack so the FFI conversion stays self-contained.
+fn record_new_utxos_ffi(
+    rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
+) -> Vec<UtxoEntryFFI> {
+    use key_wallet::managed_account::transaction_record::OutputRole;
+    use key_wallet::transaction_checking::TransactionContext;
+    use std::ffi::CString;
+
+    let height = rec.context.block_info().map(|b| b.height()).unwrap_or(0);
+    let is_confirmed = matches!(
+        rec.context,
+        TransactionContext::InBlock(_) | TransactionContext::InChainLockedBlock(_)
+    );
+    let is_instant = matches!(rec.context, TransactionContext::InstantSend(_));
+    let is_coinbase = rec.transaction.is_coin_base();
+
+    rec.output_details
+        .iter()
+        .filter_map(|d| {
+            if !matches!(d.role, OutputRole::Received | OutputRole::Change) {
+                return None;
+            }
+            let txout = rec.transaction.output.get(d.index as usize)?;
+            let address_str = d
+                .address
+                .as_ref()
+                .map(|a| a.to_string())
+                .unwrap_or_default();
+            let address = CString::new(address_str).unwrap_or_else(|_| CString::new("").unwrap());
+            let script_bytes = txout.script_pubkey.as_bytes().to_vec();
+            let script_len = script_bytes.len();
+            let script_ptr = vec_to_ptr_u8(script_bytes, script_len);
+            let mut txid = [0u8; 32];
+            txid.copy_from_slice(rec.txid.as_ref());
+            Some(UtxoEntryFFI {
+                outpoint: OutPointFFI {
+                    txid,
+                    vout: d.index,
+                },
+                amount: txout.value,
+                address: address.into_raw(),
+                script_pubkey: script_ptr,
+                script_pubkey_len: script_len,
+                height,
+                is_coinbase,
+                is_confirmed,
+                is_instantlocked: is_instant,
+                is_locked: false,
+            })
+        })
+        .collect()
+}
+
+/// Project the outpoints spent by a `TransactionRecord` (i.e. the
+/// outpoints whose UTXO rows the persister should delete).
+fn record_spent_outpoints_ffi(
+    rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
+) -> Vec<OutPointFFI> {
+    rec.input_details
+        .iter()
+        .filter_map(|d| {
+            let input = rec.transaction.input.get(d.index as usize)?;
+            let mut txid = [0u8; 32];
+            txid.copy_from_slice(input.previous_output.txid.as_ref());
+            Some(OutPointFFI {
+                txid,
+                vout: input.previous_output.vout,
+            })
+        })
+        .collect()
 }
 
 fn tx_record_to_ffi(
@@ -328,7 +436,15 @@ fn tx_record_to_ffi(
         fee: tr.fee.unwrap_or(0),
         has_fee: tr.fee.is_some(),
         label: label_str.into_raw(),
-        first_seen: tr.first_seen,
+        // `first_seen` was removed from upstream `TransactionRecord` in
+        // the event-bus refactor — there's no equivalent timestamp on
+        // the new type. The Swift persister still indexes by it, so we
+        // surface the block timestamp when the record is confirmed
+        // (a usable proxy for "first seen" in the in-block case) and 0
+        // for mempool / instant-send records, which the Swift side can
+        // refresh from `Date.now()` on insert if it needs a real
+        // observation timestamp.
+        first_seen: blk_ts as u64,
     }
 }
 

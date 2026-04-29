@@ -40,7 +40,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         let result = platform_address_wallet_total_credits(handle, &credits, &error)
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -50,14 +50,14 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// Get all platform addresses with their cached balances.
     public func addressesWithBalances() throws -> [AddressBalance] {
         var entriesPtr: UnsafeMutablePointer<AddressBalanceEntryFFI>?
-        var count: Int = 0
+        var count: UInt = 0
         var error = PlatformWalletFFIError()
 
         let result = platform_address_wallet_addresses_with_balances(
             handle, &entriesPtr, &count, &error
         )
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -69,7 +69,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             return []
         }
 
-        return (0..<count).map { i in
+        return (0..<Int(count)).map { i in
             let entry = entries[i]
             let hashData = withUnsafeBytes(of: entry.address.hash) { Data($0) }
             return AddressBalance(

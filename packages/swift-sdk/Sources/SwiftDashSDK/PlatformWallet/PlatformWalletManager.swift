@@ -126,7 +126,7 @@ public class PlatformWalletManager: ObservableObject {
             &error
         )
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -181,7 +181,7 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -222,7 +222,7 @@ public class PlatformWalletManager: ObservableObject {
                 handle,
                 network.rawValue,
                 seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                seed.count,
+                UInt(seed.count),
                 accountOptions,
                 &walletHandle,
                 &walletId,
@@ -230,7 +230,7 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
-        guard result == Success else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: result, error: error)
         }
 
@@ -268,7 +268,7 @@ public class PlatformWalletManager: ObservableObject {
 
         var error = PlatformWalletFFIError()
         let loadResult = platform_wallet_manager_load_from_persistor(handle, &error)
-        guard loadResult == Success else {
+        guard loadResult == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
             throw PlatformWalletError(result: loadResult, error: error)
         }
 
@@ -288,8 +288,11 @@ public class PlatformWalletManager: ObservableObject {
             var walletHandle: Handle = NULL_HANDLE
             var fetchError = PlatformWalletFFIError()
             let fetchResult = walletId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-                guard let base = idPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                    return ErrorNullPointer
+                // C signature is `const uint8_t (*wallet_id)[32]`, which Swift
+                // imports as `UnsafePointer<FFIByteTuple32>?`. Rebind the raw
+                // 32-byte buffer to that 32-tuple shape so the call type-checks.
+                guard let base = idPtr.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
+                    return PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER
                 }
                 return platform_wallet_manager_get_wallet(
                     handle,
@@ -298,7 +301,7 @@ public class PlatformWalletManager: ObservableObject {
                     &fetchError
                 )
             }
-            if fetchResult == Success {
+            if fetchResult == PLATFORM_WALLET_FFI_RESULT_SUCCESS {
                 let managedWallet = ManagedPlatformWallet(handle: walletHandle, walletId: walletId)
                 restored.append(managedWallet)
                 self.wallets[walletId] = managedWallet
@@ -350,16 +353,16 @@ public class PlatformWalletManager: ObservableObject {
         var error = PlatformWalletFFIError()
         let result: PlatformWalletFFIResult = bytes.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                return ErrorNullPointer
+                return PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER
             }
             return platform_wallet_account_xpub_to_string(
                 base,
-                bytes.count,
+                UInt(bytes.count),
                 &outPtr,
                 &error
             )
         }
-        guard result == Success, let cStr = outPtr else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS, let cStr = outPtr else {
             return nil
         }
         let str = String(cString: cStr)
@@ -376,15 +379,22 @@ public class PlatformWalletManager: ObservableObject {
     }
 
     /// Starts the SPV progress polling loop. Cancelled on deinit.
+    ///
+    /// `@Published` assignments are gated on inequality so that identical
+    /// snapshots don't trigger SwiftUI re-evaluation. A naive 1 Hz reassignment
+    /// of a non-Equatable struct caused every observer (sync screens, memory
+    /// explorer, global indicator) to re-evaluate every second, accreting
+    /// SwiftUI attribute-graph state and burning CPU long after sync settled.
     private func startProgressPolling() {
         progressPollTask?.cancel()
         progressPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { return }
-                if let progress = try? self.syncProgress() {
+                if let progress = try? self.syncProgress(), progress != self.spvProgress {
                     self.spvProgress = progress
                 }
-                if let isSyncing = try? self.isPlatformAddressSyncing() {
+                if let isSyncing = try? self.isPlatformAddressSyncing(),
+                   isSyncing != self.platformAddressSyncIsSyncing {
                     self.platformAddressSyncIsSyncing = isSyncing
                 }
                 try? await Task.sleep(for: .seconds(1))

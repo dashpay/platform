@@ -46,6 +46,7 @@ struct SeedBackupView: View {
                 Text("I wrote it down")
                     .font(.body)
             }
+            .accessibilityIdentifier("seedBackup.wroteItDownToggle")
             .padding(.top, 8)
 
             Spacer()
@@ -70,6 +71,7 @@ struct SeedBackupView: View {
                 .foregroundColor(.white)
                 .cornerRadius(10)
                 .disabled(!wroteItDown || isSubmitting)
+                .accessibilityIdentifier("seedBackup.createWalletButton")
             }
         }
         .padding()

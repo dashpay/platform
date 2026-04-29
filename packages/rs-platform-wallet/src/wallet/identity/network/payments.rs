@@ -165,7 +165,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 })?;
 
             let payment_address = external_account
-                .next_address(Some(&contact_xpub))
+                .next_address(Some(&contact_xpub), true)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             // --- 2. Build the transaction from BIP-44 account 0 UTXOs. ---
@@ -208,7 +208,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         "BIP-44 managed account 0 not found for change".to_string(),
                     )
                 })?
-                .next_change_address(Some(&bip44_xpub))
+                .next_change_address(Some(&bip44_xpub), true)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             let mut builder = TransactionBuilder::new();

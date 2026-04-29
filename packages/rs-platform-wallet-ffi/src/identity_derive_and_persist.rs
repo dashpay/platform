@@ -46,7 +46,16 @@
 //! | key_id | key_type        | purpose        | security_level |
 //! |--------|-----------------|----------------|----------------|
 //! | 0      | ECDSA_SECP256K1 | AUTHENTICATION | MASTER         |
-//! | > 0    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+//! | 1      | ECDSA_SECP256K1 | AUTHENTICATION | CRITICAL       |
+//! | > 1    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+//!
+//! Mirrors rs-dpp's canonical
+//! `main_keys_with_random_authentication_keys_*` layout (MASTER →
+//! CRITICAL → HIGH). The CRITICAL key at id 1 is what signs token
+//! state transitions — rs-dpp's
+//! `combined_security_level_requirement` collapses any batch
+//! containing a token transition to `[CRITICAL]` only, so without
+//! a CRITICAL key the identity cannot mint / burn / freeze tokens.
 //!
 //! If DPP renumbers any of those enum discriminants, this file is
 //! the single place that needs updating — the Swift caller just
@@ -90,6 +99,8 @@ const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
 const PURPOSE_AUTHENTICATION: u8 = 0;
 /// DPP `SecurityLevel::MASTER` discriminant byte.
 const SECURITY_LEVEL_MASTER: u8 = 0;
+/// DPP `SecurityLevel::CRITICAL` discriminant byte.
+const SECURITY_LEVEL_CRITICAL: u8 = 1;
 /// DPP `SecurityLevel::HIGH` discriminant byte.
 const SECURITY_LEVEL_HIGH: u8 = 2;
 
@@ -361,13 +372,19 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             }
         };
 
-        // Per-key DPP metadata. MASTER on key_id 0, HIGH on the
-        // rest — the convention `register_identity` enforced
-        // before the loop moved out of the platform-wallet crate.
-        let security_level = if key_index == 0 {
-            SECURITY_LEVEL_MASTER
-        } else {
-            SECURITY_LEVEL_HIGH
+        // Per-key DPP metadata. Canonical 3-key identity layout per
+        // rs-dpp's `main_keys_with_random_authentication_keys_*`:
+        // MASTER at key_id 0 (signs IdentityUpdate / IdentityCreate),
+        // CRITICAL at key_id 1 (signs token state transitions —
+        // `combined_security_level_requirement` collapses any batch
+        // containing a token transition to `[CRITICAL]`), HIGH for
+        // any further keys (general document operations). Without
+        // a CRITICAL key the identity literally cannot sign token
+        // mints / burns / freezes.
+        let security_level = match key_index {
+            0 => SECURITY_LEVEL_MASTER,
+            1 => SECURITY_LEVEL_CRITICAL,
+            _ => SECURITY_LEVEL_HIGH,
         };
         let args = PersistKeyArgs {
             wallet_id_bytes,
@@ -640,10 +657,10 @@ mod tests {
             assert_eq!(row.purpose, PURPOSE_AUTHENTICATION);
             assert_eq!(
                 row.security_level,
-                if i == 0 {
-                    SECURITY_LEVEL_MASTER
-                } else {
-                    SECURITY_LEVEL_HIGH
+                match i {
+                    0 => SECURITY_LEVEL_MASTER,
+                    1 => SECURITY_LEVEL_CRITICAL,
+                    _ => SECURITY_LEVEL_HIGH,
                 }
             );
             assert_eq!(row.public_key.len(), 33);
