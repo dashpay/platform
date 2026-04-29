@@ -73,15 +73,16 @@ impl PlatformAddressWallet {
                     .await?
             }
             InputSelection::Auto => {
-                // Auto-select supports only `[DeductFromInput(0)]`; for
-                // any other strategy the caller must use `Explicit`.
+                // Auto-select supports `[DeductFromInput(0)]` and
+                // `[ReduceOutput(0)]`; any other shape must use `Explicit`.
                 if !matches!(
                     fee_strategy.as_slice(),
                     [AddressFundsFeeStrategyStep::DeductFromInput(0)]
+                        | [AddressFundsFeeStrategyStep::ReduceOutput(0)]
                 ) {
                     return Err(PlatformWalletError::AddressOperation(
-                        "InputSelection::Auto currently only supports fee_strategy = \
-                         [DeductFromInput(0)]; for other strategies use InputSelection::Explicit"
+                        "InputSelection::Auto supports fee_strategy = [DeductFromInput(0)] \
+                         or [ReduceOutput(0)]; for other strategies use InputSelection::Explicit"
                             .to_string(),
                     ));
                 }
@@ -152,15 +153,16 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
-    /// Auto-select inputs in balance-descending order until
-    /// `total_output + estimated_fee` is covered, then delegate to
-    /// [`select_inputs`] for the headroom-respecting distribution.
+    /// Auto-select inputs balance-descending and dispatch to the
+    /// fee-strategy-specific helper. The returned map's values are
+    /// the **consumed amount per address** — the protocol enforces
+    /// `Σ inputs == Σ outputs`.
     ///
-    /// The returned map's values are the **consumed amount per
-    /// address** — not the balance. The protocol enforces
-    /// `Σ inputs == Σ outputs`; the fee is deducted separately from
-    /// one input's remaining balance per [`AddressFundsFeeStrategy`]
-    /// (e.g. `DeductFromInput(0)` hits the lex-smallest input).
+    /// Supported strategies:
+    /// - `[DeductFromInput(0)]` — fee deducted from input 0's
+    ///   remaining balance at chain time; selector reserves headroom.
+    /// - `[ReduceOutput(0)]` — fee taken from output 0's amount at
+    ///   chain time; selector skips input-side headroom.
     async fn auto_select_inputs(
         &self,
         account_index: u32,
@@ -197,7 +199,7 @@ impl PlatformAddressWallet {
         // Filter to addresses with balance ≥ `min_input_amount` (the
         // protocol's per-input minimum — anything smaller cannot
         // legally appear as an input) and sort balance-descending so
-        // [`select_inputs`] picks the smallest covering prefix.
+        // the helper picks the smallest covering prefix.
         let mut candidates: Vec<(PlatformAddress, Credits)> = account
             .addresses
             .addresses
@@ -214,13 +216,27 @@ impl PlatformAddressWallet {
             .collect();
         candidates.sort_by(|a, b| b.1.cmp(&a.1));
 
-        select_inputs(
-            candidates,
-            outputs,
-            total_output,
-            fee_strategy,
-            platform_version,
-        )
+        match fee_strategy {
+            [AddressFundsFeeStrategyStep::DeductFromInput(0)] => select_inputs_deduct_from_input(
+                candidates,
+                outputs,
+                total_output,
+                fee_strategy,
+                platform_version,
+            ),
+            [AddressFundsFeeStrategyStep::ReduceOutput(0)] => select_inputs_reduce_output(
+                candidates,
+                outputs,
+                total_output,
+                fee_strategy,
+                platform_version,
+            ),
+            _ => Err(PlatformWalletError::AddressOperation(
+                "auto_select_inputs supports fee_strategy = [DeductFromInput(0)] \
+                 or [ReduceOutput(0)]; other shapes must use InputSelection::Explicit"
+                    .to_string(),
+            )),
+        }
     }
 
     /// Simulate the fee strategy to determine how much additional balance
@@ -289,8 +305,8 @@ fn estimate_fee_for_inputs_pub(
     )
 }
 
-/// Pure input-selection helper. Order-agnostic: walks `candidates`
-/// as-is and picks the smallest covering prefix.
+/// `[DeductFromInput(0)]` selector. Order-agnostic: walks
+/// `candidates` as-is and picks the smallest covering prefix.
 ///
 /// Produces an inputs map satisfying two protocol invariants:
 /// 1. `Σ selected.values() == total_output`.
@@ -300,7 +316,7 @@ fn estimate_fee_for_inputs_pub(
 ///    the fee from its remaining balance (otherwise
 ///    `fee_fully_covered = false` and the transition is rejected).
 ///
-/// Algorithm for the only supported strategy `[DeductFromInput(0)]`:
+/// Algorithm:
 /// 1. Grow the prefix until `Σ balances ≥ total_output + estimated_fee`.
 /// 2. Within that prefix, the lex-smallest entry is the fee target.
 /// 3. Solve for `fee_target_consumed` in
@@ -317,7 +333,7 @@ fn estimate_fee_for_inputs_pub(
 ///
 /// Caller (`auto_select_inputs`) sorts candidates balance-descending
 /// in practice, but the helper itself doesn't rely on that order.
-fn select_inputs(
+fn select_inputs_deduct_from_input(
     candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
     total_output: Credits,
@@ -329,16 +345,16 @@ fn select_inputs(
             fee_strategy,
             [AddressFundsFeeStrategyStep::DeductFromInput(0)]
         ),
-        "select_inputs only supports [DeductFromInput(0)]; \
-         the public `transfer()` should have validated this already"
+        "select_inputs_deduct_from_input requires [DeductFromInput(0)]; \
+         the dispatcher should have routed other shapes elsewhere"
     );
     if !matches!(
         fee_strategy,
         [AddressFundsFeeStrategyStep::DeductFromInput(0)]
     ) {
         return Err(PlatformWalletError::AddressOperation(
-            "select_inputs only supports fee_strategy = [DeductFromInput(0)]; \
-             other shapes must use InputSelection::Explicit"
+            "select_inputs_deduct_from_input only supports fee_strategy = \
+             [DeductFromInput(0)]; other shapes must route through the dispatcher"
                 .to_string(),
         ));
     }
@@ -521,6 +537,159 @@ fn select_inputs(
     Ok(selected)
 }
 
+/// `[ReduceOutput(0)]` selector. Output 0 absorbs the fee at chain
+/// time, so inputs only need to sum to `total_output` — no fee
+/// headroom on inputs. Order-agnostic: walks `candidates` as-is and
+/// picks the smallest covering prefix.
+///
+/// Produces an inputs map satisfying:
+/// 1. `Σ selected.values() == total_output`.
+/// 2. Every selected input ≥ `min_input_amount`.
+/// 3. The BTreeMap-index-0 output (lex-smallest) holds enough to
+///    absorb the estimated fee at chain time.
+///
+/// Algorithm (mirrors the 5-phase shape of the input-side helper):
+/// 1. Grow the prefix until `Σ balances ≥ total_output`.
+/// 2. Trim the last prefix entry by `surplus = Σ − total_output` so
+///    `Σ inputs == Σ outputs`. Earlier entries stay at full balance.
+/// 3. If the trim drops the last entry below `min_input_amount`,
+///    shift consumption from the lex-smallest peer to lift it back up
+///    while keeping the peer ≥ `min_input_amount`. Error out if no
+///    peer has the headroom.
+/// 4. Estimate the fee for the chosen input count and verify
+///    `output[0] ≥ estimated_fee`; otherwise the chain-time
+///    `ReduceOutput(0)` deduction would leave the fee uncovered.
+/// 5. Defensive invariant checks.
+fn select_inputs_reduce_output(
+    candidates: Vec<(PlatformAddress, Credits)>,
+    outputs: &BTreeMap<PlatformAddress, Credits>,
+    total_output: Credits,
+    fee_strategy: &[AddressFundsFeeStrategyStep],
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    debug_assert!(
+        matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]),
+        "select_inputs_reduce_output requires [ReduceOutput(0)]; \
+         the dispatcher should have routed other shapes elsewhere"
+    );
+
+    let output_count = outputs.len();
+    let min_input_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_input_amount;
+
+    // Same upfront guard as the DeductFromInput(0) helper: a single
+    // input cannot satisfy `≥ min_input_amount` and sum to a smaller
+    // `total_output` — reject loudly rather than tripping the
+    // per-input minimum check downstream.
+    if total_output < min_input_amount {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Transfer amount {} is below the protocol minimum input amount {}; \
+             a transfer cannot be split across inputs in a way that satisfies \
+             the per-input minimum",
+            total_output, min_input_amount,
+        )));
+    }
+
+    // Phase 1: walk `candidates` until the running sum covers
+    // `total_output`. Last entry will be trimmed in Phase 2.
+    let mut prefix: Vec<(PlatformAddress, Credits)> = Vec::new();
+    let mut accumulated: Credits = 0;
+    for (address, balance) in candidates {
+        prefix.push((address, balance));
+        accumulated = accumulated.saturating_add(balance);
+        if accumulated >= total_output {
+            break;
+        }
+    }
+
+    if accumulated < total_output {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Insufficient balance: available {} credits, required {} \
+             (outputs sum; ReduceOutput(0) absorbs the fee from output 0)",
+            accumulated, total_output,
+        )));
+    }
+
+    // Phase 2: every prefix entry consumes its full balance except
+    // the last, which absorbs the surplus.
+    let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+    let surplus = accumulated - total_output;
+    let last_index = prefix.len() - 1;
+    for (i, (addr, balance)) in prefix.iter().enumerate() {
+        let consumed = if i == last_index {
+            balance.saturating_sub(surplus)
+        } else {
+            *balance
+        };
+        selected.insert(*addr, consumed);
+    }
+
+    // Phase 3: if the trim dropped the last entry below
+    // `min_input_amount`, lift it from the lex-smallest peer with
+    // spare balance. The peer must keep ≥ `min_input_amount` itself.
+    let last_addr = prefix[last_index].0;
+    let last_consumed = selected[&last_addr];
+    if last_consumed < min_input_amount && prefix.len() > 1 {
+        let shift = min_input_amount - last_consumed;
+        let donor_addr = prefix
+            .iter()
+            .filter(|(addr, _)| *addr != last_addr)
+            .find(|(_, balance)| *balance >= min_input_amount.saturating_add(shift))
+            .map(|(addr, _)| *addr);
+        let Some(donor_addr) = donor_addr else {
+            return Err(PlatformWalletError::AddressOperation(format!(
+                "Cannot satisfy per-input minimum: trimming the last input to \
+                 {} (below {}) and no peer has ≥ {} of headroom to redistribute",
+                last_consumed,
+                min_input_amount,
+                min_input_amount.saturating_add(shift),
+            )));
+        };
+        let donor_consumed = selected[&donor_addr];
+        selected.insert(donor_addr, donor_consumed - shift);
+        selected.insert(last_addr, last_consumed + shift);
+    }
+
+    // Phase 4: ReduceOutput(0) takes the fee from output 0 at chain
+    // time; verify the chosen output 0 has enough to absorb it.
+    let estimated_fee = estimate_fee_for_inputs_pub(
+        selected.len(),
+        output_count,
+        fee_strategy,
+        outputs,
+        platform_version,
+    );
+    let output_0 = outputs.values().next().copied().unwrap_or(0);
+    if output_0 < estimated_fee {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Output 0 ({} credits) cannot absorb estimated fee ({} credits) \
+             under [ReduceOutput(0)]; raise output 0 or use a different fee strategy",
+            output_0, estimated_fee,
+        )));
+    }
+
+    // Phase 5: defensive invariant checks. Fail loudly here rather
+    // than ship a transition the validator will reject.
+    let input_sum: Credits = selected.values().sum();
+    debug_assert_eq!(input_sum, total_output, "Σ inputs == Σ outputs invariant");
+    debug_assert!(
+        selected.values().all(|amount| *amount >= min_input_amount),
+        "every selected input must satisfy the protocol's per-input minimum"
+    );
+
+    if input_sum != total_output {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: Σ inputs ({}) != total_output ({})",
+            input_sum, total_output
+        )));
+    }
+
+    Ok(selected)
+}
+
 fn format_address(addr: &PlatformAddress) -> String {
     match addr {
         PlatformAddress::P2pkh(hash) => format!("p2pkh({})", hex::encode(hash)),
@@ -591,8 +760,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect("selection");
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
 
         assert_eq!(
             selected.get(&addr),
@@ -626,8 +796,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect("selection");
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
 
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
@@ -670,8 +841,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let err = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect_err("expected insufficient-balance error");
+        let err =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("expected insufficient-balance error");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
                 assert!(
@@ -699,8 +871,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect("selection");
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
 
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
@@ -748,8 +921,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect("selection");
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
 
         // (1) Σ inputs == Σ outputs.
         let input_sum: Credits = selected.values().sum();
@@ -871,8 +1045,9 @@ mod auto_select_tests {
         let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-        let err = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect_err("expected fee-headroom error");
+        let err =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("expected fee-headroom error");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
                 assert!(
@@ -906,8 +1081,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let selected = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect("selection");
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
 
         assert_eq!(
             selected.len(),
@@ -938,8 +1114,9 @@ mod auto_select_tests {
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        let err = select_inputs(Vec::new(), &outputs, 1_000_000, &fee_strategy, pv)
-            .expect_err("expected error for empty candidates");
+        let err =
+            select_inputs_deduct_from_input(Vec::new(), &outputs, 1_000_000, &fee_strategy, pv)
+                .expect_err("expected error for empty candidates");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
 
@@ -959,8 +1136,9 @@ mod auto_select_tests {
         let candidates = vec![(addr, 100_000_000)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-        let err = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv)
-            .expect_err("expected below-min-input error");
+        let err =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("expected below-min-input error");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
                 assert!(
@@ -999,7 +1177,8 @@ mod auto_select_tests {
         let candidates = vec![(addr_x, addr_x_balance), (addr_y, addr_y_balance)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-        let result = select_inputs(candidates, &outputs, total_output, &fee_strategy, pv);
+        let result =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv);
 
         match result {
             Ok(selected) => {
@@ -1024,5 +1203,171 @@ mod auto_select_tests {
             }
             Err(other) => panic!("unexpected error variant: {other:?}"),
         }
+    }
+
+    /// Single input fully covers `total_output`; the input is trimmed
+    /// to `total_output` (no fee headroom on inputs — output 0 absorbs
+    /// the fee at chain time).
+    #[test]
+    fn reduce_output_happy_path_single_input() {
+        let addr = p2pkh(0x11);
+        let target = p2pkh(0x22);
+        let total_output = 10_000_000u64;
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr, 100_000_000u64)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let selected =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
+
+        assert_eq!(
+            selected.get(&addr),
+            Some(&total_output),
+            "single input consumes exactly total_output (no headroom on inputs)"
+        );
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(input_sum, total_output, "Σ inputs == Σ outputs");
+
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// Multiple inputs needed: every entry except the last consumes
+    /// its full balance; the last is trimmed by `surplus` so
+    /// `Σ inputs == Σ outputs`.
+    #[test]
+    fn reduce_output_multi_input_trims_to_total_output() {
+        let addr_a = p2pkh(0x01);
+        let addr_b = p2pkh(0x02);
+        let target = p2pkh(0x99);
+        let total_output = 60_000_000u64;
+        let outputs = outputs_for(target, total_output);
+        // Caller pre-sorts balance-descending; addr_b is the larger,
+        // walked first, fully consumed; addr_a is trimmed.
+        let addr_b_balance = 50_000_000u64;
+        let addr_a_balance = 20_000_000u64;
+        let candidates = vec![(addr_b, addr_b_balance), (addr_a, addr_a_balance)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let selected =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
+
+        assert_eq!(selected.len(), 2);
+        assert_eq!(
+            selected.get(&addr_b),
+            Some(&addr_b_balance),
+            "non-last entry stays at full balance"
+        );
+        assert_eq!(
+            selected.get(&addr_a),
+            Some(&(total_output - addr_b_balance)),
+            "last entry trimmed by surplus"
+        );
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(input_sum, total_output);
+
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// Multi-output: only output 0 (BTreeMap-lex-smallest) absorbs the
+    /// fee at chain time. The selector ships the user's outputs map
+    /// untouched — outputs 1, 2, ... still hold their requested amounts.
+    #[test]
+    fn reduce_output_multi_output_only_first_absorbs_fee() {
+        let addr_in = p2pkh(0xFE);
+        // Output 0 (lex-smallest) gets the fee; the rest are untouched.
+        let out0 = p2pkh(0x10);
+        let out1 = p2pkh(0x20);
+        let out2 = p2pkh(0x30);
+        let mut outputs: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        outputs.insert(out0, 50_000_000);
+        outputs.insert(out1, 10_000_000);
+        outputs.insert(out2, 5_000_000);
+        let total_output: Credits = outputs.values().sum();
+
+        let candidates = vec![(addr_in, total_output + 100_000_000u64)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let selected =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
+
+        // Selector mutates only inputs; outputs map is what the caller
+        // hands to the SDK and what `validate_structure` inspects.
+        assert_eq!(outputs.get(&out1), Some(&10_000_000));
+        assert_eq!(outputs.get(&out2), Some(&5_000_000));
+
+        // Confirm BTreeMap-index-0 is `out0` (lex-smallest by 20-byte hash).
+        assert_eq!(outputs.keys().next(), Some(&out0));
+
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(input_sum, total_output);
+
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// Output 0 < estimated fee → descriptive `AddressOperation` error.
+    /// The protocol's chain-time `ReduceOutput(0)` deduction would
+    /// otherwise leave the fee uncovered.
+    #[test]
+    fn reduce_output_output_too_small_to_absorb_fee_errors() {
+        let addr_in = p2pkh(0xAA);
+        let target = p2pkh(0xBB);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_output = pv.dpp.state_transitions.address_funds.min_output_amount;
+        // Output sits at the protocol minimum — far below any plausible
+        // fee for a real transition.
+        let total_output = min_output;
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_in, 100_000_000u64)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let estimated_fee = estimate_fee_for_inputs_pub(1, 1, &fee_strategy, &outputs, pv);
+        // Sanity guard: this test is meaningful only when the output
+        // really cannot cover the fee.
+        assert!(
+            total_output < estimated_fee,
+            "test premise broken: output {} ≥ estimated fee {}",
+            total_output,
+            estimated_fee,
+        );
+
+        let err =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("expected output-too-small-for-fee error");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("cannot absorb estimated fee"),
+                    "expected output-cannot-absorb-fee phrasing, got {msg:?}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// End-to-end structural validation: feed the selector's output
+    /// to `AddressFundsTransferTransitionV0::validate_structure` to
+    /// confirm the transition is shape-valid under
+    /// `[ReduceOutput(0)]`.
+    #[test]
+    fn reduce_output_validates() {
+        let addr_in = p2pkh(0x77);
+        let target = p2pkh(0x88);
+        let total_output = 25_000_000u64;
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_in, 100_000_000u64)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let selected =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("selection");
+
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 }
