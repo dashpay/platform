@@ -75,7 +75,7 @@ struct ReceiveAddressView: View {
     private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {
         let walletId = wallet.walletId
         for account in allAccounts {
-            if account.wallet?.walletId != walletId { continue }
+            if account.wallet.walletId != walletId { continue }
             if account.accountType != accountType { continue }
             if account.accountIndex != accountIndex { continue }
             return account

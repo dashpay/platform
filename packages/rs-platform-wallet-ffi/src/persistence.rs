@@ -849,15 +849,17 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
             spec.type_tag = AccountTypeTagFFI::PlatformPayment;
             spec.index = *account;
             spec.key_class = *key_class;
-        }
-        AccountType::IdentityAuthenticationEcdsa { identity_index } => {
-            spec.type_tag = AccountTypeTagFFI::IdentityAuthenticationEcdsa;
-            spec.index = *identity_index;
-        }
-        AccountType::IdentityAuthenticationBls { identity_index } => {
-            spec.type_tag = AccountTypeTagFFI::IdentityAuthenticationBls;
-            spec.index = *identity_index;
-        }
+        } // TODO(events): the `IdentityAuthenticationEcdsa` /
+          // `IdentityAuthenticationBls` upstream `AccountType` variants
+          // were removed when identity-key derivation moved off the
+          // wallet-account model. The FFI ABI still exposes the matching
+          // `AccountTypeTagFFI` tags for backwards compatibility, but
+          // there's no upstream variant to map them to right now. If a
+          // wallet record arrives with an identity-auth derivation path,
+          // the bridge surface needs new entry points for the new
+          // identity-key shape — until then no upstream `AccountType`
+          // value can produce these tags, so the match is exhaustive
+          // without explicit branches.
     }
     spec
 }
@@ -1239,14 +1241,21 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
             account: spec.index,
             key_class: spec.key_class,
         },
-        AccountTypeTagFFI::IdentityAuthenticationEcdsa => {
-            AccountType::IdentityAuthenticationEcdsa {
-                identity_index: spec.index,
-            }
+        // TODO(events): the upstream `AccountType::IdentityAuthentication*`
+        // variants were removed in the event-bus refactor. The FFI ABI
+        // still surfaces the tags for backwards compatibility, so a
+        // Swift caller passing one back through the load path needs a
+        // new mapping target. Until the identity-key derivation moves
+        // off `AccountType` entirely, fail loudly so we don't silently
+        // pretend a record is restorable when its derivation context
+        // is gone.
+        AccountTypeTagFFI::IdentityAuthenticationEcdsa
+        | AccountTypeTagFFI::IdentityAuthenticationBls => {
+            return Err(PersistenceError::Backend(format!(
+                "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType after the upstream event-bus refactor (TODO(events))",
+                spec.type_tag
+            )));
         }
-        AccountTypeTagFFI::IdentityAuthenticationBls => AccountType::IdentityAuthenticationBls {
-            identity_index: spec.index,
-        },
     })
 }
 

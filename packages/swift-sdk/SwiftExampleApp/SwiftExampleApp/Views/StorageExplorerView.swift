@@ -48,8 +48,8 @@ struct StorageExplorerView: View {
             ) {
                 PlatformAddressStorageListView()
             }
-            modelRow("Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentSyncState.self) {
-                SyncStateStorageListView()
+            modelRow("Platform Addresses Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentPlatformAddressesSyncState.self) {
+                PlatformAddressesSyncStateStorageListView()
             }
             modelRow("Wallets", icon: "wallet.pass", type: PersistentWallet.self) {
                 WalletStorageListView()
@@ -67,8 +67,8 @@ struct StorageExplorerView: View {
             modelRow("Transactions", icon: "arrow.left.arrow.right.circle", type: PersistentTransaction.self) {
                 TransactionStorageListView()
             }
-            modelRow("UTXOs", icon: "bitcoinsign.circle", type: PersistentUtxo.self) {
-                UtxoStorageListView()
+            modelRow("TXOs", icon: "bitcoinsign.circle", type: PersistentTxo.self) {
+                TxoStorageListView()
             }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView()
@@ -142,11 +142,11 @@ struct StorageExplorerView: View {
         count(PersistentIndex.self)
         count(PersistentProperty.self)
         count(PersistentKeyword.self)
-        count(PersistentSyncState.self)
+        count(PersistentPlatformAddressesSyncState.self)
         count(PersistentWallet.self)
         count(PersistentAccount.self)
         count(PersistentTransaction.self)
-        count(PersistentUtxo.self)
+        count(PersistentTxo.self)
         count(PersistentWalletManagerMetadata.self)
         // Core and Platform address rows live in separate models now
         // (PersistentCoreAddress vs PersistentPlatformAddress), so

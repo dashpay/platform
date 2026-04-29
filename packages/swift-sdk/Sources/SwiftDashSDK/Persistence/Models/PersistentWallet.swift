@@ -45,12 +45,6 @@ public final class PersistentWallet {
     public var balanceImmature: UInt64
     /// Locked balance in duffs.
     public var balanceLocked: UInt64
-    /// Wallet is spend-disabled — either bootstrapped watch-only
-    /// (no seed) or every account is watch-only. Surfaces as the
-    /// "👁 Watch-only" badge in the wallets list. Default `false`
-    /// keeps the schema migration trivial for rows that predate
-    /// this column.
-    public var isWatchOnly: Bool = false
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for
@@ -82,7 +76,6 @@ public final class PersistentWallet {
         name: String? = nil,
         birthHeight: UInt32 = 0,
         syncedHeight: UInt32 = 0,
-        isWatchOnly: Bool = false,
         isImported: Bool = false
     ) {
         self.walletId = walletId
@@ -95,7 +88,6 @@ public final class PersistentWallet {
         self.balanceUnconfirmed = 0
         self.balanceImmature = 0
         self.balanceLocked = 0
-        self.isWatchOnly = isWatchOnly
         self.isImported = isImported
         self.createdAt = Date()
         self.lastUpdated = Date()
