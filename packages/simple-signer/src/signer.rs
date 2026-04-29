@@ -207,30 +207,26 @@ impl SimpleSigner {
         identity_index: u32,
         gap_limit: u32,
     ) -> Result<Self, SimpleSignerError> {
+        use key_wallet::bip32::KeyDerivationType;
         use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
-        use key_wallet::{AccountType, ChildNumber};
+        use key_wallet::DerivationPath;
 
         let root_priv = RootExtendedPrivKey::new_master(seed)
             .map_err(|err| SimpleSignerError::InvalidSeed(err.to_string()))?;
         let root_xpriv = root_priv.to_extended_priv_key(network);
 
-        let account_path = AccountType::IdentityAuthenticationEcdsa { identity_index }
-            .derivation_path(network)
-            .map_err(|err| SimpleSignerError::DerivationPath(err.to_string()))?;
-
         let secp = Secp256k1::new();
         let mut signer = Self::default();
-        for index in 0..gap_limit {
-            let leaf = ChildNumber::from_normal_idx(index).map_err(|err| {
-                SimpleSignerError::InvalidIndex {
-                    index,
-                    message: err.to_string(),
-                }
-            })?;
-            let leaf_path = account_path.extend([leaf]);
+        for key_index in 0..gap_limit {
+            let leaf_path = DerivationPath::identity_authentication_path(
+                network,
+                KeyDerivationType::ECDSA,
+                identity_index,
+                key_index,
+            );
             let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
                 SimpleSignerError::DerivePriv {
-                    index,
+                    index: key_index,
                     message: err.to_string(),
                 }
             })?;
