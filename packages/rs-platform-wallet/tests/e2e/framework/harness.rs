@@ -1,6 +1,6 @@
 //! Process-shared `E2eContext` initialised once per test run via
 //! [`tokio::sync::OnceCell`]. Single entry point: [`E2eContext::init`]
-//! wires config → workdir slot → panic hook → SDK (with
+//! wires config → workdir slot → SDK (with
 //! [`TrustedHttpContextProvider`]) → manager → bank → registry →
 //! startup sweep.
 //!
@@ -21,7 +21,6 @@ use tokio_util::sync::CancellationToken;
 use super::bank::BankWallet;
 use super::cleanup;
 use super::config::Config;
-use super::panic_hook;
 use super::registry::PersistentTestWalletRegistry;
 use super::sdk;
 use super::wait_hub::WaitEventHub;
@@ -49,7 +48,9 @@ pub struct E2eContext {
     pub spv_runtime: Option<Arc<SpvRuntime>>,
     pub bank: BankWallet,
     pub registry: PersistentTestWalletRegistry,
-    /// Tripped by the panic hook so background tasks can shut down.
+    /// Framework-wide shutdown signal for background tasks. Not
+    /// tripped by individual test panics — a single failing test
+    /// must not cancel SPV / wait helpers for sibling tests.
     pub cancel_token: CancellationToken,
     /// Installed as the harness's `PlatformEventHandler`; test
     /// wallets clone the `Arc` so `wait_for_balance` wakes on real
@@ -90,7 +91,7 @@ impl E2eContext {
         self.spv_runtime.as_ref()
     }
 
-    /// Tripped by the panic hook; background helpers can `select!`
+    /// Framework-shutdown signal; background helpers can `select!`
     /// on it for graceful shutdown.
     pub fn cancel_token(&self) -> &CancellationToken {
         &self.cancel_token
@@ -106,7 +107,6 @@ impl E2eContext {
         let (workdir, workdir_lock) = workdir::pick_available_workdir(&config.workdir_base)?;
 
         let cancel_token = CancellationToken::new();
-        panic_hook::install(cancel_token.clone());
 
         let sdk = sdk::build_sdk(&config)?;
 

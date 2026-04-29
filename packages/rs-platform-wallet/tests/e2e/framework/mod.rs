@@ -23,7 +23,6 @@ pub mod cleanup;
 pub mod config;
 pub mod context_provider;
 pub mod harness;
-pub mod panic_hook;
 pub mod registry;
 pub mod sdk;
 pub mod signer;
@@ -87,8 +86,8 @@ pub type FrameworkResult<T> = Result<T, FrameworkError>;
 /// One-shot setup entry point.
 ///
 /// Lazily initialises the process-shared [`E2eContext`] (bank, SDK,
-/// registry, panic hook) on first call and returns a [`SetupGuard`]
-/// wrapping a fresh-seeded [`wallet_factory::TestWallet`].
+/// registry) on first call and returns a [`SetupGuard`] wrapping a
+/// fresh-seeded [`wallet_factory::TestWallet`].
 ///
 /// The wallet is **registered in the persistent registry BEFORE
 /// being returned**, so a panic between `setup` and the test's
