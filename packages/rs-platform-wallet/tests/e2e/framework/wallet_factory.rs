@@ -11,16 +11,18 @@ use std::time::SystemTime;
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use key_wallet::account::account_collection::PlatformPaymentAccountKey;
-use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
+use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+use key_wallet::wallet::initialization::{
+    PlatformPaymentAccountSpec, WalletAccountCreationOptions,
+};
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{
     PlatformAddressChangeSet, PlatformWallet, PlatformWalletError, PlatformWalletManager,
 };
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 
 use super::harness::E2eContext;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
@@ -28,13 +30,24 @@ use super::signer::SeedBackedPlatformAddressSigner;
 use super::wait_hub::WaitEventHub;
 use super::{FrameworkError, FrameworkResult};
 
-/// DIP-17 default account/key-class — matches
-/// `WalletAccountCreationOptions::Default`
-/// (`PlatformPayment { account: 0, key_class: 0 }`).
-pub(super) const DEFAULT_ACCOUNT_INDEX_PUB: u32 = 0;
-pub(super) const DEFAULT_KEY_CLASS_PUB: u32 = 0;
-const DEFAULT_ACCOUNT_INDEX: u32 = DEFAULT_ACCOUNT_INDEX_PUB;
-const DEFAULT_KEY_CLASS: u32 = DEFAULT_KEY_CLASS_PUB;
+/// DIP-17 default PlatformPayment account spec — pinned to
+/// `PlatformPaymentAccountSpec` field defaults so a struct-shape change
+/// upstream fails to compile here.
+const DEFAULT_PLATFORM_PAYMENT_ACCOUNT_SPEC: PlatformPaymentAccountSpec =
+    PlatformPaymentAccountSpec {
+        account: 0,
+        key_class: 0,
+    };
+
+pub(super) const DEFAULT_ACCOUNT_INDEX_PUB: u32 = DEFAULT_PLATFORM_PAYMENT_ACCOUNT_SPEC.account;
+pub(super) const DEFAULT_KEY_CLASS_PUB: u32 = DEFAULT_PLATFORM_PAYMENT_ACCOUNT_SPEC.key_class;
+
+/// `PlatformPaymentAccountKey` for the default DIP-17 account, derived
+/// from the canonical [`PlatformPaymentAccountSpec`] in `key_wallet`.
+fn default_platform_payment_account_key() -> PlatformPaymentAccountKey {
+    let PlatformPaymentAccountSpec { account, key_class } = PlatformPaymentAccountSpec::default();
+    PlatformPaymentAccountKey { account, key_class }
+}
 
 /// Per-test wallet handle. Exposes the high-level operations test
 /// cases reach for (`next_unused_address`, `transfer`, `balances`,
@@ -127,13 +140,9 @@ impl TestWallet {
     /// returned address has balance `0` until the next sync sees it
     /// funded. Returns a new address if the gap window is exhausted.
     pub async fn next_unused_address(&self) -> FrameworkResult<PlatformAddress> {
-        let account_key = PlatformPaymentAccountKey {
-            account: DEFAULT_ACCOUNT_INDEX,
-            key_class: DEFAULT_KEY_CLASS,
-        };
         self.wallet
             .platform()
-            .next_unused_receive_address(account_key)
+            .next_unused_receive_address(default_platform_payment_account_key())
             .await
             .map_err(wallet_err)
     }
@@ -177,7 +186,7 @@ impl TestWallet {
         self.wallet
             .platform()
             .transfer(
-                DEFAULT_ACCOUNT_INDEX,
+                DEFAULT_ACCOUNT_INDEX_PUB,
                 InputSelection::Auto,
                 outputs,
                 default_fee_strategy(),
@@ -269,4 +278,19 @@ impl Drop for SetupGuard {
 /// `PlatformWalletError` → framework error envelope.
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Drift guard: our pinned defaults must match `PlatformPaymentAccountSpec::default()`.
+    /// If `key_wallet` ever changes its canonical defaults, this test fires.
+    #[test]
+    fn default_spec_matches_pinned_constants() {
+        let canonical = PlatformPaymentAccountSpec::default();
+        assert_eq!(canonical.account, DEFAULT_ACCOUNT_INDEX_PUB);
+        assert_eq!(canonical.key_class, DEFAULT_KEY_CLASS_PUB);
+        assert_eq!(canonical, DEFAULT_PLATFORM_PAYMENT_ACCOUNT_SPEC);
+    }
 }
