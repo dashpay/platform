@@ -2,7 +2,7 @@ pub mod fee_strategy;
 #[cfg(feature = "shielded-client")]
 mod orchard_address;
 mod platform_address;
-#[cfg(feature = "serde-conversion")]
+#[cfg(feature = "json-conversion")]
 pub mod serde_helpers;
 mod witness;
 mod witness_verification_operations;
