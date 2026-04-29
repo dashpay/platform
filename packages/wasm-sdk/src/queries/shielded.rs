@@ -105,10 +105,7 @@ impl WasmSdk {
     }
 
     /// Returns all valid anchors for building Orchard spend proofs.
-    #[wasm_bindgen(
-        js_name = "getShieldedAnchors",
-        unchecked_return_type = "Uint8Array[]"
-    )]
+    #[wasm_bindgen(js_name = "getShieldedAnchors", unchecked_return_type = "Uint8Array[]")]
     pub async fn get_shielded_anchors(&self) -> Result<Array, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{NoParamQuery, ShieldedAnchors};
