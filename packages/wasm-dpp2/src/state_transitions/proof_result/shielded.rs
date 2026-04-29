@@ -3,6 +3,7 @@
 //! These types were extracted from `proof_result` to keep shielded-specific
 //! code in its own module.
 
+use super::helpers::js_obj;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
@@ -12,8 +13,6 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
-
-use super::proof_result::js_obj;
 
 fn read_map_property(value: &JsValue, name: &str) -> WasmDppResult<Map> {
     let raw = js_sys::Reflect::get(value, &name.into())
