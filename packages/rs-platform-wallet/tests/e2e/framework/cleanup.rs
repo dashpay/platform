@@ -1,7 +1,8 @@
 //! Cleanup paths: startup [`sweep_orphans`] and per-test
 //! [`teardown_one`]. Both reconstruct the wallet from the registry
-//! seed, sync, and drain back to the bank. Best-effort: errors are
-//! logged and the registry retains the entry for the next run.
+//! seed, sync, and drain every fund source back to the bank by
+//! walking the per-source-type sweep helpers. Best-effort: errors
+//! are logged and the registry retains the entry for the next run.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -106,26 +107,19 @@ async fn sweep_one(
     let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
 
     let total = wallet.platform().total_credits().await;
-    if total <= SWEEP_DUST_THRESHOLD {
-        // Below worth-sweeping; let the caller drop the entry.
+    if total > SWEEP_DUST_THRESHOLD {
+        sweep_platform_addresses(&wallet, &signer, bank.primary_receive_address()).await?;
+    } else {
         tracing::debug!(
             wallet_id = %hex::encode(hash),
             total,
-            "orphan total below sweep threshold; dropping registry entry"
+            "orphan platform total below sweep threshold; skipping"
         );
-        // Best-effort manager unregister so SPV stops tracking the
-        // wallet's addresses. Log failures rather than fail the sweep.
-        if let Err(err) = manager.remove_wallet(hash).await {
-            tracing::warn!(
-                target: "platform_wallet::e2e::cleanup",
-                wallet_id = %hex::encode(hash),
-                error = %err,
-                "manager unregister failed for dust-threshold sweep; wallet remains tracked"
-            );
-        }
-        return Ok(());
     }
-    drain_to_bank(&wallet, &signer, bank.primary_receive_address()).await?;
+    sweep_identities(&wallet).await?;
+    sweep_core_addresses(&wallet).await?;
+    sweep_unused_core_asset_locks(&wallet).await?;
+    sweep_shielded(&wallet).await?;
 
     // Best-effort manager unregister so SPV stops tracking the
     // wallet's addresses on subsequent passes.
@@ -152,13 +146,17 @@ pub async fn teardown_one(
     test_wallet.sync_balances().await?;
     let total = test_wallet.total_credits().await;
     if total > SWEEP_DUST_THRESHOLD {
-        drain_to_bank(
+        sweep_platform_addresses(
             test_wallet.platform_wallet(),
             test_wallet.address_signer(),
             bank.primary_receive_address(),
         )
         .await?;
     }
+    sweep_identities(test_wallet.platform_wallet()).await?;
+    sweep_core_addresses(test_wallet.platform_wallet()).await?;
+    sweep_unused_core_asset_locks(test_wallet.platform_wallet()).await?;
+    sweep_shielded(test_wallet.platform_wallet()).await?;
 
     // Drop the registry entry first so an unregister failure
     // doesn't leak it; the wallet has no balance left to recover.
@@ -194,7 +192,7 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 /// transition. Inputs map = full balances, output = the sum, fee comes
 /// out of the bank's incoming amount via `ReduceOutput(0)`. Sweep gate
 /// is "address balance > 0".
-async fn drain_to_bank<S>(
+async fn sweep_platform_addresses<S>(
     wallet: &Arc<PlatformWallet>,
     signer: &S,
     bank_addr: &PlatformAddress,
@@ -223,7 +221,7 @@ where
         wallet_id = %hex::encode(wallet.wallet_id()),
         total,
         input_count = inputs.len(),
-        "drain_to_bank: ReduceOutput(0) sweep"
+        "sweep_platform_addresses: ReduceOutput(0) sweep"
     );
 
     wallet
@@ -238,5 +236,39 @@ where
         )
         .await
         .map_err(wallet_err)?;
+    Ok(())
+}
+
+/// Drain identity credit balances back to the bank identity. Noop until
+/// the identity-transfer wiring lands.
+// TODO(rs-platform-wallet/e2e #identity-sweep): implement once a
+// Signer<IdentityPublicKey> is wired through `TestWallet` and the
+// CreditTransfer transition is reachable from this harness.
+async fn sweep_identities(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+    Ok(())
+}
+
+/// Drain core (Layer 1) UTXOs to the bank's core address. Noop until
+/// the SPV wallet runtime is back online in this harness.
+// TODO(rs-platform-wallet/e2e #core-sweep): implement once the SPV
+// runtime (Task #15) lets us sign and broadcast core transactions.
+async fn sweep_core_addresses(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+    Ok(())
+}
+
+/// Consume unspent asset-lock outputs and refund their credits to the
+/// bank. Noop until the asset-lock harness is wired up.
+// TODO(rs-platform-wallet/e2e #asset-lock-sweep): walk the wallet's
+// unused asset-lock proofs and either redeem-to-identity or burn back
+// to bank-controlled core funds.
+async fn sweep_unused_core_asset_locks(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+    Ok(())
+}
+
+/// Drain the wallet's shielded note set to the bank's shielded address.
+/// Noop until the shielded-prover harness is wired up.
+// TODO(rs-platform-wallet/e2e #shielded-sweep): build a shield/unshield
+// transition that empties the note set into a bank-controlled note.
+async fn sweep_shielded(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
     Ok(())
 }
