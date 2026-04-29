@@ -2,9 +2,10 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_fixed_bytes};
+use crate::utils::{
+    IntoWasm, try_from_options_with, try_to_array, try_to_bytes, try_to_fixed_bytes,
+};
 use dpp::shielded::SerializedAction;
-use dpp::state_transition::state_transitions::shielded::common_validation::ENCRYPTED_NOTE_SIZE;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -96,15 +97,12 @@ impl SerializedOrchardActionWasm {
             try_from_options_with(opts, "rk", |v| try_to_fixed_bytes::<32>(v.clone(), "rk"))?;
         let cmx: [u8; 32] =
             try_from_options_with(opts, "cmx", |v| try_to_fixed_bytes::<32>(v.clone(), "cmx"))?;
-        // DPP enforces encrypted_note.len() == ENCRYPTED_NOTE_SIZE (216) at
-        // structural validation. Mirror that exact constraint at the wasm
-        // boundary so callers see the rejection here instead of a deeper
-        // `ShieldedEncryptedNoteSizeMismatchError` after deserialization.
-        let encrypted_note: [u8; ENCRYPTED_NOTE_SIZE] =
-            try_from_options_with(opts, "encryptedNote", |v| {
-                try_to_fixed_bytes::<ENCRYPTED_NOTE_SIZE>(v.clone(), "encryptedNote")
-            })?;
-        let encrypted_note: Vec<u8> = encrypted_note.to_vec();
+        // No size check — DPP's structural validation enforces
+        // `encrypted_note.len() == ENCRYPTED_NOTE_SIZE` (216 bytes); wasm-dpp2
+        // is a thin TS convenience wrapper and doesn't duplicate DPP logic.
+        let encrypted_note: Vec<u8> = try_from_options_with(opts, "encryptedNote", |v| {
+            try_to_bytes(v.clone(), "encryptedNote")
+        })?;
         let cv_net: [u8; 32] = try_from_options_with(opts, "cvNet", |v| {
             try_to_fixed_bytes::<32>(v.clone(), "cvNet")
         })?;

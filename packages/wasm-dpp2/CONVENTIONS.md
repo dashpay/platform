@@ -18,6 +18,55 @@ structurally identical shape with `Uint8Array` instead of base64 strings and
 
 Wrappers do not invent shapes. Wrappers do not reshape. Wrappers delegate.
 
+## wasm-dpp2 is a thin TypeScript convenience layer
+
+`wasm-dpp2` is not a validation tier. It does not duplicate, pre-empt, or
+extend `rs-dpp` logic. Its job is to:
+
+- expose `rs-dpp` types to JavaScript through wasm-bindgen,
+- adapt JS-friendly inputs (Options interfaces) into `rs-dpp` types,
+- surface `rs-dpp`'s outputs (toObject / toJSON / getters) with TypeScript
+  types accurate to the actual wire shape.
+
+It is **not** the place to:
+
+- check field lengths, ranges, or counts that `rs-dpp` validates (e.g.
+  `encrypted_note.len() == 216`, `inputs.len() == input_witnesses.len()`,
+  `actions.len() <= max_actions`),
+- enforce business rules,
+- pre-validate state-transition structure.
+
+If `rs-dpp` enforces a constraint at structural validation, `wasm-dpp2` does
+not duplicate it at the constructor boundary — even when the duplicate would
+give an earlier or clearer error. Two reasons:
+
+1. **Single source of truth.** Constraints live in `rs-dpp` so they apply
+   uniformly across all consumers (Rust SDK, drive-abci, wasm-dpp2, …). A
+   second copy in `wasm-dpp2` drifts the moment `rs-dpp` changes its rule
+   and creates two definitions of "valid" with subtle disagreements.
+2. **Layering.** Validation tiers (DPP structural validation, drive-abci
+   state validation, consensus) decide when to reject. The wasm boundary's
+   job is to construct the type, not gate-keep ahead of those tiers.
+
+The narrow exceptions (things that look like validation but aren't):
+
+- **Structural conversions required by the Rust type system** — e.g.,
+  converting `Vec<u8>` to `[u8; N]` for fields that are already
+  fixed-size in `rs-dpp` (`anchor`, `bindingSignature`, etc.). The length
+  check is a side-effect of the type conversion, not a separate validation.
+- **Information-preserving guards** — e.g., `inputs_to_btree_map` rejects
+  duplicate addresses because `BTreeMap` would silently drop the second
+  entry. The check protects against information loss during the conversion,
+  not against an `rs-dpp` constraint.
+- **JS-side ergonomic conversions** — e.g., accepting a hex string or
+  `Uint8Array` for an address, parsing strings to numbers, etc.
+
+If you find yourself adding `if x.len() < N || x.len() > M` to a
+constructor or setter, that's a `rs-dpp` validation function in disguise.
+Move it.
+
+Wrappers do not invent shapes. Wrappers do not reshape. Wrappers delegate.
+
 ## Sub-rules
 
 ### Object vs JSON
