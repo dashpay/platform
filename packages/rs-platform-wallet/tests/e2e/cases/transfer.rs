@@ -27,7 +27,7 @@ const TRANSFER_CREDITS: u64 = 10_000_000;
 /// Per-step deadline for balance observations.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
+#[tokio_shared_rt::test(shared)]
 async fn transfer_between_two_platform_addresses() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
