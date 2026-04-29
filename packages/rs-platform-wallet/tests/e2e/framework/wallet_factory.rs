@@ -11,18 +11,18 @@ use std::time::SystemTime;
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use key_wallet::Network;
 use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::wallet::initialization::{
     PlatformPaymentAccountSpec, WalletAccountCreationOptions,
 };
+use key_wallet::Network;
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{
     PlatformAddressChangeSet, PlatformWallet, PlatformWalletError, PlatformWalletManager,
 };
-use rand::RngCore;
 use rand::rngs::OsRng;
+use rand::RngCore;
 
 use super::harness::E2eContext;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
@@ -175,10 +175,10 @@ impl TestWallet {
         self.wallet.platform().total_credits().await
     }
 
-    /// Transfer credits to one or more outputs, paying fees from
-    /// inputs. Auto-selects inputs from the default account and
-    /// uses [`default_fee_strategy`] (deduct from input #0).
-    /// `outputs` maps each recipient address to its credit amount.
+    /// Transfer credits to one or more outputs. Auto-selects inputs
+    /// from the default account and uses [`default_fee_strategy`]
+    /// (reduce output #0). `outputs` maps each recipient address
+    /// to its credit amount.
     pub async fn transfer(
         &self,
         outputs: BTreeMap<PlatformAddress, Credits>,
@@ -198,9 +198,9 @@ impl TestWallet {
     }
 }
 
-/// Default fee strategy: deduct the entire fee from input #0.
+/// Default fee strategy: reduce output #0 by the fee amount.
 pub(crate) fn default_fee_strategy() -> AddressFundsFeeStrategy {
-    vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]
+    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]
 }
 
 /// Generate a fresh 64-byte seed plus its hex encoding for the
