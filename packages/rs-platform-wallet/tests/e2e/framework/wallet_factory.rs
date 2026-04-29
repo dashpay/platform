@@ -247,33 +247,19 @@ impl TestWallet {
         outputs: BTreeMap<PlatformAddress, Credits>,
         inputs: BTreeMap<PlatformAddress, Credits>,
     ) -> FrameworkResult<(PlatformAddressChangeSet, Vec<u8>)> {
-        use std::collections::BTreeSet;
-
-        use dash_sdk::platform::FetchMany;
-        use dash_sdk::query_types::AddressInfo;
-        use dpp::prelude::AddressNonce;
+        use dash_sdk::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
         use dpp::serialization::PlatformSerializable;
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 
-        // Sibling build for byte capture. Fetch on-chain nonces via
-        // the public `AddressInfo::fetch_many`, bump by one to match
-        // the SDK's `nonce_inc` convention, sign, then serialize.
-        // The transition is NEVER broadcast — the production
-        // `transfer_with_inputs` below does its own nonce fetch +
-        // sign + broadcast.
-        let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
-        let address_infos = AddressInfo::fetch_many(self.wallet.sdk(), address_set)
+        // Sibling build for byte capture. Fetches on-chain nonces and
+        // bumps them via the public SDK helpers, then signs + serializes.
+        // The transition is NEVER broadcast — `transfer_with_inputs`
+        // below does its own nonce fetch + sign + broadcast.
+        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &inputs)
             .await
             .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
-        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
-            BTreeMap::new();
-        for (addr, amount) in &inputs {
-            let info = address_infos.get(addr).cloned().flatten().ok_or_else(|| {
-                FrameworkError::Wallet(format!("address {addr:?} missing from nonce response"))
-            })?;
-            inputs_with_nonce.insert(*addr, (info.nonce + 1, *amount));
-        }
+        let inputs_with_nonce = nonce_inc(inputs_with_nonce);
 
         let st = AddressFundsTransferTransition::try_from_inputs_with_signer(
             inputs_with_nonce,
