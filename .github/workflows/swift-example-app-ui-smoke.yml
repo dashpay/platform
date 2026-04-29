@@ -2,6 +2,20 @@ name: Swift Example App UI Smoke
 
 'on':
   workflow_dispatch:
+  schedule:
+    # 23:00 UTC daily. Aligns with the main `Tests` workflow's nightly
+    # cron (also 23:00 UTC) but runs on a different runner pool
+    # (self-hosted macOS), so they don't compete for compute. The Swift
+    # discovery test hits testnet DAPI; if that becomes a contention
+    # signal, shift to 02:00 UTC.
+    - cron: "0 23 * * *"
+
+concurrency:
+  # Prevents an in-flight manual dispatch from being clobbered by the
+  # cron firing (or vice versa) on the single self-hosted Mac. Cancels
+  # the older run in favor of the newer one.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
