@@ -92,8 +92,8 @@ public final class PersistentTxo {
     /// outgoing recipient). The relationship is the convenient
     /// pointer for navigating to derivation metadata, balance, and
     /// pool tag without a separate fetch. Inverse of
-    /// `PersistentCoreAddress.txos`; `.nullify` on that side so
-    /// pool rebuilds don't cascade-delete TXOs.
+    /// `PersistentCoreAddress.txos`; `.cascade` on that side so
+    /// account / wallet teardown drops TXOs cleanly.
     public var coreAddress: PersistentCoreAddress?
 
     public init(

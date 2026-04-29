@@ -31,6 +31,12 @@ public class PlatformWalletPersistenceHandler {
         qos: .userInitiated
     )
 
+    /// True while inside a begin/end changeset bracket. When set,
+    /// per-kind helpers skip their own `backgroundContext.save()` and
+    /// let `endChangeset` commit (or rollback) the whole round
+    /// atomically.
+    private var inChangeset = false
+
     public init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         self.backgroundContext = ModelContext(modelContainer)
@@ -611,7 +617,8 @@ public class PlatformWalletPersistenceHandler {
     /// instrumented timing, etc.) has an obvious seam.
     func beginChangeset(walletId: Data) {
         onQueue {
-            _ = walletId  // reserved for future wallet-scope batching
+            _ = walletId
+            self.inChangeset = true
         }
     }
 
@@ -628,6 +635,7 @@ public class PlatformWalletPersistenceHandler {
     func endChangeset(walletId: Data, success: Bool) {
         onQueue {
             _ = walletId
+            defer { self.inChangeset = false }
             if success {
                 do {
                     try backgroundContext.save()
@@ -1664,7 +1672,7 @@ public class PlatformWalletPersistenceHandler {
             }
         }
 
-        try? backgroundContext.save()
+        if !self.inChangeset { try? backgroundContext.save() }
         }  // onQueue
     }
 
@@ -1732,7 +1740,7 @@ public class PlatformWalletPersistenceHandler {
             row.lastUpdated = Date()
         }
 
-        try? backgroundContext.save()
+        if !self.inChangeset { try? backgroundContext.save() }
     }
 
     /// Split a DIP-0018 bech32m platform address back into
@@ -1823,7 +1831,7 @@ public class PlatformWalletPersistenceHandler {
             wallet.network = appNetwork(for: networkTag)
             wallet.birthHeight = birthHeight
             wallet.lastUpdated = Date()
-            try? backgroundContext.save()
+            if !self.inChangeset { try? backgroundContext.save() }
         }
     }
 
@@ -1934,7 +1942,7 @@ public class PlatformWalletPersistenceHandler {
         account.friendIdentityId = friendIdentityId
         account.accountExtendedPubKeyBytes = xpubBytes
         account.lastUpdated = Date()
-        try? backgroundContext.save()
+        if !self.inChangeset { try? backgroundContext.save() }
         }  // onQueue
     }
 

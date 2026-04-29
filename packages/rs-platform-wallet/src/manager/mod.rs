@@ -121,13 +121,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
     }
 
-    /// Stop the wallet-event adapter task and wait for it to exit.
+    /// Stop all background tasks and wait for them to exit.
     ///
-    /// Idempotent. After this returns, no further `WalletEvent`s will
-    /// be projected to the persister. Call before dropping the manager
-    /// when a clean shutdown is required (e.g. on app termination); a
-    /// dirty drop simply leaks the task until the runtime exits.
+    /// Stops the periodic coordinators (`PlatformAddressSyncManager`,
+    /// `IdentitySyncManager`) and the wallet-event adapter task.
+    /// Idempotent. Call before dropping the manager when a clean
+    /// shutdown is required (e.g. on app termination); a dirty drop
+    /// simply leaks the tasks until the runtime exits.
     pub async fn shutdown(&self) {
+        self.platform_address_sync_manager.stop();
+        self.identity_sync_manager.stop();
+
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {
             if let Err(e) = handle.await {

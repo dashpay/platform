@@ -908,9 +908,7 @@ struct DocumentTypeStorageDetailView: View {
             }
             Section("Schema") {
                 // The schema and properties JSON blobs are stored as
-                // raw bytes; surface size first so an absent / tiny /
-                // huge schema is visible at a glance, then dump the
-                // pretty-printed payload below if it decodes.
+                // raw bytes; surface sizes and required fields.
                 FieldRow(label: "Schema Size", value: "\(record.schemaJSON.count) bytes")
                 FieldRow(
                     label: "Properties Size",

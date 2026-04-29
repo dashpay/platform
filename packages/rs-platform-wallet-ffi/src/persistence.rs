@@ -763,6 +763,14 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
+        if !round_success {
+            return Err(
+                "one or more persistence callbacks failed; changeset was rolled back"
+                    .to_string()
+                    .into(),
+            );
+        }
+
         // Merge into pending changesets.
         let mut pending = self.pending.write();
         pending

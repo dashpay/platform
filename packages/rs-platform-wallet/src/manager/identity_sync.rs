@@ -160,6 +160,10 @@ where
     persister: Arc<P>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
+    /// Monotonically increasing generation counter. Incremented each
+    /// time `start()` installs a new cancel token so the exiting
+    /// thread can tell whether its token is still current.
+    background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Unix seconds of the last completed pass across all identities.
@@ -193,6 +197,7 @@ where
             sdk,
             persister,
             background_cancel: StdMutex::new(None),
+            background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             last_sync_unix: AtomicU64::new(0),
@@ -379,6 +384,7 @@ where
         }
         let cancel = CancellationToken::new();
         *guard = Some(cancel.clone());
+        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
         drop(guard);
 
         let handle = tokio::runtime::Handle::current();
@@ -401,8 +407,12 @@ where
                         }
                     }
 
+                    // Only clear the slot if no newer start() has
+                    // installed a replacement token since we launched.
                     if let Ok(mut guard) = this.background_cancel.lock() {
-                        *guard = None;
+                        if this.background_generation.load(Ordering::Acquire) == my_gen {
+                            *guard = None;
+                        }
                     }
                 });
             })
@@ -573,33 +583,21 @@ where
         // intersected with what Platform reports.
         let mut state = self.state.write().await;
         if let Some(existing_row) = state.get(&identity_id).cloned() {
-            // Map each currently-watched token to its new info: keep
-            // the old contract / nonce placeholders, swap in the
-            // fresh balance if we got one, drop the row entirely if
-            // Platform removed it.
-            let prior_by_id: BTreeMap<Identifier, IdentityTokenSyncInfo> = existing_row
-                .tokens
-                .iter()
-                .map(|info| (info.token_id, *info))
-                .collect();
-
-            let mut new_tokens: Vec<IdentityTokenSyncInfo> = Vec::with_capacity(token_ids.len());
-            for token_id in token_ids {
-                match fresh_balances.get(token_id) {
+            // Rebuild from the *live* row (which may have been mutated
+            // by concurrent `update_watched_tokens` / `unregister_identity`
+            // while our network calls were in flight) rather than the
+            // stale `token_ids` snapshot. This way mid-sync registry
+            // changes are preserved: newly added tokens keep their
+            // initial state, and tokens removed during the pass stay
+            // removed.
+            let mut new_tokens: Vec<IdentityTokenSyncInfo> =
+                Vec::with_capacity(existing_row.tokens.len());
+            for prior in &existing_row.tokens {
+                match fresh_balances.get(&prior.token_id) {
                     Some(Some(amount)) => {
-                        let prior =
-                            prior_by_id
-                                .get(token_id)
-                                .copied()
-                                .unwrap_or(IdentityTokenSyncInfo {
-                                    token_id: *token_id,
-                                    contract_id: Identifier::default(),
-                                    balance: 0,
-                                    identity_contract_nonce: 0,
-                                });
                         new_tokens.push(IdentityTokenSyncInfo {
                             balance: *amount,
-                            ..prior
+                            ..*prior
                         });
                     }
                     Some(None) => {
@@ -607,12 +605,9 @@ where
                         // this identity — drop the row.
                     }
                     None => {
-                        // Batch failed for this token — keep the
-                        // prior row to avoid clobbering on transient
-                        // errors.
-                        if let Some(prior) = prior_by_id.get(token_id).copied() {
-                            new_tokens.push(prior);
-                        }
+                        // Batch didn't cover this token (added mid-
+                        // sync, or batch failed) — keep prior state.
+                        new_tokens.push(*prior);
                     }
                 }
             }
