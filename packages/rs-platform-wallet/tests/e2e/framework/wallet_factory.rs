@@ -6,10 +6,14 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::v0::IdentityV0;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
+use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::wallet::initialization::{
@@ -26,7 +30,10 @@ use rand::RngCore;
 
 use super::harness::E2eContext;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
-use super::signer::SeedBackedPlatformAddressSigner;
+use super::signer::{
+    derive_identity_key, SeedBackedIdentitySigner, SeedBackedPlatformAddressSigner,
+};
+use super::wait::wait_for_identity_balance;
 use super::wait_hub::WaitEventHub;
 use super::{FrameworkError, FrameworkResult};
 
@@ -196,11 +203,162 @@ impl TestWallet {
             .await
             .map_err(wallet_err)
     }
+
+    /// Network the wallet operates against. Mirrors `wallet.sdk().network`.
+    fn network(&self) -> Network {
+        self.wallet.sdk().network
+    }
+
+    /// Register a new identity, funded entirely from this wallet's
+    /// platform-address balances.
+    ///
+    /// The helper:
+    /// 1. Picks a fresh receive address and verifies it has at
+    ///    least `funding` credits (the caller is responsible for
+    ///    funding that address — typically via
+    ///    `bank.fund_address` + [`super::wait::wait_for_balance`]
+    ///    before this call).
+    /// 2. Derives MASTER + HIGH ECDSA auth keys at DIP-9 slot
+    ///    `(identity_index, 0)` and `(identity_index, 1)`.
+    /// 3. Builds a placeholder [`Identity`] populated with those
+    ///    two keys.
+    /// 4. Calls
+    ///    [`IdentityWallet::register_from_addresses`](platform_wallet::wallet::identity::IdentityWallet::register_from_addresses)
+    ///    with the funding map `{addr_1 → funding}`.
+    /// 5. Waits up to [`DEFAULT_IDENTITY_VISIBILITY_TIMEOUT`] for
+    ///    the on-chain balance to reach the post-registration
+    ///    threshold.
+    pub async fn register_identity_from_addresses(
+        &self,
+        funding_address: PlatformAddress,
+        funding: Credits,
+        identity_index: u32,
+    ) -> FrameworkResult<RegisteredIdentity> {
+        let network = self.network();
+        let identity_signer = Arc::new(SeedBackedIdentitySigner::new(
+            &self.seed_bytes,
+            network,
+            identity_index,
+        )?);
+
+        // Slot 0 → MASTER, slot 1 → HIGH. Match the DET / DPNS
+        // register_name pattern: MASTER is required for identity
+        // mutation, HIGH covers signing for most state transitions.
+        let master_key = derive_identity_key(
+            &self.seed_bytes,
+            network,
+            identity_index,
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )?;
+        let high_key = derive_identity_key(
+            &self.seed_bytes,
+            network,
+            identity_index,
+            1,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+        )?;
+
+        // Build the placeholder identity. `id` is recomputed from
+        // the input-address map by the SDK at submit time; we set
+        // it to `Identifier::default()` per the wallet API contract.
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        let mut public_keys: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
+        public_keys.insert(master_key.id(), master_key.clone());
+        public_keys.insert(high_key.id(), high_key.clone());
+        let placeholder = Identity::V0(IdentityV0 {
+            id: Identifier::default(),
+            public_keys,
+            balance: 0,
+            revision: 0,
+        });
+
+        let inputs: BTreeMap<PlatformAddress, Credits> =
+            std::iter::once((funding_address, funding)).collect();
+
+        let registered = self
+            .wallet
+            .identity()
+            .register_from_addresses(
+                &placeholder,
+                inputs,
+                None,
+                identity_index,
+                identity_signer.as_ref(),
+                &self.signer,
+                None,
+            )
+            .await
+            .map_err(wallet_err)?;
+
+        // The balance check uses a post-fee threshold of `funding /
+        // 2` — registration fees on testnet are well below half the
+        // funding amount, so this gives us a deterministic "the
+        // identity exists and has been credited" assertion without
+        // hard-coding a specific fee number that a protocol bump
+        // could invalidate.
+        wait_for_identity_balance(
+            self.wallet.sdk(),
+            registered.id(),
+            funding / 2,
+            DEFAULT_IDENTITY_VISIBILITY_TIMEOUT,
+        )
+        .await?;
+
+        Ok(RegisteredIdentity {
+            id: registered.id(),
+            master_key,
+            high_key,
+            signer: identity_signer,
+            identity_index,
+            funding,
+        })
+    }
 }
 
 /// Default fee strategy: reduce output #0 by the fee amount.
 pub(crate) fn default_fee_strategy() -> AddressFundsFeeStrategy {
     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]
+}
+
+/// Default timeout for [`TestWallet::register_identity_from_addresses`]
+/// to observe the new identity on chain.
+const DEFAULT_IDENTITY_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// A registered identity returned by
+/// [`TestWallet::register_identity_from_addresses`].
+///
+/// Bundles the on-chain identifier with the two placeholder keys
+/// (MASTER + HIGH) and the seed-backed identity signer so callers
+/// can drive identity-side state transitions (top-up, transfer,
+/// DPNS register, ...) without re-deriving anything.
+pub struct RegisteredIdentity {
+    /// On-chain identity identifier.
+    pub id: Identifier,
+    /// MASTER auth key (DPP `KeyID = 0`).
+    pub master_key: IdentityPublicKey,
+    /// HIGH auth key (DPP `KeyID = 1`).
+    pub high_key: IdentityPublicKey,
+    /// `Arc`-shared signer pre-derived for this identity's DIP-9 slot.
+    /// `Arc` lets callers hand the same signer to multiple state-transition
+    /// builders without re-creating the key cache.
+    pub signer: Arc<SeedBackedIdentitySigner>,
+    /// DIP-9 identity index used during registration.
+    pub identity_index: u32,
+    /// Pre-fee credits that funded the identity at `register_from_addresses`.
+    pub funding: Credits,
+}
+
+impl std::fmt::Debug for RegisteredIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegisteredIdentity")
+            .field("id", &self.id)
+            .field("identity_index", &self.identity_index)
+            .field("funding", &self.funding)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Generate a fresh 64-byte seed plus its hex encoding for the
