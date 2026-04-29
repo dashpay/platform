@@ -204,6 +204,96 @@ impl TestWallet {
             .map_err(wallet_err)
     }
 
+    /// Like [`Self::transfer`] but with an explicit input list
+    /// (`InputSelection::Explicit`). Used by tests that need to
+    /// drive the SDK's address-funds path without the wallet's
+    /// `auto_select_inputs` step — typically the negative variants
+    /// of PA-002 that probe insufficient-funds behaviour on a
+    /// caller-chosen input set.
+    pub async fn transfer_with_inputs(
+        &self,
+        outputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+    ) -> FrameworkResult<PlatformAddressChangeSet> {
+        self.wallet
+            .platform()
+            .transfer(
+                DEFAULT_ACCOUNT_INDEX,
+                InputSelection::Explicit(inputs),
+                outputs,
+                default_fee_strategy(),
+                Some(PlatformVersion::latest()),
+                &self.signer,
+            )
+            .await
+            .map_err(wallet_err)
+    }
+
+    /// Like [`Self::transfer_with_inputs`] but additionally returns
+    /// the canonical bytes of an `AddressFundsTransferTransition`
+    /// built with the same inputs / outputs / fee strategy.
+    ///
+    /// Used by replay-safety tests (PA-006): re-submit the captured
+    /// bytes via `sdk.broadcast_state_transition` and assert the
+    /// platform rejects the duplicate. The captured bytes are taken
+    /// from a sibling build (separate nonce fetch, separate signing
+    /// pass) — they are NOT byte-equal to the broadcast transition,
+    /// because the production path bumps nonces independently. For
+    /// PA-006 that's the right shape: the test confirms the second
+    /// submission is rejected regardless of the nonce relationship
+    /// between the two builds.
+    pub async fn transfer_capturing_st_bytes(
+        &self,
+        outputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+    ) -> FrameworkResult<(PlatformAddressChangeSet, Vec<u8>)> {
+        use std::collections::BTreeSet;
+
+        use dash_sdk::platform::FetchMany;
+        use dash_sdk::query_types::AddressInfo;
+        use dpp::prelude::AddressNonce;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
+        use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+
+        // Sibling build for byte capture. Fetch on-chain nonces via
+        // the public `AddressInfo::fetch_many`, bump by one to match
+        // the SDK's `nonce_inc` convention, sign, then serialize.
+        // The transition is NEVER broadcast — the production
+        // `transfer_with_inputs` below does its own nonce fetch +
+        // sign + broadcast.
+        let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
+        let address_infos = AddressInfo::fetch_many(self.wallet.sdk(), address_set)
+            .await
+            .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
+        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
+            BTreeMap::new();
+        for (addr, amount) in &inputs {
+            let info = address_infos.get(addr).cloned().flatten().ok_or_else(|| {
+                FrameworkError::Wallet(format!("address {addr:?} missing from nonce response"))
+            })?;
+            inputs_with_nonce.insert(*addr, (info.nonce + 1, *amount));
+        }
+
+        let st = AddressFundsTransferTransition::try_from_inputs_with_signer(
+            inputs_with_nonce,
+            outputs.clone(),
+            default_fee_strategy(),
+            &self.signer,
+            Default::default(),
+            PlatformVersion::latest(),
+        )
+        .await
+        .map_err(|err| FrameworkError::Wallet(format!("st build: {err}")))?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&st)
+            .map_err(|err| FrameworkError::Wallet(format!("st serialize: {err}")))?;
+
+        // Production transfer with the same explicit inputs. Wallet
+        // caches + chain state advance per the canonical path.
+        let cs = self.transfer_with_inputs(outputs, inputs).await?;
+        Ok((cs, bytes))
+    }
+
     /// Network the wallet operates against. Mirrors `wallet.sdk().network`.
     fn network(&self) -> Network {
         self.wallet.sdk().network
