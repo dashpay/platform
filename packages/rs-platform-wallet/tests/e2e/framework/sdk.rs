@@ -1,27 +1,8 @@
-//! `dash_sdk::Sdk` construction for the e2e harness.
-//!
-//! [`build_sdk`] returns an `Arc<Sdk>` configured for the network
-//! selected via [`super::config::Config`] (testnet by default;
-//! `devnet` and `local` are accepted aliases for `Devnet` /
-//! `Regtest`). DAPI addresses come from `Config::dapi_addresses`
-//! when non-empty, otherwise the network's hard-coded testnet
-//! defaults are used.
-//!
-//! # Context provider
-//!
-//! The harness wires
-//! [`rs_sdk_trusted_context_provider::TrustedHttpContextProvider`]
-//! as the SDK's [`ContextProvider`] directly at construction time.
-//! That provider answers quorum public-key lookups over a trusted
-//! HTTP endpoint (testnet / mainnet defaults are baked into the
-//! crate); the harness does NOT spin up an SPV client to seed
-//! quorum state. The SPV-based provider plumbing lives in
-//! `framework/spv.rs` and `framework/context_provider.rs` for
-//! future re-enablement (Task #15) but is currently disabled —
-//! see `harness.rs` for the commented-out wiring.
-//!
-//! Operators can override the provider URL via
-//! `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` ([`Config::trusted_context_url`]).
+//! `dash_sdk::Sdk` construction. [`build_sdk`] wires
+//! [`TrustedHttpContextProvider`] (the SPV-backed alternative is
+//! deferred — Task #15) and resolves DAPI addresses from
+//! [`Config::dapi_addresses`] or the testnet defaults.
+//! Provider URL override: `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL`.
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -34,27 +15,20 @@ use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
 
-/// Default DAPI addresses used when `Config::dapi_addresses` is
-/// empty. Mirrors the constant from `tests/spv_sync.rs` so both
-/// integration test binaries point at the same well-known testnet
-/// masternodes that are known to support compact block filters.
+/// Default DAPI addresses for testnet — mirrors `tests/spv_sync.rs`
+/// so both binaries hit the same masternodes that support compact
+/// block filters.
 pub const TESTNET_DAPI_ADDRESSES: &[&str] = &[
     "https://68.67.122.1:1443",
     "https://68.67.122.2:1443",
     "https://68.67.122.3:1443",
 ];
 
-/// Cache size for [`TrustedHttpContextProvider`]'s LRU quorum cache.
-/// 256 entries comfortably covers the working set for a single
-/// e2e test run; the provider only allocates an entry on a cache
-/// miss and the bound is `NonZeroUsize` for the constructor.
+/// LRU quorum-cache size for [`TrustedHttpContextProvider`].
 const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
 
-/// Build a fresh `Sdk` configured from `config`.
-///
-/// Installs [`TrustedHttpContextProvider`] as the SDK's
-/// [`ContextProvider`] using either the network-builtin endpoint
-/// or the override at [`Config::trusted_context_url`] when set.
+/// Build a fresh `Sdk` with [`TrustedHttpContextProvider`] wired
+/// (network-builtin URL, or [`Config::trusted_context_url`] override).
 pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
     let network = parse_network(&config.network)?;
     let address_list = build_address_list(config, network)?;
@@ -74,8 +48,8 @@ pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
     Ok(Arc::new(sdk))
 }
 
-/// Build the trusted HTTP context provider for `network`, honoring
-/// the optional `trusted_context_url` override.
+/// Build the trusted HTTP context provider, honoring the optional
+/// `trusted_context_url` override.
 fn build_trusted_context_provider(
     network: Network,
     config: &Config,
@@ -110,11 +84,8 @@ fn build_trusted_context_provider(
     })
 }
 
-/// Translate the string network selector from [`Config`] into a
-/// `dashcore::Network` value. Accepts `testnet` (default in
-/// `Config`), `mainnet`, `devnet`, `regtest`, and the `local`
-/// alias (mapped to `Regtest` to match the convention used
-/// elsewhere in the workspace).
+/// Network selector → `dashcore::Network`. Accepts
+/// testnet/mainnet/devnet/regtest, plus `local` as a Regtest alias.
 fn parse_network(name: &str) -> FrameworkResult<Network> {
     match name.trim().to_ascii_lowercase().as_str() {
         "" | "testnet" => Ok(Network::Testnet),
@@ -133,13 +104,10 @@ fn parse_network(name: &str) -> FrameworkResult<Network> {
     }
 }
 
-/// Resolve the DAPI [`AddressList`] used by the SDK.
-///
-/// Honours [`Config::dapi_addresses`] when populated; otherwise falls
-/// back to [`TESTNET_DAPI_ADDRESSES`] for testnet runs. For
-/// non-testnet networks without explicit addresses we surface a
-/// configuration error rather than guessing — devnet/local require
-/// operator-provided endpoints.
+/// Resolve the DAPI [`AddressList`]. Honours
+/// [`Config::dapi_addresses`]; otherwise testnet falls back to
+/// [`TESTNET_DAPI_ADDRESSES`]. Devnet/local without explicit
+/// addresses surfaces an error rather than guessing.
 fn build_address_list(config: &Config, network: Network) -> FrameworkResult<AddressList> {
     if !config.dapi_addresses.is_empty() {
         return parse_addresses(config.dapi_addresses.iter().map(String::as_str));

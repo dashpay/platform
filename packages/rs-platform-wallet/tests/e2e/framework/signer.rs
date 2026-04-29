@@ -1,21 +1,10 @@
-//! Seed-backed `Signer<PlatformAddress>` adapter.
-//!
-//! At construction time the signer eagerly derives every key in the
-//! `account=0, key_class=0` (clear-funds) gap window from the
-//! provided seed bytes via the DIP-17 path
-//! `m/9'/coin_type'/17'/account'/key_class'/index`, computes each
-//! address (RIPEMD160(SHA256(compressed pubkey))), and stores the
-//! 32-byte ECDSA secret keyed by 20-byte address hash. Signing
-//! requests then become a synchronous map lookup — no wallet round
-//! trip, no async derivation in the hot path, and `can_sign_with`
-//! reports honestly (it's a real cache check, not a permissive
-//! `true`).
-//!
-//! Keeping the keying material entirely on the test-framework side
-//! also keeps the upstream `rs-platform-wallet` production surface
-//! free of any test-only convenience accessors — the wallet doesn't
-//! expose seed bytes or per-address derivation info, and the
-//! framework doesn't need it to sign.
+//! Seed-backed `Signer<PlatformAddress>` that pre-derives the
+//! `account=0, key_class=0` clear-funds gap window via DIP-17
+//! (`m/9'/coin_type'/17'/account'/key_class'/index`) and serves
+//! signing requests via a `HashMap<address_hash, secret>` lookup.
+//! `can_sign_with` is a real cache check, not a permissive `true`.
+//! Keeps keying material on the test side so the production wallet
+//! API stays free of test-only seed accessors.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -35,49 +24,30 @@ use parking_lot::Mutex;
 use super::{FrameworkError, FrameworkResult};
 
 /// DIP-17 default account / key-class for clear-funds platform
-/// payments. Mirrors `WalletAccountCreationOptions::Default` which
-/// the e2e bank and test wallets both use.
+/// payments. Matches `WalletAccountCreationOptions::Default`.
 const DEFAULT_ACCOUNT_INDEX: u32 = 0;
 const DEFAULT_KEY_CLASS: u32 = 0;
 
-/// Default gap window pre-derived at construction. 20 keys is the
-/// `key-wallet` `DIP17_GAP_LIMIT` and matches the e2e harness's
-/// per-account address pool default. The current test scope uses
-/// at most 2 fresh receive addresses per wallet — 20 is comfortably
-/// above the working set.
+/// Default gap window pre-derived at construction
+/// (`key-wallet`'s `DIP17_GAP_LIMIT`).
 pub const DEFAULT_GAP_LIMIT: u32 = 20;
 
-/// Pre-derived address keymap. Values are 32-byte secp256k1 secret
-/// keys keyed by the 20-byte P2PKH address hash. The map is built
-/// once in [`SeedBackedPlatformAddressSigner::new`]; signing
-/// requests then become a synchronous `HashMap::get` away from a
-/// real ECDSA signature.
+/// 20-byte P2PKH address hash → 32-byte secp256k1 secret.
 type AddressKeyMap = HashMap<[u8; 20], [u8; 32]>;
 
-/// Signer that resolves `Signer<PlatformAddress>::sign` against a
-/// seed-derived key cache.
-///
-/// Construction is fallible (the seed must produce a valid root
-/// extended private key + DIP-17 derivation path); after that the
-/// signer is fully synchronous on the hot path.
+/// Resolves `Signer<PlatformAddress>::sign` against a seed-derived
+/// key cache. Construction is fallible; the hot path is sync.
 #[derive(Clone)]
 pub struct SeedBackedPlatformAddressSigner {
-    /// `Arc` so the signer can be cloned cheaply (e.g. one bank
-    /// signer + N test-wallet signers all share the same backing
-    /// map type without re-keying it). The map itself is read-only
-    /// after construction; the `Mutex` is just here so we can
-    /// extend it later if a future test exceeds the gap window.
+    /// `Arc<Mutex<_>>` for cheap cloning across signers; the
+    /// `Mutex` keeps the map extensible if a test exceeds the
+    /// gap window.
     cache: Arc<Mutex<AddressKeyMap>>,
 }
 
 impl SeedBackedPlatformAddressSigner {
-    /// Build a new signer by pre-deriving every clear-funds address
-    /// in the gap window for `seed_bytes` on `network`.
-    ///
-    /// `gap_limit` controls how many leaf indices `0..gap_limit`
-    /// are pre-derived. [`DEFAULT_GAP_LIMIT`] (20) is plenty for
-    /// the current test scope; bump it via [`Self::new_with_gap`]
-    /// if a future test needs a wider window.
+    /// Pre-derive the [`DEFAULT_GAP_LIMIT`] window for `seed_bytes`
+    /// on `network`. Use [`Self::new_with_gap`] for a custom window.
     pub fn new(seed_bytes: &[u8; 64], network: Network) -> FrameworkResult<Self> {
         Self::new_with_gap(seed_bytes, network, DEFAULT_GAP_LIMIT)
     }
@@ -114,9 +84,8 @@ impl SeedBackedPlatformAddressSigner {
                     "SeedBackedPlatformAddressSigner: invalid leaf index {index}: {err}"
                 ))
             })?;
-            // `DerivationPath::extend` returns a fresh path with
-            // the leaf appended; the account path is reused
-            // across iterations (it has no mutating accessor).
+            // `extend` returns a fresh path; account_path is reused
+            // across iterations.
             let leaf_path = account_path.extend([leaf]);
             let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
                 FrameworkError::Wallet(format!(
@@ -125,10 +94,9 @@ impl SeedBackedPlatformAddressSigner {
             })?;
             let secret: SecretKey = xpriv.private_key;
             let pubkey: PublicKey = PublicKey::from_secret_key(&secp, &secret);
-            // 33-byte compressed public key → RIPEMD160(SHA256(.))
-            // → 20-byte P2PKH address hash. Matches dashcore's
-            // `PrivateKey::public_key().pubkey_hash()` shape used
-            // by `simple-signer` and the SDK's address-funds path.
+            // Compressed pubkey → RIPEMD160(SHA256(·)) → 20-byte
+            // P2PKH address hash; matches dashcore's
+            // `PrivateKey::public_key().pubkey_hash()`.
             let pkh = ripemd160_sha256(&pubkey.serialize());
             cache.insert(pkh, secret.secret_bytes());
         }
@@ -137,9 +105,7 @@ impl SeedBackedPlatformAddressSigner {
         })
     }
 
-    /// Number of pre-derived keys currently in the cache. Useful
-    /// for diagnostic logs and for tests that want to assert on
-    /// the gap window without poking at the internals.
+    /// Number of pre-derived keys in the cache.
     pub fn cached_key_count(&self) -> usize {
         self.cache.lock().len()
     }
@@ -183,13 +149,10 @@ impl Signer<PlatformAddress> for SeedBackedPlatformAddressSigner {
     }
 }
 
-/// Resolve a [`PlatformAddress`] to its pre-derived 32-byte secret
-/// key, or surface a [`ProtocolError`] naming the missing address.
-///
-/// `ProtocolError` is large (`clippy::result_large_err`) but the
-/// crate as a whole already allows it (`#![allow(clippy::result_large_err)]`
-/// in `src/lib.rs`); the test binary doesn't share that root attr,
-/// so we silence the lint locally rather than box every call site.
+/// Resolve a [`PlatformAddress`] to its pre-derived secret, or
+/// surface a [`ProtocolError`] naming the missing address. Local
+/// `result_large_err` allow because the test binary doesn't inherit
+/// the crate-root `#![allow(...)]`.
 #[allow(clippy::result_large_err)]
 fn lookup_secret(
     cache: &Mutex<AddressKeyMap>,

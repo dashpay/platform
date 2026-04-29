@@ -1,29 +1,13 @@
-//! Persistent test-wallet registry.
+//! Persistent JSON-backed test-wallet registry at
+//! `<workdir>/test_wallets.json`. Every `setup` inserts the seed
+//! BEFORE returning the wallet so a panic between `setup` and
+//! `teardown` leaves a recoverable trail for the next-run
+//! [`super::cleanup::sweep_orphans`].
 //!
-//! JSON-backed file under `<workdir>/test_wallets.json` that records
-//! every test wallet `setup` produces, **before** the wallet is
-//! returned to the test body. If the test panics (or the process is
-//! killed) between `setup` and `teardown`, the registry retains the
-//! seed and the next process startup runs [`super::cleanup::sweep_orphans`]
-//! to recover the funds. On the happy path,
-//! [`super::cleanup::teardown_one`] removes the entry.
-//!
-//! Persistence is best-effort atomic: each mutation writes to a
-//! sibling `*.tmp` via [`tempfile::NamedTempFile`] and persists it
-//! over the live file. On POSIX this is `rename(2)` (atomic
-//! within a single filesystem); on Windows `tempfile::persist`
-//! uses `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING` so updates
-//! still overwrite cleanly. The contents are NOT `fsync`'d — a
-//! crash between the rename and the OS flushing the page cache
-//! could lose the most recent update; the next-run sweep
-//! tolerates that by treating a missing-but-previously-known
-//! wallet as already-cleaned-up. A corrupted JSON file is
-//! treated as "no orphans" — the framework logs a warning and
-//! starts fresh rather than failing init.
-//!
-//! Wave 3a delivers the full registry implementation. Higher waves
-//! drive the file from `E2eContext::init` (sweep) and
-//! `SetupGuard::{setup, teardown}` (insert / remove).
+//! Persistence: write-temp + rename via [`tempfile::NamedTempFile`]
+//! (atomic on POSIX, `MOVEFILE_REPLACE_EXISTING` on Windows). NOT
+//! fsync'd — the next-run sweep tolerates lost updates. A corrupt
+//! JSON file is logged and treated as "no orphans".
 
 use std::collections::HashMap;
 use std::fs;
@@ -36,18 +20,14 @@ use serde::{Deserialize, Serialize};
 
 use super::{FrameworkError, FrameworkResult};
 
-/// Stable wallet identifier — the `WalletId` derived from the seed.
-/// Mirrors `platform_wallet::WalletId` (`[u8; 32]`) so the registry
-/// can be reasoned about without depending on the in-memory wallet
-/// type. Stored hex-encoded in JSON.
+/// Stable wallet identifier (mirrors `platform_wallet::WalletId`).
+/// Stored hex-encoded in JSON.
 pub type WalletSeedHash = [u8; 32];
 
-/// Lifecycle status of a registry entry.
-///
-/// `Active` is the steady state. `Sweeping` is set transiently during
-/// the cleanup sweep so a second process can tell the wallet is
-/// already being handled. `Failed` indicates the previous sweep
-/// errored (timeout, network glitch); the next startup retries.
+/// Lifecycle status of a registry entry. `Active` is steady state;
+/// `Sweeping` is set transiently so a second process knows the
+/// wallet is already being handled; `Failed` flags a sweep error
+/// for next-startup retry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum EntryStatus {
     #[default]
@@ -56,49 +36,32 @@ pub enum EntryStatus {
     Failed,
 }
 
-/// One row in the registry — enough information to reconstruct the
-/// wallet from scratch (seed bytes) and explain the entry's history.
+/// One row in the registry. Holds enough to reconstruct the wallet
+/// via `manager.create_wallet_from_seed_bytes`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistryEntry {
-    /// Hex-encoded 64-byte seed. The wallet itself is not persisted —
-    /// it's reconstructible via
-    /// `manager.create_wallet_from_seed_bytes(seed_bytes, ...)`.
+    /// Hex-encoded 64-byte seed.
     pub seed_hex: String,
-    /// When the entry was inserted. `SystemTime` serialises as a
-    /// non-portable struct via serde's default impl — fine for a
-    /// debug breadcrumb.
+    /// Insertion time — debug breadcrumb only.
     pub created_at: SystemTime,
-    /// Lifecycle status. See [`EntryStatus`].
     pub status: EntryStatus,
-    /// Free-form note set by the inserter (typically the test name).
+    /// Free-form note (typically the test name).
     pub note: Option<String>,
 }
 
-/// JSON-backed test-wallet registry guarded by a process-local mutex
-/// so concurrent in-process inserts/removes serialise safely. The
-/// file itself is rewritten on every change via
-/// [`tempfile::NamedTempFile::persist`] (write-temp + rename) so
-/// cross-process visibility is consistent at file granularity on
-/// POSIX and Windows alike. See module docs for the durability /
-/// `fsync` contract.
+/// JSON-backed registry guarded by a process-local mutex. File is
+/// rewritten via write-temp + rename on every mutation; see module
+/// docs for the durability / `fsync` contract.
 pub struct PersistentTestWalletRegistry {
     path: PathBuf,
     state: Mutex<HashMap<WalletSeedHash, RegistryEntry>>,
 }
 
 impl PersistentTestWalletRegistry {
-    /// Open or create the registry at `path`.
-    ///
-    /// A missing file is treated as an empty registry. A corrupt
-    /// file is logged and replaced with an empty map — losing a
-    /// stale registry on parse failure is preferable to refusing to
-    /// start the test process. Worst case: the user manually sweeps
-    /// any leftover wallets.
-    ///
-    /// On-disk shape uses hex-encoded `WalletSeedHash` strings as
-    /// keys because JSON only allows string-keyed objects;
-    /// in-memory the keys are raw `[u8; 32]` for fast hashing /
-    /// equality.
+    /// Open or create the registry. Missing file → empty map;
+    /// corrupt JSON is logged and replaced with an empty map
+    /// (manual cleanup may be needed). On-disk keys are
+    /// hex-encoded; in-memory keys are raw `[u8; 32]`.
     pub fn open(path: PathBuf) -> FrameworkResult<Self> {
         let state = match fs::read(&path) {
             Ok(bytes) if bytes.is_empty() => HashMap::new(),
@@ -126,17 +89,14 @@ impl PersistentTestWalletRegistry {
         })
     }
 
-    /// Path of the JSON file backing this registry. Useful for log
-    /// breadcrumbs and tests that want to assert on durability.
+    /// Path of the backing JSON file.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Insert (or overwrite) an entry, persisting the new map to
-    /// disk before returning. Overwrite-on-duplicate is intentional:
-    /// the same seed surfacing twice in one process is almost always
-    /// a test bug, but failing the insert would risk leaking the
-    /// new entry. Last-write-wins lets the sweep proceed.
+    /// Insert (or overwrite) an entry, persisting before returning.
+    /// Last-write-wins on duplicate: failing the insert would risk
+    /// leaking the new entry, while a sweep can still recover.
     pub fn insert(&self, hash: WalletSeedHash, entry: RegistryEntry) -> FrameworkResult<()> {
         let snapshot = {
             let mut guard = self.state.lock();
@@ -146,9 +106,7 @@ impl PersistentTestWalletRegistry {
         atomic_write_json(&self.path, &snapshot)
     }
 
-    /// Remove an entry. Missing-key is silently OK: teardown runs in
-    /// "best effort" mode and a missing entry simply means the
-    /// happy path already cleaned up.
+    /// Remove an entry. Missing-key is OK — teardown is best-effort.
     pub fn remove(&self, hash: &WalletSeedHash) -> FrameworkResult<()> {
         let snapshot = {
             let mut guard = self.state.lock();
@@ -158,8 +116,7 @@ impl PersistentTestWalletRegistry {
         atomic_write_json(&self.path, &snapshot)
     }
 
-    /// Update the [`EntryStatus`] of an existing entry. No-op when
-    /// the entry isn't present.
+    /// Update [`EntryStatus`]; no-op if the entry is absent.
     pub fn set_status(&self, hash: &WalletSeedHash, status: EntryStatus) -> FrameworkResult<()> {
         let snapshot = {
             let mut guard = self.state.lock();
@@ -171,12 +128,9 @@ impl PersistentTestWalletRegistry {
         atomic_write_json(&self.path, &snapshot)
     }
 
-    /// Snapshot of every active or failed entry — i.e. wallets the
-    /// startup sweep must drain back to the bank.
-    ///
-    /// Sweeping-status entries are included as well: a previous
-    /// process may have crashed mid-sweep without resetting the
-    /// status, in which case the new process should pick it up.
+    /// Snapshot of all entries (Active / Failed / Sweeping). A
+    /// `Sweeping` entry indicates a previous process crashed
+    /// mid-sweep, so the new process picks it up.
     pub fn list_orphans(&self) -> Vec<(WalletSeedHash, RegistryEntry)> {
         self.state
             .lock()
@@ -186,17 +140,11 @@ impl PersistentTestWalletRegistry {
     }
 }
 
-/// Cross-platform write-temp + rename JSON persist.
-///
-/// Serialises `state` to a sibling `NamedTempFile` and persists it
-/// over `path`. On POSIX this is `rename(2)`; on Windows
+/// Write-temp + rename JSON persist. On Windows
 /// [`tempfile::NamedTempFile::persist`] uses `MoveFileEx` with
-/// `MOVEFILE_REPLACE_EXISTING`, so an already-existing destination
-/// is overwritten cleanly (a plain [`std::fs::rename`] would fail
-/// with `ERROR_ALREADY_EXISTS` on Windows after the first write).
-///
-/// No `fsync` is issued — see the module docs for the durability
-/// contract.
+/// `MOVEFILE_REPLACE_EXISTING` so an existing destination is
+/// overwritten (plain `std::fs::rename` fails there on overwrite).
+/// No `fsync` — see module docs.
 fn atomic_write_json(
     path: &Path,
     state: &HashMap<WalletSeedHash, RegistryEntry>,
@@ -216,10 +164,8 @@ fn atomic_write_json(
     fs::create_dir_all(parent)
         .map_err(|err| FrameworkError::Io(format!("creating {}: {err}", parent.display())))?;
 
-    // `NamedTempFile::new_in(parent)` keeps the temp file on the
-    // same filesystem as `path`, which is required for atomic
-    // rename. Persisting via `persist` (not `persist_noclobber`)
-    // overwrites the destination cross-platform.
+    // Same-filesystem temp file is required for atomic rename;
+    // `persist` (not `persist_noclobber`) overwrites cross-platform.
     let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|err| {
         FrameworkError::Io(format!("creating temp file in {}: {err}", parent.display()))
     })?;
@@ -238,8 +184,7 @@ fn atomic_write_json(
     Ok(())
 }
 
-/// Translate the in-memory `[u8; 32]` keys into hex strings for the
-/// JSON-on-disk representation.
+/// In-memory `[u8; 32]` keys → hex strings for JSON.
 fn encode_keys(state: &HashMap<WalletSeedHash, RegistryEntry>) -> HashMap<String, RegistryEntry> {
     state
         .iter()
@@ -247,10 +192,8 @@ fn encode_keys(state: &HashMap<WalletSeedHash, RegistryEntry>) -> HashMap<String
         .collect()
 }
 
-/// Inverse of [`encode_keys`] — reject malformed hex keys silently
-/// (a single corrupt entry shouldn't take the whole registry down).
-/// The companion `tracing::warn!` lives in `open` so the caller
-/// sees one log line per startup, not one per malformed entry.
+/// Inverse of [`encode_keys`] — drop malformed hex keys silently
+/// so one bad entry doesn't take the whole registry down.
 fn decode_keys(state: HashMap<String, RegistryEntry>) -> HashMap<WalletSeedHash, RegistryEntry> {
     state
         .into_iter()
@@ -296,7 +239,7 @@ mod tests {
             let reg = PersistentTestWalletRegistry::open(path.clone()).unwrap();
             reg.insert(hash, entry()).unwrap();
         }
-        // Reopen — entry must survive.
+        // Reopen; entry must survive.
         {
             let reg = PersistentTestWalletRegistry::open(path.clone()).unwrap();
             assert_eq!(reg.list_orphans().len(), 1);

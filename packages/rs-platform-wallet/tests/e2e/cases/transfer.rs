@@ -1,52 +1,15 @@
-//! First end-to-end test — credits transfer between two
-//! platform-payment addresses owned by the same test wallet.
+//! Self-transfer of credits between two platform-payment addresses
+//! owned by the same test wallet.
 //!
-//! Flow (mirrors the plan's "First Test" section, with a Wave-8
-//! tweak to addr_2's derivation point — see step 3):
-//!
-//! 1. `framework::setup()` — bank + SDK + SPV + registry init,
-//!    plus a freshly-seeded `TestWallet` registered for cleanup.
-//! 2. Bank funds `addr_1` with 50_000_000 credits and we wait for
-//!    the test wallet to observe the inbound balance.
-//! 3. ONLY THEN derive `addr_2`. The wallet's pool cursor only
-//!    advances once an address is observed used, so calling
-//!    `next_unused_address` twice back-to-back before any sync
-//!    would return the same address. (Discovered live in Wave 8.)
-//! 4. Test wallet self-transfers 10_000_000 credits to `addr_2`.
-//! 5. Assert balances and derive the fee from the balance delta
-//!    `FUNDING_CREDITS - received - remaining` (the production
-//!    wallet does not surface a `fee_paid` accessor — keeping the
-//!    test verification on observed balances mirrors what a real
-//!    consumer would do on-chain).
-//! 6. `setup_guard.teardown()` sweeps remaining funds back to the
-//!    bank and removes the registry entry.
-//!
-//! # Testnet assumption
-//!
-//! This test runs against Dash testnet and depends on the harness's
-//! [`SpvContextProvider`] returning a hard-coded
-//! `get_platform_activation_height() = 0` — that's safe-by-position
-//! for the platform-address transfer flow because mn_rr activation
-//! on testnet is past any height the verification path compares
-//! against. See the docs on `PLATFORM_ACTIVATION_HEIGHT_TESTNET_SAFE`
-//! in `framework/context_provider.rs` for the full rationale.
-//!
-//! [`SpvContextProvider`]: crate::framework::context_provider::SpvContextProvider
-//!
-//! Runs by default — no `#[ignore]` gate. Operator setup happens
-//! once via `packages/rs-platform-wallet/tests/.env` (see
-//! `tests/.env.example` for the canonical template); from there
-//! every `cargo test` run picks up `PLATFORM_WALLET_E2E_BANK_MNEMONIC`
-//! automatically. If the env var is missing, the harness panics
-//! with an actionable bank-under-funded message naming the bank's
-//! primary receive address — operators know exactly where to top up.
+//! Runs by default (no `#[ignore]`). Operator setup lives in
+//! `tests/.env` (template: `tests/.env.example`); a missing
+//! `PLATFORM_WALLET_E2E_BANK_MNEMONIC` panics with an actionable
+//! "top up bank at <address>" message.
 //!
 //! ```bash
-//! # One-time setup
 //! cp packages/rs-platform-wallet/tests/.env.example \
 //!    packages/rs-platform-wallet/tests/.env
-//! # then edit `tests/.env` to set PLATFORM_WALLET_E2E_BANK_MNEMONIC
-//!
+//! # edit tests/.env to set PLATFORM_WALLET_E2E_BANK_MNEMONIC
 //! cargo test --test e2e -- --nocapture
 //! ```
 
@@ -55,24 +18,15 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 
-/// Initial credits the bank funds onto `addr_1`. Large enough to
-/// cover the self-transfer plus the inevitable fee, small enough
-/// not to drain a modest bank.
+/// Initial credits the bank funds onto `addr_1`.
 const FUNDING_CREDITS: u64 = 50_000_000;
 
 /// Credits self-transferred from `addr_1` to `addr_2`.
 const TRANSFER_CREDITS: u64 = 10_000_000;
 
-/// Per-step deadline for balance observations. 60s comfortably
-/// covers BLAST-sync round-trip plus Drive block time on testnet.
+/// Per-step deadline for balance observations.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-// `flavor = "multi_thread"` is kept as defense-in-depth and parity
-// with `dash-evo-tool/tests/backend-e2e/`. With the
-// `dash_async::block_on` bridge in `framework/context_provider.rs`
-// the framework now works on every tokio runtime flavor, so this
-// attribute is no longer load-bearing — but multi-thread still
-// gives the optimal `block_in_place + spawn` bridge path.
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn transfer_between_two_platform_addresses() {
     let _ = tracing_subscriber::fmt()
@@ -85,25 +39,15 @@ async fn transfer_between_two_platform_addresses() {
 
     let s = setup().await.expect("e2e setup failed");
 
-    // Step 1: derive `addr_1` and have the bank fund it. We do NOT
-    // pre-allocate `addr_2` here: `next_unused_receive_address`
-    // advances the address pool only once an address is observed
-    // as used (i.e. an inbound balance is seen during sync).
-    // Calling `next_unused_address` twice back-to-back before any
-    // sync would return the SAME address — the cursor hasn't moved.
-    // Deriving `addr_2` after `wait_for_balance(addr_1, ...)` lets
-    // the BLAST sync inside `wait_for_balance` mark `addr_1` used
-    // first, so the next derivation lands on a fresh slot. This
-    // also exercises the wallet's "observe inbound funds + advance
-    // address pool" property as a side benefit.
+    // `next_unused_receive_address` advances the pool only once an
+    // address is observed used; derive `addr_2` AFTER `addr_1` is
+    // funded so the cursor lands on a fresh slot.
     let addr_1 = s
         .test_wallet
         .next_unused_address()
         .await
         .expect("derive addr_1");
 
-    // Step 2: bank funds addr_1 — submission only; we wait on the
-    // recipient's view of the balance below.
     s.ctx
         .bank()
         .fund_address(&addr_1, FUNDING_CREDITS)
@@ -114,9 +58,6 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .expect("addr_1 funding never observed");
 
-    // Step 3: derive `addr_2` AFTER the wallet has observed
-    // `addr_1`'s inbound funding — only now does the address pool
-    // cursor advance to a fresh slot.
     let addr_2 = s
         .test_wallet
         .next_unused_address()
@@ -127,7 +68,6 @@ async fn transfer_between_two_platform_addresses() {
         "wallet must hand out a fresh address once addr_1 is observed used"
     );
 
-    // Step 4: self-transfer addr_1 -> addr_2.
     let outputs: BTreeMap<_, _> = std::iter::once((addr_2, TRANSFER_CREDITS)).collect();
     s.test_wallet
         .transfer(outputs)
@@ -138,14 +78,9 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .expect("addr_2 transfer never observed");
 
-    // Step 5: assert final balances. Re-sync once more so the
-    // cached view reflects the post-transfer state across BOTH
-    // addresses (the wait above only blocked on addr_2 reaching
-    // its target). Then derive the fee from the balance delta
-    // (FUNDING_CREDITS - received - remaining): the production
-    // wallet does not surface a `fee_paid` accessor, so reading
-    // it from observed balances keeps the assertion close to what
-    // a real consumer would verify on-chain.
+    // Re-sync so the cached view reflects post-transfer state across
+    // BOTH addresses; derive fee from the balance delta since the
+    // wallet exposes no `fee_paid` accessor.
     s.test_wallet
         .sync_balances()
         .await
@@ -179,12 +114,6 @@ async fn transfer_between_two_platform_addresses() {
         fee < TRANSFER_CREDITS,
         "fee implausibly high: {fee} >= TRANSFER_CREDITS ({TRANSFER_CREDITS})"
     );
-    // `remaining == FUNDING_CREDITS - TRANSFER_CREDITS - fee` falls
-    // out of the fee derivation by construction once the two
-    // assertions above hold; explicitly stating it would be a
-    // tautology, so we don't.
 
-    // Step 6: explicit teardown. Sweeps remaining funds back to the
-    // bank and removes the registry entry.
     s.teardown().await.expect("teardown");
 }

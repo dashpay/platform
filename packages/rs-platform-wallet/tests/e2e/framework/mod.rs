@@ -1,36 +1,21 @@
 //! E2E test harness for `rs-platform-wallet`.
 //!
-//! Public surface for test authors:
+//! Test authors call [`setup`] to obtain a [`SetupGuard`] holding a
+//! fresh-seeded [`wallet_factory::TestWallet`] and the
+//! process-shared [`E2eContext`] (bank, SDK, registry). After the
+//! test body, call [`SetupGuard::teardown`] to drain the wallet
+//! back to the bank.
 //!
-//! - [`setup`] — one-shot entry point; lazily builds the
-//!   process-shared [`E2eContext`] and returns a [`SetupGuard`]
-//!   wrapping a fresh test wallet pre-registered for cleanup.
-//! - [`prelude`] — re-exports the types tests reach for most often.
+//! ```ignore
+//! let s = setup().await?;
+//! let addr = s.test_wallet.next_unused_address().await?;
+//! s.ctx.bank().fund_address(&addr, 50_000_000).await?;
+//! wait_for_balance(&s.test_wallet, &addr, 50_000_000, ...).await?;
+//! s.teardown().await?;
+//! ```
 //!
-//! Submodule layout mirrors the plan
-//! (`/home/ubuntu/.claude/plans/ok-now-we-ll-get-prancy-biscuit.md`,
-//! Module Layout):
-//!
-//! - [`config`] — env-var loader + programmatic constructor.
-//! - [`harness`] — `E2eContext`, lazily-initialised, holds workdir
-//!   lock + SDK + SPV + bank + registry.
-//! - [`workdir`] — `pick_available_workdir` (`flock`-based slot
-//!   selection, DET pattern).
-//! - [`panic_hook`] — installs a hook that trips the cancellation
-//!   token so SPV / background tasks shut down cleanly.
-//! - [`wait`] — generic poller + `wait_for_balance` specialisation.
-//! - [`bank`] — pre-funded bank wallet (Wave 3a).
-//! - [`wallet_factory`] — `TestWallet` factory + `SetupGuard` (Wave 3a).
-//! - [`signer`] — seed-backed `Signer<PlatformAddress>` (Wave 3a).
-//! - [`registry`] — JSON-backed test-wallet registry (Wave 3a).
-//! - [`cleanup`] — startup `sweep_orphans` + per-test `teardown_one`
-//!   (Wave 3a).
-//!
-//! Wave 3b adds `sdk`, `spv`, and `context_provider` modules
-//! alongside these (see plan for the full split).
+//! Convenience imports: [`prelude`].
 
-// Wave 2 / 3a stubs intentionally don't cross-reference yet — Wave 4
-// turns those into hard wiring and the allow can be tightened then.
 #![allow(dead_code)]
 
 pub mod bank;
@@ -48,9 +33,7 @@ pub mod wait_hub;
 pub mod wallet_factory;
 pub mod workdir;
 
-/// Common imports for test authors. Populated as Wave 3 / Wave 4
-/// stabilise the concrete signatures — kept minimal in the
-/// skeleton so the prelude itself stays meaningful.
+/// Common imports for test authors.
 pub mod prelude {
     pub use super::config::Config;
     pub use super::harness::E2eContext;
@@ -64,43 +47,31 @@ pub use wallet_factory::SetupGuard;
 use harness::E2eContext;
 
 /// Errors surfaced by the e2e framework.
-///
-/// Wave 2 shipped a single `NotImplemented` variant. Wave 3a expands
-/// the surface with `Io` / `Wallet` / `Bank` variants used by the
-/// registry, factory, and bank-load paths; Wave 3b will append SDK
-/// / SPV / context-provider variants alongside.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameworkError {
-    /// Stub returned by placeholders that haven't been wired yet
-    /// (most still belong to Wave 4 integration glue). The static
-    /// string names the call site so test failures during
-    /// scaffolding work point at the right module.
+    /// Placeholder returned by paths that surface an underlying
+    /// error through tracing; the static string names the call site.
     #[error("e2e framework not yet implemented: {0}")]
     NotImplemented(&'static str),
 
-    /// Filesystem error — registry IO, workdir creation, lockfile
-    /// open. The message is preformatted with the offending path so
-    /// downstream `?` unwraps stay readable.
+    /// Filesystem error — registry IO, workdir creation, lockfile.
+    /// Message is preformatted with the offending path.
     #[error("e2e framework I/O: {0}")]
     Io(String),
 
-    /// Wallet-creation / sync / transfer error surfaced by
-    /// `platform_wallet`'s typed errors. Stored as a String so the
-    /// e2e error type stays free of upstream-error feature flags
-    /// (the originating error type is `large_enum_variant` already).
+    /// Wallet error from `platform_wallet`. Stored as String to
+    /// avoid pulling upstream-error feature flags into the test crate.
     #[error("e2e framework wallet error: {0}")]
     Wallet(String),
 
-    /// Bank-wallet-specific failures — under-funded balance,
-    /// missing mnemonic, etc. Distinct from `Wallet` so callers
-    /// (and CI logs) can treat operator-actionable bank issues
-    /// separately from ordinary transient sync failures.
+    /// Bank-wallet failure (under-funded, missing mnemonic).
+    /// Distinct from `Wallet` so CI can treat operator-actionable
+    /// bank issues separately from transient sync failures.
     #[error("e2e bank wallet: {0}")]
     Bank(String),
 
-    /// Test wallet teardown / cleanup error. Reported but
-    /// non-fatal — the registry retains the wallet so the next
-    /// startup runs `sweep_orphans` to recover.
+    /// Cleanup / teardown error. Non-fatal — the registry retains
+    /// the wallet so the next startup's sweep recovers it.
     #[error("e2e cleanup: {0}")]
     Cleanup(String),
 }
@@ -108,24 +79,26 @@ pub enum FrameworkError {
 /// Convenience alias used across the harness.
 pub type FrameworkResult<T> = Result<T, FrameworkError>;
 
-/// One-shot setup entry point for test cases.
+/// One-shot setup entry point.
 ///
-/// Lazily initialises the process-shared [`E2eContext`] (bank,
-/// SDK, SPV, registry, panic hook) and produces a fresh-seeded
-/// [`SetupGuard::test_wallet`].
+/// Lazily initialises the process-shared [`E2eContext`] (bank, SDK,
+/// registry, panic hook) on first call and returns a [`SetupGuard`]
+/// wrapping a fresh-seeded [`wallet_factory::TestWallet`].
 ///
-/// The wallet is **registered in the persistent registry before
-/// being returned** — that way a panic between `setup` and
-/// `teardown` leaves a recoverable trail for the next process
-/// startup's sweep.
+/// The wallet is **registered in the persistent registry BEFORE
+/// being returned**, so a panic between `setup` and the test's
+/// `SetupGuard::teardown` leaves a recoverable trail for the next
+/// process startup's sweep.
+///
+/// Errors: any failure during context init, wallet creation, or
+/// registry insert is surfaced as [`FrameworkError`].
 pub async fn setup() -> FrameworkResult<SetupGuard> {
     let ctx = E2eContext::init().await?;
 
     let (seed_bytes, seed_hex) = wallet_factory::fresh_seed();
 
-    // Build the test wallet first so we can derive the wallet id
-    // for the registry entry. If creation fails we never persist —
-    // there's nothing to sweep.
+    // Build the wallet first so we can derive the id for the
+    // registry entry; on failure there is nothing to persist.
     let network = ctx.bank().network();
     let test_wallet = wallet_factory::TestWallet::create(
         ctx.manager(),
@@ -135,9 +108,8 @@ pub async fn setup() -> FrameworkResult<SetupGuard> {
     )
     .await?;
 
-    // Persist the registry entry BEFORE handing the wallet to the
-    // test body. Once this returns the entry is durable — a panic
-    // mid-test will surface to the next process startup's sweep.
+    // Persist BEFORE handing the wallet to the test body so a panic
+    // mid-test surfaces to the next process startup's sweep.
     let entry = registry::RegistryEntry {
         seed_hex,
         created_at: std::time::SystemTime::now(),

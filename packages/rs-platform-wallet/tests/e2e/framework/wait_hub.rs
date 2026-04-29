@@ -1,31 +1,23 @@
-//! Event hub that bridges `PlatformEventHandler` callbacks to async waiters.
+//! Bridges `PlatformEventHandler` callbacks to async waiters.
 //!
-//! [`WaitEventHub`] is installed as the test harness's app-level
-//! `PlatformEventHandler` (see [`super::harness::E2eContext::build`]).
-//! Whenever the SPV / wallet / platform-address-sync subsystems fire an
-//! event that might change a wallet's observable state, the hub calls
-//! [`tokio::sync::Notify::notify_waiters`]. Async helpers like
-//! [`super::wait::wait_for_balance`] grab a [`tokio::sync::Notify::notified`]
-//! future *before* polling, so a notification arriving mid-sync isn't
-//! lost — that's the whole reason the polling version had to keep
-//! waking on a fixed interval.
+//! [`WaitEventHub`] is installed as the harness's
+//! `PlatformEventHandler`. Every SPV / wallet / platform-address
+//! sync event calls [`Notify::notify_waiters`]; helpers like
+//! [`super::wait::wait_for_balance`] capture `Notified` BEFORE
+//! polling so notifications arriving mid-sync aren't lost.
 //!
-//! Events that are intentionally ignored:
-//!
-//! - `on_progress` — fires on every header batch; far too noisy and
-//!   irrelevant to the conditions tests wait on.
-//! - `on_error` — surfaced through tracing; doesn't itself indicate a
-//!   testable state change.
+//! Ignored: `on_progress` (per-header-batch noise) and `on_error`
+//! (surfaced through tracing; no testable state change).
 
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::platform_address_sync::PlatformAddressSyncSummary;
 use tokio::sync::futures::Notified;
 use tokio::sync::Notify;
 
-/// Notify-based hub that fans test-relevant SPV / platform events out to
-/// async waiters.
+/// `Notify`-based hub that fans test-relevant events out to async
+/// waiters.
 ///
-/// Construct one per [`super::harness::E2eContext`] and clone the `Arc`
+/// One instance per [`super::harness::E2eContext`]; clone the `Arc`
 /// into every [`super::wallet_factory::TestWallet`] via
 /// [`super::harness::E2eContext::wait_hub`].
 pub struct WaitEventHub {
@@ -33,26 +25,23 @@ pub struct WaitEventHub {
 }
 
 impl WaitEventHub {
-    /// Build an empty hub. No waiters until callers grab a
-    /// [`Self::notified`] future.
+    /// Build an empty hub.
     pub fn new() -> Self {
         Self {
             notify: Notify::new(),
         }
     }
 
-    /// Get a future that resolves the next time *any* relevant event
-    /// fires. Pin it (e.g. via `tokio::pin!`) before awaiting — the
-    /// reborrow pattern is what guarantees notifications arriving
-    /// between "register interest" and "await" aren't dropped.
+    /// Future that resolves the next time *any* relevant event
+    /// fires. Pin (e.g. `tokio::pin!`) before awaiting so
+    /// notifications arriving between registration and await aren't
+    /// dropped.
     pub fn notified(&self) -> Notified<'_> {
         self.notify.notified()
     }
 
-    /// Wake every currently-registered waiter. Test-only helper for
-    /// scenarios that need to nudge `wait_for_balance` after a non-event
-    /// state change (e.g. a manual cache poke). Not used by the default
-    /// e2e flow.
+    /// Wake every registered waiter. Test-only nudge for non-event
+    /// state changes (e.g. manual cache pokes).
     pub fn notify_all(&self) {
         self.notify.notify_waiters();
     }

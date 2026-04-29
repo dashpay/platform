@@ -1,18 +1,10 @@
 //! Pre-funded bank wallet — funding source for every test wallet.
 //!
-//! Loaded from the `PLATFORM_WALLET_E2E_BANK_MNEMONIC` env var at
-//! `E2eContext::init` time and held for the lifetime of the suite.
-//! `fund_address` consumes a small slice of the bank's credits and
-//! transfers them to a target [`PlatformAddress`]; in-process funding
-//! calls serialise on a static `tokio::sync::Mutex` so concurrent
-//! tests don't trip over each other's nonces.
-//!
-//! Cross-process isolation is the operator's concern: distinct
-//! `PLATFORM_WALLET_E2E_BANK_MNEMONIC` per environment, distinct
-//! workdir slots per process on the same machine.
-//!
-//! Wave 3a delivers the full implementation. Wave 4 wires
-//! `BankWallet::load` into `E2eContext::init`.
+//! Loaded from `PLATFORM_WALLET_E2E_BANK_MNEMONIC` at
+//! `E2eContext::init` time. `fund_address` serialises in-process
+//! calls on [`FUNDING_MUTEX`] so concurrent tests don't race nonces;
+//! cross-process isolation is the operator's concern (distinct
+//! mnemonic per environment, distinct workdir slot per process).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -37,20 +29,16 @@ use super::wallet_factory::{
 use super::{FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
-/// `bank.fund_address` calls so nonces don't race. Cross-process
-/// concurrency is handled by giving each process a distinct workdir
-/// slot (see [`super::workdir::pick_available_workdir`]); the bank
-/// itself is not cross-process safe.
+/// `bank.fund_address` calls so nonces don't race.
 static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
 
-/// Bank wallet handle — wraps a fully-synced `PlatformWallet` plus
-/// its dedicated signer. Funding requests go through `fund_address`
-/// rather than touching the underlying wallet directly so we keep
-/// the FUNDING_MUTEX invariant in one place.
+/// Bank wallet handle wrapping a synced `PlatformWallet` and its
+/// signer. All funding flows through `fund_address` so the
+/// `FUNDING_MUTEX` invariant lives in one place.
 pub struct BankWallet {
     wallet: Arc<PlatformWallet>,
     signer: SeedBackedPlatformAddressSigner,
-    /// Cached for log breadcrumbs / under-funded panic messages.
+    /// Cached for under-funded panic messages and log breadcrumbs.
     primary_receive_address: PlatformAddress,
 }
 
@@ -64,16 +52,12 @@ impl std::fmt::Debug for BankWallet {
 }
 
 impl BankWallet {
-    /// Load the bank from its BIP-39 mnemonic, run a single BLAST
-    /// sync pass, and verify the balance covers the configured
-    /// [`Config::min_bank_credits`] floor.
+    /// Load the bank from its BIP-39 mnemonic, sync once, and check
+    /// the balance covers [`Config::min_bank_credits`].
     ///
-    /// Under-funded balances PANIC with an actionable message
-    /// pointing at the bank's primary receive address, mirroring
-    /// `dash-evo-tool`'s convention. The panic is intentional — a
-    /// silent under-funded run would just produce confusing
-    /// downstream "insufficient balance" errors inside individual
-    /// tests instead of a single clear "top up the bank" pointer.
+    /// Under-funded balances PANIC with a "top up at <address>"
+    /// pointer; surfacing one clear actionable failure beats burying
+    /// it under per-test "insufficient balance" errors.
     pub async fn load(
         manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
         config: &Config,
@@ -83,11 +67,8 @@ impl BankWallet {
                 "bank mnemonic is empty — set PLATFORM_WALLET_E2E_BANK_MNEMONIC".into(),
             ));
         }
-        // bip39's `Mnemonic::parse` accepts every BIP-39 wordlist
-        // automatically; key-wallet's typed loader is then handled
-        // inside `create_wallet_from_mnemonic`. We also derive the
-        // 64-byte seed here so the seed-backed address signer can
-        // pre-derive its key cache in [`Self::build_signer`].
+        // Validate up front and derive the 64-byte seed once so the
+        // seed-backed signer can pre-build its key cache below.
         let validated: Bip39Mnemonic =
             config.bank_mnemonic.parse().map_err(|err: bip39::Error| {
                 FrameworkError::Bank(format!("invalid BIP-39 mnemonic: {err}"))
@@ -105,18 +86,15 @@ impl BankWallet {
             .map_err(wallet_err)?;
         wallet.platform().initialize().await;
 
-        // Single BLAST pass to seed balances. Sync errors are
-        // surfaced — a bank that can't even sync at startup will
-        // make every test fail anyway.
+        // Seed balances; a sync failure here makes every test fail.
         wallet
             .platform()
             .sync_balances(None)
             .await
             .map_err(wallet_err)?;
 
-        // Capture the bank's primary receive address before checking
-        // the funded floor so the under-funded panic message can
-        // tell the operator exactly where to top up.
+        // Capture the receive address before the funded-floor check
+        // so the under-funded panic message can name a top-up target.
         let primary_receive_address = wallet
             .platform()
             .next_unused_receive_address(
@@ -130,15 +108,9 @@ impl BankWallet {
 
         let total = wallet.platform().total_credits().await;
         if total < config.min_bank_credits {
-            // The framework treats an under-funded bank as a hard
-            // operator error — there's nothing useful the test
-            // suite can do without it. Panic so CI logs surface
-            // the actionable message clearly rather than burying
-            // it in a Result chain. Format mirrors the README's
-            // "Bank pre-funding" section (multi-line, bech32m
-            // address) so the operator-facing pointer is identical
-            // whether they hit it from the README or from a CI
-            // failure.
+            // Under-funded bank is a hard operator error; panic with
+            // the README's bank-pre-funding format so operators hit
+            // the same actionable pointer in CI as in the docs.
             let address_bech32m = primary_receive_address.to_bech32m_string(network);
             panic!(
                 "Bank wallet under-funded.\n  \
@@ -160,34 +132,31 @@ impl BankWallet {
         })
     }
 
-    /// Borrow the underlying `PlatformWallet`. Used by cleanup
-    /// helpers that need to inspect the bank's balance after a
-    /// teardown sweep.
+    /// Borrow the underlying `PlatformWallet`.
     pub fn platform_wallet(&self) -> &Arc<PlatformWallet> {
         &self.wallet
     }
 
-    /// The bank's primary receive address — the destination
-    /// `cleanup::teardown_one` sweeps test-wallet balances back to.
+    /// Primary receive address — the sweep destination for
+    /// `cleanup::teardown_one`.
     pub fn primary_receive_address(&self) -> &PlatformAddress {
         &self.primary_receive_address
     }
 
-    /// Network the bank is operating against. Mirrors
-    /// `wallet.sdk().network`; centralised here so cleanup paths
-    /// don't need to dig through the wallet handle.
+    /// Network the bank is operating against.
     pub fn network(&self) -> Network {
         self.wallet.sdk().network
     }
 
-    /// Fund a target address with `credits` credits. Acquires the
-    /// in-process [`FUNDING_MUTEX`] for the duration of the SDK
-    /// transfer so concurrent in-process calls serialise cleanly.
+    /// Fund `target` with `credits` from the bank's primary
+    /// account.
     ///
-    /// The recipient is responsible for polling its own balance
-    /// after this returns — the bank doesn't wait for the chain to
-    /// see the credits, so a follow-up
-    /// [`super::wait::wait_for_balance`] is the test's job.
+    /// Submits the transfer immediately and returns the resulting
+    /// [`PlatformAddressChangeSet`]. Does NOT wait for the chain to
+    /// observe the credit — callers follow up with
+    /// [`super::wait::wait_for_balance`] on the recipient wallet.
+    /// Concurrent in-process calls serialise on [`FUNDING_MUTEX`]
+    /// to avoid nonce races.
     pub async fn fund_address(
         &self,
         target: &PlatformAddress,
@@ -210,8 +179,7 @@ impl BankWallet {
             .map_err(wallet_err)
     }
 
-    /// Resync the bank's balances. Used by cleanup paths that need
-    /// to wait for a test wallet's drained funds to land.
+    /// Resync the bank's balances.
     pub async fn sync_balances(&self) -> FrameworkResult<()> {
         self.wallet
             .platform()
@@ -221,16 +189,16 @@ impl BankWallet {
             .map_err(wallet_err)
     }
 
-    /// Total credits the bank currently has cached.
+    /// Total credits the bank currently has cached. Reflects the
+    /// last sync — call [`Self::sync_balances`] first for a fresh
+    /// view.
     pub async fn total_credits(&self) -> Credits {
         self.wallet.platform().total_credits().await
     }
 }
 
-/// Parse the configured network string into the `key-wallet` enum.
-/// Mirrors the case-insensitive matching the rest of the platform
-/// uses; rejects anything unrecognised so config typos surface
-/// loudly.
+/// Case-insensitive network parser; rejects unknown values so
+/// config typos surface loudly.
 fn parse_network(value: &str) -> FrameworkResult<Network> {
     let normalized = value.trim().to_ascii_lowercase();
     let net = match normalized.as_str() {
