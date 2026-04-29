@@ -73,11 +73,8 @@ impl PlatformAddressWallet {
                     .await?
             }
             InputSelection::Auto => {
-                // Auto-select currently only implements the protocol-correct
-                // distribution (Phase 1-4 in `select_inputs`) for a single
-                // `[DeductFromInput(0)]` step. Other shapes — `DeductFromInput(N>0)`,
-                // `ReduceOutput`, multi-step — are not yet wired through that
-                // path; reject early and steer the caller toward `Explicit`.
+                // Auto-select supports only `[DeductFromInput(0)]`; for
+                // any other strategy the caller must use `Explicit`.
                 if !matches!(
                     fee_strategy.as_slice(),
                     [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -155,33 +152,15 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
-    /// Automatically select input addresses from the account,
-    /// consuming candidates in **balance-descending order** until
-    /// the total output amount plus the estimated input-side fee
-    /// margin is covered.
+    /// Auto-select inputs in balance-descending order until
+    /// `total_output + estimated_fee` is covered, then delegate to
+    /// [`select_inputs`] for the headroom-respecting distribution.
     ///
-    /// Sorting candidates largest-balance-first mirrors the
-    /// dash-evo-tool allocator
-    /// (`src/ui/wallets/send_screen.rs:155-157`) and minimises the
-    /// number of inputs picked: when the largest single balance
-    /// already covers `total_output + estimated_fee`, the result
-    /// is a 1-input map and the multi-input fee-headroom logic in
-    /// [`select_inputs`] never fires. For the multi-input case
-    /// (largest balance alone insufficient), `select_inputs` still
-    /// applies the headroom-respecting distribution introduced in
-    /// 9ea9e7033c — this sort change only narrows the set of
-    /// scenarios that reach that branch.
-    ///
-    /// The selected map's values are the **consumed amount per
-    /// address** (what gets moved into outputs) — not the address
-    /// balance. The protocol validates `Σ inputs.credits ==
-    /// Σ outputs.credits`; the fee is then deducted from one input
-    /// address's REMAINING balance per [`AddressFundsFeeStrategy`]
-    /// (e.g. `DeductFromInput(0)` reduces the balance left at
-    /// input #0 by the fee, rather than reducing input #0's
-    /// `Credits` value). For the wallet, this means we only need
-    /// each input address to hold `consumed + fee_share`; the
-    /// `Credits` we hand to the SDK is just the consumed amount.
+    /// The returned map's values are the **consumed amount per
+    /// address** — not the balance. The protocol enforces
+    /// `Σ inputs == Σ outputs`; the fee is deducted separately from
+    /// one input's remaining balance per [`AddressFundsFeeStrategy`]
+    /// (e.g. `DeductFromInput(0)` hits the lex-smallest input).
     async fn auto_select_inputs(
         &self,
         account_index: u32,
@@ -215,21 +194,10 @@ impl PlatformAddressWallet {
             .address_funds
             .min_input_amount;
 
-        // Snapshot addresses with balance ≥ `min_input_amount`, then sort
-        // them by balance descending so [`select_inputs`] sees the
-        // largest candidates first. Mirrors the dash-evo-tool allocator
-        // (`src/ui/wallets/send_screen.rs:155-157`) and means the
-        // common case — one address holds enough to cover
-        // `total_output + estimated_fee` — bypasses the multi-input
-        // fee-headroom branch entirely. Addresses with balance below
-        // `min_input_amount` are filtered out: the protocol's
-        // structural validator (`AddressFundsTransferTransitionV0::
-        // validate_structure`, see `state_transition_validation.rs:146`)
-        // rejects any input with `amount < min_input_amount`, so such
-        // an address cannot legally appear in the inputs map and is
-        // useless as a standalone candidate. Materialising a `Vec`
-        // here also lets the selection loop run as a pure helper that's
-        // amenable to direct unit testing.
+        // Filter to addresses with balance ≥ `min_input_amount` (the
+        // protocol's per-input minimum — anything smaller cannot
+        // legally appear as an input) and sort balance-descending so
+        // [`select_inputs`] picks the smallest covering prefix.
         let mut candidates: Vec<(PlatformAddress, Credits)> = account
             .addresses
             .addresses
@@ -256,15 +224,9 @@ impl PlatformAddressWallet {
     }
 
     /// Simulate the fee strategy to determine how much additional balance
-    /// the inputs need beyond the output amounts.
-    ///
-    /// Re-exposed at module scope via [`estimate_fee_for_inputs_pub`]
-    /// so [`select_inputs`] (the pure helper) can drive the same
-    /// estimator without going through `Self`.
-    ///
-    /// Walks through the fee strategy steps in order, deducting from the
-    /// available sources (outputs or inputs) until the fee is covered.
-    /// Returns the portion of the fee that must come from inputs.
+    /// the inputs need beyond the output amounts. Walks the strategy
+    /// steps in order, deducting from outputs/inputs until the fee is
+    /// covered, and returns the portion that must come from inputs.
     fn estimate_fee_for_inputs(
         input_count: usize,
         output_count: usize,
@@ -309,9 +271,8 @@ impl PlatformAddressWallet {
     }
 }
 
-/// Module-scope re-export of the per-input fee estimator so the
-/// pure [`select_inputs`] helper can be unit-tested without an
-/// instance of [`PlatformAddressWallet`].
+/// Module-scope view of the per-input fee estimator so [`select_inputs`]
+/// can drive it without an instance of [`PlatformAddressWallet`].
 fn estimate_fee_for_inputs_pub(
     input_count: usize,
     output_count: usize,
@@ -328,88 +289,34 @@ fn estimate_fee_for_inputs_pub(
     )
 }
 
-/// Pure input-selection helper.
+/// Pure input-selection helper. Order-agnostic: walks `candidates`
+/// as-is and picks the smallest covering prefix.
 ///
-/// Given a `candidates` list of `(address, balance)` pairs in the
-/// caller's preferred selection order (balance-descending in
-/// practice — see [`PlatformAddressWallet::auto_select_inputs`] —
-/// but `select_inputs` itself is order-agnostic: it walks
-/// `candidates` as-is and picks the smallest covering prefix),
-/// produce an inputs map satisfying TWO invariants demanded by the
-/// validator:
+/// Produces an inputs map satisfying two protocol invariants:
+/// 1. `Σ selected.values() == total_output`.
+/// 2. The `DeductFromInput(0)` fee target — the lex-smallest entry,
+///    which is the `BTreeMap` index-0 — must keep
+///    `balance − consumed ≥ estimated_fee` so drive can deduct
+///    the fee from its remaining balance (otherwise
+///    `fee_fully_covered = false` and the transition is rejected).
 ///
-/// 1. `Σ selected.values() == total_output` — the protocol's
-///    structural balance invariant for transfers.
-/// 2. The address selected for fee deduction (currently the
-///    lex-smallest address in `selected`, which is the
-///    `BTreeMap` index-0 entry that
-///    [`AddressFundsFeeStrategyStep::DeductFromInput(0)`] targets)
-///    must have **post-consumption remaining balance ≥ estimated
-///    fee**. Otherwise drive's
-///    `deduct_fee_from_outputs_or_remaining_balance_of_inputs`
-///    cannot fully cover the fee, the transition fails with
-///    `fee_fully_covered = false`, and validation rejects the
-///    state transition (see
-///    `rs-drive-abci/.../validate_fees_of_event/v0/mod.rs:209-224`).
+/// Algorithm for the only supported strategy `[DeductFromInput(0)]`:
+/// 1. Grow the prefix until `Σ balances ≥ total_output + estimated_fee`.
+/// 2. Within that prefix, the lex-smallest entry is the fee target.
+/// 3. Solve for `fee_target_consumed` in
+///    `[max(min_input_amount, total_output − other_total),
+///       fee_target_balance − estimated_fee]`. If the range is empty
+///    (no headroom), extend the prefix and retry; error out only
+///    when candidates are exhausted.
+/// 4. Insert the fee target at its minimum consumption, then
+///    distribute the remainder of `total_output` across the other
+///    prefix entries in caller-supplied order. Tail consumptions
+///    below `min_input_amount` get folded back into the fee target
+///    rather than producing a sub-minimum input.
+/// 5. Defensive invariant checks.
 ///
-/// CodeRabbit caught the bug where the previous implementation
-/// satisfied invariant (1) but not (2): if candidates were
-/// `[(addr_a, 20M), (addr_b, 50M)]`, `total_output` was 30M, and the
-/// strategy was `[DeductFromInput(0)]`, the previous build returned
-/// `{addr_a: 20M, addr_b: 10M}`. `addr_a` was fully drained, so its
-/// post-consumption remaining was 0 — the fee couldn't be deducted,
-/// and the transition was rejected. This rewrite ensures the fee
-/// target keeps enough headroom by consuming the **minimum
-/// allowable** amount (`min_input_amount` from the platform version)
-/// from it, and shifting the rest of the consumption onto the other
-/// selected inputs.
-///
-/// # Algorithm (single `DeductFromInput(0)` strategy — the only supported case)
-///
-/// 1. Pick the smallest prefix of `candidates` (in the order the
-///    caller supplied — balance-descending in practice) such that
-///    `Σ balances ≥ total_output + estimated_fee_for(prefix.len())`.
-///    Error out if no prefix covers it.
-/// 2. Identify the prospective fee target = lex-smallest address in
-///    that prefix (this is the address at `BTreeMap` index 0 of the
-///    eventual selected map, which is what `DeductFromInput(0)`
-///    targets).
-/// 3. Pick the consumption distribution:
-///    - `fee_target_max  = max(0, fee_target_balance − estimated_fee)`
-///      — the largest amount we can consume from the fee target
-///      while still leaving ≥ `estimated_fee` of remaining balance.
-///    - `other_total     = Σ balances of non-fee-target prefix entries`
-///    - `fee_target_min  = max(min_input_amount, total_output − other_total)`
-///      — the smallest amount we can consume from the fee target
-///      while still keeping it in the inputs map (`min_input_amount`,
-///      so the protocol's per-input minimum is respected) AND
-///      reaching the `Σ inputs == total_output` invariant.
-///    - If `fee_target_min > fee_target_max`, **extend the prefix
-///      with the next candidate and retry steps 1-3**. A larger
-///      prefix can lower `fee_target_min` (more `other_total` to
-///      absorb consumption) and may also pull in a smaller
-///      lex-key candidate that becomes the new fee target. Only
-///      after candidates are exhausted do we error out.
-/// 4. Build the result:
-///    - Insert `(fee_target_addr, fee_target_min)` first
-///      (always ≥ `min_input_amount`, so always present in the map
-///      and lex-smallest of the result).
-///    - Distribute `total_output − fee_target_min` across the other
-///      prefix entries in caller-supplied order
-///      (`min(balance, remaining)`). If a tail entry's tentative
-///      consumption falls below `min_input_amount` (the protocol's
-///      per-input minimum), the residue is rolled back into the
-///      fee target's consumption rather than inserted as a
-///      sub-minimum input. After roll-back the fee target's
-///      consumption must still be ≤ `fee_target_max`; otherwise
-///      we error out (this should not happen given that Phase 3
-///      already proved the prefix has slack, but the check is
-///      kept as a defensive guard).
-/// 5. Final defensive invariant check.
-///
-/// `select_inputs` only supports `fee_strategy == [DeductFromInput(0)]`.
-/// The public `transfer()` rejects other shapes for the
-/// `InputSelection::Auto` path before they reach this helper.
+/// Caller (`auto_select_inputs`) sorts candidates balance-descending
+/// in practice, but the helper itself doesn't rely on that order.
 fn select_inputs(
     candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -443,11 +350,9 @@ fn select_inputs(
         .address_funds
         .min_input_amount;
 
-    // Finding #4: the protocol rejects any input below `min_input_amount`,
-    // and an input always covers (a portion of) `total_output`. So if
-    // `total_output < min_input_amount`, no input can be sized within
-    // both bounds simultaneously — error out cleanly here rather than
-    // tripping the per-input minimum check downstream.
+    // No input can simultaneously be ≥ `min_input_amount` AND sum to
+    // `total_output` if `total_output < min_input_amount`. Reject upfront
+    // rather than tripping the per-input minimum check downstream.
     if total_output < min_input_amount {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Transfer amount {} is below the protocol minimum input amount {}; \
@@ -457,13 +362,9 @@ fn select_inputs(
         )));
     }
 
-    // Phase 1+2+3: walk candidates in caller-supplied order, growing
-    // the prefix one candidate at a time. After each push, re-run
-    // Phase 1 (does the prefix cover `total_output + estimated_fee`?)
-    // and, if so, Phase 2/3 (does the lex-smallest prefix entry have
-    // enough headroom to absorb the fee?). Either accept the prefix
-    // or extend further. Errors out only when candidates are
-    // exhausted with no feasible prefix.
+    // Phase 1-3: extend the prefix one candidate at a time until it
+    // covers `total_output + estimated_fee` AND the lex-smallest
+    // prefix entry has headroom to absorb the fee.
     let mut prefix: Vec<(PlatformAddress, Credits)> = Vec::new();
     let mut accumulated: Credits = 0;
     let mut last_estimated_fee: Credits = 0;
@@ -538,17 +439,11 @@ fn select_inputs(
         )));
     };
 
-    // Phase 4: build the result map.
-    //
-    // Start by consuming the minimum from the fee target so it
-    // retains maximum remaining balance for the on-chain fee
-    // deduction. Then walk the remaining prefix entries (in
-    // caller-supplied order) and distribute what's left of
-    // `total_output`. If a tail entry's tentative consumption is
-    // below `min_input_amount`, roll the residue back onto the
-    // fee target instead of producing a sub-minimum input —
-    // the protocol's `validate_structure` would reject the
-    // transition otherwise (`InputBelowMinimumError`).
+    // Phase 4: consume `fee_target_min` from the fee target, distribute
+    // the rest of `total_output` over the remaining prefix in caller
+    // order. Tail consumptions below `min_input_amount` get folded into
+    // the fee target — `validate_structure` would otherwise reject the
+    // transition with `InputBelowMinimumError`.
     let mut fee_target_consumed = fee_target_min;
     let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
     let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
@@ -579,15 +474,9 @@ fn select_inputs(
     if residue_to_fee_target > 0 {
         let new_consumed = fee_target_consumed.saturating_add(residue_to_fee_target);
         if new_consumed > fee_target_max {
-            // Should be unreachable: Phase 3 only accepts a prefix
-            // when fee_target_min ≤ fee_target_max, and the residue
-            // we're folding here represents amounts that *would*
-            // have been consumed by other entries — the prefix
-            // covers `total_output + estimated_fee`, so the fee
-            // target's headroom up to `fee_target_max` should
-            // accommodate any residue from the tail. We still
-            // guard against it because silently producing an
-            // invalid transition is worse than a loud error.
+            // Should be unreachable given Phase 3's headroom check, but
+            // guarded explicitly: silently shipping an invalid
+            // transition would be worse than a loud error here.
             return Err(PlatformWalletError::AddressOperation(format!(
                 "Cannot satisfy fee headroom after redistributing sub-minimum tail \
                  inputs: fee-target {} would consume {} (balance {}, max {}), leaving \
@@ -604,9 +493,8 @@ fn select_inputs(
 
     selected.insert(fee_target_addr, fee_target_consumed);
 
-    // Phase 5: defensive invariant checks. These should never trip
-    // if Phase 1+3+4 are correct, but we'd much rather fail loudly
-    // here than ship a transition the validator silently rejects.
+    // Phase 5: defensive invariant checks. Fail loudly here rather
+    // than ship a transition the validator will reject.
     let input_sum: Credits = selected.values().sum();
     debug_assert_eq!(input_sum, total_output, "Σ inputs == Σ outputs invariant");
     debug_assert_eq!(
@@ -656,12 +544,9 @@ mod auto_select_tests {
     }
 
     /// Build a minimal valid `AddressFundsTransferTransitionV0` from a
-    /// selector result and feed it to the protocol's pure
-    /// `validate_structure` validator. Mirrors the shape used by
-    /// `valid_transfer_transition()` in
-    /// `state_transition_validation.rs:237`. Uses zero nonces and
-    /// dummy P2PKH witnesses — the structural validator doesn't
-    /// inspect signature material, only counts.
+    /// selector result and feed it to `validate_structure`. Uses zero
+    /// nonces and dummy P2PKH witnesses; the structural validator only
+    /// inspects counts, not signature material.
     fn assert_selection_validates(
         selected: &BTreeMap<PlatformAddress, Credits>,
         outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -692,22 +577,10 @@ mod auto_select_tests {
         );
     }
 
-    /// Regression test for the bug surfaced by Wave 8's live
-    /// testnet run: a wallet with one address holding 100M credits,
-    /// asked for an output of 10M, must produce
-    /// `selected[addr] == 10M` (the consumed amount) — NOT
-    /// `100M` (the full balance) and NOT `10M + fee`. The fee
-    /// comes from the address's REMAINING balance via the
-    /// `DeductFromInput(0)` strategy; it's never part of the
-    /// inputs map's `Credits` value.
-    ///
-    /// The validator asserts `Σ inputs == Σ outputs` (verified
-    /// at `rs-dpp/.../address_funds_transfer_transition/v0/state_transition_validation.rs`)
-    /// and the on-chain test
-    /// (`rs-drive-abci/.../address_funds_transfer/tests.rs:test_input_balance_decreased_correctly`)
-    /// confirms `new_balance == initial_balance - transfer_amount - fee`,
-    /// i.e. the fee is deducted from the address balance separately
-    /// from the input.credits value.
+    /// One address with 100M credits, output 10M → `selected[addr] == 10M`
+    /// (the consumed amount) — NOT the full balance, NOT `10M + fee`.
+    /// The fee comes from the address's remaining balance via
+    /// `DeductFromInput(0)` and is never part of the inputs map.
     #[test]
     fn single_input_oversized_balance_trims_to_output_amount() {
         let addr = p2pkh(0x11);
@@ -736,16 +609,10 @@ mod auto_select_tests {
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
-    /// When the first selected address can't cover `output + fee`
-    /// alone but two inputs together can, the **fee target** (the
-    /// lex-smallest address, which `DeductFromInput(0)` will hit)
-    /// must keep enough remaining balance to cover the fee. So the
-    /// fee target consumes only `min_input_amount`, and the rest of
-    /// `total_output` is drawn from the other selected input(s).
-    ///
-    /// CodeRabbit caught the previous, broken behaviour where
-    /// `addr_a` was drained in full (`{addr_a: 20M, addr_b: 10M}`),
-    /// leaving zero remaining balance for fee deduction at index 0.
+    /// Two-input case: the fee target (lex-smallest, `DeductFromInput(0)`)
+    /// consumes only `min_input_amount`, the rest of `total_output` is
+    /// drawn from the other input — so the fee target keeps enough
+    /// remaining balance for the fee deduction.
     #[test]
     fn two_input_selection_keeps_fee_headroom_at_index_zero() {
         let addr_a = p2pkh(0x01);
@@ -792,9 +659,7 @@ mod auto_select_tests {
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
-    /// Inputs are insufficient → error path returns a descriptive
-    /// `AddressOperation` error with the required-vs-available
-    /// numbers.
+    /// Insufficient inputs → descriptive `AddressOperation` error.
     #[test]
     fn insufficient_balance_errors() {
         let addr = p2pkh(0x33);
@@ -818,12 +683,9 @@ mod auto_select_tests {
         }
     }
 
-    /// Two-input scenario where the first candidate alone is
-    /// nearly enough to cover `total_output`, but cannot cover
-    /// `total_output + fee` (so a second input is added). The new
-    /// algorithm always shifts consumption to the non-fee-target
-    /// inputs to keep the fee-target's remaining balance for the
-    /// fee. The map's `Σ values` must still equal `total_output`.
+    /// First candidate covers `total_output` but not `total_output + fee`,
+    /// so a second input joins. Consumption shifts to the non-fee-target
+    /// input; `Σ values` still equals `total_output`.
     #[test]
     fn fee_only_tail_input_does_not_inflate_input_sum() {
         let addr_a = p2pkh(0xA0);
@@ -848,9 +710,8 @@ mod auto_select_tests {
             "Σ inputs must equal Σ outputs (protocol's structural invariant)"
         );
 
-        // addr_a (lex-smallest) is the fee target. With the new
-        // algorithm it consumes min_input_amount; addr_b absorbs
-        // the rest of `total_output`.
+        // addr_a (lex-smallest) is the fee target: consumes
+        // `min_input_amount`; addr_b absorbs the remainder.
         assert_eq!(selected.get(&addr_a), Some(&min_input));
         assert_eq!(selected.get(&addr_b), Some(&(total_output - min_input)));
         // addr_a stays at BTreeMap index 0.
@@ -867,23 +728,15 @@ mod auto_select_tests {
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
-    /// Direct regression test for the bug CodeRabbit flagged on
-    /// PR #3554: the old `select_inputs` returned
-    /// `{addr_a: 20M, addr_b: 10M}` for this exact scenario. That
-    /// satisfied `Σ inputs == Σ outputs` but drained `addr_a`
-    /// completely, so when drive applied `DeductFromInput(0)` it
-    /// found `min(fee, remaining=0) = 0` and rejected the
-    /// transition with `AddressesNotEnoughFundsError`.
-    ///
-    /// The new algorithm must keep `addr_a` in the map at
-    /// `min_input_amount` and shift the remaining consumption
-    /// onto `addr_b`, leaving `addr_a` with enough balance left
-    /// over to absorb the fee at deduction time.
+    /// Candidates `(20M, 50M)`, `total_output = 30M`,
+    /// `[DeductFromInput(0)]`: the fee target (`addr_a`) must remain
+    /// in the map at `min_input_amount` with the rest of consumption
+    /// shifted onto `addr_b`, so `addr_a` retains enough balance for
+    /// `DeductFromInput(0)` to deduct the fee at chain time.
     #[test]
     fn fee_target_keeps_remaining_for_fee_deduction() {
-        // Address bytes are chosen so addr_a < addr_b
-        // lexicographically (matching the BTreeMap ordering used
-        // by `DeductFromInput(0)`).
+        // addr_a < addr_b lexicographically — `DeductFromInput(0)`
+        // targets the BTreeMap index-0 entry.
         let addr_a = p2pkh(0x01);
         let addr_b = p2pkh(0x02);
         let target = p2pkh(0xFF);
@@ -909,8 +762,7 @@ mod auto_select_tests {
             "fee target (lex-smallest) must be the BTreeMap index-0 entry"
         );
 
-        // (3) Fee target's post-consumption remaining ≥ estimated
-        //     fee — THE invariant the bug violated.
+        // (3) Fee target's post-consumption remaining ≥ estimated fee.
         let estimated_fee =
             estimate_fee_for_inputs_pub(selected.len(), outputs.len(), &fee_strategy, &outputs, pv);
         let remaining = addr_a_balance - selected[&addr_a];
@@ -924,31 +776,19 @@ mod auto_select_tests {
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
-    /// Protocol-level reproduction of the CodeRabbit bug. Constructs the
-    /// exact `inputs` map the pre-fix `select_inputs` would have returned
-    /// for the original example (candidates (20M, 50M), total_output 30M,
-    /// `DeductFromInput(0)`), feeds it through the live dpp fee-deduction
-    /// code path, and asserts `fee_fully_covered == false` — i.e. the
-    /// transition would have been rejected with `AddressesNotEnoughFundsError`.
-    ///
-    /// This is the smoking gun: not just a unit test of our selector, but
-    /// proof that the unfixed selector's output is structurally invalid
-    /// at the protocol layer (not merely "we agreed it should look
-    /// different"). The fixed selector is verified independently by
+    /// Protocol-level proof: the inputs map a naive selector would
+    /// produce for `(20M, 50M)` / `total_output = 30M` /
+    /// `[DeductFromInput(0)]` (`{addr_a: 20M, addr_b: 10M}`), when
+    /// fed to dpp's `deduct_fee_from_outputs_or_remaining_balance_of_inputs`,
+    /// returns `fee_fully_covered = false` — so drive's
+    /// `validate_fees_of_event` would reject the transition. The
+    /// correct selector is verified by
     /// `fee_target_keeps_remaining_for_fee_deduction`.
-    ///
-    /// Reference:
-    /// - dpp deduction:
-    ///   `packages/rs-dpp/src/address_funds/fee_strategy/deduct_fee_from_inputs_and_outputs/v0/mod.rs`
-    /// - drive enforcement:
-    ///   `packages/rs-drive-abci/src/execution/platform_events/state_transition_processing/validate_fees_of_event/v0/mod.rs:209`
-    ///   (rejects when `!fee_fully_covered`).
     #[test]
     fn pre_fix_buggy_selector_output_is_rejected_by_protocol_fee_deduction() {
         use dpp::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::deduct_fee_from_outputs_or_remaining_balance_of_inputs;
         use dpp::prelude::AddressNonce;
 
-        // CodeRabbit's example.
         let addr_a = p2pkh(0x01); // lex-smallest → DeductFromInput(0) target
         let addr_b = p2pkh(0x02);
         let target = p2pkh(0xFF);
@@ -960,25 +800,24 @@ mod auto_select_tests {
             vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
         let pv = LATEST_PLATFORM_VERSION;
 
-        // The OLD selector would produce: addr_a fully consumed (20M),
-        // addr_b trimmed to 10M. Σ = 30M = total_output ✓ aggregate, but
-        // addr_a is fully drained.
+        // Naive selector output: addr_a fully consumed (20M),
+        // addr_b trimmed to 10M. Σ = total_output, but addr_a is
+        // fully drained — no headroom left for the fee.
         let mut buggy_inputs_consumed: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
         buggy_inputs_consumed.insert(addr_a, 20_000_000);
         buggy_inputs_consumed.insert(addr_b, 10_000_000);
 
         // Drive computes `input_current_balances[addr] = original_balance - consumed`
-        // and feeds *that* (with the address nonce) into the fee-deduction code.
-        // Reproducing that step here.
+        // and feeds that (with the address nonce) into fee deduction.
         let mut input_current_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
             BTreeMap::new();
         input_current_balances.insert(addr_a, (0, addr_a_balance - 20_000_000)); // 0 remaining
         input_current_balances.insert(addr_b, (0, addr_b_balance - 10_000_000)); // 40M remaining
 
-        // Use a representative fee that's small enough to be plausible
-        // but large enough that any non-zero remaining balance on an
-        // input could absorb it (so we know the failure isn't "fee too
-        // large" but specifically "fee target has zero remaining").
+        // Representative fee: small enough to be plausible, large
+        // enough that any non-zero remaining input balance could
+        // absorb it. The failure here is "fee target has 0 remaining",
+        // not "fee too large".
         let fee: Credits = 1_000_000;
 
         let added_to_outputs: BTreeMap<PlatformAddress, Credits> = outputs.clone();
@@ -1000,9 +839,8 @@ mod auto_select_tests {
              reproduction is broken or the protocol semantics changed; investigate."
         );
 
-        // Cross-check: addr_b alone would have been able to absorb the
-        // fee (40M remaining ≫ 1M fee). The bug is specifically that the
-        // strategy targets the WRONG input — the one with no headroom.
+        // Cross-check: addr_b's remaining (40M) ≫ fee. The bug is the
+        // strategy targeting addr_a, the one with no headroom.
         assert!(
             addr_b_balance - 10_000_000 >= fee,
             "sanity: addr_b's remaining ({}) covers the fee ({}); the bug is not \
@@ -1012,16 +850,9 @@ mod auto_select_tests {
         );
     }
 
-    /// When the lex-smallest candidate is too small to retain fee
-    /// headroom AND the remaining inputs cannot absorb enough of
-    /// `total_output` to keep its consumption ≥ `min_input_amount`
-    /// at the same time, selection must error out rather than
-    /// produce a transition the validator will reject.
-    ///
-    /// Construction: candidates have just barely enough combined
-    /// balance to cover `total_output + fee` (so Phase 1 succeeds),
-    /// but the lex-smallest entry is so heavily consumed that
-    /// `fee_target_min > fee_target_max`.
+    /// Phase 1 covers `total_output + fee` but the lex-smallest entry's
+    /// `fee_target_min > fee_target_max`. Selection must error out
+    /// rather than ship a transition the validator will reject.
     #[test]
     fn fee_headroom_violation_errors() {
         let addr_a = p2pkh(0x01);
@@ -1030,14 +861,9 @@ mod auto_select_tests {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
-        // addr_a (fee target, lex-smallest) holds exactly the
-        // minimum input amount, so it cannot retain *any*
-        // remaining balance for fee deduction without dropping
-        // below `min_input_amount`. addr_b is large enough that
-        // Phase 1 (prefix covers `total_output + fee`) succeeds —
-        // the algorithm must catch the headroom violation in
-        // Phase 3 and error out instead of producing a transition
-        // the validator will reject.
+        // addr_a (fee target) holds exactly `min_input_amount` — no
+        // remaining balance for the fee. addr_b lets Phase 1 succeed,
+        // so the headroom violation must be caught in Phase 3.
         let addr_a_balance = min_input;
         let total_output = 10_000_000u64;
         let addr_b_balance = 20_000_000u64;
@@ -1053,9 +879,8 @@ mod auto_select_tests {
                     msg.contains("Cannot satisfy fee headroom"),
                     "expected 'Cannot satisfy fee headroom' phrasing in error, got {msg:?}",
                 );
-                // The exhaustion-path message references the
-                // estimated fee that the lex-smallest entry of every
-                // tried prefix could not cover.
+                // Exhaustion-path message names the estimated fee
+                // that no tried prefix could leave headroom for.
                 assert!(
                     msg.contains("estimated fee"),
                     "expected estimated-fee callout in error, got {msg:?}",
@@ -1065,15 +890,10 @@ mod auto_select_tests {
         }
     }
 
-    /// `select_inputs` is order-agnostic: it walks `candidates` as-is and
-    /// picks the smallest covering prefix. The caller (`auto_select_inputs`)
-    /// is responsible for sorting candidates in the desired preference order.
-    ///
-    /// This test asserts that when candidates arrive in balance-descending
-    /// order — the convention `auto_select_inputs` adopts — the largest
-    /// single balance covering `total_output + fee` results in a 1-input
-    /// map. This is the common path that sidesteps the multi-input fee
-    /// headroom logic entirely.
+    /// With balance-descending input — the order `auto_select_inputs`
+    /// supplies — a single largest balance covering `total_output + fee`
+    /// produces a 1-input map, sidestepping the multi-input headroom
+    /// branch.
     #[test]
     fn descending_order_picks_single_largest_when_sufficient() {
         let addr_small = p2pkh(0x01);
@@ -1123,12 +943,9 @@ mod auto_select_tests {
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
 
-    /// Finding #4 regression: when `total_output` is below the
-    /// protocol's `min_input_amount`, no single-input transfer can
-    /// be sized within both the per-input minimum and the structural
-    /// `Σ inputs == total_output` invariant. `select_inputs` must
-    /// reject upfront with a descriptive error rather than tripping
-    /// the internal "should never trip" branch downstream.
+    /// `total_output < min_input_amount` is unsatisfiable (no input can
+    /// be both ≥ `min_input_amount` and sum to `total_output`).
+    /// `select_inputs` must reject upfront with a descriptive error.
     #[test]
     fn total_output_below_min_input_amount_errors() {
         let addr = p2pkh(0x10);
@@ -1136,8 +953,8 @@ mod auto_select_tests {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
         let total_output = min_input - 1;
-        // Output-side minimum applies separately at validate_structure;
-        // this test is purely about `select_inputs`'s upfront guard.
+        // Output-side minimum is checked separately by `validate_structure`;
+        // this test exercises only the input-side upfront guard.
         let outputs = outputs_for(target, total_output);
         let candidates = vec![(addr, 100_000_000)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
@@ -1155,24 +972,15 @@ mod auto_select_tests {
         }
     }
 
-    /// Finding #1 regression (GMHz scenario): candidates after the
-    /// balance-descending sort are `[(addr_X=0x01, 1_000_000),
-    /// (addr_Y=0x02, 30_000)]` with `total_output = 950_000`. The
-    /// pre-fix algorithm would build a 2-input map `{addr_X: 920_000,
-    /// addr_Y: 30_000}` (after Phase 4 distribution), and `addr_Y`'s
-    /// 30_000 amount is below `min_input_amount = 100_000`.
-    /// `validate_structure` would reject the transition with
-    /// `InputBelowMinimumError`. The new selector must either
-    /// produce a result whose every input ≥ `min_input_amount`, or
-    /// error out — never silently ship a sub-minimum input.
+    /// Tail entry's tentative consumption falls below `min_input_amount`.
+    /// The selector must either fold the residue back into the fee
+    /// target (so every input ≥ `min_input_amount`) or error out — never
+    /// silently ship a sub-minimum input that `validate_structure`
+    /// would reject with `InputBelowMinimumError`.
     ///
-    /// Note: `auto_select_inputs` filters candidates with balance
-    /// below `min_input_amount` upstream, so addr_Y wouldn't even
-    /// reach this helper in production. We feed it directly to
-    /// `select_inputs` to exercise the in-helper redistribution
-    /// path: tail entries whose tentative consumption falls below
-    /// `min_input_amount` get folded back into the fee target's
-    /// consumption.
+    /// Production callers filter sub-minimum candidates upstream in
+    /// `auto_select_inputs`; this test feeds the helper directly to
+    /// exercise its in-helper redistribution path.
     #[test]
     fn non_fee_target_below_min_input_redistributes() {
         let addr_x = p2pkh(0x01); // lex-smallest → fee target
@@ -1181,10 +989,9 @@ mod auto_select_tests {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
-        // GMHz numbers, scaled so total_output is comfortably above
-        // min_output_amount (500_000) — the protocol's per-output
-        // minimum is checked by validate_structure separately and is
-        // unrelated to the input-side redistribution we're exercising.
+        // total_output sits above `min_output_amount` (500_000) so the
+        // separate per-output minimum check doesn't shadow what we're
+        // testing — the input-side redistribution path.
         let total_output = 950_000u64;
         let addr_x_balance = 1_000_000u64; // covers total_output + fee on its own
         let addr_y_balance = 30_000u64; // below min_input_amount
@@ -1211,10 +1018,9 @@ mod auto_select_tests {
                 assert_selection_validates(&selected, &outputs, fee_strategy, pv);
             }
             Err(PlatformWalletError::AddressOperation(_)) => {
-                // Acceptable: the helper opted to error out rather
-                // than redistribute. Either outcome is valid; the
-                // failure mode we're guarding against is a silent
-                // sub-minimum input.
+                // Acceptable: the helper errored out rather than
+                // redistribute. The failure we're guarding against
+                // is a silent sub-minimum input.
             }
             Err(other) => panic!("unexpected error variant: {other:?}"),
         }

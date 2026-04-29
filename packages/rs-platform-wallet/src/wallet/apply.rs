@@ -310,9 +310,6 @@ impl PlatformWalletInfo {
         }
 
         // 7. Recompute cached UI balance from the now-restored UTXO set.
-        //    `WalletInfoInterface::update_balance` returns `()`; the
-        //    method mutates internal state. Calling it directly avoids
-        //    clippy's `let_unit_value` lint under `-D warnings`.
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         self.core_wallet.update_balance();
         // Mirror the recomputed balance into the lock-free Arc that the

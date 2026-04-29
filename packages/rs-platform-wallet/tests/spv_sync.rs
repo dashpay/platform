@@ -71,9 +71,6 @@ impl PlatformWalletPersistence for RecordingPersister {
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), platform_wallet::changeset::PersistenceError> {
         let has_core = changeset.core.is_some();
-        // `CoreChangeSet` carries `synced_height` as a direct field
-        // (the previous nested `chain.synced_height` shape was flattened);
-        // read it straight off the changeset.
         let synced_height = changeset.core.as_ref().and_then(|c| c.synced_height);
         self.records
             .lock()
