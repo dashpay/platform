@@ -218,7 +218,7 @@ impl TestWallet {
         self.wallet
             .platform()
             .transfer(
-                DEFAULT_ACCOUNT_INDEX,
+                DEFAULT_ACCOUNT_INDEX_PUB,
                 InputSelection::Explicit(inputs),
                 outputs,
                 default_fee_strategy(),
