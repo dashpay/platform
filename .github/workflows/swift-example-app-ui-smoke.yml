@@ -161,6 +161,12 @@ jobs:
         env:
           SIM_UDID: ${{ steps.simulator.outputs.udid }}
           RESULT_BUNDLE_PATH: ${{ runner.temp }}/SwiftExampleAppUITests.xcresult
+          # Forwarded into the XCUITest runner as `UI_TEST_MNEMONIC` —
+          # `xcodebuild test` strips the `TEST_RUNNER_` prefix before
+          # passing env vars through to the test process. Empty on PRs
+          # from forks (GitHub withholds secrets there), and the test
+          # self-skips when the value is empty.
+          TEST_RUNNER_UI_TEST_MNEMONIC: ${{ secrets.UI_TEST_MNEMONIC }}
         run: |
           set -euo pipefail
           xcodebuild test \

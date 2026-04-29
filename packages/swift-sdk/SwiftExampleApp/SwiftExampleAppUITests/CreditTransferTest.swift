@@ -13,7 +13,7 @@
 //  suite can run locally without test-network credentials.
 //
 //  Env var:
-//    * UI_TEST_TESTNET_MNEMONIC — sender wallet's 12-word phrase
+//    * UI_TEST_MNEMONIC — sender wallet's 12-word phrase
 //
 //  Note on env var forwarding: a previous run on this branch showed that
 //  `xcodebuild test ENV=...` did not propagate env vars to the XCUITest
@@ -41,15 +41,15 @@ final class CreditTransferTest: XCTestCase {
 
     @MainActor
     func testImportWalletAndDiscoverIdentity() throws {
-        guard let mnemonic = ProcessInfo.processInfo.environment["UI_TEST_TESTNET_MNEMONIC"],
+        guard let mnemonic = ProcessInfo.processInfo.environment["UI_TEST_MNEMONIC"],
               !mnemonic.isEmpty
         else {
-            throw XCTSkip("Set UI_TEST_TESTNET_MNEMONIC to run this test.")
+            throw XCTSkip("Set UI_TEST_MNEMONIC to run this test.")
         }
         XCTAssertEqual(
             mnemonic.split(separator: " ").count,
             12,
-            "UI_TEST_TESTNET_MNEMONIC must be a 12-word phrase."
+            "UI_TEST_MNEMONIC must be a 12-word phrase."
         )
 
         let app = XCUIApplication()
