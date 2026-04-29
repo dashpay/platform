@@ -240,6 +240,38 @@ output `Object` / `JSON` types:
 The output shapes (`Object`, `JSON`) are strict and complete — no missing
 fields, no per-call discretion. Constructors do the normalization.
 
+### Test coverage for `Object` / `JSON` round-trips
+
+Every wasm wrapper that exposes `toObject` / `fromObject` / `toJSON` /
+`fromJSON` **must** have a unit test covering all four methods, with:
+
+1. **Per-property assertions on `toObject()` output.** Don't just assert the
+   call doesn't throw — assert the shape: instance types (`Uint8Array`,
+   `bigint`, `Map`), exact lengths for fixed-size byte fields, exact values
+   for known fixtures.
+
+2. **Per-property assertions on `toJSON()` output.** Same idea, JSON-side:
+   strings (base58 / base64 / hex), `string | number` for safe-integer u64s,
+   discriminator fields on tagged enums.
+
+3. **Round-trip via `fromObject(toObject())`.** Catches latent serde bugs in
+   the bytes / map deserialization path that pure `toObject()` shape checks
+   never exercise (this is how PR #3235 surfaced the
+   `serde_bytes_var` / `serde_bytes` `visit_bytes` gap).
+
+4. **Round-trip via `fromJSON(toJSON())`.** Same idea, JSON-side. Matters
+   especially for human-readable encodings of non-string types
+   (`bigint` ↔ string, `Identifier` ↔ base58, `BinaryData` ↔ base64).
+
+This applies to wasm-dpp2 wrappers and any wasm-sdk result type that
+implements the same four methods (`PlatformAddressInfo`,
+`ShieldedEncryptedNote`, `ShieldedNullifierStatus`, `ResponseMetadata`,
+`ProofInfo`, `IdentityBalanceAndRevision`, etc.).
+
+> **Migration backlog** (see end of file): there are 78 wasm-dpp2 specs
+> today; ~46 are missing `fromObject` coverage and ~37 are missing
+> `fromJSON` coverage. Tracked separately from PR #3235.
+
 ## Bincode is independent of serde
 
 Custom serde impls (used to reshape JSON output, like
@@ -283,3 +315,12 @@ follow-up PRs (separate from this one to keep blast radii sensible):
 - **`tag = "$version"` → `tag = "$formatVersion"` migration** — fixed for the
   5 shielded transitions in PR #3235. Audit anything else still on `$version`
   in newer code.
+
+- **Round-trip + per-property test coverage** — see "Test coverage for
+  `Object` / `JSON` round-trips" above. As of PR #3235, ~46 of the 78
+  wasm-dpp2 specs are missing `fromObject` coverage and ~37 are missing
+  `fromJSON` coverage. Same pattern needed in wasm-sdk for its result
+  wrappers. Track as a dedicated cleanup PR — large mechanical sweep,
+  expected to surface latent serde bugs along the way (the
+  `serde_bytes_var` / `serde_bytes` `visit_bytes` gap is the first known
+  example, fixed in PR #3235).

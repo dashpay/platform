@@ -6,7 +6,6 @@ use js_sys::{Array, BigInt, Uint8Array};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::serialization::bytes_b64;
 
 // ── Wrapper types ──────────────────────────────────────────────────────
 
@@ -15,11 +14,8 @@ use wasm_dpp2::serialization::bytes_b64;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShieldedEncryptedNoteWasm {
-    #[serde(with = "bytes_b64")]
     cmx: Vec<u8>,
-    #[serde(with = "bytes_b64")]
     nullifier: Vec<u8>,
-    #[serde(with = "bytes_b64")]
     encrypted_note: Vec<u8>,
 }
 
@@ -47,7 +43,6 @@ impl_wasm_serde_conversions!(ShieldedEncryptedNoteWasm, ShieldedEncryptedNote);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShieldedNullifierStatusWasm {
-    #[serde(with = "bytes_b64")]
     nullifier: Vec<u8>,
     is_spent: bool,
 }
