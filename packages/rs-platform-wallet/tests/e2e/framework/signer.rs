@@ -191,12 +191,16 @@ fn lookup_identity_secret(
     key: &IdentityPublicKey,
 ) -> Result<[u8; 32], ProtocolError> {
     let pkh = ripemd160_sha256(key.data().as_slice());
-    inner.address_private_keys.get(&pkh).copied().ok_or_else(|| {
-        ProtocolError::Generic(format!(
-            "SeedBackedIdentitySigner: identity key {} not in pre-derived gap window",
-            hex::encode(pkh)
-        ))
-    })
+    inner
+        .address_private_keys
+        .get(&pkh)
+        .copied()
+        .ok_or_else(|| {
+            ProtocolError::Generic(format!(
+                "SeedBackedIdentitySigner: identity key {} not in pre-derived gap window",
+                hex::encode(pkh)
+            ))
+        })
 }
 
 /// Build a fully-formed [`IdentityPublicKey`] for a placeholder
