@@ -10,6 +10,7 @@ use wasm_dpp2::serialization::bytes_b64;
 
 // ── Wrapper types ──────────────────────────────────────────────────────
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "ShieldedEncryptedNote")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +42,7 @@ impl ShieldedEncryptedNoteWasm {
 }
 impl_wasm_serde_conversions!(ShieldedEncryptedNoteWasm, ShieldedEncryptedNote);
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "ShieldedNullifierStatus")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
