@@ -44,6 +44,10 @@ pub struct ShieldedWithdrawalTransitionV0 {
     /// Core transaction fee rate
     pub core_fee_per_byte: u32,
     /// Withdrawal pooling strategy
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::withdrawal::pooling_serde")
+    )]
     pub pooling: Pooling,
     /// Core address receiving withdrawn funds
     pub output_script: CoreScript,

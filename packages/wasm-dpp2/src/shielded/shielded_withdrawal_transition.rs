@@ -46,7 +46,7 @@ export interface ShieldedWithdrawalTransitionObject {
     proof: Uint8Array;
     bindingSignature: Uint8Array;
     coreFeePerByte: number;
-    pooling: CreditWithdrawalTransitionPooling;
+    pooling: PoolingWasm;
     outputScript: Uint8Array;
 }
 

@@ -40,6 +40,10 @@ pub struct AddressCreditWithdrawalTransitionV0 {
     pub output: Option<(PlatformAddress, Credits)>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub core_fee_per_byte: u32,
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::withdrawal::pooling_serde")
+    )]
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub user_fee_increase: UserFeeIncrease,
