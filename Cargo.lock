@@ -6762,6 +6762,8 @@ dependencies = [
  "bincode",
  "dpp",
  "hex",
+ "key-wallet",
+ "thiserror 2.0.18",
  "tracing",
 ]
 

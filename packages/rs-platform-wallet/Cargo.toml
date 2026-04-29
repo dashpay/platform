@@ -67,7 +67,7 @@ dotenvy = "0.15"
 bip39 = "2"
 fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["derive"] }
 parking_lot = "0.12"
 # `dash-async::block_on` is the runtime-flavor-agnostic bridge used by
 # `framework/context_provider.rs` to call `SpvRuntime`'s async API
