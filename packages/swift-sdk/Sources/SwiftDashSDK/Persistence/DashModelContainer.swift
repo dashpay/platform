@@ -7,6 +7,9 @@ public enum DashModelContainer {
     public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
+            PersistentDPNSName.self,
+            PersistentDashpayProfile.self,
+            PersistentDashpayContactRequest.self,
             PersistentDocument.self,
             PersistentDataContract.self,
             PersistentPublicKey.self,
@@ -123,6 +126,41 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     watch-only state lives on the native `Wallet` /
 ///     `ManagedAccount` (FFI-backed); persisting it on the SwiftData
 ///     side was redundant and the persister never wrote it.
+///   - `PersistentDPNSName` was added (cascade-owned by
+///     `PersistentIdentity` via the new `dpnsNames` relationship)
+///     so DPNS labels are persisted instead of recomputed on every
+///     `IdentityDetailView` open. Existing dev stores predate the
+///     row collection and rebuild on next sync; the changeset's
+///     append-only merge policy populates the new rows from the
+///     persister callback.
+///   - `PersistentDashpayProfile` was added (cascade-owned by
+///     `PersistentIdentity` via the new `dashpayProfile` optional
+///     relationship). Mirrors `IdentityEntry::dashpay_profile` from
+///     the FFI so DashPay profile fields (display name, public
+///     message, avatar URL / hash / fingerprint, bio) are persisted
+///     across launches instead of being refetched. Existing dev
+///     stores predate the row and rebuild on next profile sync; the
+///     persister upserts in place via
+///     `PlatformWalletPersistenceHandler.upsertDashpayProfile`.
+///   - `PersistentDashpayContactRequest` was added (cascade-owned by
+///     `PersistentIdentity` via the new `contactRequests` collection).
+///     Mirrors `ContactChangeSet::sent_requests` /
+///     `incoming_requests` / `established` projected through the new
+///     `on_persist_contacts_fn` FFI callback, with one row per
+///     `(network, owner, contact, isOutgoing)` quad. Existing dev
+///     stores predate the row collection and rebuild on next
+///     DashPay contact sync.
+///   - `PersistentAccount` gained `#Unique<…>([\.wallet, \.accountType,
+///     \.accountIndex, \.userIdentityId, \.friendIdentityId])` plus
+///     `@Attribute(.unique)` on `accountExtendedPubKeyBytes`. The
+///     xpub field also flipped from `Data` to `Data?` so multiple
+///     unhydrated rows (xpub not yet known) don't collide on the
+///     UNIQUE constraint — SQL allows multiple `NULL`s. Together
+///     these enforce "one row per account identity, one xpub per
+///     account" at the database layer; pre-refactor the persister's
+///     `applyAccountChangeset` was string-keyed on the legacy
+///     `Debug`-formatted `account_type_name` and could grow
+///     duplicate rows for the same logical account.
 /// Each of those is a destructive change to a unique-attribute
 /// column or to relationship topology, so any pre-existing dev
 /// store will fail to open and get rebuilt from scratch on next

@@ -1,0 +1,320 @@
+import Foundation
+
+/// One row of the per-(identity, token) sync cache held by the
+/// Rust-side `IdentitySyncManager`. Mirrors the FFI
+/// `IdentityTokenSyncInfoFFI` shape — `identity_id` is replicated on
+/// every row so the whole-store snapshot stays a flat array.
+public struct IdentityTokenSyncRow: Sendable {
+    public let identityId: Identifier
+    public let tokenId: Identifier
+    public let contractId: Identifier
+    public let balance: UInt64
+    public let identityContractNonce: UInt64
+
+    init(ffi: IdentityTokenSyncInfoFFI) {
+        var identity = ffi.identity_id
+        self.identityId = withUnsafeBytes(of: &identity) { Data($0) }
+        var token = ffi.token_id
+        self.tokenId = withUnsafeBytes(of: &token) { Data($0) }
+        var contract = ffi.contract_id
+        self.contractId = withUnsafeBytes(of: &contract) { Data($0) }
+        self.balance = ffi.balance
+        self.identityContractNonce = ffi.identity_contract_nonce
+    }
+}
+
+/// Snapshot of one identity's sync row (rows + last-sync timestamp)
+/// returned by `identitySyncStateForIdentity`.
+public struct IdentityTokenSyncSnapshot: Sendable {
+    public let rows: [IdentityTokenSyncRow]
+    public let lastSyncUnixSeconds: UInt64
+
+    public init(rows: [IdentityTokenSyncRow], lastSyncUnixSeconds: UInt64) {
+        self.rows = rows
+        self.lastSyncUnixSeconds = lastSyncUnixSeconds
+    }
+}
+
+extension PlatformWalletManager {
+    /// Start the identity-token sync background loop.
+    public func startIdentityTokenSync() throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_manager_identity_sync_start(handle, &error)
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
+    /// Stop the identity-token sync background loop.
+    public func stopIdentityTokenSync() throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_manager_identity_sync_stop(handle, &error)
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
+    /// Whether the identity-token sync background loop is running.
+    public func isIdentityTokenSyncRunning() throws -> Bool {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        var running = false
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_manager_identity_sync_is_running(handle, &running, &error)
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return running
+    }
+
+    /// Whether an identity-token sync pass is currently in flight.
+    public func isIdentityTokenSyncing() throws -> Bool {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        var syncing = false
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_manager_identity_sync_is_syncing(handle, &syncing, &error)
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return syncing
+    }
+
+    /// Unix seconds of the last completed identity-token sync pass for
+    /// the given identity, or 0 if it has never been synced.
+    public func lastIdentityTokenSyncUnixSeconds(for identityId: Identifier) throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidIdentifier
+        }
+        var lastSync: UInt64 = 0
+        var error = PlatformWalletFFIError()
+        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
+            platform_wallet_manager_identity_sync_last_sync_unix_seconds(
+                handle,
+                idPtr.bindMemory(to: UInt8.self).baseAddress,
+                &lastSync,
+                &error
+            )
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+        return lastSync
+    }
+
+    /// Set the polling interval (clamped to >= 1 second on the Rust side).
+    public func setIdentityTokenSyncInterval(seconds: UInt64) throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_manager_identity_sync_set_interval(handle, seconds, &error)
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
+    /// Run one identity-token sync pass across every registered
+    /// identity. Synchronous from the FFI side — runs on a worker
+    /// detached `Task`. If a pass is already in flight, returns
+    /// without doing extra work.
+    public func syncIdentityTokensNow() async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            var error = PlatformWalletFFIError()
+            let result = platform_wallet_manager_identity_sync_sync_now(handle, &error)
+            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+                throw PlatformWalletError(result: result, error: error)
+            }
+        }.value
+    }
+
+    /// Add or replace the sync registry row for `identityId`. Each
+    /// entry in `tokenIds` becomes a watched-token row with
+    /// placeholder balance/contract/nonce until the next sync pass
+    /// populates real values. Idempotent — calling with the same
+    /// identity replaces the row.
+    public func registerIdentityForTokenSync(
+        identityId: Identifier,
+        tokenIds: [Identifier]
+    ) throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidIdentifier
+        }
+        var error = PlatformWalletFFIError()
+        // Flatten token ids into one contiguous 32*N buffer so the
+        // FFI can read them as back-to-back chunks.
+        var flat = Data(capacity: 32 * tokenIds.count)
+        for tid in tokenIds {
+            guard tid.count == 32 else {
+                throw PlatformWalletError.invalidIdentifier
+            }
+            flat.append(tid)
+        }
+        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
+            flat.withUnsafeBytes { tokensPtr -> PlatformWalletFFIResult in
+                platform_wallet_manager_identity_sync_register_identity(
+                    handle,
+                    idPtr.bindMemory(to: UInt8.self).baseAddress,
+                    tokensPtr.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(tokenIds.count),
+                    &error
+                )
+            }
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
+    /// Remove `identityId` from the sync registry. Idempotent.
+    public func unregisterIdentityForTokenSync(identityId: Identifier) throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidIdentifier
+        }
+        var error = PlatformWalletFFIError()
+        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
+            platform_wallet_manager_identity_sync_unregister_identity(
+                handle,
+                idPtr.bindMemory(to: UInt8.self).baseAddress,
+                &error
+            )
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
+    /// Replace the watched-token list on an already-registered
+    /// identity. No-op when the identity isn't registered (call
+    /// `registerIdentityForTokenSync` first if you want promotion).
+    public func updateWatchedTokensForTokenSync(
+        identityId: Identifier,
+        tokenIds: [Identifier]
+    ) throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidIdentifier
+        }
+        var error = PlatformWalletFFIError()
+        var flat = Data(capacity: 32 * tokenIds.count)
+        for tid in tokenIds {
+            guard tid.count == 32 else {
+                throw PlatformWalletError.invalidIdentifier
+            }
+            flat.append(tid)
+        }
+        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
+            flat.withUnsafeBytes { tokensPtr -> PlatformWalletFFIResult in
+                platform_wallet_manager_identity_sync_update_watched_tokens(
+                    handle,
+                    idPtr.bindMemory(to: UInt8.self).baseAddress,
+                    tokensPtr.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(tokenIds.count),
+                    &error
+                )
+            }
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+    }
+
+    /// Snapshot the per-identity token sync state for one identity.
+    /// Returns `nil` when the identity has no cached state.
+    public func identityTokenSyncState(
+        for identityId: Identifier
+    ) throws -> IdentityTokenSyncSnapshot? {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidIdentifier
+        }
+
+        var rowsPtr: UnsafeMutablePointer<IdentityTokenSyncInfoFFI>? = nil
+        var rowsCount: UInt = 0
+        var lastSync: UInt64 = 0
+        var error = PlatformWalletFFIError()
+        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
+            platform_wallet_manager_identity_sync_state_for_identity(
+                handle,
+                idPtr.bindMemory(to: UInt8.self).baseAddress,
+                &rowsPtr,
+                &rowsCount,
+                &lastSync,
+                &error
+            )
+        }
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        defer {
+            if let rowsPtr {
+                platform_wallet_manager_identity_sync_state_free(rowsPtr, rowsCount)
+            }
+        }
+
+        guard let rowsPtr else {
+            return nil
+        }
+        let buffer = UnsafeBufferPointer(start: rowsPtr, count: Int(rowsCount))
+        let rows = buffer.map { IdentityTokenSyncRow(ffi: $0) }
+        return IdentityTokenSyncSnapshot(rows: rows, lastSyncUnixSeconds: lastSync)
+    }
+
+    /// Snapshot the per-identity token sync state for every cached
+    /// identity in one flat array.
+    public func allIdentityTokenSyncRows() throws -> [IdentityTokenSyncRow] {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle
+        }
+        var rowsPtr: UnsafeMutablePointer<IdentityTokenSyncInfoFFI>? = nil
+        var rowsCount: UInt = 0
+        var error = PlatformWalletFFIError()
+        let result = platform_wallet_manager_identity_sync_state_all(
+            handle,
+            &rowsPtr,
+            &rowsCount,
+            &error
+        )
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        defer {
+            if let rowsPtr {
+                platform_wallet_manager_identity_sync_state_free(rowsPtr, rowsCount)
+            }
+        }
+
+        guard let rowsPtr else {
+            return []
+        }
+        let buffer = UnsafeBufferPointer(start: rowsPtr, count: Int(rowsCount))
+        return buffer.map { IdentityTokenSyncRow(ffi: $0) }
+    }
+}

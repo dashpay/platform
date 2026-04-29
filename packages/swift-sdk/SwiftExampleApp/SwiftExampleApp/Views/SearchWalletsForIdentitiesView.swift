@@ -90,7 +90,7 @@ struct SearchWalletsForIdentitiesView: View {
 
                 searchButtonSection
             }
-            .navigationTitle("Search Wallets")
+            .navigationTitle("Re-scan for Identities")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -288,7 +288,7 @@ struct SearchWalletsForIdentitiesView: View {
                         Text("Scanning…")
                     } else {
                         Image(systemName: "magnifyingglass")
-                        Text(result == nil ? "Search Wallet" : "Search Again")
+                        Text(result == nil ? "Re-scan Wallet" : "Re-scan Again")
                     }
                     Spacer()
                 }

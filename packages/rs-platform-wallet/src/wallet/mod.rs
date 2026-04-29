@@ -20,4 +20,3 @@ pub use platform_addresses::{
 pub use platform_wallet::{
     PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
 };
-pub use tokens::TokenWallet;

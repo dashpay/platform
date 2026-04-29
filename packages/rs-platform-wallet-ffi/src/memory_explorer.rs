@@ -4,13 +4,18 @@
 //! Powers the iOS "Wallet Memory Explorer" view — a read-only dump of
 //! what Rust currently holds for a loaded wallet (managed identity ids,
 //! out-of-wallet/observed identity ids, gap-limit registration high
-//! water mark, asset lock and token-balance counts).
+//! water mark, asset lock counts).
 //!
 //! Mirrors the per-wallet `info.identity_manager.*` and
-//! `info.tracked_asset_locks` / `info.token_balances` surface that
-//! existing FFI calls already expose piecemeal — this module just
-//! gives Swift one-shot enumerators so the explorer view can render
-//! a snapshot without juggling multiple FFI handles.
+//! `info.tracked_asset_locks` surface that existing FFI calls already
+//! expose piecemeal — this module just gives Swift one-shot
+//! enumerators so the explorer view can render a snapshot without
+//! juggling multiple FFI handles.
+//!
+//! Token balance state is owned by
+//! [`platform_wallet::IdentitySyncManager`] — query that via the
+//! `platform_wallet_manager_identity_sync_state_*` family rather than
+//! through this explorer.
 //!
 //! All entry points are read-only. Holding the wallet manager
 //! `blocking_read` guard is fine on the FFI thread (matches the
@@ -41,9 +46,6 @@ pub struct PlatformWalletMemorySummaryFFI {
     /// Number of tracked asset locks the wallet currently holds in
     /// memory (`PlatformWalletInfo.tracked_asset_locks`).
     pub tracked_asset_locks_count: usize,
-    /// Number of `(identity_id, token_id) -> amount` entries on the
-    /// wallet (`PlatformWalletInfo.token_balances`).
-    pub token_balances_count: usize,
 }
 
 /// Identity lifecycle status mirror.
@@ -257,7 +259,6 @@ pub unsafe extern "C" fn platform_wallet_get_in_memory_summary(
                 .highest_registration_index(&wallet_id)
                 .map_or(0u32, |i| i + 1);
             let tracked_asset_locks_count = info.tracked_asset_locks.len();
-            let token_balances_count = info.token_balances.len();
 
             unsafe {
                 *out = PlatformWalletMemorySummaryFFI {
@@ -265,7 +266,6 @@ pub unsafe extern "C" fn platform_wallet_get_in_memory_summary(
                     watched_count,
                     last_scanned_index,
                     tracked_asset_locks_count,
-                    token_balances_count,
                 };
             }
             PlatformWalletFFIResult::Success

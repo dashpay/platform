@@ -281,31 +281,65 @@ public class PlatformWalletPersistenceHandler {
         walletRecord: PersistentWallet,
         acc: AccountChangeSetFFI
     ) {
-        let typeName = acc.account_type_name.map { String(cString: $0) } ?? "Unknown"
         let accountIndex = acc.account_index
+        // Stable account-type discriminants from the FFI. Used as the
+        // upsert key so a load-path emit and a sync-path emit for the
+        // same account collapse onto a single row — the legacy
+        // `account_type_name` string was Rust's `Debug` output, which
+        // differs from the canonical name the load path emits ("BIP44
+        // Account" vs "Standard { index: 0, … }") and made the
+        // string-keyed predicate produce duplicate rows.
+        // `AccountTypeTagFFI` / `StandardAccountTypeTagFFI` come over
+        // as plain `UInt8` aliases (cbindgen flat-enum projection).
+        let typeTag = UInt32(acc.type_tag)
+        let standardTag = UInt8(acc.standard_tag)
+        let registrationIndex = acc.registration_index
+        let keyClass = acc.key_class
+        let userIdentityId = withUnsafeBytes(of: acc.user_identity_id) { Data($0) }
+        let friendIdentityId = withUnsafeBytes(of: acc.friend_identity_id) { Data($0) }
+        let typeName = accountTypeName(for: acc.type_tag, standardTag: acc.standard_tag)
 
-        // Upsert account (keyed by wallet + typeName + accountIndex).
+        // Upsert keyed by the full account identity. We can't easily
+        // express the identity tuple in a #Predicate with local `Data`
+        // captures, so fetch by (walletId, accountType, accountIndex)
+        // and verify the richer fields in Swift — same pattern the
+        // load path uses for `applyAccountSpec`.
         let walletId = walletRecord.walletId
         let accountDescriptor = FetchDescriptor<PersistentAccount>(
             predicate: #Predicate {
                 $0.wallet.walletId == walletId
-                    && $0.accountTypeName == typeName
+                    && $0.accountType == typeTag
                     && $0.accountIndex == accountIndex
             }
         )
+        let existing = (try? backgroundContext.fetch(accountDescriptor)) ?? []
+        let match = existing.first { row in
+            row.standardTag == standardTag
+                && row.registrationIndex == registrationIndex
+                && row.keyClass == keyClass
+                && row.userIdentityId == userIdentityId
+                && row.friendIdentityId == friendIdentityId
+        }
         let account: PersistentAccount
-        if let existing = try? backgroundContext.fetch(accountDescriptor).first {
-            account = existing
+        if let match = match {
+            account = match
             account.lastUpdated = Date()
         } else {
             account = PersistentAccount(
                 wallet: walletRecord,
-                accountType: 0,
+                accountType: typeTag,
                 accountIndex: accountIndex,
                 accountTypeName: typeName
             )
             backgroundContext.insert(account)
         }
+        // Refresh the variant-specific fields so the row stays in
+        // sync with the latest emit (matches the load-path apply).
+        account.standardTag = standardTag
+        account.registrationIndex = registrationIndex
+        account.keyClass = keyClass
+        account.userIdentityId = userIdentityId
+        account.friendIdentityId = friendIdentityId
 
         // Highest-used address pool indices.
         if acc.has_external_highest_used {
@@ -479,22 +513,39 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    private func markUtxoSpent(_ op: OutPointFFI) {
-        let outpoint = PersistentTxo.makeOutpoint(txid: hashData(op.txid), vout: op.vout)
+    private func markUtxoSpent(_ entry: SpentOutPointFFI) {
+        let outpoint = PersistentTxo.makeOutpoint(
+            txid: hashData(entry.outpoint.txid),
+            vout: entry.outpoint.vout
+        )
         let descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
-        if let txo = try? backgroundContext.fetch(descriptor).first {
-            txo.isSpent = true
-            // The FFI's spent-utxo notification only carries the
-            // outpoint, not the spending tx — so we cannot populate
-            // `txo.spendingTransaction` here. `isSpent = true` with
-            // `spendingTransaction == nil` is the steady-state we
-            // reach for now; future work: have the FFI emit the
-            // spending txid alongside each spent outpoint and link
-            // them up here.
-            txo.lastUpdated = Date()
+        guard let txo = try? backgroundContext.fetch(descriptor).first else {
+            return
         }
+        txo.isSpent = true
+        // Link the spending transaction. The FFI now carries
+        // `spending_txid` alongside the outpoint (the txid of the
+        // `TransactionRecord` whose inputs included this outpoint),
+        // so we can resolve the parent and set the relationship.
+        // If the spending tx hasn't landed in SwiftData yet (rare
+        // — same-flush ordering normally upserts the tx before
+        // its spent-outpoint emit) leave the relationship nil; the
+        // next flush carrying that tx triggers another upsert
+        // round and eventually catches up.
+        let spendingTxid = hashData(entry.spending_txid)
+        if !spendingTxid.isEmpty,
+           !spendingTxid.allSatisfy({ $0 == 0 }),
+           txo.spendingTransaction?.txid != spendingTxid {
+            let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == spendingTxid }
+            )
+            if let spendingTx = try? backgroundContext.fetch(txDescriptor).first {
+                txo.spendingTransaction = spendingTx
+            }
+        }
+        txo.lastUpdated = Date()
     }
 
     private func markUtxoInstantLocked(_ op: OutPointFFI) {
@@ -534,14 +585,15 @@ public class PlatformWalletPersistenceHandler {
         // Root xpub is redundant with `wallet_id` for identity /
         // verification; Rust-side will stop requiring it once the
         // upstream rust-dashcore PR lands.
-        cb.on_persist_account_fn = persistAccountCallback
+        cb.on_persist_account_registrations_fn = persistAccountRegistrationsCallback
         cb.on_load_wallet_list_fn = loadWalletListCallback
         cb.on_load_wallet_list_free_fn = loadWalletListFreeCallback
         cb.on_persist_wallet_metadata_fn = persistWalletMetadataCallback
-        cb.on_persist_account_addresses_fn = persistAccountAddressesCallback
+        cb.on_persist_account_address_pools_fn = persistAccountAddressPoolsCallback
         cb.on_persist_identities_fn = persistIdentitiesCallback
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         cb.on_persist_token_balances_fn = persistTokenBalancesCallback
+        cb.on_persist_contacts_fn = persistContactsCallback
         return cb
     }
 
@@ -684,6 +736,42 @@ public class PlatformWalletPersistenceHandler {
             }
             row.lastUpdated = Date()
 
+            // Upsert the DPNS-label cache for this identity.
+            //
+            // The Rust changeset's merge policy is append-only
+            // (`IdentityChangeSet::merge` only adds labels not
+            // already present on the existing entry), so a label
+            // missing from this flush does NOT mean it was removed
+            // — we mirror that by inserting new rows but never
+            // deleting existing ones here. DPNS doesn't expose a
+            // user-driven "delete name" today; if/when it does, the
+            // removal must arrive via a separate signal so we know
+            // it's intentional.
+            //
+            // `acquiredAt` is informational on the existing row —
+            // we refresh it on upsert so a later sync that fills in
+            // the timestamp wins over an earlier `0` placeholder.
+            upsertDPNSNames(
+                identityRow: row,
+                names: entry.dpnsNames
+            )
+
+            // Upsert the DashPay profile cache for this identity.
+            //
+            // Gated on `entry.dashpayProfile != nil` — a `nil`
+            // snapshot mirrors the FFI's
+            // `dashpay_profile_present == false`, which the Rust
+            // `IdentityChangeSet::merge` policy treats as "no
+            // update" (NOT delete). DashPay doesn't expose a
+            // user-driven "delete profile" today; if it ever does,
+            // the removal must arrive via a separate signal so we
+            // know it's intentional. Match the dpns-name handling
+            // shape: a missing snapshot leaves any existing row
+            // intact.
+            if let profile = entry.dashpayProfile {
+                upsertDashpayProfile(identityRow: row, profile: profile)
+            }
+
             // Attach the identity to its owning `PersistentWallet`
             // via the relationship. This is the sole wallet-side
             // association on the row — there is no denormalized
@@ -720,6 +808,143 @@ public class PlatformWalletPersistenceHandler {
 
         // No save() — bracketed by changesetBegin/End.
         }  // onQueue
+    }
+
+    /// Upsert a `PersistentDPNSName` row for every label the FFI
+    /// identity entry carried. Rows are keyed on
+    /// `(networkRaw, normalizedParentDomainName, normalizedLabel)`,
+    /// matching `PersistentDPNSName`'s
+    /// `#Unique<…>([\.networkRaw, \.normalizedParentDomainName,
+    /// \.normalizedLabel])` declaration — which itself mirrors the
+    /// DPNS contract's `parentNameAndLabel` unique index. If a label
+    /// transferred between identities on the same network the
+    /// existing row's `identity` is rebound to the current owner.
+    ///
+    /// The FFI `IdentityEntryFFI.dpns_names` array carries only the
+    /// display label today; the parent domain defaults to `"dash"`
+    /// (the only top-level DPNS domain on Dash Platform), and the
+    /// normalized forms are derived via
+    /// `PersistentDPNSName.normalize(_:)` on insert. If/when the FFI
+    /// is extended to carry the parent domain, this site's defaults
+    /// become the fallback path.
+    ///
+    /// Append-only at the per-identity level: existing rows whose
+    /// label is no longer in the FFI list survive (see the call-site
+    /// comment on `IdentityChangeSet::merge`'s policy). The function
+    /// only ever inserts or refreshes; it does NOT cascade-prune.
+    ///
+    /// Assumes it's already running on `serialQueue` — only called
+    /// from inside `persistIdentities`'s `onQueue` body.
+    private func upsertDPNSNames(
+        identityRow: PersistentIdentity,
+        names: [(label: String, acquiredAt: UInt64)]
+    ) {
+        if names.isEmpty {
+            return
+        }
+
+        let networkRaw = identityRow.networkRaw
+        // DPNS today exposes only the "dash" top-level domain. If the
+        // FFI ever forwards a different parent, the model carries it
+        // through verbatim — for now we stamp the universal default.
+        let parentDomainName = "dash"
+        let normalizedParentDomainName = PersistentDPNSName.normalize(parentDomainName)
+
+        for entry in names {
+            let normalizedLabel = PersistentDPNSName.normalize(entry.label)
+            let descriptor = FetchDescriptor<PersistentDPNSName>(
+                predicate: #Predicate {
+                    $0.networkRaw == networkRaw
+                        && $0.normalizedParentDomainName == normalizedParentDomainName
+                        && $0.normalizedLabel == normalizedLabel
+                }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                // Refresh the timestamp if the FFI now carries a
+                // non-zero value. Don't clobber a real timestamp
+                // with a `0` placeholder — `acquired_at` is sticky
+                // once set.
+                if entry.acquiredAt != 0 && existing.acquiredAt != entry.acquiredAt {
+                    existing.acquiredAt = entry.acquiredAt
+                    existing.lastUpdated = Date()
+                }
+                // Refresh the display label too — a later flush may
+                // carry a corrected casing for the same normalized
+                // form (e.g. originally synced as "alice" then
+                // re-synced as "Alice"). The normalized index column
+                // doesn't change, so the unique constraint holds.
+                if existing.label != entry.label {
+                    existing.label = entry.label
+                    existing.lastUpdated = Date()
+                }
+                // Rebind to the current owner if the label transferred
+                // between identities on this network. DPNS supports
+                // transfers, and the unique constraint is per-network,
+                // so the row stays but the owner pointer moves.
+                if existing.identity !== identityRow {
+                    existing.identity = identityRow
+                    existing.lastUpdated = Date()
+                }
+            } else {
+                let row = PersistentDPNSName(
+                    identity: identityRow,
+                    label: entry.label,
+                    parentDomainName: parentDomainName,
+                    acquiredAt: entry.acquiredAt
+                )
+                backgroundContext.insert(row)
+            }
+        }
+    }
+
+    /// Upsert the at-most-one `PersistentDashpayProfile` row for an
+    /// identity. Idempotent on repeated flushes: an existing row is
+    /// refreshed in place rather than replaced, so SwiftUI views
+    /// observing it via `@Query` see field-level updates rather than
+    /// row-replacement churn.
+    ///
+    /// The DashPay contract guarantees one `profile` document per
+    /// `ownerId`, so we never have to disambiguate multiple rows for
+    /// the same identity — `identityRow.dashpayProfile` is either
+    /// already present (refresh) or absent (insert).
+    ///
+    /// Runs on `serialQueue` — only called from inside
+    /// `persistIdentities`'s `onQueue` body.
+    private func upsertDashpayProfile(
+        identityRow: PersistentIdentity,
+        profile: DashpayProfileSnapshot
+    ) {
+        if let existing = identityRow.dashpayProfile {
+            // Field-level refresh. Every column is overwritten on
+            // every flush — the FFI snapshot is authoritative for
+            // the profile document's contents (the underlying
+            // `IdentityEntry::dashpay_profile` is a whole-document
+            // `Some(_)` payload, not a partial diff). Fields the
+            // sender omitted come through as `nil` here too, so
+            // setting them to nil mirrors the on-Platform state.
+            existing.displayName = profile.displayName
+            existing.bio = profile.bio
+            existing.publicMessage = profile.publicMessage
+            existing.avatarUrl = profile.avatarUrl
+            existing.avatarHash = profile.avatarHash
+            existing.avatarFingerprint = profile.avatarFingerprint
+            existing.lastUpdated = Date()
+        } else {
+            let row = PersistentDashpayProfile(
+                identity: identityRow,
+                displayName: profile.displayName,
+                publicMessage: profile.publicMessage,
+                bio: profile.bio,
+                avatarUrl: profile.avatarUrl,
+                avatarHash: profile.avatarHash,
+                avatarFingerprint: profile.avatarFingerprint
+            )
+            backgroundContext.insert(row)
+            // SwiftData populates the inverse `dashpayProfile`
+            // pointer from the `inverse:` declaration on
+            // `PersistentIdentity.dashpayProfile`, so we don't need
+            // to assign `identityRow.dashpayProfile = row` here.
+        }
     }
 
     // MARK: - Identity keys persistence
@@ -975,6 +1200,178 @@ public class PlatformWalletPersistenceHandler {
         let tokenId: Data
     }
 
+    // MARK: - DashPay contact-request persistence
+
+    /// Apply a DashPay `ContactChangeSet` projection to SwiftData.
+    ///
+    /// Mapping:
+    /// - Each `upsert.ContactRequestFFI` becomes one row keyed by
+    ///   `(networkRaw, ownerIdentityId, contactIdentityId, isOutgoing)`
+    ///   on `PersistentDashpayContactRequest`. The Rust side projects
+    ///   `ContactChangeSet::sent_requests` / `incoming_requests` /
+    ///   `established` into this flat array (with `is_outgoing`
+    ///   stamped per row), so the upsert path is direction-agnostic.
+    /// - Each `removedSent` row drops the matching outgoing row.
+    /// - Each `removedIncoming` row drops the matching incoming row.
+    ///
+    /// The owner identity is required to exist in SwiftData before
+    /// the row is inserted — the relationship is non-optional and
+    /// `networkRaw` is read off it. If a flush carries a contact
+    /// upsert for an owner identity Swift hasn't seen yet (race with
+    /// a first-time identity flush), the row is skipped; the next
+    /// flush will replay it after the identity row lands. In
+    /// practice the changeset is one round, so this only matters
+    /// for the very first identity registration where the contact
+    /// changeset and identity changeset arrive in the same store()
+    /// call — within a round, identities apply before contacts (see
+    /// the ordering in `FFIPersister::store`), so the lookup here
+    /// will normally succeed.
+    func persistContacts(
+        walletId: Data,
+        upserts: [ContactRequestSnapshot],
+        removedSent: [ContactRequestRemovalSnapshot],
+        removedIncoming: [ContactRequestRemovalSnapshot]
+    ) {
+        onQueue {
+            for entry in upserts {
+                let ownerId = entry.ownerIdentityId
+                let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate { $0.identityId == ownerId }
+                )
+                guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+                    // Owner identity hasn't landed yet. Within a
+                    // single round identities apply before contacts,
+                    // so we'd only hit this if the FFI changeset
+                    // surfaces a contact for an identity that isn't
+                    // managed by any wallet locally — there's no
+                    // identity row to hang it off, and the contract's
+                    // `ownerId` invariant means the row would be
+                    // orphaned anyway. Skip silently; the next sync
+                    // round will replay it once the owner row exists.
+                    continue
+                }
+
+                let networkRaw = owner.networkRaw
+                let contactId = entry.contactIdentityId
+                let isOutgoing = entry.isOutgoing
+                let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw
+                            && $0.ownerIdentityId == ownerId
+                            && $0.contactIdentityId == contactId
+                            && $0.isOutgoing == isOutgoing
+                    }
+                )
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    // Refresh in place — every column is overwritten
+                    // because the FFI snapshot is authoritative for
+                    // the underlying `ContactRequest` document. This
+                    // is also the path `established` rows take to
+                    // promote a previously-pending row in place over
+                    // its prior `sent_requests` / `incoming_requests`
+                    // entry; the unique key is identical because the
+                    // promotion doesn't change `(owner, contact,
+                    // direction)`.
+                    existing.senderKeyIndex = entry.senderKeyIndex
+                    existing.recipientKeyIndex = entry.recipientKeyIndex
+                    existing.accountReference = entry.accountReference
+                    existing.encryptedPublicKey = entry.encryptedPublicKey
+                    existing.encryptedAccountLabel = entry.encryptedAccountLabel
+                    existing.autoAcceptProof = entry.autoAcceptProof
+                    existing.coreHeightCreatedAt = entry.coreHeightCreatedAt
+                    existing.createdAtMillis = entry.createdAtMillis
+                    if existing.owner !== owner {
+                        existing.owner = owner
+                    }
+                    existing.lastUpdated = Date()
+                } else {
+                    let row = PersistentDashpayContactRequest(
+                        owner: owner,
+                        contactIdentityId: entry.contactIdentityId,
+                        isOutgoing: entry.isOutgoing,
+                        senderKeyIndex: entry.senderKeyIndex,
+                        recipientKeyIndex: entry.recipientKeyIndex,
+                        accountReference: entry.accountReference,
+                        encryptedPublicKey: entry.encryptedPublicKey,
+                        encryptedAccountLabel: entry.encryptedAccountLabel,
+                        autoAcceptProof: entry.autoAcceptProof,
+                        coreHeightCreatedAt: entry.coreHeightCreatedAt,
+                        createdAtMillis: entry.createdAtMillis
+                    )
+                    backgroundContext.insert(row)
+                }
+            }
+
+            for tomb in removedSent {
+                deleteContactRow(
+                    ownerId: tomb.ownerIdentityId,
+                    contactId: tomb.contactIdentityId,
+                    isOutgoing: true
+                )
+            }
+            for tomb in removedIncoming {
+                deleteContactRow(
+                    ownerId: tomb.ownerIdentityId,
+                    contactId: tomb.contactIdentityId,
+                    isOutgoing: false
+                )
+            }
+            // No save() — bracketed by changesetBegin/End from the
+            // Rust store() round.
+            _ = walletId  // reserved for future wallet-scope batching
+        }
+    }
+
+    /// Delete the single `PersistentDashpayContactRequest` row matching
+    /// `(ownerIdentityId, contactIdentityId, isOutgoing)`. The fourth
+    /// uniqueness column (`networkRaw`) is implied by the owner — an
+    /// identity belongs to exactly one network — so we don't have to
+    /// fan out the predicate across networks. Silent on miss (no
+    /// existing row): the FFI changeset replays tombstones, and an
+    /// already-removed row is the success state.
+    ///
+    /// Assumes it's already running on `serialQueue`.
+    private func deleteContactRow(ownerId: Data, contactId: Data, isOutgoing: Bool) {
+        let direction = isOutgoing
+        let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
+            predicate: #Predicate {
+                $0.ownerIdentityId == ownerId
+                    && $0.contactIdentityId == contactId
+                    && $0.isOutgoing == direction
+            }
+        )
+        if let existing = try? backgroundContext.fetch(descriptor).first {
+            backgroundContext.delete(existing)
+        }
+    }
+
+    /// Owned snapshot of a `ContactRequestFFI` row. Decouples the
+    /// lifetime of the encrypted-key buffers from the Rust-side
+    /// allocation: the callback copies them into Swift `Data` before
+    /// returning, so `free_contact_requests_ffi` runs cleanly.
+    struct ContactRequestSnapshot {
+        let ownerIdentityId: Data
+        let contactIdentityId: Data
+        let isOutgoing: Bool
+        let senderKeyIndex: UInt32
+        let recipientKeyIndex: UInt32
+        let accountReference: UInt32
+        let encryptedPublicKey: Data
+        let encryptedAccountLabel: Data?
+        let autoAcceptProof: Data?
+        let coreHeightCreatedAt: UInt32
+        let createdAtMillis: UInt64
+    }
+
+    /// Owned snapshot of a `ContactRequestRemovalFFI` row. Carries
+    /// just the `(owner, contact)` pair — the direction is implied
+    /// by which array (`removed_sent` vs `removed_incoming`) the
+    /// removal came from on the FFI side.
+    struct ContactRequestRemovalSnapshot {
+        let ownerIdentityId: Data
+        let contactIdentityId: Data
+    }
+
     // MARK: - Identity private-key derivation
 
     /// Derive the 32-byte ECDSA scalar for an identity key from the
@@ -1123,6 +1520,41 @@ public class PlatformWalletPersistenceHandler {
         let label: String?
         let status: UInt8
         let walletId: Data?
+        /// Confirmed DPNS labels owned by this identity, paired with
+        /// their `acquired_at` Unix-millis timestamp (`0` when the
+        /// source `Option<u64>` was `None`). Mirrors the parallel
+        /// `dpns_names` / `dpns_names_acquired_at` arrays on
+        /// `IdentityEntryFFI`. Empty when the identity has no settled
+        /// labels.
+        let dpnsNames: [(label: String, acquiredAt: UInt64)]
+        /// DashPay profile snapshot — populated iff
+        /// `IdentityEntryFFI.dashpay_profile_present == true`. `nil`
+        /// means "no update for this flush", which mirrors the
+        /// changeset's `dashpay_profile: None` semantics on the Rust
+        /// side (NOT a delete signal). Inner fields are individually
+        /// optional because every DashPay profile field but the
+        /// implicit `$ownerId` is optional in the contract schema.
+        let dashpayProfile: DashpayProfileSnapshot?
+    }
+
+    /// Owned snapshot of the `dashpay_profile_*` fields on
+    /// `IdentityEntryFFI`. Decouples the lifetime of every contained
+    /// `String` / `Data` from the FFI heap so the callback can
+    /// return immediately and the Rust side can run its free-loop.
+    struct DashpayProfileSnapshot {
+        let displayName: String?
+        let bio: String?
+        let publicMessage: String?
+        let avatarUrl: String?
+        /// 32-byte SHA-256 of the avatar binary (DIP-15 `avatarHash`).
+        /// `nil` when the source `avatar_hash_present == false` —
+        /// disambiguates "no hash" from "all-zero hash" since the
+        /// underlying byte array is zero-initialized either way.
+        let avatarHash: Data?
+        /// 8-byte DHash perceptual fingerprint (DIP-15
+        /// `avatarFingerprint`). `nil` when the source
+        /// `avatar_fingerprint_present == false`.
+        let avatarFingerprint: Data?
     }
 
     /// Swift-side snapshot of `IdentityKeyEntryFFI` — public-key
@@ -1211,6 +1643,25 @@ public class PlatformWalletPersistenceHandler {
             row.balance = entry.balance
             row.account = account
             row.lastUpdated = Date()
+
+            // Backfill the `coreAddress` link on any TXOs that were
+            // persisted before this address row existed. The SPV
+            // pass can emit UTXOs for an address whose pool row
+            // hasn't landed yet; in that case `upsertUtxo` skipped
+            // the relationship and `record.coreAddress` stayed nil.
+            // Without this sweep the storage-explorer's "Address
+            // Row" field renders as "—" forever even though the
+            // address row now exists. Avoid the SwiftData
+            // optional-relationship-in-predicate gotcha by
+            // filtering nil-coreAddress in Swift after the fetch.
+            let txoBackfillDescriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.address == address }
+            )
+            if let txosAtAddress = try? backgroundContext.fetch(txoBackfillDescriptor) {
+                for txo in txosAtAddress where txo.coreAddress == nil {
+                    txo.coreAddress = row
+                }
+            }
         }
 
         try? backgroundContext.save()
@@ -1511,7 +1962,7 @@ public class PlatformWalletPersistenceHandler {
             return (nil, 0)
         }
         let restorable = wallets.filter { wallet in
-            wallet.accounts.contains { !$0.accountExtendedPubKeyBytes.isEmpty }
+            wallet.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
         }
         if restorable.isEmpty {
             return (nil, 0)
@@ -1526,7 +1977,7 @@ public class PlatformWalletPersistenceHandler {
 
         for (i, w) in restorable.enumerated() {
             let sortedAccounts = w.accounts
-                .filter { !$0.accountExtendedPubKeyBytes.isEmpty }
+                .filter { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
                 .sorted {
                     ($0.accountType, $0.accountIndex, $0.registrationIndex, $0.keyClass)
                         < ($1.accountType, $1.accountIndex, $1.registrationIndex, $1.keyClass)
@@ -1537,7 +1988,8 @@ public class PlatformWalletPersistenceHandler {
             } else {
                 let buf = UnsafeMutablePointer<AccountSpecFFI>.allocate(capacity: sortedAccounts.count)
                 for (j, acc) in sortedAccounts.enumerated() {
-                    let xpub = acc.accountExtendedPubKeyBytes
+                    // Filter above guarantees non-nil + non-empty.
+                    let xpub = acc.accountExtendedPubKeyBytes ?? Data()
                     let xpubBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: xpub.count)
                     xpub.copyBytes(to: xpubBuffer, count: xpub.count)
                     allocation.scalarBuffers.append((xpubBuffer, xpub.count))
@@ -1782,7 +2234,9 @@ public class PlatformWalletPersistenceHandler {
                 return []
             }
             return wallets
-                .filter { w in w.accounts.contains { !$0.accountExtendedPubKeyBytes.isEmpty } }
+                .filter { w in
+                    w.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
+                }
                 .map { $0.walletId }
         }
     }
@@ -2078,21 +2532,32 @@ private func persistSyncStateCallback(
     return 0
 }
 
-private func persistAccountCallback(
+/// C shim for `on_persist_account_registrations_fn`. Walks the
+/// Rust-owned `[AccountSpecFFI]` slice and writes one
+/// `PersistentAccount` row per entry. Replaces the legacy
+/// per-entry `on_persist_account_fn` — same shape per row, but
+/// the round arrives as a single batched callback so the whole
+/// registration round flushes through one `store(...)` cycle on
+/// the Rust side.
+private func persistAccountRegistrationsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    specPtr: UnsafePointer<AccountSpecFFI>?
+    specsPtr: UnsafePointer<AccountSpecFFI>?,
+    count: UInt
 ) -> Int32 {
     guard let context = context,
-          let walletIdPtr = walletIdPtr,
-          let specPtr = specPtr else {
+          let walletIdPtr = walletIdPtr else {
         return 0
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    handler.persistAccount(walletId: walletId, spec: specPtr.pointee)
+    if count > 0, let specsPtr = specsPtr {
+        for i in 0..<Int(count) {
+            handler.persistAccount(walletId: walletId, spec: specsPtr[i])
+        }
+    }
     return 0
 }
 
@@ -2127,75 +2592,86 @@ private func loadWalletListFreeCallback(
     handler.loadWalletListFree(entries: entries.map(UnsafeRawPointer.init))
 }
 
-private func persistAccountAddressesCallback(
+/// C shim for `on_persist_account_address_pools_fn`. Walks the
+/// Rust-owned `[AccountAddressPoolFFI]` slice and dispatches one
+/// `persistAccountAddresses` call per pool. Replaces the legacy
+/// per-pool `on_persist_account_addresses_fn` — same row shape
+/// but batched into a single round so the whole registration
+/// flushes through one Rust-side `store(...)` cycle.
+private func persistAccountAddressPoolsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    specPtr: UnsafePointer<AccountSpecFFI>?,
-    addressesPtr: UnsafePointer<CoreAddressEntryFFI>?,
+    poolsPtr: UnsafePointer<AccountAddressPoolFFI>?,
     count: UInt
 ) -> Int32 {
     guard let context = context,
-          let walletIdPtr = walletIdPtr,
-          let specPtr = specPtr else {
+          let walletIdPtr = walletIdPtr else {
         return 0
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
-
-    let spec = specPtr.pointee
-    var userIdentityId = Data(count: 32)
-    withUnsafeBytes(of: spec.user_identity_id) { src in
-        userIdentityId.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
+    guard count > 0, let poolsPtr = poolsPtr else {
+        return 0
     }
-    var friendIdentityId = Data(count: 32)
-    withUnsafeBytes(of: spec.friend_identity_id) { src in
-        friendIdentityId.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-    }
-    let key = PlatformWalletPersistenceHandler.AccountLookupKey(
-        typeTag: UInt32(spec.type_tag),
-        index: spec.index,
-        standardTag: spec.standard_tag,
-        registrationIndex: spec.registration_index,
-        keyClass: spec.key_class,
-        userIdentityId: userIdentityId,
-        friendIdentityId: friendIdentityId
-    )
 
-    // Copy every C-string into a Swift String before leaving the
-    // callback — Rust owns the underlying storage only for this window.
-    var snapshots: [PlatformWalletPersistenceHandler.CoreAddressEntrySnapshot] = []
-    snapshots.reserveCapacity(Int(count))
-    if count > 0, let addressesPtr = addressesPtr {
-        for i in 0..<Int(count) {
-            let entry = addressesPtr[i]
-            let address = entry.address_base58.map { String(cString: $0) } ?? ""
-            let derivationPath = entry.derivation_path.map { String(cString: $0) } ?? ""
-            let publicKey: Data
-            if entry.has_public_key {
-                var pk = Data(count: 33)
-                withUnsafeBytes(of: entry.public_key) { src in
-                    pk.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
-                }
-                publicKey = pk
-            } else {
-                publicKey = Data()
-            }
-            if address.isEmpty { continue }
-            snapshots.append(.init(
-                address: address,
-                publicKey: publicKey,
-                poolTypeTag: entry.pool_type_tag,
-                addressIndex: entry.address_index,
-                isUsed: entry.is_used,
-                balance: entry.balance,
-                derivationPath: derivationPath
-            ))
+    for i in 0..<Int(count) {
+        let pool = poolsPtr[i]
+        let spec = pool.account
+        var userIdentityId = Data(count: 32)
+        withUnsafeBytes(of: spec.user_identity_id) { src in
+            userIdentityId.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
         }
+        var friendIdentityId = Data(count: 32)
+        withUnsafeBytes(of: spec.friend_identity_id) { src in
+            friendIdentityId.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
+        }
+        let key = PlatformWalletPersistenceHandler.AccountLookupKey(
+            typeTag: UInt32(spec.type_tag),
+            index: spec.index,
+            standardTag: spec.standard_tag,
+            registrationIndex: spec.registration_index,
+            keyClass: spec.key_class,
+            userIdentityId: userIdentityId,
+            friendIdentityId: friendIdentityId
+        )
+
+        // Copy every C-string into a Swift String before leaving the
+        // callback — Rust owns the underlying storage only for this window.
+        var snapshots: [PlatformWalletPersistenceHandler.CoreAddressEntrySnapshot] = []
+        snapshots.reserveCapacity(Int(pool.addresses_count))
+        if pool.addresses_count > 0, let addressesPtr = pool.addresses_ptr {
+            for j in 0..<Int(pool.addresses_count) {
+                let entry = addressesPtr[j]
+                let address = entry.address_base58.map { String(cString: $0) } ?? ""
+                let derivationPath = entry.derivation_path.map { String(cString: $0) } ?? ""
+                let publicKey: Data
+                if entry.has_public_key {
+                    var pk = Data(count: 33)
+                    withUnsafeBytes(of: entry.public_key) { src in
+                        pk.withUnsafeMutableBytes { dst in dst.copyMemory(from: src) }
+                    }
+                    publicKey = pk
+                } else {
+                    publicKey = Data()
+                }
+                if address.isEmpty { continue }
+                snapshots.append(.init(
+                    address: address,
+                    publicKey: publicKey,
+                    poolTypeTag: entry.pool_type_tag,
+                    addressIndex: entry.address_index,
+                    isUsed: entry.is_used,
+                    balance: entry.balance,
+                    derivationPath: derivationPath
+                ))
+            }
+        }
+
+        handler.persistAccountAddresses(walletId: walletId, accountKey: key, entries: snapshots)
     }
 
-    handler.persistAccountAddresses(walletId: walletId, accountKey: key, entries: snapshots)
     return 0
 }
 
@@ -2234,6 +2710,62 @@ private func persistIdentitiesCallback(
             let identityId = dataFromTuple32(e.identity_id)
             let walletIdField: Data? = e.wallet_id_is_some ? dataFromTuple32(e.wallet_id) : nil
             let identityIndexField: UInt32? = e.identity_index_is_some ? e.identity_index : nil
+
+            // Walk the parallel DPNS arrays into Swift-owned
+            // `(label, acquired_at)` tuples. Inner null pointers
+            // (interior NUL labels — unreachable in practice) are
+            // skipped without dropping the timestamp slot count, so
+            // we keep iteration index-aligned. The Rust-side
+            // `free_identity_entry_ffi` releases the C strings + the
+            // outer arrays after this callback returns.
+            var dpnsNames: [(label: String, acquiredAt: UInt64)] = []
+            let dpnsCount = Int(e.dpns_names_count)
+            if dpnsCount > 0,
+               let labelsPtr = e.dpns_names,
+               let acquiredPtr = e.dpns_names_acquired_at {
+                dpnsNames.reserveCapacity(dpnsCount)
+                for j in 0..<dpnsCount {
+                    let labelPtr = labelsPtr[j]
+                    let acquiredAt = acquiredPtr[j]
+                    if let labelPtr = labelPtr {
+                        let label = String(cString: labelPtr)
+                        dpnsNames.append((label: label, acquiredAt: acquiredAt))
+                    }
+                }
+            }
+
+            // Walk the optional DashPay profile block. The
+            // `dashpay_profile_present` bit is the single source of
+            // truth: `false` means "no update for this flush"
+            // (changeset-`None` semantics, NOT a delete signal), so
+            // we carry `dashpayProfile == nil` through to the
+            // handler. When the bit is set, every `*_present`
+            // sub-flag is checked individually because zero-valued
+            // payloads (empty strings, all-zero hashes /
+            // fingerprints) are valid contract values and the FFI
+            // would otherwise alias them to "absent".
+            let dashpayProfile: PlatformWalletPersistenceHandler.DashpayProfileSnapshot?
+            if e.dashpay_profile_present {
+                let avatarHash: Data? = e.dashpay_profile_avatar_hash_present
+                    ? hashData(e.dashpay_profile_avatar_hash)
+                    : nil
+                let avatarFingerprint: Data? = e.dashpay_profile_avatar_fingerprint_present
+                    ? Swift.withUnsafeBytes(of: e.dashpay_profile_avatar_fingerprint) {
+                        Data($0)
+                    }
+                    : nil
+                dashpayProfile = PlatformWalletPersistenceHandler.DashpayProfileSnapshot(
+                    displayName: e.dashpay_profile_display_name.map { String(cString: $0) },
+                    bio: e.dashpay_profile_bio.map { String(cString: $0) },
+                    publicMessage: e.dashpay_profile_public_message.map { String(cString: $0) },
+                    avatarUrl: e.dashpay_profile_avatar_url.map { String(cString: $0) },
+                    avatarHash: avatarHash,
+                    avatarFingerprint: avatarFingerprint
+                )
+            } else {
+                dashpayProfile = nil
+            }
+
             upserts.append(.init(
                 identityId: identityId,
                 balance: e.balance,
@@ -2243,7 +2775,9 @@ private func persistIdentitiesCallback(
                 // owns `PersistentIdentity.alias` directly.
                 label: nil,
                 status: e.status,
-                walletId: walletIdField
+                walletId: walletIdField,
+                dpnsNames: dpnsNames,
+                dashpayProfile: dashpayProfile
             ))
         }
     }
@@ -2377,6 +2911,118 @@ private func persistTokenBalancesCallback(
     }
 
     handler.persistTokenBalances(walletId: walletId, upserts: upserts, removals: removals)
+    return 0
+}
+
+/// C shim for `on_persist_contacts_fn`. Same snapshot + cast pattern
+/// as the identities callback — copies every `ContactRequestFFI` /
+/// `ContactRequestRemovalFFI` row into Swift-owned tuples before
+/// invoking the handler so the matching `free_contact_requests_ffi`
+/// pass on the Rust side runs cleanly the moment we return.
+///
+/// The `removed_sent` and `removed_incoming` arrays come in as two
+/// parallel `*const ContactRequestRemovalFFI` slots; we keep them
+/// separate through the snapshot too because the handler uses the
+/// arrival bucket to decide which `is_outgoing` row to delete.
+private func persistContactsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsPtr: UnsafePointer<ContactRequestFFI>?,
+    upsertsCount: UInt,
+    removedSentPtr: UnsafePointer<ContactRequestRemovalFFI>?,
+    removedSentCount: UInt,
+    removedIncomingPtr: UnsafePointer<ContactRequestRemovalFFI>?,
+    removedIncomingCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.ContactRequestSnapshot] = []
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
+            let e = upsertsPtr[i]
+            // `encrypted_public_key` is always populated on a
+            // well-formed `ContactRequest` document — Rust's
+            // `allocate_byte_buffer` only returns `(null, 0)` for an
+            // empty slice, which is invalid for this field. Treat a
+            // null pointer here defensively as an empty `Data` rather
+            // than panicking; the unique constraint still upserts the
+            // row, the row just won't decrypt.
+            let encryptedPublicKey: Data
+            if let pkPtr = e.encrypted_public_key, e.encrypted_public_key_len > 0 {
+                encryptedPublicKey = Data(bytes: pkPtr, count: Int(e.encrypted_public_key_len))
+            } else {
+                encryptedPublicKey = Data()
+            }
+            let encryptedAccountLabel: Data?
+            if let labelPtr = e.encrypted_account_label, e.encrypted_account_label_len > 0 {
+                encryptedAccountLabel = Data(
+                    bytes: labelPtr,
+                    count: Int(e.encrypted_account_label_len)
+                )
+            } else {
+                encryptedAccountLabel = nil
+            }
+            let autoAcceptProof: Data?
+            if let proofPtr = e.auto_accept_proof, e.auto_accept_proof_len > 0 {
+                autoAcceptProof = Data(bytes: proofPtr, count: Int(e.auto_accept_proof_len))
+            } else {
+                autoAcceptProof = nil
+            }
+
+            upserts.append(.init(
+                ownerIdentityId: dataFromTuple32(e.owner_id),
+                contactIdentityId: dataFromTuple32(e.contact_id),
+                isOutgoing: e.is_outgoing,
+                senderKeyIndex: e.sender_key_index,
+                recipientKeyIndex: e.recipient_key_index,
+                accountReference: e.account_reference,
+                encryptedPublicKey: encryptedPublicKey,
+                encryptedAccountLabel: encryptedAccountLabel,
+                autoAcceptProof: autoAcceptProof,
+                coreHeightCreatedAt: e.core_height_created_at,
+                createdAtMillis: e.created_at
+            ))
+        }
+    }
+
+    var removedSent: [PlatformWalletPersistenceHandler.ContactRequestRemovalSnapshot] = []
+    if removedSentCount > 0, let removedSentPtr = removedSentPtr {
+        removedSent.reserveCapacity(Int(removedSentCount))
+        for i in 0..<Int(removedSentCount) {
+            let r = removedSentPtr[i]
+            removedSent.append(.init(
+                ownerIdentityId: dataFromTuple32(r.owner_id),
+                contactIdentityId: dataFromTuple32(r.contact_id)
+            ))
+        }
+    }
+
+    var removedIncoming: [PlatformWalletPersistenceHandler.ContactRequestRemovalSnapshot] = []
+    if removedIncomingCount > 0, let removedIncomingPtr = removedIncomingPtr {
+        removedIncoming.reserveCapacity(Int(removedIncomingCount))
+        for i in 0..<Int(removedIncomingCount) {
+            let r = removedIncomingPtr[i]
+            removedIncoming.append(.init(
+                ownerIdentityId: dataFromTuple32(r.owner_id),
+                contactIdentityId: dataFromTuple32(r.contact_id)
+            ))
+        }
+    }
+
+    handler.persistContacts(
+        walletId: walletId,
+        upserts: upserts,
+        removedSent: removedSent,
+        removedIncoming: removedIncoming
+    )
     return 0
 }
 

@@ -11,7 +11,7 @@ use std::ptr;
 use crate::error::{PlatformWalletFFIError, PlatformWalletFFIResult};
 
 /// Decode a bincode-encoded `ExtendedPubKey` (as emitted by
-/// `on_persist_account_fn`) and render it as a BIP32 base58check
+/// `on_persist_account_registrations_fn`) and render it as a BIP32 base58check
 /// string. No network tag is required — the encoded `ExtendedPubKey`
 /// carries its own `network` field so the `xpub…`/`tpub…` prefix is
 /// produced automatically.

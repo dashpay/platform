@@ -8,7 +8,10 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
-use crate::changeset::PlatformWalletPersistence;
+use crate::changeset::{
+    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
+    PlatformWalletPersistence, WalletMetadataEntry,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletBalance;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -160,8 +163,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             balance: Arc::clone(&balance),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            token_watched: std::collections::BTreeMap::new(),
-            token_balances: std::collections::BTreeMap::new(),
         };
 
         // Insert into WalletManager.
@@ -175,77 +176,76 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             })?
         };
 
-        // Emit metadata + per-account xpubs to the persister so the
-        // watch-only restore path has everything it needs on next
-        // launch. Failures are logged but don't abort wallet
-        // registration — the persister is a best-effort channel, not
-        // a source of truth in steady state.
+        // Emit metadata + per-account xpubs + per-pool address
+        // snapshots to the persister so the watch-only restore path
+        // has everything it needs on next launch. The whole
+        // registration round travels as a single
+        // [`PlatformWalletChangeSet`] through the canonical `store`
+        // entry point — backends (FFI, SQLite, in-memory) see one
+        // atomic round rather than three side-channel calls.
+        //
+        // Failures are logged but don't abort wallet registration —
+        // the persister is a best-effort channel, not a source of
+        // truth in steady state.
 
         // Birth height = SPV's confirmed header tip if SPV is running,
         // otherwise 0 (caller can bump it later when SPV catches up).
         // 0 means "scan from genesis", which is safe-correct for
         // fresh wallets.
         let birth_height: u32 = self
-            .spv
+            .spv_manager
             .sync_progress()
             .await
             .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
             .unwrap_or(0);
-        if let Err(e) =
-            self.persister
-                .store_wallet_metadata(wallet_id, self.sdk.network, birth_height)
-        {
-            tracing::error!(
-                wallet_id = %hex::encode(wallet_id),
-                error = %e,
-                "failed to persist wallet metadata"
-            );
-        }
 
-        for (account_type, account_xpub) in &account_specs {
-            if let Err(e) = self
-                .persister
-                .store_account(wallet_id, account_type, account_xpub)
-            {
-                tracing::error!(
-                    wallet_id = %hex::encode(wallet_id),
-                    account_type = ?account_type,
-                    error = %e,
-                    "failed to persist account xpub"
-                );
-            }
-        }
+        let mut registration_changeset = PlatformWalletChangeSet {
+            wallet_metadata: Some(WalletMetadataEntry {
+                network: self.sdk.network,
+                birth_height,
+            }),
+            account_registrations: account_specs
+                .iter()
+                .map(|(account_type, account_xpub)| AccountRegistrationEntry {
+                    account_type: *account_type,
+                    account_xpub: *account_xpub,
+                })
+                .collect(),
+            ..Default::default()
+        };
 
-        // Emit the initial address pool contents per account. Every
-        // account type contributes at least one pool (external, or a
-        // single `Absent` pool for degenerate types); Standard
+        // Every account type contributes at least one pool (external,
+        // or a single `Absent` pool for degenerate types); Standard
         // accounts contribute two. Ordering within a pool is by
-        // derivation index via `BTreeMap::values`.
+        // derivation index via `BTreeMap::values`. Empty pools are
+        // dropped here so the FFI receiver can match the previous
+        // "skip empty pools" semantics without re-deciding it.
         for (account_type, pools) in &address_snapshots {
             for (pool_type, infos) in pools {
                 if infos.is_empty() {
                     continue;
                 }
-                if let Err(e) = self.persister.store_account_addresses(
-                    wallet_id,
-                    account_type,
-                    *pool_type,
-                    infos,
-                ) {
-                    tracing::error!(
-                        wallet_id = %hex::encode(wallet_id),
-                        account_type = ?account_type,
-                        pool_type = ?pool_type,
-                        error = %e,
-                        "failed to persist account addresses"
-                    );
-                }
+                registration_changeset
+                    .account_address_pools
+                    .push(AccountAddressPoolEntry {
+                        account_type: *account_type,
+                        pool_type: *pool_type,
+                        addresses: infos.clone(),
+                    });
             }
+        }
+
+        if let Err(e) = self.persister.store(wallet_id, registration_changeset) {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to persist wallet registration changeset"
+            );
         }
 
         // Build the PlatformWallet handle.
         let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
-            &self.spv,
+            &self.spv_manager,
         )));
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
@@ -295,6 +295,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         {
             let mut wallets = self.wallets.write().await;
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+        }
+
+        // Best-effort identity discovery. For a recovery flow (existing
+        // mnemonic re-typed by the user) this hydrates every identity
+        // the wallet had on Platform without the caller having to fire
+        // `discover` manually. For a fresh wallet the gap-limit miss
+        // loop bails out after a handful of empty queries (~seconds)
+        // and produces nothing — same end state, slightly slower than
+        // skipping. Failures here are logged but never block wallet
+        // registration: a sync hiccup or offline DAPI shouldn't lose
+        // the user the wallet they just imported.
+        if let Err(e) = platform_wallet.identity().sync().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "Identity discovery failed during wallet registration; \
+                 callers can retry via PlatformWallet::identity().discover()"
+            );
         }
 
         Ok(platform_wallet)

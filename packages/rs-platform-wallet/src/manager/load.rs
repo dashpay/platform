@@ -64,8 +64,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 balance: Arc::clone(&balance),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
-                token_watched: BTreeMap::new(),
-                token_balances: BTreeMap::new(),
             };
 
             let wallet_id = {
@@ -87,7 +85,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
 
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
-                &self.spv,
+                &self.spv_manager,
             )));
             let platform_wallet = PlatformWallet::new(
                 Arc::clone(&self.sdk),

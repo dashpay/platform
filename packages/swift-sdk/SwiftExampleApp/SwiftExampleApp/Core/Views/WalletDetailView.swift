@@ -73,7 +73,7 @@ struct WalletDetailView: View {
             .padding(.top, 8)
 
             // Balance Card
-            BalanceCardView(wallet: wallet)
+            BalanceCardView(wallet: wallet, walletTxos: walletTxos)
                 .padding()
 
             // Action Buttons
@@ -151,7 +151,7 @@ struct WalletDetailView: View {
             .padding(.top)
 
             // Account List
-            AccountListView(wallet: wallet)
+            AccountListView(wallet: wallet, walletTxos: walletTxos)
         }
         .navigationTitle(wallet.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -598,8 +598,18 @@ struct BalanceCardView: View {
     /// distinguish "synced with zero balance" from "never synced".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    init(wallet: PersistentWallet) {
+    /// Per-wallet TXO rows passed down from `WalletDetailView` so we
+    /// share a single `@Query<PersistentTxo>` subscription across
+    /// every child view that needs the balance. Originally each of
+    /// `BalanceCardView` / `AccountListView` / `WalletDetailView`
+    /// had its own subscription; during sync the SwiftData
+    /// change-tracking ran 3× per TXO insert and the persister
+    /// stalled visibly. One subscription, one walk.
+    let walletTxos: [PersistentTxo]
+
+    init(wallet: PersistentWallet, walletTxos: [PersistentTxo]) {
         self.wallet = wallet
+        self.walletTxos = walletTxos
         let walletId = wallet.walletId
         // `PersistentPlatformAddressesSyncState.network` is a required AppNetwork;
         // `.testnet` is a harmless sentinel for wallets that haven't
@@ -616,12 +626,20 @@ struct BalanceCardView: View {
         )
     }
 
+    /// Sum of unspent + confirmed TXO amounts. Walks the wallet-TXO
+    /// query result; one pass, one pred + add per row.
     private var confirmedBalance: UInt64 {
-        wallet.balanceConfirmed
+        walletTxos.lazy
+            .filter { !$0.isSpent && $0.isConfirmed }
+            .reduce(0) { $0 + $1.amount }
     }
 
+    /// Sum of unspent + unconfirmed (mempool / IS-locked-but-not-in-block)
+    /// TXO amounts.
     private var unconfirmedBalance: UInt64 {
-        wallet.balanceUnconfirmed
+        walletTxos.lazy
+            .filter { !$0.isSpent && !$0.isConfirmed }
+            .reduce(0) { $0 + $1.amount }
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
