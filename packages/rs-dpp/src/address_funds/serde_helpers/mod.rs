@@ -12,8 +12,10 @@
 //!
 //! Each helper exposes `pub fn serialize` and `pub fn deserialize` so it can be
 //! attached to a struct field via `#[serde(with = "...")]`.
-
-#![cfg(feature = "json-conversion")]
+//!
+//! Module gating lives on the parent re-export in `address_funds/mod.rs`
+//! (`#[cfg(feature = "json-conversion")]`), so this file does not need its
+//! own inner `#![cfg(...)]` attribute.
 
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;

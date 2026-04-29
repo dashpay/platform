@@ -37,7 +37,7 @@ pub type WithdrawalTransactionIndexAndBytes = (WithdrawalTransactionIndex, Vec<u
 #[cfg(feature = "serde-conversion")]
 pub mod pooling_serde {
     use super::Pooling;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(pooling: &Pooling, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
