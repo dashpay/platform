@@ -23,23 +23,11 @@ use super::signer::SeedBackedPlatformAddressSigner;
 use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
 
-/// Skip sweeps where the recoverable amount is dwarfed by the fee.
-/// At 5M dust + 30M fee, a successful sweep recovers ≥5M.
+/// Minimum sweep amount: skip wallets whose total balance is below
+/// this. Acts as the dust gate so sweeps don't churn the chain for
+/// negligible recoveries; the fee is absorbed from the output via
+/// `ReduceOutput(0)` so no fee-headroom margin is needed here.
 const SWEEP_DUST_THRESHOLD: Credits = 5_000_000;
-
-/// Approximate fee for a 1- to 3-input → 1-output sweep transfer.
-///
-/// Used to (a) decide whether a sweep is worth attempting and
-/// (b) reserve the fee margin at the [`AddressFundsFeeStrategyStep::DeductFromInput`]
-/// target. Observed Dash testnet fees scale with input count
-/// (~9.5M / ~21M / ~30M for 1 / 2 / 3 inputs); 30M covers up to
-/// 3 inputs, comfortably above the typical 1-2 owned addresses
-/// per test wallet.
-///
-/// TODO: compute dynamically against
-/// `AddressFundsTransferTransition::estimate_min_fee` so this
-/// constant doesn't drift if the protocol fee schedule changes.
-const SWEEP_FEE_ESTIMATE: Credits = 30_000_000;
 
 /// Default per-step timeout for cleanup polls.
 pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -118,7 +106,7 @@ async fn sweep_one(
     let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
 
     let total = wallet.platform().total_credits().await;
-    if total <= SWEEP_DUST_THRESHOLD.saturating_add(SWEEP_FEE_ESTIMATE) {
+    if total <= SWEEP_DUST_THRESHOLD {
         // Below worth-sweeping; let the caller drop the entry.
         tracing::debug!(
             wallet_id = %hex::encode(hash),
@@ -163,7 +151,7 @@ pub async fn teardown_one(
 ) -> FrameworkResult<()> {
     test_wallet.sync_balances().await?;
     let total = test_wallet.total_credits().await;
-    if total > SWEEP_DUST_THRESHOLD.saturating_add(SWEEP_FEE_ESTIMATE) {
+    if total > SWEEP_DUST_THRESHOLD {
         drain_to_bank(
             test_wallet.platform_wallet(),
             test_wallet.address_signer(),
@@ -202,14 +190,10 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
 }
 
-/// Drain a test wallet's credits back to `bank_addr`.
-///
-/// Uses [`InputSelection::Explicit`] because the wallet's auto path
-/// estimates fees against the protocol schedule (~5M for 1→1) while
-/// the harness reserves [`SWEEP_FEE_ESTIMATE`] (30M) — passing the
-/// exact `inputs`/`outputs` maps avoids the `Σ inputs == Σ outputs`
-/// mismatch. The fee is paid by the fee-bearer's remaining balance
-/// via [`AddressFundsFeeStrategyStep::DeductFromInput`].
+/// Drain every owned platform address back to `bank_addr` in a single
+/// transition. Inputs map = full balances, output = the sum, fee comes
+/// out of the bank's incoming amount via `ReduceOutput(0)`. Sweep gate
+/// is "address balance > 0".
 async fn drain_to_bank<S>(
     wallet: &Arc<PlatformWallet>,
     signer: &S,
@@ -218,77 +202,35 @@ async fn drain_to_bank<S>(
 where
     S: Signer<PlatformAddress> + Send + Sync,
 {
-    // BTreeMap iteration order matches the SDK's input indexing
-    // for `DeductFromInput(i)`.
-    let balances: BTreeMap<PlatformAddress, Credits> = wallet
+    let inputs: BTreeMap<PlatformAddress, Credits> = wallet
         .platform()
         .addresses_with_balances()
         .await
         .into_iter()
         .filter(|(_, b)| *b > 0)
         .collect();
-    if balances.is_empty() {
-        return Ok(());
-    }
-    let total: Credits = balances.values().sum();
-    if total <= SWEEP_DUST_THRESHOLD.saturating_add(SWEEP_FEE_ESTIMATE) {
+    if inputs.is_empty() {
         return Ok(());
     }
 
-    // Largest-balance address is the safest fee-bearer — its
-    // remaining balance must clear `SWEEP_FEE_ESTIMATE`.
-    let (fee_bearer_addr, fee_bearer_balance) = balances
-        .iter()
-        .max_by_key(|(_, b)| **b)
-        .map(|(a, b)| (*a, *b))
-        .ok_or_else(|| FrameworkError::Cleanup("drain_to_bank: no candidates".into()))?;
-    if fee_bearer_balance < SWEEP_FEE_ESTIMATE {
-        return Err(FrameworkError::Cleanup(format!(
-            "drain_to_bank: fee-bearer balance {} < SWEEP_FEE_ESTIMATE {} — \
-             wallet has too many small balances to sweep in a single transition",
-            fee_bearer_balance, SWEEP_FEE_ESTIMATE
-        )));
-    }
-
-    // Every address contributes its full balance EXCEPT fee-bearer,
-    // which contributes `balance - SWEEP_FEE_ESTIMATE` so the fee
-    // margin stays on-chain for the protocol fee deduction.
-    let mut inputs_map: BTreeMap<PlatformAddress, Credits> = balances.clone();
-    inputs_map.insert(fee_bearer_addr, fee_bearer_balance - SWEEP_FEE_ESTIMATE);
-
-    // Index in BTreeMap iteration order — what `DeductFromInput(N)`
-    // resolves against.
-    let fee_bearer_index = inputs_map
-        .keys()
-        .position(|k| *k == fee_bearer_addr)
-        .map(|i| i as u16)
-        .ok_or_else(|| {
-            FrameworkError::Cleanup("drain_to_bank: fee-bearer not in inputs map".into())
-        })?;
-
-    let total_consumed: Credits = inputs_map.values().sum();
+    let total: Credits = inputs.values().sum();
     let outputs: BTreeMap<PlatformAddress, Credits> =
-        std::iter::once((*bank_addr, total_consumed)).collect();
-
-    let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
-        fee_bearer_index,
-    )];
+        std::iter::once((*bank_addr, total)).collect();
+    let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
 
     tracing::debug!(
         target: "platform_wallet::e2e::cleanup",
         wallet_id = %hex::encode(wallet.wallet_id()),
         total,
-        total_consumed,
-        fee_margin = SWEEP_FEE_ESTIMATE,
-        fee_bearer_index,
-        "drain_to_bank: explicit transfer"
+        input_count = inputs.len(),
+        "drain_to_bank: ReduceOutput(0) sweep"
     );
 
     wallet
         .platform()
         .transfer(
             super::wallet_factory::DEFAULT_ACCOUNT_INDEX_PUB,
-            InputSelection::Explicit(inputs_map),
+            InputSelection::Explicit(inputs),
             outputs,
             fee_strategy,
             Some(PlatformVersion::latest()),
