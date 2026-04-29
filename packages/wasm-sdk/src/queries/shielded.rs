@@ -65,27 +65,16 @@ impl_wasm_serde_conversions!(ShieldedNullifierStatusWasm, ShieldedNullifierStatu
 
 /// Parse a JS `Array<Uint8Array>` of nullifiers into `Vec<[u8; 32]>`.
 ///
-/// Each element must be a `Uint8Array` of exactly 32 bytes; otherwise an error is
-/// returned. Plain numbers and other types are rejected — `Uint8Array::new(n)`
-/// would otherwise allocate a buffer of length `n`, allowing a caller to request
-/// arbitrarily large allocations before the length check.
+/// Each element must be a `Uint8Array` of exactly 32 bytes. `try_to_fixed_bytes`
+/// validates both the type (rejecting plain numbers — `Uint8Array::new(n)` would
+/// otherwise allocate `n` bytes from caller input) and the length.
 fn parse_nullifiers(nullifiers: &js_sys::Array) -> Result<Vec<[u8; 32]>, WasmSdkError> {
-    use wasm_bindgen::JsCast;
-
     nullifiers
         .iter()
-        .map(|n| {
-            let uint8_arr: Uint8Array = n.dyn_into().map_err(|_| {
-                WasmSdkError::invalid_argument("Each nullifier must be a Uint8Array")
-            })?;
-            if uint8_arr.length() != 32 {
-                return Err(WasmSdkError::invalid_argument(
-                    "Each nullifier must be exactly 32 bytes",
-                ));
-            }
-            let mut arr = [0u8; 32];
-            uint8_arr.copy_to(&mut arr);
-            Ok(arr)
+        .enumerate()
+        .map(|(i, n)| {
+            wasm_dpp2::utils::try_to_fixed_bytes::<32>(n, &format!("nullifiers[{}]", i))
+                .map_err(WasmSdkError::from)
         })
         .collect()
 }
