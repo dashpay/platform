@@ -66,9 +66,7 @@ pub mod pooling_serde {
             type Value = Pooling;
 
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str(
-                    "a Pooling variant: 'never'/'ifAvailable'/'standard' or 0/1/2",
-                )
+                f.write_str("a Pooling variant: 'never'/'ifAvailable'/'standard' or 0/1/2")
             }
 
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Pooling, E> {
@@ -98,10 +96,7 @@ pub mod pooling_serde {
 
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Pooling, E> {
                 if v < 0 {
-                    return Err(E::custom(format!(
-                        "negative pooling discriminant {}",
-                        v
-                    )));
+                    return Err(E::custom(format!("negative pooling discriminant {}", v)));
                 }
                 self.visit_u64(v as u64)
             }
@@ -147,11 +142,9 @@ pub mod pooling_serde {
                 (Pooling::IfAvailable, 1),
                 (Pooling::Standard, 2),
             ] {
-                let bytes = bincode::serde::encode_to_vec(
-                    &Wrap(variant),
-                    bincode::config::standard(),
-                )
-                .expect("bincode encode");
+                let bytes =
+                    bincode::serde::encode_to_vec(&Wrap(variant), bincode::config::standard())
+                        .expect("bincode encode");
                 assert_eq!(bytes.last(), Some(&expected_u8));
                 let (restored, _): (Wrap, usize) =
                     bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
