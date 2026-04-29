@@ -20,9 +20,8 @@ use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager
 
 use super::bank::BankWallet;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
-use super::signer::SeedBackedPlatformAddressSigner;
 use super::wallet_factory::TestWallet;
-use super::{FrameworkError, FrameworkResult};
+use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// Minimum sweep amount: skip wallets whose total balance is below
 /// this. Acts as the dust gate so sweeps don't churn the chain for
@@ -104,7 +103,7 @@ async fn sweep_one(
         .sync_balances(None)
         .await
         .map_err(wallet_err)?;
-    let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
+    let signer = make_platform_signer(&seed_bytes, network)?;
 
     let total = wallet.platform().total_credits().await;
     if total > SWEEP_DUST_THRESHOLD {

@@ -22,12 +22,13 @@ use platform_wallet::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 
+use simple_signer::signer::SimpleSigner;
+
 use super::config::{parse_network, Config};
-use super::signer::SeedBackedPlatformAddressSigner;
 use super::wallet_factory::{
     default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB,
 };
-use super::{FrameworkError, FrameworkResult};
+use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
 /// `bank.fund_address` calls so nonces don't race.
@@ -38,7 +39,7 @@ static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
 /// `FUNDING_MUTEX` invariant lives in one place.
 pub struct BankWallet {
     wallet: Arc<PlatformWallet>,
-    signer: SeedBackedPlatformAddressSigner,
+    signer: SimpleSigner,
     /// Cached for under-funded panic messages and log breadcrumbs.
     primary_receive_address: PlatformAddress,
 }
@@ -120,7 +121,7 @@ impl BankWallet {
             );
         }
 
-        let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
+        let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             wallet,
             signer,

@@ -25,12 +25,40 @@ pub mod context_provider;
 pub mod harness;
 pub mod registry;
 pub mod sdk;
-pub mod signer;
 pub mod spv;
 pub mod wait;
 pub mod wait_hub;
 pub mod wallet_factory;
 pub mod workdir;
+
+use key_wallet::gap_limit::DIP17_GAP_LIMIT;
+use key_wallet::Network;
+use simple_signer::signer::SimpleSigner;
+
+/// DIP-17 default account / key-class for clear-funds platform
+/// payments. Matches `WalletAccountCreationOptions::Default`.
+const DEFAULT_ACCOUNT_INDEX: u32 = 0;
+const DEFAULT_KEY_CLASS: u32 = 0;
+
+/// Build a [`SimpleSigner`] populated with the DIP-17 platform-payment
+/// gap window for `seed_bytes` on `network`. Pins to
+/// `account=0`/`key_class=0` to match
+/// `WalletAccountCreationOptions::Default`. `SimpleSigner` already
+/// implements `Signer<PlatformAddress>` directly, so callers can pass
+/// the returned value straight to `PlatformAddressWallet::transfer`.
+pub(super) fn make_platform_signer(
+    seed_bytes: &[u8; 64],
+    network: Network,
+) -> FrameworkResult<SimpleSigner> {
+    SimpleSigner::from_seed_for_platform_address_account(
+        seed_bytes,
+        network,
+        DEFAULT_ACCOUNT_INDEX,
+        DEFAULT_KEY_CLASS,
+        DIP17_GAP_LIMIT,
+    )
+    .map_err(|err| FrameworkError::Wallet(format!("simple-signer: {err}")))
+}
 
 /// Common imports for test authors.
 pub mod prelude {
