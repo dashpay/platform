@@ -4,8 +4,10 @@
 //
 //  Imports a wallet from a known testnet mnemonic that already has a
 //  registered identity, runs identity discovery, and asserts that the
-//  expected identity surfaces with a non-zero balance. The credit-
-//  transfer assertion is deferred to a follow-up.
+//  expected identity's balance is readable from the identity-detail
+//  view. We do not assert a non-zero floor — that would couple the
+//  test to live testnet funding state. The credit-transfer assertion
+//  is deferred to a follow-up.
 //
 //  Skipped automatically when the env var is unset, so the rest of the
 //  suite can run locally without test-network credentials.

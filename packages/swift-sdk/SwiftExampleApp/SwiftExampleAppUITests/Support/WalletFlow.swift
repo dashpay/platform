@@ -525,8 +525,20 @@ func runIdentityDiscovery(
         )
         walletOption.tap()
     }
-    XCTAssertTrue(
-        walletPicker.label.contains(walletName),
+    // SwiftUI takes a frame to update the picker's collapsed label after
+    // the menu option is tapped — a bare `.label.contains` check races
+    // on slower simulators. Wait for the propagation explicitly.
+    let selectedPredicate = NSPredicate { object, _ in
+        guard let element = object as? XCUIElement, element.exists else { return false }
+        return element.label.contains(walletName)
+    }
+    let selectedResult = XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(predicate: selectedPredicate, object: walletPicker)],
+        timeout: 5
+    )
+    XCTAssertEqual(
+        selectedResult,
+        .completed,
         "Picker shows \"\(walletPicker.label)\" but the test imported \(walletName).",
         file: file, line: line
     )

@@ -18,14 +18,18 @@ class AppState: ObservableObject {
     /// while `switchNetwork` is still tearing down the previous SDK.
     @Published var isSwitchingNetwork: Bool = false
 
+    /// Monotonic request id for in-flight switches. If two switches
+    /// overlap (user taps mainnet → testnet before the first lands), the
+    /// earlier task's completion would otherwise clear `isSwitchingNetwork`
+    /// while the later switch is still running. Each new request bumps
+    /// this counter and the spawned task only clears the flag when its
+    /// captured id still matches.
+    private var networkSwitchRequestID: UInt64 = 0
+
     @Published var currentNetwork: AppNetwork {
         didSet {
             UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
-            isSwitchingNetwork = true
-            Task {
-                await switchNetwork(to: currentNetwork)
-                isSwitchingNetwork = false
-            }
+            beginNetworkSwitch()
         }
     }
 
@@ -38,9 +42,21 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
-            isSwitchingNetwork = true
-            Task {
-                await switchNetwork(to: currentNetwork)
+            beginNetworkSwitch()
+        }
+    }
+
+    /// Bumps `networkSwitchRequestID`, raises `isSwitchingNetwork`, and
+    /// spawns the SDK-rebuild task. Only the task that owns the latest
+    /// request id may lower `isSwitchingNetwork` again — overlapping
+    /// switches' earlier tasks no-op on completion.
+    private func beginNetworkSwitch() {
+        networkSwitchRequestID &+= 1
+        let requestID = networkSwitchRequestID
+        isSwitchingNetwork = true
+        Task {
+            await switchNetwork(to: currentNetwork)
+            if requestID == networkSwitchRequestID {
                 isSwitchingNetwork = false
             }
         }
