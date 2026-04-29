@@ -34,7 +34,7 @@ struct ReceiveAddressView: View {
 
     /// Lowest-indexed unused external address on the primary BIP44
     /// account. `PersistentCoreAddress` rows are populated by the Rust
-    /// `on_persist_account_addresses_fn` callback at wallet creation
+    /// `on_persist_account_address_pools_fn` callback at wallet creation
     /// (initial gap-limit fill), so they're available without a
     /// runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {

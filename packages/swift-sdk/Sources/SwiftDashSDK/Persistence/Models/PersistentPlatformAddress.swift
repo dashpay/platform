@@ -5,8 +5,8 @@ import SwiftData
 ///
 /// Each record represents one HD-derived Platform Payment address,
 /// combining the derivation metadata (populated by the Rust
-/// `on_persist_account_addresses_fn` callback at wallet creation /
-/// pool extension) with the credit balance + nonce snapshot reported
+/// `on_persist_account_address_pools_fn` callback at wallet creation
+/// / pool extension) with the credit balance + nonce snapshot reported
 /// by the BLAST sync round. Records are upserted incrementally —
 /// address emits seed the row, balance emits refresh `balance` /
 /// `nonce` / `isUsed` / `last_seen_height`.

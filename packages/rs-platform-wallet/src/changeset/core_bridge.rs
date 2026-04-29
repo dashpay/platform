@@ -1,24 +1,28 @@
 //! Adapter that turns upstream `WalletEvent`s into `PlatformWalletChangeSet`s.
 //!
-//! Upstream `key_wallet_manager` no longer carries a `WalletPersistence`
-//! callback — each `WalletManager` exposes a `broadcast::Sender<WalletEvent>`
-//! and consumers subscribe at startup. [`WalletEventAdapter`] is the
-//! platform-wallet-side subscriber: a tokio task that drains the event
-//! stream, projects each event into a [`CoreChangeSet`], wraps it in a
-//! [`PlatformWalletChangeSet`], and forwards to the platform persister.
+//! Upstream `key_wallet_manager::WalletManager` exposes a
+//! `broadcast::Sender<WalletEvent>` and a `subscribe_events()` accessor
+//! returning a `broadcast::Receiver<WalletEvent>`; consumers attach at
+//! startup and drain the stream. [`spawn_wallet_event_adapter`] is the
+//! platform-wallet-side consumer: a tokio task that pulls events off
+//! that broadcast, projects each one into a
+//! [`CoreChangeSet`](crate::changeset::CoreChangeSet), wraps it in a
+//! [`PlatformWalletChangeSet`](crate::changeset::PlatformWalletChangeSet),
+//! and forwards to the [`PlatformWalletPersistence`] sink.
 //!
 //! # Why a single subscriber, not per-wallet
 //!
-//! `WalletManager::subscribe_events` returns a `broadcast::Receiver` that
-//! sees every event for every wallet. The adapter routes by `wallet_id`
-//! at projection time — there's no need to spawn a task per wallet.
+//! The broadcast channel emits every event for every wallet. Each
+//! event already carries a `wallet_id`, which the adapter forwards
+//! verbatim to [`PlatformWalletPersistence::store`] — no need to fan
+//! out a subscriber per wallet.
 //!
 //! # Lifetime
 //!
 //! [`spawn_wallet_event_adapter`] returns a [`JoinHandle`]. The caller
-//! (typically `PlatformWalletManager`) keeps it for the manager's
-//! lifetime; on shutdown, fire the [`CancellationToken`] to make the
-//! task exit cleanly.
+//! (typically `PlatformWalletManager`) keeps the handle for the
+//! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
+//! make the task exit cleanly.
 
 use std::sync::Arc;
 
@@ -44,17 +48,25 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// runtime), then loops dispatching events to the persister via
 /// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires
 /// or the upstream broadcast channel closes.
-pub fn spawn_wallet_event_adapter(
+///
+/// Generic over `P` so the spawned task gets static-dispatch on
+/// every `persister.store(...)` call. Pass the manager's own
+/// `Arc<P>` (not the `Arc<dyn PlatformWalletPersistence>`
+/// coercion) to actually realize the static-dispatch win.
+pub fn spawn_wallet_event_adapter<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    persister: Arc<dyn PlatformWalletPersistence>,
+    persister: Arc<P>,
     cancel: CancellationToken,
-) -> JoinHandle<()> {
+) -> JoinHandle<()>
+where
+    P: PlatformWalletPersistence + 'static,
+{
     tokio::spawn(async move {
         let mut receiver = {
             let guard = wallet_manager.read().await;
             guard.subscribe_events()
         };
-        tracing::debug!("WalletEventAdapter task started");
+        tracing::debug!("wallet-event adapter task started");
 
         loop {
             tokio::select! {
@@ -93,7 +105,7 @@ pub fn spawn_wallet_event_adapter(
                         Err(RecvError::Lagged(n)) => {
                             tracing::warn!(
                                 missed = n,
-                                "WalletEventAdapter lagged on broadcast channel; some events were dropped"
+                                "wallet-event adapter lagged on broadcast channel; some events were dropped"
                             );
                         }
                     }
@@ -101,7 +113,7 @@ pub fn spawn_wallet_event_adapter(
                 _ = cancel.cancelled() => break,
             }
         }
-        tracing::debug!("WalletEventAdapter task exiting");
+        tracing::debug!("wallet-event adapter task exiting");
     })
 }
 

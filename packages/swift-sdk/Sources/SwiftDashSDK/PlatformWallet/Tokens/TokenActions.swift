@@ -809,72 +809,14 @@ extension GroupActionMode {
 }
 
 // MARK: - Token balance watch + sync
-
-extension ManagedPlatformWallet {
-    /// Register every `(identityId, tokenId)` pair in `pairs` on the
-    /// wallet's in-memory token watch list, then run a single Platform
-    /// sync round to refresh the cached balances. Resulting balance
-    /// upserts / removals flow through the persister, which the Swift
-    /// handler maps onto `PersistentTokenBalance` rows.
-    ///
-    /// Pass an empty `pairs` array to sync the existing watch list
-    /// without registering new pairs (useful for periodic refresh).
-    /// No signer is required — watching + syncing is read-only state
-    /// against the network plus an in-memory registry mutation.
-    public func watchAndSyncTokenBalances(
-        pairs: [(identityId: Identifier, tokenId: Identifier)]
-    ) async throws {
-        let handle = self.handle
-        let ffiPairs: [TokenBalanceUpsertFFI] = pairs.map { pair in
-            var entry = TokenBalanceUpsertFFI(
-                identity_id: ManagedPlatformWallet.zeroByteTuple32(),
-                token_id: ManagedPlatformWallet.zeroByteTuple32(),
-                balance: 0
-            )
-            ManagedPlatformWallet.copyIdentifier(pair.identityId, into: &entry.identity_id)
-            ManagedPlatformWallet.copyIdentifier(pair.tokenId, into: &entry.token_id)
-            return entry
-        }
-
-        try await Task.detached(priority: .userInitiated) {
-            var error = PlatformWalletFFIError()
-            let result = ffiPairs.withUnsafeBufferPointer { bp -> PlatformWalletFFIResult in
-                platform_wallet_token_watch_and_sync(
-                    handle,
-                    bp.baseAddress,
-                    UInt(bp.count),
-                    &error
-                )
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
-        }.value
-    }
-
-    /// Build a 32-tuple of zeros. Field-by-field literals are the
-    /// only construction the imported C tuple type accepts.
-    fileprivate static func zeroByteTuple32() -> FFIByteTuple32 {
-        return (
-            0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0
-        )
-    }
-
-    /// Copy a 32-byte `Identifier` payload into a `FFIByteTuple32`
-    /// without allocating an intermediate `Data` / array.
-    fileprivate static func copyIdentifier(
-        _ id: Identifier,
-        into dst: inout FFIByteTuple32
-    ) {
-        let bytes = id.toFFIByteArray()
-        withUnsafeMutableBytes(of: &dst) { raw in
-            let typed = raw.bindMemory(to: UInt8.self)
-            for i in 0..<min(32, bytes.count) {
-                typed[i] = bytes[i]
-            }
-        }
-    }
-}
+//
+// Per-(identity, token) balance bookkeeping no longer lives on the
+// per-wallet `TokenWallet` — it has been consolidated onto the
+// manager-wide `IdentitySyncManager`. Use the lifecycle methods on
+// `PlatformWalletManager` directly:
+//
+//   try walletManager.registerIdentityForTokenSync(identityId: ...,
+//                                                   tokenIds: [...])
+//   try await walletManager.syncIdentityTokensNow()
+//
+// See `PlatformWalletManagerIdentitySync.swift`.

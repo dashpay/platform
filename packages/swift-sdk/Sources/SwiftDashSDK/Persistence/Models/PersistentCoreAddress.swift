@@ -4,7 +4,7 @@ import SwiftData
 /// SwiftData model for a single on-chain address tracked in a wallet's
 /// address pool (external / internal / absent).
 ///
-/// Populated by the Rust-side `on_persist_account_addresses_fn`
+/// Populated by the Rust-side `on_persist_account_address_pools_fn`
 /// callback, which fires at wallet creation (initial gap-limit fill),
 /// on pool extension (`next_unused` past the current tip), and when
 /// SPV marks an address used.
@@ -37,7 +37,7 @@ public final class PersistentCoreAddress {
     /// SPV height of the most recent transaction touching this address.
     public var lastSeenHeight: UInt32
     /// Cached balance in duffs from `AddressInfo.balance`. Updated by
-    /// subsequent `on_persist_account_addresses_fn` pulses.
+    /// subsequent `on_persist_account_address_pools_fn` pulses.
     public var balance: UInt64
     /// Record timestamps.
     public var createdAt: Date
@@ -46,11 +46,14 @@ public final class PersistentCoreAddress {
     /// Parent account.
     public var account: PersistentAccount?
 
-    /// TXOs paid to this address. `.nullify` on delete so dropping
-    /// an address row (e.g. pool rebuild) doesn't take its
-    /// historical TXOs with it — `PersistentTxo.address` (the
-    /// Base58Check string) remains the authoritative identifier.
-    @Relationship(deleteRule: .nullify, inverse: \PersistentTxo.coreAddress)
+    /// TXOs paid to this address. Cascade-delete: dropping the
+    /// address row takes its TXOs with it. The address is the
+    /// canonical owning record — no meaningful render path for an
+    /// address-less TXO. Pool rebuilds therefore need to reuse
+    /// existing rows (the persister upserts by Base58Check string,
+    /// which it already does) rather than wholesale-replace, or
+    /// the historical TXO chain gets wiped.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentTxo.coreAddress)
     public var txos: [PersistentTxo] = []
 
     public init(

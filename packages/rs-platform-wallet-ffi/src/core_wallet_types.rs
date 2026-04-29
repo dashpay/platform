@@ -14,6 +14,19 @@ pub struct OutPointFFI {
     pub vout: u32,
 }
 
+/// Outpoint of a TXO that was spent, paired with the spending
+/// transaction's txid. Replaces the bare `OutPointFFI` on
+/// `AccountChangeSetFFI.utxos_spent` so the Swift persister can
+/// populate `PersistentTxo.spendingTransaction` (the column that
+/// drives "Spent By" in the storage explorer and any per-tx
+/// drill-down from the spent side of the chain).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SpentOutPointFFI {
+    pub outpoint: OutPointFFI,
+    pub spending_txid: [u8; 32],
+}
+
 // ---------------------------------------------------------------------------
 // Chain state
 // ---------------------------------------------------------------------------
@@ -86,15 +99,44 @@ pub struct TransactionRecordFFI {
 
 #[repr(C)]
 pub struct AccountChangeSetFFI {
-    /// Account type name (Debug format of AccountType).
+    /// Account type name. Currently emitted as the `Debug` form of
+    /// `AccountType` (e.g. `"Standard { index: 0,
+    /// standard_account_type: BIP44Account }"`); kept for one extra
+    /// release so any caller still string-matching against it
+    /// doesn't break, but **not** used for upsert identity any more
+    /// — Swift derives the display name from the typed tag fields
+    /// below via the same helper the load path uses, so a single
+    /// canonical name appears in the SwiftData row regardless of
+    /// which path emitted it.
     pub account_type_name: *mut c_char,
     /// Account index (for indexed types, 0 otherwise).
     pub account_index: u32,
+    /// `AccountType` discriminant. Stable across releases — the
+    /// Swift persister keys upsert on `(wallet_id, type_tag,
+    /// account_index, ...)` rather than on the legacy `Debug`
+    /// `account_type_name` string, so a load-path emit and a
+    /// changeset-path emit for the same account collapse onto a
+    /// single SwiftData row.
+    pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    /// Sub-discriminant for `type_tag == Standard`. Splits BIP44
+    /// (0) from BIP32 (1). `Bip44` for non-Standard variants
+    /// (ignored by Swift in that case).
+    pub standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    /// `IdentityTopUp.registration_index`. `0` for other variants.
+    pub registration_index: u32,
+    /// `PlatformPayment.key_class`. `0` for other variants.
+    pub key_class: u32,
+    /// `Dashpay*.user_identity_id` (32 bytes). Zeroed for non-
+    /// Dashpay variants.
+    pub user_identity_id: [u8; 32],
+    /// `Dashpay*.friend_identity_id` (32 bytes). Zeroed for non-
+    /// Dashpay variants.
+    pub friend_identity_id: [u8; 32],
     /// UTXOs added.
     pub utxos_added: *mut UtxoEntryFFI,
     pub utxos_added_count: usize,
     /// Outpoints of UTXOs spent.
-    pub utxos_spent: *mut OutPointFFI,
+    pub utxos_spent: *mut SpentOutPointFFI,
     pub utxos_spent_count: usize,
     /// Outpoints that became InstantSend-locked.
     pub utxos_instant_locked: *mut OutPointFFI,
@@ -233,7 +275,7 @@ impl WalletChangeSetFFI {
             // output_details; we walk them once per record to project
             // the UTXOs the persister should add or remove.
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
-            let mut utxos_spent: Vec<OutPointFFI> = Vec::new();
+            let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
             for rec in &recs {
                 utxos_added.extend(record_new_utxos_ffi(rec));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
@@ -247,9 +289,23 @@ impl WalletChangeSetFFI {
             let utxos_spent_count = utxos_spent.len();
             let transactions_count = transactions.len();
 
+            // Project the typed `AccountType` into the same flat tag
+            // layout the load path's `AccountSpecFFI` already uses.
+            // The Swift persister upserts on these typed fields
+            // rather than on the legacy `Debug`-formatted
+            // `account_type_name` string, so a load-path emit and a
+            // sync-path emit for the same account collapse onto a
+            // single SwiftData row.
+            let tags = account_type_to_tags(&account_type);
             ffi_accounts.push(AccountChangeSetFFI {
                 account_type_name: type_name.into_raw(),
                 account_index,
+                type_tag: tags.type_tag,
+                standard_tag: tags.standard_tag,
+                registration_index: tags.registration_index,
+                key_class: tags.key_class,
+                user_identity_id: tags.user_identity_id,
+                friend_identity_id: tags.friend_identity_id,
                 utxos_added: vec_to_ptr(utxos_added),
                 utxos_added_count,
                 utxos_spent: vec_to_ptr(utxos_spent),
@@ -303,6 +359,108 @@ fn account_index_of(at: &key_wallet::account::AccountType) -> u32 {
         AccountType::PlatformPayment { account, .. } => *account,
         _ => 0,
     }
+}
+
+/// Subset of [`crate::wallet_restore_types::AccountSpecFFI`] carrying
+/// only the tag/discriminator fields — no xpub. Used by the
+/// changeset emit path to populate
+/// [`AccountChangeSetFFI`]'s typed tags so the Swift persister can
+/// upsert on the same composite key the load path uses.
+struct AccountChangeSetTags {
+    type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    registration_index: u32,
+    key_class: u32,
+    user_identity_id: [u8; 32],
+    friend_identity_id: [u8; 32],
+}
+
+/// Project an upstream [`AccountType`] into the flat FFI tag layout.
+///
+/// Mirrors [`build_account_spec_ffi`](crate::persistence::build_account_spec_ffi)'s
+/// match arms but emits only the tag/discriminator fields — the
+/// xpub is load-path-only and not relevant on the changeset emit
+/// path.
+fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountChangeSetTags {
+    use crate::wallet_restore_types::{AccountTypeTagFFI, StandardAccountTypeTagFFI};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    let mut tags = AccountChangeSetTags {
+        type_tag: AccountTypeTagFFI::Standard,
+        standard_tag: StandardAccountTypeTagFFI::Bip44,
+        registration_index: 0,
+        key_class: 0,
+        user_identity_id: [0u8; 32],
+        friend_identity_id: [0u8; 32],
+    };
+    match at {
+        AccountType::Standard {
+            standard_account_type,
+            ..
+        } => {
+            tags.type_tag = AccountTypeTagFFI::Standard;
+            tags.standard_tag = match standard_account_type {
+                StandardAccountType::BIP44Account => StandardAccountTypeTagFFI::Bip44,
+                StandardAccountType::BIP32Account => StandardAccountTypeTagFFI::Bip32,
+            };
+        }
+        AccountType::CoinJoin { .. } => {
+            tags.type_tag = AccountTypeTagFFI::CoinJoin;
+        }
+        AccountType::IdentityRegistration => {
+            tags.type_tag = AccountTypeTagFFI::IdentityRegistration;
+        }
+        AccountType::IdentityTopUp { registration_index } => {
+            tags.type_tag = AccountTypeTagFFI::IdentityTopUp;
+            tags.registration_index = *registration_index;
+        }
+        AccountType::IdentityTopUpNotBoundToIdentity => {
+            tags.type_tag = AccountTypeTagFFI::IdentityTopUpNotBoundToIdentity;
+        }
+        AccountType::IdentityInvitation => {
+            tags.type_tag = AccountTypeTagFFI::IdentityInvitation;
+        }
+        AccountType::AssetLockAddressTopUp => {
+            tags.type_tag = AccountTypeTagFFI::AssetLockAddressTopUp;
+        }
+        AccountType::AssetLockShieldedAddressTopUp => {
+            tags.type_tag = AccountTypeTagFFI::AssetLockShieldedAddressTopUp;
+        }
+        AccountType::ProviderVotingKeys => {
+            tags.type_tag = AccountTypeTagFFI::ProviderVotingKeys;
+        }
+        AccountType::ProviderOwnerKeys => {
+            tags.type_tag = AccountTypeTagFFI::ProviderOwnerKeys;
+        }
+        AccountType::ProviderOperatorKeys => {
+            tags.type_tag = AccountTypeTagFFI::ProviderOperatorKeys;
+        }
+        AccountType::ProviderPlatformKeys => {
+            tags.type_tag = AccountTypeTagFFI::ProviderPlatformKeys;
+        }
+        AccountType::DashpayReceivingFunds {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        } => {
+            tags.type_tag = AccountTypeTagFFI::DashpayReceivingFunds;
+            tags.user_identity_id = *user_identity_id;
+            tags.friend_identity_id = *friend_identity_id;
+        }
+        AccountType::DashpayExternalAccount {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        } => {
+            tags.type_tag = AccountTypeTagFFI::DashpayExternalAccount;
+            tags.user_identity_id = *user_identity_id;
+            tags.friend_identity_id = *friend_identity_id;
+        }
+        AccountType::PlatformPayment { key_class, .. } => {
+            tags.type_tag = AccountTypeTagFFI::PlatformPayment;
+            tags.key_class = *key_class;
+        }
+    }
+    tags
 }
 
 /// Project the "ours" outputs of a `TransactionRecord` into FFI UTXO
@@ -362,19 +520,26 @@ fn record_new_utxos_ffi(
 }
 
 /// Project the outpoints spent by a `TransactionRecord` (i.e. the
-/// outpoints whose UTXO rows the persister should delete).
+/// outpoints whose UTXO rows the persister should mark spent),
+/// paired with the spending transaction's txid so the Swift
+/// persister can populate `PersistentTxo.spendingTransaction`.
 fn record_spent_outpoints_ffi(
     rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
-) -> Vec<OutPointFFI> {
+) -> Vec<SpentOutPointFFI> {
+    let mut spending_txid = [0u8; 32];
+    spending_txid.copy_from_slice(rec.txid.as_ref());
     rec.input_details
         .iter()
         .filter_map(|d| {
             let input = rec.transaction.input.get(d.index as usize)?;
             let mut txid = [0u8; 32];
             txid.copy_from_slice(input.previous_output.txid.as_ref());
-            Some(OutPointFFI {
-                txid,
-                vout: input.previous_output.vout,
+            Some(SpentOutPointFFI {
+                outpoint: OutPointFFI {
+                    txid,
+                    vout: input.previous_output.vout,
+                },
+                spending_txid,
             })
         })
         .collect()

@@ -11,6 +11,27 @@ struct StorageExplorerView: View {
             modelRow("Identities", icon: "person.crop.circle", type: PersistentIdentity.self) {
                 IdentityStorageListView()
             }
+            // Identity-relationship caches: cascade-owned by
+            // `PersistentIdentity`, surfaced as their own explorer
+            // sections so the row counts and per-row drill-downs
+            // are visible without going through the parent identity.
+            modelRow("DPNS Names", icon: "at", type: PersistentDPNSName.self) {
+                DPNSNameStorageListView()
+            }
+            modelRow(
+                "DashPay Profiles",
+                icon: "person.text.rectangle",
+                type: PersistentDashpayProfile.self
+            ) {
+                DashpayProfileStorageListView()
+            }
+            modelRow(
+                "Contact Requests",
+                icon: "person.crop.circle.badge.plus",
+                type: PersistentDashpayContactRequest.self
+            ) {
+                DashpayContactRequestStorageListView()
+            }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
                 DocumentStorageListView()
             }
@@ -132,6 +153,9 @@ struct StorageExplorerView: View {
             counts[key] = (try? modelContext.fetchCount(FetchDescriptor<T>())) ?? 0
         }
         count(PersistentIdentity.self)
+        count(PersistentDPNSName.self)
+        count(PersistentDashpayProfile.self)
+        count(PersistentDashpayContactRequest.self)
         count(PersistentDocument.self)
         count(PersistentDataContract.self)
         count(PersistentPublicKey.self)

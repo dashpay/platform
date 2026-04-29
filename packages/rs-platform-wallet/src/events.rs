@@ -16,7 +16,7 @@ use arc_swap::ArcSwap;
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
-use crate::platform_address_sync::PlatformAddressSyncSummary;
+use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
@@ -28,7 +28,7 @@ pub trait PlatformEventHandler: EventHandler {
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     ///
-    /// [`PlatformAddressSyncManager`]: crate::platform_address_sync::PlatformAddressSyncManager
+    /// [`PlatformAddressSyncManager`]: crate::manager::platform_address_sync::PlatformAddressSyncManager
     fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {}
 }
 
