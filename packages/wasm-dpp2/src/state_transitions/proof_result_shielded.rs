@@ -3,14 +3,23 @@
 //! These types were extracted from `proof_result` to keep shielded-specific
 //! code in its own module.
 
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
+use crate::serialization::conversions::normalize_js_value_for_json;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
 use super::proof_result::js_obj;
+
+fn read_map_property(value: &JsValue, name: &str) -> WasmDppResult<Map> {
+    let raw = js_sys::Reflect::get(value, &name.into())
+        .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
+    Ok(raw.unchecked_into())
+}
 
 // --- VerifiedShieldedPoolState ---
 
@@ -103,9 +112,24 @@ impl VerifiedShieldedNullifiersWasm {
         js_obj(&[("nullifiers", self.nullifiers.clone().into())])
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a
+    /// plain object so its entries survive serialisation (otherwise
+    /// `JSON.stringify({nullifiers: <Map>})` produces `{"nullifiers":{}}`).
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        normalize_js_value_for_json(&self.to_object())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedShieldedNullifiersWasm> {
+        Ok(VerifiedShieldedNullifiersWasm {
+            nullifiers: read_map_property(&value, "nullifiers")?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedShieldedNullifiersWasm> {
+        Self::from_object(value)
     }
 }
 
@@ -146,9 +170,28 @@ impl VerifiedShieldedNullifiersWithAddressInfosWasm {
         ])
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the `Map` instances are
+    /// normalised to plain objects so their entries survive serialisation.
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        normalize_js_value_for_json(&self.to_object())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedShieldedNullifiersWithAddressInfosWasm> {
+        Ok(VerifiedShieldedNullifiersWithAddressInfosWasm {
+            nullifiers: read_map_property(&value, "nullifiers")?,
+            address_infos: read_map_property(&value, "addressInfos")?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedShieldedNullifiersWithAddressInfosWasm> {
+        Self::from_object(value)
     }
 }
 
@@ -195,9 +238,28 @@ impl VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
         ])
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the `Map` instances are
+    /// normalised to plain objects so their entries survive serialisation.
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        normalize_js_value_for_json(&self.to_object())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedShieldedNullifiersWithWithdrawalDocumentWasm> {
+        Ok(VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
+            nullifiers: read_map_property(&value, "nullifiers")?,
+            documents: read_map_property(&value, "documents")?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedShieldedNullifiersWithWithdrawalDocumentWasm> {
+        Self::from_object(value)
     }
 }
 

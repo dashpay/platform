@@ -266,9 +266,12 @@ impl VerifiedTokenIdentitiesBalancesWasm {
         js_obj(&[("balances", self.balances.clone().into())])
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a
+    /// plain object so its entries survive serialisation (otherwise
+    /// `JSON.stringify({balances: <Map>})` produces `{"balances":{}}`).
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        crate::serialization::conversions::normalize_js_value_for_json(&self.to_object())
     }
 
     #[wasm_bindgen(js_name = fromObject)]
@@ -339,9 +342,12 @@ impl VerifiedDocumentsWasm {
         js_obj(&[("documents", self.documents.clone().into())])
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a
+    /// plain object so its entries survive serialisation (otherwise
+    /// `JSON.stringify({documents: <Map>})` produces `{"documents":{}}`).
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        crate::serialization::conversions::normalize_js_value_for_json(&self.to_object())
     }
 
     #[wasm_bindgen(js_name = fromObject)]
@@ -526,9 +532,12 @@ impl VerifiedAddressInfosWasm {
         js_obj(&[("addressInfos", self.address_infos.clone().into())])
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a
+    /// plain object so its entries survive serialisation (otherwise
+    /// `JSON.stringify({addressInfos: <Map>})` produces `{"addressInfos":{}}`).
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        crate::serialization::conversions::normalize_js_value_for_json(&self.to_object())
     }
 
     #[wasm_bindgen(js_name = fromObject)]
@@ -575,6 +584,8 @@ impl VerifiedIdentityFullWithAddressInfosWasm {
         Ok(obj.into())
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the embedded `Map` is
+    /// normalised to a plain object so its entries survive serialisation.
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
         let id = self.identity.to_json()?;
@@ -582,7 +593,7 @@ impl VerifiedIdentityFullWithAddressInfosWasm {
         let obj = js_sys::Object::new();
         js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
         js_sys::Reflect::set(&obj, &"addressInfos".into(), &map_js).unwrap();
-        Ok(obj.into())
+        crate::serialization::conversions::normalize_js_value_for_json(&obj.into())
     }
 
     #[wasm_bindgen(js_name = fromObject)]
@@ -644,6 +655,8 @@ impl VerifiedIdentityWithAddressInfosWasm {
         Ok(obj.into())
     }
 
+    /// Returns a `JSON.stringify`-friendly form: the embedded `Map` is
+    /// normalised to a plain object so its entries survive serialisation.
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
         let pi = self.partial_identity.to_json()?;
@@ -651,7 +664,7 @@ impl VerifiedIdentityWithAddressInfosWasm {
         let obj = js_sys::Object::new();
         js_sys::Reflect::set(&obj, &"partialIdentity".into(), &pi.into()).unwrap();
         js_sys::Reflect::set(&obj, &"addressInfos".into(), &map_js).unwrap();
-        Ok(obj.into())
+        crate::serialization::conversions::normalize_js_value_for_json(&obj.into())
     }
 
     #[wasm_bindgen(js_name = fromObject)]
