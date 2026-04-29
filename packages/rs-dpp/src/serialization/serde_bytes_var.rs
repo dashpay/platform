@@ -13,7 +13,9 @@
 
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use serde::de::{self, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serializer};
+use std::fmt;
 
 pub fn serialize<S: Serializer>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error> {
     if serializer.is_human_readable() {
@@ -28,7 +30,37 @@ pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>
         let s = <String>::deserialize(deserializer)?;
         BASE64_STANDARD.decode(&s).map_err(serde::de::Error::custom)
     } else {
-        <Vec<u8>>::deserialize(deserializer)
+        // Accept both byte-buffer formats (`serde_wasm_bindgen` Uint8Array →
+        // `visit_bytes` / `visit_byte_buf`) and length-prefixed sequences
+        // (bincode, `platform_value::Value::Array(u8)` → `visit_seq`). The
+        // default `<Vec<u8>>::deserialize` only covers the seq path.
+        struct BytesOrSeqVisitor;
+
+        impl<'de> Visitor<'de> for BytesOrSeqVisitor {
+            type Value = Vec<u8>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("bytes or sequence of u8")
+            }
+
+            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                Ok(v.to_vec())
+            }
+
+            fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+                Ok(v)
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                while let Some(b) = seq.next_element::<u8>()? {
+                    bytes.push(b);
+                }
+                Ok(bytes)
+            }
+        }
+
+        deserializer.deserialize_byte_buf(BytesOrSeqVisitor)
     }
 }
 

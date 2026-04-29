@@ -18,7 +18,9 @@
 
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use serde::de::{self, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serializer};
+use std::fmt;
 
 pub fn serialize<S: Serializer, const N: usize>(
     bytes: &[u8; N],
@@ -43,10 +45,42 @@ pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
             serde::de::Error::custom(format!("expected {} bytes, got {}", N, v.len()))
         })
     } else {
-        let vec = <Vec<u8>>::deserialize(deserializer)?;
-        vec.try_into().map_err(|v: Vec<u8>| {
-            serde::de::Error::custom(format!("expected {} bytes, got {}", N, v.len()))
-        })
+        // Accept both byte-buffer formats (`serde_wasm_bindgen` Uint8Array,
+        // `platform_value::Value::Bytes` → `visit_bytes` / `visit_byte_buf`)
+        // and length-prefixed sequences (bincode → `visit_seq`). Going through
+        // `<Vec<u8>>::deserialize` would only cover the seq path.
+        struct BytesOrSeqVisitor<const N: usize>;
+
+        impl<'de, const N: usize> Visitor<'de> for BytesOrSeqVisitor<N> {
+            type Value = [u8; N];
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{} bytes (as a byte buffer or sequence of u8)", N)
+            }
+
+            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                v.try_into()
+                    .map_err(|_| E::custom(format!("expected {} bytes, got {}", N, v.len())))
+            }
+
+            fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+                let len = v.len();
+                v.try_into()
+                    .map_err(|_| E::custom(format!("expected {} bytes, got {}", N, len)))
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut buf = Vec::with_capacity(N);
+                while let Some(b) = seq.next_element::<u8>()? {
+                    buf.push(b);
+                }
+                let len = buf.len();
+                buf.try_into()
+                    .map_err(|_| de::Error::custom(format!("expected {} bytes, got {}", N, len)))
+            }
+        }
+
+        deserializer.deserialize_byte_buf(BytesOrSeqVisitor::<N>)
     }
 }
 
