@@ -42,3 +42,54 @@ impl fmt::Display for TokenConfigurationConvention {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+    use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+    use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> TokenConfigurationConvention {
+        let mut localizations = BTreeMap::new();
+        localizations.insert(
+            "en".to_string(),
+            TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                should_capitalize: true,
+                singular_form: "Token".to_string(),
+                plural_form: "Tokens".to_string(),
+            }),
+        );
+        TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+            localizations,
+            decimals: 8,
+        })
+    }
+
+    fn assert_v0_fields(t: &TokenConfigurationConvention) {
+        let TokenConfigurationConvention::V0(rec) = t;
+        assert_eq!(rec.localizations.len(), 1, "localizations count");
+        assert_eq!(rec.decimals, 8, "decimals");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = TokenConfigurationConvention::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = TokenConfigurationConvention::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}
