@@ -758,3 +758,26 @@ impl crate::serialization::JsonConvertible for TokenConfigurationChangeItem {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for TokenConfigurationChangeItem {}
 
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenConfigurationChangeItem::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenConfigurationChangeItem::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = TokenConfigurationChangeItem::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

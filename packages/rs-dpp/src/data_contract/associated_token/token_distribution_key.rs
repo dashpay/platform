@@ -125,3 +125,31 @@ impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
 // TODO(unification pass 2): TokenDistributionType has Default but no canonical-trait impl
 // (the impls are on TokenDistributionTypeWithResolvedRecipient and TokenDistributionInfo,
 // neither of which has Default). Add tests once explicit fixtures are written.
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_token_distribution_info {
+    use super::*;
+    use platform_value::Identifier;
+
+    fn fixture() -> TokenDistributionInfo {
+        TokenDistributionInfo::PreProgrammed(1_700_000_000_000, Identifier::new([0x42; 32]))
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = TokenDistributionInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
