@@ -452,7 +452,14 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 
 ## 8. Test strategy
 
-Every J or V impl gets a rs-dpp-level unit test of the form:
+**Mandatory test convention** — every J or V impl gets a rs-dpp-level unit test that performs **both**:
+
+1. **Round-trip** — `to_json` → `from_json` → `assert_eq!(original, recovered)` (and same for value).
+2. **Per-property assertions** — after the round-trip, assert each field of the recovered value individually equals the expected value. This catches silent field drops, type narrowing, and field-level transformation bugs that whole-struct equality can miss (e.g., a custom `PartialEq` that ignores a field, or u64 fields silently truncated to f64-safe range).
+
+The fixture **must** use **non-default values** for every field, so the per-property assertions actually exercise data preservation. `T::default()` fixtures are insufficient because zero values match silently-dropped fields.
+
+Template:
 
 ```rust
 #[cfg(all(test, feature = "json-conversion"))]
@@ -515,8 +522,51 @@ mod json_convertible_tests {
 
 Equivalent block for `value_convertible_tests`.
 
+### Per-property assertions (mandatory)
+
+After every round-trip test, **each field of the recovered value must be asserted individually**. Whole-struct `assert_eq!` alone fails to catch:
+- A custom `PartialEq` that intentionally ignores a field — round-trip passes even when a field is dropped.
+- A field that round-trips to its `Default` because the deserializer silently uses `serde(default)` on a missing field.
+- u64/i64 fields silently truncated through f64 due to a missing `#[serde(with = "json_safe_u64")]`.
+- Identifier formatting that makes equality look right while underlying bytes differ.
+
+**Fixture rule**: never use `T::default()` for any field that you expect to preserve. Default values match silently-dropped fields and weaken the test. Use **distinguishable non-zero values** for every field: `Identifier::new([0x42; 32])`, `12345u64`, `"alice".to_string()`, `vec![1, 2, 3]`, etc. If a real fixture is impractical for some type (e.g. `InstantLock` requires a valid Dash Core lock), mark the test `#[ignore = "needs explicit fixture"]` rather than weakening to defaults.
+
+Example for a tagged enum with multiple fields:
+
+```rust
+#[test]
+fn json_round_trip_with_per_property_assertions() {
+    use crate::serialization::JsonConvertible;
+
+    // 1. Build fixture with NON-DEFAULT values for every field.
+    let original = MyType::V0(MyTypeV0 {
+        id: Identifier::new([1u8; 32]),
+        amount: 12345,
+        name: "alice".to_string(),
+        flags: vec![true, false, true],
+        // ... every field gets a distinguishable value
+    });
+
+    // 2. Round-trip.
+    let json = original.to_json().expect("to_json");
+    let recovered = MyType::from_json(json).expect("from_json");
+
+    // 3. Whole-struct assertion.
+    assert_eq!(original, recovered);
+
+    // 4. Per-property assertions — catches silent drops & narrowing.
+    let MyType::V0(rec) = recovered else { panic!("variant changed") };
+    assert_eq!(rec.id, Identifier::new([1u8; 32]));
+    assert_eq!(rec.amount, 12345);
+    assert_eq!(rec.name, "alice");
+    assert_eq!(rec.flags, vec![true, false, true]);
+}
+```
+
 **Test responsibilities** —
-- The first two tests (round-trip + tagged-tag) are required for every J/V impl.
+- The round-trip test (with **per-property assertions** and **non-default fixture**) is mandatory for every J/V impl.
+- The tagged-tag test is required for every tagged enum (V0/V1, `serde(tag = "$formatVersion")`).
 - The "via_value matches direct" test is required for any type containing byte-shaped fields (`Identifier`, `BinaryData`, `Bytes20`/`32`/`36`, `CoreScript`, etc.). Documents Critical-1 divergence; if intentional, the test asserts a weaker structural-equivalence rather than `assert_eq`.
 - The "small int array" test is required for any type containing `Vec<u8>` / `Vec<u16>` / `Vec<u32>` / array-typed document properties. Catches Critical-2.
 

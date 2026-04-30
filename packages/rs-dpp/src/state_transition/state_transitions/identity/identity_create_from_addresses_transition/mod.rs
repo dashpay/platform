@@ -98,23 +98,91 @@ impl StateTransitionFieldTypes for IdentityCreateFromAddressesTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "serde-conversion"))]
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::address_funds::{
+        AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
+    };
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+    use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use platform_value::BinaryData;
+    use std::collections::BTreeMap;
 
+    /// Fixture with NON-DEFAULT values for every field so per-property
+    /// assertions actually exercise data preservation.
     fn fixture() -> IdentityCreateFromAddressesTransition {
-        IdentityCreateFromAddressesTransition::V0(
-            IdentityCreateFromAddressesTransitionV0::default(),
-        )
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0x11; 20]), (7u32, 1_000_000u64));
+        inputs.insert(PlatformAddress::P2sh([0x22; 20]), (3u32, 500_000u64));
+
+        let public_keys = vec![IdentityPublicKeyInCreation::V0(
+            IdentityPublicKeyInCreationV0 {
+                id: 5,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MASTER,
+                contract_bounds: None,
+                read_only: false,
+                data: BinaryData::new(vec![0xab; 33]),
+                signature: BinaryData::new(vec![0xcd; 65]),
+            },
+        )];
+
+        let v0 = IdentityCreateFromAddressesTransitionV0 {
+            public_keys,
+            inputs,
+            output: Some((PlatformAddress::P2pkh([0x33; 20]), 250_000)),
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 42,
+            input_witnesses: vec![
+                AddressWitness::P2pkh {
+                    signature: BinaryData::new(vec![0xee; 65]),
+                },
+                AddressWitness::P2sh {
+                    redeem_script: BinaryData::new(vec![0xff; 30]),
+                    signatures: vec![BinaryData::new(vec![0x12; 65])],
+                },
+            ],
+        };
+        IdentityCreateFromAddressesTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &IdentityCreateFromAddressesTransition) {
+        let IdentityCreateFromAddressesTransition::V0(rec) = t;
+        // 6-field per-property assertion
+        assert_eq!(rec.public_keys.len(), 1, "public_keys count");
+        assert_eq!(rec.inputs.len(), 2, "inputs count");
+        assert_eq!(
+            rec.output,
+            Some((PlatformAddress::P2pkh([0x33; 20]), 250_000)),
+            "output"
+        );
+        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy count");
+        assert_eq!(rec.user_fee_increase, 42, "user_fee_increase");
+        assert_eq!(rec.input_witnesses.len(), 2, "input_witnesses count");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered =
             IdentityCreateFromAddressesTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered =
+            IdentityCreateFromAddressesTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]

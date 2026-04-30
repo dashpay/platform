@@ -457,6 +457,45 @@ impl crate::serialization::JsonConvertible for StateTransition {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for StateTransition {}
 
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    /// StateTransition is `serde(untagged)` — round-trip is fragile because
+    /// deserialize tries each variant in order until one matches structurally.
+    /// Using IdentityCreateFromAddresses with default fixture; if this proves
+    /// ambiguous in pass 2 bug-fix work, we'll switch to a manual J impl that
+    /// prefixes a `$type` tag.
+    fn fixture() -> StateTransition {
+        use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+        StateTransition::IdentityCreateFromAddresses(
+            IdentityCreateFromAddressesTransition::V0(
+                IdentityCreateFromAddressesTransitionV0::default(),
+            ),
+        )
+    }
+
+    #[test]
+    #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = StateTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = StateTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
 impl OptionallyAssetLockProved for StateTransition {
     fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
         match self {

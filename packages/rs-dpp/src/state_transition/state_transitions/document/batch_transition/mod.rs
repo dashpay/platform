@@ -111,6 +111,40 @@ impl StateTransitionFieldTypes for BatchTransition {
     }
 }
 
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn fixture() -> BatchTransition {
+        BatchTransition::V0(BatchTransitionV0::default())
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = BatchTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = BatchTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
 // TODO: Make a DocumentType method
 pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> SecurityLevel {
     let maybe_security_level: Option<u64> = v
