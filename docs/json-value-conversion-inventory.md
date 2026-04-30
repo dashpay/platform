@@ -11,6 +11,8 @@ Source traits: `packages/rs-dpp/src/serialization/serialization_traits.rs:141-18
 
 This file is generated from a 4-agent parallel inventory. A 5th verification agent will cross-check it; corrections land back here as a follow-up.
 
+> **Pass-1 status (2026-04-30, commit `9f23d675af`)**: ~80 of the types catalogued below now have canonical impls. The Section 1 (already-covered) and Section 5 (missing-impls) tables are *historical* — refer to `docs/json-value-unification-plan.md` §7 Phase B and Phase C for current coverage. Pass 2 (tests + bug fixes) is in progress.
+
 ---
 
 ## Section 1 — rs-dpp types **with trait impls**
