@@ -20,7 +20,8 @@ use std::os::raw::c_char;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use platform_wallet::wallet::tokens::{
-    GroupActionEntry, GroupActionParams, GroupActionSignerEntry,
+    group_action_signers_external, pending_group_actions_external, GroupActionEntry,
+    GroupActionParams, GroupActionSignerEntry,
 };
 use serde_json::{json, Value};
 
@@ -303,17 +304,17 @@ pub unsafe extern "C" fn platform_wallet_token_pending_group_actions(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let sdk = wallet.sdk_arc();
             let result = block_on_worker(async move {
-                token_wallet
-                    .pending_group_actions_external(
-                        contract_id,
-                        group_contract_position,
-                        status_enum,
-                        start_at,
-                        limit_opt,
-                    )
-                    .await
+                pending_group_actions_external(
+                    sdk.as_ref(),
+                    contract_id,
+                    group_contract_position,
+                    status_enum,
+                    start_at,
+                    limit_opt,
+                )
+                .await
             });
             match result {
                 Ok(entries) => {
@@ -412,16 +413,16 @@ pub unsafe extern "C" fn platform_wallet_token_group_action_signers(
 
     PLATFORM_WALLET_STORAGE
         .with_item(wallet_handle, |wallet| {
-            let token_wallet = wallet.tokens().clone();
+            let sdk = wallet.sdk_arc();
             let result = block_on_worker(async move {
-                token_wallet
-                    .group_action_signers_external(
-                        contract_id,
-                        group_contract_position,
-                        status_enum,
-                        action_id_decoded,
-                    )
-                    .await
+                group_action_signers_external(
+                    sdk.as_ref(),
+                    contract_id,
+                    group_contract_position,
+                    status_enum,
+                    action_id_decoded,
+                )
+                .await
             });
             match result {
                 Ok(entries) => {

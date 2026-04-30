@@ -8,6 +8,9 @@
 # ignore VSCode project specific files
 .vscode
 
+# ignore Serena MCP project-local cache/config
+.serena
+
 # Env file
 .env
 

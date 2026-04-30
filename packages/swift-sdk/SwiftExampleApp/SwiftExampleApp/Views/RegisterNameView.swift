@@ -407,13 +407,23 @@ struct RegisterNameView: View {
     // `modelContext.container`.
     let signer = KeychainSigner(modelContainer: modelContext.container)
 
+    // The DPNS document stores `label` (display form, what the user
+    // typed) and `normalizedLabel` (homograph-safe lowercase, used
+    // for uniqueness lookup). The SDK side derives `normalizedLabel`
+    // from `label` via `convert_to_homograph_safe_chars`, so we hand
+    // it the raw trimmed input — passing `normalizedUsername` here
+    // makes both columns identical and the original casing /
+    // i-vs-1, o-vs-0 letters are lost from the cache and every
+    // subsequent display.
+    let displayLabel = username.trimmingCharacters(in: .whitespacesAndNewlines)
+
     isRegistering = true
 
     Task {
       do {
         let registeredName = try await wallet.registerDpnsName(
           identityId: identity.identityId,
-          name: normalizedUsername,
+          name: displayLabel,
           signer: signer
         )
 
@@ -426,17 +436,18 @@ struct RegisterNameView: View {
           // can immediately add this name to its local state and
           // skip the "wait until I leave + come back" round-trip.
           //
-          // Pass the bare label (`normalizedUsername`), NOT the FFI's
-          // full-domain return value (`registeredName` = "name.dash").
-          // The parent's `dpnsNames` array stores bare labels — that's
-          // what `managed.getDpnsNames()` returns — so passing the
-          // full domain here would render "trym0re2.dash" instead of
-          // "trym0re2" until the next `loadDPNSNames` round.
-          onRegistered?(normalizedUsername)
+          // Pass the bare display label (what we just registered),
+          // NOT the FFI's full-domain return value
+          // (`registeredName` = "name.dash"). The parent's
+          // `dpnsNames` array stores bare labels — that's what
+          // `managed.getDpnsNames()` returns — so passing the full
+          // domain here would render "label.dash" instead of "label"
+          // until the next `loadDPNSNames` round.
+          onRegistered?(displayLabel)
 
           registrationSuccess = true
           errorMessage = isContested ?
-          "Successfully started contest for \(normalizedUsername). Follow \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes") to resolution." :
+          "Successfully started contest for \(displayLabel). Follow \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes") to resolution." :
           "Successfully registered \(registeredName)!"
           showingError = true
           isRegistering = false

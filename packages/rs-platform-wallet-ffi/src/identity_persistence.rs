@@ -18,6 +18,8 @@
 //! helper for every entry before returning — Swift must consume
 //! whatever it needs to persist before returning from the callback.
 
+use std::ffi::CString;
+use std::os::raw::c_char;
 use std::ptr;
 
 use platform_wallet::changeset::{IdentityEntry, IdentityKeyEntry};
@@ -25,21 +27,34 @@ use platform_wallet::changeset::{IdentityEntry, IdentityKeyEntry};
 // `IdentityStatus` discriminants are mirrored on the Swift side. Keep
 // this encoding in sync with the `repr(u8)` order in
 // `platform-wallet/src/wallet/identity/types/key_storage.rs`.
-use platform_wallet::IdentityStatus;
+use platform_wallet::{DashPayProfile, IdentityStatus};
 
 /// Flat C mirror of [`IdentityEntry`]'s persistable scalars.
 ///
 /// Public keys are NOT included here — they travel in
 /// [`IdentityKeyEntryFFI`] alongside their derivation breadcrumb via
 /// a separate callback. Fields that don't map onto the Swift schema
-/// (block times, DPNS names, DashPay profile/payments) are skipped;
-/// DashPay overlays already ride on the dedicated
-/// `dashpay_profiles` / `dashpay_payments_overlay` surfaces on the
-/// parent changeset.
+/// (block times, contested DPNS names, DashPay payments) are skipped;
+/// DashPay payment overlays already ride on the dedicated
+/// `dashpay_payments_overlay` surface on the parent changeset.
 ///
 /// User-visible label is no longer carried — `ManagedIdentity` doesn't
 /// have one, and Swift owns the `PersistentIdentity.alias` column
 /// directly. Removed entirely so the FFI layout stays minimal.
+///
+/// Settled DPNS labels DO ride on this struct (heap-allocated, freed
+/// in [`free_identity_entry_ffi`]) so the Swift persister can
+/// upsert/cascade them onto a `PersistentDPNSName` row collection
+/// owned by the parent `PersistentIdentity`. Contested labels are
+/// deliberately omitted — their lifecycle is in-flight contest churn,
+/// not the settled-label collection this struct mirrors.
+///
+/// DashPay profile (`dashpay_profile_*`) rides on every upsert when
+/// the underlying [`IdentityEntry::dashpay_profile`] is `Some(_)`. The
+/// `_present` flag plus the per-string nullable pointers let Swift
+/// distinguish "no profile yet" (skip the row) from "profile present
+/// with this field unset" (clear the column). All heap-allocated
+/// strings are freed in [`free_identity_entry_ffi`].
 #[repr(C)]
 pub struct IdentityEntryFFI {
     pub identity_id: [u8; 32],
@@ -59,6 +74,73 @@ pub struct IdentityEntryFFI {
     /// link `PersistentIdentity.walletId` back to `PersistentWallet`.
     pub wallet_id_is_some: bool,
     pub wallet_id: [u8; 32],
+    /// Heap-allocated array of NUL-terminated UTF-8 C strings, one
+    /// per confirmed DPNS label on the underlying
+    /// [`IdentityEntry::dpns_names`]. Owned by this FFI struct; freed
+    /// in [`free_identity_entry_ffi`]. `null` when `dpns_names_count`
+    /// is 0.
+    ///
+    /// Inner pointers may individually be null when the source label
+    /// contained an interior NUL byte (unreachable in practice — DPNS
+    /// validation rejects them). Consumers must skip null inner
+    /// pointers.
+    pub dpns_names: *const *const c_char,
+    /// Number of entries pointed at by [`Self::dpns_names`] /
+    /// [`Self::dpns_names_acquired_at`]. The two arrays are always the
+    /// same length.
+    pub dpns_names_count: usize,
+    /// Parallel `u64` array of `acquired_at` Unix-millis timestamps;
+    /// `0` when the source `DpnsNameInfo.acquired_at` was `None`.
+    /// Same length as [`Self::dpns_names`]. Heap-allocated, freed in
+    /// [`free_identity_entry_ffi`]. `null` when count is 0.
+    pub dpns_names_acquired_at: *const u64,
+    /// `true` iff the underlying [`IdentityEntry::dashpay_profile`]
+    /// is `Some(_)`. When `false`, all `dashpay_profile_*` pointer
+    /// fields are null and the byte-array fields are zeroed — Swift
+    /// must skip the profile upsert entirely (changeset semantics:
+    /// `dashpay_profile: None` means "no update" rather than
+    /// "delete", matching the merge policy on the Rust side).
+    pub dashpay_profile_present: bool,
+    /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
+    /// profile's display name. `null` when the source field was
+    /// `None`. Owned by this FFI struct; freed in
+    /// [`free_identity_entry_ffi`]. Ignore unless
+    /// [`Self::dashpay_profile_present`] is `true`.
+    pub dashpay_profile_display_name: *const c_char,
+    /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
+    /// profile's bio. `null` when the source field was `None`. Owned
+    /// by this FFI struct; freed in [`free_identity_entry_ffi`].
+    /// Ignore unless [`Self::dashpay_profile_present`] is `true`.
+    pub dashpay_profile_bio: *const c_char,
+    /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
+    /// profile's avatar URL. `null` when the source field was
+    /// `None`. Owned by this FFI struct; freed in
+    /// [`free_identity_entry_ffi`]. Ignore unless
+    /// [`Self::dashpay_profile_present`] is `true`.
+    pub dashpay_profile_avatar_url: *const c_char,
+    /// SHA-256 hash of the avatar image bytes (DIP-15 `avatarHash`).
+    /// Zeroed when the source `Option<[u8; 32]>` was `None` — gate
+    /// reads on [`Self::dashpay_profile_avatar_hash_present`] rather
+    /// than checking for an all-zero hash, since `[0u8; 32]` is a
+    /// valid (if cosmically unlikely) hash value.
+    pub dashpay_profile_avatar_hash: [u8; 32],
+    /// `true` iff the source `avatar_hash` was `Some(_)`. Disambiguates
+    /// "no hash" from "hash that happens to be all zeros".
+    pub dashpay_profile_avatar_hash_present: bool,
+    /// DHash perceptual fingerprint of the avatar image (DIP-15
+    /// `avatarFingerprint`, 8 bytes / 64 bits). Zeroed when the source
+    /// `Option<[u8; 8]>` was `None` — gate reads on
+    /// [`Self::dashpay_profile_avatar_fingerprint_present`] rather
+    /// than checking for an all-zero fingerprint.
+    pub dashpay_profile_avatar_fingerprint: [u8; 8],
+    /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
+    pub dashpay_profile_avatar_fingerprint_present: bool,
+    /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
+    /// profile's public message. `null` when the source field was
+    /// `None`. Owned by this FFI struct; freed in
+    /// [`free_identity_entry_ffi`]. Ignore unless
+    /// [`Self::dashpay_profile_present`] is `true`.
+    pub dashpay_profile_public_message: *const c_char,
 }
 
 /// Flat C mirror of [`IdentityKeyEntry`] for forwarding across FFI.
@@ -151,6 +233,45 @@ pub struct IdentityKeyRemovalFFI {
 const _: [u8; 136] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
+// Compile-time guard for `IdentityEntryFFI`. Same rationale as the
+// `IdentityKeyEntryFFI` guard above — the Swift side picks up the
+// header layout via cbindgen, so a layout drift would manifest as a
+// random `EXC_BAD_ACCESS` in the persistIdentities callback rather
+// than a build error. Pin the expected size here so any reshape
+// fails the cargo build first.
+//
+// Expected layout on 64-bit targets (all fields in declaration
+// order under `#[repr(C)]`):
+//
+//   0..=31    identity_id                              [u8; 32]
+//   32..=39   balance                                  u64
+//   40..=47   revision                                 u64
+//   48        identity_index_is_some                   bool
+//   49..=51   (padding to 4)
+//   52..=55   identity_index                           u32
+//   56        status                                   u8
+//   57        wallet_id_is_some                        bool
+//   58..=89   wallet_id                                [u8; 32]
+//   90..=95   (padding to 8 for pointer alignment)
+//   96..=103  dpns_names                               *const *const c_char
+//   104..=111 dpns_names_count                         usize
+//   112..=119 dpns_names_acquired_at                   *const u64
+//   120       dashpay_profile_present                  bool
+//   121..=127 (padding to 8 for pointer alignment)
+//   128..=135 dashpay_profile_display_name             *const c_char
+//   136..=143 dashpay_profile_bio                      *const c_char
+//   144..=151 dashpay_profile_avatar_url               *const c_char
+//   152..=183 dashpay_profile_avatar_hash              [u8; 32]
+//   184       dashpay_profile_avatar_hash_present      bool
+//   185..=192 dashpay_profile_avatar_fingerprint       [u8; 8]
+//   193       dashpay_profile_avatar_fingerprint_present bool
+//   194..=199 (padding to 8 for pointer alignment)
+//   200..=207 dashpay_profile_public_message           *const c_char
+//
+// Total size = 208, alignment = 8 (from u64 / pointer).
+const _: [u8; 208] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityEntryFFI>()];
+
 // ---------------------------------------------------------------------------
 // Conversions
 // ---------------------------------------------------------------------------
@@ -158,9 +279,18 @@ const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 impl IdentityEntryFFI {
     /// Copy an [`IdentityEntry`] into a fresh FFI struct.
     ///
-    /// Pure scalar layout now — no heap allocations to track. The
-    /// `free_identity_entry_ffi` helper survives only to keep the
-    /// callback shape symmetric with [`IdentityKeyEntryFFI`].
+    /// Allocates two parallel heap arrays for the DPNS labels:
+    /// `dpns_names` (a boxed slice of `CString::into_raw` pointers)
+    /// and `dpns_names_acquired_at` (a boxed slice of timestamps).
+    /// Both are released by [`free_identity_entry_ffi`] which the
+    /// persister callsite calls after the Swift handler returns.
+    ///
+    /// When [`IdentityEntry::dashpay_profile`] is `Some(_)` the
+    /// per-string profile fields are heap-allocated `CString`s
+    /// (released by [`free_identity_entry_ffi`]) and the
+    /// `_present` flag is set to `true`. When the profile is
+    /// `None` every profile field is zero/null and the flag is
+    /// `false`.
     pub fn from_entry(entry: &IdentityEntry) -> Self {
         let (wallet_id_is_some, wallet_id) = match entry.wallet_id {
             Some(id) => (true, id),
@@ -169,6 +299,14 @@ impl IdentityEntryFFI {
         let (identity_index_is_some, identity_index) = match entry.identity_index {
             Some(idx) => (true, idx),
             None => (false, 0),
+        };
+
+        let (dpns_names, dpns_names_acquired_at, dpns_names_count) =
+            allocate_dpns_arrays(&entry.dpns_names);
+
+        let profile_fields = match &entry.dashpay_profile {
+            Some(profile) => DashPayProfileFields::from_profile(profile),
+            None => DashPayProfileFields::absent(),
         };
 
         Self {
@@ -180,8 +318,134 @@ impl IdentityEntryFFI {
             status: status_discriminant(entry.status),
             wallet_id_is_some,
             wallet_id,
+            dpns_names,
+            dpns_names_count,
+            dpns_names_acquired_at,
+            dashpay_profile_present: profile_fields.present,
+            dashpay_profile_display_name: profile_fields.display_name,
+            dashpay_profile_bio: profile_fields.bio,
+            dashpay_profile_avatar_url: profile_fields.avatar_url,
+            dashpay_profile_avatar_hash: profile_fields.avatar_hash,
+            dashpay_profile_avatar_hash_present: profile_fields.avatar_hash_present,
+            dashpay_profile_avatar_fingerprint: profile_fields.avatar_fingerprint,
+            dashpay_profile_avatar_fingerprint_present: profile_fields.avatar_fingerprint_present,
+            dashpay_profile_public_message: profile_fields.public_message,
         }
     }
+}
+
+/// Intermediate carrier for the DashPay profile slice of
+/// [`IdentityEntryFFI`]. Exists so [`IdentityEntryFFI::from_entry`]
+/// can build the per-string heap allocations in one place without
+/// open-coding the `Option<String>` → `CString::into_raw` ladder
+/// inline. Every owned pointer in here is released by
+/// [`free_identity_entry_ffi`] when the parent struct is freed.
+struct DashPayProfileFields {
+    present: bool,
+    display_name: *const c_char,
+    bio: *const c_char,
+    avatar_url: *const c_char,
+    avatar_hash: [u8; 32],
+    avatar_hash_present: bool,
+    avatar_fingerprint: [u8; 8],
+    avatar_fingerprint_present: bool,
+    public_message: *const c_char,
+}
+
+impl DashPayProfileFields {
+    /// Zeroed/null carrier used when the source profile is `None`.
+    fn absent() -> Self {
+        Self {
+            present: false,
+            display_name: ptr::null(),
+            bio: ptr::null(),
+            avatar_url: ptr::null(),
+            avatar_hash: [0u8; 32],
+            avatar_hash_present: false,
+            avatar_fingerprint: [0u8; 8],
+            avatar_fingerprint_present: false,
+            public_message: ptr::null(),
+        }
+    }
+
+    /// Heap-allocate the C strings for a present profile. Strings
+    /// containing interior NUL bytes (impossible in practice — the
+    /// DashPay contract validation rejects them) become null
+    /// pointers so the rest of the struct stays well-formed; Swift
+    /// reads each pointer as nullable already.
+    fn from_profile(profile: &DashPayProfile) -> Self {
+        let (avatar_hash, avatar_hash_present) = match profile.avatar_hash {
+            Some(h) => (h, true),
+            None => ([0u8; 32], false),
+        };
+        let (avatar_fingerprint, avatar_fingerprint_present) = match profile.avatar_fingerprint {
+            Some(f) => (f, true),
+            None => ([0u8; 8], false),
+        };
+        Self {
+            present: true,
+            display_name: optional_c_string(profile.display_name.as_deref()),
+            bio: optional_c_string(profile.bio.as_deref()),
+            avatar_url: optional_c_string(profile.avatar_url.as_deref()),
+            avatar_hash,
+            avatar_hash_present,
+            avatar_fingerprint,
+            avatar_fingerprint_present,
+            public_message: optional_c_string(profile.public_message.as_deref()),
+        }
+    }
+}
+
+/// Convert an `Option<&str>` into a heap-allocated `CString` raw
+/// pointer (`null` for `None`). The returned pointer is released
+/// with `CString::from_raw` inside [`free_identity_entry_ffi`].
+fn optional_c_string(s: Option<&str>) -> *const c_char {
+    match s {
+        Some(s) => match CString::new(s) {
+            Ok(c) => c.into_raw() as *const c_char,
+            Err(_) => ptr::null(),
+        },
+        None => ptr::null(),
+    }
+}
+
+/// Allocate the two parallel DPNS arrays carried on
+/// [`IdentityEntryFFI`]. Returns `(labels, acquired_at, count)` —
+/// both pointers null and count `0` when the source slice is empty.
+///
+/// `labels` is a `Box<[*const c_char]>` of `CString::into_raw`
+/// pointers — release each entry with `CString::from_raw` before
+/// dropping the outer slice. `acquired_at` is a `Box<[u64]>` of
+/// matching Unix-millis timestamps (`0` for `None`). The two slices
+/// always have the same length so the caller indexes them in
+/// lock-step.
+///
+/// Inner labels that fail `CString::new` (interior NUL — unreachable
+/// in practice given DPNS validation) become null entries so the
+/// outer iteration on the Swift side stays index-aligned with the
+/// timestamp array.
+fn allocate_dpns_arrays(
+    names: &[platform_wallet::DpnsNameInfo],
+) -> (*const *const c_char, *const u64, usize) {
+    if names.is_empty() {
+        return (ptr::null(), ptr::null(), 0);
+    }
+    let mut labels: Vec<*const c_char> = Vec::with_capacity(names.len());
+    let mut acquired: Vec<u64> = Vec::with_capacity(names.len());
+    for info in names {
+        let raw = match CString::new(info.label.clone()) {
+            Ok(s) => s.into_raw() as *const c_char,
+            // Interior NUL: skip the label but keep the slot so the
+            // timestamp array stays index-aligned.
+            Err(_) => ptr::null(),
+        };
+        labels.push(raw);
+        acquired.push(info.acquired_at.unwrap_or(0));
+    }
+    let count = labels.len();
+    let labels_ptr = Box::into_raw(labels.into_boxed_slice()) as *const *const c_char;
+    let acquired_ptr = Box::into_raw(acquired.into_boxed_slice()) as *const u64;
+    (labels_ptr, acquired_ptr, count)
 }
 
 impl IdentityKeyEntryFFI {
@@ -251,13 +515,90 @@ fn status_discriminant(status: IdentityStatus) -> u8 {
 // Destructors
 // ---------------------------------------------------------------------------
 
-/// Release heap allocations owned by an [`IdentityEntryFFI`].
+/// Release heap allocations owned by an [`IdentityEntryFFI`] —
+/// the DPNS label C-string array (each entry plus the outer boxed
+/// slice), the parallel `acquired_at` timestamp array, and (when
+/// [`IdentityEntryFFI::dashpay_profile_present`] is true) the
+/// per-string profile C-strings.
 ///
-/// Currently a no-op — `IdentityEntryFFI` no longer carries any
-/// owned heap allocations after the label field was dropped. Kept
-/// for callsite symmetry with [`free_identity_key_entry_ffi`] and
-/// to leave the door open for future heap-owned fields.
-pub unsafe fn free_identity_entry_ffi(_entry: &mut IdentityEntryFFI) {}
+/// Idempotent: pointers are nulled, the `_present` flag is reset,
+/// and counts are zeroed after release, so a second call is a no-op.
+///
+/// # Safety
+///
+/// `entry` must have been produced by [`IdentityEntryFFI::from_entry`]
+/// and not previously freed. The pointers must reference allocations
+/// owned by this struct — passing in pointers Swift owns or pointers
+/// from a different allocator will corrupt the heap.
+pub unsafe fn free_identity_entry_ffi(entry: &mut IdentityEntryFFI) {
+    if !entry.dpns_names.is_null() && entry.dpns_names_count > 0 {
+        // Reconstruct the boxed slice we created via `Box::into_raw`
+        // on a `Box<[*const c_char]>`, then walk every entry to
+        // release the per-label C-string before the outer slice
+        // drops.
+        let slice = unsafe {
+            std::slice::from_raw_parts_mut(
+                entry.dpns_names as *mut *const c_char,
+                entry.dpns_names_count,
+            )
+        };
+        for raw in slice.iter_mut() {
+            if !raw.is_null() {
+                let _ = unsafe { CString::from_raw(*raw as *mut c_char) };
+                *raw = ptr::null();
+            }
+        }
+        let _ = unsafe { Box::from_raw(slice as *mut [*const c_char]) };
+        entry.dpns_names = ptr::null();
+    }
+    if !entry.dpns_names_acquired_at.is_null() && entry.dpns_names_count > 0 {
+        let slice = unsafe {
+            std::slice::from_raw_parts_mut(
+                entry.dpns_names_acquired_at as *mut u64,
+                entry.dpns_names_count,
+            )
+        };
+        let _ = unsafe { Box::from_raw(slice as *mut [u64]) };
+        entry.dpns_names_acquired_at = ptr::null();
+    }
+    entry.dpns_names_count = 0;
+
+    // Release each per-string DashPay profile allocation. The
+    // `_present` flag gates the whole section — when the source
+    // profile was `None`, every pointer is already null and there
+    // is nothing to free. We still walk each pointer individually
+    // because a profile can be present with one or more
+    // `Option<String>` fields unset (and therefore null).
+    if entry.dashpay_profile_present {
+        free_optional_c_string(&mut entry.dashpay_profile_display_name);
+        free_optional_c_string(&mut entry.dashpay_profile_bio);
+        free_optional_c_string(&mut entry.dashpay_profile_avatar_url);
+        free_optional_c_string(&mut entry.dashpay_profile_public_message);
+        entry.dashpay_profile_avatar_hash = [0u8; 32];
+        entry.dashpay_profile_avatar_hash_present = false;
+        entry.dashpay_profile_avatar_fingerprint = [0u8; 8];
+        entry.dashpay_profile_avatar_fingerprint_present = false;
+        entry.dashpay_profile_present = false;
+    }
+}
+
+/// Release a heap-allocated C string produced by
+/// [`optional_c_string`] and null out the pointer in place. Idempotent
+/// for `null` inputs so [`free_identity_entry_ffi`] stays a no-op on
+/// double calls.
+///
+/// # Safety
+///
+/// The pointer must either be `null` or have been produced by
+/// `CString::into_raw` on a `Box`-allocated `CString` (i.e. the
+/// system allocator) — the same allocator `CString::from_raw`
+/// reclaims from.
+unsafe fn free_optional_c_string(slot: &mut *const c_char) {
+    if !slot.is_null() {
+        let _ = unsafe { CString::from_raw(*slot as *mut c_char) };
+        *slot = ptr::null();
+    }
+}
 
 /// Release heap allocations owned by an [`IdentityKeyEntryFFI`] —
 /// the public-key data buffer and, when present, the derivation-path
@@ -321,6 +662,123 @@ mod tests {
         assert_eq!(ffi.status, 2); // Active
         assert!(ffi.wallet_id_is_some);
         assert_eq!(ffi.wallet_id, [9u8; 32]);
+        assert!(ffi.dpns_names.is_null());
+        assert!(ffi.dpns_names_acquired_at.is_null());
+        assert_eq!(ffi.dpns_names_count, 0);
+        unsafe { free_identity_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn test_identity_entry_ffi_with_dpns_names() {
+        use platform_wallet::DpnsNameInfo;
+        let entry = IdentityEntry {
+            id: Identifier::from([4u8; 32]),
+            balance: 0,
+            revision: 0,
+            identity_index: Some(0),
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: vec![
+                DpnsNameInfo {
+                    label: "alice".to_string(),
+                    acquired_at: Some(1_700_000_000_000),
+                },
+                DpnsNameInfo {
+                    label: "alice2".to_string(),
+                    acquired_at: None,
+                },
+            ],
+            contested_dpns_names: Vec::new(),
+            status: IdentityStatus::Active,
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: Default::default(),
+        };
+        let mut ffi = IdentityEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.dpns_names_count, 2);
+        assert!(!ffi.dpns_names.is_null());
+        assert!(!ffi.dpns_names_acquired_at.is_null());
+
+        // Read both labels back via the C-string API to validate the
+        // shape Swift is going to walk.
+        let labels: &[*const c_char] =
+            unsafe { std::slice::from_raw_parts(ffi.dpns_names, ffi.dpns_names_count) };
+        let acquired: &[u64] =
+            unsafe { std::slice::from_raw_parts(ffi.dpns_names_acquired_at, ffi.dpns_names_count) };
+        assert!(!labels[0].is_null());
+        assert!(!labels[1].is_null());
+        let s0 = unsafe { std::ffi::CStr::from_ptr(labels[0]) }
+            .to_str()
+            .unwrap();
+        let s1 = unsafe { std::ffi::CStr::from_ptr(labels[1]) }
+            .to_str()
+            .unwrap();
+        assert_eq!(s0, "alice");
+        assert_eq!(s1, "alice2");
+        assert_eq!(acquired[0], 1_700_000_000_000);
+        assert_eq!(acquired[1], 0);
+
+        unsafe { free_identity_entry_ffi(&mut ffi) };
+        assert!(ffi.dpns_names.is_null());
+        assert!(ffi.dpns_names_acquired_at.is_null());
+        assert_eq!(ffi.dpns_names_count, 0);
+
+        // Idempotent: a second call must not double-free.
+        unsafe { free_identity_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn test_identity_entry_ffi_with_dashpay_profile() {
+        use platform_wallet::DashPayProfile;
+        let entry = IdentityEntry {
+            id: Identifier::from([5u8; 32]),
+            balance: 0,
+            revision: 0,
+            identity_index: Some(1),
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: Vec::new(),
+            status: IdentityStatus::Active,
+            wallet_id: None,
+            dashpay_profile: Some(DashPayProfile {
+                display_name: Some("Bob".to_string()),
+                bio: Some("Hello".to_string()),
+                avatar_url: Some("https://example.com/a.png".to_string()),
+                avatar_hash: Some([0xAB; 32]),
+                avatar_fingerprint: Some([0xCD; 8]),
+                public_message: None,
+            }),
+            dashpay_payments: Default::default(),
+        };
+        let mut ffi = IdentityEntryFFI::from_entry(&entry);
+        assert!(ffi.dashpay_profile_present);
+        let display = unsafe { std::ffi::CStr::from_ptr(ffi.dashpay_profile_display_name) }
+            .to_str()
+            .unwrap();
+        assert_eq!(display, "Bob");
+        let bio = unsafe { std::ffi::CStr::from_ptr(ffi.dashpay_profile_bio) }
+            .to_str()
+            .unwrap();
+        assert_eq!(bio, "Hello");
+        let url = unsafe { std::ffi::CStr::from_ptr(ffi.dashpay_profile_avatar_url) }
+            .to_str()
+            .unwrap();
+        assert_eq!(url, "https://example.com/a.png");
+        assert!(ffi.dashpay_profile_avatar_hash_present);
+        assert_eq!(ffi.dashpay_profile_avatar_hash, [0xAB; 32]);
+        assert!(ffi.dashpay_profile_avatar_fingerprint_present);
+        assert_eq!(ffi.dashpay_profile_avatar_fingerprint, [0xCD; 8]);
+        assert!(ffi.dashpay_profile_public_message.is_null());
+
+        unsafe { free_identity_entry_ffi(&mut ffi) };
+        assert!(!ffi.dashpay_profile_present);
+        assert!(ffi.dashpay_profile_display_name.is_null());
+        assert!(ffi.dashpay_profile_bio.is_null());
+        assert!(ffi.dashpay_profile_avatar_url.is_null());
+        assert!(!ffi.dashpay_profile_avatar_hash_present);
+        assert!(!ffi.dashpay_profile_avatar_fingerprint_present);
+        // Idempotent — second call must not double-free.
         unsafe { free_identity_entry_ffi(&mut ffi) };
     }
 

@@ -10,6 +10,12 @@ public final class PersistentIdentity {
     public var revision: Int64
     public var isLocal: Bool
     public var alias: String?
+    /// User's chosen primary display label (the one rendered on
+    /// list rows and avatars). Populated only when the user selects a
+    /// main name from `mainDpnsName` selection or as the fallback set
+    /// during initial registration. The full label collection lives on
+    /// the `dpnsNames` relationship below; this scalar is just the
+    /// "show this one in the cell" hint.
     public var dpnsName: String?
     public var mainDpnsName: String?
     public var identityType: String
@@ -73,6 +79,40 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) public var tokenBalances: [PersistentTokenBalance]
 
+    /// Confirmed DPNS labels owned by this identity. Cascade-deleted
+    /// from the parent — losing the identity row drops the label
+    /// cache too. Append-only on the write path: the changeset's
+    /// merge policy never removes labels (DPNS doesn't expose a
+    /// user-driven "delete name" today), so the persister callback
+    /// only inserts new rows, never removes them. Predicates filter
+    /// by the denormalized `PersistentDPNSName.identityId` column,
+    /// not through this collection — see
+    /// `PersistentDPNSName.predicate(identityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDPNSName.identity)
+    public var dpnsNames: [PersistentDPNSName] = []
+
+    /// DashPay profile cache for this identity — at most one row per
+    /// (network, identity) per the contract's per-`ownerId`
+    /// uniqueness on the `profile` document. Cascade-deleted from the
+    /// parent. Optional because not every identity has published a
+    /// profile (and the FFI changeset's `dashpay_profile: None`
+    /// semantics mean "no update", not "delete" — the persister never
+    /// nils this out from a flush). Inserted / refreshed by
+    /// `PlatformWalletPersistenceHandler.upsertDashpayProfile(...)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayProfile.identity)
+    public var dashpayProfile: PersistentDashpayProfile?
+
+    /// DashPay contact-request rows owned by this identity (both
+    /// outgoing and incoming). Cascade-deleted from the parent. Same
+    /// query-by-denormalized-id pattern as `dpnsNames`: filters use
+    /// `PersistentDashpayContactRequest.predicate(ownerIdentityId:)`
+    /// rather than walking this collection from a SwiftUI view.
+    /// Append / overwrite / delete on the write path: the persister
+    /// callback applies upserts (per `(owner, contact, isOutgoing)`)
+    /// and tombstones (`removed_sent` / `removed_incoming`) directly.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactRequest.owner)
+    public var contactRequests: [PersistentDashpayContactRequest] = []
+
     // Contracts in the local store that name this identity as their
     // owner. `.nullify` so deleting the identity leaves the contract
     // rows alive (with `ownerIdentity` nulled) — matches the user's
@@ -115,6 +155,9 @@ public final class PersistentIdentity {
         self.publicKeys = []
         self.documents = []
         self.tokenBalances = []
+        self.dpnsNames = []
+        self.dashpayProfile = nil
+        self.contactRequests = []
         self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()

@@ -18,6 +18,26 @@ import SwiftData
 /// through addresses; nothing is denormalized on this side.
 @Model
 public final class PersistentAccount {
+    /// Compound uniqueness on the full account-identity tuple:
+    /// `(wallet, accountType, accountIndex, standardTag,
+    /// registrationIndex, keyClass, userIdentityId,
+    /// friendIdentityId)`. Mirrors the persister's match logic
+    /// exactly — the variant disambiguators (`standardTag` for
+    /// BIP44 vs BIP32, `registrationIndex` for top-ups, `keyClass`
+    /// for PlatformPayment) are part of the key so legitimate
+    /// sibling accounts can coexist (e.g. BIP44 #0 and BIP32 #0,
+    /// or multiple top-up accounts on the same identity).
+    #Unique<PersistentAccount>([
+        \.wallet,
+        \.accountType,
+        \.accountIndex,
+        \.standardTag,
+        \.registrationIndex,
+        \.keyClass,
+        \.userIdentityId,
+        \.friendIdentityId,
+    ])
+
     /// Account type identifier — matches the `AccountTypeTagFFI`
     /// discriminant from the Rust side (0 = Standard, 1 = CoinJoin,
     /// … 14 = PlatformPayment, 15 = IdentityAuthenticationEcdsa,
@@ -53,11 +73,15 @@ public final class PersistentAccount {
     /// other variants.
     public var friendIdentityId: Data
     /// Bincode-encoded `ExtendedPubKey` for this account. Populated by
-    /// `on_persist_account_fn`, consumed by `on_load_wallet_list_fn`
-    /// to reconstruct a watch-only `Account` via `Account::from_xpub`.
-    /// Empty `Data` means "not yet persisted" — account cannot be
-    /// restored silently.
-    public var accountExtendedPubKeyBytes: Data
+    /// `on_persist_account_registrations_fn`, consumed by
+    /// `on_load_wallet_list_fn` to reconstruct a watch-only `Account`
+    /// via `Account::from_xpub`. `nil` means "not yet persisted" —
+    /// account cannot be restored silently. Unique because two
+    /// accounts can't legitimately share an xpub (would imply a key
+    /// reuse / derivation collision); SQL UNIQUE allows multiple
+    /// `nil` values, so freshly-inserted unhydrated rows don't
+    /// conflict.
+    @Attribute(.unique) public var accountExtendedPubKeyBytes: Data?
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date
@@ -101,7 +125,7 @@ public final class PersistentAccount {
         self.keyClass = 0
         self.userIdentityId = Data()
         self.friendIdentityId = Data()
-        self.accountExtendedPubKeyBytes = Data()
+        self.accountExtendedPubKeyBytes = nil
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.coreAddresses = []
