@@ -27,21 +27,27 @@ impl crate::serialization::ValueConvertible for YesNoAbstainVoteChoice {}
 mod json_convertible_tests_yesnoabstainvotechoice {
     use super::*;
 
-    #[test]
-    fn json_round_trip_yesnoabstainvotechoice() {
-        use crate::serialization::JsonConvertible;
-        let original = YesNoAbstainVoteChoice::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = YesNoAbstainVoteChoice::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    fn each_variant() -> [YesNoAbstainVoteChoice; 3] {
+        [YesNoAbstainVoteChoice::YES, YesNoAbstainVoteChoice::NO, YesNoAbstainVoteChoice::ABSTAIN]
     }
 
     #[test]
-    fn value_round_trip_yesnoabstainvotechoice() {
+    fn json_round_trip_each_variant() {
+        use crate::serialization::JsonConvertible;
+        for original in each_variant() {
+            let json = original.to_json().expect("to_json");
+            let recovered = YesNoAbstainVoteChoice::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_each_variant() {
         use crate::serialization::ValueConvertible;
-        let original = YesNoAbstainVoteChoice::default();
-        let value = original.to_object().expect("to_object");
-        let recovered = YesNoAbstainVoteChoice::from_object(value).expect("from_object");
-        assert_eq!(original, recovered);
+        for original in each_variant() {
+            let value = original.to_object().expect("to_object");
+            let recovered = YesNoAbstainVoteChoice::from_object(value).expect("from_object");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
     }
 }

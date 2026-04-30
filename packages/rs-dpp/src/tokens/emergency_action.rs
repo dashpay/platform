@@ -42,21 +42,27 @@ impl TokenEmergencyAction {
 mod json_convertible_tests_tokenemergencyaction {
     use super::*;
 
-    #[test]
-    fn json_round_trip_tokenemergencyaction() {
-        use crate::serialization::JsonConvertible;
-        let original = TokenEmergencyAction::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = TokenEmergencyAction::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    fn each_variant() -> [TokenEmergencyAction; 2] {
+        [TokenEmergencyAction::Pause, TokenEmergencyAction::Resume]
     }
 
     #[test]
-    fn value_round_trip_tokenemergencyaction() {
+    fn json_round_trip_each_variant() {
+        use crate::serialization::JsonConvertible;
+        for original in each_variant() {
+            let json = original.to_json().expect("to_json");
+            let recovered = TokenEmergencyAction::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_each_variant() {
         use crate::serialization::ValueConvertible;
-        let original = TokenEmergencyAction::default();
-        let value = original.to_object().expect("to_object");
-        let recovered = TokenEmergencyAction::from_object(value).expect("from_object");
-        assert_eq!(original, recovered);
+        for original in each_variant() {
+            let value = original.to_object().expect("to_object");
+            let recovered = TokenEmergencyAction::from_object(value).expect("from_object");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
     }
 }
