@@ -217,12 +217,27 @@ mod test {
 mod json_convertible_tests {
     use super::*;
 
+    use crate::tests::fixtures::instant_asset_lock_proof_fixture;
+    use platform_value::BinaryData;
+
     fn fixture() -> IdentityCreateTransition {
-        IdentityCreateTransition::V0(IdentityCreateTransitionV0::default())
+        let asset_lock_proof = instant_asset_lock_proof_fixture(None, None);
+        // identity_id is `serde(skip)` and reconstructed from the proof on deserialize
+        // (see IdentityCreateTransitionV0::try_from(IdentityCreateTransitionV0Inner)).
+        // Match what `create_identifier()` would produce so round-trip is identity.
+        let identity_id = asset_lock_proof
+            .create_identifier()
+            .expect("identity_id from proof");
+        IdentityCreateTransition::V0(IdentityCreateTransitionV0 {
+            public_keys: vec![],
+            asset_lock_proof,
+            user_fee_increase: 7,
+            signature: BinaryData::new(vec![0xa1; 65]),
+            identity_id,
+        })
     }
 
     #[test]
-    #[ignore = "needs explicit fixture: V0::default()'s asset_lock_proof is structurally invalid (\"No output at a given index\")"]
     fn json_round_trip() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
@@ -239,7 +254,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "needs explicit fixture: V0::default()'s asset_lock_proof is structurally invalid"]
     fn value_round_trip() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
