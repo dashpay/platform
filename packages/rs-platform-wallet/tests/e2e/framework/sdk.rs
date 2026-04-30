@@ -1,28 +1,24 @@
 //! `dash_sdk::Sdk` construction. [`build_sdk`] wires
 //! [`TrustedHttpContextProvider`] (the SPV-backed alternative is
 //! deferred — Task #15) and resolves DAPI addresses from
-//! [`Config::dapi_addresses`] or the testnet defaults.
+//! [`Config::dapi_addresses`] or — for mainnet/testnet — derives them
+//! from `dash_network_seeds::evo_seeds(network)`. The derivation
+//! mirrors `default_address_list_for_network` from PR #3533 verbatim
+//! so the day `SdkBuilder::new_testnet()` lands in `v3.1-dev` the
+//! whole helper collapses into a single call.
 //! Provider URL override: `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL`.
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use dash_sdk::dapi_client::AddressList;
+use dash_sdk::dapi_client::{Address, AddressList};
+use dash_sdk::sdk::Uri;
 use dash_sdk::{Sdk, SdkBuilder};
 use dashcore::Network;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 
 use super::config::{parse_network, Config};
 use super::{FrameworkError, FrameworkResult};
-
-/// Default DAPI addresses for testnet — mirrors `tests/spv_sync.rs`
-/// so both binaries hit the same masternodes that support compact
-/// block filters.
-pub const TESTNET_DAPI_ADDRESSES: &[&str] = &[
-    "https://68.67.122.1:1443",
-    "https://68.67.122.2:1443",
-    "https://68.67.122.3:1443",
-];
 
 /// LRU quorum-cache size for [`TrustedHttpContextProvider`].
 const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
@@ -85,16 +81,16 @@ fn build_trusted_context_provider(
 }
 
 /// Resolve the DAPI [`AddressList`]. Honours
-/// [`Config::dapi_addresses`]; otherwise testnet falls back to
-/// [`TESTNET_DAPI_ADDRESSES`]. Devnet/local without explicit
-/// addresses surfaces an error rather than guessing.
+/// [`Config::dapi_addresses`]; otherwise mainnet/testnet derive their
+/// list from [`default_address_list_for_network`]. Devnet/local
+/// without explicit addresses surfaces an error rather than guessing.
 fn build_address_list(config: &Config, network: Network) -> FrameworkResult<AddressList> {
     if !config.dapi_addresses.is_empty() {
         return parse_addresses(config.dapi_addresses.iter().map(String::as_str));
     }
 
     match network {
-        Network::Testnet => parse_addresses(TESTNET_DAPI_ADDRESSES.iter().copied()),
+        Network::Mainnet | Network::Testnet => Ok(default_address_list_for_network(network)),
         other => {
             tracing::error!(
                 target: "platform_wallet::e2e::sdk",
@@ -106,6 +102,34 @@ fn build_address_list(config: &Config, network: Network) -> FrameworkResult<Addr
             ))
         }
     }
+}
+
+/// Build an [`AddressList`] from `dash_network_seeds::evo_seeds(network)`.
+///
+/// Mirrors `default_address_list_for_network` from PR #3533 byte-for-byte
+/// so that, once that PR merges into `v3.1-dev`, this helper can be
+/// replaced with `SdkBuilder::new_testnet()` / `new_mainnet()` without
+/// any behaviour delta. Skips seeds without a `platform_http_port` and
+/// silently drops any URL that fails URI/Address parsing.
+fn default_address_list_for_network(network: Network) -> AddressList {
+    debug_assert!(
+        matches!(network, Network::Mainnet | Network::Testnet),
+        "default_address_list_for_network only handles mainnet / testnet; \
+         devnet/local must be configured via PLATFORM_WALLET_E2E_DAPI_ADDRESSES"
+    );
+    let mut list = AddressList::new();
+    for seed in dash_network_seeds::evo_seeds(network) {
+        let Some(port) = seed.platform_http_port else {
+            continue;
+        };
+        let url = format!("https://{}:{}", seed.address.ip(), port);
+        if let Ok(uri) = url.parse::<Uri>() {
+            if let Ok(address) = Address::try_from(uri) {
+                list.add(address);
+            }
+        }
+    }
+    list
 }
 
 fn parse_addresses<'a, I>(iter: I) -> FrameworkResult<AddressList>

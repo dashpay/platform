@@ -4867,6 +4867,7 @@ dependencies = [
  "bip39",
  "bs58",
  "dash-async",
+ "dash-network-seeds",
  "dash-sdk",
  "dash-spv",
  "dashcore",

@@ -58,6 +58,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
+# Bootstrap-list source for the e2e harness's `build_sdk` — mirrors
+# what `SdkBuilder::new_testnet()` does upstream once PR #3533 lands
+# in `v3.1-dev` (currently merged into `feat/bump-rust-dashcore-v0.42-dev`).
+# Pinned to the same rust-dashcore rev as the workspace `dashcore`
+# pin so all sibling crates from rust-dashcore stay in lock-step.
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
 
 # E2E test framework — see `tests/e2e/` for the integration harness
 # that exercises the wallet → SDK → broadcast pipeline against a

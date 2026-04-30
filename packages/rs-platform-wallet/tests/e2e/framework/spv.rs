@@ -23,7 +23,6 @@ use dashcore::Network;
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
 
 use super::config::{parse_network, Config};
-use super::sdk::TESTNET_DAPI_ADDRESSES;
 use super::{FrameworkError, FrameworkResult};
 
 /// P2P port for testnet seed peers (matches `tests/spv_sync.rs`).
@@ -238,28 +237,34 @@ fn build_client_config(config: &Config) -> FrameworkResult<ClientConfig> {
     Ok(client_config)
 }
 
-/// Seed the SPV config with hard-coded testnet P2P peers extracted
-/// from DAPI URLs. Hostnames that aren't bare IPs fall through to
-/// the SPV's own DNS discovery.
+/// Seed the SPV config with testnet P2P peers. Operator-supplied DAPI
+/// URLs are parsed for their IPs (host string only); otherwise the
+/// peer list is derived from `dash_network_seeds::evo_seeds(Testnet)`.
+/// Hostnames that aren't bare IPs fall through to the SPV's own DNS
+/// discovery.
 fn seed_p2p_peers(client_config: &mut ClientConfig, config: &Config, network: Network) {
     if !matches!(network, Network::Testnet) {
         return;
     }
 
-    let addresses: Vec<&str> = if config.dapi_addresses.is_empty() {
-        TESTNET_DAPI_ADDRESSES.to_vec()
-    } else {
-        config.dapi_addresses.iter().map(String::as_str).collect()
-    };
-
-    for addr in addresses {
-        let host = addr
-            .strip_prefix("https://")
-            .or_else(|| addr.strip_prefix("http://"))
-            .unwrap_or(addr);
-        let host_only = host.split(':').next().unwrap_or(host);
-        if let Ok(ip) = host_only.parse::<IpAddr>() {
-            client_config.add_peer(std::net::SocketAddr::new(ip, TESTNET_P2P_PORT));
+    if !config.dapi_addresses.is_empty() {
+        for addr in &config.dapi_addresses {
+            let host = addr
+                .strip_prefix("https://")
+                .or_else(|| addr.strip_prefix("http://"))
+                .unwrap_or(addr.as_str());
+            let host_only = host.split(':').next().unwrap_or(host);
+            if let Ok(ip) = host_only.parse::<IpAddr>() {
+                client_config.add_peer(std::net::SocketAddr::new(ip, TESTNET_P2P_PORT));
+            }
         }
+        return;
+    }
+
+    for seed in dash_network_seeds::evo_seeds(network) {
+        client_config.add_peer(std::net::SocketAddr::new(
+            seed.address.ip(),
+            TESTNET_P2P_PORT,
+        ));
     }
 }
