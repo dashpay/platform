@@ -76,3 +76,26 @@ impl ContestedDocumentResourceVotePoll {
         self.sha256_2_hash().map(Identifier::new)
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedDocumentResourceVotePoll::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedDocumentResourceVotePoll::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedDocumentResourceVotePoll::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = ContestedDocumentResourceVotePoll::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
