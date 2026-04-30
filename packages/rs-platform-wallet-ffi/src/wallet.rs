@@ -218,6 +218,11 @@ pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
                 })
                 .collect();
             let count = entries.len();
+            if count == 0 {
+                *out_entries = std::ptr::null();
+                *out_count = 0;
+                return PlatformWalletFFIResult::Success;
+            }
             let boxed = entries.into_boxed_slice();
             *out_entries = Box::into_raw(boxed) as *const _;
             *out_count = count;

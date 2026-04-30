@@ -413,9 +413,12 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS,
-              let entries = outEntries,
-              outCount > 0 else {
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
+            self.lastError = PlatformWalletError(result: result, error: error)
+            return []
+        }
+
+        guard let entries = outEntries, outCount > 0 else {
             return []
         }
 

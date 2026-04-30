@@ -252,11 +252,31 @@ struct WalletMemoryExplorerView: View {
 
     private func loadManagerState() {
         var errors: [String] = []
-        addressSyncRunning = (try? walletManager.isPlatformAddressSyncRunning()) ?? false
-        addressSyncing = (try? walletManager.isPlatformAddressSyncing()) ?? false
-        addressSyncLastUnix = (try? walletManager.lastPlatformAddressSyncUnixSeconds()) ?? 0
-        identitySyncRunning = (try? walletManager.isIdentityTokenSyncRunning()) ?? false
-        identitySyncing = (try? walletManager.isIdentityTokenSyncing()) ?? false
+        do {
+            addressSyncRunning = try walletManager.isPlatformAddressSyncRunning()
+        } catch {
+            errors.append("Address sync running: \(error.localizedDescription)")
+        }
+        do {
+            addressSyncing = try walletManager.isPlatformAddressSyncing()
+        } catch {
+            errors.append("Address syncing: \(error.localizedDescription)")
+        }
+        do {
+            addressSyncLastUnix = try walletManager.lastPlatformAddressSyncUnixSeconds()
+        } catch {
+            errors.append("Address last sync: \(error.localizedDescription)")
+        }
+        do {
+            identitySyncRunning = try walletManager.isIdentityTokenSyncRunning()
+        } catch {
+            errors.append("Identity sync running: \(error.localizedDescription)")
+        }
+        do {
+            identitySyncing = try walletManager.isIdentityTokenSyncing()
+        } catch {
+            errors.append("Identity syncing: \(error.localizedDescription)")
+        }
         do {
             identityTokenRows = try walletManager.allIdentityTokenSyncRows()
         } catch {
@@ -481,7 +501,6 @@ struct WalletMemoryDetailView: View {
     }
 
     private func loadOnce() {
-        guard summary == nil else { return }
         var errors: [String] = []
         do {
             summary = try wallet.inMemorySummary()
