@@ -212,3 +212,39 @@ mod test {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn fixture() -> IdentityCreateTransition {
+        IdentityCreateTransition::V0(IdentityCreateTransitionV0::default())
+    }
+
+    #[test]
+    #[ignore = "needs explicit fixture: V0::default()'s asset_lock_proof is structurally invalid (\"No output at a given index\")"]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = IdentityCreateTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
+    }
+
+    #[test]
+    #[ignore = "needs explicit fixture: V0::default()'s asset_lock_proof is structurally invalid"]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = IdentityCreateTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
