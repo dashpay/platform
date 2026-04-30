@@ -170,21 +170,28 @@ pub mod pooling_serde {
 mod json_convertible_tests_pooling {
     use super::*;
 
-    #[test]
-    fn json_round_trip_pooling() {
-        use crate::serialization::JsonConvertible;
-        let original = Pooling::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = Pooling::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    /// Test every variant — per-property assertion equivalent for unit enums.
+    fn each_variant() -> [Pooling; 3] {
+        [Pooling::Never, Pooling::IfAvailable, Pooling::Standard]
     }
 
     #[test]
-    fn value_round_trip_pooling() {
+    fn json_round_trip_each_variant() {
+        use crate::serialization::JsonConvertible;
+        for original in each_variant() {
+            let json = original.to_json().expect("to_json");
+            let recovered = Pooling::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_each_variant() {
         use crate::serialization::ValueConvertible;
-        let original = Pooling::default();
-        let value = original.to_object().expect("to_object");
-        let recovered = Pooling::from_object(value).expect("from_object");
-        assert_eq!(original, recovered);
+        for original in each_variant() {
+            let value = original.to_object().expect("to_object");
+            let recovered = Pooling::from_object(value).expect("from_object");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
     }
 }

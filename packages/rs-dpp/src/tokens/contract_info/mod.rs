@@ -69,26 +69,40 @@ mod json_convertible_tests {
 
     fn fixture() -> TokenContractInfo {
         TokenContractInfo::V0(crate::tokens::contract_info::v0::TokenContractInfoV0 {
-            contract_id: platform_value::Identifier::default(),
-            token_contract_position: 0,
+            contract_id: platform_value::Identifier::new([0xab; 32]),
+            token_contract_position: 7,
         })
     }
 
+    fn assert_v0_fields(t: &TokenContractInfo) {
+        let TokenContractInfo::V0(rec) = t;
+        assert_eq!(
+            rec.contract_id,
+            platform_value::Identifier::new([0xab; 32]),
+            "contract_id"
+        );
+        assert_eq!(rec.token_contract_position, 7, "token_contract_position");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenContractInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenContractInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
+
+    // Note: TokenContractInfo is `serde(untagged)` — no $formatVersion in JSON.
 }
