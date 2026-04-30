@@ -105,3 +105,47 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
         Ok(self.to_value_map()?.into())
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use platform_value::Identifier;
+
+    fn fixture() -> DocumentBaseTransition {
+        DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::new([0xa1; 32]),
+            identity_contract_nonce: 7,
+            document_type_name: "user".to_string(),
+            data_contract_id: Identifier::new([0xb2; 32]),
+        })
+    }
+
+    fn assert_v0_fields(t: &DocumentBaseTransition) {
+        let DocumentBaseTransition::V0(rec) = t else { panic!("expected V0") };
+        assert_eq!(rec.id, Identifier::new([0xa1; 32]), "id");
+        assert_eq!(rec.identity_contract_nonce, 7, "identity_contract_nonce");
+        assert_eq!(rec.document_type_name, "user", "document_type_name");
+        assert_eq!(rec.data_contract_id, Identifier::new([0xb2; 32]), "data_contract_id");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+        let recovered = <DocumentBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = ValueConvertible::to_object(&original).expect("to_object");
+        let recovered = <DocumentBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}
