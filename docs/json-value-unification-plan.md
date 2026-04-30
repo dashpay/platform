@@ -8,14 +8,14 @@
 | Pass | Goal | Status |
 |---|---|---|
 | 1 | Add `JsonConvertible` / `ValueConvertible` impls to ~80 types | ✅ done — `cargo check` passes |
-| 2 | Add round-trip tests; fix bugs that surface | ✅ substantially done (164 conversion tests, 7 ignored, 2 real bugs surfaced) |
+| 2 | Add round-trip tests; fix bugs that surface | ✅ substantially done (181 conversion tests, 12 ignored, 2 platform_value bugs surfaced) |
 | 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ⬜ not started |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
 
 ### Pass-2 final test count
 
-**164 dedicated json_convertible_tests pass, 7 ignored** (tracking real bugs or known fragile cases). 3432 pre-existing dpp lib tests continue to pass — no regressions.
+**181 dedicated json_convertible_tests pass, 12 ignored** (tracking real bugs or known fragile cases). 3432 pre-existing dpp lib tests continue to pass — no regressions.
 
 ### Pass-2 test status (2026-04-30, end of pass)
 
@@ -33,7 +33,7 @@
 - `StateTransition::json_round_trip` and `value_round_trip` (untagged enum, known fragile per plan §10).
 - `AddressFundingFromAssetLockTransition::value_round_trip` (OutPoint bug above).
 
-**Tested in pass 2** (~80 types covered, 164 tests):
+**Tested in pass 2** (~95 types covered, 181 tests):
 - All 5 address transitions + AddressWitness + AddressFundsFeeStrategyStep with full per-property assertions.
 - Identity, IdentityPublicKey, IdentityV0, PartialIdentity.
 - 7 state-transition outer enums (Identity*, Masternode, PublicKeyInCreation).
@@ -53,6 +53,10 @@
 - DataContractConfig.
 - ResourceVote, ContenderWithSerializedDocument.
 - StorageKeyRequirements, ArrayItemType (each-variant).
+- All 5 shielded transitions (Shield, Unshield, ShieldedTransfer, ShieldFromAssetLock, ShieldedWithdrawal) — JSON works; value tests `#[ignore]` due to [u8;N] platform_value bug.
+- DataContractInSerializationFormat (V0 with config + identifier + version + maps).
+- TokenConfiguration (via default_most_restrictive factory).
+- StateTransitionProofResult (variant matching since type lacks PartialEq).
 
 **Bugs surfaced** (logged in §10b):
 - `OutPoint` round-trip via `platform_value::Value::Map` fails. JSON works.
