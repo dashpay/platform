@@ -737,3 +737,41 @@ impl crate::serialization::JsonConvertible for AddressWitness {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for AddressWitness {}
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::BinaryData;
+
+    fn each_variant() -> [AddressWitness; 2] {
+        [
+            AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0xa1; 65]),
+            },
+            AddressWitness::P2sh {
+                redeem_script: BinaryData::new(vec![0xb2; 30]),
+                signatures: vec![BinaryData::new(vec![0xc3; 65])],
+            },
+        ]
+    }
+
+    #[test]
+    fn json_round_trip_each_variant() {
+        use crate::serialization::JsonConvertible;
+        for original in each_variant() {
+            let json = original.to_json().expect("to_json");
+            let recovered = AddressWitness::from_json(json).expect("from_json");
+            assert_eq!(original, recovered);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_each_variant() {
+        use crate::serialization::ValueConvertible;
+        for original in each_variant() {
+            let value = original.to_object().expect("to_object");
+            let recovered = AddressWitness::from_object(value).expect("from_object");
+            assert_eq!(original, recovered);
+        }
+    }
+}
