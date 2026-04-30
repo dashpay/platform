@@ -1574,6 +1574,48 @@ becomes a test failure rather than a silent drift.
 
 ---
 
+### Found-bug pins (Found-NNN)
+
+Bug-pin cases discovered during a QA-mindset audit of `packages/rs-platform-wallet/`.
+Each entry names the contract violation, the proof shape that would catch it,
+and what the fix should look like. The author of the production fix is a
+separate concern; these entries pin the expected behaviour so the regression
+becomes a test failure rather than a silent drift.
+
+> Found-001..Found-018 live on a sibling branch (`feat/rs-platform-wallet-e2e-cases` →
+> commit `5015e658e8`) and will rejoin this branch at the consolidation step. The
+> entry below is filed against the present branch (`feat/rs-platform-wallet-e2e-cases-pa`)
+> because the audit target — the harness's `SeedBackedIdentitySigner` — was added on this
+> stack and was not yet present when Found-001..018 were drafted.
+
+#### Found-019 — `SeedBackedIdentitySigner` re-hashes `ECDSA_HASH160` keys, double-hashing the lookup so any `ECDSA_HASH160`-typed `IdentityPublicKey` silently misses
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Severity**: HIGH (signer-side correctness bug; identity-key sign / can_sign_with paths fail for one of two key types the impl claims to support)
+- **Wallet feature exercised**: `tests/e2e/framework/signer.rs:114-122` (`can_sign_with`), `tests/e2e/framework/signer.rs:128-143` (`lookup_identity_secret`).
+- **Suspected bug**: Both lookup paths compute `let pkh = ripemd160_sha256(key.data().as_slice())` and probe `inner.address_private_keys` with the result. The cache itself was populated at construction in `SimpleSigner::from_seed_for_identity` (`packages/simple-signer/src/signer.rs:235`) keyed by `ripemd160_sha256(&pubkey.serialize())` — i.e. RIPEMD160(SHA256(raw 33-byte secp256k1 pubkey)). For `KeyType::ECDSA_SECP256K1` the lookup matches: `key.data()` is the raw 33-byte pubkey, hashing it once yields the cache key. For `KeyType::ECDSA_HASH160` the lookup does NOT match: `key.data()` is already a 20-byte `ripemd160_sha256(pubkey)` per `KeyType::public_key_data_from_private_key_data` and `KeyType::default_size` (`packages/rs-dpp/src/identity/identity_public_key/key_type.rs:59,244`). The impl hashes that 20-byte hash *again*, producing `ripemd160_sha256(ripemd160_sha256(pubkey))` ≠ stored key. The match arms at lines 90 and 116 explicitly admit `ECDSA_HASH160` as supported, so the type signature lies — every call against an `ECDSA_HASH160` key returns `can_sign_with == false` and `sign(..) == Err(ProtocolError::Generic("identity key {hex} not in pre-derived gap window"))` regardless of whether the underlying secret is in the cache.
+- **Preconditions**: an `IdentityPublicKey` with `key_type == ECDSA_HASH160` whose `data` is `ripemd160_sha256(pubkey)` for a pubkey derived at one of the pre-cached gap-window slots `(identity_index, key_index ∈ 0..DEFAULT_GAP_LIMIT)`.
+- **Scenario** (pure unit test on the harness signer — no chain required):
+  1. Build a seed (e.g. `[0x42; 64]`) and `let signer = SeedBackedIdentitySigner::new(&seed, Network::Testnet, identity_index = 0)?`.
+  2. Derive the secp256k1 pubkey for `(identity_index = 0, key_index = 0)` via `derive_ecdsa_identity_auth_keypair_from_master` (the same path `from_seed_for_identity` walks).
+  3. Compute `let h160 = ripemd160_sha256(&pubkey)`.
+  4. Build two `IdentityPublicKey`s for that derivation slot:
+     - `key_secp = IdentityPublicKey::V0(IdentityPublicKeyV0 { key_type: KeyType::ECDSA_SECP256K1, data: BinaryData::new(pubkey.to_vec()), .. })`
+     - `key_h160 = IdentityPublicKey::V0(IdentityPublicKeyV0 { key_type: KeyType::ECDSA_HASH160, data: BinaryData::new(h160.to_vec()), .. })`
+  5. Probe both:
+     - `signer.can_sign_with(&key_secp)` and `signer.sign(&key_secp, b"msg").await`
+     - `signer.can_sign_with(&key_h160)` and `signer.sign(&key_h160, b"msg").await`
+- **Assertions** (the proof shape):
+  - `signer.can_sign_with(&key_secp) == true` AND `signer.sign(&key_secp, b"msg").await.is_ok()` (sanity baseline — proves the cache IS populated for this slot).
+  - `signer.can_sign_with(&key_h160) == true` AND `signer.sign(&key_h160, b"msg").await.is_ok()` (the contract — `ECDSA_HASH160` is whitelisted by both match arms, so it must round-trip).
+  - Counter-assertion if buggy (today's behaviour): `signer.can_sign_with(&key_h160) == false` AND `signer.sign(&key_h160, b"msg").await` returns `Err(ProtocolError::Generic(msg))` where `msg.contains("not in pre-derived gap window")`.
+- **Expected** (after fix): branch on `key.key_type()` before computing the cache key — for `ECDSA_HASH160` the lookup key is `key.data()` *as-is* (it's already the 20-byte hash); for `ECDSA_SECP256K1` it remains `ripemd160_sha256(key.data())`. Mirror the same fix in both `lookup_identity_secret` and `can_sign_with`. Equivalent fix: reject `ECDSA_HASH160` with a clear `unsupported key type` error and remove it from the match arms — the harness only ever produces `ECDSA_SECP256K1` keys via `derive_identity_key`, so `ECDSA_HASH160` support is currently aspirational dead code.
+- **Actual** (current code): the harness signer claims to support `ECDSA_HASH160` (match arms at signer.rs:90 and signer.rs:116) but the lookup hashes the already-hashed `data` and fails every probe. The bug never triggers in *current* harness usage because `derive_identity_key` (signer.rs:182-191) hard-codes `key_type = ECDSA_SECP256K1` — but any future test that registers an identity with a hash-typed key, or any production caller that re-uses this signer (e.g. an SDK example wired to a chain identity that was registered by another wallet with an `ECDSA_HASH160` key), trips it.
+- **Harness extensions required**: none — pure unit test on `SeedBackedIdentitySigner`. `derive_ecdsa_identity_auth_keypair_from_master` is already exposed via `platform_wallet::wallet::identity::network` (used by `derive_identity_key`).
+- **Estimated complexity**: S
+- **Rationale**: This is a "the type signature lies" bug. The match arms admit two key types; one of them silently never works. Either fix the lookup or shrink the match. Without a pin, the discrepancy survives until a real consumer hits it — and that consumer's failure mode is a confusing `not in pre-derived gap window` error on a key that demonstrably *is* in the gap window. The hash-level confusion (raw pubkey vs `ripemd160_sha256(pubkey)` vs `ripemd160_sha256(ripemd160_sha256(pubkey))`) is exactly the class of bug a pure-data unit test pins cheaply.
+
+---
+
 ## 4. Harness extension roadmap
 
 Aggregating "Harness extensions required" across §3 and proposing a build
