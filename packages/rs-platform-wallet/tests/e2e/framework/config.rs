@@ -28,7 +28,12 @@ pub mod vars {
 }
 
 /// Default minimum bank balance in credits.
-pub const DEFAULT_MIN_BANK_CREDITS: u64 = 100_000_000;
+///
+/// Set at 5x the largest single-run cost (FUNDING_CREDITS=100M + ~15M chain-time
+/// fee ≈ 115M per run) following DET's safety-factor pattern (dash-evo-tool#513).
+/// Keeps the bank covering several consecutive runs even with the fee underestimate
+/// from platform #3040 in play.
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
 
 /// E2E framework configuration.
 ///

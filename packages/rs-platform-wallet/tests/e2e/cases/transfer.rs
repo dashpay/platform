@@ -21,23 +21,35 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 
+// Sized to dodge platform #3040 — AddressFundsTransferTransition's
+// `calculate_min_required_fee` returns the static
+// `state_transition_min_fees` floor (~6.5M for 1in/1out) but Drive's
+// chain-time fee includes storage + processing costs that scale with
+// the operation set (~14.94M empirically for the same shape). With
+// `[ReduceOutput(0)]`, `output[0]` absorbs the fee at chain time;
+// if it's smaller than the realistic fee the broadcast fails with
+// `AddressesNotEnoughFundsError`. Picking output amounts well above
+// the empirical chain-time ceiling sidesteps the bug until #3040
+// lands at the dpp layer.
+
 /// Gross credits the bank submits when funding `addr_1`. The bank
 /// uses `[ReduceOutput(0)]`, so addr_1 actually receives
-/// `FUNDING_CREDITS − bank_fee`. Sized comfortably above the
-/// `ReduceOutput` fee (~10 M at current pricing) so addr_1 retains
-/// enough headroom to fund the test's own self-transfer.
-const FUNDING_CREDITS: u64 = 50_000_000;
+/// `FUNDING_CREDITS − bank_fee`. Sized well above the chain-time
+/// fee (~15M empirically) so addr_1 retains enough headroom to
+/// fund the test's own self-transfer (see #3040 comment above).
+const FUNDING_CREDITS: u64 = 100_000_000;
 
 /// Lower bound on what addr_1 must receive after the bank's fee
 /// deduction before the test proceeds. Pinned well below the raw
 /// gross so the wait isn't sensitive to fee fluctuations across
 /// protocol versions.
-const FUNDING_FLOOR: u64 = 30_000_000;
+const FUNDING_FLOOR: u64 = 70_000_000;
 
 /// Gross credits the test wallet submits in its self-transfer to
 /// `addr_2`. Same `[ReduceOutput(0)]` semantics — addr_2 receives
-/// `TRANSFER_CREDITS − transfer_fee`.
-const TRANSFER_CREDITS: u64 = 10_000_000;
+/// `TRANSFER_CREDITS − transfer_fee`. Sized well above the
+/// empirical chain-time fee (~15M) to avoid #3040.
+const TRANSFER_CREDITS: u64 = 50_000_000;
 
 /// Lower bound on what addr_2 must receive before the assertions
 /// run. A non-zero floor prevents an empty observation from

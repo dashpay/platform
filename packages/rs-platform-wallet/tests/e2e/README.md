@@ -79,7 +79,7 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_BANK_MNEMONIC` | yes | — | BIP-39 mnemonic for the bank wallet. This wallet must hold at least `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` credits before the first test runs. |
 | `PLATFORM_WALLET_E2E_NETWORK` | no | `testnet` | Network to connect to: `testnet`, `devnet`, or `local`. |
 | `PLATFORM_WALLET_E2E_DAPI_ADDRESSES` | no | network default | Comma-separated list of DAPI endpoint URLs. Overrides the SDK's built-in seed list for the selected network. |
-| `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `100_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
+| `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `500_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
 | `PLATFORM_WALLET_E2E_WORKDIR` | no | `${TMPDIR}/dash-platform-wallet-e2e` | Base path for the slot-locked working directory. SPV block cache, the test-wallet registry, and SDK state are stored here. |
 | `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for devnet runs and any custom trust anchor. |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
@@ -99,7 +99,7 @@ panics with a message like:
 ```text
 Bank wallet under-funded.
   balance : 0 credits
-  required: 100000000 credits
+  required: 500000000 credits
   top up at: yXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 Send testnet platform credits to the address above, then re-run the tests.
@@ -231,7 +231,7 @@ corruption from mid-write crashes.
 - **Bank under-funded** — Initialization panics with the bank's receive address and
   the current balance. Top up the printed address from any testnet wallet and re-run.
   The minimum threshold is controlled by `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS`
-  (default 100 000 000 credits).
+  (default 500 000 000 credits).
 
 - **DAPI / context-provider unreachable** — `TrustedHttpContextProvider` calls fail
   if the configured DAPI endpoints are unreachable. Check `PLATFORM_WALLET_E2E_DAPI_ADDRESSES`
@@ -322,18 +322,18 @@ async fn transfer_between_two_platform_addresses() {
     let s = setup().await.expect("e2e setup failed");
 
     let addr_1 = s.test_wallet.next_unused_address().await.unwrap();
-    s.ctx.bank().fund_address(&addr_1, 50_000_000).await.unwrap();
-    wait_for_balance(&s.test_wallet, &addr_1, 50_000_000, Duration::from_secs(60))
+    s.ctx.bank().fund_address(&addr_1, 100_000_000).await.unwrap();
+    wait_for_balance(&s.test_wallet, &addr_1, 70_000_000, Duration::from_secs(60))
         .await
         .unwrap();
 
     let addr_2 = s.test_wallet.next_unused_address().await.unwrap();
     s.test_wallet
-        .transfer(std::iter::once((addr_2, 10_000_000)).collect())
+        .transfer(std::iter::once((addr_2, 50_000_000)).collect())
         .await
         .unwrap();
 
-    wait_for_balance(&s.test_wallet, &addr_2, 10_000_000, Duration::from_secs(60))
+    wait_for_balance(&s.test_wallet, &addr_2, 1_000_000, Duration::from_secs(60))
         .await
         .unwrap();
 
@@ -343,9 +343,9 @@ async fn transfer_between_two_platform_addresses() {
     let balances = s.test_wallet.balances().await;
     let received = balances.get(&addr_2).copied().unwrap_or(0);
     let remaining = balances.get(&addr_1).copied().unwrap_or(0);
-    let fee = 50_000_000_u64.saturating_sub(received).saturating_sub(remaining);
-    assert_eq!(received, 10_000_000);
-    assert!(fee > 0 && fee < 10_000_000);
+    let fee = 100_000_000_u64.saturating_sub(received).saturating_sub(remaining);
+    assert!(received >= 1_000_000 && received < 50_000_000);
+    assert!(fee > 0 && fee < 50_000_000);
 
     s.teardown().await.expect("teardown failed");
 }
