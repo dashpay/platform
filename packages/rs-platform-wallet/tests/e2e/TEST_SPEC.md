@@ -16,7 +16,7 @@ single live case — `transfer_between_two_platform_addresses` — exercising
 platform-address credit transfer between two addresses owned by the same test
 wallet.
 
-This specification proposes the next 25 cases, grouped by feature area,
+This specification proposes a layered set of cases, grouped by feature area,
 prioritised P0/P1/P2, and annotated with the harness extensions each requires.
 Every case targets the production `PlatformWallet` API surface (no test-only
 shims into the wallet), uses the bank-funded credit model already wired in
@@ -31,6 +31,36 @@ intent and to surface battle-tested edge cases. The harness lives on top of
 `PlatformWalletManager<NoPlatformPersistence>` and a `TrustedHttpContextProvider`,
 so anything requiring SPV proofs, asset locks, shielded notes, or fresh contract
 deployment is explicitly deferred (see §5).
+
+### 1.1 Priority scheme
+
+Every test case carries one of three priority levels. The priority drives both
+listing order within a section and CI gating tier.
+
+- **P0 — Primary path.** The happy path that demonstrates the feature works.
+  CI-gating tier; failure blocks merge. Execute first.
+- **P1 — Core variants.** Negative paths and alternate-input variants of P0
+  cases that protect the primary contract. Execute alongside P0 in CI.
+- **P2 — Edge cases.** Boundary, empty-input, concurrency, malformed-input,
+  and discovered-gap cases. Run nightly / on-demand; not gating unless an
+  active regression makes one of them so. Execute after P0/P1.
+
+Within each feature-area subsection (Platform Addresses, Identity, Tokens,
+DPNS, Dashpay, etc.), test cases are listed P0 first, then P1, then P2. The
+suffix-letter convention (e.g. `PA-001b`, `PA-002c`) groups variant cases next
+to their parent; new top-level edge cases get fresh dense IDs (e.g. `PA-009`,
+`PA-010`). No existing case ID is renumbered; new cases slot in adjacent to
+their parent.
+
+### 1.2 Mnemonic / seed source
+
+Mnemonics used by the harness (bank wallet, every `TestWallet`) MUST be drawn
+from the BIP-39 English wordlist. Out-of-band entropy paths — raw entropy,
+non-BIP-39 wordlists, or arbitrary UTF-8 strings fed as "mnemonic" — are out
+of scope for this suite. Any test that generates a seed does so via the
+BIP-39 mnemonic generator already used by `framework/wallet_factory.rs`. Cases
+that exercise non-ASCII content (e.g. Unicode display names) do so on
+downstream fields, not on the seed.
 
 ---
 
@@ -68,19 +98,39 @@ Source citations for the "Wallet API exists" column are listed inline per case
 |----|-------|----------|------------|
 | PA-001 | Multi-output platform-address transfer | P0 | S |
 | PA-002 | Partial-fund + change handling | P0 | S |
-| PA-003 | Fee scaling: one-output vs. five-output | P1 | M |
 | PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | S |
+| PA-003 | Fee scaling: one-output vs. five-output | P1 | M |
 | PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | M |
+| PA-006 | Replay safety: same outputs, second submission rejected | P1 | M |
 | PA-007 | Sync watermark idempotency | P1 | M |
 | PA-008 | Concurrent funding from bank: serialised | P1 | S |
-| PA-006 | Replay safety: same outputs, second submission rejected | P1 | M |
+| PA-002b | Zero-change exact-equality (`Σ outputs + fee == input balance`) | P1 | S |
+| PA-010 | Bank starvation: typed `BankUnderfunded` error | P1 | S |
+| PA-001b | Transfer with `output_change_address: None` vs `Some(addr)` | P2 | S |
+| PA-001c | Zero-credit single-output transfer | P2 | S |
+| PA-004b | Sweep dust threshold boundary triplet | P2 | M |
+| PA-004c | Sweep with exactly zero balance | P2 | S |
+| PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | M |
+| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | M |
+| PA-007b | Two concurrent `sync_balances` on one wallet | P2 | M |
+| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | M |
+| PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | M |
+| PA-009 | `min_input_amount` boundary triplet for cleanup | P2 | M |
+| PA-011 | Workdir slot exhaustion at `MAX_SLOTS + 1` | P2 | M |
+| PA-012 | `sync_balances` racing with `transfer` | P2 | M |
+| PA-013 | Broadcast retry under transient DAPI 5xx | P2 | M |
+| PA-014 | Multi-output at protocol-max output count | P2 | M |
 | ID-001 | Register identity funded from platform addresses | P0 | L |
 | ID-002 | Top-up identity from platform addresses | P0 | M |
 | ID-003 | Identity-to-identity credit transfer | P0 | M |
 | ID-004 | Identity update: add and disable a key | P1 | L |
 | ID-005 | Transfer credits from identity to platform addresses | P1 | M |
 | ID-006 | Refresh and load identity by index | P1 | M |
+| ID-001c | Non-default `StateTransitionSettings` (`wait_for_proof = false`) | P2 | M |
+| ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | S |
+| ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | M |
 | TK-001 | Token transfer between two identities | P1 | L |
+| TK-001b | Token transfer of amount 0 | P2 | S |
 | TK-002 | Token claim (perpetual / pre-programmed distribution) | P2 | L |
 | TK-003 | Token mint (authorised identity) | P2 | M |
 | TK-004 | Token burn | P2 | M |
@@ -91,14 +141,21 @@ Source citations for the "Wallet API exists" column are listed inline per case
 | CT-002 | Document put / replace lifecycle | P2 | M |
 | CT-003 | Contract update (add document type) | P2 | M |
 | DPNS-001 | Register and resolve a `.dash` name | P0 | M |
+| DPNS-001b | Name-length boundary quartet (2 / 3 / 63 / 64 chars) | P2 | M |
+| DPNS-001c | DPNS name with a multibyte character | P2 | S |
 | DPNS-002 | Resolve a known external name (negative-only) | P2 | S |
 | DP-001 | Set DashPay profile | P1 | M |
+| DP-001b | Profile with optional fields `None` vs `Some` | P2 | M |
+| DP-001c | Profile `display_name` containing emoji / RTL text | P2 | S |
 | DP-002 | Send and accept a contact request | P1 | L |
 | DP-003 | Send a DashPay payment | P2 | L |
 | CN-001 | Initiate a contested DPNS name (premium / 3-char) | P2 | L |
 | CN-002 | Cast a masternode vote on a contested name | DEFERRED | — |
+| Harness-G1a | Corrupted registry JSON: refuse to overwrite | P2 | M |
+| Harness-G1b | Registry forward-compatible unknown field | P2 | S |
+| Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | L |
 
-Counts by priority: **P0: 7**, **P1: 13**, **P2: 10**, **DEFERRED: 1** (total 31 entries; 30 implementable cases + 1 deferred placeholder).
+Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 34** (incl. 1 post-Task #15, 1 gated), **DEFERRED: 1** (58 total entries; 57 implementable cases + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -146,26 +203,6 @@ Counts by priority: **P0: 7**, **P1: 13**, **P2: 10**, **DEFERRED: 1** (total 31
 - **Estimated complexity**: S
 - **Rationale**: Confirms `Σ inputs == Σ outputs + fee` invariant — the property recently fixed in commits `aaf8be74ee` and `9ea9e7033c`. Without this case those regressions would be invisible.
 
-#### PA-003 — Fee scaling: one-output vs. five-output transfers
-- **Priority**: P1
-- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`, fee-strategy `AddressFundsFeeStrategyStep::DeductFromInput(0)` from `wallet_factory.rs:210`.
-- **DET parallel**: none directly — DET tests `tc_014` lifecycle but not fee scaling explicitly.
-- **Preconditions**: bank-funded test wallet with ≥ `200_000_000`.
-- **Scenario**:
-  1. Bank-fund `addr_1` with `100_000_000`.
-  2. Transfer `5_000_000` to `addr_2` (single output). Record `fee_1`.
-  3. Bank-fund `addr_3` with `100_000_000`.
-  4. Transfer `1_000_000` each to `addr_4..addr_8` (five outputs). Record `fee_5`.
-- **Assertions**:
-  - `fee_1 > 0`, `fee_5 > 0`
-  - `fee_5 > fee_1` (more outputs ⇒ larger byte size ⇒ larger fee)
-  - `fee_5 < 5 * fee_1` (sub-linear — outputs share inputs/headers)
-  - Documented bound: `fee_5 - fee_1 < 1_000_000` (regression guard; tighten once empirical numbers are known).
-- **Negative variants**: none — this is a property test.
-- **Harness extensions required**: none.
-- **Estimated complexity**: M (two transfers + bookkeeping ≈ 100-150 LoC)
-- **Rationale**: Encodes fee scaling as an asserted property. CodeRabbit fee-headroom regressions (commit `687b1f86cd`) and future fee-formula tweaks become test failures rather than silent behaviour shifts.
-
 #### PA-004 — Sweep-back: drain test wallet, observe bank credit
 - **Priority**: P0
 - **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31` invoked from `framework/cleanup.rs::teardown_one`.
@@ -188,6 +225,26 @@ Counts by priority: **P0: 7**, **P1: 13**, **P2: 10**, **DEFERRED: 1** (total 31
 - **Estimated complexity**: S
 - **Rationale**: Validates the cleanup invariant the README promises in §"Panic-safe cleanup". Without this, a regression in `cleanup.rs` would silently leak credits across runs — bank slowly drains, eventually trips under-funded panic, no test ever names the cause.
 
+#### PA-003 — Fee scaling: one-output vs. five-output transfers
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`, fee-strategy `AddressFundsFeeStrategyStep::DeductFromInput(0)` from `wallet_factory.rs:210`.
+- **DET parallel**: none directly — DET tests `tc_014` lifecycle but not fee scaling explicitly.
+- **Preconditions**: bank-funded test wallet with ≥ `200_000_000`.
+- **Scenario**:
+  1. Bank-fund `addr_1` with `100_000_000`.
+  2. Transfer `5_000_000` to `addr_2` (single output). Record `fee_1`.
+  3. Bank-fund `addr_3` with `100_000_000`.
+  4. Transfer `1_000_000` each to `addr_4..addr_8` (five outputs). Record `fee_5`.
+- **Assertions**:
+  - `fee_1 > 0`, `fee_5 > 0`
+  - `fee_5 > fee_1` (more outputs ⇒ larger byte size ⇒ larger fee)
+  - `fee_5 < 5 * fee_1` (sub-linear — outputs share inputs/headers)
+  - Documented bound: `fee_5 - fee_1 < 1_000_000` (regression guard; tighten once empirical numbers are known).
+- **Negative variants**: none — this is a property test.
+- **Harness extensions required**: none.
+- **Estimated complexity**: M (two transfers + bookkeeping ≈ 100-150 LoC)
+- **Rationale**: Encodes fee scaling as an asserted property. CodeRabbit fee-headroom regressions (commit `687b1f86cd`) and future fee-formula tweaks become test failures rather than silent behaviour shifts.
+
 #### PA-005 — Address rotation: gap-limit + observed-used cursor
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/platform_addresses/wallet.rs:180` (`next_unused_receive_address`); `provider::PerAccountPlatformAddressState`.
@@ -209,6 +266,24 @@ Counts by priority: **P0: 7**, **P1: 13**, **P2: 10**, **DEFERRED: 1** (total 31
 - **Harness extensions required**: `signer.cached_key_count()` is already public (`signer.rs:144`); no other harness change.
 - **Estimated complexity**: M (bookkeeping ≈ 200 LoC; 16 funding round-trips means a long-running test — gate it under a slow-tests feature or accept ~3 min runtime).
 - **Rationale**: The fix in commit `60f7850ab0` ("sort auto-select candidates by balance descending") is one of several invariants in the address provider that needs a regression test. PA-005 also documents the "cursor advances on observed-used" property that bit Wave 8 in PR #3549 (see `cases/transfer.rs:91-97`).
+
+#### PA-006 — Replay safety: same outputs, second submission rejected
+- **Priority**: P1
+- **Wallet feature exercised**: nonce handling inside `PutPlatformAddresses::put_with_address_funding_fetching_nonces` (re-broadcast).
+- **DET parallel**: `dash-evo-tool/tests/backend-e2e/wallet_tasks.rs:234` indirectly tests nonces.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**:
+  1. Fund `addr_1` with `50_000_000`.
+  2. Capture the underlying state-transition bytes (requires exposing the changeset's `serialized_transition` — see harness extension below).
+  3. Transfer `10_000_000` to `addr_2` (succeeds).
+  4. Submit the captured bytes a second time via `sdk.broadcast_state_transition` directly.
+- **Assertions**:
+  - Second submission returns a "stale nonce" / "already exists" SDK error (assert error class).
+  - Wallet's view of `addr_1` and `addr_2` is unchanged after the failed re-submit.
+- **Negative variants**: none — this case IS the negative variant of PA-001.
+- **Harness extensions required**: a `TestWallet::transfer_capturing_st_bytes` helper that returns the encoded ST alongside the change-set. ~30 LoC, plumbs through the SDK's `put_*` builder rather than `transfer()`.
+- **Estimated complexity**: M (single-file, harness touch)
+- **Rationale**: Closes a quiet but high-blast-radius regression class — nonce handling. If the SDK ever stops bumping nonces correctly, every wallet's "spam-click" UX breaks. PA-006 surfaces it deterministically.
 
 #### PA-007 — Sync watermark idempotency
 - **Priority**: P1
@@ -248,23 +323,284 @@ Counts by priority: **P0: 7**, **P1: 13**, **P2: 10**, **DEFERRED: 1** (total 31
 - **Estimated complexity**: S
 - **Rationale**: Encodes the FUNDING_MUTEX guarantee documented in `framework/bank.rs:39`. Without it, a future refactor that drops the mutex (or misuses it) would corrupt nonces and only surface intermittently.
 
-#### PA-006 — Replay safety: same outputs, second submission rejected
+#### PA-002b — Zero-change exact-equality (`Σ outputs + fee == input balance`)
 - **Priority**: P1
-- **Wallet feature exercised**: nonce handling inside `PutPlatformAddresses::put_with_address_funding_fetching_nonces` (re-broadcast).
-- **DET parallel**: `dash-evo-tool/tests/backend-e2e/wallet_tasks.rs:234` indirectly tests nonces.
+- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`; change-output suppression at the `Σ inputs == Σ outputs` boundary recently fixed in `aaf8be74ee` and `9ea9e7033c`.
+- **DET parallel**: none — this is a regression-pinning case for our own commits.
 - **Preconditions**: bank-funded test wallet.
 - **Scenario**:
-  1. Fund `addr_1` with `50_000_000`.
-  2. Capture the underlying state-transition bytes (requires exposing the changeset's `serialized_transition` — see harness extension below).
-  3. Transfer `10_000_000` to `addr_2` (succeeds).
-  4. Submit the captured bytes a second time via `sdk.broadcast_state_transition` directly.
+  1. Bank-fund `addr_1` with `60_000_000` and let it settle. Record `bal_1 = addr_1` balance.
+  2. Build a one-output transfer `{addr_2: bal_1 - estimated_fee}` where `estimated_fee` is derived from the wallet's fee preview (or a calibrated PA-003 measurement).
+  3. Tighten the output by 1 credit at a time until `Σ outputs + actual_fee == bal_1` exactly. Submit.
 - **Assertions**:
-  - Second submission returns a "stale nonce" / "already exists" SDK error (assert error class).
-  - Wallet's view of `addr_1` and `addr_2` is unchanged after the failed re-submit.
-- **Negative variants**: none — this case IS the negative variant of PA-001.
-- **Harness extensions required**: a `TestWallet::transfer_capturing_st_bytes` helper that returns the encoded ST alongside the change-set. ~30 LoC, plumbs through the SDK's `put_*` builder rather than `transfer()`.
-- **Estimated complexity**: M (single-file, harness touch)
-- **Rationale**: Closes a quiet but high-blast-radius regression class — nonce handling. If the SDK ever stops bumping nonces correctly, every wallet's "spam-click" UX breaks. PA-006 surfaces it deterministically.
+  - Transfer succeeds (no spurious "below dust" or change-output validation error).
+  - The on-wire state-transition contains exactly **one** output (the destination); no change output is materialised.
+  - `addr_1` post-balance == `0` exactly. Not `1`, not `dust_threshold`, not `None`.
+  - `balances[addr_2] == bal_1 - actual_fee` exactly.
+- **Negative variants**: none (this case IS the boundary).
+- **Harness extensions required**: a `TestWallet::estimate_transfer_fee(&outputs)` helper, or fall back to PA-003's empirical fee constants.
+- **Estimated complexity**: S
+- **Rationale**: Pins the `Σ inputs == Σ outputs + fee` invariant the wallet just shipped regressions on. Without an exact-equality boundary case, that bug-class re-emerges silently the next time the change-output predicate is touched.
+
+#### PA-010 — Bank starvation: typed `BankUnderfunded` error
+- **Priority**: P1
+- **Wallet feature exercised**: `framework/bank.rs::fund_address` precondition checks.
+- **DET parallel**: none — operator-actionable harness contract.
+- **Preconditions**: bank deliberately underfunded for the test (e.g. configure a fresh test bank with `5_000_000` total credits).
+- **Scenario**:
+  1. Configure the harness so `bank.total_credits()` is below the test's requested fund amount.
+  2. Call `bank.fund_address(addr_1, 30_000_000)`.
+- **Assertions**:
+  - `bank.fund_address` returns a typed `BankError::Underfunded { available, requested }` (or the equivalent named variant — pin whatever the code calls it). No panic, no generic `anyhow!` shape.
+  - Error message names the bank wallet id, the available balance, and the requested amount, so an operator can act without code-diving.
+  - The bank's funding mutex is released cleanly (a follow-up successful call after re-funding the bank works).
+  - Test wallet registry contains no half-created entry from the failed fund.
+- **Negative variants**: none.
+- **Harness extensions required**: a typed error variant on `framework/bank.rs` (most likely already present; confirm name); a way to construct an underfunded bank for the test (a `Bank::with_balance_for_test(...)` constructor or a fresh bank wallet pre-drained).
+- **Estimated complexity**: S
+- **Rationale**: Bank starvation is the single most common "weird CI failure" mode for this suite, and the failure mode shouldn't be a panic from inside `fund_address`. PA-010 makes the operator-actionable error part of the contract.
+
+#### PA-001b — Transfer with `output_change_address: None` vs `Some(addr)`
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`; the `output_change_address: Option<PlatformAddress>` argument routes change either to an auto-derived address or to an explicit one.
+- **DET parallel**: none — exercises an Option-branch the existing PA cases never split.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**:
+  1. Bank-fund `addr_1` with `60_000_000`.
+  2. Run transfer `{addr_2: 5_000_000}` with `output_change_address: None`. Record the address that ended up holding the change.
+  3. Bank-fund a fresh `addr_3` with `60_000_000`.
+  4. Derive an explicit `change_addr` separately from `addr_3` (and from any output address).
+  5. Run transfer `{addr_4: 5_000_000}` from `addr_3` with `output_change_address: Some(change_addr)`.
+- **Assertions**:
+  - `None` branch: change lands on the wallet-internal documented "auto-derive change" address (likely the next unused receive address); record exactly which one and pin the rule in the assertion.
+  - `Some(change_addr)` branch: change balance shows up on `change_addr` exactly, and not on the source or any other address.
+  - In both branches `Σ inputs == Σ outputs + fee` holds.
+- **Negative variants**:
+  - `output_change_address: Some(addr_with_existing_balance)` → assert merge-or-reject contract (whichever the wallet defines).
+- **Harness extensions required**: none.
+- **Estimated complexity**: S
+- **Rationale**: The `Option<PlatformAddress>` argument has no asserted contract today — `None` could drift into "change is silently lost" without a single test failing.
+
+#### PA-001c — Zero-credit single-output transfer
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31` boundary at output-amount zero.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**:
+  1. Bank-fund `addr_1` with `30_000_000`.
+  2. Call `transfer({addr_2: 0})` from `addr_1`.
+- **Assertions**: pin one of the two contracts (whichever the wallet implements):
+  - **(a) Reject**: a typed validation error of "amount must be positive" shape; no state-transition broadcast; balances unchanged.
+  - **(b) Accept as fee-only**: transfer broadcasts; `balances[addr_2] == 0`; `addr_1` decreased by `fee` only.
+- **Negative variants**: none — this case IS the zero-amount boundary.
+- **Harness extensions required**: none.
+- **Estimated complexity**: S
+- **Rationale**: Zero-amount transfers are a classic boundary. The wallet's contract here is currently undocumented; whichever it is, an explicit case pins it.
+
+#### PA-004b — Sweep dust threshold boundary triplet
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/cleanup.rs` sweep gate at `SWEEP_DUST_THRESHOLD` (5_000_000 credits).
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet × 3 (one per boundary).
+- **Scenario**: run three sub-cases independently, with wallet balance configured exactly:
+  1. Balance == `SWEEP_DUST_THRESHOLD - 1` (i.e. `4_999_999`). Call cleanup. Assert sweep is **skipped** (registry status `Skipped`, no broadcast).
+  2. Balance == `SWEEP_DUST_THRESHOLD` (i.e. `5_000_000`). Call cleanup. Assert sweep is **attempted** (broadcast emitted, bank credit observed minus fees).
+  3. Balance == `SWEEP_DUST_THRESHOLD + 1` (i.e. `5_000_001`). Call cleanup. Assert sweep is **attempted**.
+- **Assertions**: each sub-case asserts the registry status string and whether a state-transition was broadcast. The boundary at `==` must distinguish from `< threshold`.
+- **Negative variants**: none.
+- **Harness extensions required**: a way to configure a test wallet to hold an exact balance after fund + fee accounting (likely fund a slightly larger amount, then transfer the excess to a sink). May require the `TestWallet::transfer_with_inputs` helper (Wave F).
+- **Estimated complexity**: M
+- **Rationale**: The dust threshold is one of the few hard numeric gates in the cleanup path. Off-by-one at this boundary is the canonical bug class.
+
+#### PA-004c — Sweep with exactly zero balance
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/cleanup.rs` sweep path with empty inputs.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded harness; test wallet seeded but never funded (or fully drained before cleanup).
+- **Scenario**:
+  1. Create a fresh `TestWallet`. Do not fund it.
+  2. Call `setup_guard.teardown()`.
+- **Assertions**:
+  - Cleanup returns `Ok(())`.
+  - Registry status for the wallet is `Skipped` (no broadcast attempted).
+  - No DAPI broadcast call is made (assert via a counter on the test SDK harness, or by absence of nonce consumption on the bank).
+- **Negative variants**: none.
+- **Harness extensions required**: a "did we broadcast?" hook on the harness SDK, or a registry status accessor.
+- **Estimated complexity**: S
+- **Rationale**: A no-op cleanup must not throw. Without this case a refactor that moves the empty-input check could regress to `Err(InsufficientFunds)` and the test suite would never notice.
+
+#### PA-005b — `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused)
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/platform_addresses/wallet.rs:180` gap-limit enforcement at `DEFAULT_GAP_LIMIT = 20`.
+- **DET parallel**: none direct; PA-005 covers cursor rotation but not the gap-limit boundary.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**: three sub-cases run on separate `TestWallet` instances:
+  1. Derive **19** unused addresses (no funding). Then derive a 20th. Assert all 20 are returned without error or gap-limit growth event.
+  2. Derive **20** unused addresses (no funding). Then derive a 21st. Pin the contract: either the wallet returns a typed `GapLimitExceeded` error, or it grows the limit (assert a `GapLimitGrown` event, or whatever the wallet exposes).
+  3. Derive **21** unused addresses by request, asserting the same contract as (2).
+- **Assertions**: each sub-case nails the wallet's contract at the `DEFAULT_GAP_LIMIT` boundary.
+- **Negative variants**: none — this case is the boundary.
+- **Harness extensions required**: a way to derive without funding (already supported via `next_unused_address` repeatedly; confirm cursor doesn't auto-park).
+- **Estimated complexity**: M
+- **Rationale**: PA-005's "21+ unused addresses" line is exploratory; PA-005b promotes it to an asserted boundary on each side of `DEFAULT_GAP_LIMIT`.
+
+#### PA-006b — Two concurrent broadcasts of identical ST bytes
+- **Priority**: P2
+- **Wallet feature exercised**: nonce / replay-protection at the SDK / DAPI boundary.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet; PA-006's `transfer_capturing_st_bytes` helper.
+- **Scenario**:
+  1. Fund `addr_1` and capture the encoded ST bytes for a transfer (do not broadcast yet).
+  2. Spawn two concurrent `tokio::spawn` tasks each calling `sdk.broadcast_state_transition(captured_bytes)`.
+  3. Await both.
+- **Assertions**:
+  - Exactly one of the two futures returns success; the other returns the documented stale-nonce / already-exists / duplicate-broadcast error class.
+  - Final wallet state matches a single applied transfer (no double-debit).
+- **Negative variants**: none.
+- **Harness extensions required**: PA-006's `transfer_capturing_st_bytes`.
+- **Estimated complexity**: M
+- **Rationale**: PA-006 covers sequential replay; the race-condition variant is materially different code path inside the SDK / DAPI mempool.
+
+#### PA-007b — Two concurrent `sync_balances` on one wallet
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/platform_addresses/sync.rs:24` reentrancy / internal locking.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**:
+  1. Fund `addr_1` with `30_000_000`; wait for visibility.
+  2. Spawn two concurrent `sync_balances()` futures on the same `TestWallet` handle.
+  3. Await both.
+- **Assertions**:
+  - Both futures return `Ok(())`.
+  - Post-state cached balance equals on-chain truth (not 2× — no double-counting).
+  - Sync watermark advanced exactly once net (no spurious double-bump).
+- **Negative variants**: none.
+- **Harness extensions required**: same accessor PA-007 already requires.
+- **Estimated complexity**: M
+- **Rationale**: PA-007 is sequential; double-counting under concurrent re-sync is a UI-tier hazard worth pinning.
+
+#### PA-008b — Two `TestWallet`s × three concurrent funders each
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/bank.rs::fund_address` cross-wallet contention.
+- **DET parallel**: none.
+- **Preconditions**: bank with `≥ 70_000_000 + 6 * fund_fee` credits.
+- **Scenario**:
+  1. Spin up two independent `TestWallet` instances, A and B.
+  2. Derive `a1, a2, a3` on A and `b1, b2, b3` on B.
+  3. Spawn six concurrent `bank.fund_address` calls (three on A's addresses, three on B's, each `10_000_000`).
+  4. Await all six.
+- **Assertions**:
+  - All six addresses end with the funded amount (no nonce collision across wallet boundaries).
+  - Total bank decrease == `60_000_000 + 6 * fund_fee`.
+  - No panic, no missing balances on any sub-set after sync.
+- **Negative variants**: none.
+- **Harness extensions required**: helper to instantiate two independent `TestWallet`s in one harness setup.
+- **Estimated complexity**: M
+- **Rationale**: PA-008 keeps contention inside one `TestWallet`; PA-008b proves the bank's serialisation works under cross-wallet contention too — the realistic CI shape.
+
+#### PA-008c — Observable serialisation of `FUNDING_MUTEX`
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/bank.rs::FUNDING_MUTEX` invariant.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet; instrumentation hook on `FUNDING_MUTEX` (entry/exit timestamps or per-call sequence number).
+- **Scenario**:
+  1. Spawn three concurrent `bank.fund_address` tasks.
+  2. Each task records its mutex-entry timestamp and mutex-exit timestamp via a test-only instrumentation hook.
+  3. Await all three.
+- **Assertions**:
+  - The three intervals `[entry_i, exit_i]` are pairwise non-overlapping (proves serialisation, not just correctness).
+  - Equivalently / additionally: the bank's funding-tx nonces are strictly monotonic in the same order as the mutex entries.
+- **Negative variants**: none.
+- **Harness extensions required**: an instrumentation hook on `framework/bank.rs` (test-only `cfg(test)` accessor for the mutex's last-entry sequence, or a `parking_lot::Mutex` instrumentation wrapper).
+- **Estimated complexity**: M
+- **Rationale**: PA-008 tests "all three calls succeed" — a future refactor that drops the mutex but happens to win the race in CI would still pass. PA-008c asserts the *mechanism* observably, so a silent removal of the mutex fails the test deterministically.
+
+#### PA-009 — `min_input_amount` boundary triplet for cleanup
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/cleanup.rs::min_input_amount`, sourced from `platform_version.dpp.state_transitions.address_funds.min_input_amount`.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded harness; test wallet × 3, each with a precisely tuned balance.
+- **Scenario**: read `min` = `platform_version.dpp.state_transitions.address_funds.min_input_amount`. Run three sub-cases:
+  1. Balance == `min - 1`. Call cleanup. Assert `Skipped` (cleanup must not attempt sweep).
+  2. Balance == `min`. Call cleanup. Assert sweep is attempted (broadcast emitted; or fails with the documented "fee pushes below threshold" typed error).
+  3. Balance == `min + 1`. Call cleanup. Assert sweep is attempted and succeeds.
+- **Assertions**: each sub-case pins the cleanup status (`Skipped` vs attempted) and the typed error if the attempt fails.
+- **Negative variants**: none.
+- **Harness extensions required**: PA-004b's exact-balance setup helper; a way to read `min_input_amount` from the active `PlatformVersion` inside the test.
+- **Estimated complexity**: M
+- **Rationale**: `min_input_amount` is currently entirely uncovered. A protocol-version bump that changes the value would silently shift cleanup behaviour, with no failing test to flag the shift.
+
+#### PA-011 — Workdir slot exhaustion at `MAX_SLOTS + 1`
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/workdir.rs` `flock`-based slot allocation; `MAX_SLOTS = 10`.
+- **DET parallel**: none — operator-actionable harness contract.
+- **Preconditions**: a clean workdir base path with no held slots.
+- **Scenario**:
+  1. Spawn `MAX_SLOTS` sub-processes (or `MAX_SLOTS` concurrent harness contexts within one process) that each acquire and hold a workdir slot.
+  2. Spawn one additional (i.e. the 11th) harness context attempting to acquire a slot.
+- **Assertions**:
+  - The first `MAX_SLOTS` acquisitions succeed and land on distinct slot indices.
+  - The 11th returns a typed `WorkdirError::NoAvailableSlots { tried, base_path }` (pin the variant name) within a bounded time — no silent infinite wait.
+  - Cleanup releases all slots; a subsequent acquisition succeeds.
+- **Negative variants**: none.
+- **Harness extensions required**: a typed error variant on `framework/workdir.rs` (likely already there; confirm name); a way to spawn sub-processes for the test, or simulate slot holders within one process via held `flock` guards.
+- **Estimated complexity**: M
+- **Rationale**: Slot exhaustion is the second most common "weird CI failure" mode after bank starvation. PA-011 makes its failure mode explicit.
+
+#### PA-012 — `sync_balances` racing with `transfer`
+- **Priority**: P2
+- **Wallet feature exercised**: internal locking between `wallet/platform_addresses/sync.rs:24` and `wallet/platform_addresses/transfer.rs:31`.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**:
+  1. Bank-fund `addr_1` with `40_000_000`; wait.
+  2. Spawn two concurrent tasks: `wallet.sync_balances()` and `wallet.transfer({addr_2: 5_000_000})`.
+  3. Await both.
+- **Assertions**:
+  - Both return `Ok(...)`.
+  - Final state is consistent with sequential execution: `balances[addr_2] == 5_000_000`, `balances[addr_1] == 40_000_000 - 5_000_000 - fee`. No "fee charged twice", no "in-flight transfer double-counted".
+  - The transfer's fee was computed against a non-stale balance view (i.e. no `InsufficientFunds` because `sync_balances` clobbered the cache mid-build).
+- **Negative variants**: none.
+- **Harness extensions required**: none beyond what PA-002 / PA-007 already need.
+- **Estimated complexity**: M
+- **Rationale**: Mobile clients call `sync_balances` aggressively while the user is typing into a transfer form. A regression where these two paths race silently produces wrong fees or stale balances; PA-012 pins the contract.
+
+#### PA-013 — Broadcast retry under transient DAPI 5xx
+- **Priority**: P2
+- **Wallet feature exercised**: SDK retry policy on `broadcast_state_transition` under transient HTTP 5xx; downstream wallet state-finalisation on partial success.
+- **DET parallel**: none direct; PA-007's negative variant covers a permanently-bogus URL only.
+- **Preconditions**: a test-only DAPI proxy (or a `httpmock`-based DAPI stub) that returns `503 Service Unavailable` on the first call to `/broadcastStateTransition` and succeeds thereafter.
+- **Scenario**:
+  1. Bank-fund `addr_1`.
+  2. Configure the harness SDK to point at the proxy.
+  3. Issue a transfer.
+- **Assertions**:
+  - Wallet returns `Ok(...)` despite the transient 5xx (assuming policy is to retry; if the policy is "fail fast and surface to caller", invert the assertion and document that contract).
+  - Final on-chain state shows the transfer applied exactly once (proxy's request log shows two POSTs — one 503, one 200; chain shows one ST).
+  - On the proof-fetch failure variant (DAPI succeeds on broadcast, 5xx on proof fetch): wallet either retries proof fetch, or returns a `BroadcastedAwaitingProof` typed result (whichever the contract defines).
+- **Negative variants**:
+  - DAPI returns 5xx persistently → typed `NetworkError` after exhausted retries; cached wallet state unchanged.
+- **Harness extensions required**: a controllable test DAPI proxy (Wave F-adjacent). This is non-trivial; mark as "blocked on test-DAPI-proxy infra" if unavailable.
+- **Estimated complexity**: M
+- **Rationale**: Transient 5xx is the most common production failure mode for thin-client SDKs. Without a deterministic test, retry policy drifts between "broken" and "infinite loop" and nobody notices until users complain.
+
+#### PA-014 — Multi-output at protocol-max output count
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31` at the protocol max-output boundary; payload-size limits in DPP / Drive.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet with sufficient credits to fund N outputs (where N is the protocol max for `address_funds` outputs).
+- **Scenario**:
+  1. Discover the protocol-max output count from `platform_version.dpp.state_transitions.address_funds.max_outputs` (or the equivalent constant).
+  2. Bank-fund `addr_1` with enough credits to cover N outputs of `100_000` each plus fees.
+  3. Construct a transfer with exactly `max_outputs` destinations; submit. Record the result.
+  4. Construct a transfer with `max_outputs + 1` destinations; submit.
+- **Assertions**:
+  - At `max_outputs`: transfer succeeds; all N destinations reach the expected balance.
+  - At `max_outputs + 1`: wallet returns a typed `PayloadTooLarge` / `TooManyOutputs` validation error before broadcast (or, if the wallet attempts and DAPI rejects, the SDK error class is mapped to a typed wallet error). Pin which side enforces.
+- **Negative variants**: none.
+- **Harness extensions required**: ability to read `max_outputs` from the active platform version; a pool of `max_outputs + 1` distinct destination addresses (likely already available via `next_unused_address` on a fresh wallet).
+- **Estimated complexity**: M
+- **Rationale**: The wallet's only multi-output coverage today is "5 outputs". The actual upper limit is unmeasured; a protocol-version bump that changes `max_outputs` would silently shift behaviour, with regressions surfacing only in production state-transitions that are mysteriously rejected.
 
 ### Identity (ID)
 
@@ -401,6 +737,54 @@ Counts by priority: **P0: 7**, **P1: 13**, **P2: 10**, **DEFERRED: 1** (total 31
 - **Estimated complexity**: M
 - **Rationale**: Wallet restart / identity rediscovery is the most-hit path in mobile apps and the most-broken-by-protocol-bumps. ID-006 catches discovery regressions deterministically.
 
+#### ID-001c — Non-default `StateTransitionSettings`
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/register_from_addresses.rs:65`'s `settings: Option<StateTransitionSettings>` argument; non-default values (e.g. `wait_for_proof = false`, fee multiplier override, signing-key override).
+- **DET parallel**: none.
+- **Preconditions**: ID-001 helper.
+- **Scenario**: register an identity exactly as ID-001 except pass a non-default `StateTransitionSettings`. Run two sub-cases:
+  1. `settings: Some(StateTransitionSettings { wait_for_proof: false, .. })`. Expect the call to return as soon as broadcast succeeds, without blocking on proof.
+  2. `settings: Some(StateTransitionSettings { fee_multiplier: <non-default>, .. })`. Expect the on-chain fee to scale by the configured multiplier.
+- **Assertions**:
+  - Sub-case (1): the call's wall-clock duration is bounded below by network RTT and above by a `proof_wait_timeout` it should not have hit; cached identity is "broadcasted, awaiting proof"; on next sync the proof is observed and the change-set finalised.
+  - Sub-case (2): observed on-chain fee scales as documented (within rounding).
+- **Negative variants**: none.
+- **Harness extensions required**: Wave A; a "did we wait for proof?" hook on the harness SDK (or a wall-clock-bound check).
+- **Estimated complexity**: M
+- **Rationale**: Every existing Identity / DPNS / DashPay test passes `settings: None`. The `Some` branch is entirely uncovered; without ID-001c, settings-related fields can be silently misrouted.
+
+#### ID-005b — `transfer_credits_to_addresses` with empty outputs
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/transfer_to_addresses.rs:66` validation gate.
+- **DET parallel**: none.
+- **Preconditions**: ID-001 helper; identity with non-zero balance.
+- **Scenario**:
+  1. Register an identity per ID-001 with starting balance `≥ 50_000_000`.
+  2. Call `transfer_credits_to_addresses_with_external_signer(identity_id, {}, signer, None)` — empty output map.
+- **Assertions**:
+  - Returns a typed validation error of "at least one output is required" shape (mirror the ID-001 negative-variant message style; pin the exact variant or message).
+  - No state-transition broadcast.
+  - Identity balance unchanged.
+- **Negative variants**: none — this case IS the empty-input variant.
+- **Harness extensions required**: Wave A only.
+- **Estimated complexity**: S
+- **Rationale**: ID-001 already pins the empty-`inputs` error message exactly. ID-005b mirrors that pin on the empty-`outputs` side, which is currently uncovered.
+
+#### ID-006b — Identity-key derivation index boundary
+- **Priority**: P2
+- **Wallet feature exercised**: identity-key derivation under `wallet/identity/network/identity_handle.rs::derive_ecdsa_identity_auth_keypair_from_master` at `key_index` boundaries.
+- **DET parallel**: none direct.
+- **Preconditions**: ID-001 helper.
+- **Scenario**:
+  1. Register an identity with `key_index = 0`. Verify on-chain that the registered HIGH key matches `derive_identity_key(.., key_index = 0, ..)`.
+  2. Register a second identity (or `update_identity` add-key on the same identity) with `key_index = DEFAULT_GAP_LIMIT - 1`. Verify the registered key matches the corresponding derivation.
+  3. Optionally: attempt `key_index = DEFAULT_GAP_LIMIT` and pin the contract (rejected vs gap grown).
+- **Assertions**: each sub-case asserts that the on-chain key bytes match the off-chain DIP-9 derivation at the boundary index.
+- **Negative variants**: none.
+- **Harness extensions required**: Wave A's `derive_identity_key` helper exposed for `key_index` (in addition to `identity_index`).
+- **Estimated complexity**: M
+- **Rationale**: ID-006 covers `identity_index` boundaries; `key_index` is the parallel axis and currently uncovered.
+
 ### Tokens (TK)
 
 The wallet has token operations on the API surface
@@ -433,6 +817,20 @@ existing balances) are achievable in P0/P1.
   - Operator documentation: how to pre-fund tokens (one-time, sibling of bank pre-funding).
 - **Estimated complexity**: L
 - **Rationale**: Most-used token op. Catches token-amount underflow bugs and credit-fee accounting bugs in one shot.
+
+#### TK-001b — Token transfer of amount 0
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` zero-amount boundary.
+- **DET parallel**: none.
+- **Preconditions**: TK-001 setup (two identities with non-zero token balance on `identity_a`).
+- **Scenario**: call `token_transfer_with_signer(identity_a, contract_id, token_position, identity_b, amount=0)`.
+- **Assertions**: pin one contract:
+  - **(a) Reject**: typed validation error of "amount must be positive" shape; no broadcast; balances unchanged.
+  - **(b) Accept**: broadcast succeeds; both token balances unchanged; only `identity_a` credit balance decreased by `transfer_fee`.
+- **Negative variants**: none.
+- **Harness extensions required**: TK-001 extensions.
+- **Estimated complexity**: S
+- **Rationale**: Zero-amount transfers may be valid no-ops or invalid per contract. Either contract needs an asserted test.
 
 #### TK-002 — Token claim (perpetual / pre-programmed distribution)
 - **Priority**: P2
@@ -587,6 +985,36 @@ so that when SPV lands, the test bodies can be written without further design.
 - **Estimated complexity**: M
 - **Rationale**: DPNS register is the most user-visible Platform feature after Identity. DPNS-001 is also the gateway to Dashpay (DP-001 needs a DPNS name).
 
+#### DPNS-001b — Name-length boundary quartet (2 / 3 / 63 / 64 chars)
+- **Priority**: P2
+- **Wallet feature exercised**: DPNS name-length validation at `wallet/identity/network/dpns.rs:176`.
+- **DET parallel**: none.
+- **Preconditions**: ID-001 helper; identity with sufficient credits to register a DPNS name.
+- **Scenario**: four sub-cases, each with a fresh DPNS-eligible identity (or the same identity if the wallet permits multiple names):
+  1. Name length **2** chars (`xy.dash` — 2-char label). Expect typed validation error.
+  2. Name length **3** chars (`xyz.dash`). Expect contested-name flow OR success (depends on protocol; pin which).
+  3. Name length **63** chars (max-allowed label, all alphanumeric). Expect success.
+  4. Name length **64** chars. Expect typed validation error.
+- **Assertions**: each sub-case nails accept/reject and the typed error variant on rejection.
+- **Negative variants**: none — this case IS the boundary set.
+- **Harness extensions required**: Wave A; the random-name helper extended to take an explicit length.
+- **Estimated complexity**: M
+- **Rationale**: DPNS-001's negative variants list "shorter than 3 or longer than 63" but never pin the exact boundaries. Off-by-one at name-length is the canonical DPNS bug class.
+
+#### DPNS-001c — DPNS name with a multibyte character
+- **Priority**: P2
+- **Wallet feature exercised**: DPNS name validation / canonicalisation at `wallet/identity/network/dpns.rs:176`.
+- **DET parallel**: none.
+- **Preconditions**: ID-001 helper; identity with sufficient credits.
+- **Scenario**: register a name containing a multibyte character (e.g. `naive.dash` with `i` replaced by `ï`, or `cafe.dash` with `e` → `é`). Submit. Pin the contract:
+  - **(a) Accept-and-canonicalise**: name normalised to ASCII (e.g. via Punycode / IDN-ASCII); subsequent `resolve_name` returns the canonical form.
+  - **(b) Reject**: typed validation error of "ASCII-only" / "invalid character" shape.
+- **Assertions**: nail one of (a) or (b). If (a), assert the canonical form matches the documented rule; if (b), assert the error variant.
+- **Negative variants**: none.
+- **Harness extensions required**: Wave A.
+- **Estimated complexity**: S
+- **Rationale**: Whichever contract the wallet implements, an explicit pin prevents future protocol-version drift from silently flipping it.
+
 #### DPNS-002 — Resolve a known external name (negative-only assertion)
 - **Priority**: P2
 - **Wallet feature exercised**: `dpns.rs:281` (`resolve_name`).
@@ -612,6 +1040,38 @@ so that when SPV lands, the test bodies can be written without further design.
 - **Harness extensions required**: Wave A.
 - **Estimated complexity**: M
 - **Rationale**: Profile is the simplest DashPay write — establishes the pattern other DashPay operations (DP-002, DP-003) reuse.
+
+#### DP-001b — Profile with optional fields `None` vs `Some`
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/profile.rs:237` partial-profile semantics.
+- **DET parallel**: none direct.
+- **Preconditions**: ID-001 + DPNS-001.
+- **Scenario**: two sub-cases on the same identity (or on two identities if the wallet enforces single-profile-per-identity):
+  1. Create profile with `display_name = None, public_message = Some("hello")`. Sync; fetch.
+  2. Create profile with `display_name = Some("Marvin"), public_message = None`. Sync; fetch.
+- **Assertions**:
+  - Fetched profile preserves the `None`/`Some` distinction byte-for-byte (a `None` field comes back as absent, not as empty string `""`).
+  - Sub-case (1) post-sync: `display_name == None`, `public_message == Some("hello")`.
+  - Sub-case (2) post-sync: `display_name == Some("Marvin")`, `public_message == None`.
+- **Negative variants**: none.
+- **Harness extensions required**: Wave A.
+- **Estimated complexity**: M
+- **Rationale**: DashPay profile is a partial-update primitive in production; conflating `None` with `Some("")` would silently break all clients that use either default presentation.
+
+#### DP-001c — Profile `display_name` containing emoji / RTL text
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/profile.rs:237` UTF-8 round-trip.
+- **DET parallel**: none.
+- **Preconditions**: ID-001 + DPNS-001.
+- **Scenario**: create a profile with `display_name = "Marvin 🤖"` (emoji) and an additional sub-case with an RTL string (e.g. Hebrew or Arabic text). Sync; fetch.
+- **Assertions**:
+  - Fetched `display_name` is byte-equal to the input (including the emoji code-points and any RTL embedding marks).
+  - No silent normalisation that loses information.
+  - Length validation operates on grapheme clusters or bytes (whichever the contract specifies); pin which.
+- **Negative variants**: none.
+- **Harness extensions required**: Wave A.
+- **Estimated complexity**: S
+- **Rationale**: UTF-8 round-trip in user-displayed fields is a quiet hazard — losing emoji or RTL marks bricks user-presented identity strings without surfacing as an error.
 
 #### DP-002 — Send and accept a contact request
 - **Priority**: P1
@@ -669,6 +1129,67 @@ DET parity") rather than P0/P1. Two cases are stubbed for completeness.
 - **Reason for deferral**: requires a masternode signer and operator-controlled mn-list participation; harness has no way to drive that today.
 - **Action**: keep this row as a placeholder; revisit when a regtest-with-masternodes harness is in scope.
 
+### Harness self-tests (Harness)
+
+Cases in this subsection exercise the test harness itself (registry
+serialisation, async cancellation safety, workdir isolation), not the wallet.
+They live here because their failures masquerade as wallet bugs and the only
+sane place to pin the harness contract is alongside the wallet contract.
+
+#### Harness-G1a — Corrupted registry JSON: refuse to overwrite
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/registry.rs` parse + lock-file flow.
+- **DET parallel**: none.
+- **Preconditions**: clean workdir; ability to seed the registry file with arbitrary bytes before harness startup.
+- **Scenario**:
+  1. Pre-seed `registry.json` with valid JSON for one entry, followed by trailing garbage (`\n}}}`).
+  2. Start the harness (e.g. invoke `setup()`).
+- **Assertions**:
+  - Harness returns a typed `RegistryError::ParseError { path, byte_offset }` (pin the variant; `byte_offset` should be near the trailing garbage).
+  - Harness does **not** overwrite the on-disk registry file (preserve user data; assert file bytes unchanged after the failed start).
+  - The lock-file (`.lock`) is released cleanly so a subsequent run that fixes the file can proceed.
+- **Negative variants**: none.
+- **Harness extensions required**: a typed parse-error variant on `framework/registry.rs` (likely already there; confirm name); a test setup that seeds the registry file before harness start.
+- **Estimated complexity**: M
+- **Rationale**: When the registry serialisation format changes, stale registry files in CI shouldn't silently corrupt user data. Harness-G1a pins refuse-to-overwrite as the contract.
+
+#### Harness-G1b — Registry forward-compatible unknown field
+- **Priority**: P2
+- **Wallet feature exercised**: `framework/registry.rs` deserialisation tolerance.
+- **DET parallel**: none.
+- **Preconditions**: clean workdir; ability to pre-seed registry contents.
+- **Scenario**:
+  1. Pre-seed `registry.json` with a valid entry that includes a future-version field (e.g. `"unknown_field": "future-value"`).
+  2. Start the harness; let it perform a normal write that round-trips the registry.
+- **Assertions**:
+  - Harness loads the registry without error.
+  - On rewrite, the `unknown_field` is preserved byte-equal (forward-compatible: don't strip fields the current code doesn't understand).
+  - Tests that depend on the entry continue to operate.
+- **Negative variants**: none.
+- **Harness extensions required**: registry serde must use `#[serde(other)]` / a catch-all field, or otherwise round-trip unknown keys. Confirm or implement.
+- **Estimated complexity**: S
+- **Rationale**: Without forward-compat, the moment two CI workers run different versions of the harness against a shared registry, fields get silently stripped.
+
+#### Harness-G4 — Drop `wallet.transfer` future mid-flight, recover on next sync
+- **Priority**: P2
+- **Wallet feature exercised**: cancellation safety of `wallet/platform_addresses/transfer.rs:31`; on-next-sync recovery in `wallet/platform_addresses/sync.rs:24`.
+- **DET parallel**: none.
+- **Preconditions**: bank-funded test wallet.
+- **Scenario**:
+  1. Bank-fund `addr_1` with `40_000_000`.
+  2. Wrap `wallet.transfer({addr_2: 5_000_000})` in a `tokio::select!` against a controllable cancellation token.
+  3. Trigger cancellation **after** the broadcast call returns (i.e. ST hit DAPI) but **before** the proof-fetch completes. Confirm the future is dropped via the cancellation token.
+  4. Call `wallet.sync_balances()`.
+- **Assertions**:
+  - Internal wallet state is consistent after the drop: no half-applied change-set, no orphaned in-flight marker that would block the next call.
+  - Post-`sync_balances`, the wallet observes the broadcasted transfer and records the change-set correctly: `balances[addr_2] == 5_000_000`, `addr_1` decreased by `5_000_000 + fee`.
+  - A subsequent `wallet.transfer({addr_3: 1_000_000})` succeeds — no duplicate broadcast of the previous transfer, no nonce collision.
+- **Negative variants**:
+  - Cancellation **before** broadcast: assert no broadcast occurred and balances unchanged.
+- **Harness extensions required**: a way to inject a cancellation point between broadcast and proof-fetch (likely a test-only hook on the harness SDK or a `select!` wrapper on the wallet call). This is the most invasive of the Harness-G cases; mark as "blocked on cancellation hook" if not yet plumbed.
+- **Estimated complexity**: L
+- **Rationale**: `tokio::select!` cancellation safety is a documented Tokio footgun. Without an asserted contract, the wallet may corrupt internal state on user-initiated cancellation (e.g. mobile app foregrounding/backgrounding) and only surface as "wallet shows wrong balance after I closed the app".
+
 ---
 
 ## 4. Harness extension roadmap
@@ -681,7 +1202,7 @@ order. Each wave unlocks the cases listed.
 - Add `derive_identity_key(seed_bytes, network, identity_index, key_index, purpose, security_level) -> IdentityPublicKey` test helper.
 - Add `TestWallet::register_identity_from_addresses(funding: Credits) -> Identity` helper that builds the placeholder, calls `register_from_addresses`, and waits for on-chain visibility.
 - Add `wait_for_identity_balance(identity_id, expected, timeout)` in `framework/wait.rs`.
-- **Unlocks**: ID-001, ID-002, ID-003, ID-004, ID-005, DPNS-001, DPNS-002 (partial), CT-001, DP-001, DP-002, DP-003, TK-001, TK-002, TK-003, TK-004, CN-001.
+- **Unlocks**: ID-001, ID-001c, ID-002, ID-003, ID-004, ID-005, ID-005b, ID-006, ID-006b, DPNS-001, DPNS-001b, DPNS-001c, DPNS-002 (partial), CT-001, DP-001, DP-001b, DP-001c, DP-002, DP-003, TK-001, TK-001b, TK-002, TK-003, TK-004, CN-001.
 
 ### Wave B — Multi-identity per setup
 - Extend `setup()` to accept `setup_with_n_identities(n: u32) -> SetupGuard { test_wallet, identities: Vec<RegisteredIdentity> }`.
@@ -696,7 +1217,7 @@ order. Each wave unlocks the cases listed.
 ### Wave D — Token contract operator config
 - `Config::token_contract_id`, `Config::token_position`, optional `Config::token_claim_amount`.
 - Operator pre-funds tokens to the bank-derived identity (one-time, README'd next to bank pre-funding).
-- **Unlocks**: TK-001, TK-002, TK-003, TK-004.
+- **Unlocks**: TK-001, TK-001b, TK-002, TK-003, TK-004.
 
 ### Wave E — SPV re-enablement (Task #15)
 - Uncomment SPV block in `harness.rs:200-218`; swap `TrustedHttpContextProvider` → `SpvContextProvider`.
@@ -705,14 +1226,20 @@ order. Each wave unlocks the cases listed.
 - **Unlocks**: CR-001, CR-002, CR-003.
 
 ### Wave F — Test-only utility helpers
-- `TestWallet::transfer_with_inputs` (PA-002 negative variant).
-- `TestWallet::transfer_capturing_st_bytes` (PA-006).
+- `TestWallet::transfer_with_inputs` (PA-002 negative variant; PA-004b exact-balance setup).
+- `TestWallet::transfer_capturing_st_bytes` (PA-006, PA-006b).
+- `TestWallet::estimate_transfer_fee` (PA-002b).
 - `Bank::total_credits` accessor exposed (already exists, just lift to public re-export if not).
+- `Bank::with_balance_for_test` constructor (PA-010).
 - `TestRegistry::get_status(wallet_id)` (PA-004).
-- **Unlocks**: PA-002 (negative), PA-006, PA-004 (full assertions).
-- **Cost**: ~50-100 LoC; can land alongside any wave.
+- `FUNDING_MUTEX` instrumentation hook (PA-008c).
+- "Did we broadcast?" hook on the harness SDK (PA-004c, PA-013).
+- Cancellation-point hook between broadcast and proof-fetch (Harness-G4).
+- Test DAPI proxy / `httpmock` adapter (PA-013).
+- **Unlocks**: PA-002 (negative), PA-002b, PA-004 (full assertions), PA-004b, PA-004c, PA-006, PA-006b, PA-008c, PA-009, PA-010, PA-011, PA-012, PA-013, Harness-G1a, Harness-G1b, Harness-G4.
+- **Cost**: ~200-400 LoC across multiple commits; the test-DAPI-proxy and cancellation-hook items are non-trivial and can land late.
 
-**Recommended build order**: Wave A first (highest leverage — unblocks 17 of the 27 cases), then Wave F (cheap and unblocks the remaining PA cases), then Wave C, then Wave B as ID-003/DP-002 land. Waves D and E are independent and can run in parallel with the others once a champion is assigned.
+**Recommended build order**: Wave A first (highest leverage — unblocks 25+ cases), then Wave F's cheap helpers (estimate-fee, transfer-with-inputs, registry status, FUNDING_MUTEX hook) which unblock most P2 PA cases, then Wave C, then Wave B as ID-003/DP-002 land. Wave F's expensive items (test DAPI proxy, cancellation hook) and Waves D/E are independent and can run in parallel with the others once a champion is assigned.
 
 ### Wallet-API gap notes (follow-up issues)
 
@@ -724,6 +1251,7 @@ the spec but each would simplify a test if filed as a follow-up issue:
 3. **`IdentityManager::known_identities()` shape** — needed by ID-001's "exactly one identity registered" assertion. If the manager exposes only `BTreeMap<u32, ManagedIdentity>` without a length convenience, the test must pull internals; a `.len()` / `.identity_ids()` helper would be cleaner.
 4. **Token-balance accessor by `(identity, contract, position)`** — `wallet/tokens/wallet.rs:248` already has `balance(...)`; confirm signature matches what TK-001 needs (`balance_for(identity_id, contract_id, position)`) and add the convenience if not.
 5. **DPNS `register_name_with_external_signer` lacks a "wait for visibility" partner** — Wave A would benefit from a `wait_for_dpns_name_visible(name, timeout)` helper, ideally co-located with `wait_for_balance` in `framework/wait.rs`.
+6. **No protocol-version accessor for `min_input_amount` / `max_outputs`** — PA-009 and PA-014 need to read these from the active `PlatformVersion`; expose a thin test-friendly getter.
 
 ---
 
@@ -740,6 +1268,8 @@ prevents future scope creep arguments.
 6. **Cross-process bank concurrency** — README §"Multi-process safety" documents the operator-side requirement; not a test concern.
 7. **Mainnet runs** — config supports `network=mainnet` but the suite's bank-funded model is testnet-by-policy. Mainnet runs require an explicit operator review; out-of-scope for automation.
 8. **CN-002 (masternode voting)** — needs a regtest-with-masternodes harness that doesn't exist today.
+9. **Non-BIP-39 mnemonic / seed sources** — see §1.2. Mnemonics must be drawn from the BIP-39 English wordlist; raw-entropy and arbitrary-UTF-8 paths are out of scope.
+10. **Clock-skew / wall-clock-dependent assertions** — testnet runners are assumed to have NTP. Tests that rely on chain timestamps assume the runner's wall clock is within a few seconds of chain time. Cases that need to assert behaviour under arbitrary skew belong in a unit-test layer below this suite.
 
 ---
 
@@ -754,7 +1284,9 @@ Each question's answer changes the spec; numbered for reference.
 5. **Mainnet smoke** — should the suite ever support a single, opt-in mainnet smoke case (e.g. PA-001 with a tiny `1_000`-credit transfer) for release-gate validation?
 6. **Fee-bound numbers** — PA-003 asserts `fee_5 - fee_1 < 1_000_000`. Should we baseline empirical fee numbers and tighten these bounds in a follow-up, or keep them loose and rely on protocol-version bumps to reset them?
 7. **Deterministic fixture network** — testnet is shared and noisy. Is there appetite to maintain a regtest-with-Drive cluster for CI exclusively, or do we accept testnet flakiness as the operating constraint?
+8. **Test DAPI proxy infra** — PA-013 and the broadcast-retry contract require a controllable test DAPI proxy. Build it bespoke (`httpmock`-based), reuse an existing harness from elsewhere in the workspace, or defer the case until the proxy lands?
+9. **Cancellation-hook plumbing** — Harness-G4 needs a test-only injection point between broadcast and proof-fetch. Acceptable to add a `cfg(test)` hook on the wallet, or must this stay external (wrap the future in a `select!` from the test side and accept coarser cancellation granularity)?
 
 ---
 
-<sub>Catalogued by Marvin (QA), with the resigned competence of someone who has read every line of this code twice.</sub>
+<sub>Catalogued by Marvin (QA), with the resigned competence of someone who has read every line of this code twice. Edge-case expansion by Trillian, who knows that the difference between "tested" and "tested at the boundary" is the difference between "ships" and "ships back".</sub>
