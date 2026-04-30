@@ -26,3 +26,48 @@ impl Default for TokenClaimTransition {
         TokenClaimTransition::V0(TokenClaimTransitionV0::default()) // since only v0
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
+    use crate::state_transition::batch_transition::batched_transition::token_claim_transition::v0::TokenClaimTransitionV0;
+    use platform_value::Identifier;
+
+    fn token_base_fixture() -> TokenBaseTransition {
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 13,
+            token_contract_position: 2,
+            data_contract_id: Identifier::new([0xa1; 32]),
+            token_id: Identifier::new([0xb2; 32]),
+            using_group_info: None,
+        })
+    }
+
+    fn fixture() -> TokenClaimTransition {
+        TokenClaimTransition::V0(TokenClaimTransitionV0 {
+            base: token_base_fixture(),
+            distribution_type: crate::data_contract::associated_token::token_distribution_key::TokenDistributionType::PreProgrammed,
+            public_note: Some("claim".to_string()),
+        })
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+        let recovered = <TokenClaimTransition as JsonConvertible>::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = ValueConvertible::to_object(&original).expect("to_object");
+        let recovered = <TokenClaimTransition as ValueConvertible>::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
