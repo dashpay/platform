@@ -62,18 +62,16 @@
 - `OutPoint` round-trip via `platform_value::Value::Map` fails. JSON works.
 - `[u8; 96]` signature with custom serializer fails round-trip via platform_value. JSON works.
 
-**Out of scope for this pass** — left to follow-up:
-- `DataContractCreateTransition`, `DataContractUpdateTransition`, `DataContractInSerializationFormat`, `DataContractConfig` — V0 needs nested fixtures.
-- `TokenConfiguration`, `TokenConfigurationConvention`, `TokenConfigurationLocalization`, `TokenPreProgrammedDistribution`, `TokenPerpetualDistribution`, `TokenDistributionRules` — complex token-config types.
-- 5 shielded transitions — V0 lacks Default and has custom Orchard fields.
-- `ExtendedDocument` — Critical-3 known-broken serde.
-- `Validator`, `ValidatorSet`, `Epoch`, `StateTransitionProofResult` — complex inner types.
-- `TokenConfigUpdateTransition` — needs `TokenConfigurationChangeItem::Conventions(...)` or other variant fixtures.
-- `IdentityCreateTransition` (`#[ignore]`) — V0::default() asset_lock_proof is structurally invalid.
+**Still out of scope** (need substantial work):
+- `DataContractCreateTransition`, `DataContractUpdateTransition` — V0 inner uses `pub(in crate::data_contract)` v0 module; needs cross-module fixture helper.
+- `TokenPreProgrammedDistribution`, `TokenPerpetualDistribution`, `TokenDistributionRules` — V0 lacks Default; complex nested `RewardDistributionType` / `DistributionFunction`.
+- `TokenConfigUpdateTransition` — needs `TokenConfigurationChangeItem::Conventions(...)` variant fixture.
+- `ExtendedDocument` — Critical-3 known-broken serde (Serialize writes `version`, Deserialize reads `$version`).
+- `Validator`, `ValidatorSet` — V0 lacks Default; has BLS keys + ProTxHash that need crypto setup.
+- `IdentityCreateTransition` json/value tests (`#[ignore]`) — V0::default() asset_lock_proof is structurally invalid.
 - `StateTransition` umbrella (`#[ignore]`) — untagged enum, deserialize ambiguity.
-- `Vote`, `VotePoll`, `ContenderWithSerializedDocument`, `GroupActionEvent`, `TokenEvent`, `GroupAction`, `ContractBoundSpecification` — covered with simple Default fixtures or already had pre-existing tests.
 
-These represent ~25 types where each needs ~5-15 minutes of fixture work or upstream bug fix.
+**Pass-2 also fixed**: derived `PartialEq` on `StateTransitionProofResult` + `StoredAssetLockInfo` (was missing, blocking round-trip assert_eq).
 
 **Crate policy** —
 - `packages/wasm-dpp` (legacy) — **scheduled for removal but not now**. Apply *minimum-changes-to-compile* rule: don't migrate its non-canonical call sites; don't add new functionality; only patch what's needed to keep it building when rs-dpp internals shift. Critical features must keep working; cosmetic regressions are acceptable.
