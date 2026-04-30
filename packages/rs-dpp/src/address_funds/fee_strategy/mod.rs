@@ -182,3 +182,35 @@ impl crate::serialization::JsonConvertible for AddressFundsFeeStrategyStep {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for AddressFundsFeeStrategyStep {}
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_address_funds_fee_strategy_step {
+    use super::*;
+
+    fn each_variant() -> [AddressFundsFeeStrategyStep; 2] {
+        [
+            AddressFundsFeeStrategyStep::DeductFromInput(0),
+            AddressFundsFeeStrategyStep::ReduceOutput(1),
+        ]
+    }
+
+    #[test]
+    fn json_round_trip_each_variant() {
+        use crate::serialization::JsonConvertible;
+        for original in each_variant() {
+            let json = original.to_json().expect("to_json");
+            let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_each_variant() {
+        use crate::serialization::ValueConvertible;
+        for original in each_variant() {
+            let value = original.to_object().expect("to_object");
+            let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+}

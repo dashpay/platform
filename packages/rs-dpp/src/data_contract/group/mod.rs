@@ -107,3 +107,39 @@ impl GroupMethodsV0 for Group {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::group::v0::GroupV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> Group {
+        let mut members = BTreeMap::new();
+        members.insert(Identifier::new([0xa0; 32]), 1u32);
+        members.insert(Identifier::new([0xb1; 32]), 2u32);
+        Group::V0(GroupV0 {
+            members,
+            required_power: 2,
+        })
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = Group::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Group::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
