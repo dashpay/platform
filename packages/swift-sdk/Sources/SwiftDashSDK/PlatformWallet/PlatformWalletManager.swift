@@ -370,6 +370,82 @@ public class PlatformWalletManager: ObservableObject {
         return str
     }
 
+    // MARK: - Per-account balances
+
+    /// Per-account balance snapshot read from Rust's in-memory state.
+    public struct AccountBalance {
+        public let typeTag: UInt8
+        public let standardTag: UInt8
+        public let index: UInt32
+        public let registrationIndex: UInt32
+        public let keyClass: UInt32
+        public let userIdentityId: Data
+        public let friendIdentityId: Data
+        public let confirmed: UInt64
+        public let unconfirmed: UInt64
+        public let immature: UInt64
+        public let locked: UInt64
+    }
+
+    /// Query per-account balances directly from the Rust-side
+    /// `WalletManager`'s in-memory state. No disk I/O — reads the
+    /// live `ManagedCoreAccount.balance` values maintained during SPV
+    /// processing.
+    public func accountBalances(for walletId: Data) -> [AccountBalance] {
+        guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else {
+            return []
+        }
+
+        var outEntries: UnsafePointer<AccountBalanceEntryFFI>?
+        var outCount: UInt = 0
+        var error = PlatformWalletFFIError()
+
+        let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER
+            }
+            return platform_wallet_manager_get_account_balances(
+                handle,
+                base,
+                &outEntries,
+                &outCount,
+                &error
+            )
+        }
+
+        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS,
+              let entries = outEntries,
+              outCount > 0 else {
+            return []
+        }
+
+        defer {
+            platform_wallet_manager_free_account_balances(
+                UnsafeMutablePointer(mutating: entries),
+                outCount
+            )
+        }
+
+        return (0..<Int(outCount)).map { i in
+            var entry = entries[i]
+            let uid = withUnsafeBytes(of: &entry.user_identity_id) { Data($0) }
+            let fid = withUnsafeBytes(of: &entry.friend_identity_id) { Data($0) }
+            return AccountBalance(
+                typeTag: entry.type_tag,
+                standardTag: entry.standard_tag,
+                index: entry.index,
+                registrationIndex: entry.registration_index,
+                keyClass: entry.key_class,
+                userIdentityId: uid,
+                friendIdentityId: fid,
+                confirmed: entry.confirmed,
+                unconfirmed: entry.unconfirmed,
+                immature: entry.immature,
+                locked: entry.locked
+            )
+        }
+    }
+
     // MARK: - Internals
 
     private func ensureConfigured() throws {

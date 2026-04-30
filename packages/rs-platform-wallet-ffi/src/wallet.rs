@@ -168,6 +168,79 @@ pub unsafe extern "C" fn platform_wallet_load_and_apply_persisted(
         .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
 }
 
+/// Query per-account balances from the in-memory `WalletManager`.
+///
+/// Returns an array of [`AccountBalanceEntryFFI`] — one per account
+/// in the wallet's `ManagedAccountCollection`. The caller owns the
+/// returned array and must free it via
+/// [`platform_wallet_manager_free_account_balances`].
+///
+/// `out_entries` receives a pointer to the heap-allocated array;
+/// `out_count` receives the element count.  Both are set to
+/// null / 0 when the wallet is not found.
+///
+/// Reads the wallet manager lock via `blocking_read` — must not be
+/// called from within a tokio async context.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    out_entries: *mut *const crate::core_wallet_types::AccountBalanceEntryFFI,
+    out_count: *mut usize,
+    _out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if wallet_id.is_null() || out_entries.is_null() || out_count.is_null() {
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+
+    PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| {
+            let balances = manager.account_balances_blocking(&wid);
+            let entries: Vec<crate::core_wallet_types::AccountBalanceEntryFFI> = balances
+                .into_iter()
+                .map(|(account_type, balance)| {
+                    let tags = crate::core_wallet_types::account_type_to_tags(&account_type);
+                    crate::core_wallet_types::AccountBalanceEntryFFI {
+                        type_tag: tags.type_tag,
+                        standard_tag: tags.standard_tag,
+                        index: tags.index,
+                        registration_index: tags.registration_index,
+                        key_class: tags.key_class,
+                        user_identity_id: tags.user_identity_id,
+                        friend_identity_id: tags.friend_identity_id,
+                        confirmed: balance.confirmed(),
+                        unconfirmed: balance.unconfirmed(),
+                        immature: balance.immature(),
+                        locked: balance.locked(),
+                    }
+                })
+                .collect();
+            let count = entries.len();
+            let boxed = entries.into_boxed_slice();
+            *out_entries = Box::into_raw(boxed) as *const _;
+            *out_count = count;
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            *out_entries = std::ptr::null();
+            *out_count = 0;
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Free an array returned by [`platform_wallet_manager_get_account_balances`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
+    entries: *mut crate::core_wallet_types::AccountBalanceEntryFFI,
+    count: usize,
+) {
+    if !entries.is_null() && count > 0 {
+        let _ = Box::from_raw(std::slice::from_raw_parts_mut(entries, count));
+    }
+}
+
 /// Destroy a PlatformWallet handle.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_destroy(

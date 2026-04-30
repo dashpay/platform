@@ -88,7 +88,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     };
 
     // Create PlatformWalletInfo from the wallet
-    let platform_wallet = PlatformWalletInfo::from_wallet(&wallet);
+    let platform_wallet = PlatformWalletInfo::from_wallet(&wallet, 0);
 
     // Store in handle storage
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     };
 
     // Create PlatformWalletInfo from the wallet
-    let platform_wallet = PlatformWalletInfo::from_wallet(&wallet);
+    let platform_wallet = PlatformWalletInfo::from_wallet(&wallet, 0);
 
     // Store in handle storage
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
