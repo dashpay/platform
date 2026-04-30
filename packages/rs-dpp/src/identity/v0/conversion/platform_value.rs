@@ -96,30 +96,29 @@ mod tests {
         assert_eq!(object, cleaned);
     }
 
-    // frozen: V0 consensus behavior
+    // V0 to_object -> TryFrom<Value> round-trip succeeds.
     //
-    // `IdentityV0::to_object()` (from the `ValueConvertible` derive) serializes through
-    // platform_value's non-human-readable path and encodes `BinaryData` as `Value::Bytes`.
-    // But `platform_value::from_value(...)` produces inner deserializers that default to
-    // `is_human_readable() = true`, so `BinaryData::deserialize` dispatches to its string
-    // visitor and fails on `Value::Bytes`. The direct round-trip therefore does NOT work;
-    // consumers must go through the explicit conversion helpers (JSON path, etc.).
+    // Previously this failed because of an asymmetric `BinaryData::Deserialize`
+    // (string-only in human-readable mode, bytes-only in binary mode), while
+    // `platform_value`'s nested deserializers default to
+    // `is_human_readable() = true` even when the value carries `Value::Bytes`.
+    // The fix in PR #3235 made `BinaryData::Deserialize` symmetric (accepts
+    // both strings and bytes regardless of mode, mirroring `Identifier`).
+    // Bincode `Encode`/`Decode` derives are untouched, so consensus binary
+    // format is unchanged — only the serde platform_value path now round-trips.
     #[test]
-    fn to_object_then_try_from_fails_v0_frozen() {
+    fn to_object_then_try_from_round_trips_v0() {
         let id = sample_with_disabled(Some(9));
         let value = id.to_object().unwrap();
-        let result = IdentityV0::try_from(value);
-        assert!(
-            result.is_err(),
-            "V0 to_object -> TryFrom<Value> round-trip is not expected to succeed"
-        );
+        let back = IdentityV0::try_from(value).expect("v0 round-trip should succeed");
+        assert_eq!(id, back);
     }
 
     #[test]
-    fn try_from_ref_value_fails_on_to_object_output_v0_frozen() {
+    fn try_from_ref_value_round_trips_v0() {
         let id = sample_with_disabled(None);
         let value = id.to_object().unwrap();
-        let result = IdentityV0::try_from(&value);
-        assert!(result.is_err());
+        let back = IdentityV0::try_from(&value).expect("v0 round-trip should succeed");
+        assert_eq!(id, back);
     }
 }

@@ -55,6 +55,9 @@ zip32 = { version = "0.2.0", default-features = false, optional = true }
 rand = "0.8"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Re-enable the SDK with mocks feature for test-only mock builders;
+# the non-test build keeps the leaner default-feature SDK above.
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
 
 # E2E test framework — see `tests/e2e/` for the integration harness
 # that exercises the wallet → SDK → broadcast pipeline against a

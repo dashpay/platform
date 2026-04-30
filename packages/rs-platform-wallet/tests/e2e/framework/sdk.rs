@@ -1,7 +1,9 @@
 //! `dash_sdk::Sdk` construction. [`build_sdk`] wires
 //! [`TrustedHttpContextProvider`] (the SPV-backed alternative is
 //! deferred — Task #15) and resolves DAPI addresses from
-//! [`Config::dapi_addresses`] or the testnet defaults.
+//! [`Config::dapi_addresses`] or — for mainnet/testnet — delegates to
+//! `SdkBuilder::new_testnet()` / `new_mainnet()` (PR #3570 wires those
+//! up against `dash_network_seeds::evo_seeds(network)` upstream).
 //! Provider URL override: `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL`.
 
 use std::num::NonZeroUsize;
@@ -15,15 +17,6 @@ use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use super::config::{parse_network, Config};
 use super::{FrameworkError, FrameworkResult};
 
-/// Default DAPI addresses for testnet — mirrors `tests/spv_sync.rs`
-/// so both binaries hit the same masternodes that support compact
-/// block filters.
-pub const TESTNET_DAPI_ADDRESSES: &[&str] = &[
-    "https://68.67.122.1:1443",
-    "https://68.67.122.2:1443",
-    "https://68.67.122.3:1443",
-];
-
 /// LRU quorum-cache size for [`TrustedHttpContextProvider`].
 const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
 
@@ -31,13 +24,12 @@ const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
 /// (network-builtin URL, or [`Config::trusted_context_url`] override).
 pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
     let network = parse_network(&config.network)?;
-    let address_list = build_address_list(config, network)?;
+    let builder = build_sdk_builder(config, network)?;
 
     let cache_size = NonZeroUsize::new(TRUSTED_CONTEXT_CACHE_SIZE).expect("cache size > 0");
     let context_provider = build_trusted_context_provider(network, config, cache_size)?;
 
-    let sdk = SdkBuilder::new(address_list)
-        .with_network(network)
+    let sdk = builder
         .with_context_provider(context_provider)
         .build()
         .map_err(|e| {
@@ -84,17 +76,21 @@ fn build_trusted_context_provider(
     })
 }
 
-/// Resolve the DAPI [`AddressList`]. Honours
-/// [`Config::dapi_addresses`]; otherwise testnet falls back to
-/// [`TESTNET_DAPI_ADDRESSES`]. Devnet/local without explicit
-/// addresses surfaces an error rather than guessing.
-fn build_address_list(config: &Config, network: Network) -> FrameworkResult<AddressList> {
+/// Pick the right [`SdkBuilder`] constructor based on [`Config::dapi_addresses`]
+/// and `network`. Honours an explicit operator-supplied address list first;
+/// otherwise mainnet/testnet delegate to `SdkBuilder::new_testnet()` /
+/// `new_mainnet()` (PR #3570) which derive their bootstrap list from
+/// `dash_network_seeds::evo_seeds(network)`. Devnet/local without an explicit
+/// address list surfaces an error rather than guessing.
+fn build_sdk_builder(config: &Config, network: Network) -> FrameworkResult<SdkBuilder> {
     if !config.dapi_addresses.is_empty() {
-        return parse_addresses(config.dapi_addresses.iter().map(String::as_str));
+        let addresses = parse_addresses(config.dapi_addresses.iter().map(String::as_str))?;
+        return Ok(SdkBuilder::new(addresses).with_network(network));
     }
 
     match network {
-        Network::Testnet => parse_addresses(TESTNET_DAPI_ADDRESSES.iter().copied()),
+        Network::Testnet => Ok(SdkBuilder::new_testnet()),
+        Network::Mainnet => Ok(SdkBuilder::new_mainnet()),
         other => {
             tracing::error!(
                 target: "platform_wallet::e2e::sdk",
@@ -102,7 +98,7 @@ fn build_address_list(config: &Config, network: Network) -> FrameworkResult<Addr
                 super::config::vars::DAPI_ADDRESSES,
             );
             Err(FrameworkError::NotImplemented(
-                "sdk::build_address_list — no DAPI addresses configured (see logs)",
+                "sdk::build_sdk_builder — no DAPI addresses configured (see logs)",
             ))
         }
     }

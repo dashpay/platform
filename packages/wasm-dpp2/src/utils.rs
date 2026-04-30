@@ -488,17 +488,43 @@ pub fn try_to_fixed_bytes<const N: usize>(
     field_name: &str,
 ) -> WasmDppResult<[u8; N]> {
     let bytes = try_to_bytes(value, field_name)?;
-    if bytes.len() != N {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be exactly {} bytes, got {}",
+    try_vec_to_fixed_bytes(bytes, field_name)
+}
+
+/// Convert an already-extracted `Vec<u8>` into a fixed-size `[u8; N]`, returning
+/// a uniform error when the length doesn't match.
+///
+/// Use this whenever you already hold the bytes (after `try_to_bytes`, after a
+/// hex/base64 decode, after pulling them out of an inner DPP type, etc.) and
+/// need the fixed-size array form.
+pub fn try_vec_to_fixed_bytes<const N: usize>(
+    bytes: Vec<u8>,
+    field_name: &str,
+) -> WasmDppResult<[u8; N]> {
+    bytes.try_into().map_err(|original: Vec<u8>| {
+        WasmDppError::invalid_argument(format!(
+            "{} must be exactly {} bytes, got {}",
             field_name,
             N,
+            original.len()
+        ))
+    })
+}
+
+/// Reject byte-string fields whose length exceeds a sane upper bound, before
+/// they flow into downstream code. Lets us short-circuit DoS-shaped inputs
+/// (e.g. `serde_wasm_bindgen` happily accepting any iterable of u8s and
+/// allocating before any structural check runs).
+pub fn check_max_len(bytes: &[u8], max: usize, field_name: &str) -> WasmDppResult<()> {
+    if bytes.len() > max {
+        return Err(WasmDppError::invalid_argument(format!(
+            "{} must be at most {} bytes, got {}",
+            field_name,
+            max,
             bytes.len()
         )));
     }
-    let mut arr = [0u8; N];
-    arr.copy_from_slice(&bytes);
-    Ok(arr)
+    Ok(())
 }
 
 /// Convert a JS value to u32 with validation.

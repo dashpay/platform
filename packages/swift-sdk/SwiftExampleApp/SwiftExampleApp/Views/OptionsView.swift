@@ -13,6 +13,28 @@ struct OptionsView: View {
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
 
+    // Bind the SPV peer-override settings directly to the same
+    // UserDefaults keys that CoreContentView reads when starting SPV
+    // (`useLocalhostCore`, `localCorePeers`). This re-exposes the
+    // pre-rewrite "connect SPV to a local rust-dashcore" capability on
+    // testnet/mainnet/devnet — regtest still uses the Docker toggle
+    // above, which sets these same keys via AppState.useDockerSetup.
+    @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
+    @AppStorage("localCorePeers") private var customSpvPeers: String = ""
+
+    /// Default localhost peer string for a given network. Used to
+    /// pre-populate the peers text field when the user enables the
+    /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
+    /// so the default must include the network's standard P2P port.
+    private func defaultSpvPeers(for network: AppNetwork) -> String {
+        switch network {
+        case .mainnet: return "127.0.0.1:9999"
+        case .testnet: return "127.0.0.1:19999"
+        case .devnet:  return "127.0.0.1:29999"
+        case .regtest: return "127.0.0.1:19899"
+        }
+    }
+
     var body: some View {
         // `NavigationStack` (iOS 16+) instead of the deprecated
         // `NavigationView`. With `NavigationView`, `NavigationLink`s
@@ -78,6 +100,29 @@ struct OptionsView: View {
                             .font(.system(.body, design: .monospaced))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                        }
+                    } else {
+                        Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
+                            .onChange(of: customSpvPeersEnabled) { _, isOn in
+                                // When enabling, seed the peers field with
+                                // the network's localhost default if the
+                                // user hasn't entered anything (or has the
+                                // legacy port-less "127.0.0.1" the FFI
+                                // would otherwise drop).
+                                if isOn && (customSpvPeers.isEmpty || !customSpvPeers.contains(":")) {
+                                    customSpvPeers = defaultSpvPeers(for: appState.currentNetwork)
+                                }
+                                // Stop SPV so the next start picks up the
+                                // new peer config in CoreContentView.
+                                try? walletManager.stopSpv()
+                            }
+                            .help("Connect Core SPV to specific peers (e.g. a local rust-dashcore) instead of the public seed nodes. Restart SPV from the Wallet tab to apply.")
+
+                        if customSpvPeersEnabled {
+                            TextField(defaultSpvPeers(for: appState.currentNetwork), text: $customSpvPeers)
+                                .font(.system(.body, design: .monospaced))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                         }
                     }
 

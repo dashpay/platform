@@ -79,7 +79,7 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_BANK_MNEMONIC` | yes | — | BIP-39 mnemonic for the bank wallet. This wallet must hold at least `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` credits before the first test runs. |
 | `PLATFORM_WALLET_E2E_NETWORK` | no | `testnet` | Network to connect to: `testnet`, `devnet`, or `local`. |
 | `PLATFORM_WALLET_E2E_DAPI_ADDRESSES` | no | network default | Comma-separated list of DAPI endpoint URLs. Overrides the SDK's built-in seed list for the selected network. |
-| `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `100_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
+| `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `500_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
 | `PLATFORM_WALLET_E2E_WORKDIR` | no | `${TMPDIR}/dash-platform-wallet-e2e` | Base path for the slot-locked working directory. SPV block cache, the test-wallet registry, and SDK state are stored here. |
 | `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for devnet runs and any custom trust anchor. |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
@@ -96,10 +96,10 @@ The bank wallet is loaded from `PLATFORM_WALLET_E2E_BANK_MNEMONIC` on the first 
 If its credit balance is below `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS`, initialization
 panics with a message like:
 
-```
+```text
 Bank wallet under-funded.
   balance : 0 credits
-  required: 100000000 credits
+  required: 500000000 credits
   top up at: yXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 Send testnet platform credits to the address above, then re-run the tests.
@@ -133,11 +133,16 @@ PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." cargo test --test e2e -- --nocapture
 
 The first run takes **60–180 seconds**:
 
-- SPV light-client initializes and syncs the masternode list (~30–60 s on a cold
-  cache; significantly faster on repeat runs when the block cache is warm).
+- The harness installs `TrustedHttpContextProvider` against the configured DAPI
+  endpoints — first-run latency is dominated by the bank wallet's BLAST sync pass,
+  not SPV startup. Cold runs typically finish setup in 5–15 s; subsequent runs in
+  the same workdir slot reuse the SDK / token cache and are faster.
 - The bank wallet runs a BLAST sync pass to discover its credit balances.
 - The startup sweep recovers any wallets left over from previous panicked runs.
-- Each test itself funds a fresh wallet, performs transfers, and tears down.
+- Each test funds a fresh wallet, performs transfers, and tears down.
+
+> If the optional `SpvContextProvider` is wired in (Task #15), expect an
+> additional 30–60 s on cold cache for the masternode-list sync.
 
 Run a single test by appending its name:
 
@@ -193,15 +198,19 @@ the registry so the next run can recover it.
 
 1. Syncs the test wallet's balances.
 2. Transfers any remaining credits back to the bank's primary address.
-3. Waits for the bank to observe the incoming credits (60 s timeout).
-4. Removes the wallet entry from the registry and de-registers it from the manager.
+3. Removes the wallet entry from the registry and de-registers it from the manager.
+
+> Teardown does NOT block waiting for the bank to observe the inbound credits — the
+> sweep transition is broadcast and confirmed by the chain, and the bank wallet
+> re-syncs lazily on its next operation. Tests that immediately follow up with bank
+> ops should call `bank.sync_balances().await` to refresh the cached view.
 
 ### Panic path
 
 If `teardown()` is not called — because the test panicked or returned early — the
 `SetupGuard` `Drop` implementation logs a warning:
 
-```
+```text
 SetupGuard dropped without explicit teardown — wallet <id>
 will be swept on next test process startup
 ```
@@ -222,20 +231,20 @@ corruption from mid-write crashes.
 - **Bank under-funded** — Initialization panics with the bank's receive address and
   the current balance. Top up the printed address from any testnet wallet and re-run.
   The minimum threshold is controlled by `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS`
-  (default 100 000 000 credits).
+  (default 500 000 000 credits).
 
-- **SPV sync timeout** — Startup waits up to 60 seconds for the masternode list to
-  sync. If it times out, testnet peers may be temporarily unreachable. Check network
-  connectivity and try again; the block cache in the workdir slot will make the next
-  attempt faster. Setting `RUST_LOG=debug` shows which peers the SPV client is
-  connecting to.
+- **DAPI / context-provider unreachable** — `TrustedHttpContextProvider` calls fail
+  if the configured DAPI endpoints are unreachable. Check `PLATFORM_WALLET_E2E_DAPI_ADDRESSES`
+  and network connectivity. Setting `RUST_LOG=debug` shows which DAPI nodes are
+  being contacted. (The optional SPV path adds its own ~30–60 s masternode-list
+  sync timeout — only relevant if `SpvContextProvider` is wired in.)
 
 - **Workdir slot exhausted** — If all 10 slots are locked, initialization fails with:
-  `No available workdir slots (tried 0..10)`. This typically means 10+ concurrent
-  processes are running against the same `PLATFORM_WALLET_E2E_WORKDIR` base. Either
-  wait for other processes to finish, remove stale lock files from the slot directories
-  (`rm <workdir>*/.lock`), or set `PLATFORM_WALLET_E2E_WORKDIR` to a distinct path per
-  environment.
+  `no available workdir slots (tried 10 under <path>)`. This typically means 10+
+  concurrent processes are running against the same `PLATFORM_WALLET_E2E_WORKDIR`
+  base. Either wait for other processes to finish, remove stale lock files from
+  the slot directories (`rm <workdir>*/.lock`), or set `PLATFORM_WALLET_E2E_WORKDIR`
+  to a distinct path per environment.
 
 - **Test panicked — registry not cleared** — On the next run, the startup sweep log
   will report `swept N wallets from previous panicked run`. This is expected behavior.
@@ -313,18 +322,18 @@ async fn transfer_between_two_platform_addresses() {
     let s = setup().await.expect("e2e setup failed");
 
     let addr_1 = s.test_wallet.next_unused_address().await.unwrap();
-    s.ctx.bank().fund_address(&addr_1, 50_000_000).await.unwrap();
-    wait_for_balance(&s.test_wallet, &addr_1, 50_000_000, Duration::from_secs(60))
+    s.ctx.bank().fund_address(&addr_1, 100_000_000).await.unwrap();
+    wait_for_balance(&s.test_wallet, &addr_1, 70_000_000, Duration::from_secs(60))
         .await
         .unwrap();
 
     let addr_2 = s.test_wallet.next_unused_address().await.unwrap();
     s.test_wallet
-        .transfer(std::iter::once((addr_2, 10_000_000)).collect())
+        .transfer(std::iter::once((addr_2, 50_000_000)).collect())
         .await
         .unwrap();
 
-    wait_for_balance(&s.test_wallet, &addr_2, 10_000_000, Duration::from_secs(60))
+    wait_for_balance(&s.test_wallet, &addr_2, 1_000_000, Duration::from_secs(60))
         .await
         .unwrap();
 
@@ -334,9 +343,9 @@ async fn transfer_between_two_platform_addresses() {
     let balances = s.test_wallet.balances().await;
     let received = balances.get(&addr_2).copied().unwrap_or(0);
     let remaining = balances.get(&addr_1).copied().unwrap_or(0);
-    let fee = 50_000_000_u64.saturating_sub(received).saturating_sub(remaining);
-    assert_eq!(received, 10_000_000);
-    assert!(fee > 0 && fee < 10_000_000);
+    let fee = 100_000_000_u64.saturating_sub(received).saturating_sub(remaining);
+    assert!(received >= 1_000_000 && received < 50_000_000);
+    assert!(fee > 0 && fee < 50_000_000);
 
     s.teardown().await.expect("teardown failed");
 }

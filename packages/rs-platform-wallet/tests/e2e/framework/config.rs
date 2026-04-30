@@ -25,13 +25,25 @@ pub mod vars {
     /// Optional override for the trusted HTTP context provider URL.
     /// Defaults to the network-builtin endpoint when unset.
     pub const TRUSTED_CONTEXT_URL: &str = "PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL";
+    /// Optional override for the SPV P2P port. Unset falls back to
+    /// the network-default ([`super::default_p2p_port`]).
+    pub const P2P_PORT: &str = "PLATFORM_WALLET_E2E_P2P_PORT";
 }
 
 /// Default minimum bank balance in credits.
-pub const DEFAULT_MIN_BANK_CREDITS: u64 = 100_000_000;
+///
+/// Set at 5x the largest single-run cost (FUNDING_CREDITS=100M + ~15M chain-time
+/// fee ≈ 115M per run) following DET's safety-factor pattern (dash-evo-tool#513).
+/// Keeps the bank covering several consecutive runs even with the fee underestimate
+/// from platform #3040 in play.
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
 
 /// E2E framework configuration.
-#[derive(Debug, Clone)]
+///
+/// The `Debug` impl below is hand-written: a `derive(Debug)` would print
+/// `bank_mnemonic` verbatim, which a stray `tracing::info!("{config:?}")`
+/// or an `expect()` panic could leak into CI logs.
+#[derive(Clone)]
 pub struct Config {
     /// BIP-39 bank mnemonic. Required.
     pub bank_mnemonic: String,
@@ -47,6 +59,27 @@ pub struct Config {
     /// Optional trusted-context-provider URL override. `None` uses
     /// the per-network default; devnet requires this override.
     pub trusted_context_url: Option<String>,
+    /// Optional SPV P2P port override. `None` falls back to
+    /// [`default_p2p_port`] for the active network. Custom-port
+    /// devnets / `local` always require this override (or the
+    /// SPV path skips peer-seeding).
+    pub p2p_port: Option<u16>,
+}
+
+impl std::fmt::Debug for Config {
+    /// Redacts `bank_mnemonic`. Logs and panic backtraces would
+    /// otherwise leak the shared funding seed into CI artifacts.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("bank_mnemonic", &"<redacted>")
+            .field("network", &self.network)
+            .field("dapi_addresses", &self.dapi_addresses)
+            .field("min_bank_credits", &self.min_bank_credits)
+            .field("workdir_base", &self.workdir_base)
+            .field("trusted_context_url", &self.trusted_context_url)
+            .field("p2p_port", &self.p2p_port)
+            .finish()
+    }
 }
 
 impl Default for Config {
@@ -58,6 +91,7 @@ impl Default for Config {
             min_bank_credits: DEFAULT_MIN_BANK_CREDITS,
             workdir_base: default_workdir_base(),
             trusted_context_url: None,
+            p2p_port: None,
         }
     }
 }
@@ -120,6 +154,23 @@ impl Config {
             .map(|raw| raw.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let p2p_port = match std::env::var(vars::P2P_PORT) {
+            Ok(raw) => {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.parse::<u16>().map_err(|err| {
+                        FrameworkError::Config(format!(
+                            "{} = {raw:?} is not a valid u16 port: {err}",
+                            vars::P2P_PORT
+                        ))
+                    })?)
+                }
+            }
+            Err(_) => None,
+        };
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -127,6 +178,7 @@ impl Config {
             min_bank_credits,
             workdir_base,
             trusted_context_url,
+            p2p_port,
         })
     }
 
@@ -144,6 +196,24 @@ impl Config {
 /// before slot-fallback.
 fn default_workdir_base() -> PathBuf {
     std::env::temp_dir().join("dash-platform-wallet-e2e")
+}
+
+/// Network-default SPV P2P port. Mirrors the canonical mainnet (9999)
+/// and testnet (19999) ports. Returns `None` for regtest / devnet —
+/// those have site-specific ports and must be supplied via
+/// [`Config::p2p_port`].
+pub(super) fn default_p2p_port(network: Network) -> Option<u16> {
+    match network {
+        Network::Mainnet => Some(9999),
+        Network::Testnet => Some(19999),
+        _ => None,
+    }
+}
+
+/// Resolve the effective SPV P2P port: explicit [`Config::p2p_port`]
+/// override wins; otherwise fall back to [`default_p2p_port`].
+pub(super) fn effective_p2p_port(config: &Config, network: Network) -> Option<u16> {
+    config.p2p_port.or_else(|| default_p2p_port(network))
 }
 
 /// Parse a network string supporting the canonical dashcore names

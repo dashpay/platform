@@ -20,22 +20,24 @@ use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager
 
 use super::bank::BankWallet;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
-use super::signer::SeedBackedPlatformAddressSigner;
 use super::wallet_factory::TestWallet;
-use super::{FrameworkError, FrameworkResult};
+use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
-/// Minimum sweep amount: skip wallets whose total balance is below
-/// this. Acts as the dust gate so sweeps don't churn the chain for
-/// negligible recoveries; the fee is absorbed from the output via
-/// `ReduceOutput(0)` so no fee-headroom margin is needed here.
-const SWEEP_DUST_THRESHOLD: Credits = 5_000_000;
+/// Sweep gate: a wallet is only swept if its total balance can plausibly
+/// satisfy the protocol's `min_input_amount`. Below that, no input can
+/// pass `address_funds` validation and the broadcast would fail anyway.
+/// Pulled from `PlatformVersion` rather than a hardcoded constant so we
+/// stay in lock-step with whatever the active version dictates.
+fn min_input_amount(version: &PlatformVersion) -> Credits {
+    version.dpp.state_transitions.address_funds.min_input_amount
+}
 
 /// Default per-step timeout for cleanup polls.
 pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Sweep wallets left over from prior (likely panicked) runs.
 /// For each registry entry: reconstruct the wallet, sync, drain to
-/// the bank if above [`SWEEP_DUST_THRESHOLD`], then drop the entry.
+/// the bank if above [`min_input_amount`], then drop the entry.
 /// Per-entry failures mark the entry [`EntryStatus::Failed`] for
 /// next-run retry; the loop never aborts.
 pub async fn sweep_orphans(
@@ -104,16 +106,19 @@ async fn sweep_one(
         .sync_balances(None)
         .await
         .map_err(wallet_err)?;
-    let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
+    let signer = make_platform_signer(&seed_bytes, network)?;
 
+    let platform_version = PlatformVersion::latest();
+    let dust_gate = min_input_amount(platform_version);
     let total = wallet.platform().total_credits().await;
-    if total > SWEEP_DUST_THRESHOLD {
+    if total >= dust_gate {
         sweep_platform_addresses(&wallet, &signer, bank.primary_receive_address()).await?;
     } else {
         tracing::debug!(
             wallet_id = %hex::encode(hash),
             total,
-            "orphan platform total below sweep threshold; skipping"
+            min_input = dust_gate,
+            "orphan platform total below protocol min_input_amount; skipping"
         );
     }
     sweep_identities(&wallet).await?;
@@ -144,14 +149,23 @@ pub async fn teardown_one(
     test_wallet: &TestWallet,
 ) -> FrameworkResult<()> {
     test_wallet.sync_balances().await?;
+    let platform_version = PlatformVersion::latest();
+    let dust_gate = min_input_amount(platform_version);
     let total = test_wallet.total_credits().await;
-    if total > SWEEP_DUST_THRESHOLD {
+    if total >= dust_gate {
         sweep_platform_addresses(
             test_wallet.platform_wallet(),
             test_wallet.address_signer(),
             bank.primary_receive_address(),
         )
         .await?;
+    } else {
+        tracing::debug!(
+            wallet_id = %hex::encode(test_wallet.id()),
+            total,
+            min_input = dust_gate,
+            "test wallet total below protocol min_input_amount; skipping platform sweep"
+        );
     }
     sweep_identities(test_wallet.platform_wallet()).await?;
     sweep_core_addresses(test_wallet.platform_wallet()).await?;

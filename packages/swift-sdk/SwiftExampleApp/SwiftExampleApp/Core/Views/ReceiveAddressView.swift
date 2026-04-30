@@ -34,7 +34,7 @@ struct ReceiveAddressView: View {
 
     /// Lowest-indexed unused external address on the primary BIP44
     /// account. `PersistentCoreAddress` rows are populated by the Rust
-    /// `on_persist_account_addresses_fn` callback at wallet creation
+    /// `on_persist_account_address_pools_fn` callback at wallet creation
     /// (initial gap-limit fill), so they're available without a
     /// runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {
@@ -75,7 +75,7 @@ struct ReceiveAddressView: View {
     private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {
         let walletId = wallet.walletId
         for account in allAccounts {
-            if account.wallet?.walletId != walletId { continue }
+            if account.wallet.walletId != walletId { continue }
             if account.accountType != accountType { continue }
             if account.accountIndex != accountIndex { continue }
             return account

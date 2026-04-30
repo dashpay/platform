@@ -689,7 +689,7 @@ struct CreateIdentityView: View {
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
         allAccounts
             .filter { account in
-                guard account.wallet?.walletId == walletId else { return false }
+                guard account.wallet.walletId == walletId else { return false }
                 guard CreateIdentityView.isFundingAccount(account) else { return false }
                 return CreateIdentityView.accountBalanceSummary(account).hasBalance
             }
@@ -746,7 +746,7 @@ struct CreateIdentityView: View {
 
     private func identityRegistrationAccount(for walletId: Data) -> PersistentAccount? {
         allAccounts.first { account in
-            account.wallet?.walletId == walletId && account.accountType == 2
+            account.wallet.walletId == walletId && account.accountType == 2
         }
     }
 

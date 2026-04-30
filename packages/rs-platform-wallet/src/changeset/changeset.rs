@@ -6,27 +6,33 @@
 //!
 //! # Shape
 //!
-//! `PlatformWalletChangeSet` embeds [`key_wallet::changeset::WalletChangeSet`]
-//! verbatim in its `core` field — that sub-changeset carries every
-//! core-wallet delta (chain, accounts, UTXOs, transactions, balance) in the
-//! BDK-style per-account bucketing defined by key-wallet. Platform-specific
-//! state that doesn't exist in key-wallet lives in dedicated sub-changesets:
-//! identities, contacts, platform addresses, asset locks, and token balances.
+//! `PlatformWalletChangeSet` carries a [`CoreChangeSet`] in its `core`
+//! field — a platform-owned projection of the data that upstream's
+//! `WalletEvent` bus delivers (transaction records + UTXO deltas + heights
+//! + InstantSend locks). Platform-specific state that doesn't exist in
+//! key-wallet lives in dedicated sub-changesets: identities, contacts,
+//! platform addresses, asset locks, and token balances.
 //!
-//! Earlier revisions of this file defined its own `ChainChangeSet`,
-//! `TransactionChangeSet`, `UtxoChangeSet`, and `AccountChangeSet`. Those
-//! were stand-ins from before key-wallet had its own changeset module and
-//! used lossy flattened entries (e.g. `BTreeMap<OutPoint, u64>` for UTXOs,
-//! losing address/script/is_coinbase/confirmation state). They are all
-//! deleted; the `core` field replaces them with native `key-wallet` types.
+//! Earlier revisions of this file used `key_wallet::changeset::WalletChangeSet`
+//! verbatim in the `core` field. That upstream type was deleted in favour
+//! of an event-bus model (see PR #696 in rust-dashcore). Platform-wallet
+//! subscribes to the event bus, projects each event into a `CoreChangeSet`,
+//! and routes it through this changeset's `core` slot — keeping the
+//! per-domain merge / apply shape downstream consumers already know.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
+use dashcore::ephemerealdata::instant_lock::InstantLock;
+use dashcore::Txid;
 
 use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::prelude::AssetLockProof;
-use key_wallet::PlatformP2PKHAddress;
+use key_wallet::account::AccountType;
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::wallet::platform_wallet::WalletId;
 
@@ -46,23 +52,115 @@ use crate::wallet::identity::state::managed_identity::{
 use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
 
 // ---------------------------------------------------------------------------
-// Bridge: key_wallet::changeset::WalletChangeSet -> platform-wallet Merge
+// Core wallet changeset — projection of upstream `WalletEvent` data
 // ---------------------------------------------------------------------------
-//
-// platform-wallet has its own `Merge` trait that is semantically
-// richer than key-wallet's (recursive merge on `BTreeMap<K, V: Merge>`),
-// so we can't just import key-wallet's trait wholesale. This one-off
-// impl delegates to the key-wallet `Merge` implementation that ships
-// with `WalletChangeSet` so that
-// `Option<key_wallet::changeset::WalletChangeSet>` satisfies
-// `crate::changeset::merge::Merge` via the blanket impl.
-impl Merge for key_wallet::changeset::WalletChangeSet {
+
+/// Platform-owned projection of the core-wallet deltas that upstream's
+/// `WalletEvent` bus delivers.
+///
+/// Built by the platform-wallet event adapter from `WalletEvent` variants
+/// emitted by `WalletManager`. Every field is purely additive — the
+/// merge implementation uses last-write-wins for the height watermarks
+/// (monotonic-max), `extend` for the records / utxos vecs, and
+/// last-write-wins for the IS-lock map.
+///
+/// # Why a projection instead of the upstream type
+///
+/// Upstream `key_wallet::changeset::WalletChangeSet` was deleted in favour
+/// of `WalletEvent`. Forking that deleted type would re-introduce the
+/// merge-ordering hazards the upstream PR removed. This projection
+/// captures exactly what the persister needs (records to write, UTXOs to
+/// add/remove, height checkpoints, IS-lock updates) without inheriting
+/// the merge complexity of the deleted upstream type.
+///
+/// Not `PartialEq` — `TransactionRecord` upstream is `Debug + Clone` only,
+/// so structural equality on `records` would require us to fork the
+/// upstream type. Tests that need to inspect a changeset's contents
+/// reach into individual fields directly.
+#[derive(Debug, Clone, Default)]
+pub struct CoreChangeSet {
+    /// Transaction records produced by this batch.
+    ///
+    /// Includes records first stored (`TransactionDetected`,
+    /// `BlockProcessed.inserted`), records whose context advanced
+    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed),
+    /// and coinbase records that crossed the maturity threshold
+    /// (`BlockProcessed.matured`). All persisted; the persister's
+    /// `txid` uniqueness constraint handles dedup on replay.
+    pub records: Vec<TransactionRecord>,
+
+    /// UTXOs to remove — outpoints that records in this batch spent.
+    /// The full `Utxo` is carried (not just `OutPoint`) so a persister
+    /// audit trail / spent-output history can keep the original metadata
+    /// without a follow-up read.
+    pub spent_utxos: Vec<Utxo>,
+
+    /// UTXOs to add — outputs created by records in this batch that pay
+    /// to one of our addresses (i.e. `OutputRole::Received` or
+    /// `OutputRole::Change` per the upstream `TransactionRecord`).
+    pub new_utxos: Vec<Utxo>,
+
+    /// InstantSend locks observed for records that are NOT yet in a
+    /// chain-locked block (i.e. records still in `Mempool`,
+    /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
+    /// is excluded since chain-lock finality already supersedes IS).
+    ///
+    /// Populated from `WalletEvent::TransactionInstantLocked`. The
+    /// persister applies these by looking up the matching record and
+    /// updating its `context` to `TransactionContext::InstantSend(..)`.
+    /// Chain-locked records skip this map entirely — by the time a
+    /// transaction is chain-locked it's final, and IS-lock state is
+    /// no longer informative.
+    pub instant_locks_for_non_final_records: BTreeMap<Txid, InstantLock>,
+
+    /// From `WalletEvent::BlockProcessed.height` — advance the wallet's
+    /// `last_processed_height` to this value. Monotonic-max on merge.
+    pub last_processed_height: Option<u32>,
+
+    /// From `WalletEvent::SyncHeightAdvanced.height` — advance the
+    /// durable filter-batch sync checkpoint to this value. Monotonic-max
+    /// on merge.
+    pub synced_height: Option<u32>,
+}
+
+impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        <Self as key_wallet::changeset::Merge>::merge(self, other)
+        // Records / utxo deltas: append-only. The event adapter never
+        // produces duplicates within a single batch (each event covers
+        // a distinct moment); cross-batch dedup is the persister's
+        // responsibility (txid uniqueness for records, outpoint
+        // uniqueness for utxos).
+        self.records.extend(other.records);
+        self.spent_utxos.extend(other.spent_utxos);
+        self.new_utxos.extend(other.new_utxos);
+
+        // IS-lock map: last-write-wins per txid. A second IS-lock for
+        // the same txid (e.g. a follow-up event re-confirming the lock)
+        // overwrites — the lock object itself is canonical.
+        self.instant_locks_for_non_final_records
+            .extend(other.instant_locks_for_non_final_records);
+
+        // Height watermarks: monotonic-max. A later changeset can only
+        // advance the watermark, never roll it back. `None` means
+        // "no update in this batch".
+        if let Some(h) = other.last_processed_height {
+            self.last_processed_height = Some(
+                self.last_processed_height
+                    .map_or(h, |existing| existing.max(h)),
+            );
+        }
+        if let Some(h) = other.synced_height {
+            self.synced_height = Some(self.synced_height.map_or(h, |existing| existing.max(h)));
+        }
     }
 
     fn is_empty(&self) -> bool {
-        <Self as key_wallet::changeset::Merge>::is_empty(self)
+        self.records.is_empty()
+            && self.spent_utxos.is_empty()
+            && self.new_utxos.is_empty()
+            && self.instant_locks_for_non_final_records.is_empty()
+            && self.last_processed_height.is_none()
+            && self.synced_height.is_none()
     }
 }
 
@@ -602,52 +700,117 @@ impl Merge for AssetLockChangeSet {
 // Token Balances
 // ---------------------------------------------------------------------------
 
-/// Changes to watched Platform token balances.
+/// Per-(identity, token) balance changes emitted by
+/// [`crate::manager::identity_sync::IdentitySyncManager::sync_now`].
 ///
-/// Mirrors `PlatformWalletInfo.token_balances`
-/// (`BTreeMap<(Identifier, Identifier), TokenAmount>`) and
-/// `PlatformWalletInfo.token_watched`
-/// (`BTreeMap<Identifier, BTreeSet<Identifier>>`), plus tombstones for
-/// entries removed by `unwatch` / `unwatch_identity`.
+/// The watch list itself is no longer changeset-replicated — it lives
+/// purely in the manager's in-memory cache. Persistence carries only
+/// the post-sync balance updates and tombstones.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TokenBalanceChangeSet {
     /// Updated token balances keyed by `(identity_id, token_id)`.
     /// Last write wins on merge.
     pub balances: BTreeMap<(Identifier, Identifier), u64>,
 
-    /// Balances removed (`unwatch` / `unwatch_identity` / sync returned `None`).
+    /// Balances removed (sync returned `None`, i.e. the identity no
+    /// longer holds this token on Platform).
     pub removed_balances: BTreeSet<(Identifier, Identifier)>,
-
-    /// Tokens newly watched per identity.
-    /// Merged via set union on the inner `BTreeSet`.
-    pub watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
-
-    /// Tokens unwatched per identity.
-    /// Merged via set union on the inner `BTreeSet`.
-    pub unwatched: BTreeMap<Identifier, BTreeSet<Identifier>>,
 }
 
 impl Merge for TokenBalanceChangeSet {
     fn merge(&mut self, other: Self) {
         self.balances.extend(other.balances);
         self.removed_balances.extend(other.removed_balances);
-        for (identity_id, tokens) in other.watched {
-            self.watched.entry(identity_id).or_default().extend(tokens);
-        }
-        for (identity_id, tokens) in other.unwatched {
-            self.unwatched
-                .entry(identity_id)
-                .or_default()
-                .extend(tokens);
-        }
     }
 
     fn is_empty(&self) -> bool {
-        self.balances.is_empty()
-            && self.removed_balances.is_empty()
-            && self.watched.is_empty()
-            && self.unwatched.is_empty()
+        self.balances.is_empty() && self.removed_balances.is_empty()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet registration metadata + per-account spec / address-pool snapshots
+// ---------------------------------------------------------------------------
+
+/// Per-wallet metadata captured at registration. Carries fields not
+/// derivable from the xpub alone: which network the wallet is bound
+/// to and the birth-height best estimate (the SPV tip at create time;
+/// 0 means "scan from genesis / unknown").
+///
+/// The shape sits on [`PlatformWalletChangeSet`] as
+/// `Option<WalletMetadataEntry>` because the round emits at most one
+/// metadata blob per wallet — last-write-wins covers the rare race
+/// where two registrations fire for the same wallet id.
+///
+/// `Network` does not implement `Default`, so this entry intentionally
+/// only enters the changeset via explicit construction at registration
+/// time; the parent `Option<...>` field stays `None` for every other
+/// flush.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WalletMetadataEntry {
+    /// Network the wallet is bound to.
+    pub network: Network,
+    /// Best estimate of the chain tip at creation time. `0` means
+    /// "scan from genesis / unknown".
+    pub birth_height: u32,
+}
+
+/// One entry per registered account. Captures the per-account xpub
+/// + type so a future load path can rebuild the wallet watch-only
+/// via `Account::from_xpub`. Hardened derivation at the account
+/// level means this is the only way to recover without the
+/// mnemonic.
+///
+/// Carried on [`PlatformWalletChangeSet`] as
+/// `Vec<AccountRegistrationEntry>`. `AccountType` is `PartialEq`
+/// but not `Ord`/`Hash`, so a `BTreeMap` keyed by it isn't possible
+/// without a derived index. In practice each account is emitted
+/// exactly once per registration round, and the apply path runs
+/// these through `Account::from_xpub` which is idempotent on
+/// duplicate `(account_type, xpub)` pairs, so the merge policy
+/// is simple `extend` and dedup is the apply-side caller's
+/// responsibility if it ever matters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountRegistrationEntry {
+    /// The account variant being registered.
+    pub account_type: AccountType,
+    /// Bincode-encoded extended public key for this account.
+    pub account_xpub: ExtendedPubKey,
+}
+
+/// Address-pool snapshot for one `(account_type, pool_type)` pair.
+///
+/// Routed through the changeset rather than a dedicated trait method
+/// so the registration round (metadata + per-account specs +
+/// per-pool snapshots) is one atomic
+/// [`PlatformWalletPersistence::store`](crate::changeset::PlatformWalletPersistence::store)
+/// from the backend's perspective.
+///
+/// **Merge policy** on the parent
+/// [`PlatformWalletChangeSet::account_address_pools`] field is plain
+/// `Vec::extend` — entries are *not* deduplicated by
+/// `(account_type, pool_type)`. The FFI emits whole-pool snapshots,
+/// so a second snapshot for the same key inside one merged round
+/// represents the latest pool state and the apply-time consumer is
+/// expected to treat the last entry per `(account_type, pool_type)`
+/// as authoritative. Mid-round multi-snapshots for the same key are
+/// not produced by any current emitter (snapshots fire at register,
+/// pool extension, and used-flag flip — each on a fresh `store`
+/// round), so this is a forward-looking documentation of intent
+/// rather than a hot path.
+///
+/// Not `PartialEq` — `AddressInfo` upstream is `Debug + Clone` only,
+/// so structural equality on `addresses` would require us to fork
+/// the upstream type. Tests that need to inspect snapshot contents
+/// reach into the `addresses` vec by index instead.
+#[derive(Debug, Clone)]
+pub struct AccountAddressPoolEntry {
+    /// Which account this pool belongs to.
+    pub account_type: AccountType,
+    /// Pool variant (External / Internal / Absent / AbsentHardened).
+    pub pool_type: AddressPoolType,
+    /// Snapshot of every `AddressInfo` entry in the pool at emit time.
+    pub addresses: Vec<AddressInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -656,20 +819,23 @@ impl Merge for TokenBalanceChangeSet {
 
 /// Delta of all wallet state changes from a single operation.
 ///
-/// `core` carries the full `key_wallet::changeset::WalletChangeSet` — chain,
-/// balance, account_keys, and per-account buckets (UTXOs, transactions,
-/// addresses used, highest-used index). Platform-specific deltas (identities,
-/// contacts, platform addresses, asset locks, token balances) live in
-/// dedicated sub-changesets.
+/// `core` carries a [`CoreChangeSet`] — the platform-owned projection of
+/// `WalletEvent` data delivered by upstream's event bus (records, UTXO
+/// deltas, height checkpoints, IS-lock updates). Platform-specific deltas
+/// (identities, contacts, platform addresses, asset locks, token balances)
+/// live in dedicated sub-changesets.
 ///
 /// Composed of optional sub-changesets — `None` means no change in that
 /// area. Use [`Merge::merge`] to combine multiple deltas before persisting.
-#[derive(Debug, Clone, Default, PartialEq)]
+///
+/// Not `PartialEq` because [`CoreChangeSet`] isn't (its `records` carry
+/// `TransactionRecord`, which is `Debug + Clone` only upstream).
+#[derive(Debug, Clone, Default)]
 pub struct PlatformWalletChangeSet {
-    /// Core wallet state from key-wallet: chain, balance, account keys,
-    /// and per-account buckets (UTXOs, transactions, addresses used,
-    /// highest-used index).
-    pub core: Option<key_wallet::changeset::WalletChangeSet>,
+    /// Core-wallet deltas projected from upstream `WalletEvent`s:
+    /// transaction records, UTXO add/remove, height checkpoints, IS-lock
+    /// updates for non-final records.
+    pub core: Option<CoreChangeSet>,
     /// Identity changes (registered, updated).
     pub identities: Option<IdentityChangeSet>,
     /// Identity key changes (public keys + private-key storage) keyed
@@ -697,6 +863,18 @@ pub struct PlatformWalletChangeSet {
     /// semantics as `dashpay_profiles` — extends existing payment maps
     /// via `BTreeMap::extend` (last-write-wins per tx_id).
     pub dashpay_payments_overlay: Option<BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
+    /// Per-wallet metadata emitted once at registration. See
+    /// [`WalletMetadataEntry`] for the merge policy.
+    pub wallet_metadata: Option<WalletMetadataEntry>,
+    /// Per-account registration entries emitted at registration / on
+    /// later `add_account` calls. See [`AccountRegistrationEntry`] for
+    /// the merge policy (plain `Vec::extend`, dedup is the apply-side
+    /// caller's job).
+    pub account_registrations: Vec<AccountRegistrationEntry>,
+    /// Address-pool snapshots emitted at wallet create (initial
+    /// gap-limit population) and on any pool extension / "used" flip.
+    /// See [`AccountAddressPoolEntry`] for the merge policy.
+    pub account_address_pools: Vec<AccountAddressPoolEntry>,
 }
 
 impl From<PlatformAddressChangeSet> for PlatformWalletChangeSet {
@@ -755,9 +933,8 @@ impl From<TokenBalanceChangeSet> for PlatformWalletChangeSet {
 
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
-        // `key_wallet::changeset::WalletChangeSet` implements `Merge`
-        // itself; delegate via the `Option<T>: Merge` blanket impl from
-        // this crate's merge module.
+        // `CoreChangeSet` implements `Merge`; delegate via the
+        // `Option<T>: Merge` blanket impl from this crate's merge module.
         self.core.merge(other.core);
         self.identities.merge(other.identities);
         self.identity_keys.merge(other.identity_keys);
@@ -779,6 +956,21 @@ impl Merge for PlatformWalletChangeSet {
                 target.entry(id).or_default().extend(payments);
             }
         }
+        // Wallet metadata: last-write-wins. `Network` doesn't
+        // implement `Default`, so we can't lean on the `Option<T>:
+        // Merge` blanket impl (which requires `T: Merge: Default`);
+        // instead, `Some(other) -> overwrite`, `None -> keep current`.
+        if let Some(meta) = other.wallet_metadata {
+            self.wallet_metadata = Some(meta);
+        }
+        // Per-account specs and address-pool snapshots: append-only.
+        // See the type docstrings for the rationale (registration
+        // round emits each key once; snapshots are whole-pool, so
+        // duplicate keys within one merged round are a no-op).
+        self.account_registrations
+            .extend(other.account_registrations);
+        self.account_address_pools
+            .extend(other.account_address_pools);
     }
 
     fn is_empty(&self) -> bool {
@@ -794,6 +986,9 @@ impl Merge for PlatformWalletChangeSet {
                 .dashpay_payments_overlay
                 .as_ref()
                 .is_none_or(|m| m.is_empty())
+            && self.wallet_metadata.is_none()
+            && self.account_registrations.is_empty()
+            && self.account_address_pools.is_empty()
     }
 }
 
@@ -847,23 +1042,22 @@ mod tests {
 
         let mut a = TokenBalanceChangeSet::default();
         a.balances.insert((identity_a, token_x), 100);
-        a.watched.entry(identity_a).or_default().insert(token_x);
+        a.removed_balances.insert((identity_a, token_y));
 
         let mut b = TokenBalanceChangeSet::default();
-        // Same identity/token — last-write-wins.
+        // Same identity/token — last-write-wins on balances.
         b.balances.insert((identity_a, token_x), 200);
-        // New token on same identity — merged into the watched set.
-        b.watched.entry(identity_a).or_default().insert(token_y);
         // New identity.
         b.balances.insert((identity_b, token_x), 50);
+        // Tombstone propagates as set union.
+        b.removed_balances.insert((identity_b, token_y));
 
         a.merge(b);
 
         assert_eq!(a.balances.get(&(identity_a, token_x)), Some(&200));
         assert_eq!(a.balances.get(&(identity_b, token_x)), Some(&50));
-        let watched_a = a.watched.get(&identity_a).unwrap();
-        assert!(watched_a.contains(&token_x));
-        assert!(watched_a.contains(&token_y));
+        assert!(a.removed_balances.contains(&(identity_a, token_y)));
+        assert!(a.removed_balances.contains(&(identity_b, token_y)));
     }
 
     #[test]

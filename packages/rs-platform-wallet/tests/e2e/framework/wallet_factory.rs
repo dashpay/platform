@@ -28,14 +28,14 @@ use platform_wallet::{
 use rand::rngs::OsRng;
 use rand::RngCore;
 
+use simple_signer::signer::SimpleSigner;
+
 use super::harness::E2eContext;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
-use super::signer::{
-    derive_identity_key, SeedBackedIdentitySigner, SeedBackedPlatformAddressSigner,
-};
+use super::signer::{derive_identity_key, SeedBackedIdentitySigner};
 use super::wait::wait_for_identity_balance;
 use super::wait_hub::WaitEventHub;
-use super::{FrameworkError, FrameworkResult};
+use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// DIP-17 default PlatformPayment account spec — pinned to
 /// `PlatformPaymentAccountSpec` field defaults so a struct-shape change
@@ -63,7 +63,7 @@ fn default_platform_payment_account_key() -> PlatformPaymentAccountKey {
 pub struct TestWallet {
     seed_bytes: [u8; 64],
     pub(crate) wallet: Arc<PlatformWallet>,
-    signer: SeedBackedPlatformAddressSigner,
+    signer: SimpleSigner,
     /// Cloned from the [`E2eContext`]; backs
     /// [`super::wait::wait_for_balance`].
     wait_hub: Arc<WaitEventHub>,
@@ -103,7 +103,7 @@ impl TestWallet {
         // Force the lazy platform-address init now so test code
         // doesn't see a surprise first-use latency hit.
         wallet.platform().initialize().await;
-        let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
+        let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             seed_bytes,
             wallet,
@@ -131,7 +131,8 @@ impl TestWallet {
 
     /// Seed-backed address signer used by `transfer`; tests that
     /// broadcast transitions via the SDK directly can pass it in.
-    pub fn address_signer(&self) -> &SeedBackedPlatformAddressSigner {
+    /// Implements `Signer<PlatformAddress>` directly.
+    pub fn address_signer(&self) -> &SimpleSigner {
         &self.signer
     }
 

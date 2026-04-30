@@ -93,6 +93,8 @@ impl JsonSafeFields for crate::block::epoch::Epoch {}
 impl JsonSafeFields for crate::identity::identity_public_key::IdentityPublicKey {}
 impl JsonSafeFields for crate::identity::state_transition::asset_lock_proof::AssetLockProof {}
 impl JsonSafeFields for crate::address_funds::PlatformAddress {}
+impl JsonSafeFields for crate::address_funds::AddressFundsFeeStrategy {}
+impl JsonSafeFields for crate::address_funds::AddressWitness {}
 impl JsonSafeFields for crate::withdrawal::Pooling {}
 impl JsonSafeFields for crate::identity::core_script::CoreScript {}
 impl JsonSafeFields for crate::voting::votes::Vote {}

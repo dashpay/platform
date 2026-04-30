@@ -10,7 +10,7 @@
 //! (surfaced through tracing; no testable state change).
 
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
-use platform_wallet::platform_address_sync::PlatformAddressSyncSummary;
+use platform_wallet::PlatformAddressSyncSummary;
 use tokio::sync::futures::Notified;
 use tokio::sync::Notify;
 

@@ -2,9 +2,12 @@
 //! owned by the same test wallet.
 //!
 //! Runs by default (no `#[ignore]`). Operator setup lives in
-//! `tests/.env` (template: `tests/.env.example`); a missing
-//! `PLATFORM_WALLET_E2E_BANK_MNEMONIC` panics with an actionable
-//! "top up bank at <address>" message.
+//! `tests/.env` (template: `tests/.env.example`). A missing
+//! `PLATFORM_WALLET_E2E_BANK_MNEMONIC` surfaces as a
+//! [`FrameworkError::Bank`](crate::framework::FrameworkError::Bank)
+//! during context init; an under-funded bank wallet panics with the
+//! README's "top up at <address>" pointer so operators get an
+//! actionable target.
 //!
 //! ```bash
 //! cp packages/rs-platform-wallet/tests/.env.example \
@@ -18,11 +21,40 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 
-/// Initial credits the bank funds onto `addr_1`.
-const FUNDING_CREDITS: u64 = 50_000_000;
+// Sized to dodge platform #3040 — AddressFundsTransferTransition's
+// `calculate_min_required_fee` returns the static
+// `state_transition_min_fees` floor (~6.5M for 1in/1out) but Drive's
+// chain-time fee includes storage + processing costs that scale with
+// the operation set (~14.94M empirically for the same shape). With
+// `[ReduceOutput(0)]`, `output[0]` absorbs the fee at chain time;
+// if it's smaller than the realistic fee the broadcast fails with
+// `AddressesNotEnoughFundsError`. Picking output amounts well above
+// the empirical chain-time ceiling sidesteps the bug until #3040
+// lands at the dpp layer.
 
-/// Credits self-transferred from `addr_1` to `addr_2`.
-const TRANSFER_CREDITS: u64 = 10_000_000;
+/// Gross credits the bank submits when funding `addr_1`. The bank
+/// uses `[ReduceOutput(0)]`, so addr_1 actually receives
+/// `FUNDING_CREDITS − bank_fee`. Sized well above the chain-time
+/// fee (~15M empirically) so addr_1 retains enough headroom to
+/// fund the test's own self-transfer (see #3040 comment above).
+const FUNDING_CREDITS: u64 = 100_000_000;
+
+/// Lower bound on what addr_1 must receive after the bank's fee
+/// deduction before the test proceeds. Pinned well below the raw
+/// gross so the wait isn't sensitive to fee fluctuations across
+/// protocol versions.
+const FUNDING_FLOOR: u64 = 70_000_000;
+
+/// Gross credits the test wallet submits in its self-transfer to
+/// `addr_2`. Same `[ReduceOutput(0)]` semantics — addr_2 receives
+/// `TRANSFER_CREDITS − transfer_fee`. Sized well above the
+/// empirical chain-time fee (~15M) to avoid #3040.
+const TRANSFER_CREDITS: u64 = 50_000_000;
+
+/// Lower bound on what addr_2 must receive before the assertions
+/// run. A non-zero floor prevents an empty observation from
+/// passing the wait.
+const TRANSFER_FLOOR: u64 = 1_000_000;
 
 /// Per-step deadline for balance observations.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -54,7 +86,9 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .expect("bank.fund_address");
 
-    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_CREDITS, STEP_TIMEOUT)
+    // Bank uses `[ReduceOutput(0)]`, so addr_1 receives
+    // `FUNDING_CREDITS − bank_fee`. Wait on the post-fee floor.
+    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
         .await
         .expect("addr_1 funding never observed");
 
@@ -74,13 +108,15 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .expect("self-transfer");
 
-    wait_for_balance(&s.test_wallet, &addr_2, TRANSFER_CREDITS, STEP_TIMEOUT)
+    // addr_2 receives `TRANSFER_CREDITS − transfer_fee` (also
+    // `[ReduceOutput(0)]`). Wait on the post-fee floor.
+    wait_for_balance(&s.test_wallet, &addr_2, TRANSFER_FLOOR, STEP_TIMEOUT)
         .await
         .expect("addr_2 transfer never observed");
 
     // Re-sync so the cached view reflects post-transfer state across
-    // BOTH addresses; derive fee from the balance delta since the
-    // wallet exposes no `fee_paid` accessor.
+    // BOTH addresses, then derive bank- and transfer-fee shares from
+    // observed balances.
     s.test_wallet
         .sync_balances()
         .await
@@ -88,9 +124,17 @@ async fn transfer_between_two_platform_addresses() {
     let balances = s.test_wallet.balances().await;
     let received = balances.get(&addr_2).copied().unwrap_or(0);
     let remaining = balances.get(&addr_1).copied().unwrap_or(0);
-    let fee = FUNDING_CREDITS
-        .saturating_sub(received)
-        .saturating_sub(remaining);
+    let observed_total = received.saturating_add(remaining);
+    // Bank's `ReduceOutput(0)` charged its fee against addr_1's
+    // funding output: the wallet's total post-transfer is
+    // `FUNDING_CREDITS − bank_fee − transfer_fee`. Each fee is the
+    // amount each ReduceOutput step trimmed off its respective
+    // output; together they equal `FUNDING_CREDITS − observed_total`.
+    let total_fees = FUNDING_CREDITS.saturating_sub(observed_total);
+    // The transfer fee is the share TRANSFER_CREDITS lost while
+    // crossing addr_1 -> addr_2.
+    let transfer_fee = TRANSFER_CREDITS.saturating_sub(received);
+    let bank_fee = total_fees.saturating_sub(transfer_fee);
     tracing::info!(
         target: "platform_wallet::e2e::cases::transfer",
         ?addr_1,
@@ -98,21 +142,31 @@ async fn transfer_between_two_platform_addresses() {
         funded = FUNDING_CREDITS,
         received,
         remaining,
-        fee,
+        bank_fee,
+        transfer_fee,
         "post-transfer balance snapshot"
     );
 
-    assert_eq!(
-        received, TRANSFER_CREDITS,
-        "addr_2 must hold exactly the transferred amount"
+    assert!(
+        received >= TRANSFER_FLOOR,
+        "addr_2 must hold at least TRANSFER_FLOOR ({TRANSFER_FLOOR}); observed {received}"
     );
     assert!(
-        fee > 0,
-        "transfer must charge a non-zero fee (received={received}, remaining={remaining})"
+        received < TRANSFER_CREDITS,
+        "addr_2 must hold less than TRANSFER_CREDITS ({TRANSFER_CREDITS}) \
+         after `ReduceOutput(0)` fee deduction; observed {received}"
     );
     assert!(
-        fee < TRANSFER_CREDITS,
-        "fee implausibly high: {fee} >= TRANSFER_CREDITS ({TRANSFER_CREDITS})"
+        transfer_fee > 0,
+        "self-transfer must charge a non-zero fee (received={received})"
+    );
+    assert!(
+        transfer_fee < TRANSFER_CREDITS,
+        "transfer fee implausibly high: {transfer_fee} >= TRANSFER_CREDITS ({TRANSFER_CREDITS})"
+    );
+    assert!(
+        bank_fee > 0,
+        "bank funding must charge a non-zero fee (observed_total={observed_total})"
     );
 
     s.teardown().await.expect("teardown");

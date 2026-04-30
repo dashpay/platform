@@ -218,7 +218,7 @@ impl PlatformAddressWallet {
 
         let address = managed_account
             .addresses
-            .next_unused(&key_source)
+            .next_unused(&key_source, true)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
 
         PlatformAddress::try_from(address).map_err(|e| {

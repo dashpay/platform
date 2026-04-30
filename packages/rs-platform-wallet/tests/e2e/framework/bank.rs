@@ -11,11 +11,9 @@ use std::sync::Arc;
 
 use bip39::Mnemonic as Bip39Mnemonic;
 use dpp::address_funds::PlatformAddress;
-use dpp::dashcore::secp256k1::{PublicKey, Secp256k1};
 use dpp::fee::Credits;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
-use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
 use key_wallet::{AccountType, ChildNumber, Network};
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
@@ -24,12 +22,13 @@ use platform_wallet::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 
+use simple_signer::signer::SimpleSigner;
+
 use super::config::{parse_network, Config};
-use super::signer::SeedBackedPlatformAddressSigner;
 use super::wallet_factory::{
     default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB,
 };
-use super::{FrameworkError, FrameworkResult};
+use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
 /// `bank.fund_address` calls so nonces don't race.
@@ -40,7 +39,7 @@ static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
 /// `FUNDING_MUTEX` invariant lives in one place.
 pub struct BankWallet {
     wallet: Arc<PlatformWallet>,
-    signer: SeedBackedPlatformAddressSigner,
+    signer: SimpleSigner,
     /// Cached for under-funded panic messages and log breadcrumbs.
     primary_receive_address: PlatformAddress,
 }
@@ -101,12 +100,13 @@ impl BankWallet {
         // run. `next_unused_receive_address` would otherwise advance past
         // index 0 once it gets marked used, accumulating empty addresses.
         let primary_receive_address = derive_platform_address_at_index(
-            &seed_bytes,
+            &wallet,
             network,
             DEFAULT_ACCOUNT_INDEX_PUB,
             DEFAULT_KEY_CLASS_PUB,
             0,
-        )?;
+        )
+        .await?;
 
         let total = wallet.platform().total_credits().await;
         if total < config.min_bank_credits {
@@ -126,7 +126,7 @@ impl BankWallet {
             );
         }
 
-        let signer = SeedBackedPlatformAddressSigner::new(&seed_bytes, network)?;
+        let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             wallet,
             signer,
@@ -203,22 +203,22 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
 }
 
-/// Derive the DIP-17 platform-payment address at `index` from `seed`
-/// using path `m/9'/coin_type'/17'/account'/key_class'/index`.
+/// Derive the DIP-17 platform-payment address at `index` from the
+/// already-loaded `PlatformWallet`, using path
+/// `m/9'/coin_type'/17'/account'/key_class'/index`.
 ///
 /// Bank-only helper: lets us pin the bank's sweep target to index 0
 /// without going through the address pool's "next unused" cursor.
-fn derive_platform_address_at_index(
-    seed_bytes: &[u8; 64],
+/// Routes through [`key_wallet::Wallet::derive_public_key`] on the live
+/// wallet rather than re-running BIP-32 from raw seed bytes — keeps a
+/// single derivation surface.
+async fn derive_platform_address_at_index(
+    wallet: &Arc<PlatformWallet>,
     network: Network,
     account: u32,
     key_class: u32,
     index: u32,
 ) -> FrameworkResult<PlatformAddress> {
-    let root_priv = RootExtendedPrivKey::new_master(seed_bytes)
-        .map_err(|err| FrameworkError::Bank(format!("seed -> root xpriv: {err}")))?;
-    let root_xpriv = root_priv.to_extended_priv_key(network);
-
     let account_path = AccountType::PlatformPayment { account, key_class }
         .derivation_path(network)
         .map_err(|err| FrameworkError::Bank(format!("DIP-17 account path: {err}")))?;
@@ -226,11 +226,14 @@ fn derive_platform_address_at_index(
         .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
     let leaf_path = account_path.extend([leaf]);
 
-    let secp = Secp256k1::new();
-    let xpriv = root_xpriv
-        .derive_priv(&secp, &leaf_path)
-        .map_err(|err| FrameworkError::Bank(format!("derive_priv at index {index}: {err}")))?;
-    let pubkey = PublicKey::from_secret_key(&secp, &xpriv.private_key);
+    let pubkey = wallet
+        .state()
+        .await
+        .wallet()
+        .derive_public_key(&leaf_path)
+        .map_err(|err| {
+            FrameworkError::Bank(format!("derive_public_key at index {index}: {err}"))
+        })?;
     let pkh = ripemd160_sha256(&pubkey.serialize());
     Ok(PlatformAddress::P2pkh(pkh))
 }

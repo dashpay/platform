@@ -681,6 +681,21 @@ fn select_inputs_reduce_output(
 
     // Phase 4: ReduceOutput(0) takes the fee from output 0 at chain
     // time; verify the chosen output 0 has enough to absorb it.
+    //
+    // KNOWN BUG — platform #3040: `estimate_fee_for_inputs_pub` returns
+    // `AddressFundsTransferTransition::estimate_min_fee`, which models only
+    // the static `state_transition_min_fees` floor. The chain-time fee
+    // includes storage + processing costs that scale with the actual
+    // operation set; for 1in/1out we've seen ~6.5M static vs ~14.94M
+    // real, leaving the auto-selector to greenlight a transition that
+    // then fails on-chain with `AddressesNotEnoughFundsError`.
+    //
+    // Until #3040 is fixed at the dpp layer, callers with small `output[0]`
+    // (where `output[0]` >= static estimate but < chain-time fee) should
+    // prefer `[DeductFromInput(0)]` so any shortfall comes out of an input
+    // rather than the absorbing output. The Phase 4 check below remains as
+    // the static lower-bound gate; it cannot reject the chain-time-only
+    // failure mode.
     let estimated_fee = estimate_fee_for_inputs_pub(
         selected.len(),
         output_count,
