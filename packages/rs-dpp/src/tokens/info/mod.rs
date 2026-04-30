@@ -109,4 +109,39 @@ mod tests {
     }
 }
 
-// TODO(unification pass 2): add round-trip tests for identitytokeninfo — needs explicit fixture (no Default).
+// (TODO replaced) identitytokeninfo — needs explicit fixture (no Default).
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_identitytokeninfo {
+    use super::*;
+    use crate::tokens::info::v0::IdentityTokenInfoV0;
+
+    fn fixture() -> IdentityTokenInfo {
+        IdentityTokenInfo::V0(IdentityTokenInfoV0 { frozen: true })
+    }
+
+    fn assert_v0_fields(t: &IdentityTokenInfo) {
+        let IdentityTokenInfo::V0(rec) = t;
+        assert!(rec.frozen, "frozen");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = IdentityTokenInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = IdentityTokenInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}

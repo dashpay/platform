@@ -638,6 +638,7 @@ Tracking real round-trip failures discovered while running the new test conventi
 | Type | Test | Failure | Severity |
 |---|---|---|---|
 | `AddressFundingFromAssetLockTransition` (V0) | `value_round_trip_with_per_property_assertions` | `from_object: ValueError(SerdeDeserializationError("invalid type: map, expected an OutPoint"))` — `OutPoint` inside `ChainAssetLockProof` cannot deserialize from `platform_value::Value::Map`. JSON round-trip works. | 🟠 platform_value path broken for OutPoint-bearing types |
+| `ExtendedBlockInfo` (V0) | `value_round_trip_with_per_property_assertions` | `from_object: ValueError(SerdeDeserializationError("Invalid symbol 17, offset 0"))` — `signature: [u8;96]` with custom serializer fails to round-trip via `platform_value`. JSON round-trip works. | 🟠 platform_value path broken for [u8;N>32] custom-serde fields |
 
 These are marked `#[ignore = "..."]` in the test files and tracked here for pass-3 fix work.
 

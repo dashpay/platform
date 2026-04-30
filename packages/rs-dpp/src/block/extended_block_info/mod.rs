@@ -177,4 +177,54 @@ mod tests {
     }
 }
 
-// TODO(unification pass 2): add round-trip tests for extendedblockinfo — needs explicit fixture (no Default).
+// (TODO replaced) extendedblockinfo — needs explicit fixture (no Default).
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_extendedblockinfo {
+    use super::*;
+    use crate::block::block_info::BlockInfo;
+    use crate::block::extended_block_info::v0::ExtendedBlockInfoV0;
+
+    fn fixture() -> ExtendedBlockInfo {
+        ExtendedBlockInfo::V0(ExtendedBlockInfoV0 {
+            basic_info: BlockInfo::default(),
+            app_hash: [0x11; 32],
+            quorum_hash: [0x22; 32],
+            block_id_hash: [0x33; 32],
+            proposer_pro_tx_hash: [0x44; 32],
+            signature: [0x55; 96],
+            round: 3,
+        })
+    }
+
+    fn assert_v0_fields(t: &ExtendedBlockInfo) {
+        let ExtendedBlockInfo::V0(rec) = t;
+        assert_eq!(rec.app_hash, [0x11; 32], "app_hash");
+        assert_eq!(rec.quorum_hash, [0x22; 32], "quorum_hash");
+        assert_eq!(rec.block_id_hash, [0x33; 32], "block_id_hash");
+        assert_eq!(rec.proposer_pro_tx_hash, [0x44; 32], "proposer_pro_tx_hash");
+        assert_eq!(rec.signature, [0x55; 96], "signature");
+        assert_eq!(rec.round, 3, "round");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ExtendedBlockInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    #[ignore = "BUG: signature [u8;96] with custom serializer fails to deserialize via platform_value (\"Invalid symbol 17, offset 0\"). JSON round-trip works. Track for pass-3 fix."]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = ExtendedBlockInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}

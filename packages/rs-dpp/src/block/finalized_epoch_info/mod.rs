@@ -116,4 +116,67 @@ mod tests {
     }
 }
 
-// TODO(unification pass 2): add round-trip tests for finalizedepochinfo — needs explicit fixture (no Default).
+// (TODO replaced) finalizedepochinfo — needs explicit fixture (no Default).
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_finalizedepochinfo {
+    use super::*;
+    use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> FinalizedEpochInfo {
+        let mut block_proposers = BTreeMap::new();
+        block_proposers.insert(Identifier::new([0xab; 32]), 5u64);
+        FinalizedEpochInfo::V0(FinalizedEpochInfoV0 {
+            first_block_time: 1_700_000_000_000,
+            first_block_height: 100,
+            total_blocks_in_epoch: 250,
+            first_core_block_height: 50,
+            next_epoch_start_core_block_height: 75,
+            total_processing_fees: 1_000_000,
+            total_distributed_storage_fees: 200_000,
+            total_created_storage_fees: 250_000,
+            core_block_rewards: 500_000,
+            block_proposers,
+            fee_multiplier_permille: 1500,
+            protocol_version: 9,
+        })
+    }
+
+    fn assert_v0_fields(t: &FinalizedEpochInfo) {
+        let FinalizedEpochInfo::V0(rec) = t;
+        assert_eq!(rec.first_block_time, 1_700_000_000_000, "first_block_time");
+        assert_eq!(rec.first_block_height, 100, "first_block_height");
+        assert_eq!(rec.total_blocks_in_epoch, 250, "total_blocks_in_epoch");
+        assert_eq!(rec.first_core_block_height, 50, "first_core_block_height");
+        assert_eq!(rec.next_epoch_start_core_block_height, 75, "next_epoch_start_core_block_height");
+        assert_eq!(rec.total_processing_fees, 1_000_000, "total_processing_fees");
+        assert_eq!(rec.total_distributed_storage_fees, 200_000, "total_distributed_storage_fees");
+        assert_eq!(rec.total_created_storage_fees, 250_000, "total_created_storage_fees");
+        assert_eq!(rec.core_block_rewards, 500_000, "core_block_rewards");
+        assert_eq!(rec.block_proposers.len(), 1, "block_proposers count");
+        assert_eq!(rec.fee_multiplier_permille, 1500, "fee_multiplier_permille");
+        assert_eq!(rec.protocol_version, 9, "protocol_version");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = FinalizedEpochInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = FinalizedEpochInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}

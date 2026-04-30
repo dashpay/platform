@@ -76,4 +76,39 @@ mod tests {
     }
 }
 
-// TODO(unification pass 2): add round-trip tests for tokenstatus — needs explicit fixture (no Default).
+// (TODO replaced) tokenstatus — needs explicit fixture (no Default).
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_tokenstatus {
+    use super::*;
+    use crate::tokens::status::v0::TokenStatusV0;
+
+    fn fixture() -> TokenStatus {
+        TokenStatus::V0(TokenStatusV0 { paused: true })
+    }
+
+    fn assert_v0_fields(t: &TokenStatus) {
+        let TokenStatus::V0(rec) = t;
+        assert!(rec.paused, "paused");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = TokenStatus::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = TokenStatus::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}

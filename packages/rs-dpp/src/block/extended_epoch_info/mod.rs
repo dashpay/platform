@@ -122,4 +122,51 @@ mod tests {
     }
 }
 
-// TODO(unification pass 2): add round-trip tests for extendedepochinfo — needs explicit fixture (no Default).
+// (TODO replaced) extendedepochinfo — needs explicit fixture (no Default).
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_extendedepochinfo {
+    use super::*;
+    use crate::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+
+    fn fixture() -> ExtendedEpochInfo {
+        ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
+            index: 7,
+            first_block_time: 1_700_000_000_000,
+            first_block_height: 100,
+            first_core_block_height: 50,
+            fee_multiplier_permille: 1500,
+            protocol_version: 9,
+        })
+    }
+
+    fn assert_v0_fields(t: &ExtendedEpochInfo) {
+        let ExtendedEpochInfo::V0(rec) = t;
+        assert_eq!(rec.index, 7, "index");
+        assert_eq!(rec.first_block_time, 1_700_000_000_000, "first_block_time");
+        assert_eq!(rec.first_block_height, 100, "first_block_height");
+        assert_eq!(rec.first_core_block_height, 50, "first_core_block_height");
+        assert_eq!(rec.fee_multiplier_permille, 1500, "fee_multiplier_permille");
+        assert_eq!(rec.protocol_version, 9, "protocol_version");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ExtendedEpochInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = ExtendedEpochInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}
