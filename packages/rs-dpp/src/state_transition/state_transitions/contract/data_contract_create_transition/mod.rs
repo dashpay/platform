@@ -431,7 +431,63 @@ mod test {
     }
 }
 
-// TODO(unification pass 3): add fixture for DataContract*Transition — needs
-// access to DataContractInSerializationFormatV0 which is `pub(in crate::data_contract)`.
-// Either expose a fixture helper from rs-dpp::tests::fixtures, or use 
-// TryFromPlatformVersioned<DataContract>::try_from_platform_versioned to build it.
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::state_transition::data_contract_create_transition::v0::DataContractCreateTransitionV0;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_value::BinaryData;
+    use platform_version::version::PlatformVersion;
+    use platform_version::TryFromPlatformVersioned;
+
+    fn fixture() -> DataContractCreateTransition {
+        let pv = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, pv.protocol_version);
+        let data_contract = created.data_contract().clone();
+        let mut v0 = DataContractCreateTransitionV0::try_from_platform_versioned(data_contract, pv)
+            .expect("v0 from contract");
+        v0.identity_nonce = 5;
+        v0.user_fee_increase = 3;
+        v0.signature_public_key_id = 1;
+        v0.signature = BinaryData::new(vec![0xab; 65]);
+        DataContractCreateTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &DataContractCreateTransition) {
+        let DataContractCreateTransition::V0(rec) = t;
+        assert_eq!(rec.identity_nonce, 5, "identity_nonce");
+        assert_eq!(rec.user_fee_increase, 3, "user_fee_increase");
+        assert_eq!(rec.signature_public_key_id, 1, "signature_public_key_id");
+        assert_eq!(rec.signature, BinaryData::new(vec![0xab; 65]), "signature");
+    }
+
+    #[test]
+    #[ignore = "BUG: DataContract document_schemas lose sized integer types via JSON round-trip (U32(63) -> U64(63), I32(0) -> U64(0)). platform_value preserves sized ints; serde_json has only one Number. Critical-1 manifestation. Value round-trip works."]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+        let recovered =
+            <DataContractCreateTransition as JsonConvertible>::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = JsonConvertible::to_json(&fixture()).expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = ValueConvertible::to_object(&original).expect("to_object");
+        let recovered =
+            <DataContractCreateTransition as ValueConvertible>::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+}

@@ -675,6 +675,8 @@ Tracking real round-trip failures discovered while running the new test conventi
 |---|---|---|---|
 | `AddressFundingFromAssetLockTransition` (V0) | `value_round_trip_with_per_property_assertions` | `from_object: ValueError(SerdeDeserializationError("invalid type: map, expected an OutPoint"))` — `OutPoint` inside `ChainAssetLockProof` cannot deserialize from `platform_value::Value::Map`. JSON round-trip works. | 🟠 platform_value path broken for OutPoint-bearing types |
 | `ExtendedBlockInfo` (V0) | `value_round_trip_with_per_property_assertions` | `from_object: ValueError(SerdeDeserializationError("Invalid symbol 17, offset 0"))` — `signature: [u8;96]` with custom serializer fails to round-trip via `platform_value`. JSON round-trip works. | 🟠 platform_value path broken for [u8;N>32] custom-serde fields |
+| `DataContractCreateTransition`, `DataContractUpdateTransition` | `json_round_trip_with_per_property_assertions` | `document_schemas` lose sized integer types via JSON round-trip: `U32(63)` becomes `U64(63)`, `I32(0)` becomes `U64(0)`. `platform_value::Value` preserves sized integer variants; `serde_json::Value` has only one `Number` type, so the distinction is lost. Value round-trip works. | 🟠 Critical-1 manifestation; affects any DataContract embedded in a state transition |
+| 5 shielded transitions | `value_round_trip` | Same `[u8;N]` custom-serde bug as ExtendedBlockInfo (binding_signature, anchor, action fields). JSON works. | 🟠 platform_value [u8;N] |
 
 These are marked `#[ignore = "..."]` in the test files and tracked here for pass-3 fix work.
 
