@@ -227,24 +227,56 @@ mod json_convertible_tests {
     use super::*;
 
     fn fixture() -> TokenPaymentInfo {
-        TokenPaymentInfo::V0(TokenPaymentInfoV0::default())
+        TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+            payment_token_contract_id: Some(Identifier::new([0x99; 32])),
+            token_contract_position: 3,
+            minimum_token_cost: Some(100),
+            maximum_token_cost: Some(1_000),
+            gas_fees_paid_by: GasFeesPaidBy::ContractOwner,
+        })
+    }
+
+    fn assert_v0_fields(t: &TokenPaymentInfo) {
+        let TokenPaymentInfo::V0(rec) = t;
+        assert_eq!(
+            rec.payment_token_contract_id,
+            Some(Identifier::new([0x99; 32])),
+            "payment_token_contract_id"
+        );
+        assert_eq!(rec.token_contract_position, 3, "token_contract_position");
+        assert_eq!(rec.minimum_token_cost, Some(100), "minimum_token_cost");
+        assert_eq!(rec.maximum_token_cost, Some(1_000), "maximum_token_cost");
+        assert_eq!(
+            rec.gas_fees_paid_by,
+            GasFeesPaidBy::ContractOwner,
+            "gas_fees_paid_by"
+        );
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenPaymentInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenPaymentInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
     }
 }
