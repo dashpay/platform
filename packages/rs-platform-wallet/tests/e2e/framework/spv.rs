@@ -11,10 +11,11 @@
 //! and emit info-level progress logs every
 //! [`PROGRESS_LOG_INTERVAL`] for debuggability.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dash_sdk::dapi_client::AddressList;
 use dash_spv::client::config::MempoolStrategy;
 use dash_spv::sync::{ProgressPercentage, SyncState};
 use dash_spv::types::ValidationMode;
@@ -22,11 +23,8 @@ use dash_spv::ClientConfig;
 use dashcore::Network;
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
 
-use super::config::{parse_network, Config};
+use super::config::{effective_p2p_port, parse_network, Config};
 use super::{FrameworkError, FrameworkResult};
-
-/// P2P port for testnet seed peers (matches `tests/spv_sync.rs`).
-const TESTNET_P2P_PORT: u16 = 19999;
 
 /// Polling interval for [`wait_for_mn_list_synced`].
 const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -44,15 +42,22 @@ const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(30);
 /// `config.workdir_base.join("spv-data")`. Returns the same handle
 /// as [`PlatformWalletManager::spv_arc`]; shut it down via
 /// [`SpvRuntime::stop`].
+///
+/// `address_list` is the SDK's live DAPI address list (typically
+/// `sdk.address_list()`). P2P peers are seeded from those same
+/// IPs with the effective P2P port — keeping a single source of
+/// truth instead of forking from `dash_network_seeds` and risking
+/// drift between SDK-tracked and SPV-tracked endpoints.
 pub async fn start_spv<P>(
     manager: &Arc<PlatformWalletManager<P>>,
     config: &Config,
+    address_list: &AddressList,
 ) -> FrameworkResult<Arc<SpvRuntime>>
 where
     P: PlatformWalletPersistence + 'static,
 {
     let spv = manager.spv_arc();
-    let client_config = build_client_config(config)?;
+    let client_config = build_client_config(config, address_list)?;
 
     spv.spawn_in_background(client_config);
     tracing::info!(
@@ -198,10 +203,14 @@ fn log_pipeline_snapshot(
 
 /// Build the SPV [`ClientConfig`] for `config.network`. Storage
 /// under `<workdir>/spv-data`, full validation, bloom-filter
-/// mempool tracking, and (testnet only) hard-coded DAPI peers as
-/// P2P seeds — mirrors `tests/spv_sync.rs` to skip DNS-discovered
-/// peers that lack compact-block-filter support.
-fn build_client_config(config: &Config) -> FrameworkResult<ClientConfig> {
+/// mempool tracking, and DAPI peers (extracted from `address_list`)
+/// seeded with the effective P2P port — sticks to the SDK's live
+/// endpoints to skip DNS-discovered peers that lack compact-block-filter
+/// support.
+fn build_client_config(
+    config: &Config,
+    address_list: &AddressList,
+) -> FrameworkResult<ClientConfig> {
     let network = parse_network(&config.network)?;
 
     let storage_path = config.workdir_base.join("spv-data");
@@ -222,7 +231,7 @@ fn build_client_config(config: &Config) -> FrameworkResult<ClientConfig> {
         .with_start_height(0)
         .with_mempool_tracking(MempoolStrategy::BloomFilter);
 
-    seed_p2p_peers(&mut client_config, config, network);
+    seed_p2p_peers(&mut client_config, config, network, address_list);
 
     client_config.validate().map_err(|e| {
         tracing::error!(
@@ -237,34 +246,42 @@ fn build_client_config(config: &Config) -> FrameworkResult<ClientConfig> {
     Ok(client_config)
 }
 
-/// Seed the SPV config with testnet P2P peers. Operator-supplied DAPI
-/// URLs are parsed for their IPs (host string only); otherwise the
-/// peer list is derived from `dash_network_seeds::evo_seeds(Testnet)`.
-/// Hostnames that aren't bare IPs fall through to the SPV's own DNS
-/// discovery.
-fn seed_p2p_peers(client_config: &mut ClientConfig, config: &Config, network: Network) {
-    if !matches!(network, Network::Testnet) {
+/// Seed the SPV `ClientConfig` with P2P peers derived from the SDK's
+/// live `AddressList`. Each address contributes its host IP paired
+/// with the effective P2P port ([`Config::p2p_port`] override, or the
+/// network-default mainnet 9999 / testnet 19999). Non-IP hostnames
+/// (which `address.uri().host()` can return for DNS targets) fall
+/// through to the SPV's own DNS discovery rather than being added as
+/// numeric peers.
+///
+/// If the active network has neither an override port nor a known
+/// default (regtest / devnet), no peers are seeded — the operator
+/// must supply `PLATFORM_WALLET_E2E_P2P_PORT` for those.
+fn seed_p2p_peers(
+    client_config: &mut ClientConfig,
+    config: &Config,
+    network: Network,
+    address_list: &AddressList,
+) {
+    let Some(port) = effective_p2p_port(config, network) else {
+        tracing::debug!(
+            target: "platform_wallet::e2e::spv",
+            ?network,
+            "no SPV P2P port configured (neither {} nor a known network default); \
+             skipping peer seeding — SPV will fall back to DNS discovery",
+            super::config::vars::P2P_PORT,
+        );
         return;
-    }
+    };
 
-    if !config.dapi_addresses.is_empty() {
-        for addr in &config.dapi_addresses {
-            let host = addr
-                .strip_prefix("https://")
-                .or_else(|| addr.strip_prefix("http://"))
-                .unwrap_or(addr.as_str());
-            let host_only = host.split(':').next().unwrap_or(host);
-            if let Ok(ip) = host_only.parse::<IpAddr>() {
-                client_config.add_peer(std::net::SocketAddr::new(ip, TESTNET_P2P_PORT));
-            }
+    for address in address_list.get_live_addresses() {
+        let Some(host) = address.uri().host() else {
+            continue;
+        };
+        // SPV's `add_peer` takes a numeric `SocketAddr`; non-IP hosts
+        // (DNS names) are left for the SPV client's discovery loop.
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            client_config.add_peer(SocketAddr::new(ip, port));
         }
-        return;
-    }
-
-    for seed in dash_network_seeds::evo_seeds(network) {
-        client_config.add_peer(std::net::SocketAddr::new(
-            seed.address.ip(),
-            TESTNET_P2P_PORT,
-        ));
     }
 }

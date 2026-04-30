@@ -58,12 +58,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
-# P2P seed source for the e2e harness's optional SPV path — backs
-# `framework/spv.rs::seed_p2p_peers` with `evo_seeds(Testnet)` IPs.
-# `framework/sdk.rs` itself goes through `SdkBuilder::new_testnet()`
-# (PR #3570) and doesn't need this dep, but the SPV runtime takes
-# raw `SocketAddr`s and there's no `SdkBuilder`-equivalent helper.
-dash-network-seeds = { workspace = true }
 
 # E2E test framework — see `tests/e2e/` for the integration harness
 # that exercises the wallet → SDK → broadcast pipeline against a
