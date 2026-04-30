@@ -8,10 +8,34 @@
 | Pass | Goal | Status |
 |---|---|---|
 | 1 | Add `JsonConvertible` / `ValueConvertible` impls to ~80 types | ✅ done — `cargo check` passes |
-| 2 | Add round-trip tests; fix bugs that surface | ⏳ in progress |
+| 2 | Add round-trip tests; fix bugs that surface | ⏳ in progress (49/~80 tests, 3 ignored, 1 real bug surfaced) |
 | 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ⬜ not started |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
+
+### Pass-2 test status (2026-04-30)
+
+**On new convention (non-default fixture + per-property assertion)** — 17 types:
+- 5 address transitions (`Identity{Create,TopUp,CreditTransferTo}FromAddresses`, `Address{FundingFromAssetLock,FundsTransfer,CreditWithdrawal}Transition`)
+- `Identity`, `IdentityPublicKey`, `TokenContractInfo`, `TokenPaymentInfo`, `Pooling` (each variant)
+- `BatchTransition`, `Document` (default fixture for now), `GroupStateTransitionInfo`, `DocumentPatch`
+- `TokenEmergencyAction`, `GasFeesPaidBy`, `YesNoAbstainVoteChoice` (each-variant)
+- `AssetLockProof` (passes via `Default` impl)
+
+**Bugs surfaced** — 1 (logged in §10b):
+- `AddressFundingFromAssetLockTransition` value round-trip fails on `OutPoint` deserialization.
+
+**Tests `#[ignore]`** — 3:
+- `StateTransition::json_round_trip` and `value_round_trip` (untagged enum, known fragile per plan §10).
+- `AddressFundingFromAssetLockTransition::value_round_trip` (OutPoint bug above).
+
+**Remaining work in pass 2** (no rs-dpp-side tests yet, or still using Default fixture):
+- 19 batch sub-transitions: `DocumentCreate/Replace/Delete/Transfer/Purchase/UpdatePrice/BaseTransition`, `Token{Base,Burn,Mint,Transfer,Freeze,Unfreeze,DestroyFrozenFunds,EmergencyAction,ConfigUpdate,Claim,DirectPurchase,SetPriceForDirectPurchase}Transition`.
+- 5 shielded transitions: `Shield`, `Unshield`, `ShieldedTransfer`, `ShieldFromAssetLock`, `ShieldedWithdrawal`Transition.
+- 14 state-transition outer enums (already tested in pass 1 inventory but no canonical-trait tests yet): `IdentityCreateTransition`, `IdentityUpdateTransition`, `IdentityTopUpTransition`, `IdentityCreditWithdrawalTransition`, `IdentityCreditTransferTransition`, `MasternodeVoteTransition`, `IdentityPublicKeyInCreation`, `DataContractCreateTransition`, `DataContractUpdateTransition`, …
+- ~30 leaf types: `TokenConfigurationChangeItem`, `TokenDistributionInfo`, `TokenDistributionTypeWithResolvedRecipient`, `DistributionFunction`, `RewardDistributionType`, `ArrayItemType`, `OrderBy`, `ContestedIndexResolution`, `ContestedIndexFieldMatch`, `ContestedIndexInformation`, `Index`, `IndexProperty`, `StorageKeyRequirements`, `SerializedAction`, `Epoch`, `StateTransitionProofResult`, `AddressFundsFeeStrategyStep`, `AddressWitness`, `PlatformAddress`, `DataContractInSerializationFormat`, `DataContractConfig`, `TokenKeepsHistoryRules`, `TokenPreProgrammedDistribution`, `TokenPerpetualDistribution`, `TokenMarketplaceRules`, `TokenDistributionRules`, `Validator`, `ValidatorSet`, `AssetLockValue`, `StoredAssetLockInfo`, `IdentityTokenInfo`, `TokenStatus`, `Vote`, `ResourceVote`, `VotePoll`, `ResourceVoteChoice`, `ContenderWithSerializedDocument`, `ContestedDocumentResourceVotePoll`, `ContestedDocumentVotePollWinnerInfo`, `ChainAssetLockProof`, `InstantAssetLockProof`, `ContractBoundSpecification`, `Group`, `BlockInfo`, `ExtendedBlockInfo`, `ExtendedEpochInfo`, `FinalizedEpochInfo`, `ChangeControlRules`, `TokenConfigurationConvention`, `TokenConfigurationLocalization`, `TokenConfiguration`, `GroupActionEvent`, `GroupAction` (no Default), `TokenEvent`, `Document` (Default fixture, needs explicit), `IdentityV0` (Default fixture, redundant with Identity), `ExtendedDocument` (known broken per Critical-3), `StateTransition` (untagged, ignored).
+
+**Pass-2 cost estimate**: each new test takes ~5-10 minutes to write (inspect fields → construct fixture → write assertion helper). At ~80 remaining types, this is **~10-15 hours of focused work**.
 
 **Crate policy** —
 - `packages/wasm-dpp` (legacy) — **scheduled for removal but not now**. Apply *minimum-changes-to-compile* rule: don't migrate its non-canonical call sites; don't add new functionality; only patch what's needed to keep it building when rs-dpp internals shift. Critical features must keep working; cosmetic regressions are acceptable.
