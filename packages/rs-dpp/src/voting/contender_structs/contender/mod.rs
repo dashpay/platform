@@ -456,3 +456,30 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_contender_with_serialized_document {
+    use super::*;
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = ContenderWithSerializedDocument::V0(
+            ContenderWithSerializedDocumentV0::default(),
+        );
+        let json = original.to_json().expect("to_json");
+        let recovered = ContenderWithSerializedDocument::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = ContenderWithSerializedDocument::V0(
+            ContenderWithSerializedDocumentV0::default(),
+        );
+        let value = original.to_object().expect("to_object");
+        let recovered = ContenderWithSerializedDocument::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
