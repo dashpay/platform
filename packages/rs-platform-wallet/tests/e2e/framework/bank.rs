@@ -99,9 +99,14 @@ impl BankWallet {
         // so the same address absorbs sweep-back funds across every test
         // run. `next_unused_receive_address` would otherwise advance past
         // index 0 once it gets marked used, accumulating empty addresses.
-        let primary_receive_address =
-            derive_platform_address_at_index(&wallet, network, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB, 0)
-                .await?;
+        let primary_receive_address = derive_platform_address_at_index(
+            &wallet,
+            network,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            DEFAULT_KEY_CLASS_PUB,
+            0,
+        )
+        .await?;
 
         let total = wallet.platform().total_credits().await;
         if total < config.min_bank_credits {
@@ -226,7 +231,9 @@ async fn derive_platform_address_at_index(
         .await
         .wallet()
         .derive_public_key(&leaf_path)
-        .map_err(|err| FrameworkError::Bank(format!("derive_public_key at index {index}: {err}")))?;
+        .map_err(|err| {
+            FrameworkError::Bank(format!("derive_public_key at index {index}: {err}"))
+        })?;
     let pkh = ripemd160_sha256(&pubkey.serialize());
     Ok(PlatformAddress::P2pkh(pkh))
 }

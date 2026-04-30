@@ -4,6 +4,7 @@
 //! the slot's lifetime — dropping it releases the lock.
 
 use std::fs::{self, File, OpenOptions};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
@@ -47,7 +48,12 @@ pub fn pick_available_workdir(base: &Path) -> FrameworkResult<(PathBuf, File)> {
                 );
                 return Ok((dir, lock_file));
             }
-            Err(err) => {
+            // `WouldBlock` is the only "slot is held by another
+            // process" outcome. Anything else (permission denied,
+            // unsupported filesystem, EIO, etc.) is propagated so
+            // operators see the real cause instead of a misleading
+            // "no available workdir slots" message after the loop.
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {
                 tracing::debug!(
                     target: "platform_wallet::e2e::workdir",
                     slot,
@@ -58,6 +64,13 @@ pub fn pick_available_workdir(base: &Path) -> FrameworkResult<(PathBuf, File)> {
                 // Dropping `lock_file` here releases the would-be
                 // lock without affecting the existing holder.
                 continue;
+            }
+            Err(err) => {
+                return Err(FrameworkError::Io(format!(
+                    "locking {} failed (kind={:?}): {err}",
+                    lock_path.display(),
+                    err.kind()
+                )));
             }
         }
     }

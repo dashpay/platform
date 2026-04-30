@@ -25,14 +25,17 @@ use super::{FrameworkError, FrameworkResult};
 pub type WalletSeedHash = [u8; 32];
 
 /// Lifecycle status of a registry entry. `Active` is steady state;
-/// `Sweeping` is set transiently so a second process knows the
-/// wallet is already being handled; `Failed` flags a sweep error
-/// for next-startup retry.
+/// `Failed` flags a sweep error for next-startup retry.
+///
+/// A transient `Sweeping` state was considered for cross-process
+/// progress signalling but isn't wired up — the per-slot workdir
+/// lock already serialises the only writer that touches a given
+/// registry path, so a second process never sees an in-flight sweep
+/// from a peer. If we ever share a slot we'll need to add it back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum EntryStatus {
     #[default]
     Active,
-    Sweeping,
     Failed,
 }
 
@@ -128,9 +131,10 @@ impl PersistentTestWalletRegistry {
         atomic_write_json(&self.path, &snapshot)
     }
 
-    /// Snapshot of all entries (Active / Failed / Sweeping). A
-    /// `Sweeping` entry indicates a previous process crashed
-    /// mid-sweep, so the new process picks it up.
+    /// Snapshot of all entries (Active / Failed). The startup sweep
+    /// reconstructs each wallet, attempts to drain its credits, and
+    /// drops the entry on success; a transient sweep failure flips
+    /// the entry to `Failed` so the next run retries.
     pub fn list_orphans(&self) -> Vec<(WalletSeedHash, RegistryEntry)> {
         self.state
             .lock()

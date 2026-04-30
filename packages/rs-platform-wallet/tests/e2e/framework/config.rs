@@ -31,7 +31,11 @@ pub mod vars {
 pub const DEFAULT_MIN_BANK_CREDITS: u64 = 100_000_000;
 
 /// E2E framework configuration.
-#[derive(Debug, Clone)]
+///
+/// The `Debug` impl below is hand-written: a `derive(Debug)` would print
+/// `bank_mnemonic` verbatim, which a stray `tracing::info!("{config:?}")`
+/// or an `expect()` panic could leak into CI logs.
+#[derive(Clone)]
 pub struct Config {
     /// BIP-39 bank mnemonic. Required.
     pub bank_mnemonic: String,
@@ -47,6 +51,21 @@ pub struct Config {
     /// Optional trusted-context-provider URL override. `None` uses
     /// the per-network default; devnet requires this override.
     pub trusted_context_url: Option<String>,
+}
+
+impl std::fmt::Debug for Config {
+    /// Redacts `bank_mnemonic`. Logs and panic backtraces would
+    /// otherwise leak the shared funding seed into CI artifacts.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("bank_mnemonic", &"<redacted>")
+            .field("network", &self.network)
+            .field("dapi_addresses", &self.dapi_addresses)
+            .field("min_bank_credits", &self.min_bank_credits)
+            .field("workdir_base", &self.workdir_base)
+            .field("trusted_context_url", &self.trusted_context_url)
+            .finish()
+    }
 }
 
 impl Default for Config {
