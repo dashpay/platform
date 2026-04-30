@@ -554,7 +554,17 @@ After every round-trip test, **each field of the recovered value must be asserte
 - u64/i64 fields silently truncated through f64 due to a missing `#[serde(with = "json_safe_u64")]`.
 - Identifier formatting that makes equality look right while underlying bytes differ.
 
-**Fixture rule**: never use `T::default()` for any field that you expect to preserve. Default values match silently-dropped fields and weaken the test. Use **distinguishable non-zero values** for every field: `Identifier::new([0x42; 32])`, `12345u64`, `"alice".to_string()`, `vec![1, 2, 3]`, etc. If a real fixture is impractical for some type (e.g. `InstantLock` requires a valid Dash Core lock), mark the test `#[ignore = "needs explicit fixture"]` rather than weakening to defaults.
+**Fixture rule**: never use `T::default()` for any field that you expect to preserve. Default values match silently-dropped fields and weaken the test. Use **distinguishable non-zero values** for every field: `Identifier::new([0x42; 32])`, `12345u64`, `"alice".to_string()`, `vec![1, 2, 3]`, etc.
+
+**Fixture sources**, in priority order:
+1. **Hand-built struct literals** with non-default values per field — preferred for domain types (`Identifier::new([0x42; 32])`, `BinaryData::new(vec![0xab; 33])`, explicit enum variants like `KeyType::ECDSA_SECP256K1`).
+2. **`random_*` constructors** — many dpp types expose helpers like `IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng`, `Document::random_document`, etc. Seed an RNG (`rand::rngs::StdRng::seed_from_u64(42)`) for determinism.
+3. **`from_*` factory methods** — e.g. `CoreScript::from_bytes(...)`, `OutPoint::from_str(...)`.
+4. **Test fixture modules** under `packages/rs-dpp/src/tests/fixtures/` for shared, reusable instances.
+
+**Default::default() is only acceptable** when the type is a flat unit-only enum (where each variant is the entire fixture) or when the test wraps an enum with multiple discriminating variants and per-variant testing covers the field shape. For struct fixtures with field-level data, **always** use a hand-built or `random_*`-built fixture.
+
+If no path is practical (e.g. `InstantLock` needs a valid Dash Core lock with chain context), mark `#[ignore = "needs ..."]` rather than weakening to defaults — but try every other path first.
 
 Example for a tagged enum with multiple fields:
 
