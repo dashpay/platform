@@ -120,3 +120,42 @@ impl ValidatorV0Setters for Validator {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::core_types::validator::v0::ValidatorV0;
+    use dashcore::hashes::Hash;
+    use dashcore::{ProTxHash, PubkeyHash};
+
+    fn fixture() -> Validator {
+        Validator::V0(ValidatorV0 {
+            pro_tx_hash: ProTxHash::from_byte_array([0x11; 32]),
+            public_key: None,
+            node_ip: "127.0.0.1".to_string(),
+            node_id: PubkeyHash::from_byte_array([0x22; 20]),
+            core_port: 9999,
+            platform_http_port: 443,
+            platform_p2p_port: 26656,
+            is_banned: false,
+        })
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = Validator::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Validator::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
