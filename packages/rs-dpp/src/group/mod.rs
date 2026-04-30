@@ -69,21 +69,37 @@ pub struct GroupStateTransitionResolvedInfo {
 mod json_convertible_tests_groupstatetransitioninfo {
     use super::*;
 
-    #[test]
-    fn json_round_trip_groupstatetransitioninfo() {
-        use crate::serialization::JsonConvertible;
-        let original = GroupStateTransitionInfo::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = GroupStateTransitionInfo::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    fn fixture() -> GroupStateTransitionInfo {
+        GroupStateTransitionInfo {
+            group_contract_position: 5,
+            action_id: Identifier::new([0x33; 32]),
+            action_is_proposer: true,
+        }
+    }
+
+    fn assert_fields(g: &GroupStateTransitionInfo) {
+        assert_eq!(g.group_contract_position, 5, "group_contract_position");
+        assert_eq!(g.action_id, Identifier::new([0x33; 32]), "action_id");
+        assert!(g.action_is_proposer, "action_is_proposer");
     }
 
     #[test]
-    fn value_round_trip_groupstatetransitioninfo() {
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = GroupStateTransitionInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
-        let original = GroupStateTransitionInfo::default();
+        let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = GroupStateTransitionInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_fields(&recovered);
     }
 }
