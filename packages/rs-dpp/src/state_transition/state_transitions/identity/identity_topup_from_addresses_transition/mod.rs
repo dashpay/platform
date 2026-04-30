@@ -94,21 +94,63 @@ impl StateTransitionFieldTypes for IdentityTopUpFromAddressesTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "serde-conversion"))]
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+    use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+    use platform_value::{BinaryData, Identifier};
+    use std::collections::BTreeMap;
 
     fn fixture() -> IdentityTopUpFromAddressesTransition {
-        IdentityTopUpFromAddressesTransition::V0(IdentityTopUpFromAddressesTransitionV0::default())
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0x44; 20]), (9u32, 750_000u64));
+
+        let v0 = IdentityTopUpFromAddressesTransitionV0 {
+            inputs,
+            output: Some((PlatformAddress::P2sh([0x55; 20]), 100_000)),
+            identity_id: Identifier::new([0x66; 32]),
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 7,
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0x77; 65]),
+            }],
+        };
+        IdentityTopUpFromAddressesTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &IdentityTopUpFromAddressesTransition) {
+        let IdentityTopUpFromAddressesTransition::V0(rec) = t;
+        assert_eq!(rec.inputs.len(), 1, "inputs count");
+        assert_eq!(
+            rec.output,
+            Some((PlatformAddress::P2sh([0x55; 20]), 100_000)),
+            "output"
+        );
+        assert_eq!(rec.identity_id, Identifier::new([0x66; 32]), "identity_id");
+        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy");
+        assert_eq!(rec.user_fee_increase, 7, "user_fee_increase");
+        assert_eq!(rec.input_witnesses.len(), 1, "input_witnesses");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered =
             IdentityTopUpFromAddressesTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered =
+            IdentityTopUpFromAddressesTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]

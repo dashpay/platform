@@ -101,23 +101,58 @@ impl StateTransitionFieldTypes for IdentityCreditTransferToAddressesTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "serde-conversion"))]
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::address_funds::PlatformAddress;
+    use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+    use platform_value::{BinaryData, Identifier};
+    use std::collections::BTreeMap;
 
     fn fixture() -> IdentityCreditTransferToAddressesTransition {
-        IdentityCreditTransferToAddressesTransition::V0(
-            IdentityCreditTransferToAddressesTransitionV0::default(),
-        )
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([0x88; 20]), 50_000u64);
+        recipient_addresses.insert(PlatformAddress::P2sh([0x99; 20]), 25_000u64);
+
+        let v0 = IdentityCreditTransferToAddressesTransitionV0 {
+            identity_id: Identifier::new([0xaa; 32]),
+            recipient_addresses,
+            nonce: 13,
+            user_fee_increase: 5,
+            signature_public_key_id: 2,
+            signature: BinaryData::new(vec![0xbb; 65]),
+        };
+        IdentityCreditTransferToAddressesTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &IdentityCreditTransferToAddressesTransition) {
+        let IdentityCreditTransferToAddressesTransition::V0(rec) = t;
+        assert_eq!(rec.identity_id, Identifier::new([0xaa; 32]), "identity_id");
+        assert_eq!(rec.recipient_addresses.len(), 2, "recipient_addresses count");
+        assert_eq!(rec.nonce, 13, "nonce");
+        assert_eq!(rec.user_fee_increase, 5, "user_fee_increase");
+        assert_eq!(rec.signature_public_key_id, 2, "signature_public_key_id");
+        assert_eq!(rec.signature, BinaryData::new(vec![0xbb; 65]), "signature");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered =
             IdentityCreditTransferToAddressesTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered =
+            IdentityCreditTransferToAddressesTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
