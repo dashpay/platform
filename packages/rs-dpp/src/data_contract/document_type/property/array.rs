@@ -630,3 +630,11 @@ mod tests {
         assert_eq!(val, Value::Text("not a number".to_string()));
     }
 }
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ArrayItemType {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ArrayItemType {}
+

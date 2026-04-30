@@ -750,3 +750,11 @@ mod tests {
         assert!(dbg.contains("ManualMinting"));
     }
 }
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenConfigurationChangeItem {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenConfigurationChangeItem {}
+

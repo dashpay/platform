@@ -19,3 +19,9 @@ pub struct DocumentPatch {
     #[serde(rename = "$updatedAt")]
     pub updated_at: Option<TimestampMillis>,
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentPatch {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentPatch {}

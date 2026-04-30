@@ -107,6 +107,12 @@ pub enum TokenPaymentInfo {
     V0(TokenPaymentInfoV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenPaymentInfo {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenPaymentInfo {}
+
 impl TokenPaymentInfoMethodsV0 for TokenPaymentInfo {}
 
 impl TokenPaymentInfoAccessorsV0 for TokenPaymentInfo {

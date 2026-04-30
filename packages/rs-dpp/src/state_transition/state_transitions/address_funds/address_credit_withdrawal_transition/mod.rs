@@ -1,3 +1,7 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
 
 pub mod accessors;
@@ -81,6 +85,12 @@ impl AddressCreditWithdrawalTransition {
         }
     }
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl JsonConvertible for AddressCreditWithdrawalTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl ValueConvertible for AddressCreditWithdrawalTransition {}
 
 impl StateTransitionFieldTypes for AddressCreditWithdrawalTransition {
     fn signature_property_paths() -> Vec<&'static str> {

@@ -15,6 +15,12 @@ pub enum TokenEmergencyActionTransition {
     V0(TokenEmergencyActionTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenEmergencyActionTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenEmergencyActionTransition {}
+
 impl Default for TokenEmergencyActionTransition {
     fn default() -> Self {
         TokenEmergencyActionTransition::V0(TokenEmergencyActionTransitionV0::default())

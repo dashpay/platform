@@ -28,6 +28,12 @@ pub enum AssetLockValue {
     V0(AssetLockValueV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for AssetLockValue {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for AssetLockValue {}
+
 impl AssetLockValue {
     pub fn new(
         initial_credit_value: Credits,

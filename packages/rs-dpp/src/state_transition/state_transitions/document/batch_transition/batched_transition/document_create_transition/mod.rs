@@ -24,6 +24,12 @@ pub enum DocumentCreateTransition {
     V0(DocumentCreateTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentCreateTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentCreateTransition {}
+
 impl Default for DocumentCreateTransition {
     fn default() -> Self {
         DocumentCreateTransition::V0(DocumentCreateTransitionV0::default()) // since only v0

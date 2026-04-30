@@ -88,6 +88,12 @@ impl Default for AssetLockProof {
     }
 }
 
+#[cfg(feature = "json-conversion")]
+impl crate::serialization::JsonConvertible for AssetLockProof {}
+
+#[cfg(feature = "value-conversion")]
+impl crate::serialization::ValueConvertible for AssetLockProof {}
+
 impl AsRef<AssetLockProof> for AssetLockProof {
     fn as_ref(&self) -> &AssetLockProof {
         self

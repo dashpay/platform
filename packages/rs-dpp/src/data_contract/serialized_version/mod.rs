@@ -12,6 +12,8 @@ use crate::data_contract::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -96,6 +98,10 @@ impl fmt::Display for DataContractMismatch {
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
+)]
+#[cfg_attr(
+    all(feature = "value-conversion", feature = "serde-conversion"),
+    derive(ValueConvertible)
 )]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(

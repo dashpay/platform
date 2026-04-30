@@ -35,6 +35,12 @@ pub enum DocumentBaseTransition {
     V1(DocumentBaseTransitionV1),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentBaseTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentBaseTransition {}
+
 impl Default for DocumentBaseTransition {
     fn default() -> Self {
         DocumentBaseTransition::V0(DocumentBaseTransitionV0::default()) // since only v0

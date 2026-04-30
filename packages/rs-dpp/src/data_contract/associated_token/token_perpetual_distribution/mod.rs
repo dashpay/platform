@@ -2,6 +2,8 @@ use crate::data_contract::associated_token::token_perpetual_distribution::v0::To
 use crate::errors::ProtocolError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -16,6 +18,7 @@ pub mod reward_distribution_type;
 pub mod v0;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(
     Serialize,
     Deserialize,

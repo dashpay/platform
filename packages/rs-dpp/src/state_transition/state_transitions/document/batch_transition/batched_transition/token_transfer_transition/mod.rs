@@ -14,3 +14,9 @@ pub enum TokenTransferTransition {
     #[display("V0({})", "_0")]
     V0(TokenTransferTransitionV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenTransferTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenTransferTransition {}

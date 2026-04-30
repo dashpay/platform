@@ -155,3 +155,9 @@ pub struct SerializedAction {
     /// signature from one transition cannot be reused in another.
     pub spend_auth_sig: [u8; 64],
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for SerializedAction {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for SerializedAction {}

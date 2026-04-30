@@ -12,6 +12,8 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use fields::*;
@@ -75,6 +77,9 @@ impl IdentityTopUpFromAddressesTransition {
     }
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl JsonConvertible for IdentityTopUpFromAddressesTransition {}
+
 impl StateTransitionFieldTypes for IdentityTopUpFromAddressesTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE]
@@ -86,5 +91,29 @@ impl StateTransitionFieldTypes for IdentityTopUpFromAddressesTransition {
 
     fn binary_property_paths() -> Vec<&'static str> {
         vec![]
+    }
+}
+
+#[cfg(all(test, feature = "json-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn fixture() -> IdentityTopUpFromAddressesTransition {
+        IdentityTopUpFromAddressesTransition::V0(IdentityTopUpFromAddressesTransitionV0::default())
+    }
+
+    #[test]
+    fn json_round_trip() {
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered =
+            IdentityTopUpFromAddressesTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
     }
 }

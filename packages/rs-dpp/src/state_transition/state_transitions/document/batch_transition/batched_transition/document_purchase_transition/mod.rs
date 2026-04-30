@@ -14,3 +14,9 @@ pub enum DocumentPurchaseTransition {
     #[display("V0({})", "_0")]
     V0(DocumentPurchaseTransitionV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentPurchaseTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentPurchaseTransition {}

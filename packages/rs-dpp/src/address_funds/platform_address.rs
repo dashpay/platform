@@ -47,6 +47,12 @@ pub enum PlatformAddress {
     P2sh([u8; 20]),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for PlatformAddress {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for PlatformAddress {}
+
 // Custom serde impls so JSON / `platform_value` output is the canonical 21-byte
 // address representation (hex string in human-readable formats, raw bytes in
 // binary formats) — matching the wasm wrapper's serde and what consumers expect.

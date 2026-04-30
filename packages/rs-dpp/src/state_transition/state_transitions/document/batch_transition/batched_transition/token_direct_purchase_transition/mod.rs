@@ -29,6 +29,12 @@ pub enum TokenDirectPurchaseTransition {
     V0(TokenDirectPurchaseTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenDirectPurchaseTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenDirectPurchaseTransition {}
+
 impl Default for TokenDirectPurchaseTransition {
     fn default() -> Self {
         TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0::default())

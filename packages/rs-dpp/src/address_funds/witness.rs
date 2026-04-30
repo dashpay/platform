@@ -731,3 +731,9 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for AddressWitness {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for AddressWitness {}

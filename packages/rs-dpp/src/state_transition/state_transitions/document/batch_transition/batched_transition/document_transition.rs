@@ -39,6 +39,12 @@ pub enum DocumentTransition {
     Purchase(DocumentPurchaseTransition),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentTransition {}
+
 impl BatchTransitionResolversV0 for DocumentTransition {
     fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
         if let Self::Create(ref t) = self {

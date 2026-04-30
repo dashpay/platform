@@ -82,6 +82,12 @@ pub enum TokenTransition {
     SetPriceForDirectPurchase(TokenSetPriceForDirectPurchaseTransition),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenTransition {}
+
 impl BatchTransitionResolversV0 for TokenTransition {
     fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
         None

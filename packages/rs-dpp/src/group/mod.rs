@@ -49,6 +49,12 @@ pub struct GroupStateTransitionInfo {
     pub action_is_proposer: bool,
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for GroupStateTransitionInfo {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for GroupStateTransitionInfo {}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupStateTransitionResolvedInfo {
     pub group_contract_position: GroupContractPosition,

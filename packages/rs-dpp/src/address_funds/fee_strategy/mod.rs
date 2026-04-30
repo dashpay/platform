@@ -176,3 +176,9 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for AddressFundsFeeStrategyStep {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for AddressFundsFeeStrategyStep {}

@@ -15,6 +15,12 @@ pub enum Validator {
     V0(ValidatorV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Validator {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Validator {}
+
 impl ValidatorV0Getters for Validator {
     fn pro_tx_hash(&self) -> &ProTxHash {
         match self {

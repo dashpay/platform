@@ -29,6 +29,12 @@ pub enum GasFeesPaidBy {
     PreferContractOwner = 2,
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for GasFeesPaidBy {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for GasFeesPaidBy {}
+
 impl From<GasFeesPaidBy> for u8 {
     fn from(value: GasFeesPaidBy) -> Self {
         match value {

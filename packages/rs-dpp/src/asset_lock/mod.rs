@@ -15,3 +15,9 @@ pub enum StoredAssetLockInfo {
     /// The asset lock is not yet known to Platform
     NotPresent,
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for StoredAssetLockInfo {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for StoredAssetLockInfo {}

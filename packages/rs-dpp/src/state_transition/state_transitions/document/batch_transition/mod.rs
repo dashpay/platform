@@ -91,6 +91,12 @@ pub enum BatchTransition {
     V1(BatchTransitionV1),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for BatchTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for BatchTransition {}
+
 impl StateTransitionFieldTypes for BatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE]

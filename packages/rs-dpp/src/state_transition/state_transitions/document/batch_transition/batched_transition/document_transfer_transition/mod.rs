@@ -14,3 +14,9 @@ pub enum DocumentTransferTransition {
     #[display("V0({})", "_0")]
     V0(DocumentTransferTransitionV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentTransferTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentTransferTransition {}

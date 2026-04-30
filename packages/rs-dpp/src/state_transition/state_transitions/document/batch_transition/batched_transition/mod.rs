@@ -54,6 +54,12 @@ pub enum BatchedTransition {
     Token(TokenTransition),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for BatchedTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for BatchedTransition {}
+
 #[derive(Debug, From, Clone, Copy, PartialEq, Display)]
 pub enum BatchedTransitionRef<'a> {
     #[display("DocumentTransition({})", "_0")]

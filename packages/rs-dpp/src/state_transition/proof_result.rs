@@ -67,3 +67,11 @@ pub enum StateTransitionProofResult {
         BTreeMap<Identifier, Option<Document>>,
     ),
 }
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for StateTransitionProofResult {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
+

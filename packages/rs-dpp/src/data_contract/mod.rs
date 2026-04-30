@@ -109,6 +109,12 @@ pub enum DataContract {
     V1(DataContractV1),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DataContract {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DataContract {}
+
 impl PlatformSerializableWithPlatformVersion for DataContract {
     type Error = ProtocolError;
 

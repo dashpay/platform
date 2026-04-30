@@ -11,6 +11,12 @@ pub enum GroupActionStatus {
     ActionClosed,
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for GroupActionStatus {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for GroupActionStatus {}
+
 impl TryFrom<u8> for GroupActionStatus {
     type Error = anyhow::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {

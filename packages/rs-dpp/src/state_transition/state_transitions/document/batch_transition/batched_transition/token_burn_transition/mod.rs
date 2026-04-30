@@ -15,6 +15,12 @@ pub enum TokenBurnTransition {
     V0(TokenBurnTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenBurnTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenBurnTransition {}
+
 impl Default for TokenBurnTransition {
     fn default() -> Self {
         TokenBurnTransition::V0(TokenBurnTransitionV0::default()) // since only v0

@@ -15,6 +15,12 @@ pub enum TokenConfigUpdateTransition {
     V0(TokenConfigUpdateTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenConfigUpdateTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenConfigUpdateTransition {}
+
 impl Default for TokenConfigUpdateTransition {
     fn default() -> Self {
         TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0::default())

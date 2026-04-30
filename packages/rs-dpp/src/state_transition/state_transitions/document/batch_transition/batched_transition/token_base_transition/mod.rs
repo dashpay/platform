@@ -28,6 +28,12 @@ pub enum TokenBaseTransition {
     V0(TokenBaseTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenBaseTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenBaseTransition {}
+
 impl Default for TokenBaseTransition {
     fn default() -> Self {
         TokenBaseTransition::V0(TokenBaseTransitionV0::default()) // since only v0

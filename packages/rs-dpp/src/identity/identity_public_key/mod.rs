@@ -2,6 +2,8 @@
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
@@ -56,6 +58,9 @@ pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for IdentityPublicKey {}
 
 impl IdentityPublicKey {
     /// Checks if public key security level is MASTER

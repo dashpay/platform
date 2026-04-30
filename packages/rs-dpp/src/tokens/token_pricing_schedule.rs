@@ -44,6 +44,12 @@ pub enum TokenPricingSchedule {
     SetPrices(BTreeMap<TokenAmount, Credits>),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenPricingSchedule {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenPricingSchedule {}
+
 impl TokenPricingSchedule {
     pub fn minimum_purchase_amount_and_price(&self) -> (TokenAmount, Credits) {
         match self {

@@ -567,3 +567,11 @@ impl fmt::Display for RewardDistributionType {
         }
     }
 }
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for RewardDistributionType {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for RewardDistributionType {}
+

@@ -113,3 +113,11 @@ impl<'de, C> BorrowDecode<'de, C> for Epoch {
         Epoch::new(index).map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))
     }
 }
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Epoch {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Epoch {}
+

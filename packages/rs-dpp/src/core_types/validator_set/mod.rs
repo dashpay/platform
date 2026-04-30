@@ -32,6 +32,12 @@ pub enum ValidatorSet {
     V0(ValidatorSetV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ValidatorSet {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ValidatorSet {}
+
 impl Display for ValidatorSet {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

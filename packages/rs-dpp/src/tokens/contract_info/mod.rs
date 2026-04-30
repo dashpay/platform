@@ -33,6 +33,12 @@ pub enum TokenContractInfo {
     V0(TokenContractInfoV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenContractInfo {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenContractInfo {}
+
 impl TokenContractInfo {
     pub fn new(
         contract_id: Identifier,

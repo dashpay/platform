@@ -5,6 +5,11 @@ mod document_try_into_asset_unlock_base_transaction_info;
 use bincode::{Decode, Encode};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
+
 #[repr(u8)]
 #[derive(
     Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode, Default,
@@ -15,6 +20,12 @@ pub enum Pooling {
     IfAvailable = 1,
     Standard = 2,
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for Pooling {}
+
+#[cfg(feature = "value-conversion")]
+impl ValueConvertible for Pooling {}
 
 /// Transaction index type
 pub type WithdrawalTransactionIndex = u64;

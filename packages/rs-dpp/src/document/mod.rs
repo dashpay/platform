@@ -59,6 +59,12 @@ pub enum Document {
     V0(DocumentV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Document {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Document {}
+
 impl fmt::Display for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {

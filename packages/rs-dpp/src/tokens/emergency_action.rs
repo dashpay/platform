@@ -17,6 +17,12 @@ pub enum TokenEmergencyAction {
     Resume = 1,
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenEmergencyAction {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenEmergencyAction {}
+
 impl TokenEmergencyAction {
     pub fn paused(&self) -> bool {
         matches!(self, TokenEmergencyAction::Pause)

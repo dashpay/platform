@@ -22,6 +22,12 @@ pub enum DocumentReplaceTransition {
     V0(DocumentReplaceTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentReplaceTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentReplaceTransition {}
+
 /// document from replace transition
 pub trait DocumentFromReplaceTransition {
     /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` reference, incorporating `owner_id`, creation metadata, and additional blockchain-related information.

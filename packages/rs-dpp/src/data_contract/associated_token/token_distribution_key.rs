@@ -107,3 +107,17 @@ pub struct TokenDistributionKey {
     pub recipient: TokenDistributionRecipient,
     pub distribution_type: TokenDistributionType,
 }
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenDistributionTypeWithResolvedRecipient {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenDistributionTypeWithResolvedRecipient {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenDistributionInfo {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
+

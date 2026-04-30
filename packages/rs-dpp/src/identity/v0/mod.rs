@@ -4,6 +4,8 @@ pub mod random;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use std::collections::BTreeMap;
@@ -49,6 +51,9 @@ impl Hash for IdentityV0 {
         self.id.hash(state);
     }
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl JsonConvertible for IdentityV0 {}
 
 mod public_key_serialization {
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

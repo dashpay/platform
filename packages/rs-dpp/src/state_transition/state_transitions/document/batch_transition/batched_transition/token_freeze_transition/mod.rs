@@ -15,6 +15,12 @@ pub enum TokenFreezeTransition {
     V0(TokenFreezeTransitionV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenFreezeTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenFreezeTransition {}
+
 impl Default for TokenFreezeTransition {
     fn default() -> Self {
         TokenFreezeTransition::V0(TokenFreezeTransitionV0::default()) // since only v0

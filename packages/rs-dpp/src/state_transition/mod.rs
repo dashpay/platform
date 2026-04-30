@@ -451,6 +451,12 @@ pub enum StateTransition {
     ShieldedWithdrawal(ShieldedWithdrawalTransition),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for StateTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for StateTransition {}
+
 impl OptionallyAssetLockProved for StateTransition {
     fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
         match self {

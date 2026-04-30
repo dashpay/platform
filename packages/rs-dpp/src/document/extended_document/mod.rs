@@ -31,6 +31,12 @@ pub enum ExtendedDocument {
     V0(ExtendedDocumentV0),
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ExtendedDocument {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ExtendedDocument {}
+
 impl ExtendedDocument {
     #[cfg(feature = "json-conversion")]
     /// Returns the properties of the document as a JSON value.
