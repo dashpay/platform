@@ -368,3 +368,8 @@ mod test {
         }
     }
 }
+
+// TODO(unification pass 3): add fixture for DataContract*Transition — needs
+// access to DataContractInSerializationFormatV0 which is `pub(in crate::data_contract)`.
+// Either expose a fixture helper from rs-dpp::tests::fixtures, or use 
+// TryFromPlatformVersioned<DataContract>::try_from_platform_versioned to build it.
