@@ -1,6 +1,12 @@
 //! Test framework configuration. Centralises every
 //! `PLATFORM_WALLET_E2E_*` env var; loadable via [`Config::from_env`]
 //! or constructed programmatically via [`Config::new`].
+//!
+//! Both constructors return a fully-resolved [`Config`]: every
+//! defaultable field already carries its final value (no
+//! `read-then-derive` lookups left for callers). `network` is parsed
+//! once into [`Network`]; `p2p_port` is resolved against the
+//! network-specific default at construction time.
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -13,7 +19,7 @@ use super::{FrameworkError, FrameworkResult};
 pub mod vars {
     /// BIP-39 bank-wallet mnemonic. Required.
     pub const BANK_MNEMONIC: &str = "PLATFORM_WALLET_E2E_BANK_MNEMONIC";
-    /// Network selector: `testnet` (default) / `devnet` / `local`.
+    /// Network selector: `testnet` (default) / `mainnet` / `devnet` / `local`.
     pub const NETWORK: &str = "PLATFORM_WALLET_E2E_NETWORK";
     /// Comma-separated list of DAPI addresses overriding the
     /// network default.
@@ -26,7 +32,8 @@ pub mod vars {
     /// Defaults to the network-builtin endpoint when unset.
     pub const TRUSTED_CONTEXT_URL: &str = "PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL";
     /// Optional override for the SPV P2P port. Unset falls back to
-    /// the network-default ([`super::default_p2p_port`]).
+    /// the network default (mainnet 9999, testnet 19999); regtest and
+    /// devnet have no default and require this var.
     pub const P2P_PORT: &str = "PLATFORM_WALLET_E2E_P2P_PORT";
 }
 
@@ -38,17 +45,24 @@ pub mod vars {
 /// from platform #3040 in play.
 pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
 
-/// E2E framework configuration.
+/// E2E framework configuration — fully resolved.
 ///
-/// The `Debug` impl below is hand-written: a `derive(Debug)` would print
-/// `bank_mnemonic` verbatim, which a stray `tracing::info!("{config:?}")`
-/// or an `expect()` panic could leak into CI logs.
+/// Every field carries its final value as of construction; callers
+/// don't have to re-derive defaults. `network` is parsed; `p2p_port`
+/// is the resolved port (override-or-default) — `None` only when the
+/// network has no default and no override was supplied (regtest /
+/// devnet without explicit configuration).
+///
+/// The `Debug` impl below is hand-written: a `derive(Debug)` would
+/// print `bank_mnemonic` verbatim, which a stray
+/// `tracing::info!("{config:?}")` or an `expect()` panic could leak
+/// into CI logs.
 #[derive(Clone)]
 pub struct Config {
     /// BIP-39 bank mnemonic. Required.
     pub bank_mnemonic: String,
-    /// Network selector. Defaults to `"testnet"`.
-    pub network: String,
+    /// Active network — parsed at construction.
+    pub network: Network,
     /// Optional DAPI address overrides; empty means use the
     /// network default list.
     pub dapi_addresses: Vec<String>,
@@ -59,10 +73,12 @@ pub struct Config {
     /// Optional trusted-context-provider URL override. `None` uses
     /// the per-network default; devnet requires this override.
     pub trusted_context_url: Option<String>,
-    /// Optional SPV P2P port override. `None` falls back to
-    /// [`default_p2p_port`] for the active network. Custom-port
-    /// devnets / `local` always require this override (or the
-    /// SPV path skips peer-seeding).
+    /// SPV P2P port for the active network — resolved at construction
+    /// time from the env override or the network default. `None` only
+    /// when the network has no default and no override was provided
+    /// (regtest / devnet without explicit configuration); the SPV
+    /// peer-seeding path treats that as "skip and fall back to DNS
+    /// discovery."
     pub p2p_port: Option<u16>,
 }
 
@@ -84,14 +100,15 @@ impl std::fmt::Debug for Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let network = Network::Testnet;
         Self {
             bank_mnemonic: String::new(),
-            network: "testnet".into(),
+            network,
             dapi_addresses: Vec::new(),
             min_bank_credits: DEFAULT_MIN_BANK_CREDITS,
             workdir_base: default_workdir_base(),
             trusted_context_url: None,
-            p2p_port: None,
+            p2p_port: default_p2p_port(network),
         }
     }
 }
@@ -100,7 +117,7 @@ impl Config {
     /// Load from environment variables, with `.env` at
     /// `${CARGO_MANIFEST_DIR}/tests/.env` as a CWD-independent
     /// fallback. `bank_mnemonic` is required; everything else
-    /// uses the per-field defaults.
+    /// resolves to its final value via the per-field defaults.
     pub fn from_env() -> FrameworkResult<Self> {
         // Anchor the `.env` path at the crate's manifest dir so
         // CWD doesn't change behaviour; a missing file is expected.
@@ -123,7 +140,10 @@ impl Config {
             ))
         })?;
 
-        let network = std::env::var(vars::NETWORK).unwrap_or_else(|_| "testnet".into());
+        let network = match std::env::var(vars::NETWORK) {
+            Ok(raw) => parse_network(&raw)?,
+            Err(_) => Network::Testnet,
+        };
 
         let dapi_addresses = std::env::var(vars::DAPI_ADDRESSES)
             .ok()
@@ -158,7 +178,7 @@ impl Config {
             Ok(raw) => {
                 let trimmed = raw.trim();
                 if trimmed.is_empty() {
-                    None
+                    default_p2p_port(network)
                 } else {
                     Some(trimmed.parse::<u16>().map_err(|err| {
                         FrameworkError::Config(format!(
@@ -168,7 +188,7 @@ impl Config {
                     })?)
                 }
             }
-            Err(_) => None,
+            Err(_) => default_p2p_port(network),
         };
 
         Ok(Self {
@@ -183,7 +203,9 @@ impl Config {
     }
 
     /// Programmatic constructor — mirrors [`Config::from_env`] for
-    /// test harnesses that don't route through env vars.
+    /// test harnesses that don't route through env vars. Returns a
+    /// fully-resolved config: `network` defaults to testnet and
+    /// `p2p_port` to the testnet default (19999).
     pub fn new(bank_mnemonic: String) -> Self {
         Self {
             bank_mnemonic,
@@ -201,8 +223,9 @@ fn default_workdir_base() -> PathBuf {
 /// Network-default SPV P2P port. Mirrors the canonical mainnet (9999)
 /// and testnet (19999) ports. Returns `None` for regtest / devnet —
 /// those have site-specific ports and must be supplied via
-/// [`Config::p2p_port`].
-pub(super) fn default_p2p_port(network: Network) -> Option<u16> {
+/// [`vars::P2P_PORT`]. Used only at [`Config`] construction; callers
+/// read the resolved [`Config::p2p_port`] directly.
+fn default_p2p_port(network: Network) -> Option<u16> {
     match network {
         Network::Mainnet => Some(9999),
         Network::Testnet => Some(19999),
@@ -210,16 +233,11 @@ pub(super) fn default_p2p_port(network: Network) -> Option<u16> {
     }
 }
 
-/// Resolve the effective SPV P2P port: explicit [`Config::p2p_port`]
-/// override wins; otherwise fall back to [`default_p2p_port`].
-pub(super) fn effective_p2p_port(config: &Config, network: Network) -> Option<u16> {
-    config.p2p_port.or_else(|| default_p2p_port(network))
-}
-
 /// Parse a network string supporting the canonical dashcore names
 /// plus the test-harness `local` alias for regtest and an empty
-/// shorthand for testnet. Delegates the rest to `<Network as FromStr>`.
-pub(super) fn parse_network(s: &str) -> FrameworkResult<Network> {
+/// shorthand for testnet. Used only at [`Config`] construction;
+/// callers read the resolved [`Config::network`] directly.
+fn parse_network(s: &str) -> FrameworkResult<Network> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Ok(Network::Testnet);

@@ -23,7 +23,7 @@ use dash_spv::ClientConfig;
 use dashcore::Network;
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
 
-use super::config::{effective_p2p_port, parse_network, Config};
+use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
 
 /// Polling interval for [`wait_for_mn_list_synced`].
@@ -62,7 +62,7 @@ where
     spv.spawn_in_background(client_config);
     tracing::info!(
         target: "platform_wallet::e2e::spv",
-        network = %config.network,
+        network = ?config.network,
         "SPV runtime spawned in background"
     );
 
@@ -211,7 +211,7 @@ fn build_client_config(
     config: &Config,
     address_list: &AddressList,
 ) -> FrameworkResult<ClientConfig> {
-    let network = parse_network(&config.network)?;
+    let network = config.network;
 
     let storage_path = config.workdir_base.join("spv-data");
     std::fs::create_dir_all(&storage_path).map_err(|e| {
@@ -231,7 +231,7 @@ fn build_client_config(
         .with_start_height(0)
         .with_mempool_tracking(MempoolStrategy::BloomFilter);
 
-    seed_p2p_peers(&mut client_config, config, network, address_list);
+    seed_p2p_peers(&mut client_config, config, address_list);
 
     client_config.validate().map_err(|e| {
         tracing::error!(
@@ -248,25 +248,20 @@ fn build_client_config(
 
 /// Seed the SPV `ClientConfig` with P2P peers derived from the SDK's
 /// live `AddressList`. Each address contributes its host IP paired
-/// with the effective P2P port ([`Config::p2p_port`] override, or the
-/// network-default mainnet 9999 / testnet 19999). Non-IP hostnames
-/// (which `address.uri().host()` can return for DNS targets) fall
-/// through to the SPV's own DNS discovery rather than being added as
-/// numeric peers.
+/// with [`Config::p2p_port`] (already resolved to override-or-default
+/// at config construction time). Non-IP hostnames (which
+/// `address.uri().host()` can return for DNS targets) fall through to
+/// the SPV's own DNS discovery rather than being added as numeric
+/// peers.
 ///
-/// If the active network has neither an override port nor a known
-/// default (regtest / devnet), no peers are seeded — the operator
-/// must supply `PLATFORM_WALLET_E2E_P2P_PORT` for those.
-fn seed_p2p_peers(
-    client_config: &mut ClientConfig,
-    config: &Config,
-    network: Network,
-    address_list: &AddressList,
-) {
-    let Some(port) = effective_p2p_port(config, network) else {
+/// If `Config::p2p_port` is `None` (regtest / devnet without an
+/// explicit override) no peers are seeded — the operator must supply
+/// [`vars::P2P_PORT`](super::config::vars::P2P_PORT) for those.
+fn seed_p2p_peers(client_config: &mut ClientConfig, config: &Config, address_list: &AddressList) {
+    let Some(port) = config.p2p_port else {
         tracing::debug!(
             target: "platform_wallet::e2e::spv",
-            ?network,
+            network = ?config.network,
             "no SPV P2P port configured (neither {} nor a known network default); \
              skipping peer seeding — SPV will fall back to DNS discovery",
             super::config::vars::P2P_PORT,
