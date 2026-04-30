@@ -14,11 +14,24 @@ struct IdentityDetailView: View {
     /// alias edit), SwiftUI re-renders this view automatically.
     @Query private var identities: [PersistentIdentity]
 
+    /// Reactively observe the confirmed DPNS labels owned by this
+    /// identity. Filters by the denormalized `identityId` column on
+    /// `PersistentDPNSName` (not the optional relationship traversal
+    /// `identity?.identityId`, which SwiftData's predicate engine
+    /// chokes on for nullable relationships). Newest acquisition first
+    /// — the `acquiredAt` Unix-millis timestamp is `0` when unknown,
+    /// so legacy / un-timestamped rows naturally sort to the bottom.
+    @Query private var dpnsNamesRows: [PersistentDPNSName]
+
     init(identityId: Data) {
         self.identityId = identityId
         let target = identityId
         _identities = Query(
             filter: #Predicate<PersistentIdentity> { $0.identityId == target }
+        )
+        _dpnsNamesRows = Query(
+            filter: PersistentDPNSName.predicate(identityId: target),
+            sort: [SortDescriptor(\PersistentDPNSName.acquiredAt, order: .reverse)]
         )
     }
 
@@ -40,9 +53,13 @@ struct IdentityDetailView: View {
     @State private var showingProfileEditor = false
     @State private var profileError: String?
 
-    /// DPNS names owned by this identity, fetched from the owning
-    /// wallet's `ManagedIdentity`. Empty until `loadDPNSNames` runs.
-    @State private var dpnsNames: [String] = []
+    /// Bare-label projection of `dpnsNamesRows`. The list views in
+    /// this file deal in `[String]`, so this keeps the existing
+    /// rendering code shape after we switched the source of truth
+    /// from a plain `@State` array to a SwiftData `@Query`.
+    private var dpnsNames: [String] {
+        dpnsNamesRows.map(\.label)
+    }
     /// Labels this identity is currently contending for.
     @State private var contestedDpnsNames: [String] = []
     /// Contest metadata keyed by name, surfaced to
@@ -371,17 +388,16 @@ struct IdentityDetailView: View {
             EditAliasView(identity: identity, newAlias: $newAlias)
         }
         .sheet(isPresented: $showingRegisterName) {
-            RegisterNameView(identity: identity, onRegistered: { name in
-                // Append the just-registered name to the local @State
-                // list immediately so the section re-renders without
-                // waiting for the parent's `onAppear` re-fetch.
-                // De-dupe in case a stale `loadDPNSNames()` already
-                // landed it.
-                if !dpnsNames.contains(name) {
-                    dpnsNames.append(name)
-                }
-            })
-            .environmentObject(appState)
+            // The DPNS name list is now driven by `@Query` over
+            // `PersistentDPNSName`. The Rust-side
+            // `register_name_with_external_signer` path queues an
+            // `IdentityChangeSet` whose persister-callback hop
+            // upserts the new label row, which `dpnsNamesRows`
+            // observes — no manual @State poke needed. We still pass
+            // an `onRegistered` closure so `RegisterNameView` can
+            // honor its callback contract, but the body is a no-op.
+            RegisterNameView(identity: identity, onRegistered: { _ in })
+                .environmentObject(appState)
         }
         .sheet(isPresented: $showingSelectMainName) {
             SelectMainNameView(identity: identity)
@@ -584,18 +600,23 @@ struct IdentityDetailView: View {
 
         guard appState.sdk != nil else { return }
 
-        // Fetch regular and contested names sequentially to avoid sending non-Sendable results across tasks
-        let regular = await fetchRegularDPNSNames(identity: identity)
+        // Regular DPNS labels: kick a Rust-side
+        // `IdentityWallet::sync_dpns_names` so the persister callback
+        // receives a fresh `IdentityChangeSet` and upserts our
+        // `PersistentDPNSName` rows. The view's `@Query` over
+        // `dpnsNamesRows` picks the new rows up reactively — no
+        // assignment needed here. The returned tuple's labels are
+        // ignored on purpose; SwiftData is the source of truth.
+        _ = await fetchRegularDPNSNames(identity: identity)
+
+        // Contested labels still flow through plain `@State` —
+        // they aren't part of the `PersistentDPNSName` collection
+        // (different lifecycle: in-flight contest churn vs. settled
+        // labels). The contested cache stays a per-view cache for
+        // now.
         let contested = await fetchContestedDPNSNames(identity: identity)
 
         await MainActor.run {
-            // Drive the local @State fields directly — they are the
-            // source of truth for this view's DPNS lists. The
-            // previous `appState.updateIdentityDPNSNames(...)` call
-            // wrote to the IdentityModel cache (which no longer
-            // exists post-migration) and was not bound back to this
-            // view's state, so nothing actually rendered from it.
-            self.dpnsNames = regular.0
             self.contestedDpnsNames = contested.0
             self.contestedDpnsInfo = contested.1
 
@@ -956,30 +977,31 @@ struct IdentityDetailView: View {
             }
 
             // Persist balances into `PersistentTokenBalance` via the
-            // platform-wallet token-watch + sync pipeline. We watch
-            // every (identity, token) pair this view cares about,
-            // sync, and let the Rust persister fire the
+            // manager-level identity-sync pipeline. We register the
+            // identity with this view's token list, kick a single
+            // sync pass, and let the Rust persister fire the
             // `on_persist_token_balances_fn` callback — the Swift
             // handler maps that onto SwiftData rows that the rest of
             // the app reads via @Query (recipient pickers, Burn /
             // Transfer / DestroyFrozen views). Failures here are
             // non-fatal: the display fetch below still surfaces the
             // numbers, and the next reload tries again.
-            if let walletId = identity.wallet?.walletId,
-               let wallet = walletManager.wallet(for: walletId) {
-                let identityBytes = identity.identityId
-                let pairs: [(identityId: Identifier, tokenId: Identifier)] =
-                    idToToken.keys.compactMap { tokenIdBase58 in
-                        guard let tokenIdBytes = Data.identifier(fromBase58: tokenIdBase58) else {
-                            return nil
-                        }
-                        return (identityId: identityBytes, tokenId: tokenIdBytes)
-                    }
-                do {
-                    try await wallet.watchAndSyncTokenBalances(pairs: pairs)
-                } catch {
-                    print("⚠️ token watch+sync failed: \(error)")
-                }
+            //
+            // (`registerIdentityForTokenSync` is idempotent — calling
+            // again with a different token list replaces the watched
+            // set; balances for tokens kept across the swap survive.)
+            let identityBytes = identity.identityId
+            let tokenIdData: [Identifier] = idToToken.keys.compactMap { tokenIdBase58 in
+                Data.identifier(fromBase58: tokenIdBase58)
+            }
+            do {
+                try walletManager.registerIdentityForTokenSync(
+                    identityId: identityBytes,
+                    tokenIds: tokenIdData
+                )
+                try await walletManager.syncIdentityTokensNow()
+            } catch {
+                print("⚠️ identity token sync failed: \(error)")
             }
 
             do {

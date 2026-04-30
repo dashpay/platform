@@ -1,12 +1,10 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use dashcore::OutPoint;
-use dpp::balances::credits::TokenAmount;
-use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet_manager::WalletManager;
@@ -18,7 +16,6 @@ use super::core::{CoreWallet, WalletBalance};
 use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
-use super::tokens::TokenWallet;
 use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -42,8 +39,6 @@ pub struct PlatformWalletInfo {
     pub balance: Arc<WalletBalance>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
-    pub token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
-    pub token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
@@ -69,7 +64,6 @@ pub struct PlatformWallet {
     pub(crate) core: CoreWallet<SpvBroadcaster>,
     pub(crate) identity: IdentityWallet<SpvBroadcaster>,
     pub(crate) platform: PlatformAddressWallet,
-    pub(crate) tokens: TokenWallet,
     /// Shared asset lock manager.
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle.
@@ -100,11 +94,6 @@ impl PlatformWallet {
         &self.platform
     }
 
-    /// Access the token wallet.
-    pub fn tokens(&self) -> &TokenWallet {
-        &self.tokens
-    }
-
     /// Access the shared asset lock manager.
     pub fn asset_locks(&self) -> &Arc<AssetLockManager<SpvBroadcaster>> {
         &self.asset_locks
@@ -118,6 +107,14 @@ impl PlatformWallet {
     /// Get a reference to the SDK.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
+    }
+
+    /// Clone the underlying `Arc<dash_sdk::Sdk>` so callers (e.g. FFI
+    /// async blocks moved onto a worker runtime) can hold an
+    /// independently-owned SDK handle without keeping the
+    /// `PlatformWallet` borrow alive.
+    pub fn sdk_arc(&self) -> Arc<dash_sdk::Sdk> {
+        Arc::clone(&self.sdk)
     }
 
     /// Get a reference to the shared wallet manager lock.
@@ -263,12 +260,6 @@ impl PlatformWallet {
             wallet_id,
             wallet_persister.clone(),
         );
-        let tokens = TokenWallet::new(
-            Arc::clone(&sdk),
-            Arc::clone(&wallet_manager),
-            wallet_id,
-            wallet_persister.clone(),
-        );
 
         Self {
             wallet_id,
@@ -277,7 +268,6 @@ impl PlatformWallet {
             core,
             identity,
             platform,
-            tokens,
             asset_locks,
             persister: wallet_persister,
             balance,
@@ -401,7 +391,6 @@ impl Clone for PlatformWallet {
             core: self.core.clone(),
             identity: self.identity.clone(),
             platform: self.platform.clone(),
-            tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),
             persister: self.persister.clone(),
             balance: self.balance.clone(),

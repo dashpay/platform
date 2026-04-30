@@ -1986,24 +1986,19 @@ public struct InMemoryWalletSummary: Sendable {
     /// Number of asset locks tracked in
     /// `PlatformWalletInfo.tracked_asset_locks`.
     public let trackedAssetLocksCount: Int
-    /// Number of `(identity_id, token_id) -> amount` rows on
-    /// `PlatformWalletInfo.token_balances`.
-    public let tokenBalancesCount: Int
 
     public init(
         identitiesCount: Int,
         watchedCount: Int,
         lastScannedIndex: UInt32,
         primaryIdentityId: Identifier?,
-        trackedAssetLocksCount: Int,
-        tokenBalancesCount: Int
+        trackedAssetLocksCount: Int
     ) {
         self.identitiesCount = identitiesCount
         self.watchedCount = watchedCount
         self.lastScannedIndex = lastScannedIndex
         self.primaryIdentityId = primaryIdentityId
         self.trackedAssetLocksCount = trackedAssetLocksCount
-        self.tokenBalancesCount = tokenBalancesCount
     }
 }
 
@@ -2049,8 +2044,7 @@ extension ManagedPlatformWallet {
             // Primary-identity selection no longer lives on the Rust
             // side; UI layer owns it now.
             primaryIdentityId: nil,
-            trackedAssetLocksCount: Int(ffi.tracked_asset_locks_count),
-            tokenBalancesCount: Int(ffi.token_balances_count)
+            trackedAssetLocksCount: Int(ffi.tracked_asset_locks_count)
         )
     }
 

@@ -401,7 +401,7 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => todo!("shielded transitions not yet implemented"),
+            | ShieldedWithdrawal(_) => None,
         }
     }
 
@@ -428,7 +428,7 @@ impl StateTransitionWasm {
             | ShieldedTransfer(_)
             | Unshield(_)
             | ShieldFromAssetLock(_)
-            | ShieldedWithdrawal(_) => todo!("shielded transitions not yet implemented"),
+            | ShieldedWithdrawal(_) => None,
         }
     }
 
@@ -571,7 +571,9 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set owner for shielded transition",
+                ));
             }
         };
 
@@ -646,7 +648,9 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for shielded transition",
+                ));
             }
         };
 
@@ -741,7 +745,9 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for shielded transition",
+                ));
             }
         };
 

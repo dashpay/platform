@@ -130,8 +130,7 @@ struct WalletMemoryExplorerView: View {
             watchedCount: 0,
             lastScannedIndex: 0,
             primaryIdentityId: nil,
-            trackedAssetLocksCount: 0,
-            tokenBalancesCount: 0
+            trackedAssetLocksCount: 0
         )
         VStack(alignment: .leading, spacing: 4) {
             Text(walletDisplayLabel(walletId, fromPersistent: nil))
@@ -177,10 +176,6 @@ struct WalletMemoryDetailView: View {
                     KVRow(
                         label: "Tracked Asset Locks",
                         value: "\(summary.trackedAssetLocksCount)"
-                    )
-                    KVRow(
-                        label: "Token Balances",
-                        value: "\(summary.tokenBalancesCount)"
                     )
                     if let primary = summary.primaryIdentityId {
                         KVRow(label: "Primary Identity", value: shortBase58(primary))

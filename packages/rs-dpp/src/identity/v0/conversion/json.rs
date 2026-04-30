@@ -83,25 +83,23 @@ mod tests {
         assert!(obj.contains_key("revision"));
     }
 
-    // frozen: V0 consensus behavior
+    // V0 to_json -> from_json round-trip succeeds.
     //
-    // `IdentityV0::to_json` produces a JSON form where the inner public keys carry the
-    // `$formatVersion` serde-adjacency tag and `data` is base64-encoded; but
-    // `IdentityV0::from_json` does the reverse mapping via `replace_at_paths` +
-    // `platform_value::from_value`. That combination does not round-trip for `IdentityV0`
-    // because the inner platform_value deserializer is inconsistent about
-    // `is_human_readable()` for nested BinaryData fields. Lock the observed failure in
-    // so the roundtrip pattern is not silently "fixed" in V0.
+    // Previously, this combination failed because `BinaryData::Deserialize` was
+    // asymmetric — its human-readable visitor accepted only strings and the binary
+    // visitor accepted only byte sequences, while `platform_value`'s nested
+    // deserializers default to `is_human_readable() = true` even when the value
+    // carries `Value::Bytes`. The fix in PR #3235 made `BinaryData::Deserialize`
+    // symmetric (accepts both strings and bytes regardless of mode, mirroring the
+    // `Identifier` pattern). Bincode `Encode`/`Decode` derives are untouched, so
+    // consensus binary format is unchanged — only the serde JSON path now
+    // round-trips cleanly.
     #[test]
-    fn to_json_then_from_json_fails_binary_data_roundtrip_v0_frozen() {
+    fn to_json_then_from_json_round_trips_v0() {
         let id = sample_identity_v0();
         let json = id.to_json().unwrap();
-        let back = IdentityV0::from_json(json);
-        assert!(
-            back.is_err(),
-            "V0 to_json -> from_json roundtrip is not expected to succeed; \
-             if this starts to pass, V0 consensus behavior may have changed"
-        );
+        let back = IdentityV0::from_json(json).expect("v0 round-trip should succeed");
+        assert_eq!(id, back);
     }
 
     #[test]
