@@ -813,11 +813,10 @@ private extension PlatformSpvSyncState {
     var label: String {
         switch self {
         case .waitForEvents: return "Waiting"
-        case .syncingHeaders: return "Syncing Headers"
-        case .syncingFilterHeaders: return "Syncing Filter Headers"
-        case .syncingFilters: return "Syncing Filters"
-        case .syncingMasternodes: return "Syncing Masternodes"
+        case .waitingForConnections: return "Connecting"
+        case .syncing: return "Syncing"
         case .synced: return "Synced"
+        case .error: return "Error"
         @unknown default: return "Unknown"
         }
     }
