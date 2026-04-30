@@ -87,6 +87,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .accounts
             .all_accounts()
             .iter()
+            .filter(|account| {
+                matches!(
+                    account.managed_account_type.to_account_type(),
+                    AccountType::Standard { .. }
+                        | AccountType::CoinJoin { .. }
+                        | AccountType::IdentityTopUp { .. }
+                        | AccountType::DashpayReceivingFunds { .. }
+                        | AccountType::DashpayExternalAccount { .. }
+                        | AccountType::PlatformPayment { .. }
+                )
+            })
             .map(|account| {
                 (
                     account.managed_account_type.to_account_type(),

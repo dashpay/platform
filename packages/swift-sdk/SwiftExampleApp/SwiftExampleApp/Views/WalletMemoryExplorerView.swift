@@ -339,21 +339,13 @@ struct WalletMemoryDetailView: View {
     // MARK: - Account Balances
 
     private var accountBalancesSection: some View {
-        let funded = accountBalances.filter {
-            ($0.confirmed + $0.unconfirmed + $0.immature + $0.locked) > 0
-        }
-        let zeroCount = accountBalances.count - funded.count
-        return Section {
+        Section {
             if accountBalances.isEmpty {
                 Text("No accounts")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            } else if funded.isEmpty {
-                Text("All \(accountBalances.count) accounts have zero balance")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             } else {
-                ForEach(Array(funded.enumerated()), id: \.offset) { _, acct in
+                ForEach(Array(accountBalances.enumerated()), id: \.offset) { _, acct in
                     let name = accountTypeName(
                         typeTag: acct.typeTag,
                         standardTag: acct.standardTag
@@ -375,11 +367,6 @@ struct WalletMemoryDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                }
-                if zeroCount > 0 {
-                    Text("\(zeroCount) more account(s) with zero balance")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
             }
         } header: {
