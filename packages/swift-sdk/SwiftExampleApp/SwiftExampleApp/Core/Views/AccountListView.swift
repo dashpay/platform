@@ -5,51 +5,18 @@ import SwiftData
 // MARK: - Account List View
 struct AccountListView: View {
     let wallet: PersistentWallet
-    /// Wallet-scoped TXO set passed down from `WalletDetailView` so
-    /// we share a single `@Query<PersistentTxo>` subscription across
-    /// `BalanceCardView` and the per-account rows. Without this
-    /// consolidation each consumer had its own subscription and the
-    /// persister stalled visibly during sync (3× SwiftData
-    /// change-tracking work per TXO insert).
-    let walletTxos: [PersistentTxo]
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
     @Query private var accounts: [PersistentAccount]
 
-    /// `address → [TXO]` index built once per render. Each account
-    /// row asks for its slice via `txos(for:)`; that's a constant-
-    /// time set-of-lookups against the index instead of a fresh
-    /// O(walletTxos) filter per account. Address-pool size is
-    /// gap-limit-bounded (~30-60 rows), so this stays cheap even
-    /// for wallets with thousands of TXOs.
-    private var txosByAddress: [String: [PersistentTxo]] {
-        Dictionary(grouping: walletTxos, by: \.address)
-    }
-
-    init(wallet: PersistentWallet, walletTxos: [PersistentTxo]) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
-        self.walletTxos = walletTxos
         let walletId = wallet.walletId
         _accounts = Query(
             filter: #Predicate<PersistentAccount> { acc in
                 acc.wallet.walletId == walletId
             }
         )
-    }
-
-    /// TXOs belonging to a specific account, looked up from the
-    /// pre-built `txosByAddress` index by walking the account's
-    /// address pool.
-    private func txos(
-        for account: PersistentAccount,
-        index: [String: [PersistentTxo]]
-    ) -> [PersistentTxo] {
-        var collected: [PersistentTxo] = []
-        for address in account.coreAddresses {
-            if let bucket = index[address.address] {
-                collected.append(contentsOf: bucket)
-            }
-        }
-        return collected
     }
 
     /// Stable display order — grouped by logical priority rather
@@ -95,12 +62,18 @@ struct AccountListView: View {
                     description: Text("Accounts are created automatically when the wallet syncs.")
                 )
             } else {
-                let index = txosByAddress
+                let balances = walletManager.accountBalances(for: wallet.walletId)
                 List(orderedAccounts) { account in
                     NavigationLink(destination: AccountDetailView(wallet: wallet, account: account)) {
+                        let match = balances.first { b in
+                            UInt32(b.typeTag) == account.accountType &&
+                            b.standardTag == account.standardTag &&
+                            b.index == account.accountIndex
+                        }
                         AccountRowView(
                             account: account,
-                            accountTxos: txos(for: account, index: index)
+                            coreConfirmedBalance: match?.confirmed ?? 0,
+                            coreUnconfirmedBalance: match?.unconfirmed ?? 0
                         )
                     }
                 }
@@ -113,29 +86,20 @@ struct AccountListView: View {
 // MARK: - Account Row View
 struct AccountRowView: View {
     let account: PersistentAccount
-    /// TXOs that the parent has identified as belonging to this
-    /// account. Pre-filtered upstream so the row doesn't have to
-    /// re-walk the wallet's TXO set per render. Empty for non-
-    /// Core-balance accounts (PlatformPayment / identity / etc.).
-    let accountTxos: [PersistentTxo]
+    /// Per-account confirmed balance queried from Rust's in-memory state.
+    let coreConfirmedBalance: UInt64
+    /// Per-account unconfirmed balance queried from Rust's in-memory state.
+    let coreUnconfirmedBalance: UInt64
 
-    /// Friendly label for the account. Indexed account types get a
-    /// trailing "#<index>"; other types keep the bare name emitted by
-    /// the FFI (identity / provider / etc.).
     private var label: String {
         switch account.accountType {
-        case 0, 1, 14: // Standard (BIP44/BIP32), CoinJoin, PlatformPayment
+        case 0, 1, 14:
             return "\(account.accountTypeName) #\(account.accountIndex)"
         default:
             return account.accountTypeName
         }
     }
 
-    /// Whether this account should surface a numeric balance on the
-    /// summary row. Keyed on the FFI `accountType` tag — name
-    /// matching was fragile because the Rust side emits different
-    /// labels (e.g. "BIP44 Account" vs "Standard BIP44") across
-    /// releases.
     private var shouldShowBalance: Bool {
         switch account.accountType {
         case 0, 1, 14: return true
@@ -143,30 +107,8 @@ struct AccountRowView: View {
         }
     }
 
-    /// PlatformPayment balance/unit differs from Core (credits, not
-    /// duffs) so the row needs a dedicated render path. `true` when
-    /// this row should use the `platformBalanceRow` helper.
     private var isPlatformPayment: Bool {
         account.accountType == 14
-    }
-
-    /// Per-account balance: partition the parent-supplied
-    /// `accountTxos` by `isSpent` × `isConfirmed`.
-    /// `PersistentAccount.balanceConfirmed` / `balanceUnconfirmed`
-    /// are persisted scalars but nothing currently writes them, so
-    /// we derive on read from the TXO set (the source of truth).
-    /// The walk happens upstream in `AccountListView.txos(for:)` —
-    /// this just filters the pre-narrowed slice.
-    private var coreConfirmedBalance: UInt64 {
-        accountTxos.lazy
-            .filter { !$0.isSpent && $0.isConfirmed }
-            .reduce(0) { $0 + $1.amount }
-    }
-
-    private var coreUnconfirmedBalance: UInt64 {
-        accountTxos.lazy
-            .filter { !$0.isSpent && !$0.isConfirmed }
-            .reduce(0) { $0 + $1.amount }
     }
 
     private var iconName: String {

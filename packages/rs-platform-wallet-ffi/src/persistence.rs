@@ -1195,7 +1195,7 @@ fn build_wallet_start_state(
     // unlock path builds a signing wallet from the mnemonic.
     let wallet = Wallet::new_watch_only(network, entry.wallet_id, accounts);
 
-    let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+    let wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
