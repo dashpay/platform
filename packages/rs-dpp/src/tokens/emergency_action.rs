@@ -37,3 +37,26 @@ impl TokenEmergencyAction {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_tokenemergencyaction {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_tokenemergencyaction() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenEmergencyAction::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = TokenEmergencyAction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_tokenemergencyaction() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenEmergencyAction::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = TokenEmergencyAction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

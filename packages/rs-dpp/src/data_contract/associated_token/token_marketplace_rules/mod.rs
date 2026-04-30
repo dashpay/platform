@@ -30,3 +30,6 @@ impl fmt::Display for TokenMarketplaceRules {
         }
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for TokenMarketplaceRules — V0 lacks Default,
+// needs explicit fixture.

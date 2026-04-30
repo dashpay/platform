@@ -79,3 +79,26 @@ impl TryFrom<u64> for GasFeesPaidBy {
             .try_into()
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_gasfeespaidby {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_gasfeespaidby() {
+        use crate::serialization::JsonConvertible;
+        let original = GasFeesPaidBy::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = GasFeesPaidBy::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_gasfeespaidby() {
+        use crate::serialization::ValueConvertible;
+        let original = GasFeesPaidBy::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = GasFeesPaidBy::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
