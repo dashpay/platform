@@ -28,8 +28,12 @@ export async function prefetchLocalReady(
     } catch (error) {
       lastError = error;
       const remaining = deadline - Date.now();
-      if (remaining <= intervalMs) break;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      if (remaining <= intervalMs) {
+        break;
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, intervalMs);
+      });
     }
   }
 
