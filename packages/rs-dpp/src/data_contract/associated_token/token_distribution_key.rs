@@ -121,3 +121,7 @@ impl crate::serialization::JsonConvertible for TokenDistributionInfo {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
 
+
+// TODO(unification pass 2): TokenDistributionType has Default but no canonical-trait impl
+// (the impls are on TokenDistributionTypeWithResolvedRecipient and TokenDistributionInfo,
+// neither of which has Default). Add tests once explicit fixtures are written.
