@@ -1,6 +1,6 @@
 import * as sdk from '../../../dist/sdk.compressed.js';
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_INTERVAL_MS = 2_000;
 
 export interface PrefetchLocalReadyOptions {
@@ -28,12 +28,11 @@ export async function prefetchLocalReady(
     } catch (error) {
       lastError = error;
       const remaining = deadline - Date.now();
-      if (remaining <= intervalMs) {
-        break;
+      if (remaining > intervalMs) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, intervalMs);
+        });
       }
-      await new Promise((resolve) => {
-        setTimeout(resolve, intervalMs);
-      });
     }
   }
 

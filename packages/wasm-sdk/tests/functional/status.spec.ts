@@ -3,7 +3,7 @@ import init, * as sdk from '../../dist/sdk.compressed.js';
 import { prefetchLocalReady } from './helpers/trustedContext.ts';
 
 describe('Status', function describeStatus() {
-  this.timeout(30000);
+  this.timeout(60000);
 
   let client: sdk.WasmSdk;
   let builder: sdk.WasmSdkBuilder;
