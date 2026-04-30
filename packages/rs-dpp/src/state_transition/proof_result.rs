@@ -75,3 +75,45 @@ impl crate::serialization::JsonConvertible for StateTransitionProofResult {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
 
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::Identifier;
+
+    fn fixture() -> StateTransitionProofResult {
+        StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::new([0xab; 32]))
+    }
+
+    fn assert_variant_balance_absence(
+        original: &StateTransitionProofResult,
+        recovered: &StateTransitionProofResult,
+    ) {
+        // StateTransitionProofResult lacks PartialEq — match variants & inner data.
+        match (original, recovered) {
+            (
+                StateTransitionProofResult::VerifiedTokenBalanceAbsence(o),
+                StateTransitionProofResult::VerifiedTokenBalanceAbsence(r),
+            ) => assert_eq!(o, r, "identifier"),
+            _ => panic!("variant changed during round-trip"),
+        }
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_variant_balance_absence(&original, &recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
+        assert_variant_balance_absence(&original, &recovered);
+    }
+}
