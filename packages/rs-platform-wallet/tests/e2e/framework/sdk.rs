@@ -14,7 +14,7 @@ use dash_sdk::{Sdk, SdkBuilder};
 use dashcore::Network;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 
-use super::config::{parse_network, Config};
+use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
 
 /// LRU quorum-cache size for [`TrustedHttpContextProvider`].
@@ -23,7 +23,7 @@ const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
 /// Build a fresh `Sdk` with [`TrustedHttpContextProvider`] wired
 /// (network-builtin URL, or [`Config::trusted_context_url`] override).
 pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
-    let network = parse_network(&config.network)?;
+    let network = config.network;
     let builder = build_sdk_builder(config, network)?;
 
     let cache_size = NonZeroUsize::new(TRUSTED_CONTEXT_CACHE_SIZE).expect("cache size > 0");

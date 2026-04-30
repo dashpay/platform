@@ -24,7 +24,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use simple_signer::signer::SimpleSigner;
 
-use super::config::{parse_network, Config};
+use super::config::Config;
 use super::wallet_factory::{
     default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB,
 };
@@ -77,7 +77,7 @@ impl BankWallet {
             })?;
         let seed_bytes = validated.to_seed("");
 
-        let network = parse_network(&config.network)?;
+        let network = config.network;
         let wallet = manager
             .create_wallet_from_mnemonic(
                 &config.bank_mnemonic,
