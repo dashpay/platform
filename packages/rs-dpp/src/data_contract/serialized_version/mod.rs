@@ -1172,3 +1172,60 @@ mod tests {
         assert_eq!(pv.dpp.contract_versions.contract_structure_version, 1);
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::config::v0::DataContractConfigV0;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> DataContractInSerializationFormat {
+        DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
+            id: Identifier::new([0xa1; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::new([0xb2; 32]),
+            schema_defs: None,
+            document_schemas: BTreeMap::new(),
+        })
+    }
+
+    fn assert_v0_fields(t: &DataContractInSerializationFormat) {
+        let DataContractInSerializationFormat::V0(rec) = t else { panic!("expected V0") };
+        assert_eq!(rec.id, Identifier::new([0xa1; 32]), "id");
+        assert_eq!(rec.version, 1, "version");
+        assert_eq!(rec.owner_id, Identifier::new([0xb2; 32]), "owner_id");
+        assert!(rec.schema_defs.is_none(), "schema_defs");
+        assert!(rec.document_schemas.is_empty(), "document_schemas");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = DataContractInSerializationFormat::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = DataContractInSerializationFormat::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
+    }
+}
