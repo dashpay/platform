@@ -155,7 +155,30 @@ Source citations for the "Wallet API exists" column are listed inline per case
 | Harness-G1b | Registry forward-compatible unknown field | P2 | S |
 | Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | L |
 
-Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 34** (incl. 1 post-Task #15, 1 gated), **DEFERRED: 1** (58 total entries; 57 implementable cases + 1 deferred placeholder).
+#### Found-bug pins
+
+| ID | Title | Priority | Complexity |
+|----|-------|----------|------------|
+| Found-001 | `auto_select_inputs_for_withdrawal` ignores `min_input_amount` floor | P2 | S |
+| Found-002 | `auto_select_inputs_for_withdrawal` skips fee-target headroom check | P2 | M |
+| Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | S |
+| Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | S |
+| Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | M |
+| Found-006 | `top_up_identity_with_funding` ignores caller-supplied `topup_index` | P2 | S |
+| Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | M |
+| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | M |
+| Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | M |
+| Found-010 | `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance | P2 | S |
+| Found-011 | `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order | P2 | S |
+| Found-012 | `validate_or_upgrade_proof` and `wait_for_proof` only consult `standard_bip44_accounts`, missing CoinJoin / non-BIP-44 funding accounts | P2 | M |
+| Found-013 | `recover_asset_lock_blocking` swallows every error and returns `()` — silent recovery failure | P2 | S |
+| Found-014 | `transfer_credits_with_external_signer` never updates the receiver's local balance even when the receiver is wallet-owned | P2 | S |
+| Found-015 | `load_from_persistor` leaves a partially registered wallet in `wallet_manager` when `wallet_id` mismatches | P2 | M |
+| Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | M |
+| Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | S |
+| Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | S |
+
+Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (incl. 1 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (76 total entries; 57 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -1189,6 +1212,365 @@ sane place to pin the harness contract is alongside the wallet contract.
 - **Harness extensions required**: a way to inject a cancellation point between broadcast and proof-fetch (likely a test-only hook on the harness SDK or a `select!` wrapper on the wallet call). This is the most invasive of the Harness-G cases; mark as "blocked on cancellation hook" if not yet plumbed.
 - **Estimated complexity**: L
 - **Rationale**: `tokio::select!` cancellation safety is a documented Tokio footgun. Without an asserted contract, the wallet may corrupt internal state on user-initiated cancellation (e.g. mobile app foregrounding/backgrounding) and only surface as "wallet shows wrong balance after I closed the app".
+
+### Found-bug pins (Found-NNN)
+
+Bug-pin cases discovered during a QA-mindset audit of `packages/rs-platform-wallet/src/`.
+Each entry names the contract violation, the proof shape that would catch it,
+and what the fix should look like. The author of the production fix is a
+separate concern; these entries pin the expected behaviour so the regression
+becomes a test failure rather than a silent drift.
+
+#### Found-001 — `auto_select_inputs_for_withdrawal` ignores `min_input_amount` floor
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/platform_addresses/withdrawal.rs:170` (`auto_select_inputs_for_withdrawal`).
+- **Suspected bug**: The withdrawal-side auto-selector iterates every funded address (`balance > 0`) and inserts each into the selected map. Unlike `transfer.rs::auto_select_inputs` (which filters out balances `< min_input_amount`), the withdrawal helper has no `min_input_amount` floor. An address holding fewer credits than the protocol's per-input minimum will be selected, and the resulting transition trips `InputBelowMinimumError` at `validate_structure` time.
+- **Preconditions**: a platform payment account holds at least one address with balance `> 0` but `< min_input_amount` (e.g. an address that absorbed dust on a prior partial sync).
+- **Scenario**:
+  1. Seed account with two funded addresses: `addr_A.balance = 100_000_000`, `addr_B.balance = min_input_amount - 1`.
+  2. Call `withdraw(account_index, InputSelection::Auto, ..., DeductFromInput(0))`.
+- **Assertions** (the proof shape):
+  - The selector returns an `Err(PlatformWalletError::AddressOperation(_))` whose message references `min_input_amount`, OR the selector returns `Ok(map)` where every value is `>= min_input_amount`.
+  - In NEITHER case does it return `Ok(map)` containing `addr_B → (min_input_amount - 1)`.
+- **Expected** (after fix): mirror the transfer-side filter — exclude candidates below `min_input_amount` before constructing the input map; if the survivors don't cover the requested fee, error with a descriptive message.
+- **Actual** (current code): the function selects `addr_B` unconditionally; the broadcast then fails with a generic protocol-validation error that doesn't name the cause.
+- **Severity**: HIGH (per-input minimum is a hard protocol gate; user gets an opaque rejection instead of a clear wallet-side error)
+- **Harness extensions required**: `auto_select_inputs_for_withdrawal` is a private helper; the test exercises it indirectly via `withdraw(InputSelection::Auto, ...)` and seeded balances. Needs a way to seed individual platform-payment addresses with a sub-minimum balance — likely via direct `set_address_credit_balance` on `ManagedPlatformAccount` for the test setup.
+- **Estimated complexity**: S
+- **Rationale**: The transfer path was hardened against this exact failure mode (see `auto_select_inputs` filter). Withdrawal silently drifted out of parity. Real-world trigger: a dust-tier address arrives mid-sync and the user attempts an "auto-select" withdrawal — the wallet builds an unspendable transition.
+
+#### Found-002 — `auto_select_inputs_for_withdrawal` skips fee-target headroom check
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/platform_addresses/withdrawal.rs:170-235`.
+- **Suspected bug**: The transfer-side `select_inputs_deduct_from_input` performs an explicit "fee target retains ≥ estimated_fee" check (Phase 3) before returning. The withdrawal-side helper checks only the aggregate `accumulated < estimated_fee` — i.e. that the *sum* of all inputs covers the fee. Under `[DeductFromInput(0)]` the fee is taken from the lex-smallest input's *remaining balance*, not the aggregate, so a selection where the lex-smallest input is fully consumed but other inputs cover the difference passes the helper's gate yet fails on chain — the same failure pattern PA-002b / commits `9ea9e7033c` and `687b1f86cd` pinned for transfer.
+- **Preconditions**: a withdrawal account with at least one small input that becomes the lex-smallest "fee target" after BTreeMap insertion.
+- **Scenario**:
+  1. Seed account with `addr_A` (lex-smallest, balance == small amount equal to its own consumption with no fee headroom) and `addr_B` (large balance covering the rest).
+  2. Call `withdraw(..., InputSelection::Auto, ..., DeductFromInput(0))`.
+- **Assertions** (the proof shape):
+  - The selector errors with a "fee headroom" message, OR after broadcast `validate_fees_of_event` would return `fee_fully_covered = false` (provable in a unit test by feeding the helper output to `deduct_fee_from_outputs_or_remaining_balance_of_inputs` exactly as PA-006 does for transfer).
+- **Expected** (after fix): adopt the transfer helper's Phase-3 headroom check — confirm `lex-smallest-input.balance - lex-smallest-input.consumed >= estimated_fee` before returning.
+- **Actual** (current code): the helper performs only an aggregate check; the chain-time deduction misdirects to an empty-remaining input.
+- **Severity**: HIGH (drives users into the same chain-time `AddressesNotEnoughFundsError` class as platform #3040)
+- **Harness extensions required**: same as Found-001 — fine-grained seeding of platform-payment account balances. A protocol-level reproduction (analogous to `pre_fix_buggy_selector_output_is_rejected_by_protocol_fee_deduction` in transfer's tests) is the simplest proof shape.
+- **Estimated complexity**: M
+- **Rationale**: Withdrawal lags transfer's hardening; the same regression class will silently re-emerge in withdrawal until the contract is pinned.
+
+#### Found-003 — `addresses_with_balances` and `total_credits` only see the first platform-payment account
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/platform_addresses/wallet.rs:233` (`addresses_with_balances`), `wallet/platform_addresses/wallet.rs:271` (`total_credits`).
+- **Suspected bug**: Both methods reach for `first_platform_payment_managed_account()` and return data from that single account. The doc comments make no mention of the "first account only" restriction (`addresses_with_balances` says "all platform addresses", `total_credits` says "total platform credits across all addresses"). Wallets with multiple platform-payment accounts (DIP-17 supports this) silently undercount.
+- **Preconditions**: a wallet with two or more `PlatformPayment` accounts, each holding a non-zero balance on at least one address.
+- **Scenario**:
+  1. Construct a wallet with `WalletAccountCreationOptions` that yields two PlatformPayment accounts (account `0` and account `1`).
+  2. Fund one address on account `0` with `40_000_000`; fund one address on account `1` with `60_000_000`.
+  3. Read `wallet.platform().addresses_with_balances().await` and `wallet.platform().total_credits().await`.
+- **Assertions** (the proof shape):
+  - `addresses_with_balances` returns at least two entries (one from each account).
+  - `total_credits == 100_000_000` (sum across both accounts).
+- **Expected** (after fix): iterate `core_wallet.platform_payment_managed_accounts()` (or equivalent multi-account accessor) and aggregate.
+- **Actual** (current code): returns only account-0 data; second account's `60_000_000` is invisible from these accessors.
+- **Severity**: MEDIUM (UI-facing; the user sees a "wrong balance" without any error indication)
+- **Harness extensions required**: a test wallet builder that requests multiple PlatformPayment accounts at creation. The existing `wallet_factory` defaults to one; a `WalletAccountCreationOptions` variant or test-only setup is needed.
+- **Estimated complexity**: S
+- **Rationale**: The "first account only" restriction is a load-bearing implicit assumption that nothing in the public API surface tells callers about. Multi-account support is documented at the wallet-creation layer; the readback must match.
+
+#### Found-004 — `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:157-167`, `wallet/platform_addresses/withdrawal.rs:142-152`, `wallet/platform_addresses/fund_from_asset_lock.rs:130-140`.
+- **Suspected bug**: All three call sites build a `PlatformAddressBalanceEntry` whose `address_index` is computed via a `find_map(...).unwrap_or(0)` over the account's address pool. If the address truly is not in the pool (defensive case — e.g. caller passed an address that doesn't belong to the account), the entry persists with `address_index = 0`, mis-attributing the balance update to whichever address actually sits at index 0. The persister then writes the wrong row.
+- **Preconditions**: an account containing at least one address at index `0`. A subsequent operation references an address NOT in the pool (e.g. via `Explicit` input that's foreign to this account).
+- **Scenario**:
+  1. Build account `A` with addresses `addr_at_0`, `addr_at_1`, `addr_at_2`.
+  2. Construct a transfer / withdrawal / fund call referencing a `PlatformAddress` that is NOT in any of the account's pools but is otherwise well-formed.
+  3. Inspect the returned `PlatformAddressChangeSet`.
+- **Assertions** (the proof shape):
+  - The changeset must NOT contain an entry with `(address: foreign_addr, address_index: 0)` — that's a corrupted persistence row.
+  - Either the operation rejects with a typed error before producing a changeset entry, OR the entry omits the foreign address entirely.
+- **Expected** (after fix): on `find_map(...) == None`, log + skip the entry instead of attributing it to index 0; or fail the call with a typed error pointing at the unknown address.
+- **Actual** (current code): the entry is attributed to index 0 and written to the persister.
+- **Severity**: MEDIUM (silent data corruption in the persister's address table; downstream readers think `addr_at_0`'s balance is whatever the SDK reported for the foreign address)
+- **Harness extensions required**: a way to drive the call site with a foreign `PlatformAddress`. The transfer / fund paths accept `Explicit*` input maps so this is straightforward; the withdrawal path is per-account so requires a similar input-construction helper.
+- **Estimated complexity**: S
+- **Rationale**: `unwrap_or(0)` on a derivation-index lookup is the canonical "should have been a typed error" pattern. With three call sites identical, the regression class is broad.
+
+#### Found-005 — `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/identity/network/register_from_addresses.rs:87-122`, `wallet/identity/network/top_up_from_addresses.rs:58`.
+- **Suspected bug**: Both call sites pattern-match the SDK return as `(_address_infos, ...)` and drop the address-info map. `transfer()` and `withdraw()` (in `platform_addresses/`) consume this same map to update local balances + nonces. The TODO comment in `register_from_addresses.rs:139-143` admits the gap. As a result, addresses' cached `(balance, nonce)` go stale immediately after these calls — until the next BLAST sync round resolves them. A second operation against the same address before the sync uses a stale nonce and is rejected.
+- **Preconditions**: a platform-funded address with a known nonce. Run two consecutive operations against it.
+- **Scenario**:
+  1. Fund `addr_A` on test wallet with `60_000_000`. Note the address's nonce (post-funding).
+  2. Call `register_from_addresses({addr_A: 30_000_000}, ...)` — this consumes part of addr_A's balance and bumps its nonce on chain.
+  3. Without an intervening BLAST sync, immediately call a second operation against `addr_A` (e.g. another `register_from_addresses` or a `transfer`).
+- **Assertions** (the proof shape):
+  - After step 2, `wallet.platform().addresses_with_balances()` reflects `addr_A`'s post-call balance (i.e. NOT the pre-call `60_000_000`).
+  - The cached nonce for `addr_A` matches the chain-time nonce post-step-2.
+  - Step 3 succeeds (would fail with a stale-nonce error today).
+- **Expected** (after fix): mirror the `transfer()` pattern — walk `address_infos` and update each address's cached `AddressFunds` + emit a `PlatformAddressChangeSet` so the persister sees the updated nonce.
+- **Actual** (current code): the map is dropped; local cache stays at pre-call values.
+- **Severity**: MEDIUM (causes "spam-click" failures and surprises power users; not silent corruption but slow-to-recover staleness)
+- **Harness extensions required**: a way to issue two back-to-back operations against the same input address with no sync between them.
+- **Estimated complexity**: M (needs identity-signer + DPNS-style identity setup, then two consecutive identity-funding calls)
+- **Rationale**: The TODO comment in the source admits the gap; a test pins it so the comment doesn't outlive the next refactor that touches these files.
+
+#### Found-006 — `top_up_identity_with_funding` ignores caller-supplied `topup_index`
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/identity/network/top_up.rs:60-106`.
+- **Suspected bug**: The method's doc says `topup_index` is "An incrementing index distinguishing successive top-ups for the same identity". The implementation prefixes the parameter with `_` and the function body derives the funding key path from `identity_index` alone (with a `TODO(platform-wallet)` comment confirming the parameter is unused). Two consecutive top-ups for the same identity therefore derive from the same `(IdentityTopUp, identity_index)` path — yielding the same one-time key address, the same outpoint candidate, and a likely-duplicate asset-lock transaction or nonce collision on the same address.
+- **Preconditions**: an identity registered on testnet via the wallet.
+- **Scenario**:
+  1. Register identity `I` via `register_identity_with_funding_external_signer`.
+  2. Call `top_up_identity(&I.id, topup_index=0, amount_duffs=A0, ...)`.
+  3. Call `top_up_identity(&I.id, topup_index=1, amount_duffs=A1, ...)` — same identity, fresh `topup_index`.
+- **Assertions** (the proof shape):
+  - The two top-up calls produce DIFFERENT funding-output addresses (re-derived from different paths).
+  - The two asset-lock transactions have different txids.
+  - The doc claim about "successive top-ups for the same identity" is honoured — both calls succeed and credit the identity by `A0 + A1` total.
+- **Expected** (after fix): wire `topup_index` into the derivation path (or remove the parameter and document the constraint).
+- **Actual** (current code): two consecutive top-ups for the same identity share the same derivation context; the second is liable to collide with the first depending on caller behaviour.
+- **Severity**: HIGH (the public API has a parameter that does nothing; callers relying on the doc-stated semantics produce broken transactions)
+- **Harness extensions required**: identity setup; access to the asset-lock transaction details (currently inside `AssetLockManager`).
+- **Estimated complexity**: M
+- **Rationale**: A parameter that's documented as load-bearing but discarded by the implementation is a contract violation that no test currently catches. The TODO in the source admits the gap; a test makes it actionable.
+
+#### Found-007 — `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `manager/platform_address_sync.rs:189-224` (`start`).
+- **Suspected bug**: `start()` checks `guard.is_some()` and bails early, then installs a fresh cancel token. On loop exit the spawned thread unconditionally writes `*guard = None;`. There is no generation counter (unlike `IdentitySyncManager::start`, which does have one). Trace: `start()` spawns thread A → `stop()` cancels A → `start()` spawns thread B (guard now Some(B)) → thread A's loop finally exits and overwrites `guard = None`. Thread B is still running, but `is_running()` reports `false` and a third `start()` will spawn thread C. Multiple sync threads can run concurrently against the same `wallets` map, each issuing GRPC calls to DAPI.
+- **Preconditions**: a manager whose `start()` returns quickly enough to interleave a `stop()` and another `start()` before the original thread observes cancellation.
+- **Scenario**:
+  1. Build a manager with one registered wallet and a reachable DAPI endpoint.
+  2. Call `start()`.
+  3. Immediately call `stop()`.
+  4. Immediately call `start()` again (before thread A's first sync round completes).
+  5. Wait for thread A to observe its cancel token (it will, eventually) and clean up.
+  6. Inspect `is_running()` and the actual thread count.
+- **Assertions** (the proof shape):
+  - At every moment after step 4, AT MOST one platform-address-sync thread is running.
+  - `is_running() == true` for the entire window between step 4 and a later `stop()`.
+  - After thread A exits in step 5, `is_running()` does NOT drop to `false` (because thread B is still active).
+- **Expected** (after fix): adopt `IdentitySyncManager`'s generation-counter pattern — the spawned thread only clears the guard if its own generation matches the latest installed one.
+- **Actual** (current code): thread A unconditionally clears the guard on exit, masking thread B's existence to `is_running()`.
+- **Severity**: MEDIUM (parallel sync threads cause duplicate DAPI calls, write contention on the wallet manager lock, and inflated rate-limit usage; not data corruption but operationally noisy)
+- **Harness extensions required**: a way to count active "platform-address-sync" threads (`std::thread::Builder::name`) or to wedge a sync iteration so cancellation is observable but slow. The simplest proof shape is a counter that the sync routine increments per pass; if two threads run concurrently the counter advances faster than the interval.
+- **Estimated complexity**: M
+- **Rationale**: `IdentitySyncManager` already has the right pattern. The asymmetry between the two managers is the bug.
+
+#### Found-008 — `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/asset_lock/lock_notify_handler.rs:30` (`notify_waiters()`); `wallet/asset_lock/sync/proof.rs:287-337` (`wait_for_proof`'s check-then-await loop).
+- **Suspected bug**: `LockNotifyHandler::on_sync_event` calls `Notify::notify_waiters()`, which wakes only currently-registered waiters and produces no permit. `wait_for_proof` runs a check-then-await loop: read state under a read lock, drop the lock, then call `lock_notify.notified().await`. If a lock event fires in the gap between the state check and the registration of the next `notified()` future, no waiter is currently registered, the notification is discarded, and the waiter sleeps until the next event or the timeout.
+- **Preconditions**: SPV emits exactly one `InstantLockReceived` for the watched outpoint at a precise moment.
+- **Scenario**:
+  1. Tracked asset lock `OL` is in `Broadcast` state.
+  2. Test thread calls `wait_for_proof(&OL.out_point, timeout=300s)`.
+  3. The sequence (deterministic for the test):
+     - Wait for `wait_for_proof` to enter the loop and complete its first state check (no proof yet, still `Broadcast`).
+     - BEFORE `wait_for_proof` reaches `lock_notify.notified()`, drive `LockNotifyHandler::on_sync_event(InstantLockReceived(OL))` exactly once.
+     - Update the underlying `TransactionContext` to `InstantSend(lock)` AT THE SAME TIME (so a re-check would succeed).
+- **Assertions** (the proof shape):
+  - `wait_for_proof` returns `Ok(InstantAssetLockProof(...))` within `1s` (i.e. without waiting for the timeout).
+  - Counter-assertion if buggy: it sleeps until either a follow-up notify or `FinalityTimeout`.
+- **Expected** (after fix): use `Notify::notify_one()` (which keeps a permit if no waiter is registered) or call `notified()` BEFORE the state check (so the future is registered before the check happens, per Tokio's documented "intended use").
+- **Actual** (current code): a single missed notification stalls the waiter.
+- **Severity**: HIGH (asset-lock proof flow is on the critical path of identity registration / top-up; a stalled wait surfaces as long timeouts followed by spurious "asset lock expired" errors)
+- **Harness extensions required**: a test handle on `LockNotifyHandler` (it's already constructed with an `Arc<Notify>`); a way to drive the handler synchronously with a controlled state mutation. The wait-for-proof check uses `wallet_manager`, so the test must mutate the tracked record's `TransactionContext` before re-driving the handler.
+- **Estimated complexity**: M
+- **Rationale**: This is the textbook `Notify` footgun — `notify_waiters` doesn't store a permit, so check-then-await is a missed-wakeup. The asset-lock flow is exactly the place where one missed wakeup turns a 5-second proof wait into a 5-minute hang.
+
+#### Found-009 — wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `changeset/core_bridge.rs:71-115` (the `tokio::select!` loop in `spawn_wallet_event_adapter`).
+- **Suspected bug**: On `Err(RecvError::Lagged(n))` the loop logs a warning and continues. The dropped events are gone — `WalletEvent::TransactionDetected`, `BlockProcessed`, etc. that the broadcast channel discarded never reach the persister. Persisted state then lags reality, and there's no compensating mechanism to refetch them.
+- **Preconditions**: the broadcast channel's capacity is exceeded (many events fired in a tight burst, e.g. an SPV catch-up with a lot of UTXO changes).
+- **Scenario**:
+  1. Configure the persister to record every `store(..., cs)` it sees.
+  2. Drive the upstream broadcast channel with `(channel_capacity + 10)` distinct events in a tight burst, each with a unique `wallet_id` or `txid` so the persister can tell them apart.
+  3. Wait for the loop to drain.
+- **Assertions** (the proof shape):
+  - The persister observes ALL injected events. Or, equivalently, at least one of: (a) the loop's recovery mechanism re-emits the dropped events (e.g. by walking `wallet_manager` state and emitting a synthetic catch-up changeset), (b) the loop returns / signals an error to the caller so the application can react. Today neither happens.
+- **Expected** (after fix): on `Lagged(n)`, either re-subscribe and emit a "full state snapshot" changeset, or escalate the error (e.g. via a status channel) so the operator can issue an explicit re-sync. Silent loss is not OK because the persister diverges from chain reality with no signal.
+- **Actual** (current code): events are gone, only a warning log remains.
+- **Severity**: MEDIUM (losing core-wallet events causes the persister's stored state to diverge silently from the in-memory `WalletManager` state)
+- **Harness extensions required**: a way to construct a small-capacity `tokio::sync::broadcast::Sender` and inject events directly; or an instrumented wallet manager that exposes the broadcast for tests.
+- **Estimated complexity**: M
+- **Rationale**: `Lagged` is rare but not impossible. When it happens, the wallet's persisted state silently goes wrong. Documenting the contract one way or the other (re-emit / escalate / accept loss) is the minimum bar.
+
+#### Found-010 — `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/apply.rs:259-273` (the `platform_addresses` apply branch).
+- **Suspected bug**: The apply path walks `addr_cs.addresses` and writes only `entry.funds.balance` via `set_address_credit_balance`. The `nonce` field on `entry.funds` is dropped — the comment at line 266-270 admits this and points at "evo-tool's platform_address_balances table" as the alleged consumer of the nonce. But that consumption only happens via the FFI persister callback; pure in-memory replay (e.g. tests, restart-into-memory) loses the nonce and a subsequent operation against the same address will use a stale value.
+- **Preconditions**: a persister round-trip whose only consumer is `apply_changeset` (no FFI sidecar).
+- **Scenario**:
+  1. Source `PlatformWalletInfo` `A` has `addr_X` with `(balance=50, nonce=7)`.
+  2. Snapshot `A` into a `PlatformAddressChangeSet` and apply it to a fresh `PlatformWalletInfo` `B`.
+  3. Read `B`'s cached state for `addr_X`.
+- **Assertions** (the proof shape):
+  - `B`'s cached nonce for `addr_X == 7`.
+  - Counter-assertion if buggy: `B`'s nonce reads back as `0` (the default) because apply never wrote it.
+- **Expected** (after fix): persist + apply the nonce alongside the balance — extend `set_address_credit_balance` to also accept the nonce, or add a sibling write.
+- **Actual** (current code): apply discards the nonce. Test harnesses replaying a changeset see balance-only state.
+- **Severity**: MEDIUM (only bites pure-Rust persisters and tests; FFI consumers are unaffected because they read the changeset directly)
+- **Harness extensions required**: ability to read back per-address nonce from `ManagedPlatformAccount`. If no such accessor exists today, the test would need a new one.
+- **Estimated complexity**: S
+- **Rationale**: The contract is "apply replays the changeset onto state". Replaying balance only is a partial replay; the silent-drop of nonce is a documentation gap that masquerades as design.
+
+#### Found-011 — `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `changeset/changeset.rs:336-421` (`IdentityChangeSet::merge`); `wallet/apply.rs:127-143` (the apply order: insert then remove).
+- **Suspected bug**: The `Merge` trait's docstring says changesets are "commutative and associative". `IdentityChangeSet::merge` extends `identities` (inserts) and `removed` (tombstones) independently with no insert-vs-tombstone resolution. The apply order is "insert first, then remove", so a merged changeset that contains BOTH an insert and a tombstone for identity `id_X` always resolves to "removed", regardless of which side was passed first to `merge`. The latent contract violation: `A.merge(B)` then apply ≠ `B.merge(A)` then apply for the case `A = {insert id_X}`, `B = {tombstone id_X}` (both produce "removed"), but the merger has no way to express "the insert wins because it came later". The docstring on the changeset itself acknowledges the hazard ("Merge ordering hazard"); the trait-level docstring still claims commutativity. One of the two is wrong.
+- **Preconditions**: two changesets that disagree on a single identity (one inserts, one removes).
+- **Scenario**:
+  1. Build `cs_insert` containing `identities: {id_X → entry}` only.
+  2. Build `cs_remove` containing `removed: {id_X}` only.
+  3. Compute state_AB by merging cs_insert into a copy, then merging cs_remove, then applying.
+  4. Compute state_BA by merging cs_remove into a copy, then merging cs_insert, then applying.
+- **Assertions** (the proof shape):
+  - If commutativity is the contract: state_AB == state_BA AND for at least one of them id_X is present (non-vacuous). Today both end up "removed", so the contract is "tombstone wins". State the rule in the docstring.
+  - If "tombstone wins" is the contract: docstring on the `Merge` trait must say so explicitly; the test pins the ordering.
+- **Expected** (after fix): pick one — either `merge` resolves the conflict by last-seen (A.merge(B) ⇒ tombstone wins because it came later in `B`; B.merge(A) ⇒ insert wins because it came later in `A`), or document "tombstone always wins regardless of merge order" and remove the commutativity claim.
+- **Actual** (current code): tombstone always wins and the docstring claims commutativity; one of the two is misleading.
+- **Severity**: LOW (no current emitter produces both insert and tombstone for the same key in one mutation, per the in-source comment, but the latent footgun is documented as if it isn't a footgun)
+- **Harness extensions required**: none — pure unit-test-shaped.
+- **Estimated complexity**: S
+- **Rationale**: A "commutative" claim that doesn't hold for the simplest counter-example is a documentation bug that misleads future emitters. Pinning the actual semantics in a test forces the doc to match reality.
+
+#### Found-012 — `validate_or_upgrade_proof` and `wait_for_proof` only consult `standard_bip44_accounts`, missing CoinJoin / non-BIP-44 funding accounts
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/asset_lock/sync/proof.rs:43-54` (`validate_or_upgrade_proof`); `wallet/asset_lock/sync/proof.rs:289-322` (`wait_for_proof`); `wallet/asset_lock/sync/recovery.rs:104-110` (`resolve_status_from_info`).
+- **Suspected bug**: All three lookups walk `info.core_wallet.accounts.standard_bip44_accounts.get(&account_index)` and bail with "Transaction not found" if the BIP-44 lookup misses. But `account_index` on the tracked lock can refer to a CoinJoin account, an identity account, or any non-BIP-44 funding source. A real CoinJoin-funded asset lock would have its tx in `coinjoin_accounts` (or wherever), not `standard_bip44_accounts`. The wallet then can't resolve the chain status, can't upgrade IS to CL, and `wait_for_proof` returns "transaction not found" even though the chain has the tx.
+- **Preconditions**: an asset lock funded from a non-BIP-44 account.
+- **Scenario**:
+  1. Track a `TrackedAssetLock` whose `account_index` corresponds to a non-BIP-44 account containing the asset-lock tx.
+  2. Call `wait_for_proof(&out_point, timeout=10s)`.
+- **Assertions** (the proof shape):
+  - `wait_for_proof` returns `Ok(_)` (the proof) within the timeout, OR errors with a CLEAR account-type-mismatch message — never a generic "Transaction not found in account N" message that masks the real cause.
+- **Expected** (after fix): walk every account collection, not just `standard_bip44_accounts`; or carry the account *kind* alongside `account_index` on `TrackedAssetLock`.
+- **Actual** (current code): non-BIP-44 funded asset locks silently fail proof discovery.
+- **Severity**: MEDIUM (impacts CoinJoin / shielded users; the failure mode is "asset lock never resolves" with a misleading error)
+- **Harness extensions required**: ability to register a CoinJoin or non-BIP-44 account on the test wallet and seed a tx into its `transactions` map.
+- **Estimated complexity**: M
+- **Rationale**: Hardcoding `standard_bip44_accounts` in three places means the bug class spans the entire asset-lock proof pipeline. Pinning the contract on at least the proof-wait path catches a future shielded / CoinJoin asset-lock effort.
+
+#### Found-013 — `recover_asset_lock_blocking` swallows every error and returns `()` — silent recovery failure
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/asset_lock/sync/recovery.rs:36-88` (`recover_asset_lock_blocking`).
+- **Suspected bug**: The function returns `()`; every failure path is a silent `return`: `wallet_id` not in manager → silent return; lock already tracked → silent return; persister `store` failure → logged and discarded inside `queue_asset_lock_changeset`. There is no signal to the caller that recovery either ran successfully or failed — the doc neither mentions success/failure nor offers a query path to check whether the lock is now tracked.
+- **Preconditions**: a recovery attempt against a wallet that doesn't exist in the manager.
+- **Scenario**:
+  1. Construct an `AssetLockManager` whose `wallet_id` was deliberately removed from the wallet manager.
+  2. Call `recover_asset_lock_blocking(...)`.
+- **Assertions** (the proof shape):
+  - The caller can detect the failure — either via a `Result<(), _>` return type, or a follow-up `is_tracked` check that reflects "no, the recovery did not land".
+  - Today: the function returns `()`; the caller has no way to distinguish "recovery succeeded" from "wallet was missing".
+- **Expected** (after fix): change the signature to `Result<(), PlatformWalletError>` (matching the rest of this module's surface), or document explicitly that the function is best-effort and provide a sibling `is_tracked` accessor for confirmation.
+- **Actual** (current code): silent failure on `wallet_id` miss; the test harness can't distinguish a successful recovery from a no-op.
+- **Severity**: LOW (a recovery failure should be loud; silent swallow is poor ergonomics rather than data corruption — but evo-tool / DET-style callers may rely on this contract)
+- **Harness extensions required**: an `is_tracked` query on `AssetLockManager` (likely already exists via `list_tracked_locks`).
+- **Estimated complexity**: S
+- **Rationale**: `pub fn ... -> ()` on an operation that has multiple distinct failure modes is a documentation bug; pin the contract one way or the other.
+
+#### Found-014 — `transfer_credits_with_external_signer` never updates the receiver's local balance even when the receiver is wallet-owned
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `wallet/identity/network/transfer.rs:74-138`.
+- **Suspected bug**: The SDK call returns `(sender_balance, receiver_balance)`; the wallet uses only `sender_balance` and pattern-matches the receiver as `_receiver_balance`. If the receiver identity is also owned by this wallet (a wallet hosting two identities is the canonical case), its local cached balance falls out of sync until the next identity sync round.
+- **Preconditions**: a wallet hosting two identities `I_send` and `I_recv`. Both are managed by the local `IdentityManager`.
+- **Scenario**:
+  1. Register both `I_send` and `I_recv` against the same wallet.
+  2. Record both identities' cached balances pre-transfer.
+  3. Call `transfer_credits_with_external_signer(I_send, I_recv, amount, ...)`.
+  4. Read both cached balances post-call (no intervening sync).
+- **Assertions** (the proof shape):
+  - `I_send.cached_balance` decreased by `amount + fee` (call returns `sender_balance`, so this side updates).
+  - `I_recv.cached_balance` increased by `amount` exactly.
+  - Counter-assertion if buggy: `I_recv.cached_balance` is unchanged from its pre-call value.
+- **Expected** (after fix): if `I_recv` is in the local `IdentityManager`, write `set_balance(receiver_balance)` for it too and emit a snapshot changeset.
+- **Actual** (current code): receiver-side cache is stale until the next sync; UI reads show the wrong balance for the receiver.
+- **Severity**: MEDIUM (UI staleness for self-transfers; not data corruption, but a contract violation since the SDK explicitly reports the receiver balance and the wallet has it on hand)
+- **Harness extensions required**: identity setup with two wallet-owned identities (Wave A blocker).
+- **Estimated complexity**: S
+- **Rationale**: The SDK pattern-binds the receiver balance specifically so the wallet can use it. Discarding it via `_receiver_balance` is a small but precise contract miss.
+
+#### Found-015 — `load_from_persistor` leaves a partially registered wallet in `wallet_manager` when `wallet_id` mismatches
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `manager/load.rs:69-85`.
+- **Suspected bug**: The load loop calls `wm.insert_wallet(wallet, platform_info)` which yields an internally-recomputed `wallet_id`. Immediately afterwards the code compares against `expected_wallet_id` and returns an `Err` if they differ. But by that point the wallet has already been inserted into `self.wallet_manager`. The error-return short-circuits any subsequent rollback, so the manager ends up holding a wallet whose id doesn't match the persisted record — and the `self.wallets` map (the public registry) doesn't have it. Subsequent reads via `wallets.get(...)` return `None` while sync paths see the stale entry.
+- **Preconditions**: a persister whose load returns a `(expected_wallet_id, wallet_state)` pair where `expected_wallet_id` != `Wallet::compute_id(wallet_state.wallet)`. (Trivially constructible in tests.)
+- **Scenario**:
+  1. Build a `ClientStartState` with `wallets[expected_id] = state` where `state.wallet`'s recomputed id is `actual_id != expected_id`.
+  2. Call `manager.load_from_persistor()` and observe the error.
+  3. Inspect `manager.wallet_manager` (count of wallets) and `manager.wallets` (count of public-registered wallets).
+- **Assertions** (the proof shape):
+  - On error from `load_from_persistor`, both `wallet_manager` and `self.wallets` contain ZERO wallets — neither was partially populated.
+  - Counter-assertion if buggy: `wallet_manager` contains ONE wallet (the partial insert) while `self.wallets` is empty.
+- **Expected** (after fix): roll back the `wm.insert_wallet` (call `wm.remove_wallet(wallet_id)`) before returning the error, or perform the id check BEFORE inserting.
+- **Actual** (current code): the manager is left in a half-loaded state where the inner manager and the outer registry disagree.
+- **Severity**: MEDIUM (only triggered by corrupted persisted state, but when it triggers the wallet manager is operationally inconsistent)
+- **Harness extensions required**: a stub persister that returns a malformed `ClientStartState`.
+- **Estimated complexity**: M
+- **Rationale**: Half-loaded states lead to the worst class of bug — the manager's internal invariant ("every entry in `wallet_manager` has a matching `Arc<PlatformWallet>` in `self.wallets`") is silently broken.
+
+#### Found-016 — `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `manager/wallet_lifecycle.rs:322-337`.
+- **Suspected bug**: The function takes the `self.wallets` write lock, removes the wallet, drops the lock, then takes the `self.wallet_manager` write lock and removes from there. Between the two operations, a concurrent task can read `self.wallet_manager` (via e.g. a sync routine) and find the wallet still present, while `self.wallets` no longer has it. The sync routine then queries provider state for a wallet it can't find via the public registry — which manifests as `WalletNotFound` deep inside an unrelated callsite.
+- **Preconditions**: at least one concurrent reader on `self.wallet_manager` while `remove_wallet` is in progress.
+- **Scenario**:
+  1. Register a wallet `W` with the manager.
+  2. Spawn task `T1`: in a tight loop, take `wallet_manager.read()` and check whether `W` is present; record both that result and the result of `self.wallets.read()` for the same wallet.
+  3. From the main task, call `manager.remove_wallet(&W.id)`.
+  4. Stop `T1`.
+- **Assertions** (the proof shape):
+  - For every observation `T1` made: either both registries report present, or both report absent. Never one-of-two.
+  - Counter-assertion if buggy: at least one observation shows `wallet_manager` present, `self.wallets` absent.
+- **Expected** (after fix): perform both removes under a coordinated lock or document the transient inconsistency window. Operations that depend on cross-registry consistency must guard against it.
+- **Actual** (current code): a small but real window of inconsistency.
+- **Severity**: MEDIUM (race window is small but the resulting `WalletNotFound` errors look like spontaneous failures at unrelated call sites)
+- **Harness extensions required**: a way to wedge a concurrent reader with deterministic interleaving (e.g. a `tokio::sync::Barrier` injected for tests).
+- **Estimated complexity**: M
+- **Rationale**: Two-registry models (here, the inner `WalletManager` plus the outer `Arc<PlatformWallet>` registry) are a classic source of inconsistency windows. The fix is invariant-driven; the test pins the invariant.
+
+#### Found-017 — `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `manager/wallet_lifecycle.rs:238-244`, `manager/wallet_lifecycle.rs:296-298`.
+- **Suspected bug**: The persister is invoked to store the registration changeset (metadata + per-account specs + per-pool snapshots). On failure the code logs and proceeds to insert the wallet into `self.wallets`. The wallet is fully usable in the current process but on next launch the persister has no record of it — the user-visible effect is "I imported my wallet, used it, restarted the app, and the wallet is gone".
+- **Preconditions**: a persister whose `store` returns an error for the registration round.
+- **Scenario**:
+  1. Build a manager with a stub persister that fails (`store(...) → Err(_)`) on its first call.
+  2. Call `create_wallet_from_mnemonic(...)`.
+  3. Inspect the result and the manager state.
+- **Assertions** (the proof shape):
+  - EITHER `create_wallet_from_mnemonic` returns `Err(_)` so the caller knows the wallet won't survive a restart, AND the manager state is rolled back (no entry in `self.wallets`, no entry in `self.wallet_manager`).
+  - OR the function succeeds AND the persister failure is exposed via a status / event channel the caller can subscribe to. A silent log isn't sufficient.
+- **Expected** (after fix): treat the registration `store` as load-bearing — fail the registration and roll back the in-memory state on persister error.
+- **Actual** (current code): the registration silently proceeds; the user discovers the loss only on next launch.
+- **Severity**: HIGH (data loss class — a successful-looking wallet import that doesn't survive restart)
+- **Harness extensions required**: a stub persister with a configurable failure mode.
+- **Estimated complexity**: S
+- **Rationale**: The current code path assumes the persister is "best-effort". For the registration-round changeset specifically, this assumption is wrong — without that record, the wallet is unrecoverable.
+
+#### Found-018 — `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Wallet feature exercised**: `changeset/changeset.rs:586-635` (`PlatformAddressChangeSet::fee_paid`, `Merge::merge`).
+- **Suspected bug**: The `fee` field's docstring says "Fee paid by the transfer that produced this changeset, in credits." (singular). `fee_paid()` returns `self.fee`. But `merge` does `self.fee = self.fee.saturating_add(other.fee)` — so a merged changeset's `fee_paid()` returns the sum of fees across multiple transfers. A consumer that calls `fee_paid()` on a merged changeset and expects "the fee for ONE transfer" gets a misleading number with no way to tell.
+- **Preconditions**: two changesets, each with a non-zero `fee`.
+- **Scenario**:
+  1. Build `cs_a` with `fee = 100_000`.
+  2. Build `cs_b` with `fee = 200_000`.
+  3. Compute `cs_a.merge(cs_b)`.
+  4. Read `cs_a.fee_paid()`.
+- **Assertions** (the proof shape):
+  - Pick one — and document the choice:
+    - (a) `fee_paid()` on a merged changeset is the sum: `300_000`. Then rename / re-document the field to "total fee paid across operations in this batch".
+    - (b) `fee_paid()` is the fee of a single transfer; `merge` should preserve it via last-write-wins or refuse to merge non-zero fees. Then document and enforce.
+  - Today: `fee_paid()` returns `300_000` while the docstring says "fee paid by the transfer that produced this changeset" — internally inconsistent.
+- **Expected** (after fix): rename the docstring or change the merge policy. The two are at war.
+- **Actual** (current code): consumers reading `fee_paid()` on a merged changeset can mis-count the per-transfer fee.
+- **Severity**: LOW (only callers reading the fee accessor on a merged changeset are affected; the changeset is mostly consumed pre-merge)
+- **Harness extensions required**: none — pure unit-test.
+- **Estimated complexity**: S
+- **Rationale**: Two facts in the source disagree (docstring vs merge behaviour). One of them is wrong. A test pins which.
 
 ---
 
