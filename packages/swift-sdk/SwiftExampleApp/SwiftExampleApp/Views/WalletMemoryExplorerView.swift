@@ -251,6 +251,7 @@ struct WalletMemoryExplorerView: View {
     // MARK: - Load
 
     private func loadManagerState() {
+        loadError = nil
         var errors: [String] = []
         do {
             addressSyncRunning = try walletManager.isPlatformAddressSyncRunning()
@@ -501,6 +502,8 @@ struct WalletMemoryDetailView: View {
     }
 
     private func loadOnce() {
+        summaryError = nil
+        loadError = nil
         var errors: [String] = []
         do {
             summary = try wallet.inMemorySummary()
