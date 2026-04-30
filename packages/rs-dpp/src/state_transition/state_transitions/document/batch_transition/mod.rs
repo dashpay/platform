@@ -114,18 +114,37 @@ impl StateTransitionFieldTypes for BatchTransition {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use platform_value::{BinaryData, Identifier};
 
     fn fixture() -> BatchTransition {
-        BatchTransition::V0(BatchTransitionV0::default())
+        BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0xc0; 32]),
+            transitions: vec![], // empty transitions list — sub-types tested separately
+            user_fee_increase: 23,
+            signature_public_key_id: 4,
+            signature: BinaryData::new(vec![0xd0; 65]),
+        })
+    }
+
+    fn assert_v0_fields(t: &BatchTransition) {
+        let BatchTransition::V0(rec) = t else {
+            panic!("expected V0 variant");
+        };
+        assert_eq!(rec.owner_id, Identifier::new([0xc0; 32]), "owner_id");
+        assert_eq!(rec.transitions.len(), 0, "transitions");
+        assert_eq!(rec.user_fee_increase, 23, "user_fee_increase");
+        assert_eq!(rec.signature_public_key_id, 4, "signature_public_key_id");
+        assert_eq!(rec.signature, BinaryData::new(vec![0xd0; 65]), "signature");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = BatchTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -136,12 +155,13 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = BatchTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }
 
