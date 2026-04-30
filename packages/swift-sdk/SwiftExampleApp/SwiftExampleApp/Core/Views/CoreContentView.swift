@@ -651,11 +651,16 @@ struct WalletRowView: View {
     /// addresses (no identities) showed "Empty".
     @Query private var addressBalances: [PersistentPlatformAddress]
 
+    @Query private var walletTxos: [PersistentTxo]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+        _walletTxos = Query(
+            filter: #Predicate<PersistentTxo> { $0.walletId == walletId }
         )
     }
 
@@ -677,9 +682,23 @@ struct WalletRowView: View {
         }
     }
 
+    /// Sum of unspent TXO amounts (confirmed + unconfirmed). Mirrors
+    /// `BalanceCardView`'s headline derivation; immature / locked
+    /// scalars are skipped because the persister never writes them.
+    private var confirmedBalance: UInt64 {
+        walletTxos.lazy
+            .filter { !$0.isSpent && $0.isConfirmed }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    private var unconfirmedBalance: UInt64 {
+        walletTxos.lazy
+            .filter { !$0.isSpent && !$0.isConfirmed }
+            .reduce(0) { $0 + $1.amount }
+    }
+
     private var totalCoreBalance: UInt64 {
-        wallet.balanceConfirmed + wallet.balanceUnconfirmed
-            + wallet.balanceImmature + wallet.balanceLocked
+        confirmedBalance + unconfirmedBalance
     }
 
     /// Combined wallet balance expressed in DASH. Core uses 1e8
@@ -735,17 +754,11 @@ struct WalletRowView: View {
 
     private func balanceBreakdown() -> String? {
         var parts: [String] = []
-        if wallet.balanceConfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceConfirmed)) confirmed")
+        if confirmedBalance > 0 {
+            parts.append("\(formatBalance(confirmedBalance)) confirmed")
         }
-        if wallet.balanceUnconfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceUnconfirmed)) unconfirmed")
-        }
-        if wallet.balanceImmature > 0 {
-            parts.append("\(formatBalance(wallet.balanceImmature)) immature")
-        }
-        if wallet.balanceLocked > 0 {
-            parts.append("\(formatBalance(wallet.balanceLocked)) locked")
+        if unconfirmedBalance > 0 {
+            parts.append("\(formatBalance(unconfirmedBalance)) unconfirmed")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }

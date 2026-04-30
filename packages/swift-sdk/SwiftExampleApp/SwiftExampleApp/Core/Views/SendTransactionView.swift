@@ -13,9 +13,15 @@ struct SendTransactionView: View {
 
     @Environment(\.modelContext) private var modelContext
 
+    @Query private var walletTxos: [PersistentTxo]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
+        let walletId = wallet.walletId
+        _walletTxos = Query(
+            filter: #Predicate<PersistentTxo> { $0.walletId == walletId }
+        )
     }
 
     var body: some View {
@@ -162,7 +168,9 @@ struct SendTransactionView: View {
     // MARK: - Computed
 
     private var coreBalance: UInt64 {
-        wallet.balanceConfirmed
+        walletTxos.lazy
+            .filter { !$0.isSpent }
+            .reduce(0) { $0 + $1.amount }
     }
 
     private var shieldedBalance: UInt64 {
