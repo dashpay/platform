@@ -109,4 +109,44 @@ mod tests {
     }
 }
 
-// TODO(unification pass 2): add round-trip tests for chainassetlockproof — needs explicit fixture (no Default).
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use dashcore::OutPoint;
+    use std::str::FromStr;
+
+    fn fixture() -> ChainAssetLockProof {
+        ChainAssetLockProof {
+            core_chain_locked_height: 12345,
+            out_point: OutPoint::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000001:0",
+            )
+            .expect("outpoint"),
+        }
+    }
+
+    fn assert_fields(p: &ChainAssetLockProof) {
+        assert_eq!(p.core_chain_locked_height, 12345, "core_chain_locked_height");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ChainAssetLockProof::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+
+    #[test]
+    #[ignore = "BUG: OutPoint cannot deserialize via platform_value::Value::Map (\"invalid type: map, expected an OutPoint\"). JSON works."]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = ChainAssetLockProof::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+}
