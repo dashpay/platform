@@ -1502,3 +1502,49 @@ impl crate::serialization::JsonConvertible for IndexProperty {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for IndexProperty {}
 
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn ix_info_fixture() -> ContestedIndexInformation {
+        ContestedIndexInformation::default()
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_information() {
+        use crate::serialization::JsonConvertible;
+        let original = ix_info_fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedIndexInformation::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_information() {
+        use crate::serialization::ValueConvertible;
+        let original = ix_info_fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = ContestedIndexInformation::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_order_by() {
+        use crate::serialization::JsonConvertible;
+        for original in [OrderBy::Asc, OrderBy::Desc] {
+            let json = original.to_json().expect("to_json");
+            let recovered = OrderBy::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_resolution() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexResolution::MasternodeVote;
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedIndexResolution::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+}
