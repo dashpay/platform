@@ -66,3 +66,26 @@ impl VotePoll {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_votepoll {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_votepoll() {
+        use crate::serialization::JsonConvertible;
+        let original = VotePoll::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = VotePoll::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_votepoll() {
+        use crate::serialization::ValueConvertible;
+        let original = VotePoll::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = VotePoll::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

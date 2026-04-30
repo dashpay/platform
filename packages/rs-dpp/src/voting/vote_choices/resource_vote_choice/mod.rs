@@ -104,3 +104,26 @@ impl TryFrom<(i32, Option<Vec<u8>>)> for ResourceVoteChoice {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_resourcevotechoice {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_resourcevotechoice() {
+        use crate::serialization::JsonConvertible;
+        let original = ResourceVoteChoice::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = ResourceVoteChoice::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_resourcevotechoice() {
+        use crate::serialization::ValueConvertible;
+        let original = ResourceVoteChoice::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = ResourceVoteChoice::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

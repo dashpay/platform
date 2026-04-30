@@ -86,3 +86,26 @@ mod tests {
         assert_eq!(vote, restored);
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_vote {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_vote() {
+        use crate::serialization::JsonConvertible;
+        let original = Vote::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = Vote::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_vote() {
+        use crate::serialization::ValueConvertible;
+        let original = Vote::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = Vote::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

@@ -115,3 +115,5 @@ mod tests {
         assert_eq!(info, restored);
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for finalizedepochinfo — needs explicit fixture (no Default).

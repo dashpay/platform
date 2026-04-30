@@ -108,3 +108,5 @@ mod tests {
         assert_eq!(proof, restored);
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for chainassetlockproof — needs explicit fixture (no Default).

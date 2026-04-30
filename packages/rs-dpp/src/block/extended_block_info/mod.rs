@@ -176,3 +176,5 @@ mod tests {
         assert_eq!(block_info, decoded);
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for extendedblockinfo — needs explicit fixture (no Default).

@@ -75,3 +75,5 @@ mod tests {
         assert_eq!(status, restored);
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for tokenstatus — needs explicit fixture (no Default).
