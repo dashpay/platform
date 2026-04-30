@@ -109,11 +109,15 @@ pub enum DataContract {
     V1(DataContractV1),
 }
 
-#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DataContract {}
-
-#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DataContract {}
+// Note: DataContract intentionally does NOT implement JsonConvertible / ValueConvertible.
+// It exposes version-aware `to_json(&PlatformVersion)` / `from_json(JsonValue, &PlatformVersion, ...)`
+// via DataContractJsonConversionMethodsV0 / DataContractValueConversionMethodsV0 — those methods
+// route serialization through DataContractInSerializationFormat to preserve the active platform
+// version. Adding the canonical traits here would shadow the version-aware methods (E0034 ambiguity
+// at every call site that passes a PlatformVersion). Per the unification plan §3.11 step 10, the
+// proper fix is renaming the legacy methods to `*_versioned` first; that's a separate task.
+// `DataContractInSerializationFormat` (the underlying serialization shape) DOES implement the
+// canonical traits — see `data_contract/serialized_version/mod.rs`.
 
 impl PlatformSerializableWithPlatformVersion for DataContract {
     type Error = ProtocolError;
