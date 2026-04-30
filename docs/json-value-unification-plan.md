@@ -597,6 +597,16 @@ Each migration PR should:
 - **`rs-sdk` / `rs-drive-proof-verifier`**: zero direct callers of non-canonical mechanisms — these crates are migration-safe.
 - **JSON-Schema validating-JSON path**: `try_into_validating_json` produces a structurally different JSON (bytes-as-arrays, integers-as-numbers). Cannot be replaced with plain `JsonConvertible::to_json`. Stays as KEEP-AS-EXCEPTION; document as the validation-only escape hatch.
 
+## 10b. Bugs surfaced by pass-2 tests
+
+Tracking real round-trip failures discovered while running the new test convention. Each entry needs a follow-up fix.
+
+| Type | Test | Failure | Severity |
+|---|---|---|---|
+| `AddressFundingFromAssetLockTransition` (V0) | `value_round_trip_with_per_property_assertions` | `from_object: ValueError(SerdeDeserializationError("invalid type: map, expected an OutPoint"))` — `OutPoint` inside `ChainAssetLockProof` cannot deserialize from `platform_value::Value::Map`. JSON round-trip works. | 🟠 platform_value path broken for OutPoint-bearing types |
+
+These are marked `#[ignore = "..."]` in the test files and tracked here for pass-3 fix work.
+
 ## 11. Lessons learned from pass 1 (2026-04-30)
 
 These are observations gathered during the pass-1 mass migration. They refine §3 and §10 and should inform pass 2.

@@ -99,20 +99,58 @@ impl StateTransitionFieldTypes for AddressFundsTransferTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "serde-conversion"))]
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+    use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use platform_value::BinaryData;
+    use std::collections::BTreeMap;
 
     fn fixture() -> AddressFundsTransferTransition {
-        AddressFundsTransferTransition::V0(AddressFundsTransferTransitionV0::default())
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xf1; 20]), (10u32, 800_000u64));
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert(PlatformAddress::P2sh([0xf2; 20]), 700_000u64);
+
+        let v0 = AddressFundsTransferTransitionV0 {
+            inputs,
+            outputs,
+            fee_strategy: vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            user_fee_increase: 17,
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0xa9; 65]),
+            }],
+        };
+        AddressFundsTransferTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &AddressFundsTransferTransition) {
+        let AddressFundsTransferTransition::V0(rec) = t;
+        assert_eq!(rec.inputs.len(), 1, "inputs count");
+        assert_eq!(rec.outputs.len(), 1, "outputs count");
+        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy");
+        assert_eq!(rec.user_fee_increase, 17, "user_fee_increase");
+        assert_eq!(rec.input_witnesses.len(), 1, "input_witnesses");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = AddressFundsTransferTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = AddressFundsTransferTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]

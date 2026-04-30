@@ -109,26 +109,71 @@ impl StateTransitionFieldTypes for AddressCreditWithdrawalTransition {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+    use crate::identity::core_script::CoreScript;
+    use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
+    use crate::withdrawal::Pooling;
+    use platform_value::BinaryData;
+    use std::collections::BTreeMap;
 
     fn fixture() -> AddressCreditWithdrawalTransition {
-        AddressCreditWithdrawalTransition::V0(AddressCreditWithdrawalTransitionV0::default())
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0x01; 20]), (5u32, 900_000u64));
+
+        let v0 = AddressCreditWithdrawalTransitionV0 {
+            inputs,
+            output: Some((PlatformAddress::P2sh([0x02; 20]), 100_000u64)),
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            core_fee_per_byte: 21,
+            pooling: Pooling::IfAvailable,
+            output_script: CoreScript::from_bytes(vec![0xaa, 0xbb, 0xcc]),
+            user_fee_increase: 19,
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0xef; 65]),
+            }],
+        };
+        AddressCreditWithdrawalTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &AddressCreditWithdrawalTransition) {
+        let AddressCreditWithdrawalTransition::V0(rec) = t;
+        assert_eq!(rec.inputs.len(), 1, "inputs count");
+        assert_eq!(
+            rec.output,
+            Some((PlatformAddress::P2sh([0x02; 20]), 100_000u64)),
+            "output"
+        );
+        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy");
+        assert_eq!(rec.core_fee_per_byte, 21, "core_fee_per_byte");
+        assert_eq!(rec.pooling, Pooling::IfAvailable, "pooling");
+        assert_eq!(rec.user_fee_increase, 19, "user_fee_increase");
+        assert_eq!(rec.input_witnesses.len(), 1, "input_witnesses");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = AddressCreditWithdrawalTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = AddressCreditWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
     }
 }

@@ -97,23 +97,84 @@ impl StateTransitionFieldTypes for AddressFundingFromAssetLockTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "serde-conversion"))]
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+    use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+    use dashcore::OutPoint;
+    use platform_value::{BinaryData, Identifier};
+    use std::collections::BTreeMap;
+    use std::str::FromStr;
 
     fn fixture() -> AddressFundingFromAssetLockTransition {
-        AddressFundingFromAssetLockTransition::V0(
-            AddressFundingFromAssetLockTransitionV0::default(),
-        )
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xa1; 20]), (4u32, 600_000u64));
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert(PlatformAddress::P2pkh([0xb2; 20]), Some(400_000u64));
+        outputs.insert(PlatformAddress::P2sh([0xc3; 20]), None); // remainder
+
+        let asset_lock_proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 12345,
+            out_point: OutPoint::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000001:1",
+            )
+            .expect("outpoint"),
+        });
+
+        let v0 = AddressFundingFromAssetLockTransitionV0 {
+            asset_lock_proof,
+            inputs,
+            outputs,
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 11,
+            signature: BinaryData::new(vec![0xd4; 65]),
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0xe5; 65]),
+            }],
+        };
+        AddressFundingFromAssetLockTransition::V0(v0)
+    }
+
+    fn assert_v0_fields(t: &AddressFundingFromAssetLockTransition) {
+        let AddressFundingFromAssetLockTransition::V0(rec) = t;
+        match &rec.asset_lock_proof {
+            AssetLockProof::Chain(c) => {
+                assert_eq!(c.core_chain_locked_height, 12345, "asset_lock_proof.height");
+            }
+            other => panic!("expected Chain proof, got {:?}", other),
+        }
+        assert_eq!(rec.inputs.len(), 1, "inputs count");
+        assert_eq!(rec.outputs.len(), 2, "outputs count");
+        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy");
+        assert_eq!(rec.user_fee_increase, 11, "user_fee_increase");
+        assert_eq!(rec.signature, BinaryData::new(vec![0xd4; 65]), "signature");
+        assert_eq!(rec.input_witnesses.len(), 1, "input_witnesses");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered =
             AddressFundingFromAssetLockTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    #[ignore = "BUG: OutPoint inside ChainAssetLockProof fails to round-trip via platform_value::Value (\"invalid type: map, expected an OutPoint\"). \
+                JSON round-trip works. Track for pass-2 fix queue."]
+    fn value_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered =
+            AddressFundingFromAssetLockTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
