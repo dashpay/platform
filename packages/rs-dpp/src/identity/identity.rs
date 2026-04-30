@@ -59,6 +59,71 @@ impl JsonConvertible for PartialIdentity {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl ValueConvertible for PartialIdentity {}
 
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::identity::accessors::IdentityGettersV0;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use platform_value::BinaryData;
+
+    fn fixture_pubkey(id: u32, byte: u8) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![byte; 33]),
+            disabled_at: None,
+        })
+    }
+
+    fn fixture() -> Identity {
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(0, fixture_pubkey(0, 0xa0));
+        public_keys.insert(1, fixture_pubkey(1, 0xb1));
+        Identity::V0(IdentityV0 {
+            id: Identifier::new([0x42; 32]),
+            public_keys,
+            balance: 1_000_000,
+            revision: 7,
+        })
+    }
+
+    fn assert_fields(identity: &Identity) {
+        assert_eq!(identity.id(), Identifier::new([0x42; 32]), "id");
+        assert_eq!(identity.balance(), 1_000_000, "balance");
+        assert_eq!(identity.revision(), 7, "revision");
+        assert_eq!(identity.public_keys().len(), 2, "public_keys count");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = Identity::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Identity::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
+    }
+}
+
 /// An identity struct that represent partially set/loaded identity data.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -347,29 +412,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
-    use super::*;
-
-    fn fixture() -> Identity {
-        Identity::V0(IdentityV0::default())
-    }
-
-    #[test]
-    fn json_round_trip() {
-        use crate::serialization::JsonConvertible;
-        let original = fixture();
-        let json = original.to_json().expect("to_json");
-        let recovered = Identity::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
-    }
-
-    #[test]
-    fn value_round_trip() {
-        use crate::serialization::ValueConvertible;
-        let original = fixture();
-        let value = original.to_object().expect("to_object");
-        let recovered = Identity::from_object(value).expect("from_object");
-        assert_eq!(original, recovered);
-    }
-}
