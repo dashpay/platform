@@ -64,3 +64,26 @@ pub struct GroupStateTransitionResolvedInfo {
     pub action_is_proposer: bool,
     pub signer_power: GroupMemberPower,
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_groupstatetransitioninfo {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_groupstatetransitioninfo() {
+        use crate::serialization::JsonConvertible;
+        let original = GroupStateTransitionInfo::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = GroupStateTransitionInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_groupstatetransitioninfo() {
+        use crate::serialization::ValueConvertible;
+        let original = GroupStateTransitionInfo::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = GroupStateTransitionInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

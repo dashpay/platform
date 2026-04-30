@@ -65,3 +65,7 @@ impl GroupActionAccessors for GroupAction {
         }
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for GroupAction once we have an
+// explicit fixture (GroupActionV0 has no Default — its `event: GroupActionEvent`
+// field is itself a versioned enum without Default).

@@ -126,3 +126,6 @@ impl AssetLockValueSettersV0 for AssetLockValue {
         }
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for AssetLockValue — AssetLockValueV0
+// lacks Default, so an explicit fixture is required.

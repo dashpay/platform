@@ -346,3 +346,30 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn fixture() -> Identity {
+        Identity::V0(IdentityV0::default())
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = Identity::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Identity::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
