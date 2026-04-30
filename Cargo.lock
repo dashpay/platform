@@ -1623,6 +1623,7 @@ dependencies = [
  "dapi-grpc",
  "dash-async",
  "dash-context-provider",
+ "dash-network-seeds",
  "dash-platform-macros",
  "derive_more 1.0.0",
  "dotenvy",
