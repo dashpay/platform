@@ -121,3 +121,38 @@ impl crate::serialization::JsonConvertible for Epoch {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for Epoch {}
 
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests_epoch {
+    use super::*;
+
+    fn fixture() -> Epoch {
+        Epoch::new(7).expect("epoch")
+    }
+
+    fn assert_fields(e: &Epoch) {
+        assert_eq!(e.index, 7, "index");
+        // key is serde(skip) and reconstructed from index in Deserialize
+        assert_eq!(e.key, Epoch::new(7).expect("epoch").key, "key matches Epoch::new(7)");
+    }
+
+    #[test]
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = Epoch::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Epoch::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+        assert_fields(&recovered);
+    }
+}
