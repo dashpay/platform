@@ -103,11 +103,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "BUG: Bytes32::deserialize requires a base64 string unconditionally, but \
-                platform_value::to_value emits bytes (is_human_readable=false). The $entropy \
-                field hits this on round-trip through platform_value. Tracks the Critical-1 \
-                is_human_readable divergence in the json-value-unification plan; the JSON \
-                path works fine (see json_round_trip)."]
     fn value_round_trip() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
