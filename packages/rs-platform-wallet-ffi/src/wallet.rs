@@ -242,7 +242,7 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
     count: usize,
 ) {
     if !entries.is_null() && count > 0 {
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(entries, count));
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
     }
 }
 

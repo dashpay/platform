@@ -15,6 +15,7 @@ use platform_wallet::spv::{ClientConfig, ProgressPercentage, SyncProgress, SyncS
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
+use crate::types::FFINetwork;
 
 // ---------------------------------------------------------------------------
 // Sync progress
@@ -222,7 +223,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
 pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     handle: Handle,
     data_dir: *const c_char,
-    network: u32,
+    network: FFINetwork,
     user_agent: *const c_char,
     peers: *const *const c_char,
     peer_count: usize,
@@ -247,13 +248,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         }
     };
 
-    let net = match network {
-        0 => dashcore::Network::Mainnet,
-        1 => dashcore::Network::Testnet,
-        2 => dashcore::Network::Devnet,
-        3 => dashcore::Network::Regtest,
-        _ => return PlatformWalletFFIResult::ErrorInvalidNetwork,
-    };
+    let net: crate::types::Network = network.into();
 
     let mut peer_list: Vec<String> = Vec::new();
     if !peers.is_null() && peer_count > 0 {

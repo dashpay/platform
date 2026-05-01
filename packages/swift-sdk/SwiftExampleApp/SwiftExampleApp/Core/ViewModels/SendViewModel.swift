@@ -83,9 +83,9 @@ class SendViewModel: ObservableObject {
     @Published var error: String?
     @Published var successMessage: String?
 
-    private let network: AppNetwork
+    private let network: Network
 
-    init(network: AppNetwork) {
+    init(network: Network) {
         self.network = network
     }
 
@@ -204,9 +204,9 @@ class SendViewModel: ObservableObject {
                 // hasn't had its network stamped yet — a wallet in
                 // that state has no identities to find anyway.
                 //
-                // Filter against `networkRaw` (the Int-backed shadow
+                // Filter against `networkRaw` (the UInt32-backed shadow
                 // field) because Foundation's predicate engine can't
-                // capture `AppNetwork`.
+                // capture `Network`.
                 let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
                 let amountThreshold = Int64(bitPattern: amount)
                 let descriptor = FetchDescriptor<PersistentIdentity>(

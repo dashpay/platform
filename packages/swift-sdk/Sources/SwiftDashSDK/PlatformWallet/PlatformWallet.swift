@@ -4,7 +4,7 @@ import DashSDKFFI
 /// Platform Wallet for managing identities and DashPay contacts
 public class PlatformWallet {
     private let handle: Handle
-    private var identityManagers: [PlatformNetwork: IdentityManager] = [:]
+    private var identityManagers: [Network: IdentityManager] = [:]
 
     private init(handle: Handle) {
         self.handle = handle
@@ -15,7 +15,7 @@ public class PlatformWallet {
     }
 
     /// Create a new Platform Wallet from a 64-byte seed
-    public static func fromSeed(_ seed: Data, network: PlatformNetwork = .testnet) throws -> PlatformWallet {
+    public static func fromSeed(_ seed: Data, network: Network = .testnet) throws -> PlatformWallet {
         guard seed.count == 64 else {
             throw PlatformWalletError.invalidParameter
         }
@@ -44,7 +44,7 @@ public class PlatformWallet {
     public static func fromMnemonic(
         _ mnemonic: String,
         passphrase: String? = nil,
-        network: PlatformNetwork = .testnet
+        network: Network = .testnet
     ) throws -> PlatformWallet {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
@@ -68,7 +68,7 @@ public class PlatformWallet {
     }
 
     /// Get the identity manager for a specific network
-    public func getIdentityManager(for network: PlatformNetwork) throws -> IdentityManager {
+    public func getIdentityManager(for network: Network) throws -> IdentityManager {
         // Check if we already have it cached
         if let manager = identityManagers[network] {
             return manager
@@ -93,7 +93,7 @@ public class PlatformWallet {
     }
 
     /// Set the identity manager for a specific network
-    public func setIdentityManager(_ manager: IdentityManager, for network: PlatformNetwork) throws {
+    public func setIdentityManager(_ manager: IdentityManager, for network: Network) throws {
         var error = PlatformWalletFFIError()
 
         let result = platform_wallet_info_set_identity_manager(

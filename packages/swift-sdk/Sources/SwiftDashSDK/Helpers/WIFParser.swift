@@ -67,16 +67,17 @@ public enum WIFParser {
     ///
     /// - Parameters:
     ///   - privateKey: The raw 32-byte secp256k1 secret scalar.
-    ///   - isTestnet: `true` → testnet (`0xEF`); `false` → mainnet
-    ///     (`0xCC`).
-    public static func encodeToWIF(_ privateKey: Data, isTestnet: Bool = true) -> String? {
+    ///   - network: Which network the key belongs to (default: testnet).
+    ///     Mainnet uses version byte `0xCC`; every other network uses
+    ///     the testnet `0xEF` byte.
+    public static func encodeToWIF(_ privateKey: Data, network: Network = .testnet) -> String? {
         guard privateKey.count == 32 else { return nil }
 
         // The FFI takes a NUL-terminated hex string for the private
         // key. Encode → call → free → parse the returned C string.
         let privateKeyHex = privateKey.toHexString()
         let result = privateKeyHex.withCString { hexPtr in
-            dash_sdk_private_key_to_wif(hexPtr, isTestnet)
+            dash_sdk_private_key_to_wif(hexPtr, network.ffiValue)
         }
 
         if let error = result.error {

@@ -22,10 +22,10 @@
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 
+use crate::types::{FFINetwork, Network};
 use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
-use rs_sdk_ffi::DashSDKNetwork;
 use zeroize::Zeroizing;
 
 use crate::derive_and_persist_callbacks::{
@@ -33,7 +33,7 @@ use crate::derive_and_persist_callbacks::{
 };
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
-use crate::identity_keys_from_mnemonic::{map_network, parse_mnemonic_any_language};
+use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 
 /// Derive a single ECDSA identity-authentication keypair at
 /// `(identity_index, key_index)` from a BIP-39 mnemonic. Returns
@@ -72,7 +72,7 @@ use crate::identity_keys_from_mnemonic::{map_network, parse_mnemonic_any_languag
 pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
     mnemonic_cstr: *const std::os::raw::c_char,
     passphrase_cstr: *const std::os::raw::c_char,
-    network: DashSDKNetwork,
+    network: FFINetwork,
     identity_index: u32,
     key_index: u32,
     out_row: *mut IdentityKeyPreviewFFI,
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
 unsafe fn derive_at_slot_inner(
     mnemonic_str: &str,
     passphrase_str: &str,
-    network: DashSDKNetwork,
+    network: FFINetwork,
     identity_index: u32,
     key_index: u32,
     out_row: *mut IdentityKeyPreviewFFI,
@@ -175,7 +175,7 @@ unsafe fn derive_at_slot_inner(
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
 
     // ---- Master xpriv --------------------------------------------------------
-    let kw_network = map_network(network);
+    let kw_network: Network = network.into();
     let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
         Ok(m) => m,
         Err(e) => {
@@ -338,7 +338,7 @@ unsafe fn derive_at_slot_inner(
 /// - `out_error` may be NULL.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
-    network: DashSDKNetwork,
+    network: FFINetwork,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     identity_index: u32,

@@ -27,7 +27,7 @@ struct RecipientPickerView: View {
     /// wallet; it only calls `resolveDpnsName`.
     let wallet: ManagedPlatformWallet
     /// Limits the local-identity list to identities on this network.
-    let network: AppNetwork
+    let network: Network
     /// Optional identity id to exclude (e.g. the sender — you can't
     /// transfer to yourself).
     let exclude: Data?
@@ -58,7 +58,7 @@ struct RecipientPickerView: View {
     init(
         selection: Binding<RecipientSelection?>,
         wallet: ManagedPlatformWallet,
-        network: AppNetwork,
+        network: Network,
         exclude: Data? = nil
     ) {
         self._selection = selection

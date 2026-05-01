@@ -5,10 +5,10 @@ use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
 use crate::handle::*;
 use crate::persistence::{FFIPersister, PersistenceCallbacks};
 use crate::runtime::runtime;
+use crate::types::{FFINetwork, Network};
 
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-use key_wallet::Network;
 use platform_wallet::PlatformWalletManager;
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
     manager_handle: Handle,
-    network: u32,
+    network: FFINetwork,
     seed_bytes: *const u8,
     seed_len: usize,
     account_options: u32,
@@ -95,21 +95,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
         return PlatformWalletFFIResult::ErrorInvalidParameter;
     }
 
-    let network = match network {
-        0 => Network::Mainnet,
-        1 => Network::Testnet,
-        2 => Network::Devnet,
-        3 => Network::Regtest,
-        _ => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidNetwork,
-                    format!("Unknown network: {}", network),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidNetwork;
-        }
-    };
+    let network: Network = network.into();
 
     let mut seed = [0u8; 64];
     std::ptr::copy_nonoverlapping(seed_bytes, seed.as_mut_ptr(), 64);
@@ -153,7 +139,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
 pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     manager_handle: Handle,
     mnemonic: *const std::os::raw::c_char,
-    network: u32,
+    network: FFINetwork,
     account_options: u32,
     out_wallet_handle: *mut Handle,
     out_wallet_id: *mut [u8; 32],
@@ -176,21 +162,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
         }
     };
 
-    let network = match network {
-        0 => Network::Mainnet,
-        1 => Network::Testnet,
-        2 => Network::Devnet,
-        3 => Network::Regtest,
-        _ => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidNetwork,
-                    format!("Unknown network: {}", network),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidNetwork;
-        }
-    };
+    let network: Network = network.into();
 
     let accounts = match account_options {
         0 => WalletAccountCreationOptions::None,

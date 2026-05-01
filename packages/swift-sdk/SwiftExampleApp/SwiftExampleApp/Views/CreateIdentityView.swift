@@ -442,7 +442,7 @@ struct CreateIdentityView: View {
             identityPubkeys = try managedWallet.prePersistIdentityKeysForRegistration(
                 identityIndex: identityIndex,
                 keyCount: Self.defaultKeyCount,
-                network: platformState.currentNetwork.sdkNetwork
+                network: platformState.currentNetwork
             )
         } catch {
             submitError = .init(
@@ -465,7 +465,7 @@ struct CreateIdentityView: View {
 
         isCreating = true
 
-        let network: AppNetwork = platformState.currentNetwork
+        let network: Network = platformState.currentNetwork
 
         Task {
             do {
@@ -571,7 +571,7 @@ struct CreateIdentityView: View {
     /// `"derived:<path>"` identifiers — no Keychain write needed.
     private func persistCreatedIdentity(
         _ created: ManagedPlatformWallet.CreatedIdentity,
-        network: AppNetwork
+        network: Network
     ) throws {
         let identityId = created.identityId
         let descriptor = FetchDescriptor<PersistentIdentity>(

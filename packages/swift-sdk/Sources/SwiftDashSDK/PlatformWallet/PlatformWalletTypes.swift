@@ -20,8 +20,6 @@ extension Identifier {
     }
 }
 
-typealias NetworkType = UInt32
-
 /// Platform Wallet error types
 public enum PlatformWalletError: LocalizedError {
     case nullPointer
@@ -100,18 +98,6 @@ public enum PlatformWalletError: LocalizedError {
         default:
             self = .unknown(rustMessage ?? "Unknown error")
         }
-    }
-}
-
-/// Network type for Platform wallet
-public enum PlatformNetwork: UInt32 {
-    case mainnet = 0
-    case testnet = 1
-    case devnet = 2
-    case local = 3
-
-    var ffiValue: NetworkType {
-        NetworkType(self.rawValue)
     }
 }
 

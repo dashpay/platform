@@ -215,10 +215,10 @@ struct GetAddressInfoView: View {
               .cornerRadius(8)
             } else if let info = viewModel.result {
               VStack(alignment: .leading, spacing: 8) {
-                let network =
+                let network: Network =
                   viewModel.addressInput.lowercased().hasPrefix("tdashevo")
-                  ? DashSDKNetwork(rawValue: 1)
-                  : DashSDKNetwork(rawValue: 0)
+                  ? .testnet
+                  : .mainnet
                 let bech32mAddress = info.toBech32m(network: network) ?? info.addressHex
 
                 ResultRow(label: "Address", value: bech32mAddress)
@@ -355,7 +355,7 @@ struct GetAddressesInfosView: View {
               .cornerRadius(8)
             } else if let result = viewModel.result {
               let isTestnet = viewModel.addressesText.lowercased().contains("tdashevo")
-              let network = isTestnet ? DashSDKNetwork(rawValue: 1) : DashSDKNetwork(rawValue: 0)
+              let network: Network = isTestnet ? .testnet : .mainnet
 
               VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -1088,7 +1088,7 @@ struct GetRecentBalanceChangesView: View {
             .padding(.horizontal)
           } else if let changes = result {
             // Get network from SDK (0 = mainnet, 1 = testnet)
-            let network = appState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+            let network = appState.sdk?.network ?? .testnet
             RecentBalanceChangesResultView(changes: changes, network: network)
               .padding(.horizontal)
           }
@@ -1142,7 +1142,7 @@ struct GetRecentBalanceChangesView: View {
 
 struct RecentBalanceChangesResultView: View {
   let changes: RecentBalanceChanges
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -1184,7 +1184,7 @@ struct RecentBalanceChangesResultView: View {
 
 struct BlockBalanceChangesView: View {
   let block: BlockBalanceChanges
-  let network: DashSDKNetwork
+  let network: Network
 
   @State private var isExpanded = false
 
@@ -1221,7 +1221,7 @@ struct BlockBalanceChangesView: View {
 
 struct AddressBalanceChangeView: View {
   let change: AddressBalanceChange
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -1378,7 +1378,7 @@ struct GetCompactedBalanceChangesView: View {
             .padding(.horizontal)
           } else if let changes = result {
             // Get network from SDK
-            let network = appState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+            let network = appState.sdk?.network ?? .testnet
             CompactedBalanceChangesResultView(changes: changes, network: network)
               .padding(.horizontal)
           }
@@ -1432,7 +1432,7 @@ struct GetCompactedBalanceChangesView: View {
 
 struct CompactedBalanceChangesResultView: View {
   let changes: CompactedBalanceChanges
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -1474,7 +1474,7 @@ struct CompactedBalanceChangesResultView: View {
 
 struct CompactedBlockRangeView: View {
   let range: CompactedBlockRange
-  let network: DashSDKNetwork
+  let network: Network
 
   @State private var isExpanded = false
 
@@ -1511,7 +1511,7 @@ struct CompactedBlockRangeView: View {
 
 struct CompactedAddressChangeView: View {
   let change: CompactedAddressChange
-  let network: DashSDKNetwork
+  let network: Network
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {

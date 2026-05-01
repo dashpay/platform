@@ -100,7 +100,7 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
 /// Config for starting the SPV sync.
 public struct PlatformSpvStartConfig {
     public var dataDir: String
-    public var network: PlatformNetwork
+    public var network: Network
     public var userAgent: String?
     public var peers: [String]
     public var restrictToConfiguredPeers: Bool
@@ -109,7 +109,7 @@ public struct PlatformSpvStartConfig {
 
     public init(
         dataDir: String,
-        network: PlatformNetwork,
+        network: Network,
         userAgent: String? = nil,
         peers: [String] = [],
         restrictToConfiguredPeers: Bool = false,
@@ -188,7 +188,7 @@ extension PlatformWalletManager {
                 return platform_wallet_manager_spv_start(
                     handle,
                     dataDirPtr,
-                    config.network.rawValue,
+                    config.network.ffiValue,
                     userAgentPtr,
                     peersPtr,
                     UInt(peerCStrings.count),

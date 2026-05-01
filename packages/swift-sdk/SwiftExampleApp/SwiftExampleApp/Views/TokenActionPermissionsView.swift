@@ -654,8 +654,8 @@ struct TokenActionPermissionsView: View {
         // crash from `ModelContext.fetch` (the `@Query` getter is the
         // visible frame). The helper captures the raw Int by a unique
         // name so the translator stays unambiguous.
-        let resolvedNetwork: AppNetwork? = token.dataContract
-            .flatMap { AppNetwork(rawValue: $0.networkRaw) }
+        let resolvedNetwork: Network? = token.dataContract
+            .flatMap { Network(rawValue: $0.networkRaw) }
         if let resolvedNetwork {
             self._localIdentities = Query(
                 filter: PersistentIdentity.walletOwnedIdentitiesPredicate(network: resolvedNetwork),
