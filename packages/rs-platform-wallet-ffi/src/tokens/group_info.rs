@@ -14,13 +14,13 @@
 
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 
-use crate::error::{PlatformWalletFfiResult, PlatformWalletFfiResultCode};
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::types::read_identifier;
 
 /// Decode a flat `(kind, position, action_id, action_is_proposer)`
 /// tuple from an FFI caller into an `Option<GroupStateTransitionInfoStatus>`.
 ///
-/// On error returns `Err(PlatformWalletFfiResult)` carrying the FFI
+/// On error returns `Err(PlatformWalletFFIResult)` carrying the FFI
 /// error the caller should bubble up.
 ///
 /// # Safety
@@ -31,7 +31,7 @@ pub(crate) unsafe fn decode_group_info(
     position: u16,
     action_id: *const u8,
     action_is_proposer: bool,
-) -> Result<Option<GroupStateTransitionInfoStatus>, PlatformWalletFfiResult> {
+) -> Result<Option<GroupStateTransitionInfoStatus>, PlatformWalletFFIResult> {
     match kind {
         0 => Ok(None),
         1 => Ok(Some(
@@ -39,8 +39,8 @@ pub(crate) unsafe fn decode_group_info(
         )),
         2 => {
             if action_id.is_null() {
-                return Err(PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorNullPointer,
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
                     "group_info_action_id is null but kind == 2 (other-signer)",
                 ));
             }
@@ -55,8 +55,8 @@ pub(crate) unsafe fn decode_group_info(
                 ),
             ))
         }
-        other => Err(PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("Invalid group_info_kind: {other} (expected 0, 1, or 2)"),
         )),
     }

@@ -10,12 +10,12 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 pub unsafe extern "C" fn platform_wallet_get_id(
     handle: Handle,
     out_wallet_id: *mut [u8; 32],
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_wallet_id);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| wallet.wallet_id());
     *out_wallet_id = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get lock-free balance (spendable, unconfirmed, immature, locked).
@@ -28,7 +28,7 @@ pub unsafe extern "C" fn platform_wallet_get_balance(
     out_unconfirmed: *mut u64,
     out_immature: *mut u64,
     out_locked: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| {
         let b = wallet.balance();
         (b.confirmed(), b.unconfirmed(), b.immature(), b.locked())
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn platform_wallet_get_balance(
     if !out_locked.is_null() {
         *out_locked = locked;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get a PlatformAddressWallet handle from a PlatformWallet.
@@ -56,13 +56,13 @@ pub unsafe extern "C" fn platform_wallet_get_balance(
 pub unsafe extern "C" fn platform_wallet_get_platform(
     handle: Handle,
     out_platform_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_platform_handle);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| wallet.platform().clone());
     let platform_wallet = unwrap_option_or_return!(option);
     *out_platform_handle = PLATFORM_ADDRESS_WALLET_STORAGE.insert(platform_wallet);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get an AssetLockManager handle from a PlatformWallet.
@@ -70,14 +70,14 @@ pub unsafe extern "C" fn platform_wallet_get_platform(
 pub unsafe extern "C" fn platform_wallet_get_asset_locks(
     handle: Handle,
     out_asset_lock_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_asset_lock_handle);
 
     let option = PLATFORM_WALLET_STORAGE
         .with_item(handle, |wallet| std::sync::Arc::clone(wallet.asset_locks()));
     let asset_locks = unwrap_option_or_return!(option);
     *out_asset_lock_handle = ASSET_LOCK_MANAGER_STORAGE.insert(asset_locks);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get a CoreWallet handle from a PlatformWallet.
@@ -87,35 +87,35 @@ pub unsafe extern "C" fn platform_wallet_get_asset_locks(
 pub unsafe extern "C" fn platform_wallet_get_core(
     handle: Handle,
     out_core_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_core_handle);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| wallet.core().clone());
     let core_wallet = unwrap_option_or_return!(option);
     *out_core_handle = CORE_WALLET_STORAGE.insert(core_wallet);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Flush all queued changesets to the storage backend.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_flush_persist(handle: Handle) -> PlatformWalletFfiResult {
+pub unsafe extern "C" fn platform_wallet_flush_persist(handle: Handle) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| wallet.flush_persist());
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Load persisted state and apply it to the in-memory wallet.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_load_and_apply_persisted(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| {
         runtime().block_on(wallet.load_and_apply_persisted())
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Query per-account balances from the in-memory `WalletManager`.
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
     wallet_id: *const u8,
     out_entries: *mut *const crate::core_wallet_types::AccountBalanceEntryFFI,
     out_count: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id);
     check_ptr!(out_entries);
     check_ptr!(out_count);
@@ -173,13 +173,13 @@ pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
     if count == 0 {
         *out_entries = std::ptr::null();
         *out_count = 0;
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
 
     let boxed = entries.into_boxed_slice();
     *out_entries = Box::into_raw(boxed) as *const _;
     *out_count = count;
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free an array returned by [`platform_wallet_manager_get_account_balances`].
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
 
 /// Destroy a PlatformWallet handle.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWalletFfiResult {
+pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
     PLATFORM_WALLET_STORAGE.remove(handle);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

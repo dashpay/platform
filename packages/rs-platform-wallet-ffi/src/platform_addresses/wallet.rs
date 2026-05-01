@@ -16,9 +16,9 @@ use super::runtime;
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_destroy(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     PLATFORM_ADDRESS_WALLET_STORAGE.remove(handle);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Add a provider for a new account index.
@@ -26,13 +26,13 @@ pub unsafe extern "C" fn platform_address_wallet_destroy(
 pub unsafe extern "C" fn platform_address_wallet_add_provider(
     handle: Handle,
     account_index: u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
         runtime().block_on(wallet.add_provider(account_index))
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Restore sync state from persisted values.
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
     sync_height: u64,
     sync_timestamp: u64,
     last_known_recent_block: u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
         runtime().block_on(wallet.restore_sync_state(
             sync_height,
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
         ));
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -67,13 +67,13 @@ pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
 pub unsafe extern "C" fn platform_address_wallet_total_credits(
     handle: Handle,
     out_credits: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_credits);
 
     let option = PLATFORM_ADDRESS_WALLET_STORAGE
         .with_item(handle, |wallet| runtime().block_on(wallet.total_credits()));
     *out_credits = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get all platform addresses with their cached balances.
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
     handle: Handle,
     out_entries: *mut *mut AddressBalanceEntryFFI,
     out_count: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_entries);
     check_ptr!(out_count);
 
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
     } else {
         *out_entries = Box::into_raw(entries.into_boxed_slice()) as *mut AddressBalanceEntryFFI;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ pub unsafe extern "C" fn platform_wallet_token_transfer(
     public_note: *const c_char,
     _signing_key_id: u32,
     signer_handle: *mut SignerHandle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
     let from_id = unwrap_result_or_return!(read_identifier(identity_id));
@@ -66,5 +66,5 @@ pub unsafe extern "C" fn platform_wallet_token_transfer(
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

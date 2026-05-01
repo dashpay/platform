@@ -8,7 +8,7 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 
-use crate::error::{PlatformWalletFfiResult, PlatformWalletFfiResultCode};
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::{check_ptr, unwrap_result_or_return};
 
 /// Decode a bincode-encoded `ExtendedPubKey` (as emitted by
@@ -24,12 +24,12 @@ pub unsafe extern "C" fn platform_wallet_account_xpub_to_string(
     bytes: *const u8,
     bytes_len: usize,
     out_string: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(bytes);
     check_ptr!(out_string);
     if bytes_len == 0 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "bytes_len is zero",
         );
     }
@@ -42,7 +42,7 @@ pub unsafe extern "C" fn platform_wallet_account_xpub_to_string(
 
     let cstring = unwrap_result_or_return!(CString::new(xpub.to_string()));
     *out_string = cstring.into_raw();
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free a C string returned by [`platform_wallet_account_xpub_to_string`].

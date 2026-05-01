@@ -34,7 +34,7 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
     fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
     check_ptr!(signer_address_handle);
 
@@ -67,5 +67,5 @@ pub unsafe extern "C" fn platform_address_wallet_transfer(
     let result = unwrap_option_or_return!(option);
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

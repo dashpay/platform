@@ -149,7 +149,7 @@ pub struct IdentityPubkeyFFI {
 /// different prefixes — `add_public_keys[i]` for update,
 /// `identity_pubkeys[i]` for registration).
 ///
-/// Returns `Err(PlatformWalletFfiResult)` carrying the FFI error the
+/// Returns `Err(PlatformWalletFFIResult)` carrying the FFI error the
 /// caller should bubble up (the result already holds the message);
 /// caller does `unwrap_result_or_return!(decode_contract_bounds(...))`.
 pub(crate) unsafe fn decode_contract_bounds(
@@ -157,12 +157,12 @@ pub(crate) unsafe fn decode_contract_bounds(
     purpose: Purpose,
     row_index: usize,
     field_label: &str,
-) -> Result<Option<ContractBounds>, PlatformWalletFfiResult> {
+) -> Result<Option<ContractBounds>, PlatformWalletFFIResult> {
     match row.contract_bounds_kind {
         0 => {
             if matches!(purpose, Purpose::ENCRYPTION | Purpose::DECRYPTION) {
-                return Err(PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
                     format!(
                         "{field_label}[{row_index}].contract_bounds_kind = 0 (no bounds) but \
                          purpose = {purpose:?} requires bounds — Drive scopes Encryption / \
@@ -174,8 +174,8 @@ pub(crate) unsafe fn decode_contract_bounds(
         }
         1 => {
             if row.contract_bounds_id.is_null() {
-                return Err(PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorNullPointer,
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
                     format!(
                         "{field_label}[{row_index}].contract_bounds_id is null but kind == 1 \
                          (SingleContract)"
@@ -193,8 +193,8 @@ pub(crate) unsafe fn decode_contract_bounds(
         }
         2 => {
             if row.contract_bounds_id.is_null() || row.contract_bounds_document_type.is_null() {
-                return Err(PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorNullPointer,
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
                     format!(
                         "{field_label}[{row_index}].contract_bounds_id or \
                          .contract_bounds_document_type is null but kind == 2 \
@@ -210,8 +210,8 @@ pub(crate) unsafe fn decode_contract_bounds(
             let doc_type = match CStr::from_ptr(row.contract_bounds_document_type).to_str() {
                 Ok(s) => s.to_string(),
                 Err(e) => {
-                    return Err(PlatformWalletFfiResult::err(
-                        PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                         format!(
                             "{field_label}[{row_index}].contract_bounds_document_type is not \
                              valid UTF-8: {e}"
@@ -224,8 +224,8 @@ pub(crate) unsafe fn decode_contract_bounds(
                 document_type_name: doc_type,
             }))
         }
-        other => Err(PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "{field_label}[{row_index}].contract_bounds_kind = {other} is not a valid \
                  discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType)"
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     output: *const IdentityFundingOutputFFI,
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(inputs);
     check_ptr!(identity_pubkeys);
     check_ptr!(signer_identity_handle);
@@ -291,14 +291,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     check_ptr!(out_identity_id);
     check_ptr!(out_identity_handle);
     if inputs_count == 0 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "`inputs_count` is zero",
         );
     }
     if identity_pubkeys_count == 0 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "`identity_pubkeys_count` must be >= 1",
         );
     }
@@ -310,8 +310,8 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
             0 => PlatformAddress::P2pkh(entry.hash),
             1 => PlatformAddress::P2sh(entry.hash),
             _ => {
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
                     "invalid address_type (expected 0 or 1)",
                 );
             }
@@ -331,8 +331,8 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
                 0 => PlatformAddress::P2pkh(output_ref.hash),
                 1 => PlatformAddress::P2sh(output_ref.hash),
                 _ => {
-                    return PlatformWalletFfiResult::err(
-                        PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                    return PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
                         "invalid output address_type (expected 0 or 1)",
                     );
                 }
@@ -354,8 +354,8 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         let purpose = unwrap_result_or_return!(Purpose::try_from(row.purpose));
         let security_level = unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
         if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorNullPointer,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
                 format!("identity_pubkeys[{i}].pubkey_bytes is null or empty"),
             );
         }
@@ -414,7 +414,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     *out_identity_handle = handle;
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -480,11 +480,11 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
     identity_index: u32,
     key_count: u32,
     out_rows: *mut IdentityRegistrationKeyDerivationsFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_rows);
     *out_rows = IdentityRegistrationKeyDerivationsFFI::empty();
     if key_count == 0 {
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -493,8 +493,8 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
         let key_wallet = match wm.get_wallet(&wallet_id) {
             Some(w) => w,
             None => {
-                return Err(PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorInvalidHandle,
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidHandle,
                     "Wallet not found in wallet manager",
                 ));
             }
@@ -525,8 +525,8 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                     Ok(t) => t,
                     Err(e) => {
                         cleanup(rows);
-                        return Err(PlatformWalletFfiResult::err(
-                            PlatformWalletFfiResultCode::ErrorWalletOperation,
+                        return Err(PlatformWalletFFIResult::err(
+                            PlatformWalletFFIResultCode::ErrorWalletOperation,
                             format!(
                                 "derive_identity_keys_for_index: derivation failed at \
                                  (identity={identity_index}, key={key_id}): {e}"
@@ -539,8 +539,8 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                 Ok(s) => s,
                 Err(e) => {
                     cleanup(rows);
-                    return Err(PlatformWalletFfiResult::err(
-                        PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                         format!("derivation path contained NUL byte: {e}"),
                     ));
                 }
@@ -565,8 +565,8 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                     }
                     drop(path_cstring);
                     cleanup(rows);
-                    return Err(PlatformWalletFfiResult::err(
-                        PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                         format!("WIF string contained NUL byte: {e}"),
                     ));
                 }
@@ -595,7 +595,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
         items: items_ptr,
         count: items_count,
     };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release a [`IdentityRegistrationKeyDerivationsFFI`] previously

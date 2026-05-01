@@ -80,25 +80,25 @@ impl Default for PlatformAddressSyncWalletResultFFI {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_start(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let _entered = runtime().enter();
         manager.platform_address_sync_arc().start();
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Stop the platform-address sync manager if it is running.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_stop(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         manager.platform_address_sync().stop();
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether the platform-address sync manager background loop is running.
@@ -106,14 +106,14 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_stop(
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_running(
     handle: Handle,
     out_running: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         manager.platform_address_sync().is_running()
     });
     *out_running = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether a platform-address sync pass is currently in flight.
@@ -121,14 +121,14 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_runnin
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_syncing(
     handle: Handle,
     out_syncing: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_syncing);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         manager.platform_address_sync().is_syncing()
     });
     *out_syncing = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Unix seconds of the last completed platform-address sync pass, or 0 if none ran.
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_syncin
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_last_sync_unix_seconds(
     handle: Handle,
     out_last_sync_unix: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_last_sync_unix);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
@@ -146,7 +146,7 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_last_sync
             .unwrap_or(0)
     });
     *out_last_sync_unix = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Set the background platform-address sync interval in seconds.
@@ -154,14 +154,14 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_last_sync
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_interval(
     handle: Handle,
     interval_seconds: u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         manager
             .platform_address_sync()
             .set_interval(Duration::from_secs(interval_seconds));
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Replace the shared platform-address sync config used on each pass.
@@ -171,7 +171,7 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_inter
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_config(
     handle: Handle,
     config: *const AddressSyncConfigFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let cfg = if config.is_null() {
         None
     } else {
@@ -181,17 +181,17 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_confi
         manager.platform_address_sync().set_config(cfg);
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Run one platform-address sync pass across all registered wallets.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(manager.platform_address_sync().sync_now());
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

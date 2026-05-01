@@ -25,7 +25,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
     fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_changeset);
     check_ptr!(addresses);
     check_ptr!(asset_lock_proof_bytes);
@@ -71,5 +71,5 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
     let result = unwrap_option_or_return!(option);
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

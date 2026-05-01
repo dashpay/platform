@@ -75,7 +75,7 @@ fn option_string_to_c(s: Option<&str>) -> *mut c_char {
     }
 }
 
-unsafe fn decode_opt_c_str(ptr: *const c_char) -> Result<Option<String>, PlatformWalletFfiResult> {
+unsafe fn decode_opt_c_str(ptr: *const c_char) -> Result<Option<String>, PlatformWalletFFIResult> {
     if ptr.is_null() {
         return Ok(None);
     }
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
     identity_handle: Handle,
     out_profile: *mut DashPayProfileFFI,
     out_has_profile: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
 
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
             *out_has_profile = false;
         },
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Read the cached DashPay profile for a specific identity owned by a wallet.
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
     identity_id: *const u8,
     out_profile: *mut DashPayProfileFFI,
     out_has_profile: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
 
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
             *out_has_profile = false;
         },
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release strings owned by a [`DashPayProfileFFI`].
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn dashpay_profile_ffi_free(profile: *mut DashPayProfileFF
 pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
     wallet_handle: Handle,
     out_synced_count: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
         block_on_worker(async move { identity.sync_profiles().await })
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dashpay_profiles(
     if !out_synced_count.is_null() {
         unsafe { *out_synced_count = count };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Create or update a DashPay profile using an externally-supplied signer.
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
     do_create: bool,
     signer_handle: *mut SignerHandle,
     out_profile: *mut DashPayProfileFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(signer_handle);
 
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
     let result = unwrap_option_or_return!(option);
     let profile = unwrap_result_or_return!(result);
     *out_profile = DashPayProfileFFI::from_profile(&profile);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]
@@ -263,7 +263,7 @@ mod tests {
             let mut has_profile = true;
 
             let result = managed_identity_get_dashpay_profile(handle, &mut out, &mut has_profile);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!has_profile);
             assert!(out.display_name.is_null());
             assert!(out.public_message.is_null());
@@ -296,7 +296,7 @@ mod tests {
             let mut has_profile = false;
 
             let result = managed_identity_get_dashpay_profile(handle, &mut out, &mut has_profile);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(has_profile);
 
             let display = std::ffi::CStr::from_ptr(out.display_name).to_str().unwrap();
@@ -325,7 +325,7 @@ mod tests {
 
             let result =
                 managed_identity_get_dashpay_profile(9_999_999, &mut out, &mut has_profile);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::NotFound);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
 
             dashpay_profile_ffi_free(&mut out);
         }

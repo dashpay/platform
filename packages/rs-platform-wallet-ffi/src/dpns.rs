@@ -51,7 +51,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
     name: *const c_char,
     signer_handle: *mut SignerHandle,
     out_full_domain_name: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(name);
     check_ptr!(out_full_domain_name);
     check_ptr!(signer_handle);
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn platform_wallet_register_dpns_name_with_signer(
     let full_name = unwrap_result_or_return!(result);
     let cstr = unwrap_result_or_return!(CString::new(full_name));
     unsafe { *out_full_domain_name = cstr.into_raw() };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Resolve a DPNS name (`"alice"` or `"alice.dash"`) to an identity id.
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn platform_wallet_resolve_dpns_name(
     name: *const c_char,
     out_identity_id: *mut u8,
     out_found: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(name);
     check_ptr!(out_identity_id);
     check_ptr!(out_found);
@@ -111,7 +111,7 @@ pub unsafe extern "C" fn platform_wallet_resolve_dpns_name(
             *out_found = false;
         },
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Prefix search over DPNS documents on Platform.
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn platform_wallet_search_dpns_names(
     limit: u32,
     out_results: *mut *mut DpnsSearchResultFFI,
     out_count: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(prefix);
     check_ptr!(out_results);
     check_ptr!(out_count);
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn platform_wallet_search_dpns_names(
             *out_results = ptr::null_mut();
             *out_count = 0;
         }
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
     let mut buf: Vec<DpnsSearchResultFFI> = Vec::with_capacity(list.len());
     for u in list {
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn platform_wallet_search_dpns_names(
         *out_results = array_ptr;
         *out_count = count;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release an array previously returned by
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dpns_names(
     wallet_handle: Handle,
     identity_id: *const u8,
     out_added: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn platform_wallet_sync_dpns_names(
     if !out_added.is_null() {
         unsafe { *out_added = added };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Heap-allocated array of DPNS labels returned by
@@ -259,7 +259,7 @@ impl DpnsNameArray {
 pub unsafe extern "C" fn managed_identity_get_dpns_names(
     identity_handle: Handle,
     out_array: *mut DpnsNameArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn managed_identity_get_dpns_names(
     let labels = unwrap_option_or_return!(option);
     if labels.is_empty() {
         unsafe { *out_array = DpnsNameArray::empty() };
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
     let mut raw_labels: Vec<*mut c_char> = Vec::with_capacity(labels.len());
     for label in labels {
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn managed_identity_get_dpns_names(
     let boxed = raw_labels.into_boxed_slice();
     let ptr = Box::into_raw(boxed) as *mut *mut c_char;
     unsafe { *out_array = DpnsNameArray { labels: ptr, count } };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release an array previously returned by
@@ -387,7 +387,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
     label: *const c_char,
     out_state: *mut ContestVoteStateFFI,
     out_found: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(label);
     check_ptr!(out_state);
     check_ptr!(out_found);
@@ -454,14 +454,14 @@ pub unsafe extern "C" fn platform_wallet_fetch_contest_vote_state(
                 };
                 *out_found = true;
             }
-            PlatformWalletFfiResult::ok()
+            PlatformWalletFFIResult::ok()
         }
         None => {
             unsafe {
                 *out_state = ContestVoteStateFFI::empty();
                 *out_found = false;
             }
-            PlatformWalletFfiResult::ok()
+            PlatformWalletFFIResult::ok()
         }
     }
 }
@@ -504,7 +504,7 @@ pub unsafe extern "C" fn platform_wallet_sync_contested_dpns_names(
     wallet_handle: Handle,
     identity_id: *const u8,
     out_count: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -516,7 +516,7 @@ pub unsafe extern "C" fn platform_wallet_sync_contested_dpns_names(
     if !out_count.is_null() {
         unsafe { *out_count = labels.len() as u32 };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Read the cached contested DPNS labels for a [`ManagedIdentity`]
@@ -528,7 +528,7 @@ pub unsafe extern "C" fn platform_wallet_sync_contested_dpns_names(
 pub unsafe extern "C" fn managed_identity_get_contested_dpns_names(
     identity_handle: Handle,
     out_array: *mut DpnsNameArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -537,7 +537,7 @@ pub unsafe extern "C" fn managed_identity_get_contested_dpns_names(
     let labels = unwrap_option_or_return!(option);
     if labels.is_empty() {
         unsafe { *out_array = DpnsNameArray::empty() };
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
     let mut raw_labels: Vec<*mut c_char> = Vec::with_capacity(labels.len());
     for label in labels {
@@ -551,5 +551,5 @@ pub unsafe extern "C" fn managed_identity_get_contested_dpns_names(
     let boxed = raw_labels.into_boxed_slice();
     let ptr = Box::into_raw(boxed) as *mut *mut c_char;
     unsafe { *out_array = DpnsNameArray { labels: ptr, count } };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

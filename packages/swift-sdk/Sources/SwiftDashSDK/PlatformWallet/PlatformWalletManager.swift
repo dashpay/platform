@@ -378,7 +378,7 @@ public class PlatformWalletManager: ObservableObject {
         var outEntries: UnsafePointer<AccountBalanceEntryFFI>?
         var outCount: UInt = 0
 
-        let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFfiResult in
+        let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self)
             return platform_wallet_manager_get_account_balances(
                 handle,

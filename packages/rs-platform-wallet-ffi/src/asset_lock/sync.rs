@@ -31,7 +31,7 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     out_proof_bytes: *mut *mut u8,
     out_proof_len: *mut usize,
     out_private_key: *mut [u8; 32],
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(txid);
     check_ptr!(out_proof_bytes);
     check_ptr!(out_proof_len);
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     *out_proof_bytes = Box::into_raw(boxed) as *mut u8;
     *out_proof_len = len;
     *out_private_key = key.inner.secret_bytes();
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Recover a tracked asset lock from a serialized transaction.
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
     vout: u32,
     proof_bytes: *const u8,
     proof_len: usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(tx_bytes);
     check_ptr!(txid);
 
@@ -113,5 +113,5 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
         );
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

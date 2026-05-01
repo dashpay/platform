@@ -21,7 +21,7 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
     has_config: bool,
     config: *const AddressSyncConfigFFI,
     out_result: *mut AddressSyncResultFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_result);
 
     let config_opt = if has_config && !config.is_null() {
@@ -38,5 +38,5 @@ pub unsafe extern "C" fn platform_address_wallet_sync_balances(
     let result = unwrap_option_or_return!(option);
     let sync = unwrap_result_or_return!(result);
     *out_result = AddressSyncResultFFI::from(&sync);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

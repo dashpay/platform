@@ -16,7 +16,7 @@ pub unsafe extern "C" fn core_wallet_next_receive_address(
     handle: Handle,
     account_index: u32,
     out_address: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_address);
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
@@ -26,7 +26,7 @@ pub unsafe extern "C" fn core_wallet_next_receive_address(
     let addr = unwrap_result_or_return!(result);
     let c_str = unwrap_result_or_return!(CString::new(addr.to_string()));
     *out_address = c_str.into_raw();
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the next unused BIP-44 internal (change) address for a specific account.
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn core_wallet_next_change_address(
     handle: Handle,
     account_index: u32,
     out_address: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_address);
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn core_wallet_next_change_address(
     let addr = unwrap_result_or_return!(result);
     let c_str = unwrap_result_or_return!(CString::new(addr.to_string()));
     *out_address = c_str.into_raw();
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free an address string returned by `core_wallet_next_receive_address`

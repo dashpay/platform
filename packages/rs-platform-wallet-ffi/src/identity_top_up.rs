@@ -68,14 +68,14 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     inputs_count: usize,
     signer_address_handle: *mut SignerHandle,
     out_new_balance: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(identity_id);
     check_ptr!(inputs);
     check_ptr!(signer_address_handle);
     check_ptr!(out_new_balance);
     if inputs_count == 0 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "`inputs_count` is zero",
         );
     }
@@ -90,8 +90,8 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
             0 => PlatformAddress::P2pkh(entry.hash),
             1 => PlatformAddress::P2sh(entry.hash),
             _ => {
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
                     "invalid address_type (expected 0 or 1)",
                 );
             }
@@ -128,5 +128,5 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     let result = unwrap_option_or_return!(option);
     let new_balance = unwrap_result_or_return!(result);
     *out_new_balance = new_balance;
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

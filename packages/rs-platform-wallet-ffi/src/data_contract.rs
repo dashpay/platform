@@ -30,7 +30,7 @@ pub unsafe extern "C" fn platform_wallet_create_data_contract_with_signer(
     config_json: *const c_char,
     signer_handle: *mut SignerHandle,
     out_contract_id: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
     check_ptr!(documents_schema_json);
     check_ptr!(out_contract_id);
@@ -73,13 +73,13 @@ pub unsafe extern "C" fn platform_wallet_create_data_contract_with_signer(
     let bytes = contract_id.to_buffer();
     let dst = slice::from_raw_parts_mut(out_contract_id, 32);
     dst.copy_from_slice(&bytes);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Decode an optional NUL-terminated UTF-8 C string.
 unsafe fn read_optional_str<'a>(
     ptr: *const c_char,
-) -> Result<Option<&'a str>, PlatformWalletFfiResult> {
+) -> Result<Option<&'a str>, PlatformWalletFFIResult> {
     if ptr.is_null() {
         return Ok(None);
     }

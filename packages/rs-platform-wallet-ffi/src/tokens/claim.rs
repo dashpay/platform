@@ -36,7 +36,7 @@ pub unsafe extern "C" fn platform_wallet_token_claim(
     public_note: *const c_char,
     _signing_key_id: u32,
     signer_handle: *mut SignerHandle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
@@ -46,8 +46,8 @@ pub unsafe extern "C" fn platform_wallet_token_claim(
         0 => TokenDistributionType::PreProgrammed,
         1 => TokenDistributionType::Perpetual,
         other => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 format!("Invalid distribution_type: {other} (expected 0 or 1)"),
             );
         }
@@ -86,5 +86,5 @@ pub unsafe extern "C" fn platform_wallet_token_claim(
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

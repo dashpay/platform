@@ -3,7 +3,7 @@ import DashSDKFFI
 
 // MARK: - Typed result code
 
-/// Swift mirror of the Rust `PlatformWalletFfiResultCode` enum.
+/// Swift mirror of the Rust `PlatformWalletFFIResultCode` enum.
 public enum PlatformWalletResultCode: Int32, Sendable {
     case success = 0
     case errorInvalidHandle = 1
@@ -21,7 +21,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case notFound = 98
     case errorUnknown = 99
 
-    init(ffi: PlatformWalletFfiResultCode) {
+    init(ffi: PlatformWalletFFIResultCode) {
         switch ffi {
         case PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS:
             self = .success
@@ -61,7 +61,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
 
 // MARK: - Class wrapper
 
-/// Reference-counted wrapper around a `PlatformWalletFfiResult`
+/// Reference-counted wrapper around a `PlatformWalletFFIResult`
 /// returned by Rust. Owns the heap-allocated `message` C string and
 /// frees it through `platform_wallet_ffi_result_free` in `deinit`,
 /// regardless of whether the caller threw, returned early, or simply
@@ -72,9 +72,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
 /// you want to inspect the `message` without throwing (e.g. logging
 /// a warning on a soft-failure path).
 final class PlatformWalletResult {
-    private var inner: PlatformWalletFfiResult
+    private var inner: PlatformWalletFFIResult
 
-    init(_ ffi: PlatformWalletFfiResult) {
+    init(_ ffi: PlatformWalletFFIResult) {
         self.inner = ffi
     }
 
@@ -128,7 +128,7 @@ public enum PlatformWalletError: LocalizedError {
     case unknown(String)
 
     /// Diagnostic detail Rust attached to the originating
-    /// `PlatformWalletFfiResult`, or the context string a Swift-side
+    /// `PlatformWalletFFIResult`, or the context string a Swift-side
     /// guard chose when constructing the error inline.
     public var errorDescription: String? {
         switch self {
@@ -168,7 +168,7 @@ public enum PlatformWalletError: LocalizedError {
 
 // MARK: - Convenience extensions
 
-extension PlatformWalletFfiResult {
+extension PlatformWalletFFIResult {
     @inline(__always)
     func check() throws {
         try PlatformWalletResult(self).throwIfError()

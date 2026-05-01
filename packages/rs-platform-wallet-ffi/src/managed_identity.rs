@@ -14,7 +14,7 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     identity_bytes: *const std::os::raw::c_uchar,
     identity_len: usize,
     out_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(identity_bytes);
     check_ptr!(out_handle);
 
@@ -28,7 +28,7 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the identity ID into a 32-byte out-buffer.
@@ -36,14 +36,14 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
 pub unsafe extern "C" fn managed_identity_get_id(
     identity_handle: Handle,
     out_id: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_id);
 
     let option =
         MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| identity.identity.id());
     let id = unwrap_option_or_return!(option);
     unsafe { write_identifier(out_id, &id) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the identity balance
@@ -51,13 +51,13 @@ pub unsafe extern "C" fn managed_identity_get_id(
 pub unsafe extern "C" fn managed_identity_get_balance(
     identity_handle: Handle,
     out_balance: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_balance);
 
     let option =
         MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| identity.identity.balance());
     *out_balance = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the label.
@@ -68,13 +68,13 @@ pub unsafe extern "C" fn managed_identity_get_balance(
 pub unsafe extern "C" fn managed_identity_get_label(
     identity_handle: Handle,
     out_label: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_label);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |_identity| ());
     unwrap_option_or_return!(option);
     unsafe { *out_label = std::ptr::null_mut() };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Set the label — no-op stub.
@@ -82,10 +82,10 @@ pub unsafe extern "C" fn managed_identity_get_label(
 pub unsafe extern "C" fn managed_identity_set_label(
     identity_handle: Handle,
     _label: *const c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |_identity| ());
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get last updated balance block time
@@ -93,7 +93,7 @@ pub unsafe extern "C" fn managed_identity_set_label(
 pub unsafe extern "C" fn managed_identity_get_last_updated_balance_block_time(
     identity_handle: Handle,
     out_block_time: *mut BlockTime,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_block_time);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn managed_identity_get_last_updated_balance_block_time(
             },
         };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Set last updated balance block time.
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn managed_identity_get_last_updated_balance_block_time(
 pub unsafe extern "C" fn managed_identity_set_last_updated_balance_block_time(
     identity_handle: Handle,
     block_time: *const BlockTime,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let bt = deref_ptr!(block_time);
     let owned: platform_wallet::BlockTime = platform_wallet::BlockTime {
         height: bt.height,
@@ -129,7 +129,7 @@ pub unsafe extern "C" fn managed_identity_set_last_updated_balance_block_time(
         identity.last_updated_balance_block_time = Some(owned);
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get last synced keys block time
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn managed_identity_set_last_updated_balance_block_time(
 pub unsafe extern "C" fn managed_identity_get_last_synced_keys_block_time(
     identity_handle: Handle,
     out_block_time: *mut BlockTime,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_block_time);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -154,7 +154,7 @@ pub unsafe extern "C" fn managed_identity_get_last_synced_keys_block_time(
             },
         };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the identity revision.
@@ -162,13 +162,13 @@ pub unsafe extern "C" fn managed_identity_get_last_synced_keys_block_time(
 pub unsafe extern "C" fn managed_identity_get_revision(
     identity_handle: Handle,
     out_revision: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_revision);
 
     let option = MANAGED_IDENTITY_STORAGE
         .with_item(identity_handle, |identity| identity.identity.revision());
     *out_revision = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Flat C representation of an `IdentityPublicKey` for the Swift
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
     identity_handle: Handle,
     out_keys: *mut *mut IdentityPublicKeyFFI,
     out_count: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_keys);
     check_ptr!(out_count);
 
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
             *out_keys = std::ptr::null_mut();
             *out_count = 0;
         }
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
     let count = buf.len();
     let boxed = buf.into_boxed_slice();
@@ -241,7 +241,7 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
         *out_keys = array_ptr;
         *out_count = count;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release an array previously returned by
@@ -271,12 +271,12 @@ pub unsafe extern "C" fn managed_identity_free_public_keys(
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_destroy(
     identity_handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     if MANAGED_IDENTITY_STORAGE.remove(identity_handle).is_some() {
-        PlatformWalletFfiResult::ok()
+        PlatformWalletFFIResult::ok()
     } else {
-        PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidHandle,
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
             "Invalid identity handle",
         )
     }

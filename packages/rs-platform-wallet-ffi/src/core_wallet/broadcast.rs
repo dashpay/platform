@@ -14,7 +14,7 @@ pub unsafe extern "C" fn core_wallet_broadcast_transaction(
     tx_bytes: *const u8,
     tx_bytes_len: usize,
     out_txid: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(tx_bytes);
     check_ptr!(out_txid);
 
@@ -29,7 +29,7 @@ pub unsafe extern "C" fn core_wallet_broadcast_transaction(
     let txid = unwrap_result_or_return!(result);
     let c_str = unwrap_result_or_return!(std::ffi::CString::new(txid.to_string()));
     *out_txid = c_str.into_raw();
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Build, sign, and broadcast a payment to the given addresses.
@@ -44,7 +44,7 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
     count: usize,
     out_tx_bytes: *mut *mut u8,
     out_tx_len: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     if count > 0 {
         check_ptr!(addresses);
         check_ptr!(amounts);
@@ -69,8 +69,8 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
         0 => StandardAccountType::BIP44Account,
         1 => StandardAccountType::BIP32Account,
         _ => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 format!("Unknown account type: {account_type}"),
             );
         }
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
     let boxed = serialized.into_boxed_slice();
     *out_tx_bytes = Box::into_raw(boxed) as *mut u8;
     *out_tx_len = len;
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free transaction bytes returned by `core_wallet_send_to_addresses`.

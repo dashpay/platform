@@ -22,7 +22,7 @@ pub unsafe extern "C" fn asset_lock_manager_build_transaction(
     out_tx_bytes: *mut *mut u8,
     out_tx_len: *mut usize,
     out_private_key: *mut [u8; 32],
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_tx_bytes);
     check_ptr!(out_tx_len);
     check_ptr!(out_private_key);
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn asset_lock_manager_build_transaction(
     *out_tx_len = len;
     *out_private_key = key.inner.secret_bytes();
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Build, broadcast, and wait for an asset lock proof.
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn asset_lock_manager_create_funded_proof(
     out_proof_len: *mut usize,
     out_private_key: *mut [u8; 32],
     out_txid: *mut [u8; 32],
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_proof_bytes);
     check_ptr!(out_proof_len);
     check_ptr!(out_private_key);
@@ -105,7 +105,7 @@ pub unsafe extern "C" fn asset_lock_manager_create_funded_proof(
     txid_bytes.copy_from_slice(&out_point.txid[..]);
     *out_txid = txid_bytes;
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free transaction bytes.

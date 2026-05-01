@@ -27,7 +27,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
     identity_index: u32,
     key_index: u32,
     out_row: *mut IdentityKeyPreviewFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     use std::ffi::CStr;
 
     check_ptr!(out_row);
@@ -59,7 +59,7 @@ unsafe fn derive_at_slot_inner(
     identity_index: u32,
     key_index: u32,
     out_row: *mut IdentityKeyPreviewFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
 
@@ -89,8 +89,8 @@ unsafe fn derive_at_slot_inner(
                 pub_ptr, pub_len,
             )));
             drop(path_cstring);
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 format!("SecretKey::from_slice failed: {e}"),
             );
         }
@@ -107,8 +107,8 @@ unsafe fn derive_at_slot_inner(
                 pub_ptr, pub_len,
             )));
             drop(path_cstring);
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                 format!("WIF string contained NUL byte: {e}"),
             );
         }
@@ -126,7 +126,7 @@ unsafe fn derive_at_slot_inner(
         private_key_bytes: *private_key_bytes_buf,
     };
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Resolver-based variant of [`dash_sdk_derive_identity_key_at_slot`].
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
     identity_index: u32,
     key_index: u32,
     out_row: *mut IdentityKeyPreviewFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_row);
     *out_row = IdentityKeyPreviewFFI::empty();
 
@@ -161,20 +161,20 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
     match rc {
         x if x == mnemonic_resolver_result::SUCCESS => {}
         x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
             );
         }
         x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
             );
         }
         _ => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: failed (other / Keychain access error)",
             );
         }

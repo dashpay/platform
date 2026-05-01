@@ -20,11 +20,11 @@ const TAG_MAX_SUPPLY: u8 = 0;
 unsafe fn decode_change_item(
     tag: u8,
     payload_json: *const c_char,
-) -> Result<TokenConfigurationChangeItem, PlatformWalletFfiResult> {
+) -> Result<TokenConfigurationChangeItem, PlatformWalletFFIResult> {
     match tag {
         TAG_MAX_SUPPLY => decode_max_supply_payload(payload_json),
-        other => Err(PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "change_item_tag {other} not yet supported by FFI (only MaxSupply = 0 is wired in this release)"
             ),
@@ -34,10 +34,10 @@ unsafe fn decode_change_item(
 
 unsafe fn decode_max_supply_payload(
     payload_json: *const c_char,
-) -> Result<TokenConfigurationChangeItem, PlatformWalletFfiResult> {
+) -> Result<TokenConfigurationChangeItem, PlatformWalletFFIResult> {
     if payload_json.is_null() {
-        return Err(PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorNullPointer,
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
             "change_item_payload_json is null (expected JSON object for MaxSupply)",
         ));
     }
@@ -47,8 +47,8 @@ unsafe fn decode_max_supply_payload(
     let new_max_supply_field = match parsed.get("newMaxSupply") {
         Some(v) => v,
         None => {
-            return Err(PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 "MaxSupply payload missing required field 'newMaxSupply'",
             ));
         }
@@ -57,14 +57,14 @@ unsafe fn decode_max_supply_payload(
     let new_max_supply: Option<u64> = match new_max_supply_field {
         Value::Null => None,
         Value::String(s) => Some(s.parse::<u64>().map_err(|e| {
-            PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 format!("'newMaxSupply' is not a valid u64: {e}"),
             )
         })?),
         _ => {
-            return Err(PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 "'newMaxSupply' must be a string-encoded u64 or null",
             ));
         }
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn platform_wallet_token_update_config(
     group_info_action_is_proposer: bool,
     _signing_key_id: u32,
     signer_handle: *mut SignerHandle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn platform_wallet_token_update_config(
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]
@@ -183,7 +183,7 @@ mod tests {
             let payload = cstr(r#"{}"#);
             let result = decode_change_item(TAG_MAX_SUPPLY, payload.as_ptr());
             match result {
-                Err(r) if r.code == PlatformWalletFfiResultCode::ErrorInvalidParameter => {}
+                Err(r) if r.code == PlatformWalletFFIResultCode::ErrorInvalidParameter => {}
                 _ => panic!("expected ErrorInvalidParameter"),
             }
         }
@@ -195,7 +195,7 @@ mod tests {
             let payload = cstr(r#"{}"#);
             let result = decode_change_item(1, payload.as_ptr());
             match result {
-                Err(r) if r.code == PlatformWalletFfiResultCode::ErrorInvalidParameter => {}
+                Err(r) if r.code == PlatformWalletFFIResultCode::ErrorInvalidParameter => {}
                 _ => panic!("expected ErrorInvalidParameter for unsupported tag"),
             }
         }
@@ -207,7 +207,7 @@ mod tests {
             let payload = cstr("not json");
             let result = decode_change_item(TAG_MAX_SUPPLY, payload.as_ptr());
             match result {
-                Err(r) if r.code == PlatformWalletFfiResultCode::ErrorDeserialization => {}
+                Err(r) if r.code == PlatformWalletFFIResultCode::ErrorDeserialization => {}
                 _ => panic!("expected ErrorDeserialization"),
             }
         }

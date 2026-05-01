@@ -31,14 +31,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
     signer_handle: *mut SignerHandle,
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
     check_ptr!(identity_pubkeys);
     check_ptr!(out_identity_id);
     check_ptr!(out_identity_handle);
     if identity_pubkeys_count == 0 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "identity_pubkeys_count must be >= 1",
         );
     }
@@ -51,8 +51,8 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         let purpose = unwrap_result_or_return!(Purpose::try_from(row.purpose));
         let security_level = unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
         if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorNullPointer,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
                 format!("identity_pubkeys[{i}].pubkey_bytes is null or empty"),
             );
         }
@@ -97,5 +97,5 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
     let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     *out_identity_handle = handle;
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

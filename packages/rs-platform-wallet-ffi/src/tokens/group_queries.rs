@@ -33,12 +33,12 @@ use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Decode a raw `u8` status from the FFI caller into the rs-dpp enum.
-fn decode_status(status: u8) -> Result<GroupActionStatus, PlatformWalletFfiResult> {
+fn decode_status(status: u8) -> Result<GroupActionStatus, PlatformWalletFFIResult> {
     match status {
         0 => Ok(GroupActionStatus::ActionActive),
         1 => Ok(GroupActionStatus::ActionClosed),
-        other => Err(PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("Invalid group action status: {other} (expected 0 or 1)"),
         )),
     }
@@ -164,11 +164,11 @@ fn render_signer_entry(entry: &GroupActionSignerEntry) -> Value {
 
 /// Allocate a JSON `Value` as a NUL-terminated C string and write it
 /// to `out_json`. Caller frees with `platform_wallet_free_string`.
-unsafe fn emit_json(value: Value, out_json: *mut *mut c_char) -> PlatformWalletFfiResult {
+unsafe fn emit_json(value: Value, out_json: *mut *mut c_char) -> PlatformWalletFFIResult {
     let serialized = unwrap_result_or_return!(serde_json::to_string(&value));
     let cstring = unwrap_result_or_return!(std::ffi::CString::new(serialized));
     *out_json = cstring.into_raw();
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Fetch group-action proposals on `(token_contract_id, group_contract_position)`
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn platform_wallet_token_pending_group_actions(
     start_at_action_id: *const u8,
     limit: u16,
     out_json: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_json);
     *out_json = std::ptr::null_mut();
 
@@ -264,7 +264,7 @@ pub unsafe extern "C" fn platform_wallet_token_group_action_signers(
     status: u8,
     action_id: *const u8,
     out_json: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_json);
     *out_json = std::ptr::null_mut();
 

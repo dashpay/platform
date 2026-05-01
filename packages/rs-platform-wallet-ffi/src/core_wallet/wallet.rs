@@ -6,9 +6,9 @@ use crate::{check_ptr, unwrap_option_or_return};
 
 /// Destroy a CoreWallet handle.
 #[no_mangle]
-pub unsafe extern "C" fn core_wallet_destroy(handle: Handle) -> PlatformWalletFfiResult {
+pub unsafe extern "C" fn core_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
     CORE_WALLET_STORAGE.remove(handle);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get lock-free balance (spendable, unconfirmed, immature, locked).
@@ -21,7 +21,7 @@ pub unsafe extern "C" fn core_wallet_get_balance(
     out_unconfirmed: *mut u64,
     out_immature: *mut u64,
     out_locked: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
         let b = wallet.balance();
         (b.confirmed(), b.unconfirmed(), b.immature(), b.locked())
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn core_wallet_get_balance(
     if !out_locked.is_null() {
         *out_locked = locked;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the network this wallet operates on.
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn core_wallet_get_balance(
 pub unsafe extern "C" fn core_wallet_get_network(
     handle: Handle,
     out_network: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_network);
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| match wallet.network() {
@@ -60,5 +60,5 @@ pub unsafe extern "C" fn core_wallet_get_network(
         key_wallet::Network::Regtest => 3,
     });
     *out_network = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

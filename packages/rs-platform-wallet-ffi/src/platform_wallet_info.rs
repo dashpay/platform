@@ -17,7 +17,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     seed_bytes: *const c_uchar,
     seed_len: usize,
     out_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(seed_bytes);
     check_ptr!(out_handle);
 
@@ -27,8 +27,8 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
         2 => Network::Devnet,
         3 => Network::Regtest,
         _ => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidNetwork,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork,
                 format!("Unknown network: {network}"),
             );
         }
@@ -36,8 +36,8 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
 
     // Validate seed length (should be 64 bytes for BIP39)
     if seed_len != 64 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("Invalid seed length: expected 64 bytes, got {seed_len}"),
         );
     }
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Create a new PlatformWalletInfo from mnemonic.
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     mnemonic: *const c_char,
     passphrase: *const c_char,
     out_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(mnemonic);
     check_ptr!(out_handle);
 
@@ -80,8 +80,8 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
         2 => Network::Devnet,
         3 => Network::Regtest,
         _ => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidNetwork,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork,
                 format!("Unknown network: {network}"),
             );
         }
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the identity manager
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
 pub unsafe extern "C" fn platform_wallet_info_get_identity_manager(
     wallet_handle: Handle,
     out_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_handle);
 
     let option = WALLET_INFO_STORAGE.with_item(wallet_handle, |wallet_info| {
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn platform_wallet_info_get_identity_manager(
     let manager = unwrap_option_or_return!(option);
     let handle = IDENTITY_MANAGER_STORAGE.insert(manager);
     unsafe { *out_handle = handle };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Set the identity manager
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn platform_wallet_info_get_identity_manager(
 pub unsafe extern "C" fn platform_wallet_info_set_identity_manager(
     wallet_handle: Handle,
     manager_handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let manager_option =
         IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| manager.clone());
     let manager = unwrap_option_or_return!(manager_option);
@@ -157,19 +157,19 @@ pub unsafe extern "C" fn platform_wallet_info_set_identity_manager(
         wallet_info.identity_manager = manager;
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Destroy PlatformWalletInfo and free resources
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_destroy(
     wallet_handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     if WALLET_INFO_STORAGE.remove(wallet_handle).is_some() {
-        PlatformWalletFfiResult::ok()
+        PlatformWalletFFIResult::ok()
     } else {
-        PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidHandle,
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
             "Invalid wallet handle",
         )
     }
@@ -192,7 +192,7 @@ mod tests {
                 &mut handle,
             );
 
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_ne!(handle, NULL_HANDLE);
 
             platform_wallet_info_destroy(handle);
@@ -215,7 +215,7 @@ mod tests {
                 &mut handle,
             );
 
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_ne!(handle, NULL_HANDLE);
 
             platform_wallet_info_destroy(handle);
@@ -226,7 +226,7 @@ mod tests {
     fn test_destroy_invalid_handle() {
         unsafe {
             let result = platform_wallet_info_destroy(9999);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::ErrorInvalidHandle);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         }
     }
 }

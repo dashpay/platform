@@ -8,7 +8,7 @@ pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
     json_string: *const c_char,
     out_bytes: *mut *mut c_uchar,
     out_len: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(json_string);
     check_ptr!(out_bytes);
     check_ptr!(out_len);
@@ -26,7 +26,7 @@ pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
         *out_len = len;
     }
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Deserialize JSON bytes to string
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn platform_wallet_deserialize_from_json_bytes(
     bytes: *const c_uchar,
     len: usize,
     out_json_string: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(bytes);
     check_ptr!(out_json_string);
 
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn platform_wallet_deserialize_from_json_bytes(
     let s = unwrap_result_or_return!(std::str::from_utf8(data));
     let c_str = unwrap_result_or_return!(std::ffi::CString::new(s));
     unsafe { *out_json_string = c_str.into_raw() };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free bytes allocated by FFI functions
@@ -60,11 +60,11 @@ pub unsafe extern "C" fn platform_wallet_bytes_free(bytes: *mut c_uchar, len: us
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_generate_random_identifier(
     out_id: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_id);
     let id = dpp::prelude::Identifier::random();
     unsafe { crate::types::write_identifier(out_id, &id) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Convert identifier (32 bytes pointed to by `id`) to base58 hex
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn platform_wallet_generate_random_identifier(
 pub unsafe extern "C" fn platform_wallet_identifier_to_hex(
     id: *const u8,
     out_hex: *mut *mut c_char,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(id);
     check_ptr!(out_hex);
 
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn platform_wallet_identifier_to_hex(
     let hex = identifier.to_string(dpp::platform_value::string_encoding::Encoding::Base58);
     let c_str = unwrap_result_or_return!(std::ffi::CString::new(hex));
     unsafe { *out_hex = c_str.into_raw() };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Convert base58 hex string to identifier (writes 32 bytes into
@@ -91,7 +91,7 @@ pub unsafe extern "C" fn platform_wallet_identifier_to_hex(
 pub unsafe extern "C" fn platform_wallet_identifier_from_hex(
     hex: *const c_char,
     out_id: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(hex);
     check_ptr!(out_id);
 
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn platform_wallet_identifier_from_hex(
         dpp::platform_value::string_encoding::Encoding::Base58,
     ));
     unsafe { crate::types::write_identifier(out_id, &identifier) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Compute hash160 (RIPEMD160(SHA256(data))) of the input bytes.
@@ -193,13 +193,13 @@ mod tests {
 
             let result =
                 platform_wallet_serialize_to_json_bytes(json.as_ptr(), &mut bytes, &mut len);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!bytes.is_null());
             assert!(len > 0);
 
             let mut json_out: *mut c_char = std::ptr::null_mut();
             let result = platform_wallet_deserialize_from_json_bytes(bytes, len, &mut json_out);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!json_out.is_null());
 
             let json_str = std::ffi::CStr::from_ptr(json_out).to_str().unwrap();
@@ -215,7 +215,7 @@ mod tests {
         unsafe {
             let mut id = [0u8; 32];
             let result = platform_wallet_generate_random_identifier(id.as_mut_ptr());
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_ne!(id, [0u8; 32]);
         }
     }
@@ -228,12 +228,12 @@ mod tests {
 
             let mut hex: *mut c_char = std::ptr::null_mut();
             let result = platform_wallet_identifier_to_hex(id.as_ptr(), &mut hex);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!hex.is_null());
 
             let mut id2 = [0u8; 32];
             let result = platform_wallet_identifier_from_hex(hex, id2.as_mut_ptr());
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
 
             assert_eq!(id, id2);
 

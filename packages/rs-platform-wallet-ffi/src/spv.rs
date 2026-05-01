@@ -134,7 +134,7 @@ fn progress_to_ffi(p: &SyncProgress) -> FFISpvSyncProgress {
 pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
     handle: Handle,
     out_progress: *mut FFISpvSyncProgress,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_progress);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
         Some(p) => progress_to_ffi(&p),
         None => FFISpvSyncProgress::default(),
     };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether the SPV client is currently running.
@@ -153,12 +153,12 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
 pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     handle: Handle,
     out_running: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
     let option =
         PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_started());
     *out_running = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Start SPV sync in the background.
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     restrict_to_configured_peers: bool,
     start_from_height: u32,
     masternode_sync_enabled: bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(data_dir);
     let data_dir_str = unwrap_result_or_return!(CStr::from_ptr(data_dir).to_str()).to_string();
     let user_agent_str = if user_agent.is_null() {
@@ -189,8 +189,8 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         2 => dashcore::Network::Devnet,
         3 => dashcore::Network::Regtest,
         _ => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidNetwork,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork,
                 format!("Unknown network: {network}"),
             );
         }
@@ -231,32 +231,32 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         manager.spv_arc().spawn_in_background(config);
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Stop the SPV client.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(async {
             let _ = manager.spv().stop().await;
         });
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Clear all persisted SPV storage (headers, filters, state).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(manager.spv().clear_storage())
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

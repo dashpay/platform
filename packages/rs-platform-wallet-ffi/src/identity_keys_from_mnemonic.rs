@@ -84,7 +84,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
     identity_index: u32,
     key_count: u32,
     out_rows: *mut IdentityRegistrationKeyDerivationsFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     use std::ffi::CStr;
 
     check_ptr!(out_rows);
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
     check_ptr!(mnemonic_cstr);
 
     if key_count == 0 {
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
 
     let mnemonic_str = unwrap_result_or_return!(CStr::from_ptr(mnemonic_cstr).to_str());
@@ -134,8 +134,8 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             Ok(p) => p,
             Err(detail) => {
                 cleanup(rows);
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorWalletOperation,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!(
                         "derive_identity_keys_from_mnemonic: path build failed at \
                          (identity={identity_index}, key={key_index}): {detail}"
@@ -148,8 +148,8 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorWalletOperation,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!(
                         "derive_identity_keys_from_mnemonic: derive_priv failed at \
                          (identity={identity_index}, key={key_index}): {e}"
@@ -164,8 +164,8 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             Ok(s) => s,
             Err(e) => {
                 cleanup(rows);
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                     format!("derivation path contained NUL byte: {e}"),
                 );
             }
@@ -188,8 +188,8 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
                 drop(Vec::from_raw_parts(pub_ptr, pub_len, pub_len));
                 drop(path_cstring);
                 cleanup(rows);
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                     format!("WIF string contained NUL byte: {e}"),
                 );
             }
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
         items: items_ptr,
         count: items_count,
     };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release a [`IdentityRegistrationKeyDerivationsFFI`] previously
@@ -278,7 +278,7 @@ mod tests {
                 &mut out,
             )
         };
-        assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.count, 3);
         assert!(!out.items.is_null());
 
@@ -329,7 +329,7 @@ mod tests {
                 &mut out,
             )
         };
-        assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.count, 1);
 
         let row = unsafe { &*out.items };
@@ -358,7 +358,7 @@ mod tests {
                 &mut out,
             )
         };
-        assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.count, 0);
         assert!(out.items.is_null());
         unsafe { dash_sdk_derive_identity_keys_from_mnemonic_free(&mut out) };
@@ -383,7 +383,7 @@ mod tests {
         };
         assert_eq!(
             result.code,
-            PlatformWalletFfiResultCode::ErrorInvalidParameter
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
         assert!(out.items.is_null());
         assert_eq!(out.count, 0);

@@ -69,7 +69,7 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
     wallet_handle: Handle,
     identity_id: *const u8,
     out_managed_identity_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_managed_identity_handle);
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
     let inner = unwrap_option_or_return!(option);
     let managed = unwrap_option_or_return!(inner);
     unsafe { *out_managed_identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn platform_wallet_contact_request_handle_array_free(
 pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
     wallet_handle: Handle,
     out_array: *mut ContactRequestHandleArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
     let result = unwrap_option_or_return!(option);
     let list = unwrap_result_or_return!(result);
     unsafe { *out_array = ContactRequestHandleArray::from_requests(list) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     auto_accept_proof_len: usize,
     signer_handle: *mut SignerHandle,
     out_request_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_request_handle);
     check_ptr!(signer_handle);
 
@@ -254,7 +254,7 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     let result = unwrap_option_or_return!(option);
     let request = unwrap_result_or_return!(result);
     *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Accept an incoming contact request using an externally-supplied
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
     request_handle: Handle,
     signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_established_handle);
     check_ptr!(signer_handle);
 
@@ -297,7 +297,7 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
     let result = unwrap_option_or_return!(option);
     let contact = unwrap_result_or_return!(result);
     *out_established_handle = ESTABLISHED_CONTACT_STORAGE.insert(contact);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
     wallet_handle: Handle,
     our_identity_id: *const u8,
     contact_identity_id: *const u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let our_id = unwrap_result_or_return!(unsafe { read_identifier(our_identity_id) });
     let contact_id = unwrap_result_or_return!(unsafe { read_identifier(contact_identity_id) });
 
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +338,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
     wallet_handle: Handle,
     identity_id: *const u8,
     out_array: *mut ContactRequestHandleArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
@@ -349,7 +349,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
     let result = unwrap_option_or_return!(option);
     let list = unwrap_result_or_return!(result);
     unsafe { *out_array = ContactRequestHandleArray::from_requests(list) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +365,7 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     amount_duffs: u64,
     memo: *const c_char,
     out_txid: *mut [u8; 32],
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_txid);
 
     let from_id = unwrap_result_or_return!(unsafe { read_identifier(from_identity_id) });
@@ -390,5 +390,5 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_txid.cast::<u8>(), 32);
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

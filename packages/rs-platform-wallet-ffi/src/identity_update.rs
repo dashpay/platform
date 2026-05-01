@@ -33,7 +33,7 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
     signer_handle: *mut SignerHandle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
@@ -51,8 +51,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
                 let security_level =
                     unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
                 if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-                    return PlatformWalletFfiResult::err(
-                        PlatformWalletFfiResultCode::ErrorNullPointer,
+                    return PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorNullPointer,
                         format!("add_public_keys[{i}].pubkey_bytes is null or empty"),
                     );
                 }
@@ -100,5 +100,5 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

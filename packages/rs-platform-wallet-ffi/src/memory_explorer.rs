@@ -65,7 +65,7 @@ impl From<IdentityStatus> for IdentityStatusFFI {
 pub unsafe extern "C" fn platform_wallet_list_in_memory_identity_ids(
     wallet_handle: Handle,
     out_array: *mut IdentifierArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn platform_wallet_list_in_memory_identity_ids(
     let inner = unwrap_option_or_return!(option);
     let ids = unwrap_option_or_return!(inner);
     unsafe { *out_array = IdentifierArray::new(ids) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// List the ids of every out-of-wallet / observed identity.
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn platform_wallet_list_in_memory_identity_ids(
 pub unsafe extern "C" fn platform_wallet_list_in_memory_watched_identity_ids(
     wallet_handle: Handle,
     out_array: *mut IdentifierArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn platform_wallet_list_in_memory_watched_identity_ids(
     let inner = unwrap_option_or_return!(option);
     let ids = unwrap_option_or_return!(inner);
     unsafe { *out_array = IdentifierArray::new(ids) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Populate `out` with a snapshot of the wallet's in-memory state.
@@ -115,7 +115,7 @@ pub unsafe extern "C" fn platform_wallet_list_in_memory_watched_identity_ids(
 pub unsafe extern "C" fn platform_wallet_get_in_memory_summary(
     wallet_handle: Handle,
     out: *mut PlatformWalletMemorySummaryFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn platform_wallet_get_in_memory_summary(
     let inner = unwrap_option_or_return!(option);
     let summary = unwrap_option_or_return!(inner);
     unsafe { *out = summary };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Read the BIP-9 identity index recorded on a managed identity.
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn managed_identity_get_identity_index(
     identity_handle: Handle,
     out_has_index: *mut bool,
     out_index: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_has_index);
     check_ptr!(out_index);
 
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn managed_identity_get_identity_index(
             *out_index = 0;
         },
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Read the lifecycle status of a managed identity.
@@ -183,12 +183,12 @@ pub unsafe extern "C" fn managed_identity_get_identity_index(
 pub unsafe extern "C" fn managed_identity_get_status(
     identity_handle: Handle,
     out_status: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_status);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         IdentityStatusFFI::from(identity.status) as u8
     });
     *out_status = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

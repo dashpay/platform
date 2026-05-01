@@ -6,8 +6,8 @@ use std::os::raw::c_char;
 macro_rules! deref_ptr {
     ($ptr:expr) => {{
         if $ptr.is_null() {
-            return $crate::error::PlatformWalletFfiResult::err(
-                $crate::error::PlatformWalletFfiResultCode::ErrorNullPointer,
+            return $crate::error::PlatformWalletFFIResult::err(
+                $crate::error::PlatformWalletFFIResultCode::ErrorNullPointer,
                 format!("{} ptr is null", stringify!($ptr)),
             );
         }
@@ -19,8 +19,8 @@ macro_rules! deref_ptr {
 macro_rules! deref_ptr_mut {
     ($ptr:expr) => {{
         if $ptr.is_null() {
-            return $crate::error::PlatformWalletFfiResult::err(
-                $crate::error::PlatformWalletFfiResultCode::ErrorNullPointer,
+            return $crate::error::PlatformWalletFFIResult::err(
+                $crate::error::PlatformWalletFFIResultCode::ErrorNullPointer,
                 format!("{} ptr is null", stringify!($ptr)),
             );
         }
@@ -32,8 +32,8 @@ macro_rules! deref_ptr_mut {
 macro_rules! check_ptr {
     ($ptr:expr) => {{
         if $ptr.is_null() {
-            return $crate::error::PlatformWalletFfiResult::err(
-                $crate::error::PlatformWalletFfiResultCode::ErrorNullPointer,
+            return $crate::error::PlatformWalletFFIResult::err(
+                $crate::error::PlatformWalletFFIResultCode::ErrorNullPointer,
                 format!("{} ptr is null", stringify!($ptr)),
             );
         }
@@ -62,7 +62,7 @@ macro_rules! unwrap_option_or_return {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlatformWalletFfiResultCode {
+pub enum PlatformWalletFFIResultCode {
     Success = 0,
     ErrorInvalidHandle = 1,
     ErrorInvalidParameter = 2,
@@ -84,12 +84,12 @@ pub enum PlatformWalletFfiResultCode {
 /// Must be freed with ['platform_wallet_ffi_result_free']
 #[repr(C)]
 #[derive(Debug)]
-pub struct PlatformWalletFfiResult {
-    pub code: PlatformWalletFfiResultCode,
+pub struct PlatformWalletFFIResult {
+    pub code: PlatformWalletFFIResultCode,
     pub message: *mut c_char,
 }
 
-impl Drop for PlatformWalletFfiResult {
+impl Drop for PlatformWalletFFIResult {
     fn drop(&mut self) {
         if !self.message.is_null() {
             unsafe {
@@ -100,15 +100,15 @@ impl Drop for PlatformWalletFfiResult {
     }
 }
 
-impl PlatformWalletFfiResult {
+impl PlatformWalletFFIResult {
     pub const fn ok() -> Self {
         Self {
-            code: PlatformWalletFfiResultCode::Success,
+            code: PlatformWalletFFIResultCode::Success,
             message: std::ptr::null_mut(),
         }
     }
 
-    pub fn err(code: PlatformWalletFfiResultCode, message: impl Into<String>) -> Self {
+    pub fn err(code: PlatformWalletFFIResultCode, message: impl Into<String>) -> Self {
         let msg = message.into();
         let c_msg = CString::new(msg).unwrap_or_else(|_| CString::new("<invalid UTF-8>").unwrap());
         Self {
@@ -125,10 +125,10 @@ impl PlatformWalletFfiResult {
 /// (message is already NULL).
 ///
 /// # Safety
-/// `result` must point to a valid `PlatformWalletFfiResult`
+/// `result` must point to a valid `PlatformWalletFFIResult`
 /// produced by this crate. Mutates the struct through the pointer.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_ffi_result_free(result: *mut PlatformWalletFfiResult) {
+pub unsafe extern "C" fn platform_wallet_ffi_result_free(result: *mut PlatformWalletFFIResult) {
     if result.is_null() {
         return;
     }
@@ -142,196 +142,196 @@ pub unsafe extern "C" fn platform_wallet_ffi_result_free(result: *mut PlatformWa
     }
 }
 
-impl<T> From<Option<T>> for PlatformWalletFfiResult {
+impl<T> From<Option<T>> for PlatformWalletFFIResult {
     fn from(value: Option<T>) -> Self {
         match value {
             Some(_) => Self::ok(),
             None => Self::err(
-                PlatformWalletFfiResultCode::NotFound,
+                PlatformWalletFFIResultCode::NotFound,
                 format!("requested {} not found", std::any::type_name::<T>()),
             ),
         }
     }
 }
 
-impl From<PlatformWalletError> for PlatformWalletFfiResult {
+impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
-        PlatformWalletFfiResult::err(PlatformWalletFfiResultCode::ErrorUnknown, error.to_string())
+        PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorUnknown, error.to_string())
     }
 }
 
-impl From<dashcore::consensus::encode::Error> for PlatformWalletFfiResult {
+impl From<dashcore::consensus::encode::Error> for PlatformWalletFFIResult {
     fn from(error: dashcore::consensus::encode::Error) -> Self {
-        PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorDeserialization,
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorDeserialization,
             error.to_string(),
         )
     }
 }
 
-impl From<std::ffi::NulError> for PlatformWalletFfiResult {
+impl From<std::ffi::NulError> for PlatformWalletFFIResult {
     fn from(e: std::ffi::NulError) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion,
             format!("string contained an interior NUL byte: {e}"),
         )
     }
 }
 
-impl From<std::str::Utf8Error> for PlatformWalletFfiResult {
+impl From<std::str::Utf8Error> for PlatformWalletFFIResult {
     fn from(e: std::str::Utf8Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion,
             format!("invalid UTF-8: {e}"),
         )
     }
 }
 
-impl From<std::string::FromUtf8Error> for PlatformWalletFfiResult {
+impl From<std::string::FromUtf8Error> for PlatformWalletFFIResult {
     fn from(e: std::string::FromUtf8Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorUtf8Conversion,
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion,
             format!("invalid UTF-8: {e}"),
         )
     }
 }
 
-impl From<bs58::decode::Error> for PlatformWalletFfiResult {
+impl From<bs58::decode::Error> for PlatformWalletFFIResult {
     fn from(e: bs58::decode::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorInvalidIdentifier,
+            PlatformWalletFFIResultCode::ErrorInvalidIdentifier,
             format!("base58 decode failed: {e}"),
         )
     }
 }
 
-impl From<hex::FromHexError> for PlatformWalletFfiResult {
+impl From<hex::FromHexError> for PlatformWalletFFIResult {
     fn from(e: hex::FromHexError) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorInvalidIdentifier,
+            PlatformWalletFFIResultCode::ErrorInvalidIdentifier,
             format!("hex decode failed: {e}"),
         )
     }
 }
 
-impl From<serde_json::Error> for PlatformWalletFfiResult {
+impl From<serde_json::Error> for PlatformWalletFFIResult {
     fn from(e: serde_json::Error) -> Self {
         let code = if e.is_data() || e.is_syntax() {
-            PlatformWalletFfiResultCode::ErrorDeserialization
+            PlatformWalletFFIResultCode::ErrorDeserialization
         } else {
-            PlatformWalletFfiResultCode::ErrorSerialization
+            PlatformWalletFFIResultCode::ErrorSerialization
         };
         Self::err(code, format!("JSON error: {e}"))
     }
 }
 
-impl From<bincode::error::EncodeError> for PlatformWalletFfiResult {
+impl From<bincode::error::EncodeError> for PlatformWalletFFIResult {
     fn from(e: bincode::error::EncodeError) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorSerialization,
+            PlatformWalletFFIResultCode::ErrorSerialization,
             format!("bincode encode failed: {e}"),
         )
     }
 }
 
-impl From<bincode::error::DecodeError> for PlatformWalletFfiResult {
+impl From<bincode::error::DecodeError> for PlatformWalletFFIResult {
     fn from(e: bincode::error::DecodeError) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorDeserialization,
+            PlatformWalletFFIResultCode::ErrorDeserialization,
             format!("bincode decode failed: {e}"),
         )
     }
 }
 
-impl From<dpp::ProtocolError> for PlatformWalletFfiResult {
+impl From<dpp::ProtocolError> for PlatformWalletFFIResult {
     fn from(e: dpp::ProtocolError) -> Self {
         let msg = e.to_string();
         let code = if msg.contains("identifier") {
-            PlatformWalletFfiResultCode::ErrorInvalidIdentifier
+            PlatformWalletFFIResultCode::ErrorInvalidIdentifier
         } else if msg.contains("deserialization") || msg.contains("decode") {
-            PlatformWalletFfiResultCode::ErrorDeserialization
+            PlatformWalletFFIResultCode::ErrorDeserialization
         } else if msg.contains("serialization") || msg.contains("encode") {
-            PlatformWalletFfiResultCode::ErrorSerialization
+            PlatformWalletFFIResultCode::ErrorSerialization
         } else {
-            PlatformWalletFfiResultCode::ErrorWalletOperation
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         };
         Self::err(code, format!("DPP protocol error: {msg}"))
     }
 }
 
-impl From<&str> for PlatformWalletFfiResult {
+impl From<&str> for PlatformWalletFFIResult {
     fn from(e: &str) -> Self {
-        Self::err(PlatformWalletFfiResultCode::ErrorInvalidParameter, e)
+        Self::err(PlatformWalletFFIResultCode::ErrorInvalidParameter, e)
     }
 }
 
-impl From<key_wallet::bip32::Error> for PlatformWalletFfiResult {
+impl From<key_wallet::bip32::Error> for PlatformWalletFFIResult {
     fn from(e: key_wallet::bip32::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorWalletOperation,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("bip32 derivation failed: {e}"),
         )
     }
 }
 
-impl From<key_wallet::Error> for PlatformWalletFfiResult {
+impl From<key_wallet::Error> for PlatformWalletFFIResult {
     fn from(e: key_wallet::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorWalletOperation,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("key-wallet error: {e}"),
         )
     }
 }
 
-impl From<dashcore::address::Error> for PlatformWalletFfiResult {
+impl From<dashcore::address::Error> for PlatformWalletFFIResult {
     fn from(e: dashcore::address::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("address parse failed: {e}"),
         )
     }
 }
 
-impl From<dashcore::key::Error> for PlatformWalletFfiResult {
+impl From<dashcore::key::Error> for PlatformWalletFFIResult {
     fn from(e: dashcore::key::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("dashcore key error: {e}"),
         )
     }
 }
 
-impl From<dpp::platform_value::Error> for PlatformWalletFfiResult {
+impl From<dpp::platform_value::Error> for PlatformWalletFFIResult {
     fn from(e: dpp::platform_value::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorSerialization,
+            PlatformWalletFFIResultCode::ErrorSerialization,
             format!("platform_value error: {e}"),
         )
     }
 }
 
-impl From<platform_wallet::changeset::PersistenceError> for PlatformWalletFfiResult {
+impl From<platform_wallet::changeset::PersistenceError> for PlatformWalletFFIResult {
     fn from(e: platform_wallet::changeset::PersistenceError) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorWalletOperation,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("persistence error: {e}"),
         )
     }
 }
 
-impl From<Box<dyn std::error::Error + Send + Sync>> for PlatformWalletFfiResult {
+impl From<Box<dyn std::error::Error + Send + Sync>> for PlatformWalletFFIResult {
     fn from(e: Box<dyn std::error::Error + Send + Sync>) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorUnknown,
+            PlatformWalletFFIResultCode::ErrorUnknown,
             format!("unclassified error: {e}"),
         )
     }
 }
 
-impl From<anyhow::Error> for PlatformWalletFfiResult {
+impl From<anyhow::Error> for PlatformWalletFFIResult {
     fn from(e: anyhow::Error) -> Self {
         Self::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             e.to_string(),
         )
     }
@@ -343,16 +343,16 @@ mod tests {
 
     #[test]
     fn ok_has_null_message() {
-        let r = PlatformWalletFfiResult::ok();
-        assert_eq!(r.code, PlatformWalletFfiResultCode::Success);
+        let r = PlatformWalletFFIResult::ok();
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
         assert!(r.message.is_null());
     }
 
     #[test]
     fn err_carries_message() {
         let mut r =
-            PlatformWalletFfiResult::err(PlatformWalletFfiResultCode::ErrorDeserialization, "boom");
-        assert_ne!(r.code, PlatformWalletFfiResultCode::Success);
+            PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorDeserialization, "boom");
+        assert_ne!(r.code, PlatformWalletFFIResultCode::Success);
         assert!(!r.message.is_null());
         unsafe { platform_wallet_ffi_result_free(&mut r) };
         assert!(r.message.is_null());
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn free_is_idempotent() {
-        let mut r = PlatformWalletFfiResult::err(PlatformWalletFfiResultCode::ErrorUnknown, "x");
+        let mut r = PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorUnknown, "x");
         unsafe {
             platform_wallet_ffi_result_free(&mut r);
             platform_wallet_ffi_result_free(&mut r);
@@ -370,8 +370,8 @@ mod tests {
 
     #[test]
     fn nul_in_message_is_replaced() {
-        let r = PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorUnknown,
+        let r = PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorUnknown,
             "before\0after",
         );
         assert!(!r.message.is_null());

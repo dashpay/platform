@@ -45,7 +45,7 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
     out_secret_key: *mut u8,
     out_chain_code: *mut u8,
     out_public_key: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(mnemonic);
     check_ptr!(path_utf8);
     check_ptr!(out_secret_key);
@@ -65,8 +65,8 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
         2 => Network::Devnet,
         3 => Network::Regtest,
         _ => {
-            return PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidParameter,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 "invalid network (expected 0..=3)",
             );
         }
@@ -93,5 +93,5 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
         std::ptr::copy_nonoverlapping(pubkey_bytes.as_ptr(), out_public_key, 33);
     }
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

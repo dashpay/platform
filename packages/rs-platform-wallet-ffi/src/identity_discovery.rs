@@ -78,7 +78,7 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
     start_index_or_neg1: i64,
     gap_limit: u32,
     out_found: *mut DiscoveredIdentityIdsFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_found);
 
     // Pre-clear the out-array so partial failures don't leave the
@@ -105,7 +105,7 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
     let result = unwrap_option_or_return!(option);
     let found = unwrap_result_or_return!(result);
     if found.is_empty() {
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
 
     use dpp::identity::accessors::IdentityGettersV0;
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
     unsafe {
         *out_found = DiscoveredIdentityIdsFFI { ids: ptr, count };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release a [`DiscoveredIdentityIdsFFI`] previously populated by

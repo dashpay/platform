@@ -66,7 +66,7 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_with_signer(
     to_identity_id: *const u8,
     amount: u64,
     signer_handle: *mut SignerHandle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
     let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_with_signer(
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Transfer credits from `from_identity_id` to a set of
@@ -118,12 +118,12 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
     outputs_count: usize,
     signer_handle: *mut SignerHandle,
     out_new_balance: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
     check_ptr!(outputs);
     if outputs_count == 0 {
-        return PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidParameter,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "`outputs_count` is zero",
         );
     }
@@ -137,8 +137,8 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
             0 => PlatformAddress::P2pkh(entry.hash),
             1 => PlatformAddress::P2sh(entry.hash),
             _ => {
-                return PlatformWalletFfiResult::err(
-                    PlatformWalletFfiResultCode::ErrorInvalidParameter,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
                     "invalid address_type (expected 0 or 1)",
                 );
             }
@@ -164,5 +164,5 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
     if !out_new_balance.is_null() {
         *out_new_balance = new_balance;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }

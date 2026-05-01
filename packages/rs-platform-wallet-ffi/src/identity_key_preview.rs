@@ -143,7 +143,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     start_index: u32,
     count_or_neg1: i32,
     out_previews: *mut IdentityKeyPreviewsFFI,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_previews);
 
     // Pre-clear so partial failures don't leave the caller staring
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     if count == 0 {
         // Empty preview is a valid result — early-out before
         // touching the wallet manager.
-        return PlatformWalletFfiResult::ok();
+        return PlatformWalletFFIResult::ok();
     }
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -167,8 +167,8 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
         // in on non-tokio threads.
         let wm = wallet.wallet_manager().blocking_read();
         let key_wallet = wm.get_wallet(&wallet.wallet_id()).ok_or_else(|| {
-            PlatformWalletFfiResult::err(
-                PlatformWalletFfiResultCode::ErrorInvalidHandle,
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
                 "Wallet not found in wallet manager",
             )
         })?;
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
         // pointer detachment (`into_raw`, `mem::forget`) happens at
         // the very end so an early `?` cleans up via Drop.
         let build_row =
-            |identity_index: u32| -> Result<IdentityKeyPreviewFFI, PlatformWalletFfiResult> {
+            |identity_index: u32| -> Result<IdentityKeyPreviewFFI, PlatformWalletFFIResult> {
                 let (path, ext_priv, public_key) = derive_identity_auth_keypair(
                     key_wallet,
                     network,
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
             count: items_count,
         };
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release an [`IdentityKeyPreviewsFFI`] previously populated by

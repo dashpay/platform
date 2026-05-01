@@ -29,9 +29,9 @@ pub struct TrackedAssetLockFFI {
 
 /// Destroy an AssetLockManager handle.
 #[no_mangle]
-pub unsafe extern "C" fn asset_lock_manager_destroy(handle: Handle) -> PlatformWalletFfiResult {
+pub unsafe extern "C" fn asset_lock_manager_destroy(handle: Handle) -> PlatformWalletFFIResult {
     ASSET_LOCK_MANAGER_STORAGE.remove(handle);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// List all tracked asset locks.
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
     handle: Handle,
     out_locks: *mut *mut TrackedAssetLockFFI,
     out_count: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_locks);
     check_ptr!(out_count);
 
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
     } else {
         *out_locks = Box::into_raw(entries.into_boxed_slice()) as *mut TrackedAssetLockFFI;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free tracked locks array.

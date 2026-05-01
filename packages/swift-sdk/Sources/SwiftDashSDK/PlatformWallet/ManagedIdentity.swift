@@ -414,7 +414,7 @@ public final class ManagedIdentity: @unchecked Sendable {
     /// Keeping the plumbing in one place avoids duplicating the
     /// error handling + defer + pointer iteration block twice.
     private func readDpnsNameArray(
-        _ fetch: (inout DpnsNameArray) -> PlatformWalletFfiResult
+        _ fetch: (inout DpnsNameArray) -> PlatformWalletFFIResult
     ) throws -> [String] {
         var array = DpnsNameArray()
         try fetch(&array).check()

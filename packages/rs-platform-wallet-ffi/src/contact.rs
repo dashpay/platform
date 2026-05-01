@@ -10,7 +10,7 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
     identity_handle: Handle,
     out_array: *mut IdentifierArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -22,7 +22,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
     });
     let ids = unwrap_option_or_return!(option);
     unsafe { *out_array = IdentifierArray::new(ids) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get all incoming contact request IDs
@@ -30,7 +30,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
 pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
     identity_handle: Handle,
     out_array: *mut IdentifierArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -42,7 +42,7 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
     });
     let ids = unwrap_option_or_return!(option);
     unsafe { *out_array = IdentifierArray::new(ids) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get all established contact IDs
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
 pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
     identity_handle: Handle,
     out_array: *mut IdentifierArray,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_array);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
     });
     let ids = unwrap_option_or_return!(option);
     unsafe { *out_array = IdentifierArray::new(ids) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Check if a contact is established. `contact_id` is a `*const u8`
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
     identity_handle: Handle,
     contact_id: *const u8,
     out_is_established: *mut bool,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_is_established);
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(contact_id) });
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
         identity.established_contacts.contains_key(&id)
     });
     *out_is_established = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Send a contact request from this identity to another
@@ -91,7 +91,7 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
 pub unsafe extern "C" fn managed_identity_send_contact_request(
     identity_handle: Handle,
     request_handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let request_result = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
 
     let request = unwrap_option_or_return!(request_result);
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn managed_identity_send_contact_request(
         identity.add_sent_contact_request(request, &ffi_noop_persister());
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Accept an incoming contact request
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn managed_identity_send_contact_request(
 pub unsafe extern "C" fn managed_identity_accept_contact_request(
     identity_handle: Handle,
     request_handle: Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let request_result = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
 
     let request = unwrap_option_or_return!(request_result);
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
         identity.add_incoming_contact_request(request, &ffi_noop_persister());
     });
     unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Reject an incoming contact request
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
 pub unsafe extern "C" fn managed_identity_reject_contact_request(
     identity_handle: Handle,
     sender_id: *const u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
@@ -136,10 +136,10 @@ pub unsafe extern "C" fn managed_identity_reject_contact_request(
     });
     let removed = unwrap_option_or_return!(option);
     if removed {
-        PlatformWalletFfiResult::ok()
+        PlatformWalletFFIResult::ok()
     } else {
-        PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorContactNotFound,
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorContactNotFound,
             "Contact request not found",
         )
     }
@@ -195,7 +195,7 @@ mod tests {
             };
 
             let result = managed_identity_get_sent_contact_request_ids(handle, &mut array);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(array.count, 0); // Should be empty for new identity
 
             // Cleanup
@@ -217,7 +217,7 @@ mod tests {
             };
 
             let result = managed_identity_get_incoming_contact_request_ids(handle, &mut array);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(array.count, 0);
 
             // Cleanup
@@ -239,7 +239,7 @@ mod tests {
             };
 
             let result = managed_identity_get_established_contact_ids(handle, &mut array);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(array.count, 0);
 
             // Cleanup
@@ -264,7 +264,7 @@ mod tests {
                 id_bytes.as_ptr(),
                 &mut is_established,
             );
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!is_established);
 
             // Cleanup

@@ -26,7 +26,7 @@ pub unsafe extern "C" fn contact_request_create(
     core_height_created_at: u32,
     created_at: u64,
     out_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(encrypted_public_key_bytes);
     check_ptr!(out_handle);
 
@@ -51,7 +51,7 @@ pub unsafe extern "C" fn contact_request_create(
     let handle = CONTACT_REQUEST_STORAGE.insert(contact_request);
     unsafe { *out_handle = handle };
 
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Create a contact request handle from a managed identity's sent request
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
     identity_handle: Handle,
     recipient_id: *const u8,
     out_request_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_request_handle);
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(recipient_id) });
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
     let request = unwrap_option_or_return!(option);
 
     unsafe { *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Create a contact request handle from a managed identity's incoming request
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
     identity_handle: Handle,
     sender_id: *const u8,
     out_request_handle: *mut Handle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_request_handle);
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
     let inner = unwrap_option_or_return!(option);
     let request = unwrap_option_or_return!(inner);
     unsafe { *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get sender ID from contact request into a 32-byte out-buffer.
@@ -100,13 +100,13 @@ pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
 pub unsafe extern "C" fn contact_request_get_sender_id(
     request_handle: Handle,
     out_id: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_id);
 
     let option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.sender_id);
     let id = unwrap_option_or_return!(option);
     unsafe { write_identifier(out_id, &id) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get recipient ID from contact request into a 32-byte out-buffer.
@@ -114,13 +114,13 @@ pub unsafe extern "C" fn contact_request_get_sender_id(
 pub unsafe extern "C" fn contact_request_get_recipient_id(
     request_handle: Handle,
     out_id: *mut u8,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_id);
 
     let option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.recipient_id);
     let id = unwrap_option_or_return!(option);
     unsafe { write_identifier(out_id, &id) };
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get sender key index from contact request
@@ -128,13 +128,13 @@ pub unsafe extern "C" fn contact_request_get_recipient_id(
 pub unsafe extern "C" fn contact_request_get_sender_key_index(
     request_handle: Handle,
     out_index: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_index);
 
     let option =
         CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.sender_key_index);
     *out_index = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get recipient key index from contact request
@@ -142,13 +142,13 @@ pub unsafe extern "C" fn contact_request_get_sender_key_index(
 pub unsafe extern "C" fn contact_request_get_recipient_key_index(
     request_handle: Handle,
     out_index: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_index);
 
     let option =
         CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.recipient_key_index);
     *out_index = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get account reference from contact request
@@ -156,13 +156,13 @@ pub unsafe extern "C" fn contact_request_get_recipient_key_index(
 pub unsafe extern "C" fn contact_request_get_account_reference(
     request_handle: Handle,
     out_account_ref: *mut u32,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_account_ref);
 
     let option =
         CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.account_reference);
     *out_account_ref = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get encrypted public key from contact request
@@ -171,7 +171,7 @@ pub unsafe extern "C" fn contact_request_get_encrypted_public_key(
     request_handle: Handle,
     out_bytes: *mut *mut u8,
     out_len: *mut usize,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_bytes);
     check_ptr!(out_len);
 
@@ -185,7 +185,7 @@ pub unsafe extern "C" fn contact_request_get_encrypted_public_key(
         *out_bytes = ptr;
         *out_len = len;
     }
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get creation timestamp from contact request
@@ -193,22 +193,22 @@ pub unsafe extern "C" fn contact_request_get_encrypted_public_key(
 pub unsafe extern "C" fn contact_request_get_created_at(
     request_handle: Handle,
     out_timestamp: *mut u64,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(out_timestamp);
 
     let option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.created_at);
     *out_timestamp = unwrap_option_or_return!(option);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
 
 /// Destroy contact request handle
 #[no_mangle]
-pub extern "C" fn contact_request_destroy(request_handle: Handle) -> PlatformWalletFfiResult {
+pub extern "C" fn contact_request_destroy(request_handle: Handle) -> PlatformWalletFFIResult {
     if CONTACT_REQUEST_STORAGE.remove(request_handle).is_some() {
-        PlatformWalletFfiResult::ok()
+        PlatformWalletFFIResult::ok()
     } else {
-        PlatformWalletFfiResult::err(
-            PlatformWalletFfiResultCode::ErrorInvalidHandle,
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
             "Invalid contact request handle",
         )
     }
@@ -242,43 +242,43 @@ mod tests {
             // Test sender ID
             let mut out_id = [0u8; 32];
             let result = contact_request_get_sender_id(handle, out_id.as_mut_ptr());
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(out_id, [1u8; 32]);
 
             // Test recipient ID
             let result = contact_request_get_recipient_id(handle, out_id.as_mut_ptr());
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(out_id, [2u8; 32]);
 
             // Test sender key index
             let mut sender_key_idx = 0u32;
             let result = contact_request_get_sender_key_index(handle, &mut sender_key_idx);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(sender_key_idx, 0);
 
             // Test recipient key index
             let mut recipient_key_idx = 0u32;
             let result = contact_request_get_recipient_key_index(handle, &mut recipient_key_idx);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(recipient_key_idx, 1);
 
             // Test account reference
             let mut account_ref = 0u32;
             let result = contact_request_get_account_reference(handle, &mut account_ref);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(account_ref, 42);
 
             // Test created_at
             let mut created_at = 0u64;
             let result = contact_request_get_created_at(handle, &mut created_at);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(created_at, 1_700_000_000);
 
             // Test encrypted public key
             let mut bytes_ptr: *mut u8 = std::ptr::null_mut();
             let mut len: usize = 0;
             let result = contact_request_get_encrypted_public_key(handle, &mut bytes_ptr, &mut len);
-            assert_eq!(result.code, PlatformWalletFfiResultCode::Success);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_eq!(len, 96);
             assert!(!bytes_ptr.is_null());
 

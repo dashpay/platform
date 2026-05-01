@@ -23,7 +23,7 @@ pub unsafe extern "C" fn platform_wallet_withdraw_credits_with_signer(
     amount: u64,
     to_address: *const c_char,
     signer_handle: *mut SignerHandle,
-) -> PlatformWalletFfiResult {
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
     check_ptr!(to_address);
 
@@ -40,13 +40,13 @@ pub unsafe extern "C" fn platform_wallet_withdraw_credits_with_signer(
             wallet_handle,
             |wallet| -> Result<
                 Result<(), platform_wallet::PlatformWalletError>,
-                PlatformWalletFfiResult,
+                PlatformWalletFFIResult,
             > {
                 let wallet_network = wallet.platform().network();
                 let to_address_parsed = to_address_unchecked
                     .clone()
                     .require_network(wallet_network)
-                    .map_err(PlatformWalletFfiResult::from)?;
+                    .map_err(PlatformWalletFFIResult::from)?;
                 let identity_wallet = wallet.identity().clone();
                 Ok(block_on_worker(async move {
                     let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
@@ -65,5 +65,5 @@ pub unsafe extern "C" fn platform_wallet_withdraw_credits_with_signer(
     let inner = unwrap_option_or_return!(option);
     let result = unwrap_result_or_return!(inner);
     unwrap_result_or_return!(result);
-    PlatformWalletFfiResult::ok()
+    PlatformWalletFFIResult::ok()
 }
