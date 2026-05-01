@@ -138,7 +138,9 @@ public final class DashPayService: Sendable {
     /// - Throws: Error if acceptance fails
     public func acceptContactRequest(identity: ManagedIdentity, from senderId: Identifier) throws {
         guard let request = try identity.getIncomingContactRequest(senderId: senderId) else {
-            throw PlatformWalletError.contactNotFound
+            throw PlatformWalletError.contactNotFound(
+                "no incoming contact request from sender id"
+            )
         }
         try identity.acceptContactRequest(request)
     }

@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// A managed wallet created by `PlatformWalletManager`.
 ///
@@ -23,8 +24,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     }
 
     deinit {
-        var error = PlatformWalletFFIError()
-        _ = platform_wallet_destroy(handle, &error)
+        _ = platform_wallet_destroy(handle)
     }
 
     // MARK: - Balance (lock-free)
@@ -47,20 +47,16 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         var unconfirmed: UInt64 = 0
         var immature: UInt64 = 0
         var locked: UInt64 = 0
-        var error = PlatformWalletFFIError()
 
         let result = platform_wallet_get_balance(
             handle,
             &spendable,
             &unconfirmed,
             &immature,
-            &locked,
-            &error
+            &locked
         )
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
 
         return WalletBalance(
             spendable: spendable,
@@ -78,13 +74,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// The caller is responsible for the returned object's lifetime.
     public func platformAddressWallet() throws -> ManagedPlatformAddressWallet {
         var platformHandle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
 
-        let result = platform_wallet_get_platform(handle, &platformHandle, &error)
+        let result = platform_wallet_get_platform(handle, &platformHandle)
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
 
         return ManagedPlatformAddressWallet(handle: platformHandle)
     }
@@ -92,12 +85,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// Get the core wallet for UTXO management, addresses, and transactions.
     public func coreWallet() throws -> ManagedCoreWallet {
         var coreHandle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
 
-        let result = platform_wallet_get_core(handle, &coreHandle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        let result = platform_wallet_get_core(handle, &coreHandle)
+        try result.check()
 
         return ManagedCoreWallet(handle: coreHandle)
     }
@@ -105,12 +95,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// Get the asset lock manager for building and tracking asset locks.
     public func assetLockManager() throws -> ManagedAssetLockManager {
         var assetLockHandle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
 
-        let result = platform_wallet_get_asset_locks(handle, &assetLockHandle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        let result = platform_wallet_get_asset_locks(handle, &assetLockHandle)
+        try result.check()
 
         return ManagedAssetLockManager(handle: assetLockHandle)
     }
@@ -119,22 +106,16 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     /// Flush all queued changesets to the storage backend.
     public func flushPersist() throws {
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_flush_persist(handle, &error)
+        let result = platform_wallet_flush_persist(handle)
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
     }
 
     /// Load persisted state and apply it to the in-memory wallet.
     public func loadAndApplyPersisted() throws {
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_load_and_apply_persisted(handle, &error)
+        let result = platform_wallet_load_and_apply_persisted(handle)
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
     }
 
     // MARK: - Identity registration (address-funded)
@@ -289,10 +270,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         addressSigner: KeychainSigner
     ) async throws -> CreatedIdentity {
         guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter("inputs is empty")
         }
         guard !identityPubkeys.isEmpty else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter("identityPubkeys is empty")
         }
         // Reject malformed address hashes up front for the same
         // reason `topUpFromAddresses` does — `.prefix(20)` below
@@ -300,11 +281,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         // a different address.
         for input in inputs {
             guard input.hash.count == 20 else {
-                throw PlatformWalletError.invalidParameter
+                throw PlatformWalletError.invalidParameter(
+                    "input hash must be 20 bytes, got \(input.hash.count)"
+                )
             }
         }
         if let output, output.hash.count != 20 {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter(
+                "output hash must be 20 bytes, got \(output.hash.count)"
+            )
         }
 
         let handle = self.handle
@@ -375,7 +360,6 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                 0, 0, 0, 0, 0, 0, 0, 0
             )
             var outIdentityHandle: Handle = NULL_HANDLE
-            var error = PlatformWalletFFIError()
 
             // Stage each pubkey into a contiguous, owning buffer so
             // the `pubkey_bytes` pointers we hand to Rust stay valid
@@ -411,17 +395,14 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                                 UInt(inputsBuf.count),
                                 outputPtr,
                                 &outIdentityId,
-                                &outIdentityHandle,
-                                &error
+                                &outIdentityHandle
                             )
                         }
                     }
                 }
             }
 
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             guard outIdentityHandle != NULL_HANDLE else {
                 throw PlatformWalletError.walletOperation("identity handle not returned")
             }
@@ -489,10 +470,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         addressSigner: KeychainSigner
     ) async throws -> UInt64 {
         guard identityId.count == 32 else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
         }
         guard !inputs.isEmpty else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter("inputs is empty")
         }
         // Reject malformed address hashes up front. Earlier
         // revisions used `.prefix(20)` on the FFI build below,
@@ -502,7 +485,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         // here surfaces the failure as a recoverable error.
         for input in inputs {
             guard input.hash.count == 20 else {
-                throw PlatformWalletError.invalidParameter
+                throw PlatformWalletError.invalidParameter(
+                    "input hash must be 20 bytes, got \(input.hash.count)"
+                )
             }
         }
 
@@ -548,7 +533,6 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             }
 
             var newBalance: UInt64 = 0
-            var error = PlatformWalletFFIError()
 
             let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
                 withUnsafePointer(to: &idTuple) { idPtr in
@@ -558,15 +542,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                         inputsBuf.baseAddress,
                         UInt(inputsBuf.count),
                         addressSignerHandle,
-                        &newBalance,
-                        &error
+                        &newBalance
                     )
                 }
             }
 
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return newBalance
         }.value
     }
@@ -784,21 +765,17 @@ extension ManagedPlatformWallet {
         }
 
         var out = IdentityKeyPreviewsFFI()
-        var error = PlatformWalletFFIError()
         let result = platform_wallet_preview_identity_registration_keys(
             handle,
             startIndex,
             countOrNeg1,
-            &out,
-            &error
+            &out
         )
         // Free the Rust-owned array whether we succeeded or bailed
         // out — the free function is a no-op on the zero struct.
         defer { platform_wallet_preview_identity_registration_keys_free(&out) }
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
 
         guard let base = out.items, out.count > 0 else {
             return []
@@ -899,12 +876,13 @@ extension ManagedPlatformWallet {
         // length guard for the (unexpected but possible) case where
         // the instance was constructed with a malformed wallet id.
         guard self.walletId.count == 32 else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(self.walletId.count)"
+            )
         }
         let resolver = MnemonicResolver(storage: storage)
 
         var row = IdentityKeyPreviewFFI()
-        var error = PlatformWalletFFIError()
 
         let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
             let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
@@ -914,15 +892,12 @@ extension ManagedPlatformWallet {
                 resolver.handle,
                 identityIndex,
                 keyId,
-                &row,
-                &error
+                &row
             )
         }
         defer { dash_sdk_derive_identity_key_at_slot_free(&row) }
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
 
         let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
         let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
@@ -1035,7 +1010,6 @@ extension ManagedPlatformWallet {
         let persister = IdentityKeyPersister(keychain: keychain)
 
         var out = IdentityRegistrationKeyDerivationsFFI()
-        var error = PlatformWalletFFIError()
 
         // `walletId` is `Data`; bind into a 32-byte UInt8 pointer
         // so Rust receives a stable address for the duration of
@@ -1049,15 +1023,12 @@ extension ManagedPlatformWallet {
                 keyCount,
                 resolver.handle,
                 persister.handle,
-                &out,
-                &error
+                &out
             )
         }
         defer { dash_sdk_derive_identity_keys_from_mnemonic_free(&out) }
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
 
         guard let base = out.items, out.count > 0 else { return [] }
 
@@ -1177,18 +1148,14 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) {
             () -> [Identifier] in
             var found = DiscoveredIdentityIdsFFI()
-            var error = PlatformWalletFFIError()
             let result = platform_wallet_discover_identities(
                 handle,
                 startArg,
                 gapArg,
-                &found,
-                &error
+                &found
             )
             defer { platform_wallet_discover_identities_free(&found) }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             guard let base = found.ids, found.count > 0 else {
                 return []
             }
@@ -1264,7 +1231,6 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) { () -> String in
             _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
-            var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { idBp in
                 name.withCString { namePtr in
                     platform_wallet_register_dpns_name_with_signer(
@@ -1272,14 +1238,11 @@ extension ManagedPlatformWallet {
                         idBp.baseAddress!,
                         namePtr,
                         signerHandle,
-                        &outPtr,
-                        &error
+                        &outPtr
                     )
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             defer { if let p = outPtr { platform_wallet_string_free(p) } }
             guard let p = outPtr else {
                 throw PlatformWalletError.walletOperation(
@@ -1297,21 +1260,17 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) { () -> Identifier? in
             var buf = [UInt8](repeating: 0, count: 32)
             var found = false
-            var error = PlatformWalletFFIError()
             let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
                 name.withCString { namePtr in
                     platform_wallet_resolve_dpns_name(
                         handle,
                         namePtr,
                         bp.baseAddress!,
-                        &found,
-                        &error
+                        &found
                     )
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             guard found else { return nil }
             return Data(buf)
         }.value
@@ -1328,20 +1287,16 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) { () -> [DpnsSearchResult] in
             var outPtr: UnsafeMutablePointer<DpnsSearchResultFFI>? = nil
             var outCount: UInt = 0
-            var error = PlatformWalletFFIError()
             let result = prefix.withCString { prefixPtr in
                 platform_wallet_search_dpns_names(
                     handle,
                     prefixPtr,
                     limit,
                     &outPtr,
-                    &outCount,
-                    &error
+                    &outCount
                 )
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             guard let ptr = outPtr, outCount > 0 else {
                 return []
             }
@@ -1381,13 +1336,10 @@ extension ManagedPlatformWallet {
         }
         return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var added: UInt32 = 0
-            var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { bp in
-                platform_wallet_sync_dpns_names(handle, bp.baseAddress!, &added, &error)
+                platform_wallet_sync_dpns_names(handle, bp.baseAddress!, &added)
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return added
         }.value
     }
@@ -1415,7 +1367,6 @@ extension ManagedPlatformWallet {
             () -> ContestVoteState? in
             var state = ContestVoteStateFFI()
             var found = false
-            var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
                 label.withCString { labelPtr in
                     platform_wallet_fetch_contest_vote_state(
@@ -1423,15 +1374,12 @@ extension ManagedPlatformWallet {
                         idBp.baseAddress!,
                         labelPtr,
                         &state,
-                        &found,
-                        &error
+                        &found
                     )
                 }
             }
             defer { contest_vote_state_ffi_free(&state) }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             guard found else { return nil }
             return ContestVoteState(ffi: state)
         }.value
@@ -1456,18 +1404,14 @@ extension ManagedPlatformWallet {
         }
         return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var count: UInt32 = 0
-            var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { bp in
                 platform_wallet_sync_contested_dpns_names(
                     handle,
                     bp.baseAddress!,
-                    &count,
-                    &error
+                    &count
                 )
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return count
         }.value
     }
@@ -1486,18 +1430,14 @@ extension ManagedPlatformWallet {
     /// this identity.
     public func managedIdentity(identityId: Identifier) throws -> ManagedIdentity {
         var outHandle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
         let result = identityId.withFFIBytes { idPtr in
             platform_wallet_get_managed_identity(
                 handle,
                 idPtr,
-                &outHandle,
-                &error
+                &outHandle
             )
         }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
         return ManagedIdentity(handle: outHandle)
     }
 
@@ -1510,11 +1450,8 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
             var array = ContactRequestHandleArray()
-            var error = PlatformWalletFFIError()
-            let result = platform_wallet_sync_contact_requests(handle, &array, &error)
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            let result = platform_wallet_sync_contact_requests(handle, &array)
+            try result.check()
             defer { platform_wallet_contact_request_handle_array_free(&array) }
             guard let handles = array.handles, array.count > 0 else {
                 return []
@@ -1563,7 +1500,6 @@ extension ManagedPlatformWallet {
             () -> Handle in
             _ = signer
             var outHandle: Handle = NULL_HANDLE
-            var error = PlatformWalletFFIError()
             let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
                 senderBp -> PlatformWalletFFIResult in
                 recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
@@ -1581,8 +1517,7 @@ extension ManagedPlatformWallet {
                                     bytesPtr,
                                     UInt(autoAcceptProof.count),
                                     signerHandle,
-                                    &outHandle,
-                                    &error
+                                    &outHandle
                                 )
                             }
                         } else {
@@ -1594,8 +1529,7 @@ extension ManagedPlatformWallet {
                                 nil,
                                 0,
                                 signerHandle,
-                                &outHandle,
-                                &error
+                                &outHandle
                             )
                         }
                     }
@@ -1606,9 +1540,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return outHandle
         }.value
 
@@ -1630,17 +1562,13 @@ extension ManagedPlatformWallet {
         ) { () -> Handle in
             _ = signer
             var outHandle: Handle = NULL_HANDLE
-            var error = PlatformWalletFFIError()
             let result = platform_wallet_accept_contact_request_with_signer(
                 walletHandle,
                 requestHandle,
                 signerHandle,
-                &outHandle,
-                &error
+                &outHandle
             )
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return outHandle
         }.value
         return EstablishedContact(handle: establishedHandle)
@@ -1663,21 +1591,17 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         try await Task.detached(priority: .userInitiated) {
-            var error = PlatformWalletFFIError()
             let result = ourBytes.withUnsafeBufferPointer {
                 ourBp -> PlatformWalletFFIResult in
                 contactBytes.withUnsafeBufferPointer { contactBp in
                     platform_wallet_reject_contact_request(
                         handle,
                         ourBp.baseAddress!,
-                        contactBp.baseAddress!,
-                        &error
+                        contactBp.baseAddress!
                     )
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
         }.value
     }
 
@@ -1691,18 +1615,14 @@ extension ManagedPlatformWallet {
         }
         return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
             var array = ContactRequestHandleArray(handles: nil, count: 0)
-            var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer { idBp in
                 platform_wallet_fetch_sent_contact_requests(
                     handle,
                     idBp.baseAddress!,
-                    &array,
-                    &error
+                    &array
                 )
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             defer { platform_wallet_contact_request_handle_array_free(&array) }
             guard let handles = array.handles, array.count > 0 else {
                 return []
@@ -1749,7 +1669,6 @@ extension ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             )
-            var error = PlatformWalletFFIError()
             let result: PlatformWalletFFIResult = fromBytes.withUnsafeBufferPointer {
                 fromBp -> PlatformWalletFFIResult in
                 toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
@@ -1760,8 +1679,7 @@ extension ManagedPlatformWallet {
                             toBp.baseAddress!,
                             amountDuffs,
                             memoPtr,
-                            &txidTuple,
-                            &error
+                            &txidTuple
                         )
                     }
                     if let memoCopy {
@@ -1771,9 +1689,7 @@ extension ManagedPlatformWallet {
                     }
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
         }.value
     }
@@ -1795,22 +1711,18 @@ extension ManagedPlatformWallet {
     public func getDashPayProfile(identityId: Identifier) throws -> DashPayProfile? {
         var ffiProfile = DashPayProfileFFI()
         var hasProfile: Bool = false
-        var error = PlatformWalletFFIError()
 
         let result = identityId.withFFIBytes { idPtr in
             platform_wallet_get_dashpay_profile(
                 handle,
                 idPtr,
                 &ffiProfile,
-                &hasProfile,
-                &error
+                &hasProfile
             )
         }
         defer { dashpay_profile_ffi_free(&ffiProfile) }
 
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try result.check()
         guard hasProfile else { return nil }
         return DashPayProfile(ffi: ffiProfile)
     }
@@ -1830,15 +1742,11 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var syncedCount: UInt32 = 0
-            var error = PlatformWalletFFIError()
             let result = platform_wallet_sync_dashpay_profiles(
                 handle,
-                &syncedCount,
-                &error
+                &syncedCount
             )
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return syncedCount
         }.value
     }
@@ -1900,7 +1808,6 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
             _ = signer
             var outProfile = DashPayProfileFFI()
-            var error = PlatformWalletFFIError()
 
             let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
@@ -1924,8 +1831,7 @@ extension ManagedPlatformWallet {
                                 UInt(avatarBytes.count),
                                 doCreate,
                                 signerHandle,
-                                &outProfile,
-                                &error
+                                &outProfile
                             )
                         }
                     } else {
@@ -1940,8 +1846,7 @@ extension ManagedPlatformWallet {
                             0,
                             doCreate,
                             signerHandle,
-                            &outProfile,
-                            &error
+                            &outProfile
                         )
                     }
                 }
@@ -1949,9 +1854,7 @@ extension ManagedPlatformWallet {
 
             defer { dashpay_profile_ffi_free(&outProfile) }
 
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return DashPayProfile(ffi: outProfile)
         }.value
     }
@@ -2011,8 +1914,8 @@ extension ManagedPlatformWallet {
     /// SwiftData's `PersistentIdentity` query when the wallet hasn't
     /// rehydrated all of its persisted identities into memory.
     public func inMemoryIdentityIds() throws -> [Identifier] {
-        try readIdentifierArray { array, error in
-            platform_wallet_list_in_memory_identity_ids(handle, &array, &error)
+        try readIdentifierArray { array in
+            platform_wallet_list_in_memory_identity_ids(handle, &array)
         }
     }
 
@@ -2020,8 +1923,8 @@ extension ManagedPlatformWallet {
     /// the wallet currently knows about. Reads
     /// `info.identity_manager.watched_identities` directly.
     public func inMemoryWatchedIdentityIds() throws -> [Identifier] {
-        try readIdentifierArray { array, error in
-            platform_wallet_list_in_memory_watched_identity_ids(handle, &array, &error)
+        try readIdentifierArray { array in
+            platform_wallet_list_in_memory_watched_identity_ids(handle, &array)
         }
     }
 
@@ -2030,12 +1933,9 @@ extension ManagedPlatformWallet {
     /// at the top of the per-wallet detail screen.
     public func inMemorySummary() throws -> InMemoryWalletSummary {
         var ffi = PlatformWalletMemorySummaryFFI()
-        var error = PlatformWalletFFIError()
 
-        let result = platform_wallet_get_in_memory_summary(handle, &ffi, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        let result = platform_wallet_get_in_memory_summary(handle, &ffi)
+        try result.check()
 
         return InMemoryWalletSummary(
             identitiesCount: Int(ffi.identities_count),
@@ -2053,14 +1953,10 @@ extension ManagedPlatformWallet {
     /// free helper, so the per-method variance is just the FFI call
     /// itself.
     private func readIdentifierArray(
-        _ fetch: (inout IdentifierArray, inout PlatformWalletFFIError) -> PlatformWalletFFIResult
+        _ fetch: (inout IdentifierArray) -> PlatformWalletFFIResult
     ) throws -> [Identifier] {
         var array = IdentifierArray()
-        var error = PlatformWalletFFIError()
-        let result = fetch(&array, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try fetch(&array).check()
         defer { platform_wallet_identifier_array_free(&array) }
         guard array.items != nil, array.count > 0 else {
             return []
@@ -2156,7 +2052,6 @@ extension ManagedPlatformWallet {
         }
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
             let result = fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
                 toBytes.withUnsafeBufferPointer { toBp in
                     platform_wallet_transfer_credits_with_signer(
@@ -2164,14 +2059,11 @@ extension ManagedPlatformWallet {
                         fromBp.baseAddress!,
                         toBp.baseAddress!,
                         amount,
-                        signerHandle,
-                        &error
+                        signerHandle
                     )
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
         }.value
     }
 
@@ -2186,7 +2078,7 @@ extension ManagedPlatformWallet {
         signer: KeychainSigner
     ) async throws -> UInt64 {
         guard !recipients.isEmpty else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter("recipients is empty")
         }
         let handle = self.handle
         let signerHandle = signer.handle
@@ -2225,7 +2117,6 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             _ = signer
             var newBalance: UInt64 = 0
-            var error = PlatformWalletFFIError()
             let result = fromBytes.withUnsafeBufferPointer {
                 fromBp -> PlatformWalletFFIResult in
                 rows.withUnsafeBufferPointer { rowsBp in
@@ -2235,14 +2126,11 @@ extension ManagedPlatformWallet {
                         rowsBp.baseAddress,
                         UInt(rowsBp.count),
                         signerHandle,
-                        &newBalance,
-                        &error
+                        &newBalance
                     )
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return newBalance
         }.value
     }
@@ -2263,7 +2151,6 @@ extension ManagedPlatformWallet {
         }
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
                 toAddress.withCString { addrPtr in
@@ -2272,14 +2159,11 @@ extension ManagedPlatformWallet {
                         idBp.baseAddress!,
                         amount,
                         addrPtr,
-                        signerHandle,
-                        &error
+                        signerHandle
                     )
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
         }.value
     }
 
@@ -2308,7 +2192,6 @@ extension ManagedPlatformWallet {
         let disableIds = disablePublicKeyIds
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
             // FFI sees stays valid for the call duration.
@@ -2324,8 +2207,7 @@ extension ManagedPlatformWallet {
                             0,
                             disableIds.isEmpty ? nil : disableBp.baseAddress,
                             UInt(disableIds.count),
-                            signerHandle,
-                            &error
+                            signerHandle
                         )
                     }
                     return ManagedPlatformWallet.withPubkeyFFIArray(
@@ -2339,15 +2221,12 @@ extension ManagedPlatformWallet {
                             UInt(ffiRowsCount),
                             disableIds.isEmpty ? nil : disableBp.baseAddress,
                             UInt(disableIds.count),
-                            signerHandle,
-                            &error
+                            signerHandle
                         )
                     }
                 }
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
         }.value
     }
 
@@ -2412,7 +2291,6 @@ extension ManagedPlatformWallet {
             // `withCString` scopes here are sufficient — the
             // pointers don't need to outlive the call.
             _ = signer
-            var error = PlatformWalletFFIError()
             var contractIdBytes = [UInt8](repeating: 0, count: 32)
 
             let result = idBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
@@ -2433,8 +2311,7 @@ extension ManagedPlatformWallet {
                                                 descriptionPtr,
                                                 configPtr,
                                                 signerHandle,
-                                                outBp.baseAddress!,
-                                                &error
+                                                outBp.baseAddress!
                                             )
                                         }
                                     }
@@ -2445,9 +2322,7 @@ extension ManagedPlatformWallet {
                 }
             }
 
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             return Data(contractIdBytes)
         }.value
     }
@@ -2485,7 +2360,7 @@ extension ManagedPlatformWallet {
         signer: KeychainSigner
     ) async throws -> (Identifier, ManagedIdentity) {
         guard !identityPubkeys.isEmpty else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter("identityPubkeys is empty")
         }
         let handle = self.handle
         let signerHandle = signer.handle
@@ -2503,7 +2378,6 @@ extension ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             )
             var outManagedHandle: Handle = NULL_HANDLE
-            var error = PlatformWalletFFIError()
             // Pin each pubkey buffer simultaneously via the existing
             // helper, then hand the assembled row array to the FFI.
             let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
@@ -2519,13 +2393,10 @@ extension ManagedPlatformWallet {
                     UInt(ffiRowsCount),
                     signerHandle,
                     &idTuple,
-                    &outManagedHandle,
-                    &error
+                    &outManagedHandle
                 )
             }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try result.check()
             // Copy the 32-byte tuple into a Data via withUnsafeBytes.
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
             return (identityId, ManagedIdentity(handle: outManagedHandle))

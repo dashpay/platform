@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Asset lock lifecycle manager for building, broadcasting, and tracking asset locks.
 ///
@@ -11,8 +12,7 @@ public class ManagedAssetLockManager {
     }
 
     deinit {
-        var error = PlatformWalletFFIError()
-        _ = asset_lock_manager_destroy(handle, &error)
+        asset_lock_manager_destroy(handle).discard()
     }
 
     // MARK: - Types
@@ -79,12 +79,7 @@ public class ManagedAssetLockManager {
     public func listTrackedLocks() throws -> [TrackedAssetLock] {
         var locksPtr: UnsafeMutablePointer<TrackedAssetLockFFI>? = nil
         var count: UInt = 0
-        var error = PlatformWalletFFIError()
-
-        let result = asset_lock_manager_list_tracked_locks(handle, &locksPtr, &count, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try asset_lock_manager_list_tracked_locks(handle, &locksPtr, &count).check()
         defer { asset_lock_manager_free_tracked_locks(locksPtr, count) }
 
         guard let locks = locksPtr, count > 0 else { return [] }
@@ -116,20 +111,14 @@ public class ManagedAssetLockManager {
     ) throws -> BuildResult {
         var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var txLen: UInt = 0
-        var privateKey: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var privateKey: FFIByteTuple32 = // gitleaks:allow
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var error = PlatformWalletFFIError()
 
-        let result = asset_lock_manager_build_transaction(
+        try asset_lock_manager_build_transaction(
             handle, amountDuffs, accountIndex, fundingType.rawValue, identityIndex,
-            &txBytesPtr, &txLen, &privateKey, &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &txBytesPtr, &txLen, &privateKey
+        ).check()
+
         guard let txPtr = txBytesPtr, txLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but transaction buffer was empty")
         }
@@ -149,25 +138,16 @@ public class ManagedAssetLockManager {
     ) throws -> FundedProofResult {
         var proofBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var proofLen: UInt = 0
-        var privateKey: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var privateKey: FFIByteTuple32 = // gitleaks:allow
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var txid: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var txid: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var error = PlatformWalletFFIError()
 
-        let result = asset_lock_manager_create_funded_proof(
+        try asset_lock_manager_create_funded_proof(
             handle, amountDuffs, accountIndex, fundingType.rawValue, identityIndex,
-            &proofBytesPtr, &proofLen, &privateKey, &txid, &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &proofBytesPtr, &proofLen, &privateKey, &txid
+        ).check()
+
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty")
         }
@@ -189,22 +169,17 @@ public class ManagedAssetLockManager {
         timeoutSeconds: UInt64 = 300
     ) throws -> ResumeResult {
         guard txid.count == 32 else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter(
+                "txid must be 32 bytes, got \(txid.count)"
+            )
         }
 
         var proofBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var proofLen: UInt = 0
-        var privateKey: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var privateKey: FFIByteTuple32 = // gitleaks:allow
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var error = PlatformWalletFFIError()
 
-        var txidTuple: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var txidTuple: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
         txid.withUnsafeBytes { buf in
             withUnsafeMutableBytes(of: &txidTuple) { dst in
@@ -212,13 +187,11 @@ public class ManagedAssetLockManager {
             }
         }
 
-        let result = asset_lock_manager_resume(
+        try asset_lock_manager_resume(
             handle, &txidTuple, vout, timeoutSeconds,
-            &proofBytesPtr, &proofLen, &privateKey, &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &proofBytesPtr, &proofLen, &privateKey
+        ).check()
+
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty")
         }

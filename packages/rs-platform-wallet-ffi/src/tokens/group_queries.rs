@@ -25,37 +25,26 @@ use platform_wallet::wallet::tokens::{
 };
 use serde_json::{json, Value};
 
-use crate::error::{PlatformWalletFFIError, PlatformWalletFFIResult};
+use crate::check_ptr;
+use crate::error::*;
 use crate::handle::*;
 use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Decode a raw `u8` status from the FFI caller into the rs-dpp enum.
-/// Mirrors `GroupActionStatus::try_from(u8)` but stamps `out_error`
-/// on failure rather than returning `anyhow::Error`.
-unsafe fn decode_status(
-    status: u8,
-    out_error: *mut PlatformWalletFFIError,
-) -> Result<GroupActionStatus, PlatformWalletFFIResult> {
+fn decode_status(status: u8) -> Result<GroupActionStatus, PlatformWalletFFIResult> {
     match status {
         0 => Ok(GroupActionStatus::ActionActive),
         1 => Ok(GroupActionStatus::ActionClosed),
-        other => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!("Invalid group action status: {other} (expected 0 or 1)"),
-                );
-            }
-            Err(PlatformWalletFFIResult::ErrorInvalidParameter)
-        }
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("Invalid group action status: {other} (expected 0 or 1)"),
+        )),
     }
 }
 
-/// Render a group-action `params` payload as a JSON object. Each
-/// variant matches the discriminator names emitted in
-/// [`render_action_entry`] below. `kind` is owned so the `Other`
-/// variant can carry a runtime name without a static-lifetime trick.
+/// Render a group-action `params` payload as a JSON object.
 fn render_params(params: &GroupActionParams) -> (String, Value) {
     fn id(b: &dpp::prelude::Identifier) -> String {
         bs58::encode(b.as_bytes()).into_string()
@@ -175,37 +164,11 @@ fn render_signer_entry(entry: &GroupActionSignerEntry) -> Value {
 
 /// Allocate a JSON `Value` as a NUL-terminated C string and write it
 /// to `out_json`. Caller frees with `platform_wallet_free_string`.
-unsafe fn emit_json(
-    value: Value,
-    out_json: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
-    let serialized = match serde_json::to_string(&value) {
-        Ok(s) => s,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorSerialization,
-                    format!("Failed to serialize group action JSON: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorSerialization;
-        }
-    };
-    let cstring = match std::ffi::CString::new(serialized) {
-        Ok(s) => s,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorSerialization,
-                    format!("Group action JSON contained a NUL byte: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorSerialization;
-        }
-    };
+unsafe fn emit_json(value: Value, out_json: *mut *mut c_char) -> PlatformWalletFFIResult {
+    let serialized = unwrap_result_or_return!(serde_json::to_string(&value));
+    let cstring = unwrap_result_or_return!(std::ffi::CString::new(serialized));
     *out_json = cstring.into_raw();
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
 /// Fetch group-action proposals on `(token_contract_id, group_contract_position)`
@@ -241,7 +204,6 @@ unsafe fn emit_json(
 /// - `out_json` must be a writable `*mut *mut c_char`. On success the
 ///   caller owns the string and must free it via
 ///   `platform_wallet_free_string`.
-/// - `out_error` may be NULL.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_token_pending_group_actions(
@@ -252,113 +214,47 @@ pub unsafe extern "C" fn platform_wallet_token_pending_group_actions(
     start_at_action_id: *const u8,
     limit: u16,
     out_json: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_json.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "out_json is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_json);
     *out_json = std::ptr::null_mut();
 
-    let contract_id = match read_identifier(token_contract_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid token_contract_id: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let contract_id = unwrap_result_or_return!(read_identifier(token_contract_id));
 
-    let status_enum = match decode_status(status, out_error) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
+    let status_enum = unwrap_result_or_return!(decode_status(status));
 
     let start_at = if start_at_action_id.is_null() {
         None
     } else {
-        match read_identifier(start_at_action_id) {
-            Ok(i) => Some((i, true)),
-            Err(e) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid start_at_action_id: {e}"),
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-            }
-        }
+        Some((
+            unwrap_result_or_return!(read_identifier(start_at_action_id)),
+            true,
+        ))
     };
 
     let limit_opt = if limit == 0 { None } else { Some(limit) };
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let sdk = wallet.sdk_arc();
-            let result = block_on_worker(async move {
-                pending_group_actions_external(
-                    sdk.as_ref(),
-                    contract_id,
-                    group_contract_position,
-                    status_enum,
-                    start_at,
-                    limit_opt,
-                )
-                .await
-            });
-            match result {
-                Ok(entries) => {
-                    let array: Vec<Value> = entries.iter().map(render_action_entry).collect();
-                    emit_json(Value::Array(array), out_json, out_error)
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("token_pending_group_actions failed: {e}"),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let sdk = wallet.sdk_arc();
+        block_on_worker(async move {
+            pending_group_actions_external(
+                sdk.as_ref(),
+                contract_id,
+                group_contract_position,
+                status_enum,
+                start_at,
+                limit_opt,
+            )
+            .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let entries = unwrap_result_or_return!(result);
+    let array: Vec<Value> = entries.iter().map(render_action_entry).collect();
+    emit_json(Value::Array(array), out_json)
 }
 
 /// Fetch the signers of a specific group-action proposal. Writes a
 /// JSON array to `out_json`.
-///
-/// JSON element shape:
-/// ```json
-/// { "identityId": "<base58 identity id>", "power": <u32> }
-/// ```
-///
-/// # Safety
-/// - `wallet_handle` must come from the platform-wallet handle registry.
-/// - `token_contract_id` and `action_id` must each point at exactly
-///   32 readable bytes.
-/// - `out_json` must be a writable `*mut *mut c_char`. On success the
-///   caller owns the string and must free it via
-///   `platform_wallet_free_string`.
-/// - `out_error` may be NULL.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_token_group_action_signers(
@@ -368,85 +264,30 @@ pub unsafe extern "C" fn platform_wallet_token_group_action_signers(
     status: u8,
     action_id: *const u8,
     out_json: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_json.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "out_json is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_json);
     *out_json = std::ptr::null_mut();
 
-    let contract_id = match read_identifier(token_contract_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid token_contract_id: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let action_id_decoded = match read_identifier(action_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid action_id: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let contract_id = unwrap_result_or_return!(read_identifier(token_contract_id));
+    let action_id_decoded = unwrap_result_or_return!(read_identifier(action_id));
 
-    let status_enum = match decode_status(status, out_error) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
+    let status_enum = unwrap_result_or_return!(decode_status(status));
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let sdk = wallet.sdk_arc();
-            let result = block_on_worker(async move {
-                group_action_signers_external(
-                    sdk.as_ref(),
-                    contract_id,
-                    group_contract_position,
-                    status_enum,
-                    action_id_decoded,
-                )
-                .await
-            });
-            match result {
-                Ok(entries) => {
-                    let array: Vec<Value> = entries.iter().map(render_signer_entry).collect();
-                    emit_json(Value::Array(array), out_json, out_error)
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("token_group_action_signers failed: {e}"),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let sdk = wallet.sdk_arc();
+        block_on_worker(async move {
+            group_action_signers_external(
+                sdk.as_ref(),
+                contract_id,
+                group_contract_position,
+                status_enum,
+                action_id_decoded,
+            )
+            .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let entries = unwrap_result_or_return!(result);
+    let array: Vec<Value> = entries.iter().map(render_signer_entry).collect();
+    emit_json(Value::Array(array), out_json)
 }
