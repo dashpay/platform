@@ -11,6 +11,7 @@
 
 pub mod asset_lock;
 pub mod contact;
+pub mod contact_persistence;
 pub mod contact_request;
 pub mod core_address_types;
 pub mod core_wallet;
@@ -35,6 +36,7 @@ pub mod identity_persistence;
 pub mod identity_registration;
 pub mod identity_registration_funded_with_signer;
 pub mod identity_registration_with_signer;
+pub mod identity_sync;
 pub mod identity_top_up;
 pub mod identity_transfer;
 pub mod identity_update;
@@ -50,15 +52,19 @@ pub mod platform_wallet_info;
 mod runtime;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
+pub mod token_persistence;
+pub mod tokens;
 pub mod types;
 pub mod utils;
 pub mod wallet;
+pub mod wallet_registration_persistence;
 pub mod wallet_restore_types;
 pub mod xpub_render;
 
 // Re-exports
 pub use asset_lock::*;
 pub use contact::*;
+pub use contact_persistence::*;
 pub use contact_request::*;
 pub use core_address_types::*;
 pub use core_wallet::*;
@@ -82,6 +88,7 @@ pub use identity_manager::*;
 pub use identity_persistence::*;
 pub use identity_registration_funded_with_signer::*;
 pub use identity_registration_with_signer::*;
+pub use identity_sync::*;
 pub use identity_top_up::*;
 pub use identity_transfer::*;
 pub use identity_update::*;
@@ -96,9 +103,12 @@ pub use platform_addresses::*;
 pub use platform_wallet_info::*;
 pub use sign_with_mnemonic_resolver::*;
 pub use spv::*;
+pub use token_persistence::*;
+pub use tokens::*;
 pub use types::*;
 pub use utils::*;
 pub use wallet::*;
+pub use wallet_registration_persistence::*;
 pub use wallet_restore_types::*;
 pub use xpub_render::*;
 

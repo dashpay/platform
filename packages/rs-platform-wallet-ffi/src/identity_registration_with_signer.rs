@@ -71,11 +71,13 @@ use std::ptr;
 use std::slice;
 use zeroize::Zeroize;
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_registration::{IdentityFundingInputFFI, IdentityFundingOutputFFI};
 use crate::runtime::block_on_worker;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// One identity authentication public key the caller has already
 /// derived (via [`crate::dash_sdk_derive_identity_keys_from_mnemonic`]
@@ -142,65 +144,48 @@ pub struct IdentityPubkeyFFI {
 /// silently can't use.
 ///
 /// `purpose` is the parsed `Purpose` discriminant for the row, used
-/// only for the encryption / decryption guard above.
+/// only for the encryption / decryption guard above. `row_index` and
+/// `field_label` only flavour error messages (different callers want
+/// different prefixes — `add_public_keys[i]` for update,
+/// `identity_pubkeys[i]` for registration).
 ///
-/// `row_index` and `field_label` only flavour error messages
-/// (different callers want different prefixes — `add_public_keys[i]`
-/// for update, `identity_pubkeys[i]` for registration). On any
-/// error, populates `out_error` (when non-null) and returns
-/// `Err(result_code)` so the caller can early-return with the same
-/// FFI status it was already returning.
-///
-/// # Safety
-/// Each non-null pointer in the row must remain valid for the
-/// duration of the call. `contract_bounds_id` (when not null) must
-/// point at >=32 bytes; `contract_bounds_document_type` (when not
-/// null) must be a NUL-terminated UTF-8 C string.
+/// Returns `Err(PlatformWalletFFIResult)` carrying the FFI error the
+/// caller should bubble up (the result already holds the message);
+/// caller does `unwrap_result_or_return!(decode_contract_bounds(...))`.
 pub(crate) unsafe fn decode_contract_bounds(
     row: &IdentityPubkeyFFI,
     purpose: Purpose,
     row_index: usize,
     field_label: &str,
-    out_error: *mut PlatformWalletFFIError,
 ) -> Result<Option<ContractBounds>, PlatformWalletFFIResult> {
     match row.contract_bounds_kind {
         0 => {
             if matches!(purpose, Purpose::ENCRYPTION | Purpose::DECRYPTION) {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        format!(
-                            "{}[{}].contract_bounds_kind = 0 (no bounds) but purpose = {:?} \
-                             requires bounds — Drive scopes Encryption / Decryption keys to a \
-                             specific contract (use kind 1 or 2)",
-                            field_label, row_index, purpose
-                        ),
-                    );
-                }
-                return Err(PlatformWalletFFIResult::ErrorInvalidParameter);
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    format!(
+                        "{field_label}[{row_index}].contract_bounds_kind = 0 (no bounds) but \
+                         purpose = {purpose:?} requires bounds — Drive scopes Encryption / \
+                         Decryption keys to a specific contract (use kind 1 or 2)"
+                    ),
+                ));
             }
             Ok(None)
         }
         1 => {
             if row.contract_bounds_id.is_null() {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorNullPointer,
-                        format!(
-                            "{}[{}].contract_bounds_id is null but kind == 1 \
-                             (SingleContract)",
-                            field_label, row_index
-                        ),
-                    );
-                }
-                return Err(PlatformWalletFFIResult::ErrorNullPointer);
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    format!(
+                        "{field_label}[{row_index}].contract_bounds_id is null but kind == 1 \
+                         (SingleContract)"
+                    ),
+                ));
             }
             let id_bytes: [u8; 32] =
                 match <[u8; 32]>::try_from(slice::from_raw_parts(row.contract_bounds_id, 32)) {
                     Ok(b) => b,
-                    Err(_) => {
-                        unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes")
-                    }
+                    Err(_) => unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes"),
                 };
             Ok(Some(ContractBounds::SingleContract {
                 id: Identifier::from(id_bytes),
@@ -208,38 +193,30 @@ pub(crate) unsafe fn decode_contract_bounds(
         }
         2 => {
             if row.contract_bounds_id.is_null() || row.contract_bounds_document_type.is_null() {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorNullPointer,
-                        format!(
-                            "{}[{}].contract_bounds_id or .contract_bounds_document_type \
-                             is null but kind == 2 (SingleContractDocumentType)",
-                            field_label, row_index
-                        ),
-                    );
-                }
-                return Err(PlatformWalletFFIResult::ErrorNullPointer);
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    format!(
+                        "{field_label}[{row_index}].contract_bounds_id or \
+                         .contract_bounds_document_type is null but kind == 2 \
+                         (SingleContractDocumentType)"
+                    ),
+                ));
             }
             let id_bytes: [u8; 32] =
                 match <[u8; 32]>::try_from(slice::from_raw_parts(row.contract_bounds_id, 32)) {
                     Ok(b) => b,
-                    Err(_) => {
-                        unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes")
-                    }
+                    Err(_) => unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes"),
                 };
             let doc_type = match CStr::from_ptr(row.contract_bounds_document_type).to_str() {
                 Ok(s) => s.to_string(),
                 Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            format!(
-                                "{}[{}].contract_bounds_document_type is not valid UTF-8: {}",
-                                field_label, row_index, e
-                            ),
-                        );
-                    }
-                    return Err(PlatformWalletFFIResult::ErrorUtf8Conversion);
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                        format!(
+                            "{field_label}[{row_index}].contract_bounds_document_type is not \
+                             valid UTF-8: {e}"
+                        ),
+                    ));
                 }
             };
             Ok(Some(ContractBounds::SingleContractDocumentType {
@@ -247,19 +224,13 @@ pub(crate) unsafe fn decode_contract_bounds(
                 document_type_name: doc_type,
             }))
         }
-        other => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!(
-                        "{}[{}].contract_bounds_kind = {} is not a valid discriminant \
-                         (0=none, 1=SingleContract, 2=SingleContractDocumentType)",
-                        field_label, row_index, other
-                    ),
-                );
-            }
-            Err(PlatformWalletFFIResult::ErrorInvalidParameter)
-        }
+        other => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "{field_label}[{row_index}].contract_bounds_kind = {other} is not a valid \
+                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType)"
+            ),
+        )),
     }
 }
 
@@ -289,25 +260,15 @@ pub(crate) unsafe fn decode_contract_bounds(
 /// unblocks watch-only wallets (where the identity signer is a
 /// hardware HSM and the address signer reaches into the Keychain)
 /// and Keychain-backed platform-address keys without another ABI
-/// change later.
+/// change later. Passing the same pointer for both is supported and
+/// expected — the underlying `VTableSigner` impls
+/// `Signer<IdentityPublicKey>` AND `Signer<PlatformAddress>` and
+/// dispatches by `key_type` byte.
 ///
 /// On success both `out_identity_id` (32 bytes) and
 /// `out_identity_handle` are populated. The returned handle points at
 /// a freshly-inserted `ManagedIdentity` in `MANAGED_IDENTITY_STORAGE`
 /// wrapping the new identity together with `identity_index`.
-///
-/// # Safety
-/// - All pointer parameters follow the same null / lifetime rules as
-///   the mnemonic-based variant.
-/// - `identity_pubkeys` must point at a valid `[IdentityPubkeyFFI;
-///   identity_pubkeys_count]` array, and each row's `pubkey_bytes`
-///   must be a valid `[u8; pubkey_len]` buffer for the duration of
-///   the call. The caller retains ownership of every buffer.
-/// - `signer_identity_handle` and `signer_address_handle` must each be
-///   a valid, non-destroyed handle and must outlive this call. Passing
-///   the same pointer for both is supported and expected — the
-///   underlying `VTableSigner` impls `Signer<IdentityPublicKey>` AND
-///   `Signer<PlatformAddress>` and dispatches by `key_type` byte.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
@@ -322,39 +283,26 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     output: *const IdentityFundingOutputFFI,
     out_identity_id: *mut [u8; 32],
     out_identity_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let invariant_violation: Option<&'static str> = if inputs.is_null() {
-        Some("`inputs` pointer is null")
-    } else if inputs_count == 0 {
-        Some("`inputs_count` is zero")
-    } else if identity_pubkeys.is_null() {
-        Some("`identity_pubkeys` pointer is null")
-    } else if identity_pubkeys_count == 0 {
-        Some("`identity_pubkeys_count` must be >= 1")
-    } else if signer_identity_handle.is_null() {
-        Some("`signer_identity_handle` pointer is null")
-    } else if signer_address_handle.is_null() {
-        Some("`signer_address_handle` pointer is null")
-    } else if out_identity_id.is_null() {
-        Some("`out_identity_id` pointer is null")
-    } else if out_identity_handle.is_null() {
-        Some("`out_identity_handle` pointer is null")
-    } else {
-        None
-    };
-    if let Some(detail) = invariant_violation {
-        if !out_error.is_null() {
-            *out_error =
-                PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorNullPointer, detail);
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
+    check_ptr!(inputs);
+    check_ptr!(identity_pubkeys);
+    check_ptr!(signer_identity_handle);
+    check_ptr!(signer_address_handle);
+    check_ptr!(out_identity_id);
+    check_ptr!(out_identity_handle);
+    if inputs_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`inputs_count` is zero",
+        );
+    }
+    if identity_pubkeys_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`identity_pubkeys_count` must be >= 1",
+        );
     }
 
-    // Parse the inputs and optional output exactly the same way the
-    // mnemonic variant does. Keeping the FFI shape identical lets
-    // Swift call this function by swapping the symbol name and
-    // dropping the mnemonic + passphrase arguments.
     let entries = slice::from_raw_parts(inputs, inputs_count);
     let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
     for entry in entries {
@@ -362,20 +310,12 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
             0 => PlatformAddress::P2pkh(entry.hash),
             1 => PlatformAddress::P2sh(entry.hash),
             _ => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        "invalid address_type (expected 0 or 1)",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    "invalid address_type (expected 0 or 1)",
+                );
             }
         };
-        // Sum duplicate rows for the same address rather than
-        // overwriting — see the matching comment in
-        // `identity_top_up.rs`. Caller may legitimately split one
-        // address across rows; `insert` alone would silently
-        // under-fund the new identity by the prior contribution.
         input_map
             .entry(address)
             .and_modify(|existing| *existing = existing.saturating_add(entry.credits))
@@ -391,13 +331,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
                 0 => PlatformAddress::P2pkh(output_ref.hash),
                 1 => PlatformAddress::P2sh(output_ref.hash),
                 _ => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorInvalidParameter,
-                            "invalid output address_type (expected 0 or 1)",
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorInvalidParameter;
+                    return PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        "invalid output address_type (expected 0 or 1)",
+                    );
                 }
             };
             Some((address, output_ref.credits))
@@ -406,102 +343,26 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         }
     };
 
-    // Re-acquire each `VTableSigner` behind its handle as a borrowed
-    // reference inside the future. Round-tripping the pointers through
-    // `usize` gives the spawned future a `Send + 'static` capture (the
-    // raw pointer is `!Send`, but `usize` is). The actual signer state
-    // — `Inner::Callback { ctx, vtable }` — is `Send + Sync` (see the
-    // unsafe impls in `rs-sdk-ffi/src/signer.rs`).
-    //
-    // The two pointers may legitimately alias when the caller is
-    // sharing one `KeychainSigner` for both roles; the `Signer<K>`
-    // trait is generic over `K`, so the same `VTableSigner` value is
-    // viewed as `Signer<IdentityPublicKey>` *or* `Signer<PlatformAddress>`
-    // at the call site below depending on which generic parameter
-    // `register_from_addresses` instantiates.
     let signer_identity_addr = signer_identity_handle as usize;
     let signer_address_addr = signer_address_handle as usize;
 
-    // Materialize the caller-supplied pubkey rows into a BTreeMap of
-    // `IdentityPublicKey` once, *before* entering the wallet-storage
-    // closure. This lookup is independent of the wallet handle (we no
-    // longer derive from the seed here — Swift derived these via the
-    // mnemonic-driven FFI which works for watch-only wallets too) and
-    // a parse failure should not depend on whether the wallet handle
-    // happens to be valid. Validation errors propagate out the same
-    // way as before via `out_error`.
     let pubkey_rows: &[IdentityPubkeyFFI] =
         slice::from_raw_parts(identity_pubkeys, identity_pubkeys_count);
     let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
     for (i, row) in pubkey_rows.iter().enumerate() {
-        let key_type = match KeyType::try_from(row.key_type) {
-            Ok(kt) => kt,
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        format!(
-                            "identity_pubkeys[{}].key_type = {} is not a valid KeyType discriminant",
-                            i, row.key_type
-                        ),
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
-            }
-        };
-        let purpose = match Purpose::try_from(row.purpose) {
-            Ok(p) => p,
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        format!(
-                            "identity_pubkeys[{}].purpose = {} is not a valid Purpose discriminant",
-                            i, row.purpose
-                        ),
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
-            }
-        };
-        let security_level = match SecurityLevel::try_from(row.security_level) {
-            Ok(sl) => sl,
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        format!(
-                            "identity_pubkeys[{}].security_level = {} is not a valid SecurityLevel discriminant",
-                            i, row.security_level
-                        ),
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
-            }
-        };
+        let key_type = unwrap_result_or_return!(KeyType::try_from(row.key_type));
+        let purpose = unwrap_result_or_return!(Purpose::try_from(row.purpose));
+        let security_level = unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
         if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    format!("identity_pubkeys[{}].pubkey_bytes is null or empty", i),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorNullPointer;
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                format!("identity_pubkeys[{i}].pubkey_bytes is null or empty"),
+            );
         }
         let pubkey_bytes: Vec<u8> =
             slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
-        // Decode the optional contract-bounds payload through the
-        // shared helper. Earlier revisions silently dropped these
-        // fields here, so Encryption / Decryption keys registered
-        // via this entry point ended up unbounded on Platform —
-        // matching the update path's parser closes the gap. The
-        // helper also rejects unscoped Encryption / Decryption
-        // keys (Drive requires a contract scope for those).
         let contract_bounds =
-            match decode_contract_bounds(row, purpose, i, "identity_pubkeys", out_error) {
-                Ok(b) => b,
-                Err(code) => return code,
-            };
+            unwrap_result_or_return!(decode_contract_bounds(row, purpose, i, "identity_pubkeys"));
         keys_map.insert(
             row.key_id,
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -517,75 +378,43 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         );
     }
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity_wallet = wallet.identity().clone();
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
 
-            // Pubkey derivation moved up above the wallet-storage
-            // closure: the caller supplies the pubkeys directly via
-            // `identity_pubkeys`, so we no longer need to consult the
-            // wallet manager here. The wallet handle is still
-            // required for `wallet.identity()` and for the SDK call
-            // below — those uses are unchanged.
-            let placeholder = Identity::V0(IdentityV0 {
-                id: Identifier::default(),
-                public_keys: keys_map,
-                balance: 0,
-                revision: 0,
-            });
+        let placeholder = Identity::V0(IdentityV0 {
+            id: Identifier::default(),
+            public_keys: keys_map,
+            balance: 0,
+            revision: 0,
+        });
 
-            // SAFETY: the caller guaranteed both signer handles are
-            // valid and outlive this call. `signer_*_addr` are the
-            // same pointers reinterpreted as `usize` so they can
-            // travel into the `'static + Send` future below.
-            let result = block_on_worker(async move {
-                let identity_signer: &VTableSigner =
-                    unsafe { &*(signer_identity_addr as *const VTableSigner) };
-                let address_signer: &VTableSigner =
-                    unsafe { &*(signer_address_addr as *const VTableSigner) };
+        block_on_worker(async move {
+            let identity_signer: &VTableSigner =
+                unsafe { &*(signer_identity_addr as *const VTableSigner) };
+            let address_signer: &VTableSigner =
+                unsafe { &*(signer_address_addr as *const VTableSigner) };
 
-                identity_wallet
-                    .register_from_addresses(
-                        &placeholder,
-                        input_map,
-                        output_map,
-                        identity_index,
-                        identity_signer,
-                        address_signer,
-                        None,
-                    )
-                    .await
-            });
-
-            match result {
-                Ok(identity) => {
-                    let id_bytes: [u8; 32] = identity.id().to_buffer();
-                    *out_identity_id = id_bytes;
-                    let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
-                    let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
-                    *out_identity_handle = handle;
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("register_from_addresses failed: {}", e),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+            identity_wallet
+                .register_from_addresses(
+                    &placeholder,
+                    input_map,
+                    output_map,
+                    identity_index,
+                    identity_signer,
+                    address_signer,
+                    None,
+                )
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let identity = unwrap_result_or_return!(result);
+    let id_bytes: [u8; 32] = identity.id().to_buffer();
+    *out_identity_id = id_bytes;
+    let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
+    let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+    *out_identity_handle = handle;
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -594,13 +423,15 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
 
 /// Heap-allocated array of [`IdentityKeyPreviewFFI`] rows handed back
 /// by [`platform_wallet_derive_identity_keys_for_index`]. Same memory
-/// layout (and same free function) as [`crate::identity_key_preview::IdentityKeyPreviewsFFI`]
-/// so the existing release machinery can reclaim it.
+/// layout (and same free function) as
+/// [`crate::identity_key_preview::IdentityKeyPreviewsFFI`] so the
+/// existing release machinery can reclaim it.
 ///
-/// We deliberately re-use `IdentityKeyPreviewFFI` rather than inventing
-/// a new row type so the Swift side can drop the result through the
-/// existing `previewIdentityRegistrationKeys`-style marshalling code
-/// (just iterated over a different `(identity_index, key_index)` set).
+/// We deliberately re-use `IdentityKeyPreviewFFI` rather than
+/// inventing a new row type so the Swift side can drop the result
+/// through the existing `previewIdentityRegistrationKeys`-style
+/// marshalling code (just iterated over a different
+/// `(identity_index, key_index)` set).
 #[repr(C)]
 pub struct IdentityRegistrationKeyDerivationsFFI {
     pub items: *mut IdentityKeyPreviewFFI,
@@ -620,8 +451,9 @@ impl IdentityRegistrationKeyDerivationsFFI {
 /// [`platform_wallet_register_identity_with_signer`] call will need
 /// for `identity_index`, returning one row per key id in `0..key_count`.
 ///
-/// Sister function to [`crate::platform_wallet_preview_identity_registration_keys`]:
-/// the preview only walks the MASTER slot at key_id 0 across many
+/// Sister function to
+/// [`crate::platform_wallet_preview_identity_registration_keys`]: the
+/// preview only walks the MASTER slot at key_id 0 across many
 /// `identity_index` values; this function fixes the `identity_index`
 /// and walks `key_count` consecutive `key_id`s. Used at registration
 /// time so the Swift `KeychainSigner` can pre-stash every key the
@@ -639,172 +471,131 @@ impl IdentityRegistrationKeyDerivationsFFI {
 /// in-process `WalletManager`). Most call sites should prefer
 /// [`crate::dash_sdk_derive_identity_keys_from_mnemonic`], which
 /// takes the mnemonic directly and works on every wallet shape
-/// regardless of how it was loaded into the process.
-///
-/// Kept around for any out-of-tree consumer that still binds to the
-/// old symbol; new code should not call it.
-///
-/// # Safety
-/// `wallet_handle` must come from the platform-wallet handle registry.
-/// `out_rows` must be a valid, writable pointer. `out_error` may be
-/// null.
+/// regardless of how it was loaded into the process. Kept around for
+/// any out-of-tree consumer that still binds to the old symbol; new
+/// code should not call it.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
     wallet_handle: Handle,
     identity_index: u32,
     key_count: u32,
     out_rows: *mut IdentityRegistrationKeyDerivationsFFI,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_rows.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "out_rows is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_rows);
     *out_rows = IdentityRegistrationKeyDerivationsFFI::empty();
     if key_count == 0 {
-        return PlatformWalletFFIResult::Success;
+        return PlatformWalletFFIResult::ok();
     }
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let wm = wallet.wallet_manager().blocking_read();
-            let wallet_id = wallet.wallet_id();
-            let key_wallet = match wm.get_wallet(&wallet_id) {
-                Some(w) => w,
-                None => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorInvalidHandle,
-                            "Wallet not found in wallet manager",
-                        );
-                    }
-                    return PlatformWalletFFIResult::ErrorInvalidHandle;
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let wm = wallet.wallet_manager().blocking_read();
+        let wallet_id = wallet.wallet_id();
+        let key_wallet = match wm.get_wallet(&wallet_id) {
+            Some(w) => w,
+            None => {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                    "Wallet not found in wallet manager",
+                ));
+            }
+        };
+        let network = key_wallet.network;
+
+        let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
+
+        let cleanup = |rows: Vec<IdentityKeyPreviewFFI>| {
+            for row in rows {
+                if !row.derivation_path.is_null() {
+                    let _ = unsafe { CString::from_raw(row.derivation_path) };
                 }
-            };
-            let network = key_wallet.network;
-
-            let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
-
-            // Hand-roll cleanup on failure: each successfully-pushed
-            // row owns CString / Vec allocations that won't be freed
-            // by `Vec::drop` (we declare them as raw pointers).
-            let cleanup = |rows: Vec<IdentityKeyPreviewFFI>| {
-                for row in rows {
-                    if !row.derivation_path.is_null() {
-                        let _ = CString::from_raw(row.derivation_path);
-                    }
-                    if !row.public_key.is_null() {
-                        let _ = Vec::from_raw_parts(
-                            row.public_key,
-                            row.public_key_len,
-                            row.public_key_len,
-                        );
-                    }
-                    if !row.private_key_wif.is_null() {
-                        let _ = CString::from_raw(row.private_key_wif);
-                    }
-                }
-            };
-
-            for key_id in 0..key_count {
-                let (path, ext_priv, public_key) =
-                    match derive_identity_auth_keypair(key_wallet, network, identity_index, key_id)
-                    {
-                        Ok(t) => t,
-                        Err(e) => {
-                            cleanup(rows);
-                            if !out_error.is_null() {
-                                *out_error = PlatformWalletFFIError::new(
-                                    PlatformWalletFFIResult::ErrorWalletOperation,
-                                    format!(
-                                        "derive_identity_keys_for_index: derivation failed at \
-                                         (identity={}, key={}): {}",
-                                        identity_index, key_id, e
-                                    ),
-                                );
-                            }
-                            return PlatformWalletFFIResult::ErrorWalletOperation;
-                        }
+                if !row.public_key.is_null() {
+                    let _ = unsafe {
+                        Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len)
                     };
-
-                let path_cstring = match CString::new(path.to_string()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        cleanup(rows);
-                        if !out_error.is_null() {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorUtf8Conversion,
-                                format!("derivation path contained NUL byte: {}", e),
-                            );
-                        }
-                        return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                    }
-                };
-
-                let pub_bytes: [u8; 33] = public_key.serialize();
-                let mut pub_box: Box<[u8]> = pub_bytes.to_vec().into_boxed_slice();
-                let pub_ptr = pub_box.as_mut_ptr();
-                let pub_len = pub_box.len();
-                std::mem::forget(pub_box);
-
-                let dash_private = DashPrivateKey {
-                    compressed: true,
-                    network,
-                    inner: ext_priv.private_key,
-                };
-                let wif_cstring = match CString::new(dash_private.to_wif()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        unsafe {
-                            drop(Vec::from_raw_parts(pub_ptr, pub_len, pub_len));
-                        }
-                        drop(path_cstring);
-                        cleanup(rows);
-                        if !out_error.is_null() {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorUtf8Conversion,
-                                format!("WIF string contained NUL byte: {}", e),
-                            );
-                        }
-                        return PlatformWalletFFIResult::ErrorUtf8Conversion;
-                    }
-                };
-
-                rows.push(IdentityKeyPreviewFFI {
-                    identity_index,
-                    derivation_path: path_cstring.into_raw(),
-                    public_key: pub_ptr,
-                    public_key_len: pub_len,
-                    private_key_wif: wif_cstring.into_raw(),
-                    private_key_bytes: ext_priv.private_key.secret_bytes(),
-                });
+                }
+                if !row.private_key_wif.is_null() {
+                    let _ = unsafe { CString::from_raw(row.private_key_wif) };
+                }
             }
+        };
 
-            let mut boxed = rows.into_boxed_slice();
-            let items_ptr = boxed.as_mut_ptr();
-            let items_count = boxed.len();
-            std::mem::forget(boxed);
+        for key_id in 0..key_count {
+            let (path, ext_priv, public_key) =
+                match derive_identity_auth_keypair(key_wallet, network, identity_index, key_id) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        cleanup(rows);
+                        return Err(PlatformWalletFFIResult::err(
+                            PlatformWalletFFIResultCode::ErrorWalletOperation,
+                            format!(
+                                "derive_identity_keys_for_index: derivation failed at \
+                                 (identity={identity_index}, key={key_id}): {e}"
+                            ),
+                        ));
+                    }
+                };
 
-            *out_rows = IdentityRegistrationKeyDerivationsFFI {
-                items: items_ptr,
-                count: items_count,
+            let path_cstring = match CString::new(path.to_string()) {
+                Ok(s) => s,
+                Err(e) => {
+                    cleanup(rows);
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                        format!("derivation path contained NUL byte: {e}"),
+                    ));
+                }
             };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+
+            let pub_bytes: [u8; 33] = public_key.serialize();
+            let mut pub_box: Box<[u8]> = pub_bytes.to_vec().into_boxed_slice();
+            let pub_ptr = pub_box.as_mut_ptr();
+            let pub_len = pub_box.len();
+            std::mem::forget(pub_box);
+
+            let dash_private = DashPrivateKey {
+                compressed: true,
+                network,
+                inner: ext_priv.private_key,
+            };
+            let wif_cstring = match CString::new(dash_private.to_wif()) {
+                Ok(s) => s,
+                Err(e) => {
+                    unsafe {
+                        drop(Vec::from_raw_parts(pub_ptr, pub_len, pub_len));
+                    }
+                    drop(path_cstring);
+                    cleanup(rows);
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                        format!("WIF string contained NUL byte: {e}"),
+                    ));
+                }
+            };
+
+            rows.push(IdentityKeyPreviewFFI {
+                identity_index,
+                derivation_path: path_cstring.into_raw(),
+                public_key: pub_ptr,
+                public_key_len: pub_len,
+                private_key_wif: wif_cstring.into_raw(),
+                private_key_bytes: ext_priv.private_key.secret_bytes(),
+            });
+        }
+        Ok(rows)
+    });
+    let inner = unwrap_option_or_return!(option);
+    let rows = unwrap_result_or_return!(inner);
+
+    let mut boxed = rows.into_boxed_slice();
+    let items_ptr = boxed.as_mut_ptr();
+    let items_count = boxed.len();
+    std::mem::forget(boxed);
+
+    *out_rows = IdentityRegistrationKeyDerivationsFFI {
+        items: items_ptr,
+        count: items_count,
+    };
+    PlatformWalletFFIResult::ok()
 }
 
 /// Release a [`IdentityRegistrationKeyDerivationsFFI`] previously
@@ -812,12 +603,9 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
 ///
 /// Safe to call on a zero / null struct or null outer pointer (no-op).
 /// Each row's owned strings (`derivation_path`, `private_key_wif`)
-/// and pubkey buffer are reclaimed.
-///
-/// # Safety
-/// `rows.items` must have been handed out by
-/// [`platform_wallet_derive_identity_keys_for_index`] and must not be
-/// freed twice.
+/// and pubkey buffer are reclaimed. `rows.items` must have been
+/// handed out by [`platform_wallet_derive_identity_keys_for_index`]
+/// and must not be freed twice.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index_free(
     rows: *mut IdentityRegistrationKeyDerivationsFFI,
@@ -838,19 +626,12 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index_free(
             let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
         }
         if !row.private_key_wif.is_null() {
-            // The WIF string encodes the same 32-byte secret as
-            // `private_key_bytes`; scrub the buffer in place before
-            // dropping so the heap allocation isn't released with
-            // recoverable key material.
             let mut wif = CString::from_raw(row.private_key_wif).into_bytes_with_nul();
             wif.zeroize();
             row.private_key_wif = ptr::null_mut();
         }
-        // Final inline secret scalar — wipe before the row slab is
-        // returned to the allocator.
         row.private_key_bytes.zeroize();
     }
-    // Reclaim the row array itself.
     let _ = Box::from_raw(slice as *mut [IdentityKeyPreviewFFI]);
 }
 

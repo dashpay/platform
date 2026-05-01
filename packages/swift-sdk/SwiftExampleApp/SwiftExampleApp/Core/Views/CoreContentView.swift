@@ -469,7 +469,7 @@ var body: some View {
 
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
-                network: platformNetwork(from: platformState.currentNetwork),
+                network: platformState.currentNetwork,
                 peers: peers,
                 restrictToConfiguredPeers: useLocalCore,
                 masternodeSyncEnabled: masternodesEnabled
@@ -508,14 +508,6 @@ var body: some View {
         }
     }
 
-    private func platformNetwork(from network: AppNetwork) -> PlatformNetwork {
-        switch network {
-        case .mainnet: return .mainnet
-        case .testnet: return .testnet
-        case .devnet: return .devnet
-        case .regtest: return .testnet
-        }
-    }
 }
 
 // MARK: - Compact Sync Row
@@ -770,12 +762,6 @@ struct WalletRowView: View {
                 HStack(spacing: 6) {
                     Text(wallet.label)
                         .font(.headline)
-                    if wallet.isWatchOnly {
-                        Image(systemName: "eye")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                            .help("Watch-only")
-                    }
                     if wallet.isImported {
                         Image(systemName: "tray.and.arrow.down")
                             .font(.caption)

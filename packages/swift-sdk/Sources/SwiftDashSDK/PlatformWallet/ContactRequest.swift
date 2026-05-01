@@ -15,7 +15,7 @@ public final class ContactRequest: @unchecked Sendable {
     }
 
     deinit {
-        _ = contact_request_destroy(handle)
+        contact_request_destroy(handle).discard()
     }
 
     /// Create a new contact request
@@ -30,32 +30,26 @@ public final class ContactRequest: @unchecked Sendable {
         createdAt: UInt64
     ) throws -> ContactRequest {
         var handle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
 
         // Nest the two `withFFIBytes` closures + `withUnsafeBytes`
         // so all three buffers stay live for the FFI call window.
-        let result = senderId.withFFIBytes { senderPtr -> PlatformWalletFFIResult in
-            recipientId.withFFIBytes { recipientPtr -> PlatformWalletFFIResult in
-                encryptedPublicKey.withUnsafeBytes { keyPtr -> PlatformWalletFFIResult in
-                    contact_request_create(
+        try senderId.withFFIBytes { senderPtr in
+            try recipientId.withFFIBytes { recipientPtr in
+                try encryptedPublicKey.withUnsafeBytes { keyPtr in
+                    try contact_request_create(
                         senderPtr,
                         recipientPtr,
                         senderKeyIndex,
                         recipientKeyIndex,
                         accountReference,
                         keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        encryptedPublicKey.count,
+                        UInt(encryptedPublicKey.count),
                         coreHeightCreatedAt,
                         createdAt,
-                        &handle,
-                        &error
-                    )
+                        &handle
+                    ).check()
                 }
             }
-        }
-
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
         }
 
         return ContactRequest(handle: handle)
@@ -64,82 +58,47 @@ public final class ContactRequest: @unchecked Sendable {
     /// Get the sender identity ID
     public func getSenderId() throws -> Identifier {
         var buf = [UInt8](repeating: 0, count: 32)
-        var error = PlatformWalletFFIError()
-
-        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
-            contact_request_get_sender_id(handle, bp.baseAddress!, &error)
+        try buf.withUnsafeMutableBufferPointer { bp in
+            try contact_request_get_sender_id(handle, bp.baseAddress!).check()
         }
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
         return Data(buf)
     }
 
     /// Get the recipient identity ID
     public func getRecipientId() throws -> Identifier {
         var buf = [UInt8](repeating: 0, count: 32)
-        var error = PlatformWalletFFIError()
-
-        let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
-            contact_request_get_recipient_id(handle, bp.baseAddress!, &error)
+        try buf.withUnsafeMutableBufferPointer { bp in
+            try contact_request_get_recipient_id(handle, bp.baseAddress!).check()
         }
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
         return Data(buf)
     }
 
     /// Get the sender key index
     public func getSenderKeyIndex() throws -> UInt32 {
         var keyIndex: UInt32 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = contact_request_get_sender_key_index(handle, &keyIndex, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
+        try contact_request_get_sender_key_index(handle, &keyIndex).check()
         return keyIndex
     }
 
     /// Get the recipient key index
     public func getRecipientKeyIndex() throws -> UInt32 {
         var keyIndex: UInt32 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = contact_request_get_recipient_key_index(handle, &keyIndex, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
+        try contact_request_get_recipient_key_index(handle, &keyIndex).check()
         return keyIndex
     }
 
     /// Get the account reference
     public func getAccountReference() throws -> UInt32 {
         var accountRef: UInt32 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = contact_request_get_account_reference(handle, &accountRef, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
+        try contact_request_get_account_reference(handle, &accountRef).check()
         return accountRef
     }
 
     /// Get the encrypted public key
     public func getEncryptedPublicKey() throws -> Data {
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var length: Int = 0
-        var error = PlatformWalletFFIError()
-
-        let result = contact_request_get_encrypted_public_key(handle, &bytesPtr, &length, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        var length: UInt = 0
+        try contact_request_get_encrypted_public_key(handle, &bytesPtr, &length).check()
 
         defer {
             if let ptr = bytesPtr {
@@ -148,7 +107,9 @@ public final class ContactRequest: @unchecked Sendable {
         }
 
         guard let ptr = bytesPtr else {
-            throw PlatformWalletError.nullPointer
+            throw PlatformWalletError.nullPointer(
+                "contact_request_get_encrypted_public_key returned a NULL bytes pointer"
+            )
         }
 
         return Data(bytes: ptr, count: Int(length))
@@ -157,13 +118,7 @@ public final class ContactRequest: @unchecked Sendable {
     /// Get the creation timestamp
     public func getCreatedAt() throws -> UInt64 {
         var createdAt: UInt64 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = contact_request_get_created_at(handle, &createdAt, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
+        try contact_request_get_created_at(handle, &createdAt).check()
         return createdAt
     }
 }

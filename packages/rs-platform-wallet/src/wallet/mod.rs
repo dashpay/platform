@@ -8,7 +8,6 @@ pub mod platform_wallet;
 mod platform_wallet_traits;
 #[cfg(feature = "shielded")]
 pub mod shielded;
-pub mod signer;
 pub mod tokens;
 
 pub use self::core::CoreWallet;
@@ -21,5 +20,3 @@ pub use platform_addresses::{
 pub use platform_wallet::{
     PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
 };
-pub use signer::{IdentitySigner, ManagedIdentitySigner};
-pub use tokens::TokenWallet;

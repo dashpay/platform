@@ -38,6 +38,11 @@ mod dashpay_sync;
 mod payments;
 mod profile;
 
+// Token state-transition operations (same `IdentityWallet` impl blocks).
+// Bookkeeping (watch / sync / balance) lives on
+// `crate::manager::identity_sync::IdentitySyncManager`.
+mod tokens;
+
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{

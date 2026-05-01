@@ -241,7 +241,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // address is NOT marked as used yet — that happens inside the
         // builder after a successful transaction build.
         managed_account
-            .next_address(account_xpub.as_ref())
+            .next_address(account_xpub.as_ref(), false)
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Failed to get next funding address: {}",

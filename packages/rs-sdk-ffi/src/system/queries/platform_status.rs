@@ -60,13 +60,7 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
     let sdk = wrapper.sdk.clone();
 
-    // Get network
-    let network_str = match sdk.network {
-        dash_sdk::dpp::dashcore::Network::Mainnet => "mainnet",
-        dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
-        dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
-        dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
-    };
+    let network_str = sdk.network.to_string();
 
     rt.block_on(async move {
         // Query for the most recent epoch

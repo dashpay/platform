@@ -6,6 +6,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::public_key::PublicKeyWasm;
+use crate::utils::try_vec_to_fixed_bytes;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::hashes::hex::FromHex;
 use dpp::dashcore::key::Secp256k1;
@@ -49,9 +50,7 @@ impl PrivateKeyWasm {
     pub fn from_bytes(bytes: Vec<u8>, network: NetworkLikeJs) -> WasmDppResult<Self> {
         let network_wasm: NetworkWasm = network.try_into()?;
 
-        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
-            WasmDppError::invalid_argument("Private key bytes must be exactly 32 bytes".to_string())
-        })?;
+        let key_bytes: [u8; 32] = try_vec_to_fixed_bytes(bytes, "privateKey")?;
 
         let pk = PrivateKey::from_byte_array(&key_bytes, network_wasm.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -69,9 +68,7 @@ impl PrivateKeyWasm {
         let bytes = Vec::from_hex(hex_key)
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
-            WasmDppError::invalid_argument("Private key hex must decode to 32 bytes".to_string())
-        })?;
+        let key_bytes: [u8; 32] = try_vec_to_fixed_bytes(bytes, "privateKey")?;
 
         let pk = PrivateKey::from_byte_array(&key_bytes, network_wasm.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;

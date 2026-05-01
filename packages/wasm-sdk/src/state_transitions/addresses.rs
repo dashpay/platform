@@ -738,8 +738,9 @@ impl WasmSdk {
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_address_funding_options(options.into())?;
 
-        // Convert outputs to map (address -> optional amount)
-        let outputs_map = outputs_to_optional_btree_map(parsed.outputs);
+        // Convert outputs to map (address -> optional amount).
+        // `outputs_to_optional_btree_map` is fallible (rejects duplicate addresses).
+        let outputs_map = outputs_to_optional_btree_map(parsed.outputs)?;
 
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);

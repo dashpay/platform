@@ -86,11 +86,16 @@ import SwiftData
 public final class KeychainSigner: Signer, @unchecked Sendable {
     // MARK: Public surface
 
-    /// Owned for the lifetime of this object. Pass this to any
-    /// `_with_signer` FFI entry point. Freed in `deinit` via
-    /// `dash_sdk_signer_destroy`.
-    public var handle: OpaquePointer {
-        OpaquePointer(handlePtr)
+    /// FFI signer handle. Pass to any `*_with_signer` entry point;
+    /// the underlying pointer is the C-imported
+    /// `UnsafeMutablePointer<SignerHandle>` from `platform-wallet-ffi.h`
+    /// (and equivalently `rs-sdk-ffi.h`). Owned by this object —
+    /// freed in `deinit` via `dash_sdk_signer_destroy`. Caller must
+    /// keep the `KeychainSigner` alive for the duration of any FFI
+    /// call that captured this pointer (see the keepalive contract
+    /// above).
+    public var handle: UnsafeMutablePointer<SignerHandle> {
+        handlePtr
     }
 
     // MARK: Errors
@@ -159,7 +164,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// Network is only used for `dash_sdk_signer_create_from_private_key`,
     /// which uses it for WIF / address derivation but not for signing
     /// itself. Stored here so the trampoline doesn't have to plumb it.
-    private let network: DashSDKNetwork
+    private let network: Network
     /// Background `ModelContext` pinned to this signer. Created lazily
     /// per-trampoline-call (see `lookupPrivateKey`) — SwiftData
     /// `ModelContext` instances are cheap and let us stay off the
@@ -191,7 +196,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     ///   - keychain: defaults to `KeychainManager.shared`.
     public init(
         modelContainer: ModelContainer,
-        network: DashSDKNetwork = DashSDKNetwork(rawValue: 1),
+        network: Network = .testnet,
         keychain: KeychainManager = .shared
     ) {
         self.modelContainer = modelContainer
@@ -351,9 +356,9 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             else {
                 return false
             }
-            // `WalletStorage.retrieveMnemonic` throws on miss;
-            // a successful return is sufficient to confirm presence.
-            return (try? WalletStorage().retrieveMnemonic(for: resolved.walletId)) != nil
+            // Existence check only — do NOT materialize the mnemonic
+            // bytes on the preflight path.
+            return WalletStorage().hasMnemonic(for: resolved.walletId)
         }
 
         var found = false
@@ -499,7 +504,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // signature-shape additions without an ABI change. Defer-
         // scrubbed below regardless of success/failure.
         var sigBuf = [UInt8](repeating: 0, count: 128)
-        var sigLen: Int = 0
+        var sigLen: UInt = 0
         var errTag: UInt8 = 0
         defer {
             sigBuf.withUnsafeMutableBufferPointer { ptr in
@@ -526,11 +531,11 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                             walletPtr,
                             pPtr,
                             dataBase,
-                            dataRaw.count,
+                            UInt(dataRaw.count),
                             ecdsaSecp256k1KeyType,
-                            self.network,
+                            self.network.ffiValue,
                             bufPtr.baseAddress,
-                            bufPtr.count,
+                            UInt(bufPtr.count),
                             &sigLen,
                             &errTag
                         )
@@ -553,7 +558,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
         // Copy out the leading `sigLen` bytes BEFORE the deferred
         // scrub erases them.
-        let signature = Data(sigBuf.prefix(sigLen))
+        let signature = Data(sigBuf.prefix(Int(sigLen)))
         return .success(signature)
     }
 
@@ -586,7 +591,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             dash_sdk_signer_create_from_private_key(
                 keyBuf.baseAddress!,
                 UInt(keyBuf.count),
-                self.network
+                self.network.ffiValue
             )
         }
 

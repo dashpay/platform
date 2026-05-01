@@ -134,7 +134,7 @@ struct IdentitiesContentView: View {
                     Button {
                         showingSearchWallets = true
                     } label: {
-                        Label("Search Wallets for Identities", systemImage: "magnifyingglass")
+                        Label("Re-scan for Identities", systemImage: "magnifyingglass")
                     }
                     .accessibilityIdentifier("identities.searchWalletsMenuItem")
                 } label: {

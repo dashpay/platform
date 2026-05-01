@@ -35,7 +35,7 @@ struct CreateWalletView: View {
         case mnemonic
     }
 
-    var currentNetwork: AppNetwork {
+    var currentNetwork: Network {
         platformState.currentNetwork
     }
 
@@ -282,27 +282,18 @@ struct CreateWalletView: View {
                 print("Import option enabled: \(showImportOption)")
 
                 // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [AppNetwork] = [
-                    createForMainnet ? AppNetwork.mainnet : nil,
-                    createForTestnet ? AppNetwork.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
+                let selectedNetworks: [Network] = [
+                    createForMainnet ? Network.mainnet : nil,
+                    createForTestnet ? Network.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
                 ].compactMap { $0 }
 
-                guard let primaryNetwork = selectedNetworks.first else {
+                guard let platformNetwork = selectedNetworks.first else {
                     struct MissingNetwork: LocalizedError {
                         var errorDescription: String? { "No network selected" }
                     }
                     throw MissingNetwork()
                 }
-
-                let platformNetwork: PlatformNetwork = {
-                    switch primaryNetwork {
-                    case .mainnet: return .mainnet
-                    case .testnet: return .testnet
-                    case .devnet: return .devnet
-                    case .regtest: return .testnet
-                    }
-                }()
 
                 // Create exactly one wallet via PlatformWalletManager.
                 // The Rust-side wallet creation emits
@@ -356,7 +347,7 @@ struct CreateWalletView: View {
                     dismiss()
                 }
 
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
+                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(platformNetwork.displayName) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")

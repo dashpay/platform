@@ -17,18 +17,22 @@ pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
-pub mod platform_address_sync;
 pub mod spv;
 pub mod wallet;
 
 pub use error::PlatformWalletError;
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-pub use manager::PlatformWalletManager;
-pub use platform_address_sync::{
+pub use manager::identity_sync::{
+    IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
+    DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,
+    MAX_TOKENS_PER_BALANCE_BATCH as IDENTITY_SYNC_MAX_TOKENS_PER_BATCH,
+};
+pub use manager::platform_address_sync::{
     PlatformAddressSyncManager, PlatformAddressSyncSummary, WalletSyncOutcome,
     DEFAULT_SYNC_INTERVAL_SECS,
 };
+pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -49,10 +53,8 @@ pub use wallet::identity::{
     DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
-pub use wallet::ManagedIdentitySigner;
 pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
-pub use wallet::TokenWallet;
 
 // Re-export changeset types for caller-level staging.
 pub use changeset::Merge;

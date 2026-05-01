@@ -123,123 +123,13 @@ pub enum ContestWinner {
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Register a DPNS name for an identity.
-    ///
-    /// # Arguments
-    ///
-    /// * `identity_id` - The identity to register the name for.
-    /// * `name` - The desired username label (e.g., "alice").
-    pub async fn register_name(
-        &self,
-        identity_id: &Identifier,
-        name: &str,
-    ) -> Result<String, PlatformWalletError> {
-        use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
-
-        let (identity, identity_index, auth_key) = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            let manager = &info.identity_manager;
-            let identity = manager
-                .identity(identity_id)
-                .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager
-                .identity_index(identity_id)
-                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
-            // DPNS name registration writes a document state transition,
-            // which DPP requires to be signed by a HIGH-or-stricter
-            // authentication key. MASTER is intentionally excluded —
-            // it's reserved for identity-self-modification operations
-            // (identity update, key rotation, withdrawal) and is
-            // rejected by the protocol on document-side state
-            // transitions.
-            let key = identity
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(
-                        "No HIGH or CRITICAL authentication key found on identity \
-                         (required for document state transitions)"
-                            .to_string(),
-                    )
-                })?
-                .clone();
-            (identity, index, key)
-        };
-
-        let signer = self.signer_for_identity(identity_index);
-
-        let input = RegisterDpnsNameInput {
-            label: name.to_string(),
-            identity,
-            identity_public_key: auth_key,
-            signer,
-            preorder_callback: None,
-        };
-
-        let result = self.sdk.register_dpns_name(input).await.map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register DPNS name '{}': {}",
-                name, e
-            ))
-        })?;
-
-        // Record the just-registered name on the `ManagedIdentity` so
-        // subsequent reads (and the persisted snapshot) reflect it
-        // without an extra round-trip to Platform. `add_dpns_name`
-        // emits an `IdentityChangeSet` via the persister handle.
-        //
-        // The `acquired_at` timestamp is best-effort wall-clock — the
-        // DPNS contract carries its own `$createdAt` on the document
-        // but the SDK doesn't surface it back on the register result
-        // today. If that changes, swap this for the contract-side
-        // value.
-        let acquired_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .ok();
-        let label_to_store = name.to_string();
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                    // Skip if we already have this label recorded —
-                    // `add_dpns_name` has no idempotency guard of its
-                    // own and would emit a duplicate entry otherwise.
-                    if !managed
-                        .dpns_names
-                        .iter()
-                        .any(|existing| existing.label == label_to_store)
-                    {
-                        managed.add_dpns_name(
-                            DpnsNameInfo {
-                                label: label_to_store,
-                                acquired_at,
-                            },
-                            &self.persister,
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(result.full_domain_name)
-    }
-
     /// Register a DPNS name using an externally-provided identity and signer.
     ///
-    /// Unlike [`register_name`](Self::register_name), this method does **not**
-    /// look up the identity in the internal `IdentityManager`. The caller
-    /// supplies the `Identity`, the signing key, and a `Signer` directly.
+    /// Unlike
+    /// [`register_name_with_external_signer`](Self::register_name_with_external_signer),
+    /// this method does **not** look up the identity in the internal
+    /// `IdentityManager`. The caller supplies the `Identity`, the
+    /// signing key, and a `Signer` directly.
     ///
     /// Returns the full domain name (e.g. "alice.dash").
     pub async fn register_name_with_signer<S: Signer<IdentityPublicKey>>(
@@ -263,28 +153,26 @@ impl IdentityWallet {
         Ok(result.full_domain_name)
     }
 
-    /// Register a DPNS name using an externally-supplied signer.
+    /// Register a DPNS name for an identity using an
+    /// externally-supplied signer.
     ///
-    /// Same shape as [`Self::register_name`] but signing is routed
-    /// through the supplied `&S: Signer<IdentityPublicKey>` instead of
-    /// the wallet's own `IdentitySigner`. Required for external-signable
-    /// wallets (no seed Rust-side) and the architecturally correct path
-    /// per `swift-sdk/CLAUDE.md`.
+    /// # Arguments
     ///
-    /// The identity is still looked up from the in-process
-    /// `IdentityManager` (so we can locate the HIGH/CRITICAL
-    /// authentication key the document state transition requires), but
-    /// `signer.sign(...)` is invoked through the caller-supplied
-    /// trait object rather than the wallet-derived `IdentitySigner`.
-    /// This avoids re-acquiring the `wallet_manager` lock from inside
-    /// the signing path (which would deadlock the Tokio worker if the
-    /// signer used `blocking_read` to derive a private key) and lets
-    /// watch-only wallets — where the seed lives in iOS Keychain
-    /// rather than the in-process `WalletManager` — register names.
+    /// * `identity_id` - The identity to register the name for.
+    /// * `name` - The desired username label (e.g., "alice").
+    /// * `signer` - External `Signer<IdentityPublicKey>` for the
+    ///   document state-transition signature — the architecturally
+    ///   correct path per `swift-sdk/CLAUDE.md`.
+    ///
+    /// The identity is looked up from the in-process `IdentityManager`
+    /// so we can locate the HIGH/CRITICAL authentication key the
+    /// document state transition requires; `signer.sign(...)` is
+    /// invoked through the caller-supplied trait object. Works for
+    /// watch-only wallets where the seed lives in iOS Keychain
+    /// rather than the in-process `WalletManager`.
     ///
     /// On success the just-registered label is appended to
-    /// `ManagedIdentity.dpns_names` and an identity changeset is queued
-    /// (identical book-keeping to [`Self::register_name`]).
+    /// `ManagedIdentity.dpns_names` and an identity changeset is queued.
     pub async fn register_name_with_external_signer<S>(
         &self,
         identity_id: &Identifier,

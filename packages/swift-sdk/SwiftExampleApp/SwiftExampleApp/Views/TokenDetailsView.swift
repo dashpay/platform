@@ -8,11 +8,11 @@ struct TokenDetailsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Action launcher — navigates to TokenActionsView with
-                // an identity Picker so the user can ask "what can I
-                // do with this token as <identity>?". This is the only
-                // tap entry point we currently wire; deeper state-
-                // transition flows hang off TokenActionsView's rows.
+                // Action launcher — navigates to
+                // TokenActionPermissionsView with an identity Picker
+                // so the user can ask "what can I do with this token
+                // as <identity>?". Per-action state-transition flows
+                // hang off that view's rows.
                 actionsEntrySection
 
                 // Basic Information

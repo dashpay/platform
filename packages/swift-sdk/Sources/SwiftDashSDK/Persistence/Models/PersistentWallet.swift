@@ -14,18 +14,18 @@ public final class PersistentWallet {
     /// the row was created by a changeset before `persistWalletMetadata`
     /// filled the network in. Views treat `nil` as unknown.
     ///
-    /// Stored as the `AppNetwork.rawValue` `Int?` so SwiftData
+    /// Stored as the `Network.rawValue` `UInt32?` so SwiftData
     /// `#Predicate` expressions can evaluate it directly. See
     /// `PersistentIdentity.networkRaw` for the full rationale.
-    public var networkRaw: Int?
+    public var networkRaw: UInt32?
 
     /// Type-safe accessor over `networkRaw`. `nil` round-trips as
     /// `nil`; non-nil reads fall back to `.testnet` if the stored
-    /// raw value ever drifts out of the `AppNetwork` range.
-    public var network: AppNetwork? {
+    /// raw value ever drifts out of the `Network` range.
+    public var network: Network? {
         get {
             guard let raw = networkRaw else { return nil }
-            return AppNetwork(rawValue: raw) ?? .testnet
+            return Network(rawValue: raw) ?? .testnet
         }
         set { networkRaw = newValue?.rawValue }
     }
@@ -45,12 +45,6 @@ public final class PersistentWallet {
     public var balanceImmature: UInt64
     /// Locked balance in duffs.
     public var balanceLocked: UInt64
-    /// Wallet is spend-disabled — either bootstrapped watch-only
-    /// (no seed) or every account is watch-only. Surfaces as the
-    /// "👁 Watch-only" badge in the wallets list. Default `false`
-    /// keeps the schema migration trivial for rows that predate
-    /// this column.
-    public var isWatchOnly: Bool = false
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for
@@ -78,11 +72,10 @@ public final class PersistentWallet {
 
     public init(
         walletId: Data,
-        network: AppNetwork? = nil,
+        network: Network? = nil,
         name: String? = nil,
         birthHeight: UInt32 = 0,
         syncedHeight: UInt32 = 0,
-        isWatchOnly: Bool = false,
         isImported: Bool = false
     ) {
         self.walletId = walletId
@@ -95,7 +88,6 @@ public final class PersistentWallet {
         self.balanceUnconfirmed = 0
         self.balanceImmature = 0
         self.balanceLocked = 0
-        self.isWatchOnly = isWatchOnly
         self.isImported = isImported
         self.createdAt = Date()
         self.lastUpdated = Date()

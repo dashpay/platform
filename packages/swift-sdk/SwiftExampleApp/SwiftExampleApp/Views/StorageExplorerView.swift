@@ -11,6 +11,27 @@ struct StorageExplorerView: View {
             modelRow("Identities", icon: "person.crop.circle", type: PersistentIdentity.self) {
                 IdentityStorageListView()
             }
+            // Identity-relationship caches: cascade-owned by
+            // `PersistentIdentity`, surfaced as their own explorer
+            // sections so the row counts and per-row drill-downs
+            // are visible without going through the parent identity.
+            modelRow("DPNS Names", icon: "at", type: PersistentDPNSName.self) {
+                DPNSNameStorageListView()
+            }
+            modelRow(
+                "DashPay Profiles",
+                icon: "person.text.rectangle",
+                type: PersistentDashpayProfile.self
+            ) {
+                DashpayProfileStorageListView()
+            }
+            modelRow(
+                "Contact Requests",
+                icon: "person.crop.circle.badge.plus",
+                type: PersistentDashpayContactRequest.self
+            ) {
+                DashpayContactRequestStorageListView()
+            }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
                 DocumentStorageListView()
             }
@@ -48,8 +69,8 @@ struct StorageExplorerView: View {
             ) {
                 PlatformAddressStorageListView()
             }
-            modelRow("Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentSyncState.self) {
-                SyncStateStorageListView()
+            modelRow("Platform Addresses Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentPlatformAddressesSyncState.self) {
+                PlatformAddressesSyncStateStorageListView()
             }
             modelRow("Wallets", icon: "wallet.pass", type: PersistentWallet.self) {
                 WalletStorageListView()
@@ -67,8 +88,8 @@ struct StorageExplorerView: View {
             modelRow("Transactions", icon: "arrow.left.arrow.right.circle", type: PersistentTransaction.self) {
                 TransactionStorageListView()
             }
-            modelRow("UTXOs", icon: "bitcoinsign.circle", type: PersistentUtxo.self) {
-                UtxoStorageListView()
+            modelRow("TXOs", icon: "bitcoinsign.circle", type: PersistentTxo.self) {
+                TxoStorageListView()
             }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView()
@@ -132,6 +153,9 @@ struct StorageExplorerView: View {
             counts[key] = (try? modelContext.fetchCount(FetchDescriptor<T>())) ?? 0
         }
         count(PersistentIdentity.self)
+        count(PersistentDPNSName.self)
+        count(PersistentDashpayProfile.self)
+        count(PersistentDashpayContactRequest.self)
         count(PersistentDocument.self)
         count(PersistentDataContract.self)
         count(PersistentPublicKey.self)
@@ -142,11 +166,11 @@ struct StorageExplorerView: View {
         count(PersistentIndex.self)
         count(PersistentProperty.self)
         count(PersistentKeyword.self)
-        count(PersistentSyncState.self)
+        count(PersistentPlatformAddressesSyncState.self)
         count(PersistentWallet.self)
         count(PersistentAccount.self)
         count(PersistentTransaction.self)
-        count(PersistentUtxo.self)
+        count(PersistentTxo.self)
         count(PersistentWalletManagerMetadata.self)
         // Core and Platform address rows live in separate models now
         // (PersistentCoreAddress vs PersistentPlatformAddress), so

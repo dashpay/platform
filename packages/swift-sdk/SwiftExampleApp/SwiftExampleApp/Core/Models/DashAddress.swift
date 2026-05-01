@@ -13,7 +13,7 @@ struct DashAddress {
     let displayString: String
 
     /// Parse any address string and detect its type
-    static func parse(_ input: String, network: AppNetwork) -> DashAddress {
+    static func parse(_ input: String, network: Network) -> DashAddress {
         // 1. Try bech32m first
         if let decoded = Bech32m.decode(input) {
             let hrp = decoded.hrp
@@ -45,7 +45,7 @@ struct DashAddress {
         }
 
         // 2. Try Core address — validate via Rust FFI (Base58Check + network)
-        let keyWalletNetwork: KeyWalletNetwork = (network == .mainnet) ? .mainnet : .testnet
+        let keyWalletNetwork: Network = (network == .mainnet) ? .mainnet : .testnet
         if Address.validate(input, network: keyWalletNetwork),
            let script = coreAddressToOutputScript(input) {
             return DashAddress(type: .core(script), displayString: input)
@@ -57,7 +57,7 @@ struct DashAddress {
 
     /// Encode raw 43-byte Orchard address to bech32m display string.
     /// Prepends 0x10 type byte then bech32m encodes with dash/tdash HRP.
-    static func encodeOrchard(rawBytes: Data, network: AppNetwork) -> String? {
+    static func encodeOrchard(rawBytes: Data, network: Network) -> String? {
         guard rawBytes.count == 43 else { return nil }
         let hrp = (network == .mainnet) ? "dash" : "tdash"
         var payload = Data([0x10])
@@ -66,7 +66,7 @@ struct DashAddress {
     }
 
     /// Encode 21-byte platform address to bech32m display string
-    static func encodePlatform(rawBytes: Data, network: AppNetwork) -> String? {
+    static func encodePlatform(rawBytes: Data, network: Network) -> String? {
         guard rawBytes.count == 21 else { return nil }
         let hrp = (network == .mainnet) ? "dashevo" : "tdashevo"
         return Bech32m.encode(hrp: hrp, data: rawBytes)

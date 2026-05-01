@@ -40,15 +40,15 @@ use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 use std::str::FromStr;
 
+use crate::types::{FFINetwork, Network};
 use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
-use rs_sdk_ffi::DashSDKNetwork;
 use zeroize::Zeroizing;
 
 use crate::derive_and_persist_callbacks::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
-use crate::identity_keys_from_mnemonic::{map_network, parse_mnemonic_any_language};
+use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 
 // One-byte error tags. Mirror the shape of
 // `signer_simple::SIGN_WITH_MNEMONIC_ERR_*` so call sites already
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     data: *const u8,
     data_len: usize,
     key_type: u8,
-    network: DashSDKNetwork,
+    network: FFINetwork,
     out_signature: *mut u8,
     out_signature_capacity: usize,
     out_signature_len: *mut usize,
@@ -199,7 +199,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_INVALID_PATH),
     };
 
-    let kw_network = map_network(network);
+    let kw_network: Network = network.into();
     let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
@@ -298,7 +298,7 @@ mod tests {
                 data.as_ptr(),
                 data.len(),
                 0, // ECDSA_SECP256K1
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,
@@ -329,7 +329,7 @@ mod tests {
                 data.as_ptr(),
                 data.len(),
                 0,
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,
@@ -359,7 +359,7 @@ mod tests {
                 data.as_ptr(),
                 data.len(),
                 1, // BLS12_381 — not supported
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,

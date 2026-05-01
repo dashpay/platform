@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Core wallet for UTXO management, address derivation, and transaction broadcasting.
 ///
@@ -11,8 +12,7 @@ public class ManagedCoreWallet {
     }
 
     deinit {
-        var error = PlatformWalletFFIError()
-        _ = core_wallet_destroy(handle, &error)
+        core_wallet_destroy(handle).discard()
     }
 
     // MARK: - Balance
@@ -39,14 +39,9 @@ public class ManagedCoreWallet {
         var unconfirmed: UInt64 = 0
         var immature: UInt64 = 0
         var locked: UInt64 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = core_wallet_get_balance(
-            handle, &confirmed, &unconfirmed, &immature, &locked, &error
-        )
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try core_wallet_get_balance(
+            handle, &confirmed, &unconfirmed, &immature, &locked
+        ).check()
 
         return CoreBalance(
             confirmed: confirmed,
@@ -57,16 +52,10 @@ public class ManagedCoreWallet {
     }
 
     /// Get the network this wallet operates on.
-    public func network() throws -> PlatformNetwork {
-        var networkValue: UInt32 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = core_wallet_get_network(handle, &networkValue, &error)
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
-        return PlatformNetwork(rawValue: networkValue) ?? .testnet
+    public func network() throws -> Network {
+        var ffiNetwork = FFINetwork(0)
+        try core_wallet_get_network(handle, &ffiNetwork).check()
+        return Network(ffiNetwork: ffiNetwork)
     }
 
     // MARK: - Addresses
@@ -74,28 +63,26 @@ public class ManagedCoreWallet {
     /// Get the next unused receive address for a specific BIP-44 account.
     public func nextReceiveAddress(accountIndex: UInt32 = 0) throws -> String {
         var addressPtr: UnsafeMutablePointer<CChar>? = nil
-        var error = PlatformWalletFFIError()
-
-        let result = core_wallet_next_receive_address(handle, accountIndex, &addressPtr, &error)
-        guard result == Success, let ptr = addressPtr else {
-            throw PlatformWalletError(result: result, error: error)
+        try core_wallet_next_receive_address(handle, accountIndex, &addressPtr).check()
+        guard let ptr = addressPtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_next_receive_address returned a NULL address pointer"
+            )
         }
         defer { core_wallet_free_address(ptr) }
-
         return String(cString: ptr)
     }
 
     /// Get the next unused change address for a specific BIP-44 account.
     public func nextChangeAddress(accountIndex: UInt32 = 0) throws -> String {
         var addressPtr: UnsafeMutablePointer<CChar>? = nil
-        var error = PlatformWalletFFIError()
-
-        let result = core_wallet_next_change_address(handle, accountIndex, &addressPtr, &error)
-        guard result == Success, let ptr = addressPtr else {
-            throw PlatformWalletError(result: result, error: error)
+        try core_wallet_next_change_address(handle, accountIndex, &addressPtr).check()
+        guard let ptr = addressPtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_next_change_address returned a NULL address pointer"
+            )
         }
         defer { core_wallet_free_address(ptr) }
-
         return String(cString: ptr)
     }
 
@@ -116,35 +103,33 @@ public class ManagedCoreWallet {
         recipients: [(address: String, amountDuffs: UInt64)]
     ) throws -> Data {
         var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var txLen: Int = 0
-        var error = PlatformWalletFFIError()
+        var txLen: UInt = 0
 
         // Build C string array
         let cStrings = recipients.map { ($0.address as NSString).utf8String }
         let amounts = recipients.map { $0.amountDuffs }
 
-        let result = cStrings.withUnsafeBufferPointer { addrBuf in
-            amounts.withUnsafeBufferPointer { amountBuf in
-                core_wallet_send_to_addresses(
+        try cStrings.withUnsafeBufferPointer { addrBuf in
+            try amounts.withUnsafeBufferPointer { amountBuf in
+                try core_wallet_send_to_addresses(
                     handle,
                     accountType.rawValue,
                     accountIndex,
                     addrBuf.baseAddress,
                     amountBuf.baseAddress,
-                    recipients.count,
+                    UInt(recipients.count),
                     &txBytesPtr,
-                    &txLen,
-                    &error
-                )
+                    &txLen
+                ).check()
             }
         }
 
-        guard result == Success, let ptr = txBytesPtr, txLen > 0 else {
-            throw PlatformWalletError(result: result, error: error)
+        guard let ptr = txBytesPtr, txLen > 0 else {
+            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
         }
         defer { core_wallet_free_tx_bytes(ptr, txLen) }
 
-        return Data(bytes: ptr, count: txLen)
+        return Data(bytes: ptr, count: Int(txLen))
     }
 
     /// Broadcast a raw signed transaction.
@@ -152,20 +137,19 @@ public class ManagedCoreWallet {
     /// Returns the transaction ID as a hex string.
     public func broadcastTransaction(_ txData: Data) throws -> String {
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        var error = PlatformWalletFFIError()
-
-        let result = txData.withUnsafeBytes { txBuf in
-            core_wallet_broadcast_transaction(
+        try txData.withUnsafeBytes { txBuf in
+            try core_wallet_broadcast_transaction(
                 handle,
                 txBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                txData.count,
-                &txidPtr,
-                &error
-            )
+                UInt(txData.count),
+                &txidPtr
+            ).check()
         }
 
-        guard result == Success, let ptr = txidPtr else {
-            throw PlatformWalletError(result: result, error: error)
+        guard let ptr = txidPtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_broadcast_transaction returned a NULL txid pointer"
+            )
         }
         defer { core_wallet_free_address(ptr) } // same free for C strings
 

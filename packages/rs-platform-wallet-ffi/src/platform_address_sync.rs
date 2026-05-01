@@ -9,6 +9,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::AddressSyncConfigFFI;
 use crate::runtime::runtime;
+use crate::{check_ptr, unwrap_option_or_return};
 
 /// Flattened sync metrics for one wallet result in a platform-address sync pass.
 #[repr(C)]
@@ -79,45 +80,25 @@ impl Default for PlatformAddressSyncWalletResultFFI {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_start(
     handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let _entered = runtime().enter();
-            manager.platform_address_sync_arc().start();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let _entered = runtime().enter();
+        manager.platform_address_sync_arc().start();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Stop the platform-address sync manager if it is running.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_stop(
     handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            manager.platform_address_sync().stop();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.platform_address_sync().stop();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether the platform-address sync manager background loop is running.
@@ -125,26 +106,14 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_stop(
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_running(
     handle: Handle,
     out_running: *mut bool,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_running.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_running);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            *out_running = manager.platform_address_sync().is_running();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.platform_address_sync().is_running()
+    });
+    *out_running = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether a platform-address sync pass is currently in flight.
@@ -152,26 +121,14 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_runnin
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_syncing(
     handle: Handle,
     out_syncing: *mut bool,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_syncing.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_syncing);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            *out_syncing = manager.platform_address_sync().is_syncing();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.platform_address_sync().is_syncing()
+    });
+    *out_syncing = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Unix seconds of the last completed platform-address sync pass, or 0 if none ran.
@@ -179,29 +136,17 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_is_syncin
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_last_sync_unix_seconds(
     handle: Handle,
     out_last_sync_unix: *mut u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_last_sync_unix.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_last_sync_unix);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            *out_last_sync_unix = manager
-                .platform_address_sync()
-                .last_sync_unix_seconds()
-                .unwrap_or(0);
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager
+            .platform_address_sync()
+            .last_sync_unix_seconds()
+            .unwrap_or(0)
+    });
+    *out_last_sync_unix = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Set the background platform-address sync interval in seconds.
@@ -209,24 +154,14 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_last_sync
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_interval(
     handle: Handle,
     interval_seconds: u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            manager
-                .platform_address_sync()
-                .set_interval(Duration::from_secs(interval_seconds));
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager
+            .platform_address_sync()
+            .set_interval(Duration::from_secs(interval_seconds));
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Replace the shared platform-address sync config used on each pass.
@@ -236,47 +171,27 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_inter
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_set_config(
     handle: Handle,
     config: *const AddressSyncConfigFFI,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let config = if config.is_null() {
-                None
-            } else {
-                Some((*config).into())
-            };
-            manager.platform_address_sync().set_config(config);
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let cfg = if config.is_null() {
+        None
+    } else {
+        Some((*config).into())
+    };
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.platform_address_sync().set_config(cfg);
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Run one platform-address sync pass across all registered wallets.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
     handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            runtime().block_on(manager.platform_address_sync().sync_now());
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.platform_address_sync().sync_now());
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }

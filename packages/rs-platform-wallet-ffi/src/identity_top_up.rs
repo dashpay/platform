@@ -30,10 +30,12 @@ use dpp::fee::Credits;
 use dpp::prelude::Identifier;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration::IdentityFundingInputFFI;
 use crate::runtime::block_on_worker;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Top up an existing identity's credit balance from one or more
 /// Platform addresses, using an external `SignerHandle` for the
@@ -66,27 +68,16 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     inputs_count: usize,
     signer_address_handle: *mut SignerHandle,
     out_new_balance: *mut u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let invariant_violation: Option<&'static str> = if identity_id.is_null() {
-        Some("`identity_id` pointer is null")
-    } else if inputs.is_null() {
-        Some("`inputs` pointer is null")
-    } else if inputs_count == 0 {
-        Some("`inputs_count` is zero")
-    } else if signer_address_handle.is_null() {
-        Some("`signer_address_handle` pointer is null")
-    } else if out_new_balance.is_null() {
-        Some("`out_new_balance` pointer is null")
-    } else {
-        None
-    };
-    if let Some(detail) = invariant_violation {
-        if !out_error.is_null() {
-            *out_error =
-                PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorNullPointer, detail);
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
+    check_ptr!(identity_id);
+    check_ptr!(inputs);
+    check_ptr!(signer_address_handle);
+    check_ptr!(out_new_balance);
+    if inputs_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`inputs_count` is zero",
+        );
     }
 
     let identity_id_bytes: [u8; 32] = *identity_id;
@@ -99,13 +90,10 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
             0 => PlatformAddress::P2pkh(entry.hash),
             1 => PlatformAddress::P2sh(entry.hash),
             _ => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        "invalid address_type (expected 0 or 1)",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    "invalid address_type (expected 0 or 1)",
+                );
             }
         };
         // Caller may pass the same address twice (the Swift inputs
@@ -128,42 +116,17 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     // is `Send + Sync` — see the unsafe impls in `rs-sdk-ffi/src/signer.rs`.
     let signer_addr = signer_address_handle as usize;
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity_wallet = wallet.identity().clone();
-
-            let result = block_on_worker(async move {
-                let address_signer: &VTableSigner =
-                    unsafe { &*(signer_addr as *const VTableSigner) };
-
-                identity_wallet
-                    .top_up_from_addresses(&identity_id, input_map, address_signer, None)
-                    .await
-            });
-
-            match result {
-                Ok(new_balance) => {
-                    *out_new_balance = new_balance;
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("top_up_from_addresses failed: {}", e),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+            identity_wallet
+                .top_up_from_addresses(&identity_id, input_map, address_signer, None)
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let new_balance = unwrap_result_or_return!(result);
+    *out_new_balance = new_balance;
+    PlatformWalletFFIResult::ok()
 }
