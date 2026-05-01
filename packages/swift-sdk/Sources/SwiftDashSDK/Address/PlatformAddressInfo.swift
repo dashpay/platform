@@ -43,19 +43,9 @@ public struct PlatformAddressInfo: Sendable, Equatable, Codable {
 
     /// Convert address bytes to bech32m string (requires network parameter)
     /// Format: [type_byte][20_byte_hash]
-    public func toBech32m(network: DashSDKNetwork) -> String? {
+    public func toBech32m(network: Network) -> String? {
         guard addressBytes.count == 21 else { return nil }
-
-        // Get HRP based on network
-        // DashSDKNetwork raw values: 0 = mainnet, 1 = testnet, 2 = regtest, 3 = devnet, 4 = local
-        let hrp: String
-        if network.rawValue == 0 {
-            hrp = "dashevo"  // mainnet
-        } else {
-            hrp = "tdashevo"  // testnet, devnet, regtest, local
-        }
-
-        // Use bech32m encoding
+        let hrp = network == .mainnet ? "dashevo" : "tdashevo"
         return Bech32m.encode(hrp: hrp, data: addressBytes)
     }
 }
@@ -189,14 +179,9 @@ public struct AddressBalanceChange: Sendable, Equatable {
     }
 
     /// Convert address bytes to bech32m string
-    public func toBech32m(network: DashSDKNetwork) -> String? {
+    public func toBech32m(network: Network) -> String? {
         guard addressBytes.count == 21 else { return nil }
-        let hrp: String
-        if network.rawValue == 0 {
-            hrp = "dashevo"
-        } else {
-            hrp = "tdashevo"
-        }
+        let hrp = network == .mainnet ? "dashevo" : "tdashevo"
         return Bech32m.encode(hrp: hrp, data: addressBytes)
     }
 }
@@ -278,14 +263,9 @@ public struct CompactedAddressChange: Sendable, Equatable {
     }
 
     /// Convert address bytes to bech32m string
-    public func toBech32m(network: DashSDKNetwork) -> String? {
+    public func toBech32m(network: Network) -> String? {
         guard addressBytes.count == 21 else { return nil }
-        let hrp: String
-        if network.rawValue == 0 {
-            hrp = "dashevo"
-        } else {
-            hrp = "tdashevo"
-        }
+        let hrp = network == .mainnet ? "dashevo" : "tdashevo"
         return Bech32m.encode(hrp: hrp, data: addressBytes)
     }
 }

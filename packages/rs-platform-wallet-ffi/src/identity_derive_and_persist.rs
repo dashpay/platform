@@ -76,10 +76,10 @@ use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
+use crate::types::{FFINetwork, Network};
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use rs_sdk_ffi::DashSDKNetwork;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::derive_and_persist_callbacks::{
@@ -89,7 +89,7 @@ use crate::derive_and_persist_callbacks::{
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::{
-    identity_auth_derivation_path, map_network, parse_mnemonic_any_language,
+    identity_auth_derivation_path, parse_mnemonic_any_language,
 };
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
 use crate::{check_ptr, unwrap_result_or_return};
@@ -156,7 +156,7 @@ const SECURITY_LEVEL_HIGH: u8 = 2;
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
-    network: DashSDKNetwork,
+    network: FFINetwork,
     wallet_id_bytes: *const u8,
     identity_index: u32,
     key_count: u32,
@@ -237,7 +237,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     // (non-zeroized) `String` storage early.
     drop(mnemonic);
 
-    let kw_network = map_network(network);
+    let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
     let secp = Secp256k1::new();
 
@@ -552,7 +552,7 @@ mod tests {
         };
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 7, // identity_index
                 3, // key_count
@@ -616,7 +616,7 @@ mod tests {
         };
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
                 2,
@@ -641,7 +641,7 @@ mod tests {
         // Null out_pubkeys.
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
                 1,
@@ -659,7 +659,7 @@ mod tests {
         };
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 std::ptr::null(),
                 0,
                 1,
@@ -686,7 +686,7 @@ mod tests {
         };
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
                 0,

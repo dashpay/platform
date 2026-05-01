@@ -51,7 +51,7 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
     let key_array = &*(private_key_bytes as *const [u8; 32]);
     let private_key = unwrap_result_or_return!(dashcore::PrivateKey::from_byte_array(
         key_array,
-        dashcore::Network::Mainnet,
+        crate::types::Network::Mainnet,
     ));
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);

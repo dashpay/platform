@@ -27,6 +27,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # Core dependencies (for Network type)
 dashcore = { workspace = true }
 key-wallet = { workspace = true, features = ["bincode"] }
+dash-network = { workspace = true, features = ["ffi"] }
 
 # Bincode used to serialize RootExtendedPubKey / ExtendedPubKey across
 # FFI for watch-only restore. Same version pinned elsewhere in workspace.

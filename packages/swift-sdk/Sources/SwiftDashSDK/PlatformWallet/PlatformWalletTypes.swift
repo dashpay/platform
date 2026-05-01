@@ -20,20 +20,6 @@ extension Identifier {
     }
 }
 
-typealias NetworkType = UInt32
-
-/// Network type for Platform wallet
-public enum PlatformNetwork: UInt32 {
-    case mainnet = 0
-    case testnet = 1
-    case devnet = 2
-    case local = 3
-
-    var ffiValue: NetworkType {
-        NetworkType(self.rawValue)
-    }
-}
-
 /// Identity lifecycle status as carried on the Rust-side
 /// `ManagedIdentity.status`. Mirrors `IdentityStatusFFI` /
 /// `platform_wallet::wallet::identity::state::managed_identity::IdentityStatus`.

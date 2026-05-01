@@ -1,6 +1,6 @@
 use crate::error::*;
 use crate::handle::*;
-use crate::types::Network;
+use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -8,12 +8,9 @@ use platform_wallet::PlatformWalletInfo;
 use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes.
-///
-/// `network` encoding matches other entry points in this crate:
-/// 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
-    network: u32,
+    network: FFINetwork,
     seed_bytes: *const c_uchar,
     seed_len: usize,
     out_handle: *mut Handle,
@@ -21,18 +18,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     check_ptr!(seed_bytes);
     check_ptr!(out_handle);
 
-    let network = match network {
-        0 => Network::Mainnet,
-        1 => Network::Testnet,
-        2 => Network::Devnet,
-        3 => Network::Regtest,
-        _ => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidNetwork,
-                format!("Unknown network: {network}"),
-            );
-        }
-    };
+    let network: Network = network.into();
 
     // Validate seed length (should be 64 bytes for BIP39)
     if seed_len != 64 {
@@ -66,7 +52,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
 /// Create a new PlatformWalletInfo from mnemonic.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
-    network: u32,
+    network: FFINetwork,
     mnemonic: *const c_char,
     passphrase: *const c_char,
     out_handle: *mut Handle,
@@ -74,18 +60,7 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     check_ptr!(mnemonic);
     check_ptr!(out_handle);
 
-    let network = match network {
-        0 => Network::Mainnet,
-        1 => Network::Testnet,
-        2 => Network::Devnet,
-        3 => Network::Regtest,
-        _ => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidNetwork,
-                format!("Unknown network: {network}"),
-            );
-        }
-    };
+    let network: Network = network.into();
 
     let mnemonic_str =
         unwrap_result_or_return!(unsafe { std::ffi::CStr::from_ptr(mnemonic).to_str() });
@@ -186,7 +161,7 @@ mod tests {
             let mut handle: Handle = NULL_HANDLE;
 
             let result = platform_wallet_info_create_from_seed(
-                1, // Testnet
+                FFINetwork::Testnet,
                 seed.as_ptr(),
                 seed.len(),
                 &mut handle,
@@ -209,7 +184,7 @@ mod tests {
             let mut handle: Handle = NULL_HANDLE;
 
             let result = platform_wallet_info_create_from_mnemonic(
-                1, // Testnet
+                FFINetwork::Testnet,
                 mnemonic.as_ptr(),
                 std::ptr::null(),
                 &mut handle,

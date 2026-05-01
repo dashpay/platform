@@ -52,10 +52,10 @@ public class ManagedCoreWallet {
     }
 
     /// Get the network this wallet operates on.
-    public func network() throws -> PlatformNetwork {
-        var networkValue: UInt32 = 0
-        try core_wallet_get_network(handle, &networkValue).check()
-        return PlatformNetwork(rawValue: networkValue) ?? .testnet
+    public func network() throws -> Network {
+        var ffiNetwork = FFINetwork(0)
+        try core_wallet_get_network(handle, &ffiNetwork).check()
+        return Network(ffiNetwork: ffiNetwork)
     }
 
     // MARK: - Addresses

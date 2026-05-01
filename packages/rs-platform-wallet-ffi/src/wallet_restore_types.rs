@@ -22,6 +22,7 @@
 use std::os::raw::{c_char, c_void};
 
 use crate::platform_address_types::AddressBalanceEntryFFI;
+use crate::types::FFINetwork;
 
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
@@ -222,10 +223,9 @@ pub struct IdentityRestoreEntryFFI {
 #[repr(C)]
 pub struct WalletRestoreEntryFFI {
     pub wallet_id: [u8; 32],
-    /// [`key_wallet::Network`] discriminant, matching
-    /// `platform_wallet_manager_create_wallet_from_seed`:
-    /// 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
-    pub network: u8,
+    /// Network this wallet was created on. Mirrors what was supplied to
+    /// `platform_wallet_manager_create_wallet_from_seed`.
+    pub network: FFINetwork,
     pub accounts: *const AccountSpecFFI,
     pub accounts_count: usize,
     /// Cached platform-address balances for this wallet. The pointer is

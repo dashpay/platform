@@ -863,7 +863,7 @@ extension ManagedPlatformWallet {
     public func deriveIdentityAuthKeyAtSlot(
         identityIndex: UInt32,
         keyId: UInt32,
-        network: DashSDKNetwork,
+        network: Network,
         storage: WalletStorage = WalletStorage()
     ) throws -> IdentityRegistrationKeyPreview {
         // The FFI takes a 32-byte wallet id which the resolver uses
@@ -887,7 +887,7 @@ extension ManagedPlatformWallet {
         let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
             let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
             return dash_sdk_derive_identity_key_at_slot_with_resolver(
-                network,
+                network.ffiValue,
                 walletPtr,
                 resolver.handle,
                 identityIndex,
@@ -991,7 +991,7 @@ extension ManagedPlatformWallet {
     public func prePersistIdentityKeysForRegistration(
         identityIndex: UInt32,
         keyCount: UInt32,
-        network: DashSDKNetwork,
+        network: Network,
         keychain: KeychainManager = .shared,
         storage: WalletStorage = WalletStorage()
     ) throws -> [IdentityPubkey] {
@@ -1017,7 +1017,7 @@ extension ManagedPlatformWallet {
         let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
             let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress
             return dash_sdk_derive_and_persist_identity_keys(
-                network,
+                network.ffiValue,
                 walletPtr,
                 identityIndex,
                 keyCount,
