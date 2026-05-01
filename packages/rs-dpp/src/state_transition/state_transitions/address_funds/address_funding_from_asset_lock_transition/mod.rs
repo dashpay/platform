@@ -166,8 +166,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "BUG: OutPoint inside ChainAssetLockProof fails to round-trip via platform_value::Value (\"invalid type: map, expected an OutPoint\"). \
-                JSON round-trip works. Track for pass-2 fix queue."]
     fn value_round_trip_with_per_property_assertions() {
         let original = fixture();
         let value = original.to_object().expect("to_object");

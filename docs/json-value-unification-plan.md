@@ -686,13 +686,32 @@ Tracking real round-trip failures discovered while running the new test conventi
 
 | Type | Test | Failure | Severity |
 |---|---|---|---|
-| `AddressFundingFromAssetLockTransition` (V0) | `value_round_trip_with_per_property_assertions` | `from_object: ValueError(SerdeDeserializationError("invalid type: map, expected an OutPoint"))` — `OutPoint` inside `ChainAssetLockProof` cannot deserialize from `platform_value::Value::Map`. JSON round-trip works. | 🟠 platform_value path broken for OutPoint-bearing types |
+| ~~`AddressFundingFromAssetLockTransition` / `ChainAssetLockProof`~~ ✅ FIXED locally | ~~`value_round_trip_with_per_property_assertions`~~ | Upstream root cause in `dashcore`: the `serde_struct_human_string_impl!` macro (`dash/src/serde_utils.rs:361`) — used by `OutPoint` AND every `hash_newtype!`-generated type (`Txid`, `BlockHash`, etc.) — branches on `is_human_readable` with two completely disjoint visitors (HR-only `StringVisitor` vs non-HR `StructVisitor`). Through serde's `ContentDeserializer` (HR=true regardless of upstream), a struct-shaped value is dispatched to the HR `StringVisitor` → `deserialize_str` on `Content::Map` → `"invalid type: map, expected an OutPoint"`. Local fix: `outpoint_serde` wrapper module in `chain_asset_lock_proof.rs` with a unified visitor accepting `visit_str` + `visit_map` + `visit_seq`, plus a `TxidCompat` newtype handling the same bug one level deeper for `Txid` (which has the identical pattern from `hash_newtype!`). HR branch dispatches via `deserialize_any` (handles true-HR + ContentDeserializer); non-HR branch uses `deserialize_struct` / `deserialize_byte_buf` (bincode requires explicit shape hint, doesn't support `deserialize_any`). Marked with TODO to remove once upstream dashcore fix lands. **Upstream PR pending** — fix the macro in dashcore once and every hash_newtype type benefits. | ✅ local; upstream PR pending |
 | ~~`ExtendedBlockInfo` (V0)~~ ✅ FIXED | ~~`value_round_trip`~~ | Root cause: `crate::serialization::serde_bytes` (auto-injected for `[u8;N]` fields by `#[json_safe_fields]`) used `is_human_readable` to switch paths, but serde's `ContentDeserializer` (used for internally-tagged enums like `tag = "$formatVersion"`) reports HR=true even when wrapping bytes from a non-HR source. Fix: unified visitor accepts strings, bytes, byte_buf, and seq in both branches; HR branch dispatches via `deserialize_any` to handle both true HR (string) and ContentDeserializer-wrapped bytes. Also removed the redundant custom `signature_serializer` on `ExtendedBlockInfoV0::signature: [u8;96]` (json_safe_fields auto-injects the helper). | ✅ |
 | `DataContractCreateTransition`, `DataContractUpdateTransition` | `json_round_trip_with_per_property_assertions` | `document_schemas` lose sized integer types via JSON round-trip: `U32(63)` becomes `U64(63)`, `I32(0)` becomes `U64(0)`. `platform_value::Value` preserves sized integer variants; `serde_json::Value` has only one `Number` type, so the distinction is lost. Value round-trip works. | 🟠 Critical-1 manifestation; affects any DataContract embedded in a state transition |
 | ~~5 shielded transitions~~ ✅ FIXED | ~~`value_round_trip`~~ | Same root cause as ExtendedBlockInfo (above). The same `serde_bytes` / `serde_bytes_var` fix unblocked all 5: `ShieldTransition`, `UnshieldTransition`, `ShieldedTransferTransition`, `ShieldFromAssetLockTransition`, `ShieldedWithdrawalTransition`. | ✅ |
 | `ValidatorSet` (V0) | `json_round_trip` and `value_round_trip` | `BlsPublicKey<Bls12381G2Impl>::deserialize` requires a **borrowed** string (`&str`), but both `serde_json::Value` and `platform_value::Value` produce **owned** `String` when traversed. Both round-trips fail with `"invalid type: string ..., expected a borrowed string"`. Affects `Validator.public_key` and `ValidatorSetV0.threshold_public_key`. Upstream fix needed in `dashcore::blsful` Deserialize impl (accept owned strings via `visit_string` in addition to `visit_borrowed_str`). | 🟠 dashcore::blsful borrowed-string-only deserialize |
 
 The ✅ entries are resolved on this branch. The remaining 🟠 entries are tracked here for pass-3 fix work.
+
+### Common pattern: serde's `ContentDeserializer` HR-quirk
+
+Every fix in this batch shares the same root cause and follows the same shape:
+
+> serde's `ContentDeserializer` (used internally for any `#[serde(tag = "...")]` enum) **always reports `is_human_readable: true`** regardless of the upstream deserializer. Custom `Deserialize` impls that branch on `is_human_readable` and have non-overlapping visitors (HR expects string, non-HR expects bytes/struct) break when wrapped by such an enum: the HR branch is invoked on a buffered non-HR shape and fails.
+
+**Fix recipe** (used by `Bytes32`, `BinaryData`, `Identifier`, `serde_bytes`, `serde_bytes_var`, `outpoint_serde`, `TxidCompat`):
+
+1. Single visitor implementing **all** input shapes (`visit_str`, `visit_bytes`, `visit_byte_buf`, `visit_seq`, `visit_map` as relevant).
+2. HR branch: `deserialize_any(visitor)` — handles both true HR (serde_json string) and `ContentDeserializer`-wrapped bytes/struct.
+3. Non-HR branch: an explicit shape hint (`deserialize_byte_buf` / `deserialize_struct`) — required because bincode is non-self-describing and refuses `deserialize_any` (`Serde(AnyNotSupported)`).
+
+When adding a new custom-serde type that may end up inside a tagged enum, follow this template. Three places now document the quirk in-code: `rs-platform-value/src/types/{bytes_32, binary_data, identifier}.rs` (with explicit comments).
+
+### Upstream fixes pending
+
+- **dashcore `serde_struct_human_string_impl!` macro** — applies the unified visitor pattern at the macro source; benefits `OutPoint`, `Txid`, `BlockHash`, every `hash_newtype!` user. Once landed, remove the local `outpoint_serde` wrapper and the `serde(with = ...)` annotation on `ChainAssetLockProof::out_point`. Tracked via TODO comment in `chain_asset_lock_proof.rs`.
+- **dashcore `blsful::PublicKey::Deserialize`** — switch from `visit_borrowed_str` to `visit_string`/`visit_str` so `serde_json::Value` and `platform_value::Value` (which yield owned strings on traversal) round-trip cleanly. Unblocks `ValidatorSet` round-trip.
 
 ## 11. Lessons learned from pass 1 (2026-04-30)
 
