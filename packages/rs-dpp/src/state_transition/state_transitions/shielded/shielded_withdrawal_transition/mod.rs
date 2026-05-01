@@ -117,7 +117,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "BUG: [u8;N] fixed-array fields fail platform_value round-trip"]
     fn value_round_trip() {
         use crate::serialization::ValueConvertible;
         let original = fixture();

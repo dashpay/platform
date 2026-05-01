@@ -21,7 +21,6 @@ pub struct ExtendedBlockInfoV0 {
     /// The proposer pro_tx_hash
     pub proposer_pro_tx_hash: [u8; 32],
     /// Signature
-    #[serde(with = "signature_serializer")]
     pub signature: [u8; 96],
     /// Round
     pub round: u32,
@@ -133,28 +132,3 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfoV0 {
     }
 }
 
-mod signature_serializer {
-    use super::*;
-    use serde::de::Error;
-    use serde::{Deserializer, Serializer};
-
-    pub fn serialize<S>(signature: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_bytes(signature)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 96], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let buf: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        if buf.len() != 96 {
-            return Err(Error::invalid_length(buf.len(), &"array of length 96"));
-        }
-        let mut arr = [0u8; 96];
-        arr.copy_from_slice(&buf);
-        Ok(arr)
-    }
-}

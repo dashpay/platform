@@ -218,7 +218,6 @@ mod json_convertible_tests_extendedblockinfo {
     }
 
     #[test]
-    #[ignore = "BUG: signature [u8;96] with custom serializer fails to deserialize via platform_value (\"Invalid symbol 17, offset 0\"). JSON round-trip works. Track for pass-3 fix."]
     fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();

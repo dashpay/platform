@@ -14,7 +14,7 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use serde::de::{self, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serializer};
+use serde::{Deserializer, Serializer};
 use std::fmt;
 
 pub fn serialize<S: Serializer>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error> {
@@ -26,41 +26,53 @@ pub fn serialize<S: Serializer>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok,
 }
 
 pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
-    if deserializer.is_human_readable() {
-        let s = <String>::deserialize(deserializer)?;
-        BASE64_STANDARD.decode(&s).map_err(serde::de::Error::custom)
-    } else {
-        // Accept both byte-buffer formats (`serde_wasm_bindgen` Uint8Array →
-        // `visit_bytes` / `visit_byte_buf`) and length-prefixed sequences
-        // (bincode, `platform_value::Value::Array(u8)` → `visit_seq`). The
-        // default `<Vec<u8>>::deserialize` only covers the seq path.
-        struct BytesOrSeqVisitor;
+    // Accept all four input shapes — base64 string, byte buffer, byte slice,
+    // and sequence of u8 — regardless of the deserializer's `is_human_readable`
+    // flag. Required because serde's `ContentDeserializer` (used for internally
+    // tagged enums like `#[serde(tag = "$formatVersion")]`) always reports
+    // `is_human_readable: true`, so a value that started as bytes through a
+    // non-HR deserializer can arrive at this visitor through any path.
 
-        impl<'de> Visitor<'de> for BytesOrSeqVisitor {
-            type Value = Vec<u8>;
+    struct AnyShapeVisitor;
 
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("bytes or sequence of u8")
-            }
+    impl<'de> Visitor<'de> for AnyShapeVisitor {
+        type Value = Vec<u8>;
 
-            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
-                Ok(v.to_vec())
-            }
-
-            fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
-                Ok(v)
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0));
-                while let Some(b) = seq.next_element::<u8>()? {
-                    bytes.push(b);
-                }
-                Ok(bytes)
-            }
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("bytes, sequence of u8, or base64-encoded string")
         }
 
-        deserializer.deserialize_byte_buf(BytesOrSeqVisitor)
+        fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+            Ok(v.to_vec())
+        }
+
+        fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            Ok(v)
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            BASE64_STANDARD
+                .decode(v)
+                .map_err(|e| E::custom(format!("expected base64 for bytes: {}", e)))
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(b) = seq.next_element::<u8>()? {
+                bytes.push(b);
+            }
+            Ok(bytes)
+        }
+    }
+
+    if deserializer.is_human_readable() {
+        // `deserialize_any` covers true HR (serde_json string) AND
+        // ContentDeserializer (which reports HR but may wrap bytes from a
+        // non-HR source like platform_value).
+        deserializer.deserialize_any(AnyShapeVisitor)
+    } else {
+        // Non-HR (bincode, platform_value): explicit shape hint.
+        deserializer.deserialize_byte_buf(AnyShapeVisitor)
     }
 }
 

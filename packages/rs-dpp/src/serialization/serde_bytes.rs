@@ -19,7 +19,7 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use serde::de::{self, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serializer};
+use serde::{Deserializer, Serializer};
 use std::fmt;
 
 pub fn serialize<S: Serializer, const N: usize>(
@@ -36,51 +36,69 @@ pub fn serialize<S: Serializer, const N: usize>(
 pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
     deserializer: D,
 ) -> Result<[u8; N], D::Error> {
-    if deserializer.is_human_readable() {
-        let s = <String>::deserialize(deserializer)?;
-        let vec = BASE64_STANDARD
-            .decode(&s)
-            .map_err(serde::de::Error::custom)?;
-        vec.try_into().map_err(|v: Vec<u8>| {
-            serde::de::Error::custom(format!("expected {} bytes, got {}", N, v.len()))
-        })
-    } else {
-        // Accept both byte-buffer formats (`serde_wasm_bindgen` Uint8Array,
-        // `platform_value::Value::Bytes` → `visit_bytes` / `visit_byte_buf`)
-        // and length-prefixed sequences (bincode → `visit_seq`). Going through
-        // `<Vec<u8>>::deserialize` would only cover the seq path.
-        struct BytesOrSeqVisitor<const N: usize>;
+    // Accept all four input shapes — base64 string, byte buffer, byte slice,
+    // and sequence of u8 — regardless of the deserializer's `is_human_readable`
+    // flag. Required because serde's `ContentDeserializer` (used for internally
+    // tagged enums like `#[serde(tag = "$formatVersion")]`) always reports
+    // `is_human_readable: true`, so a value that started as bytes through a
+    // non-HR deserializer (platform_value, bincode) can arrive at this visitor
+    // through the string path and vice versa. Mirrors the pattern used by
+    // `platform_value::types::{bytes_32,binary_data,identifier}`.
 
-        impl<'de, const N: usize> Visitor<'de> for BytesOrSeqVisitor<N> {
-            type Value = [u8; N];
+    struct AnyShapeVisitor<const N: usize>;
 
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{} bytes (as a byte buffer or sequence of u8)", N)
-            }
+    impl<'de, const N: usize> Visitor<'de> for AnyShapeVisitor<N> {
+        type Value = [u8; N];
 
-            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
-                v.try_into()
-                    .map_err(|_| E::custom(format!("expected {} bytes, got {}", N, v.len())))
-            }
-
-            fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
-                let len = v.len();
-                v.try_into()
-                    .map_err(|_| E::custom(format!("expected {} bytes, got {}", N, len)))
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                let mut buf = Vec::with_capacity(N);
-                while let Some(b) = seq.next_element::<u8>()? {
-                    buf.push(b);
-                }
-                let len = buf.len();
-                buf.try_into()
-                    .map_err(|_| de::Error::custom(format!("expected {} bytes, got {}", N, len)))
-            }
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(
+                f,
+                "{} bytes (as a byte buffer, sequence of u8, or base64-encoded string)",
+                N
+            )
         }
 
-        deserializer.deserialize_byte_buf(BytesOrSeqVisitor::<N>)
+        fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+            v.try_into()
+                .map_err(|_| E::custom(format!("expected {} bytes, got {}", N, v.len())))
+        }
+
+        fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            let len = v.len();
+            v.try_into()
+                .map_err(|_| E::custom(format!("expected {} bytes, got {}", N, len)))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            let vec = BASE64_STANDARD
+                .decode(v)
+                .map_err(|e| E::custom(format!("expected base64-encoded {} bytes: {}", N, e)))?;
+            self.visit_byte_buf(vec)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut buf = Vec::with_capacity(N);
+            while let Some(b) = seq.next_element::<u8>()? {
+                buf.push(b);
+            }
+            let len = buf.len();
+            buf.try_into()
+                .map_err(|_| de::Error::custom(format!("expected {} bytes, got {}", N, len)))
+        }
+    }
+
+    if deserializer.is_human_readable() {
+        // `deserialize_any` covers both true human-readable deserializers
+        // (serde_json sees a string → `visit_str`) AND serde's
+        // `ContentDeserializer` (which falsely reports `is_human_readable=true`
+        // and may wrap `Content::ByteBuf` from a non-HR source like
+        // platform_value → dispatches to `visit_bytes`).
+        deserializer.deserialize_any(AnyShapeVisitor::<N>)
+    } else {
+        // Non-HR (bincode, platform_value): bincode is non-self-describing and
+        // requires an explicit shape hint; `deserialize_byte_buf` is what works
+        // for both bincode (length-prefixed bytes) and platform_value (Value::Bytes).
+        deserializer.deserialize_byte_buf(AnyShapeVisitor::<N>)
     }
 }
 

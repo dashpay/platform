@@ -126,7 +126,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "BUG: [u8;N] fixed-array fields fail platform_value round-trip (\"Invalid symbol 17\"). JSON works. Same as ExtendedBlockInfo signature bug."]
     fn value_round_trip() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
