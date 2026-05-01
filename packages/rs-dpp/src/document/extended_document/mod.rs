@@ -1,7 +1,5 @@
 mod accessors;
 mod fields;
-#[cfg(feature = "serde-conversion")]
-mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
 
@@ -27,7 +25,13 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned, From)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "$extendedFormatVersion")
+)]
 pub enum ExtendedDocument {
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(ExtendedDocumentV0),
 }
 
@@ -36,6 +40,86 @@ impl crate::serialization::JsonConvertible for ExtendedDocument {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for ExtendedDocument {}
+
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::document::extended_document::v0::ExtendedDocumentV0;
+    use crate::document::v0::DocumentV0;
+    use crate::document::Document;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_value::{Bytes32, Identifier};
+    use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> ExtendedDocument {
+        let pv = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, pv.protocol_version);
+        let data_contract = created.data_contract().clone();
+        let data_contract_id = data_contract.id();
+
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::new([0xa1; 32]),
+            owner_id: Identifier::new([0xb2; 32]),
+            properties: BTreeMap::new(),
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        ExtendedDocument::V0(ExtendedDocumentV0 {
+            document_type_name: "niceDocument".to_string(),
+            data_contract_id,
+            document,
+            data_contract,
+            metadata: None,
+            entropy: Bytes32::new([0xcc; 32]),
+            token_payment_info: None,
+        })
+    }
+
+    #[test]
+    fn json_round_trip() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+        let recovered = <ExtendedDocument as JsonConvertible>::from_json(json).expect("from_json");
+        // ExtendedDocument lacks PartialEq — match variant + assert key fields.
+        let ExtendedDocument::V0(orig_v0) = original;
+        let ExtendedDocument::V0(rec_v0) = recovered;
+        assert_eq!(orig_v0.document_type_name, rec_v0.document_type_name, "document_type_name");
+        assert_eq!(orig_v0.data_contract_id, rec_v0.data_contract_id, "data_contract_id");
+        assert_eq!(orig_v0.entropy, rec_v0.entropy, "entropy");
+        assert_eq!(orig_v0.token_payment_info, rec_v0.token_payment_info, "token_payment_info");
+    }
+
+    #[test]
+    #[ignore = "BUG: Bytes32::deserialize requires a base64 string unconditionally, but \
+                platform_value::to_value emits bytes (is_human_readable=false). The $entropy \
+                field hits this on round-trip through platform_value. Tracks the Critical-1 \
+                is_human_readable divergence in the json-value-unification plan; the JSON \
+                path works fine (see json_round_trip)."]
+    fn value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = ValueConvertible::to_object(&original).expect("to_object");
+        let recovered = <ExtendedDocument as ValueConvertible>::from_object(value).expect("from_object");
+        let ExtendedDocument::V0(orig_v0) = original;
+        let ExtendedDocument::V0(rec_v0) = recovered;
+        assert_eq!(orig_v0.document_type_name, rec_v0.document_type_name, "document_type_name");
+        assert_eq!(orig_v0.data_contract_id, rec_v0.data_contract_id, "data_contract_id");
+        assert_eq!(orig_v0.entropy, rec_v0.entropy, "entropy");
+    }
+}
 
 impl ExtendedDocument {
     #[cfg(feature = "json-conversion")]
@@ -550,12 +634,28 @@ mod test {
             dpns_contract,
             LATEST_PLATFORM_VERSION,
         )?;
-        let string = serde_json::to_string(&document)?;
+        let value: JsonValue = serde_json::to_value(&document)?;
 
         assert_eq!(
-            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$formatVersion\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"identity\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null,\"$transferredAt\":null,\"$createdAtBlockHeight\":null,\"$updatedAtBlockHeight\":null,\"$transferredAtBlockHeight\":null,\"$createdAtCoreBlockHeight\":null,\"$updatedAtCoreBlockHeight\":null,\"$transferredAtCoreBlockHeight\":null,\"$creatorId\":null}}",
-            string
+            value["$extendedFormatVersion"],
+            JsonValue::String("0".to_string()),
+            "outer enum version is its own key, distinct from the inner Document's $formatVersion",
         );
+        assert_eq!(
+            value["$formatVersion"],
+            JsonValue::String("0".to_string()),
+            "inner Document's version surfaces at top level via serde(flatten)",
+        );
+        assert_eq!(value["$type"], JsonValue::String("domain".to_string()));
+        assert_eq!(
+            value["$dataContractId"],
+            JsonValue::String("566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy".to_string())
+        );
+        assert_eq!(
+            value["$id"],
+            JsonValue::String("4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E".to_string())
+        );
+        assert_eq!(value["label"], JsonValue::String("user-9999".to_string()));
 
         Ok(())
     }

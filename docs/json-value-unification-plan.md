@@ -145,14 +145,22 @@ These are the bug / risk findings that must be addressed before or during the mi
 
 **Plan impact**: must be fixed before any migration that changes which conversion path is used, or correctness regressions will appear. This is its own pre-requisite work item.
 
-#### Critical-3: `ExtendedDocument` is non-round-trippable today
+#### Critical-3: `ExtendedDocument` is non-round-trippable today  ✅ RESOLVED
 
-`document/extended_document/serde_serialize.rs`:
-- Serialize writes `"version"` (line 19).
-- Deserialize reads `"$version"` (line 51).
-- Deserialize also requires a `data_contract` field that Serialize never writes (line 73).
+**Was**: `document/extended_document/serde_serialize.rs`:
+- Serialize wrote `"version"` (line 19).
+- Deserialize read `"$version"` (line 51).
+- Deserialize also required a `data_contract` field that Serialize never wrote (line 73).
 
-**Implication**: `serde_json::from_value(serde_json::to_value(&doc))` always fails today. Whatever consumes ExtendedDocument JSON either has its own bespoke path or is already broken. Therefore **fixing the manual impl is not a wire-compat risk** — there's no working round-trip to preserve.
+**Fix** (Apr 2026, this branch):
+- Deleted `serde_serialize.rs`.
+- Outer `ExtendedDocument` enum uses `#[serde(tag = "$extendedFormatVersion")]` — its own explicit version key, distinct from the inner Document's `$formatVersion`. Two version dimensions, two keys; both writeable, both readable, no collision.
+- `ExtendedDocumentV0` keeps `#[serde(flatten)] document: Document`. The flattened Document still emits its own `$formatVersion` at top level (Document has `#[serde(tag = "$formatVersion")]`), so the wire shape carries both `$extendedFormatVersion` and `$formatVersion`.
+- Why two keys: ExtendedDocument is an envelope wrapping a `Document` plus the full `DataContract` plus `$entropy`/`$metadata`/`$tokenPaymentInfo`. The envelope can evolve independently of the inner Document — bumping ExtendedDocument to V1 (e.g. new envelope field) shouldn't force a Document V1 it doesn't otherwise need. Explicit separate version keys preserve that independence and follow the dpp convention "every versioned enum gets its own version property in JSON."
+- Why we initially tried `tag = "$formatVersion"` and rejected it: serde emits both the outer enum tag AND the flattened inner Document tag at the same JSON level; same key name → duplicate keys in one object → JSON undefined behavior, deserialize fails. Different key names sidesteps this entirely.
+- Round-trip tests added in `document/extended_document/mod.rs::json_convertible_tests` (json + value paths).
+- Existing `test_json_serialize` updated from magic-string to per-field assertions (the new derived shape includes the full data_contract, too brittle for a literal match) and asserts both `$extendedFormatVersion: "0"` and `$formatVersion: "0"` are present at top level.
+- `value_round_trip` is `#[ignore]` pending Critical-1 — `Bytes32::deserialize` (the `$entropy` field type) requires a base64 string unconditionally, but `platform_value::to_value` emits bytes when `is_human_readable=false`. The JSON path round-trips clean; only the `Value` path is blocked by this existing platform_value/Bytes32 divergence.
 
 #### Critical-4: `DataContract` serde is impure (PlatformVersion::get_current() coupling)
 
@@ -217,7 +225,7 @@ Merged from both passes (broad agent labels A1-A17 + deep agent labels A1-A16 re
 
 | Type | Location | What differs from `derive(Serialize)` | Decision |
 |---|---|---|---|
-| C1: `ExtendedDocument` | `document/extended_document/serde_serialize.rs:10,94` | **BUG**: writes `version`, reads `$version`; reader requires `data_contract` field that writer never emits. **Non-round-trippable today.** | **REFACTOR** — pick `#[serde(tag="$version")]` enum derive; round-trip test mandatory. No wire-compat to preserve (per Critical-3). |
+| C1: `ExtendedDocument` | `document/extended_document/mod.rs` (was `…/serde_serialize.rs`) | ✅ FIXED (Apr 2026). Outer enum: `#[serde(tag = "$extendedFormatVersion")]`. Inner V0 keeps `#[serde(flatten)] document: Document`; Document's own `#[serde(tag = "$formatVersion")]` surfaces alongside the outer's. Two distinct version keys, no collision. Round-trip tests added. | **DONE**. |
 | C2: `AssetLockProof` (Deserialize only) | `identity/state_transition/asset_lock_proof/mod.rs:57-85` | Goes through `RawAssetLockProof`. No matching `Serialize`. Two large commented-out previous attempts at lines 99-133. `to_raw_object` produces *untagged* Value, breaking round-trip with Deserialize that expects tag. | **REFACTOR** — pick tagged-enum representation (matches the §6 escape-hatch pattern); add round-trip test; **KEEP** as documented exception once fixed. |
 | C3: `InstantAssetLockProof` | `…/instant/instant_asset_lock_proof.rs:47-76` | Substitutes via `RawInstantLockProof` (consensus-encoded `instant_lock`/`transaction` bytes). Different *shape* from in-memory representation — wire format. | **KEEP-AS-EXCEPTION** — load-bearing wire format. |
 | C4: `DataContract` | `data_contract/conversion/serde/mod.rs:9-44` | Routes via `DataContractInSerializationFormat::try_from_platform_versioned(get_current())`. Always validates on Deserialize. Per Critical-4: thread-state-dependent. | **KEEP-AS-EXCEPTION** — version-dispatch pattern. Document. |
@@ -278,7 +286,7 @@ For the same type, going through different mechanisms produces different JSON/Va
 
 | # | Type | Mechanism A | Mechanism B | Difference | Severity |
 |---|---|---|---|---|---|
-| B1 | `ExtendedDocument` | manual `Serialize` (writes `version`) | manual `Deserialize` (reads `$version`) | **Non-round-trippable** (Critical-3) | 🔴 broken |
+| B1 | `ExtendedDocument` | manual `Serialize` (writes `version`) | manual `Deserialize` (reads `$version`) | ~~**Non-round-trippable** (Critical-3)~~ ✅ FIXED — outer enum has `tag = "$extendedFormatVersion"`; inner Document's `$formatVersion` coexists at top level via flatten | 🟢 round-trippable |
 | B2 | `Identifier`, `Bytes*`, `U128/I128` | `try_into` (canonical) | `try_into_validating_json` | bs58-string vs byte-array; string vs number; etc. | 🟠 used for schema validation |
 | B3 | Any `array<uint, len ≥ 10, all ≤ 255>` | round-trip via `from_json` | semantic round-trip | Silently coerced to `Bytes`; round-trip back becomes base64 string | 🔴 silent type confusion (Critical-2) |
 | B4 | `IdentityPublicKey::disabledAt: null` | `to_cleaned_object` | canonical `to_object` | Field present (null) vs absent | 🟠 hash-divergent |
