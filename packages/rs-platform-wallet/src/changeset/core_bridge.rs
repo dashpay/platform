@@ -214,6 +214,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     );
     let is_instant = matches!(record.context, TransactionContext::InstantSend(_));
     let is_coinbase = record.transaction.is_coin_base();
+    // We own at least one input iff the wallet recorded any input details
+    // (those entries are keyed to inputs that spent our outpoints).
+    let owns_any_input = !record.input_details.is_empty();
 
     record
         .output_details
@@ -228,6 +231,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 .get(detail.index as usize)?
                 .clone();
             let address = detail.address.clone()?;
+            // Mirror key-wallet's "trusted change" rule: change output of a
+            // transaction we authored (so it's our funds returning).
+            let is_trusted = matches!(detail.role, OutputRole::Change) && owns_any_input;
             Some(Utxo {
                 outpoint: OutPoint {
                     txid: record.txid,
@@ -240,6 +246,7 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 is_confirmed,
                 is_instantlocked: is_instant,
                 is_locked: false,
+                is_trusted,
             })
         })
         .collect()
@@ -275,6 +282,7 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 is_confirmed: false,
                 is_instantlocked: false,
                 is_locked: false,
+                is_trusted: false,
             })
         })
         .collect()
