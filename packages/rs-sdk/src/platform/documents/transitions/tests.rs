@@ -5,14 +5,14 @@ use super::replace::DocumentReplaceTransitionBuilder;
 use super::set_price::DocumentSetPriceTransitionBuilder;
 use super::transfer::DocumentTransferTransitionBuilder;
 use crate::platform::test_helpers::{
-    new_mock_sdk_with_contract_nonce, test_data_contract, test_identity_public_key,
-    validate_transition_like_builder, TestSigner, INVALID_NONCE, TEST_DOCUMENT_TYPE_NAME,
+    new_mock_sdk_with_contract_nonce, test_data_contract, test_identity_public_key, TestSigner,
+    TEST_DOCUMENT_TYPE_NAME,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::{Document, DocumentV0};
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::prelude::Identifier;
-use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionLike;
 use std::sync::Arc;
 
 fn test_document(owner_id: Identifier) -> Document {
@@ -32,163 +32,6 @@ fn test_document(owner_id: Identifier) -> Document {
         transferred_at_core_block_height: None,
         creator_id: None,
     })
-}
-
-pub(super) fn assert_document_create_validate_base_structure_error() {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
-    let owner_id = Identifier::random();
-    let document = test_document(owner_id);
-    let document_type = data_contract
-        .document_type_for_name(TEST_DOCUMENT_TYPE_NAME)
-        .expect("expected test document type");
-    let transition = BatchTransition::new_document_creation_transition_from_document(
-        document,
-        document_type,
-        [7; 32],
-        &test_identity_public_key(),
-        INVALID_NONCE,
-        0,
-        None,
-        &TestSigner,
-        platform_version,
-        None,
-    )
-    .expect("transition should build");
-
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
-}
-
-pub(super) fn assert_document_delete_validate_base_structure_error() {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
-    let owner_id = Identifier::random();
-    let document = test_document(owner_id);
-    let document_type = data_contract
-        .document_type_for_name(TEST_DOCUMENT_TYPE_NAME)
-        .expect("expected test document type");
-    let transition = BatchTransition::new_document_deletion_transition_from_document(
-        document,
-        document_type,
-        &test_identity_public_key(),
-        INVALID_NONCE,
-        0,
-        None,
-        &TestSigner,
-        platform_version,
-        None,
-    )
-    .expect("transition should build");
-
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
-}
-
-pub(super) fn assert_document_purchase_validate_base_structure_error() {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
-    let owner_id = Identifier::random();
-    let document = test_document(owner_id);
-    let purchaser_id = Identifier::random();
-    let document_type = data_contract
-        .document_type_for_name(TEST_DOCUMENT_TYPE_NAME)
-        .expect("expected test document type");
-    let transition = BatchTransition::new_document_purchase_transition_from_document(
-        document,
-        document_type,
-        purchaser_id,
-        100,
-        &test_identity_public_key(),
-        INVALID_NONCE,
-        0,
-        None,
-        &TestSigner,
-        platform_version,
-        None,
-    )
-    .expect("transition should build");
-
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
-}
-
-pub(super) fn assert_document_replace_validate_base_structure_error() {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
-    let owner_id = Identifier::random();
-    let document = test_document(owner_id);
-    let document_type = data_contract
-        .document_type_for_name(TEST_DOCUMENT_TYPE_NAME)
-        .expect("expected test document type");
-    let transition = BatchTransition::new_document_replacement_transition_from_document(
-        document,
-        document_type,
-        &test_identity_public_key(),
-        INVALID_NONCE,
-        0,
-        None,
-        &TestSigner,
-        platform_version,
-        None,
-    )
-    .expect("transition should build");
-
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
-}
-
-pub(super) fn assert_document_set_price_validate_base_structure_error() {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
-    let owner_id = Identifier::random();
-    let document = test_document(owner_id);
-    let document_type = data_contract
-        .document_type_for_name(TEST_DOCUMENT_TYPE_NAME)
-        .expect("expected test document type");
-    let transition = BatchTransition::new_document_update_price_transition_from_document(
-        document,
-        document_type,
-        200,
-        &test_identity_public_key(),
-        INVALID_NONCE,
-        0,
-        None,
-        &TestSigner,
-        platform_version,
-        None,
-    )
-    .expect("transition should build");
-
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
-}
-
-pub(super) fn assert_document_transfer_validate_base_structure_error() {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
-    let owner_id = Identifier::random();
-    let document = test_document(owner_id);
-    let recipient_id = Identifier::random();
-    let document_type = data_contract
-        .document_type_for_name(TEST_DOCUMENT_TYPE_NAME)
-        .expect("expected test document type");
-    let transition = BatchTransition::new_document_transfer_transition_from_document(
-        document,
-        document_type,
-        recipient_id,
-        &test_identity_public_key(),
-        INVALID_NONCE,
-        0,
-        None,
-        &TestSigner,
-        platform_version,
-        None,
-    )
-    .expect("transition should build");
-
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
 }
 
 #[tokio::test]
@@ -294,6 +137,54 @@ async fn document_create_builder_sign_succeeds_for_valid_input() {
         st.signature().is_some_and(|sig| !sig.is_empty()),
         "transition should have a non-empty signature"
     );
+}
+
+#[tokio::test]
+async fn document_create_builder_sign_replaces_incorrect_document_id() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let mut document = test_document(owner_id);
+    let entropy = [7; 32];
+    let expected_id = Document::generate_document_id_v0(
+        data_contract.id_ref(),
+        &owner_id,
+        TEST_DOCUMENT_TYPE_NAME,
+        entropy.as_slice(),
+    );
+
+    document.set_id(Identifier::random());
+    assert_ne!(document.id(), expected_id);
+
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentCreateTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        entropy,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "builder should normalize document id before signing; got error: {:?}",
+        result.err()
+    );
+
+    let state_transition = result.unwrap();
+    let StateTransition::Batch(batch_transition) = state_transition else {
+        panic!("document create builder should return a batch transition");
+    };
+
+    assert_eq!(batch_transition.modified_data_ids(), vec![expected_id]);
 }
 
 #[tokio::test]

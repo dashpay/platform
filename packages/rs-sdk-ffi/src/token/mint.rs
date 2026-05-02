@@ -274,7 +274,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "FFI TOKEN MINT: failed to mint token");
-                FFIError::InternalError(format!("Failed to mint token and wait: {}", e))
+                FFIError::SDKError(e)
             })?;
         tracing::info!("FFI TOKEN MINT: token mint succeeded");
         Ok(result)

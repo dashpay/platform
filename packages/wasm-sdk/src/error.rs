@@ -1,7 +1,10 @@
+use dash_sdk::dpp::consensus::{codes::ErrorWithCode, ConsensusError};
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
+use js_sys::{Array, Object, Reflect};
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 use wasm_dpp2::error::WasmDppError;
 
 /// Structured error surfaced to JS consumers
@@ -51,9 +54,19 @@ pub struct WasmSdkError {
     code: i32,
     /// Indicates if the operation can be retried safely.
     is_retriable: bool,
+    /// Structured carrier for protocol consensus errors.
+    consensus_errors: Vec<WasmConsensusError>,
 }
 
 // wasm-bindgen getters defined below in the second impl block
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct WasmConsensusError {
+    kind: String,
+    name: String,
+    message: String,
+    code: u32,
+}
 
 impl WasmSdkError {
     fn new<M: Into<String>>(
@@ -67,6 +80,29 @@ impl WasmSdkError {
             message: message.into(),
             code: code.unwrap_or(-1),
             is_retriable,
+            consensus_errors: Vec::new(),
+        }
+    }
+
+    fn from_protocol_error(err: ProtocolError, is_retriable: bool) -> Self {
+        let message = err.to_string();
+        let consensus_errors = match &err {
+            ProtocolError::ConsensusError(error) => {
+                vec![WasmConsensusError::from_consensus_error(error.as_ref())]
+            }
+            ProtocolError::ConsensusErrors(errors) => errors
+                .iter()
+                .map(WasmConsensusError::from_consensus_error)
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        Self {
+            kind: WasmSdkErrorKind::Protocol,
+            message,
+            code: -1,
+            is_retriable,
+            consensus_errors,
         }
     }
 
@@ -101,7 +137,7 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
+            Protocol(e) => Self::from_protocol_error(e, retriable),
             Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
@@ -202,7 +238,7 @@ impl From<SdkError> for WasmSdkError {
 }
 impl From<ProtocolError> for WasmSdkError {
     fn from(err: ProtocolError) -> Self {
-        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), None, false)
+        Self::from_protocol_error(err, false)
     }
 }
 
@@ -229,6 +265,51 @@ impl From<WasmDppError> for WasmSdkError {
             WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
         };
         Self::new(kind, err.to_string(), None, false)
+    }
+}
+
+impl WasmConsensusError {
+    fn from_consensus_error(err: &ConsensusError) -> Self {
+        let name = match err {
+            ConsensusError::DefaultError => "DefaultError",
+            ConsensusError::BasicError(_) => "BasicError",
+            ConsensusError::StateError(_) => "StateError",
+            ConsensusError::SignatureError(_) => "SignatureError",
+            ConsensusError::FeeError(_) => "FeeError",
+        }
+        .to_string();
+
+        Self {
+            kind: name.clone(),
+            name,
+            message: err.to_string(),
+            code: err.code(),
+        }
+    }
+
+    fn to_js_value(&self) -> JsValue {
+        let object = Object::new();
+        let _ = Reflect::set(
+            &object,
+            &JsValue::from_str("kind"),
+            &JsValue::from_str(&self.kind),
+        );
+        let _ = Reflect::set(
+            &object,
+            &JsValue::from_str("name"),
+            &JsValue::from_str(&self.name),
+        );
+        let _ = Reflect::set(
+            &object,
+            &JsValue::from_str("message"),
+            &JsValue::from_str(&self.message),
+        );
+        let _ = Reflect::set(
+            &object,
+            &JsValue::from_str("code"),
+            &JsValue::from_f64(self.code as f64),
+        );
+        object.into()
     }
 }
 
@@ -292,5 +373,78 @@ impl WasmSdkError {
     #[wasm_bindgen(getter = "isRetriable")]
     pub fn is_retriable(&self) -> bool {
         self.is_retriable
+    }
+
+    /// Structured protocol consensus errors when the originating protocol error
+    /// was `ProtocolError::ConsensusError` or `ProtocolError::ConsensusErrors`.
+    #[wasm_bindgen(
+        getter = "consensusErrors",
+        unchecked_return_type = "Array<{ kind: string; name: string; message: string; code: number }> | undefined"
+    )]
+    pub fn consensus_errors(&self) -> JsValue {
+        if self.consensus_errors.is_empty() {
+            return JsValue::UNDEFINED;
+        }
+
+        Array::from_iter(
+            self.consensus_errors
+                .iter()
+                .map(WasmConsensusError::to_js_value),
+        )
+        .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::consensus::basic::document::DocumentTransitionsAreAbsentError;
+
+    #[test]
+    fn protocol_consensus_errors_plural_are_preserved_structurally() {
+        let error = WasmSdkError::from(ProtocolError::ConsensusErrors(vec![
+            DocumentTransitionsAreAbsentError::new().into(),
+            ConsensusError::DefaultError,
+        ]));
+
+        assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
+        assert!(!error.is_retriable);
+        assert_eq!(error.consensus_errors.len(), 2);
+        assert_eq!(error.consensus_errors[0].name, "BasicError");
+        assert_eq!(
+            error.consensus_errors[0].message,
+            DocumentTransitionsAreAbsentError::new().to_string()
+        );
+        assert_eq!(error.consensus_errors[1].name, "DefaultError");
+        assert_eq!(error.consensus_errors[1].code, 1);
+    }
+
+    #[test]
+    fn protocol_consensus_errors_singular_is_preserved_structurally() {
+        let consensus_error: ConsensusError = DocumentTransitionsAreAbsentError::new().into();
+        let expected_message = consensus_error.to_string();
+        let expected_code = consensus_error.code();
+        let error = WasmSdkError::from(ProtocolError::ConsensusError(Box::new(consensus_error)));
+
+        assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
+        assert!(!error.is_retriable);
+        assert_eq!(error.consensus_errors.len(), 1);
+        assert_eq!(error.consensus_errors[0].name, "BasicError");
+        assert_eq!(error.consensus_errors[0].message, expected_message);
+        assert_eq!(error.consensus_errors[0].code, expected_code);
+    }
+
+    #[test]
+    fn sdk_protocol_errors_use_protocol_mapping() {
+        let sdk_error = SdkError::Protocol(ProtocolError::ConsensusErrors(vec![
+            ConsensusError::DefaultError,
+            ConsensusError::DefaultError,
+        ]));
+        let retriable = sdk_error.can_retry();
+        let error = WasmSdkError::from(sdk_error);
+
+        assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
+        assert_eq!(error.is_retriable, retriable);
+        assert_eq!(error.consensus_errors.len(), 2);
     }
 }

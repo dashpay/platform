@@ -37,8 +37,9 @@ use crate::state_transition::StateTransitionOwned;
 
 impl BatchTransition {
     #[inline(always)]
-    pub(super) fn validate_base_structure_v0(
+    fn validate_base_structure_v0_internal(
         &self,
+        accumulate_token_structure_errors: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         if self.transitions_are_empty() {
@@ -94,6 +95,9 @@ impl BatchTransition {
         let mut result = SimpleConsensusValidationResult::default();
 
         for transitions in document_transitions_by_contracts.values() {
+            // Keep the document branch batch-level only here. Transition-local
+            // document checks either require contract/state context or are
+            // reserved for constructor-only pre-sign validation.
             for transition in transitions {
                 // We need to make sure that the identity contract nonce is within the allowed bounds
                 // This means that it is stored on 40 bits
@@ -183,7 +187,11 @@ impl BatchTransition {
             };
 
             if !consensus_result.is_valid() {
-                return Ok(consensus_result);
+                if accumulate_token_structure_errors {
+                    result.merge(consensus_result);
+                } else {
+                    return Ok(consensus_result);
+                }
             }
 
             // We need to verify that the action id given matches the expected action id
@@ -221,57 +229,153 @@ impl BatchTransition {
 
         Ok(result)
     }
+
+    #[inline(always)]
+    pub(super) fn validate_base_structure_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.validate_base_structure_v0_internal(false, platform_version)
+    }
+
+    #[cfg(any(test, feature = "state-transition-signing"))]
+    #[inline(always)]
+    pub(super) fn validate_base_structure_pre_sign_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.validate_base_structure_v0_internal(true, platform_version)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::consensus::ConsensusError;
+    use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
+    use crate::document::Document;
+    use crate::state_transition::batch_transition::batched_transition::token_burn_transition::v0::TokenBurnTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::token_burn_transition::TokenBurnTransition;
+    use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
     use crate::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
     use crate::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransition;
+    use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::DocumentPurchaseTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransition;
+    use crate::state_transition::batch_transition::batched_transition::document_replace_transition::v0::DocumentReplaceTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransition;
+    use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransition;
+    use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::DocumentUpdatePriceTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransition;
     use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
     use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+    use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
     use crate::state_transition::batch_transition::{
         BatchTransition, BatchTransitionV0, BatchTransitionV1,
     };
     use platform_value::BinaryData;
     use std::collections::BTreeMap;
 
-    fn make_base(nonce: u64, type_name: &str) -> DocumentBaseTransition {
+    fn owner_id_v0() -> Identifier {
+        Identifier::new([0x01; 32])
+    }
+
+    fn owner_id_v1() -> Identifier {
+        Identifier::new([0x02; 32])
+    }
+
+    fn make_base(id: Identifier, nonce: u64, type_name: &str) -> DocumentBaseTransition {
         DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
-            id: Identifier::new([1u8; 32]),
+            id,
             identity_contract_nonce: nonce,
             document_type_name: type_name.to_string(),
             data_contract_id: Identifier::new([0xAA; 32]),
         })
     }
 
-    fn make_create(nonce: u64) -> DocumentTransition {
+    fn make_create(owner_id: Identifier, nonce: u64) -> DocumentTransition {
+        let data_contract_id = Identifier::new([0xAA; 32]);
+        let document_type_name = "test_doc".to_string();
+        let entropy = [0u8; 32];
+        let id = Document::generate_document_id_v0(
+            &data_contract_id,
+            &owner_id,
+            &document_type_name,
+            &entropy,
+        );
+
         DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
-            base: make_base(nonce, "test_doc"),
-            entropy: [0u8; 32],
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id,
+                identity_contract_nonce: nonce,
+                document_type_name,
+                data_contract_id,
+            }),
+            entropy,
             data: BTreeMap::new(),
             prefunded_voting_balance: None,
         }))
     }
 
+    fn make_invalid_create(owner_id: Identifier, nonce: u64) -> DocumentTransition {
+        let mut transition = make_create(owner_id, nonce);
+        transition.base_mut().set_id(Identifier::new([9u8; 32]));
+        transition
+    }
+
     fn make_delete(nonce: u64, id_byte: u8) -> DocumentTransition {
         DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
-            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
-                id: Identifier::new([id_byte; 32]),
-                identity_contract_nonce: nonce,
-                document_type_name: "test_doc".to_string(),
-                data_contract_id: Identifier::new([0xAA; 32]),
-            }),
+            base: make_base(Identifier::new([id_byte; 32]), nonce, "test_doc"),
         }))
+    }
+
+    fn make_replace(nonce: u64, id_byte: u8) -> DocumentTransition {
+        DocumentTransition::Replace(DocumentReplaceTransition::V0(DocumentReplaceTransitionV0 {
+            base: make_base(Identifier::new([id_byte; 32]), nonce, "test_doc"),
+            revision: 1,
+            data: BTreeMap::new(),
+        }))
+    }
+
+    fn make_transfer(nonce: u64, id_byte: u8) -> DocumentTransition {
+        DocumentTransition::Transfer(DocumentTransferTransition::V0(
+            DocumentTransferTransitionV0 {
+                base: make_base(Identifier::new([id_byte; 32]), nonce, "test_doc"),
+                revision: 1,
+                recipient_owner_id: Identifier::new([0xBB; 32]),
+            },
+        ))
+    }
+
+    fn make_purchase(nonce: u64, id_byte: u8) -> DocumentTransition {
+        DocumentTransition::Purchase(DocumentPurchaseTransition::V0(
+            DocumentPurchaseTransitionV0 {
+                base: make_base(Identifier::new([id_byte; 32]), nonce, "test_doc"),
+                revision: 1,
+                price: 100,
+            },
+        ))
+    }
+
+    fn make_update_price(nonce: u64, id_byte: u8) -> DocumentTransition {
+        DocumentTransition::UpdatePrice(DocumentUpdatePriceTransition::V0(
+            DocumentUpdatePriceTransitionV0 {
+                base: make_base(Identifier::new([id_byte; 32]), nonce, "test_doc"),
+                revision: 1,
+                price: 200,
+            },
+        ))
     }
 
     fn make_batch_v0(transitions: Vec<DocumentTransition>) -> BatchTransition {
         BatchTransition::V0(BatchTransitionV0 {
-            owner_id: Identifier::new([0x01; 32]),
+            owner_id: owner_id_v0(),
             transitions,
             user_fee_increase: 0,
             signature_public_key_id: 0,
@@ -281,8 +385,50 @@ mod tests {
 
     fn make_batch_v1_empty() -> BatchTransition {
         BatchTransition::V1(BatchTransitionV1 {
-            owner_id: Identifier::new([0x02; 32]),
+            owner_id: owner_id_v1(),
             transitions: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        })
+    }
+
+    fn make_token_base(nonce: u64) -> TokenBaseTransition {
+        let data_contract_id = Identifier::new([0xBB; 32]);
+        let token_contract_position = 0;
+        let token_id = TokenBaseTransitionV0 {
+            identity_contract_nonce: nonce,
+            token_contract_position,
+            data_contract_id,
+            token_id: Identifier::default(),
+            using_group_info: None,
+        }
+        .calculate_token_id();
+
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: nonce,
+            token_contract_position,
+            data_contract_id,
+            token_id,
+            using_group_info: None,
+        })
+    }
+
+    fn make_invalid_token_burn(nonce: u64) -> TokenTransition {
+        TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_token_base(nonce),
+            burn_amount: MAX_DISTRIBUTION_PARAM + 1,
+            public_note: None,
+        }))
+    }
+
+    fn make_token_batch_v1(transitions: Vec<TokenTransition>) -> BatchTransition {
+        BatchTransition::V1(BatchTransitionV1 {
+            owner_id: owner_id_v1(),
+            transitions: transitions
+                .into_iter()
+                .map(BatchedTransition::Token)
+                .collect(),
             user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: BinaryData::default(),
@@ -336,11 +482,103 @@ mod tests {
     #[test]
     fn validate_base_structure_v0_passes_with_single_valid_transition() {
         let pv = PlatformVersion::latest();
-        let batch = make_batch_v0(vec![make_create(1)]);
+        let batch = make_batch_v0(vec![make_create(owner_id_v0(), 1)]);
         let result = batch
             .validate_base_structure_v0(pv)
             .expect("no protocol err");
         assert!(result.is_valid(), "expected valid, got {:?}", result.errors);
+    }
+
+    #[test]
+    fn validate_base_structure_v0_skips_invalid_create_document_id() {
+        let pv = PlatformVersion::latest();
+        let batch = make_batch_v0(vec![make_invalid_create(owner_id_v0(), 1)]);
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+        assert!(
+            result.is_valid(),
+            "server-side base structure should skip create-id validation, got {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validate_base_structure_v0_reports_batch_level_errors_only_for_invalid_create() {
+        let pv = PlatformVersion::latest();
+        let bad_nonce: u64 = u64::MAX;
+        let batch = make_batch_v0(vec![make_invalid_create(owner_id_v0(), bad_nonce)]);
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+
+        assert!(!result.is_valid());
+        assert_eq!(result.errors.len(), 1, "expected batch-level errors only");
+        assert!(result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(_))
+        )));
+    }
+
+    #[test]
+    fn validate_base_structure_pre_sign_returns_all_accumulated_consensus_errors() {
+        let pv = PlatformVersion::latest();
+        let bad_nonce: u64 = u64::MAX;
+        let batch = make_batch_v0(vec![make_invalid_create(owner_id_v0(), bad_nonce)]);
+
+        match batch.validate_base_structure_pre_sign(pv) {
+            Err(ProtocolError::ConsensusErrors(errors)) => {
+                assert_eq!(errors.len(), 2, "expected all accumulated errors");
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::InvalidDocumentTransitionIdError(_))
+                )));
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(_))
+                )));
+            }
+            other => panic!("expected ProtocolError::ConsensusErrors, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn validate_base_structure_pre_sign_accumulates_token_structure_and_nonce_errors() {
+        let pv = PlatformVersion::latest();
+        let bad_nonce: u64 = u64::MAX;
+        let batch = make_token_batch_v1(vec![make_invalid_token_burn(bad_nonce)]);
+
+        match batch.validate_base_structure_pre_sign(pv) {
+            Err(ProtocolError::ConsensusErrors(errors)) => {
+                assert_eq!(errors.len(), 2, "expected all accumulated errors");
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(_))
+                )));
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_))
+                )));
+            }
+            other => panic!("expected ProtocolError::ConsensusErrors, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn validate_base_structure_v0_keeps_token_structure_early_return_behavior() {
+        let pv = PlatformVersion::latest();
+        let bad_nonce: u64 = u64::MAX;
+        let batch = make_token_batch_v1(vec![make_invalid_token_burn(bad_nonce)]);
+
+        let result = batch
+            .validate_base_structure_v0(pv)
+            .expect("no protocol err");
+
+        assert_eq!(result.errors.len(), 1, "expected only nested token error");
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_))
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -414,8 +652,8 @@ mod tests {
     fn validate_base_structure_v0_passes_for_v1_with_documents_only() {
         let pv = PlatformVersion::latest();
         let batch = BatchTransition::V1(BatchTransitionV1 {
-            owner_id: Identifier::new([0x02; 32]),
-            transitions: vec![BatchedTransition::Document(make_create(1))],
+            owner_id: owner_id_v1(),
+            transitions: vec![BatchedTransition::Document(make_create(owner_id_v1(), 1))],
             user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: BinaryData::default(),
@@ -424,5 +662,23 @@ mod tests {
             .validate_base_structure_v0(pv)
             .expect("no protocol err");
         assert!(result.is_valid(), "expected valid, got {:?}", result.errors);
+    }
+
+    #[test]
+    fn validate_base_structure_v0_passes_for_non_create_document_variants() {
+        let pv = PlatformVersion::latest();
+        for transition in [
+            make_delete(1, 1),
+            make_replace(2, 2),
+            make_transfer(3, 3),
+            make_purchase(4, 4),
+            make_update_price(5, 5),
+        ] {
+            let batch = make_batch_v0(vec![transition]);
+            let result = batch
+                .validate_base_structure_v0(pv)
+                .expect("no protocol err");
+            assert!(result.is_valid(), "expected valid, got {:?}", result.errors);
+        }
     }
 }

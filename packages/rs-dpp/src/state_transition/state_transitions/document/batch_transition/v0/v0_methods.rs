@@ -122,17 +122,15 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        let required_security_level = document_type.security_level_requirement();
-        state_transition
-            .sign_external_with_options(
+        documents_batch_transition
+            .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(required_security_level)),
-                resolved_options.signing_options,
+                Some(document_type.security_level_requirement()),
+                platform_version,
+                Some(resolved_options),
             )
-            .await?;
-        Ok(state_transition)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -166,17 +164,15 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        let required_security_level = document_type.security_level_requirement();
-        state_transition
-            .sign_external_with_options(
+        documents_batch_transition
+            .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(required_security_level)),
-                resolved_options.signing_options,
+                Some(document_type.security_level_requirement()),
+                platform_version,
+                Some(resolved_options),
             )
-            .await?;
-        Ok(state_transition)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -212,17 +208,15 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        let required_security_level = document_type.security_level_requirement();
-        state_transition
-            .sign_external_with_options(
+        documents_batch_transition
+            .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(required_security_level)),
-                resolved_options.signing_options,
+                Some(document_type.security_level_requirement()),
+                platform_version,
+                Some(resolved_options),
             )
-            .await?;
-        Ok(state_transition)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -256,17 +250,15 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        let required_security_level = document_type.security_level_requirement();
-        state_transition
-            .sign_external_with_options(
+        documents_batch_transition
+            .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(required_security_level)),
-                resolved_options.signing_options,
+                Some(document_type.security_level_requirement()),
+                platform_version,
+                Some(resolved_options),
             )
-            .await?;
-        Ok(state_transition)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -302,17 +294,15 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        let required_security_level = document_type.security_level_requirement();
-        state_transition
-            .sign_external_with_options(
+        documents_batch_transition
+            .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(required_security_level)),
-                resolved_options.signing_options,
+                Some(document_type.security_level_requirement()),
+                platform_version,
+                Some(resolved_options),
             )
-            .await?;
-        Ok(state_transition)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -348,17 +338,15 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        let required_security_level = document_type.security_level_requirement();
-        state_transition
-            .sign_external_with_options(
+        documents_batch_transition
+            .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(required_security_level)),
-                resolved_options.signing_options,
+                Some(document_type.security_level_requirement()),
+                platform_version,
+                Some(resolved_options),
             )
-            .await?;
-        Ok(state_transition)
+            .await
     }
 
     fn set_transitions(&mut self, transitions: Vec<BatchedTransition>) {

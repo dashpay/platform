@@ -10,8 +10,9 @@ use super::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 use super::transfer::TokenTransferTransitionBuilder;
 use super::unfreeze::TokenUnfreezeTransitionBuilder;
 use crate::platform::test_helpers::{
-    new_mock_sdk_with_contract_nonce, test_data_contract, test_identity_public_key,
-    validate_transition_like_builder, TestSigner, INVALID_NONCE, TEST_DOCUMENT_TYPE_NAME,
+    assert_nonce_out_of_bounds_construction_error, new_mock_sdk_with_contract_nonce,
+    test_data_contract, test_identity_public_key, TestSigner, INVALID_NONCE,
+    TEST_DOCUMENT_TYPE_NAME,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -44,10 +45,10 @@ fn token_setup() -> (
     (data_contract, owner_id, token_id)
 }
 
-pub(super) fn assert_token_burn_validate_base_structure_error() {
+pub(super) async fn assert_token_burn_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_burn_transition(
+    let result = BatchTransition::new_token_burn_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -62,16 +63,15 @@ pub(super) fn assert_token_burn_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_claim_validate_base_structure_error() {
+pub(super) async fn assert_token_claim_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_claim_transition(
+    let result = BatchTransition::new_token_claim_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -85,21 +85,23 @@ pub(super) fn assert_token_claim_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_config_update_validate_base_structure_error() {
+pub(super) async fn assert_token_config_update_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_config_update_transition(
+    // Use a structurally-valid config change so the nonce check is the first
+    // base-structure error reported (TokenConfigurationNoChange would trip
+    // InvalidTokenConfigUpdateNoChangeError before nonce is reported).
+    let result = BatchTransition::new_token_config_update_transition(
         token_id,
         owner_id,
         data_contract.id(),
         TEST_TOKEN_POSITION,
-        TokenConfigurationChangeItem::TokenConfigurationNoChange,
+        TokenConfigurationChangeItem::MintingAllowChoosingDestination(true),
         None,
         None,
         &test_identity_public_key(),
@@ -109,16 +111,15 @@ pub(super) fn assert_token_config_update_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_destroy_validate_base_structure_error() {
+pub(super) async fn assert_token_destroy_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_destroy_frozen_funds_transition(
+    let result = BatchTransition::new_token_destroy_frozen_funds_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -133,16 +134,15 @@ pub(super) fn assert_token_destroy_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_emergency_action_validate_base_structure_error() {
+pub(super) async fn assert_token_emergency_action_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_emergency_action_transition(
+    let result = BatchTransition::new_token_emergency_action_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -157,16 +157,15 @@ pub(super) fn assert_token_emergency_action_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_freeze_validate_base_structure_error() {
+pub(super) async fn assert_token_freeze_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_freeze_transition(
+    let result = BatchTransition::new_token_freeze_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -181,16 +180,15 @@ pub(super) fn assert_token_freeze_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_mint_validate_base_structure_error() {
+pub(super) async fn assert_token_mint_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_mint_transition(
+    let result = BatchTransition::new_token_mint_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -206,16 +204,15 @@ pub(super) fn assert_token_mint_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_purchase_validate_base_structure_error() {
+pub(super) async fn assert_token_purchase_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_direct_purchase_transition(
+    let result = BatchTransition::new_token_direct_purchase_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -229,16 +226,15 @@ pub(super) fn assert_token_purchase_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_set_price_validate_base_structure_error() {
+pub(super) async fn assert_token_set_price_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_change_direct_purchase_price_transition(
+    let result = BatchTransition::new_token_change_direct_purchase_price_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -253,16 +249,15 @@ pub(super) fn assert_token_set_price_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_transfer_validate_base_structure_error() {
+pub(super) async fn assert_token_transfer_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_transfer_transition(
+    let result = BatchTransition::new_token_transfer_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -279,16 +274,15 @@ pub(super) fn assert_token_transfer_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
-pub(super) fn assert_token_unfreeze_validate_base_structure_error() {
+pub(super) async fn assert_token_unfreeze_validate_base_structure_error() {
     let platform_version = dpp::version::PlatformVersion::latest();
     let (data_contract, owner_id, token_id) = token_setup();
-    let transition = BatchTransition::new_token_unfreeze_transition(
+    let result = BatchTransition::new_token_unfreeze_transition(
         token_id,
         owner_id,
         data_contract.id(),
@@ -303,10 +297,9 @@ pub(super) fn assert_token_unfreeze_validate_base_structure_error() {
         platform_version,
         None,
     )
-    .expect("transition should build");
+    .await;
 
-    let result = validate_transition_like_builder(&transition);
-    assert!(result.is_err(), "expected validation error, got {result:?}");
+    assert_nonce_out_of_bounds_construction_error(result);
 }
 
 #[tokio::test]

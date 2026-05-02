@@ -218,9 +218,7 @@ pub unsafe extern "C" fn dash_sdk_token_set_price(
             .sdk
             .token_set_price_for_direct_purchase(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to set token price and wait: {}", e))
-            })?;
+            .map_err(FFIError::SDKError)?;
 
         Ok(result)
     });

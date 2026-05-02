@@ -170,9 +170,7 @@ pub unsafe extern "C" fn dash_sdk_token_purchase(
             .sdk
             .token_purchase(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to purchase token and wait: {}", e))
-            })?;
+            .map_err(FFIError::SDKError)?;
 
         Ok(result)
     });

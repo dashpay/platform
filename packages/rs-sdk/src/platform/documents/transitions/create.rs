@@ -1,10 +1,9 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::transition::validation::validate_batch_base_structure;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -154,8 +153,16 @@ impl DocumentCreateTransitionBuilder {
             .document_type_for_name(&self.document_type_name)
             .map_err(|e| Error::Protocol(e.into()))?;
 
+        let mut document = self.document.clone();
+        document.set_id(Document::generate_document_id_v0(
+            self.data_contract.id_ref(),
+            &document.owner_id(),
+            &self.document_type_name,
+            self.document_state_transition_entropy.as_slice(),
+        ));
+
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
-            self.document.clone(),
+            document,
             document_type,
             self.document_state_transition_entropy,
             identity_public_key,
@@ -167,9 +174,6 @@ impl DocumentCreateTransitionBuilder {
             self.state_transition_creation_options,
         )
         .await?;
-
-        // Validate the transition structure before returning
-        validate_batch_base_structure(&state_transition, platform_version)?;
 
         Ok(state_transition)
     }
@@ -251,13 +255,5 @@ impl Sdk {
                 Default::default(),
             )),
         }
-    }
-}
-
-#[cfg(test)]
-mod validation_tests {
-    #[test]
-    fn validate_base_structure_error_case() {
-        super::super::tests::assert_document_create_validate_base_structure_error();
     }
 }

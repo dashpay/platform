@@ -1,5 +1,4 @@
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::transition::validation::validate_batch_base_structure;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
@@ -156,17 +155,14 @@ impl TokenDirectPurchaseTransitionBuilder {
         )
         .await?;
 
-        // Validate the transition structure before returning
-        validate_batch_base_structure(&state_transition, platform_version)?;
-
         Ok(state_transition)
     }
 }
 
 #[cfg(test)]
 mod validation_tests {
-    #[test]
-    fn validate_base_structure_error_case() {
-        super::super::tests::assert_token_purchase_validate_base_structure_error();
+    #[tokio::test]
+    async fn validate_base_structure_error_case() {
+        super::super::tests::assert_token_purchase_validate_base_structure_error().await;
     }
 }

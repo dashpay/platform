@@ -1,6 +1,5 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::transition::validation::validate_batch_base_structure;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -210,9 +209,6 @@ impl DocumentSetPriceTransitionBuilder {
         )
         .await?;
 
-        // Validate the transition structure before returning
-        validate_batch_base_structure(&state_transition, platform_version)?;
-
         Ok(state_transition)
     }
 }
@@ -289,13 +285,5 @@ impl Sdk {
                 Default::default(),
             )),
         }
-    }
-}
-
-#[cfg(test)]
-mod validation_tests {
-    #[test]
-    fn validate_base_structure_error_case() {
-        super::super::tests::assert_document_set_price_validate_base_structure_error();
     }
 }

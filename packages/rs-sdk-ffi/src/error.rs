@@ -1,5 +1,6 @@
 //! Error handling for FFI layer
 
+use dash_sdk::dpp::ProtocolError;
 use std::ffi::{CString, NulError};
 use std::os::raw::c_char;
 use thiserror::Error;
@@ -102,6 +103,12 @@ impl From<FFIError> for DashSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKError(sdk_err) => {
+                if let dash_sdk::Error::Protocol(protocol_error) = sdk_err {
+                    if let Some(message) = format_protocol_consensus_error(protocol_error) {
+                        return DashSDKError::new(DashSDKErrorCode::ProtocolError, message);
+                    }
+                }
+
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
 
@@ -161,6 +168,20 @@ impl From<FFIError> for DashSDKError {
     }
 }
 
+fn format_protocol_consensus_error(error: &ProtocolError) -> Option<String> {
+    match error {
+        ProtocolError::ConsensusError(consensus_error) => Some(consensus_error.to_string()),
+        ProtocolError::ConsensusErrors(consensus_errors) => Some(
+            consensus_errors
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; "),
+        ),
+        _ => None,
+    }
+}
+
 /// Free an error message
 ///
 /// # Safety
@@ -190,4 +211,69 @@ macro_rules! ffi_result {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::consensus::basic::document::NonceOutOfBoundsError;
+    use dash_sdk::dpp::consensus::basic::token::InvalidTokenAmountError;
+    use dash_sdk::dpp::consensus::{basic::BasicError, ConsensusError};
+    use std::ffi::CStr;
+
+    fn error_message(error: &DashSDKError) -> String {
+        unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .expect("ffi error message should be valid utf-8")
+            .to_owned()
+    }
+
+    fn free_error_message(error: DashSDKError) {
+        if !error.message.is_null() {
+            unsafe {
+                let _ = CString::from_raw(error.message);
+            }
+        }
+    }
+
+    #[test]
+    fn sdk_protocol_consensus_error_maps_to_protocol_error_code() {
+        let sdk_error = dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(
+            ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
+                NonceOutOfBoundsError::new(u64::MAX),
+            )),
+        )));
+
+        let ffi_error = DashSDKError::from(FFIError::SDKError(sdk_error));
+        let message = error_message(&ffi_error);
+
+        assert_eq!(ffi_error.code, DashSDKErrorCode::ProtocolError);
+        assert!(message.contains("Nonce is out of bounds"));
+        assert!(!message.contains("Failed to fetch balances"));
+
+        free_error_message(ffi_error);
+    }
+
+    #[test]
+    fn sdk_protocol_consensus_errors_join_messages_readably() {
+        let sdk_error = dash_sdk::Error::Protocol(ProtocolError::ConsensusErrors(vec![
+            ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
+                NonceOutOfBoundsError::new(u64::MAX),
+            )),
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
+                InvalidTokenAmountError::new(100, 0),
+            )),
+        ]));
+
+        let ffi_error = DashSDKError::from(FFIError::SDKError(sdk_error));
+        let message = error_message(&ffi_error);
+
+        assert_eq!(ffi_error.code, DashSDKErrorCode::ProtocolError);
+        assert!(message.contains("Nonce is out of bounds"));
+        assert!(message.contains("Invalid token amount 0"));
+        assert!(message.contains("; "));
+        assert!(!message.contains("Multiple consensus errors: ["));
+
+        free_error_message(ffi_error);
+    }
 }

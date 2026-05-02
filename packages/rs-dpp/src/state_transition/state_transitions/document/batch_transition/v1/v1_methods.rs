@@ -69,8 +69,6 @@ use crate::state_transition::batch_transition::token_transfer_transition::TokenT
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
-#[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
@@ -137,27 +135,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-
-        Ok(state_transition)
+        documents_batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -219,28 +199,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
 
-        // Create the state transition
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-
-        Ok(state_transition)
+        documents_batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
     #[cfg(feature = "state-transition-signing")]
     async fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
@@ -257,7 +218,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         // Create the transfer transition for batch version 1
@@ -286,28 +247,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
 
-        // Create the state transition
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-
-        Ok(state_transition)
+        documents_batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -370,26 +312,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
 
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        documents_batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -452,26 +377,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
 
-        let mut state_transition: StateTransition = documents_batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        documents_batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -536,26 +444,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -618,26 +509,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -700,26 +574,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -734,7 +591,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let claim_transition = TokenClaimTransition::V0(TokenClaimTransitionV0 {
@@ -757,26 +614,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -843,26 +683,9 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 
     #[cfg(feature = "state-transition-signing")]
@@ -877,7 +700,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let direct_purchase_transition =
@@ -901,25 +724,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
-        let mut state_transition: StateTransition = batch_transition.into();
-        if let Some(options) = options {
-            state_transition
-                .sign_external_with_options(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                    options.signing_options,
-                )
-                .await?;
-        } else {
-            state_transition
-                .sign_external(
-                    identity_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-        }
-        Ok(state_transition)
+        batch_transition
+            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .await
     }
 }

@@ -178,9 +178,7 @@ pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
             .sdk
             .token_destroy_frozen_funds(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to destroy frozen funds and wait: {}", e))
-            })?;
+            .map_err(FFIError::SDKError)?;
 
         Ok(result)
     });

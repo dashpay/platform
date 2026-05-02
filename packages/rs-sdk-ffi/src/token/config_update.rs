@@ -231,9 +231,7 @@ pub unsafe extern "C" fn dash_sdk_token_update_contract_token_configuration(
             .sdk
             .token_update_contract_token_configuration(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to update token config and wait: {}", e))
-            })?;
+            .map_err(FFIError::SDKError)?;
 
         Ok(result)
     });

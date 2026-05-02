@@ -178,9 +178,7 @@ pub unsafe extern "C" fn dash_sdk_token_unfreeze(
             .sdk
             .token_unfreeze_identity(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to unfreeze token and wait: {}", e))
-            })?;
+            .map_err(FFIError::SDKError)?;
 
         Ok(result)
     });

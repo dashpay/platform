@@ -47,7 +47,7 @@ mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 mod v1;
-#[cfg(feature = "validation")]
+#[cfg(any(feature = "validation", feature = "batch-base-structure-validation"))]
 mod validation;
 #[cfg(feature = "value-conversion")]
 mod value_conversion;

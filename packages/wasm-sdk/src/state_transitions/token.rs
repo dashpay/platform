@@ -398,7 +398,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_mint(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to mint tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenMintResultWasm::from_result(result, contract_id))
     }
@@ -626,7 +626,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_burn(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to burn tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenBurnResultWasm::from_result(result, contract_id))
     }
@@ -865,7 +865,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_transfer(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to transfer tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenTransferResultWasm::from_result(
             result,
@@ -1083,7 +1083,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_freeze(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to freeze tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenFreezeResultWasm::from_result(result, contract_id))
     }
@@ -1296,7 +1296,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_unfreeze_identity(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to unfreeze tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenUnfreezeResultWasm::from_result(result, contract_id))
     }
@@ -1495,9 +1495,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_destroy_frozen_funds(builder, &identity_key, &signer)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to destroy frozen tokens: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenDestroyFrozenResultWasm::from_result(
             result,
@@ -1713,9 +1711,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_emergency_action(builder, &identity_key, &signer)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to perform emergency action: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenEmergencyActionResultWasm::from_result(
             result,
@@ -1909,7 +1905,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_claim(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to claim tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenClaimResultWasm::from_result(result, contract_id))
     }
@@ -2148,7 +2144,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_set_price_for_direct_purchase(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to set token price: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenSetPriceResultWasm::from_result(result, contract_id))
     }
@@ -2360,7 +2356,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_purchase(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to purchase tokens: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenDirectPurchaseResultWasm::from_result(
             result,
@@ -2563,9 +2559,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_update_contract_token_configuration(builder, &identity_key, &signer)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to update token configuration: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(TokenConfigUpdateResultWasm::from_result(
             result,

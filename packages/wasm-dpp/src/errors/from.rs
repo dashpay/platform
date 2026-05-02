@@ -1,4 +1,5 @@
 use dpp::DashPlatformProtocolInitError;
+use js_sys::Array;
 use wasm_bindgen::JsValue;
 
 use dpp::errors::ProtocolError;
@@ -15,6 +16,9 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
     match pe {
         // TODO(versioning): restore this
         ProtocolError::ConsensusError(consensus_error) => from_consensus_error(*consensus_error),
+        ProtocolError::ConsensusErrors(consensus_errors) => {
+            Array::from_iter(consensus_errors.into_iter().map(from_consensus_error)).into()
+        }
         ProtocolError::DataContractError(e) => from_data_contract_to_js_error(e),
 
         ProtocolError::Document(e) => from_document_to_js_error(*e),

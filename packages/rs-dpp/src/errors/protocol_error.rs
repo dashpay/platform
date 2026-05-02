@@ -131,6 +131,9 @@ pub enum ProtocolError {
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
 
+    #[error("Multiple consensus errors: {0:?}")]
+    ConsensusErrors(Vec<ConsensusError>),
+
     #[error(transparent)]
     Document(Box<DocumentError>),
 

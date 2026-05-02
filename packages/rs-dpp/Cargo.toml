@@ -181,10 +181,17 @@ abci = [
 ]
 cbor = ["ciborium"]
 validation = [
+  "batch-base-structure-validation",
   "json-schema-validation",
   "value-conversion",
   "ed25519-dalek",
 ]
+# Narrow feature that compiles only `BatchTransition::validate_base_structure`
+# without pulling in json-schema-validation, value-conversion, or ed25519-dalek.
+# Useful for clients that need pre-broadcast base-structure checks without
+# the full validation toolchain. `state-transition-signing` enables this
+# transitively so constructor pre-sign validation is always present there.
+batch-base-structure-validation = []
 # TODO: Tring to remove regexp
 create-contested-document = []
 json-conversion = ["value-conversion", "platform-value/json", "json-object"]
@@ -243,6 +250,7 @@ state-transition-signing = [
   "state-transitions",
   "message-signing",
   "state-transition-validation",
+  "batch-base-structure-validation",
 ]
 vote-serialization = []
 vote-serde-conversion = ["serde-conversion"]

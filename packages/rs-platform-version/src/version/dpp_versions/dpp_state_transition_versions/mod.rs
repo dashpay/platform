@@ -71,4 +71,9 @@ pub struct DocumentsBatchTransitionVersions {
 pub struct DocumentsBatchTransitionValidationVersions {
     pub find_duplicates_by_id: FeatureVersion,
     pub validate_base_structure: FeatureVersion,
+    /// DPP-side dispatch for the constructor-only document create transition
+    /// structure validator used by `validate_base_structure_pre_sign`. This is
+    /// independent of the drive-abci action validator (which has its own
+    /// version field under `drive_abci.validation_and_processing`).
+    pub document_create_transition_structure_validation: FeatureVersion,
 }
