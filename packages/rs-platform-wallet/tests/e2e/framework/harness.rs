@@ -137,7 +137,7 @@ impl E2eContext {
         // // Pass the SDK's live address list so SPV peers stay in
         // // lock-step with the DAPI endpoints the SDK is actually
         // // talking to (port-swapped to the effective P2P port).
-        // let spv_runtime = spv::start_spv(&manager, &config, sdk.address_list()).await?;
+        // let spv_runtime = spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
         // spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
         // // `set_context_provider` is `ArcSwap`-backed, safe to
         // // call after construction.

@@ -12,6 +12,7 @@
 //! [`PROGRESS_LOG_INTERVAL`] for debuggability.
 
 use std::net::{IpAddr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -39,9 +40,12 @@ const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Spawn the SPV client backing the harness's
 /// [`PlatformWalletManager`]. Storage is anchored under
-/// `config.workdir_base.join("spv-data")`. Returns the same handle
-/// as [`PlatformWalletManager::spv_arc`]; shut it down via
-/// [`SpvRuntime::stop`].
+/// `<workdir>/spv-data` where `workdir` is the slot the harness
+/// already locked via [`super::workdir::pick_available_workdir`] —
+/// concurrent processes get distinct slots and therefore distinct
+/// SPV stores, so RocksDB never sees cross-process contention.
+/// Returns the same handle as [`PlatformWalletManager::spv_arc`];
+/// shut it down via [`SpvRuntime::stop`].
 ///
 /// `address_list` is the SDK's live DAPI address list (typically
 /// `sdk.address_list()`). P2P peers are seeded from those same
@@ -51,13 +55,14 @@ const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(30);
 pub async fn start_spv<P>(
     manager: &Arc<PlatformWalletManager<P>>,
     config: &Config,
+    workdir: &Path,
     address_list: &AddressList,
 ) -> FrameworkResult<Arc<SpvRuntime>>
 where
     P: PlatformWalletPersistence + 'static,
 {
     let spv = manager.spv_arc();
-    let client_config = build_client_config(config, address_list)?;
+    let client_config = build_client_config(config, workdir, address_list)?;
 
     spv.spawn_in_background(client_config);
     tracing::info!(
@@ -126,8 +131,8 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
                     target: "platform_wallet::e2e::spv",
                     "mn-list sync entered Error state"
                 );
-                return Err(FrameworkError::NotImplemented(
-                    "spv::wait_for_mn_list_synced — mn-list entered Error state (see logs)",
+                return Err(FrameworkError::Spv(
+                    "wait_for_mn_list_synced: mn-list entered Error state".to_string(),
                 ));
             }
         }
@@ -146,9 +151,9 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
                 target: "platform_wallet::e2e::spv",
                 "timed out after {effective_timeout:?} waiting for mn-list sync"
             );
-            return Err(FrameworkError::NotImplemented(
-                "spv::wait_for_mn_list_synced — timed out (see logs)",
-            ));
+            return Err(FrameworkError::Spv(format!(
+                "wait_for_mn_list_synced: timed out after {effective_timeout:?}"
+            )));
         }
 
         tokio::time::sleep(READINESS_POLL_INTERVAL).await;
@@ -202,27 +207,29 @@ fn log_pipeline_snapshot(
 }
 
 /// Build the SPV [`ClientConfig`] for `config.network`. Storage
-/// under `<workdir>/spv-data`, full validation, bloom-filter
-/// mempool tracking, and DAPI peers (extracted from `address_list`)
-/// seeded with the effective P2P port — sticks to the SDK's live
-/// endpoints to skip DNS-discovered peers that lack compact-block-filter
-/// support.
+/// under `<workdir>/spv-data` (the slot-locked dir, NOT
+/// `workdir_base`), full validation, bloom-filter mempool tracking,
+/// and DAPI peers (extracted from `address_list`) seeded with the
+/// effective P2P port — sticks to the SDK's live endpoints to skip
+/// DNS-discovered peers that lack compact-block-filter support.
 fn build_client_config(
     config: &Config,
+    workdir: &Path,
     address_list: &AddressList,
 ) -> FrameworkResult<ClientConfig> {
     let network = config.network;
 
-    let storage_path = config.workdir_base.join("spv-data");
+    let storage_path = workdir.join("spv-data");
     std::fs::create_dir_all(&storage_path).map_err(|e| {
         tracing::error!(
             target: "platform_wallet::e2e::spv",
             "failed to create SPV storage dir {}: {e}",
             storage_path.display()
         );
-        FrameworkError::NotImplemented(
-            "spv::build_client_config — failed to create SPV storage dir (see logs)",
-        )
+        FrameworkError::Spv(format!(
+            "failed to create SPV storage dir {}: {e}",
+            storage_path.display()
+        ))
     })?;
 
     let mut client_config = ClientConfig::new(network)
@@ -238,9 +245,7 @@ fn build_client_config(
             target: "platform_wallet::e2e::spv",
             "invalid SPV ClientConfig: {e}"
         );
-        FrameworkError::NotImplemented(
-            "spv::build_client_config — invalid SPV ClientConfig (see logs)",
-        )
+        FrameworkError::Spv(format!("invalid SPV ClientConfig: {e}"))
     })?;
 
     Ok(client_config)

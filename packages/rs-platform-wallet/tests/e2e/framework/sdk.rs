@@ -34,7 +34,7 @@ pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
         .build()
         .map_err(|e| {
             tracing::error!(target: "platform_wallet::e2e::sdk", "SdkBuilder::build failed: {e}");
-            FrameworkError::NotImplemented("sdk::build_sdk — SdkBuilder::build failed (see logs)")
+            FrameworkError::Sdk(format!("SdkBuilder::build failed: {e}"))
         })?;
 
     Ok(Arc::new(sdk))
@@ -70,9 +70,9 @@ fn build_trusted_context_provider(
             target: "platform_wallet::e2e::sdk",
             "TrustedHttpContextProvider construction failed: {e}"
         );
-        FrameworkError::NotImplemented(
-            "sdk::build_trusted_context_provider — TrustedHttpContextProvider failed (see logs)",
-        )
+        FrameworkError::Sdk(format!(
+            "TrustedHttpContextProvider construction failed: {e}"
+        ))
     })
 }
 
@@ -97,9 +97,10 @@ fn build_sdk_builder(config: &Config, network: Network) -> FrameworkResult<SdkBu
                 "no DAPI addresses configured for {other:?} — set {} to a comma-separated list of DAPI URLs",
                 super::config::vars::DAPI_ADDRESSES,
             );
-            Err(FrameworkError::NotImplemented(
-                "sdk::build_sdk_builder — no DAPI addresses configured (see logs)",
-            ))
+            Err(FrameworkError::Config(format!(
+                "no DAPI addresses configured for {other:?} — set {} to a comma-separated list of DAPI URLs",
+                super::config::vars::DAPI_ADDRESSES,
+            )))
         }
     }
 }
@@ -115,9 +116,7 @@ where
                     target: "platform_wallet::e2e::sdk",
                     "invalid DAPI address {s:?}: {e}"
                 );
-                FrameworkError::NotImplemented(
-                    "sdk::parse_addresses — invalid DAPI address (see logs)",
-                )
+                FrameworkError::Config(format!("invalid DAPI address {s:?}: {e}"))
             })
         })
         .collect()

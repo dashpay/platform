@@ -107,6 +107,19 @@ pub enum FrameworkError {
     /// [`config`].
     #[error("e2e config: {0}")]
     Config(String),
+
+    /// SDK construction / wiring failure (e.g. `SdkBuilder::build`,
+    /// `TrustedHttpContextProvider::new`, DAPI address parsing).
+    /// Carries the upstream error stringified so CI logs and any
+    /// `Result`-matching caller see the underlying cause.
+    #[error("e2e sdk: {0}")]
+    Sdk(String),
+
+    /// SPV (`dash-spv`) construction / sync failure. Distinct from
+    /// [`Self::Sdk`] so SPV-only deferred-runtime issues are easy to
+    /// filter when the SPV path comes back online (Task #15).
+    #[error("e2e spv: {0}")]
+    Spv(String),
 }
 
 /// Convenience alias used across the harness.

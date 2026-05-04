@@ -47,12 +47,19 @@ stable enough to drive from tests. See [Future Core support](#future-core-suppor
 - Network access to Dash testnet DAPI nodes (default) or a local/devnet cluster.
 - Rust toolchain (stable, matches workspace `rust-toolchain.toml`).
 
-Tests run by default once `tests/.env` exists with a valid bank mnemonic. They are
-NOT marked `#[ignore]`. If `PLATFORM_WALLET_E2E_BANK_MNEMONIC` is unset or the bank
-is under-funded the harness panics with an actionable message naming the bank's
-primary receive address — the failure is operator-actionable, not silent. CI jobs
-that run `cargo test` without setting up the operator env will surface that panic;
-gate those jobs at the workflow level (e.g. only run e2e on a dedicated job).
+Tests are gated behind `#[ignore]` so a stock `cargo test` (or workspace-wide
+invocation) stays green for contributors and CI jobs that lack a funded testnet
+bank wallet, live DAPI access, and the operator `.env`. To execute the live suite
+once setup is in place, opt in explicitly with `--ignored`:
+
+```bash
+cargo test --test e2e -- --ignored --nocapture
+```
+
+If `PLATFORM_WALLET_E2E_BANK_MNEMONIC` is unset when an opt-in run starts, the
+harness panics with an actionable message naming the bank's primary receive
+address — the failure is operator-actionable, not silent. An under-funded bank
+wallet panics with the same "top up at &lt;address&gt;" pointer.
 
 ---
 

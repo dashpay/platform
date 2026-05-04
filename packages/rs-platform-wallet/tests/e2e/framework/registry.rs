@@ -97,38 +97,53 @@ impl PersistentTestWalletRegistry {
         &self.path
     }
 
-    /// Insert (or overwrite) an entry, persisting before returning.
-    /// Last-write-wins on duplicate: failing the insert would risk
-    /// leaking the new entry, while a sweep can still recover.
+    /// Insert (or overwrite) an entry, persisting before mutating
+    /// the in-memory map: the snapshot is built off the current state,
+    /// written to disk, and only swapped in once the write succeeds.
+    /// A failed write therefore leaves both memory and disk on the
+    /// previous state — preserving the module's "persist before
+    /// returning" contract under partial failure.
+    /// Last-write-wins on duplicate.
     pub fn insert(&self, hash: WalletSeedHash, entry: RegistryEntry) -> FrameworkResult<()> {
         let snapshot = {
-            let mut guard = self.state.lock();
-            guard.insert(hash, entry);
-            guard.clone()
+            let guard = self.state.lock();
+            let mut snapshot = guard.clone();
+            snapshot.insert(hash, entry);
+            snapshot
         };
-        atomic_write_json(&self.path, &snapshot)
+        atomic_write_json(&self.path, &snapshot)?;
+        *self.state.lock() = snapshot;
+        Ok(())
     }
 
     /// Remove an entry. Missing-key is OK — teardown is best-effort.
+    /// Persists before mutating in-memory state (see [`Self::insert`]).
     pub fn remove(&self, hash: &WalletSeedHash) -> FrameworkResult<()> {
         let snapshot = {
-            let mut guard = self.state.lock();
-            guard.remove(hash);
-            guard.clone()
+            let guard = self.state.lock();
+            let mut snapshot = guard.clone();
+            snapshot.remove(hash);
+            snapshot
         };
-        atomic_write_json(&self.path, &snapshot)
+        atomic_write_json(&self.path, &snapshot)?;
+        *self.state.lock() = snapshot;
+        Ok(())
     }
 
-    /// Update [`EntryStatus`]; no-op if the entry is absent.
+    /// Update [`EntryStatus`]; no-op if the entry is absent. Persists
+    /// before mutating in-memory state (see [`Self::insert`]).
     pub fn set_status(&self, hash: &WalletSeedHash, status: EntryStatus) -> FrameworkResult<()> {
         let snapshot = {
-            let mut guard = self.state.lock();
-            if let Some(entry) = guard.get_mut(hash) {
+            let guard = self.state.lock();
+            let mut snapshot = guard.clone();
+            if let Some(entry) = snapshot.get_mut(hash) {
                 entry.status = status;
             }
-            guard.clone()
+            snapshot
         };
-        atomic_write_json(&self.path, &snapshot)
+        atomic_write_json(&self.path, &snapshot)?;
+        *self.state.lock() = snapshot;
+        Ok(())
     }
 
     /// Snapshot of all entries (Active / Failed). The startup sweep
