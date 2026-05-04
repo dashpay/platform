@@ -247,6 +247,16 @@ impl TestWallet {
     /// detection); assertions should target the nonce-duplicate
     /// rejection reason, or capture bytes from the production submission
     /// so the replayed transition shares both nonce and signature.
+    ///
+    /// The caller's `inputs` map supplies the **set of input addresses**;
+    /// per-address amounts are recomputed by [`balance_explicit_inputs`]
+    /// so that `Σ inputs == Σ outputs` (the protocol's strict balance
+    /// check on `AddressFundsTransferTransition`). With
+    /// `[ReduceOutput(0)]`, the chain-time fee is taken from output 0
+    /// at execution; the encoded transition itself must still balance
+    /// pre-fee. Callers may pass `address.balance` as a placeholder —
+    /// it is only used as a relative weight when distributing across
+    /// multiple input addresses.
     pub async fn transfer_capturing_st_bytes(
         &self,
         outputs: BTreeMap<PlatformAddress, Credits>,
@@ -257,11 +267,14 @@ impl TestWallet {
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 
+        let platform_version = PlatformVersion::latest();
+        let balanced_inputs = balance_explicit_inputs(&inputs, &outputs, platform_version)?;
+
         // Sibling build for byte capture. Fetches on-chain nonces and
         // bumps them via the public SDK helpers, then signs + serializes.
         // The transition is NEVER broadcast — `transfer_with_inputs`
         // below does its own nonce fetch + sign + broadcast.
-        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &inputs)
+        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &balanced_inputs)
             .await
             .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
         let inputs_with_nonce = nonce_inc(inputs_with_nonce);
@@ -272,7 +285,7 @@ impl TestWallet {
             default_fee_strategy(),
             &self.signer,
             Default::default(),
-            PlatformVersion::latest(),
+            platform_version,
         )
         .await
         .map_err(|err| FrameworkError::Wallet(format!("st build: {err}")))?;
@@ -281,7 +294,7 @@ impl TestWallet {
 
         // Production transfer with the same explicit inputs. Wallet
         // caches + chain state advance per the canonical path.
-        let cs = self.transfer_with_inputs(outputs, inputs).await?;
+        let cs = self.transfer_with_inputs(outputs, balanced_inputs).await?;
         Ok((cs, bytes))
     }
 
@@ -403,6 +416,112 @@ impl TestWallet {
 /// Default fee strategy: reduce output #0 by the fee amount.
 pub(crate) fn default_fee_strategy() -> AddressFundsFeeStrategy {
     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]
+}
+
+/// Rebalance an explicit-input map so its sum equals `Σ outputs`.
+///
+/// `AddressFundsTransferTransition` validation rejects with
+/// `InputOutputBalanceMismatchError` unless the encoded transition
+/// satisfies `Σ inputs == Σ outputs`. With `[ReduceOutput(0)]` (the
+/// harness default) the chain-time fee is taken from output 0 at
+/// execution; the transition payload must still balance pre-fee.
+///
+/// Caller-supplied per-address values act as relative weights — a
+/// single-input map is assigned the full output sum; multi-input
+/// maps split the output sum proportionally with any rounding
+/// remainder absorbed by the lex-smallest entry. Each share is held
+/// at or above `min_input_amount` (the protocol's per-input floor) by
+/// pulling the deficit from the donor with the largest share that
+/// still has headroom.
+fn balance_explicit_inputs(
+    inputs: &BTreeMap<PlatformAddress, Credits>,
+    outputs: &BTreeMap<PlatformAddress, Credits>,
+    platform_version: &PlatformVersion,
+) -> FrameworkResult<BTreeMap<PlatformAddress, Credits>> {
+    if inputs.is_empty() {
+        return Err(FrameworkError::Wallet(
+            "transfer_capturing_st_bytes requires at least one input address".into(),
+        ));
+    }
+    let total_output: Credits = outputs.values().copied().sum();
+    let min_input = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_input_amount;
+    if total_output < min_input {
+        return Err(FrameworkError::Wallet(format!(
+            "Σ outputs {total_output} < min_input_amount {min_input}: cannot \
+             build a balanced explicit-input map"
+        )));
+    }
+
+    // Single input: assign the full output sum directly. This is the
+    // PA-006 / PA-006b shape and the path that matters in practice.
+    if inputs.len() == 1 {
+        let addr = *inputs.keys().next().expect("len == 1");
+        let mut out = BTreeMap::new();
+        out.insert(addr, total_output);
+        return Ok(out);
+    }
+
+    // Multi-input: weight by caller values. Zero-sum weights collapse
+    // to equal share to avoid div-by-zero.
+    let weight_total: u128 = inputs.values().map(|w| *w as u128).sum();
+    let n = inputs.len() as u128;
+    let mut shares: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+    let mut assigned: u128 = 0;
+    for (addr, weight) in inputs {
+        let share = if weight_total == 0 {
+            (total_output as u128) / n
+        } else {
+            ((total_output as u128) * (*weight as u128)) / weight_total
+        };
+        shares.insert(*addr, share as Credits);
+        assigned += share;
+    }
+    // Lex-smallest entry absorbs the rounding remainder so Σ matches.
+    let remainder = (total_output as u128).saturating_sub(assigned) as Credits;
+    if remainder > 0 {
+        if let Some((_, slot)) = shares.iter_mut().next() {
+            *slot = slot.saturating_add(remainder);
+        }
+    }
+
+    // Lift any sub-floor share by pulling the deficit from the largest
+    // peer that retains ≥ min_input after the donation.
+    let needs_lift: Vec<(PlatformAddress, Credits)> = shares
+        .iter()
+        .filter(|(_, v)| **v < min_input)
+        .map(|(a, v)| (*a, *v))
+        .collect();
+    for (addr, share) in needs_lift {
+        let deficit = min_input - share;
+        let donor = shares
+            .iter()
+            .filter(|(a, v)| **a != addr && **v >= min_input.saturating_add(deficit))
+            .max_by_key(|(_, v)| **v)
+            .map(|(a, _)| *a);
+        let Some(donor) = donor else {
+            return Err(FrameworkError::Wallet(format!(
+                "cannot satisfy min_input_amount {min_input} on {n} inputs with \
+                 Σ outputs {total_output}; no donor with sufficient headroom"
+            )));
+        };
+        if let Some(slot) = shares.get_mut(&donor) {
+            *slot -= deficit;
+        }
+        if let Some(slot) = shares.get_mut(&addr) {
+            *slot += deficit;
+        }
+    }
+
+    debug_assert_eq!(
+        shares.values().copied().sum::<Credits>(),
+        total_output,
+        "balanced inputs must sum to Σ outputs"
+    );
+    Ok(shares)
 }
 
 /// Default timeout for [`TestWallet::register_identity_from_addresses`]
@@ -532,5 +651,66 @@ mod tests {
         assert_eq!(canonical.account, DEFAULT_ACCOUNT_INDEX_PUB);
         assert_eq!(canonical.key_class, DEFAULT_KEY_CLASS_PUB);
         assert_eq!(canonical, DEFAULT_PLATFORM_PAYMENT_ACCOUNT_SPEC);
+    }
+
+    fn addr(byte: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([byte; 20])
+    }
+
+    /// PA-006 / PA-006b shape: one input address, one output address.
+    /// Caller passes the address's full balance as the input amount;
+    /// the helper must rewrite it to `Σ outputs` so the protocol's
+    /// `Σ in == Σ out` check passes.
+    #[test]
+    fn balance_explicit_inputs_single_address_matches_output_sum() {
+        let pv = PlatformVersion::latest();
+        let in_addr = addr(0x01);
+        let out_addr = addr(0x02);
+        let inputs: BTreeMap<_, _> = std::iter::once((in_addr, 90_755_960u64)).collect();
+        let outputs: BTreeMap<_, _> = std::iter::once((out_addr, 50_000_000u64)).collect();
+
+        let balanced = balance_explicit_inputs(&inputs, &outputs, pv).expect("balance");
+        assert_eq!(balanced.len(), 1);
+        assert_eq!(balanced.get(&in_addr).copied(), Some(50_000_000));
+        let in_sum: Credits = balanced.values().copied().sum();
+        let out_sum: Credits = outputs.values().copied().sum();
+        assert_eq!(in_sum, out_sum, "Σ inputs must equal Σ outputs");
+    }
+
+    /// Multi-input shape: split `Σ outputs` proportionally to the
+    /// caller-supplied weights; sum must match exactly.
+    #[test]
+    fn balance_explicit_inputs_multi_address_sum_matches() {
+        let pv = PlatformVersion::latest();
+        let a = addr(0x01);
+        let b = addr(0x02);
+        let out = addr(0x09);
+        let inputs: BTreeMap<_, _> = [(a, 30_000_000u64), (b, 70_000_000u64)]
+            .into_iter()
+            .collect();
+        let outputs: BTreeMap<_, _> = std::iter::once((out, 50_000_001u64)).collect();
+
+        let balanced = balance_explicit_inputs(&inputs, &outputs, pv).expect("balance");
+        assert_eq!(balanced.len(), 2);
+        let in_sum: Credits = balanced.values().copied().sum();
+        assert_eq!(in_sum, 50_000_001, "Σ inputs must equal Σ outputs exactly");
+
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+        for (a, v) in &balanced {
+            assert!(
+                *v >= min_input,
+                "share for {a:?} = {v} below min_input {min_input}"
+            );
+        }
+    }
+
+    /// Empty inputs are rejected up-front; the protocol requires ≥ 1
+    /// input on every transfer transition.
+    #[test]
+    fn balance_explicit_inputs_rejects_empty() {
+        let pv = PlatformVersion::latest();
+        let outputs: BTreeMap<_, _> = std::iter::once((addr(0x09), 50_000_000u64)).collect();
+        let err = balance_explicit_inputs(&BTreeMap::new(), &outputs, pv).unwrap_err();
+        assert!(matches!(err, FrameworkError::Wallet(_)));
     }
 }
