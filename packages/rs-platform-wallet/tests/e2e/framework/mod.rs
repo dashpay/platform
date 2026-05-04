@@ -217,10 +217,12 @@ pub async fn setup_with_n_identities(
 /// Guard returned by [`setup_with_n_identities`]. Wraps the base
 /// [`SetupGuard`] plus the freshly-registered identities.
 ///
-/// Calling [`MultiIdentitySetupGuard::teardown`] consumes the
-/// guard and forwards to the inner [`SetupGuard::teardown`] —
-/// identity-side cleanup is implicit (their funds drain back to
-/// the bank during the wallet sweep).
+/// Calling [`MultiIdentitySetupGuard::teardown`] consumes the guard
+/// and forwards to the inner [`SetupGuard::teardown`], which sweeps
+/// platform-address balances. Identity-credit cleanup is deferred to
+/// a follow-up PR — see the `#identity-sweep` TODO in
+/// [`cleanup::sweep_identities`]. Until then, every identity
+/// registered here keeps its post-registration credit balance.
 pub struct MultiIdentitySetupGuard {
     /// Inner single-wallet guard. Holds the [`E2eContext`] and the
     /// shared [`wallet_factory::TestWallet`] every identity is
