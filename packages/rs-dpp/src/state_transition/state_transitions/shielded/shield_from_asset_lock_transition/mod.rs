@@ -74,14 +74,14 @@ impl StateTransitionFieldTypes for ShieldFromAssetLockTransition {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::shielded::SerializedAction;
     use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+    use crate::tests::fixtures::instant_asset_lock_proof_fixture;
     use platform_value::BinaryData;
 
     fn fixture() -> ShieldFromAssetLockTransition {
         ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
-            asset_lock_proof: AssetLockProof::default(),
+            asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
             actions: vec![SerializedAction {
                 nullifier: [0x11; 32],
                 rk: [0x22; 32],
@@ -98,13 +98,42 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(original: &ShieldFromAssetLockTransition, recovered: &ShieldFromAssetLockTransition) {
+        let ShieldFromAssetLockTransition::V0(orig) = original;
+        let ShieldFromAssetLockTransition::V0(v0) = recovered;
+        assert_eq!(
+            v0.asset_lock_proof, orig.asset_lock_proof,
+            "asset_lock_proof"
+        );
+        assert_eq!(v0.actions.len(), 1, "actions.len");
+        assert_eq!(v0.actions[0].nullifier, [0x11; 32], "actions[0].nullifier");
+        assert_eq!(v0.actions[0].rk, [0x22; 32], "actions[0].rk");
+        assert_eq!(v0.actions[0].cmx, [0x33; 32], "actions[0].cmx");
+        assert_eq!(
+            v0.actions[0].encrypted_note,
+            vec![0x44; 216],
+            "actions[0].encrypted_note"
+        );
+        assert_eq!(v0.actions[0].cv_net, [0x55; 32], "actions[0].cv_net");
+        assert_eq!(
+            v0.actions[0].spend_auth_sig, [0x66; 64],
+            "actions[0].spend_auth_sig"
+        );
+        assert_eq!(v0.value_balance, 1_000_000, "value_balance");
+        assert_eq!(v0.anchor, [0x77; 32], "anchor");
+        assert_eq!(v0.proof, vec![0x88; 192], "proof");
+        assert_eq!(v0.binding_signature, [0x99; 64], "binding_signature");
+        assert_eq!(v0.signature, BinaryData::new(vec![0xab; 65]), "signature");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = ShieldFromAssetLockTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&original, &recovered);
     }
 
     #[test]
@@ -115,11 +144,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = ShieldFromAssetLockTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&original, &recovered);
     }
 }

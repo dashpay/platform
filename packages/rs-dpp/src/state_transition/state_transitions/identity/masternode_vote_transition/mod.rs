@@ -257,17 +257,61 @@ mod test {
 mod json_convertible_tests {
     use super::*;
 
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::VotePoll;
+    use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
+    use crate::voting::votes::resource_vote::ResourceVote;
+    use crate::voting::votes::Vote;
+    use platform_value::{BinaryData, Identifier, Value};
+
+    fn fixture_vote() -> Vote {
+        Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                ContestedDocumentResourceVotePoll {
+                    contract_id: Identifier::new([0x12; 32]),
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![Value::Text("dash".to_string())],
+                },
+            ),
+            resource_vote_choice: ResourceVoteChoice::TowardsIdentity(Identifier::new([0x34; 32])),
+        }))
+    }
+
     fn fixture() -> MasternodeVoteTransition {
-        MasternodeVoteTransition::V0(MasternodeVoteTransitionV0::default())
+        MasternodeVoteTransition::V0(MasternodeVoteTransitionV0 {
+            pro_tx_hash: Identifier::new([0x66; 32]),
+            voter_identity_id: Identifier::new([0x77; 32]),
+            vote: fixture_vote(),
+            nonce: 99,
+            signature_public_key_id: 8,
+            signature: BinaryData::new(vec![0xe5; 65]),
+        })
+    }
+
+    fn assert_v0_fields(t: &MasternodeVoteTransition) {
+        let MasternodeVoteTransition::V0(v0) = t;
+        assert_eq!(v0.pro_tx_hash, Identifier::new([0x66; 32]), "pro_tx_hash");
+        assert_eq!(
+            v0.voter_identity_id,
+            Identifier::new([0x77; 32]),
+            "voter_identity_id"
+        );
+        assert_eq!(v0.vote, fixture_vote(), "vote");
+        assert_eq!(v0.nonce, 99, "nonce");
+        assert_eq!(v0.signature_public_key_id, 8, "signature_public_key_id");
+        assert_eq!(v0.signature, BinaryData::new(vec![0xe5; 65]), "signature");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = MasternodeVoteTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -278,11 +322,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = MasternodeVoteTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

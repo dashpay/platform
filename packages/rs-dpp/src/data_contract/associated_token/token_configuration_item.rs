@@ -763,21 +763,39 @@ impl crate::serialization::ValueConvertible for TokenConfigurationChangeItem {}
 mod json_convertible_tests {
     use super::*;
 
-    #[test]
-    fn json_round_trip() {
-        use crate::serialization::JsonConvertible;
-        let original = TokenConfigurationChangeItem::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    /// Non-default variant (`MaxSupply(Some(...))`) with a non-zero inner amount
+    /// so a per-property assertion would catch a silent variant flip or
+    /// inner-zero on round-trip.
+    fn fixture() -> TokenConfigurationChangeItem {
+        TokenConfigurationChangeItem::MaxSupply(Some(123_456_789u64))
+    }
+
+    fn assert_per_property(actual: &TokenConfigurationChangeItem) {
+        match actual {
+            TokenConfigurationChangeItem::MaxSupply(Some(v)) => {
+                assert_eq!(*v, 123_456_789u64, "MaxSupply inner amount");
+            }
+            other => panic!("expected MaxSupply(Some(_)), got {:?}", other),
+        }
     }
 
     #[test]
-    fn value_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_per_property(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
-        let original = TokenConfigurationChangeItem::default();
+        let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenConfigurationChangeItem::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 }

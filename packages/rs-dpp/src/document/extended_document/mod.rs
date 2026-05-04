@@ -88,7 +88,7 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = JsonConvertible::to_json(&original).expect("to_json");
@@ -103,7 +103,7 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = ValueConvertible::to_object(&original).expect("to_object");

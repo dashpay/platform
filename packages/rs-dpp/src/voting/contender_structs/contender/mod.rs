@@ -460,26 +460,47 @@ mod tests {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests_contender_with_serialized_document {
     use super::*;
+    use platform_value::Identifier;
 
-    #[test]
-    fn json_round_trip() {
-        use crate::serialization::JsonConvertible;
-        let original = ContenderWithSerializedDocument::V0(
-            ContenderWithSerializedDocumentV0::default(),
+    /// Non-default values per field (real identity_id bytes, non-empty
+    /// serialized_document, non-zero tally) so a per-property assertion would
+    /// catch silent zero-out / flip on round-trip.
+    fn fixture() -> ContenderWithSerializedDocument {
+        ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+            identity_id: Identifier::new([0xa1; 32]),
+            serialized_document: Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            vote_tally: Some(42),
+        })
+    }
+
+    fn assert_v0_fields(c: &ContenderWithSerializedDocument) {
+        let ContenderWithSerializedDocument::V0(rec) = c;
+        assert_eq!(rec.identity_id, Identifier::new([0xa1; 32]), "identity_id");
+        assert_eq!(
+            rec.serialized_document,
+            Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            "serialized_document"
         );
-        let json = original.to_json().expect("to_json");
-        let recovered = ContenderWithSerializedDocument::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+        assert_eq!(rec.vote_tally, Some(42), "vote_tally");
     }
 
     #[test]
-    fn value_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContenderWithSerializedDocument::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
-        let original = ContenderWithSerializedDocument::V0(
-            ContenderWithSerializedDocumentV0::default(),
-        );
+        let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = ContenderWithSerializedDocument::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

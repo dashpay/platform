@@ -733,25 +733,63 @@ mod tests {
 mod json_convertible_tests {
     use super::*;
 
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
     fn fixture() -> Document {
-        Document::V0(DocumentV0::default())
+        Document::V0(DocumentV0 {
+            id: Identifier::new([0xa1; 32]),
+            owner_id: Identifier::new([0xb2; 32]),
+            properties: BTreeMap::new(),
+            revision: Some(2),
+            created_at: Some(1_700_000_000_000),
+            updated_at: Some(1_700_000_001_000),
+            transferred_at: None,
+            created_at_block_height: Some(100),
+            updated_at_block_height: Some(101),
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(50),
+            updated_at_core_block_height: Some(51),
+            transferred_at_core_block_height: None,
+            creator_id: Some(Identifier::new([0xc3; 32])),
+        })
+    }
+
+    fn assert_v0_fields(d: &Document) {
+        let Document::V0(v0) = d;
+        assert_eq!(v0.id, Identifier::new([0xa1; 32]), "id");
+        assert_eq!(v0.owner_id, Identifier::new([0xb2; 32]), "owner_id");
+        assert!(v0.properties.is_empty(), "properties");
+        assert_eq!(v0.revision, Some(2), "revision");
+        assert_eq!(v0.created_at, Some(1_700_000_000_000), "created_at");
+        assert_eq!(v0.updated_at, Some(1_700_000_001_000), "updated_at");
+        assert_eq!(v0.transferred_at, None, "transferred_at");
+        assert_eq!(v0.created_at_block_height, Some(100), "created_at_block_height");
+        assert_eq!(v0.updated_at_block_height, Some(101), "updated_at_block_height");
+        assert_eq!(v0.transferred_at_block_height, None, "transferred_at_block_height");
+        assert_eq!(v0.created_at_core_block_height, Some(50), "created_at_core_block_height");
+        assert_eq!(v0.updated_at_core_block_height, Some(51), "updated_at_core_block_height");
+        assert_eq!(v0.transferred_at_core_block_height, None, "transferred_at_core_block_height");
+        assert_eq!(v0.creator_id, Some(Identifier::new([0xc3; 32])), "creator_id");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = Document::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = Document::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

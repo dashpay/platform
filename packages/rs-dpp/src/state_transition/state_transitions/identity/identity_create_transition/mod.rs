@@ -237,13 +237,26 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(t: &IdentityCreateTransition) {
+        let IdentityCreateTransition::V0(v0) = t;
+        assert!(v0.public_keys.is_empty(), "public_keys");
+        assert_eq!(v0.user_fee_increase, 7, "user_fee_increase");
+        assert_eq!(v0.signature, BinaryData::new(vec![0xa1; 65]), "signature");
+        let expected_id = v0
+            .asset_lock_proof
+            .create_identifier()
+            .expect("identity_id from proof");
+        assert_eq!(v0.identity_id, expected_id, "identity_id");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = IdentityCreateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -254,11 +267,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = IdentityCreateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

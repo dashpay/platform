@@ -67,26 +67,48 @@ mod tests {
 mod json_convertible_tests {
     use super::*;
     use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 
+    /// `default_most_restrictive` already populates ~25 inner fields with
+    /// non-default values (decimals=8, base_supply=100_000, paused=false,
+    /// allow_transfer_to_frozen_balance=true, etc.) so we keep it and assert
+    /// the most distinctive ones to catch silent zero-out / variant flip.
     fn fixture() -> TokenConfiguration {
         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
     }
 
+    fn assert_v0_fields(c: &TokenConfiguration) {
+        let TokenConfiguration::V0(rec) = c;
+        let TokenConfigurationConvention::V0(conv) = &rec.conventions;
+        assert_eq!(conv.decimals, 8, "conventions.decimals");
+        assert_eq!(rec.base_supply, 100_000, "base_supply");
+        assert_eq!(rec.max_supply, None, "max_supply");
+        assert!(!rec.start_as_paused, "start_as_paused (false)");
+        assert!(
+            rec.allow_transfer_to_frozen_balance,
+            "allow_transfer_to_frozen_balance"
+        );
+        assert!(rec.main_control_group.is_none(), "main_control_group");
+        assert!(rec.description.is_none(), "description");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenConfiguration::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenConfiguration::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

@@ -362,17 +362,51 @@ mod test {
 mod json_convertible_tests {
     use super::*;
 
+    use crate::identity::core_script::CoreScript;
+    use crate::withdrawal::Pooling;
+    use platform_value::{BinaryData, Identifier};
+
     fn fixture() -> IdentityCreditWithdrawalTransition {
-        IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0::default())
+        IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::new([0x33; 32]),
+            amount: 9_876_543,
+            core_fee_per_byte: 5,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes(vec![0x76, 0xa9, 0x14]),
+            nonce: 11,
+            user_fee_increase: 2,
+            signature_public_key_id: 4,
+            signature: BinaryData::new(vec![0xb2; 65]),
+        })
+    }
+
+    fn assert_v0_fields(t: &IdentityCreditWithdrawalTransition) {
+        let IdentityCreditWithdrawalTransition::V0(v0) = t else {
+            panic!("expected V0");
+        };
+        assert_eq!(v0.identity_id, Identifier::new([0x33; 32]), "identity_id");
+        assert_eq!(v0.amount, 9_876_543, "amount");
+        assert_eq!(v0.core_fee_per_byte, 5, "core_fee_per_byte");
+        assert_eq!(v0.pooling, Pooling::Never, "pooling");
+        assert_eq!(
+            v0.output_script,
+            CoreScript::from_bytes(vec![0x76, 0xa9, 0x14]),
+            "output_script"
+        );
+        assert_eq!(v0.nonce, 11, "nonce");
+        assert_eq!(v0.user_fee_increase, 2, "user_fee_increase");
+        assert_eq!(v0.signature_public_key_id, 4, "signature_public_key_id");
+        assert_eq!(v0.signature, BinaryData::new(vec![0xb2; 65]), "signature");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = IdentityCreditWithdrawalTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -383,11 +417,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

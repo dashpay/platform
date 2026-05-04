@@ -47,6 +47,8 @@ mod json_convertible_tests {
         })
     }
 
+    /// Non-default values per field so a per-property assertion would catch
+    /// any silent zero-out / flip on round-trip.
     fn fixture() -> TokenConfigUpdateTransition {
         TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
             base: token_base_fixture(),
@@ -55,21 +57,39 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(t: &TokenConfigUpdateTransition) {
+        let TokenConfigUpdateTransition::V0(rec) = t;
+        let TokenBaseTransition::V0(base) = &rec.base;
+        assert_eq!(base.identity_contract_nonce, 13, "base.identity_contract_nonce");
+        assert_eq!(base.token_contract_position, 2, "base.token_contract_position");
+        assert_eq!(base.data_contract_id, Identifier::new([0xa1; 32]), "base.data_contract_id");
+        assert_eq!(base.token_id, Identifier::new([0xb2; 32]), "base.token_id");
+        assert_eq!(base.using_group_info, None, "base.using_group_info");
+        assert_eq!(
+            rec.update_token_configuration_item,
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            "update_token_configuration_item"
+        );
+        assert_eq!(rec.public_note, Some("config update".to_string()), "public_note");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = JsonConvertible::to_json(&original).expect("to_json");
         let recovered = <TokenConfigUpdateTransition as JsonConvertible>::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = ValueConvertible::to_object(&original).expect("to_object");
         let recovered = <TokenConfigUpdateTransition as ValueConvertible>::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

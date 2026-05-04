@@ -113,21 +113,40 @@ mod tests {
 mod json_convertible_tests {
     use super::*;
 
-    #[test]
-    fn json_round_trip() {
-        use crate::serialization::JsonConvertible;
-        let original = ContestedDocumentVotePollWinnerInfo::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = ContestedDocumentVotePollWinnerInfo::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    /// Non-default variant (`WonByIdentity` with a non-zero identifier) so
+    /// per-property assertions catch silent variant-flip / identifier-zero
+    /// on round-trip — the previous fixture used `Default` (`NoWinner`),
+    /// which carries no inner state.
+    fn fixture() -> ContestedDocumentVotePollWinnerInfo {
+        ContestedDocumentVotePollWinnerInfo::WonByIdentity(Identifier::new([0xab; 32]))
+    }
+
+    fn assert_per_property(actual: &ContestedDocumentVotePollWinnerInfo) {
+        match actual {
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id) => {
+                assert_eq!(*id, Identifier::new([0xab; 32]), "WonByIdentity.id");
+            }
+            other => panic!("expected WonByIdentity, got {:?}", other),
+        }
     }
 
     #[test]
-    fn value_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedDocumentVotePollWinnerInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_per_property(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
-        let original = ContestedDocumentVotePollWinnerInfo::default();
+        let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = ContestedDocumentVotePollWinnerInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 }

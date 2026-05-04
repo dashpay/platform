@@ -38,6 +38,9 @@ mod json_convertible_tests {
     use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
     use crate::data_contract::change_control_rules::ChangeControlRules;
 
+    /// Non-default values per inner field (set destination_identity to a
+    /// specific identifier and `minting_allow_choosing_destination` to true)
+    /// so per-property assertions catch silent zero-out / flip on round-trip.
     fn fixture() -> TokenDistributionRules {
         let ccr = || ChangeControlRules::V0(ChangeControlRulesV0::default());
         TokenDistributionRules::V0(TokenDistributionRulesV0 {
@@ -52,21 +55,44 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(r: &TokenDistributionRules) {
+        let TokenDistributionRules::V0(rec) = r;
+        assert!(
+            rec.perpetual_distribution.is_none(),
+            "perpetual_distribution"
+        );
+        assert!(
+            rec.pre_programmed_distribution.is_none(),
+            "pre_programmed_distribution"
+        );
+        assert_eq!(
+            rec.new_tokens_destination_identity,
+            Some(platform_value::Identifier::new([0x42; 32])),
+            "new_tokens_destination_identity"
+        );
+        assert!(
+            rec.minting_allow_choosing_destination,
+            "minting_allow_choosing_destination"
+        );
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenDistributionRules::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenDistributionRules::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

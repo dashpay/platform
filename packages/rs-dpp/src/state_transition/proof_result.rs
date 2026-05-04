@@ -81,25 +81,43 @@ mod json_convertible_tests {
     use super::*;
     use platform_value::Identifier;
 
+    /// Non-default variant `VerifiedTokenBalance(id, amount)` with both
+    /// tuple fields set so a per-property assertion catches silent
+    /// variant flip / inner-zero on round-trip.
     fn fixture() -> StateTransitionProofResult {
-        StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::new([0xab; 32]))
+        StateTransitionProofResult::VerifiedTokenBalance(
+            Identifier::new([0xab; 32]),
+            123_456_789u64,
+        )
+    }
+
+    fn assert_per_property(actual: &StateTransitionProofResult) {
+        match actual {
+            StateTransitionProofResult::VerifiedTokenBalance(id, amount) => {
+                assert_eq!(*id, Identifier::new([0xab; 32]), "VerifiedTokenBalance.id");
+                assert_eq!(*amount, 123_456_789u64, "VerifiedTokenBalance.amount");
+            }
+            other => panic!("expected VerifiedTokenBalance, got {}", other),
+        }
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 }

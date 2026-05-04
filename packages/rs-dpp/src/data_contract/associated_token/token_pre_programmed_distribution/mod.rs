@@ -38,29 +38,70 @@ mod json_convertible_tests {
     use platform_value::Identifier;
     use std::collections::BTreeMap;
 
+    /// Non-default fixture with two distinct timestamps and two recipients per
+    /// timestamp so per-property assertions can catch silent map-flatten /
+    /// key-swap on round-trip.
     fn fixture() -> TokenPreProgrammedDistribution {
-        let mut inner = BTreeMap::new();
-        inner.insert(Identifier::new([0xab; 32]), 1000u64);
+        let mut early = BTreeMap::new();
+        early.insert(Identifier::new([0xab; 32]), 1000u64);
+        early.insert(Identifier::new([0xcd; 32]), 2000u64);
+
+        let mut late = BTreeMap::new();
+        late.insert(Identifier::new([0xef; 32]), 3000u64);
+
         let mut distributions = BTreeMap::new();
-        distributions.insert(1_700_000_000_000u64, inner);
+        distributions.insert(1_700_000_000_000u64, early);
+        distributions.insert(1_800_000_000_000u64, late);
         TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 { distributions })
     }
 
+    fn assert_v0_fields(d: &TokenPreProgrammedDistribution) {
+        let TokenPreProgrammedDistribution::V0(rec) = d;
+        assert_eq!(rec.distributions.len(), 2, "distributions.len");
+        let early = rec
+            .distributions
+            .get(&1_700_000_000_000u64)
+            .expect("early ts present");
+        assert_eq!(early.len(), 2, "early.recipients.len");
+        assert_eq!(
+            early.get(&Identifier::new([0xab; 32])).copied(),
+            Some(1000u64),
+            "early[0xab..]"
+        );
+        assert_eq!(
+            early.get(&Identifier::new([0xcd; 32])).copied(),
+            Some(2000u64),
+            "early[0xcd..]"
+        );
+        let late = rec
+            .distributions
+            .get(&1_800_000_000_000u64)
+            .expect("late ts present");
+        assert_eq!(late.len(), 1, "late.recipients.len");
+        assert_eq!(
+            late.get(&Identifier::new([0xef; 32])).copied(),
+            Some(3000u64),
+            "late[0xef..]"
+        );
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenPreProgrammedDistribution::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenPreProgrammedDistribution::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

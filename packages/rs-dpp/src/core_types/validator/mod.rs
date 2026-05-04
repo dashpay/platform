@@ -141,21 +141,35 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(v: &Validator) {
+        let Validator::V0(v0) = v;
+        assert_eq!(v0.pro_tx_hash, ProTxHash::from_byte_array([0x11; 32]), "pro_tx_hash");
+        assert_eq!(v0.public_key, None, "public_key");
+        assert_eq!(v0.node_ip, "127.0.0.1", "node_ip");
+        assert_eq!(v0.node_id, PubkeyHash::from_byte_array([0x22; 20]), "node_id");
+        assert_eq!(v0.core_port, 9999, "core_port");
+        assert_eq!(v0.platform_http_port, 443, "platform_http_port");
+        assert_eq!(v0.platform_p2p_port, 26656, "platform_p2p_port");
+        assert!(!v0.is_banned, "is_banned");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = Validator::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = Validator::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

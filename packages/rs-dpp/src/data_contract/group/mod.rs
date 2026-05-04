@@ -115,6 +115,8 @@ mod json_convertible_tests {
     use platform_value::Identifier;
     use std::collections::BTreeMap;
 
+    /// Non-default values per field so a per-property assertion would catch
+    /// any silent zero-out / flip on round-trip.
     fn fixture() -> Group {
         let mut members = BTreeMap::new();
         members.insert(Identifier::new([0xa0; 32]), 1u32);
@@ -125,21 +127,39 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(g: &Group) {
+        let Group::V0(rec) = g;
+        assert_eq!(rec.members.len(), 2, "members.len");
+        assert_eq!(
+            rec.members.get(&Identifier::new([0xa0; 32])).copied(),
+            Some(1u32),
+            "members[0xa0..]"
+        );
+        assert_eq!(
+            rec.members.get(&Identifier::new([0xb1; 32])).copied(),
+            Some(2u32),
+            "members[0xb1..]"
+        );
+        assert_eq!(rec.required_power, 2, "required_power");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = Group::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = Group::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

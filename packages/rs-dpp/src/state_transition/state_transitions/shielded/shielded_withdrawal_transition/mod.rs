@@ -100,13 +100,30 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(t: &ShieldedWithdrawalTransition) {
+        let ShieldedWithdrawalTransition::V0(v0) = t;
+        assert_eq!(v0.actions.len(), 1, "actions.len");
+        assert_eq!(v0.unshielding_amount, 750_000, "unshielding_amount");
+        assert_eq!(v0.anchor, [0x77; 32], "anchor");
+        assert_eq!(v0.proof, vec![0x88; 192], "proof");
+        assert_eq!(v0.binding_signature, [0x99; 64], "binding_signature");
+        assert_eq!(v0.core_fee_per_byte, 21, "core_fee_per_byte");
+        assert_eq!(v0.pooling, Pooling::IfAvailable, "pooling");
+        assert_eq!(
+            v0.output_script,
+            CoreScript::from_bytes(vec![0xaa, 0xbb]),
+            "output_script"
+        );
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = ShieldedWithdrawalTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -117,11 +134,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = ShieldedWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

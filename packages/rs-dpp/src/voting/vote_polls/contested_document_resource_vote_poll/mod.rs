@@ -81,21 +81,55 @@ impl ContestedDocumentResourceVotePoll {
 mod json_convertible_tests {
     use super::*;
 
-    #[test]
-    fn json_round_trip() {
-        use crate::serialization::JsonConvertible;
-        let original = ContestedDocumentResourceVotePoll::default();
-        let json = original.to_json().expect("to_json");
-        let recovered = ContestedDocumentResourceVotePoll::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
+    /// Non-default values per field (real contract id, named type/index, two
+    /// index values) so a per-property assertion catches silent zero-out /
+    /// vec-truncate on round-trip.
+    fn fixture() -> ContestedDocumentResourceVotePoll {
+        ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([0xc1; 32]),
+            document_type_name: "preorder".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text("alice".to_string()),
+            ],
+        }
+    }
+
+    fn assert_per_property(p: &ContestedDocumentResourceVotePoll) {
+        assert_eq!(p.contract_id, Identifier::new([0xc1; 32]), "contract_id");
+        assert_eq!(p.document_type_name, "preorder", "document_type_name");
+        assert_eq!(p.index_name, "parentNameAndLabel", "index_name");
+        assert_eq!(p.index_values.len(), 2, "index_values.len");
+        assert_eq!(
+            p.index_values[0],
+            Value::Text("dash".to_string()),
+            "index_values[0]"
+        );
+        assert_eq!(
+            p.index_values[1],
+            Value::Text("alice".to_string()),
+            "index_values[1]"
+        );
     }
 
     #[test]
-    fn value_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedDocumentResourceVotePoll::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+        assert_per_property(&recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
-        let original = ContestedDocumentResourceVotePoll::default();
+        let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = ContestedDocumentResourceVotePoll::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 }

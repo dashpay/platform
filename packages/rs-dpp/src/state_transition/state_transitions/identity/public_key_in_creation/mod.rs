@@ -489,17 +489,42 @@ mod test {
 mod json_convertible_tests {
     use super::*;
 
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use platform_value::BinaryData;
+
     fn fixture() -> IdentityPublicKeyInCreation {
-        IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0::default())
+        IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 7,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: true,
+            data: BinaryData::new(vec![0x88; 33]),
+            signature: BinaryData::new(vec![0x99; 65]),
+        })
+    }
+
+    fn assert_v0_fields(t: &IdentityPublicKeyInCreation) {
+        let IdentityPublicKeyInCreation::V0(v0) = t;
+        assert_eq!(v0.id, 7, "id");
+        assert_eq!(v0.key_type, KeyType::ECDSA_SECP256K1, "key_type");
+        assert_eq!(v0.purpose, Purpose::AUTHENTICATION, "purpose");
+        assert_eq!(v0.security_level, SecurityLevel::HIGH, "security_level");
+        assert_eq!(v0.contract_bounds, None, "contract_bounds");
+        assert!(v0.read_only, "read_only");
+        assert_eq!(v0.data, BinaryData::new(vec![0x88; 33]), "data");
+        assert_eq!(v0.signature, BinaryData::new(vec![0x99; 65]), "signature");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = IdentityPublicKeyInCreation::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -510,11 +535,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = IdentityPublicKeyInCreation::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

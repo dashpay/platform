@@ -58,6 +58,8 @@ mod json_convertible_tests {
     use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
     use crate::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
 
+    /// Non-default values (interval=1000, amount=100, ContractOwner) so a
+    /// per-property assertion catches any silent zero-out / variant flip.
     fn fixture() -> TokenPerpetualDistribution {
         TokenPerpetualDistribution::V0(TokenPerpetualDistributionV0 {
             distribution_type: RewardDistributionType::BlockBasedDistribution {
@@ -68,21 +70,46 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(d: &TokenPerpetualDistribution) {
+        let TokenPerpetualDistribution::V0(rec) = d;
+        match &rec.distribution_type {
+            RewardDistributionType::BlockBasedDistribution { interval, function } => {
+                assert_eq!(*interval, 1000, "distribution_type.interval");
+                match function {
+                    DistributionFunction::FixedAmount { amount } => {
+                        assert_eq!(*amount, 100, "distribution_type.function.amount");
+                    }
+                    other => panic!("expected FixedAmount, got {:?}", other),
+                }
+            }
+            other => panic!("expected BlockBasedDistribution, got {:?}", other),
+        }
+        assert!(
+            matches!(
+                rec.distribution_recipient,
+                TokenDistributionRecipient::ContractOwner
+            ),
+            "distribution_recipient = ContractOwner"
+        );
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenPerpetualDistribution::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenPerpetualDistribution::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

@@ -467,32 +467,56 @@ mod json_convertible_tests {
     /// ambiguous in pass 2 bug-fix work, we'll switch to a manual J impl that
     /// prefixes a `$type` tag.
     fn fixture() -> StateTransition {
+        use crate::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+        use crate::address_funds::PlatformAddress;
         use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
-        StateTransition::IdentityCreateFromAddresses(
-            IdentityCreateFromAddressesTransition::V0(
-                IdentityCreateFromAddressesTransitionV0::default(),
-            ),
-        )
+        use std::collections::BTreeMap;
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xa1; 20]), (1u32, 500_000u64));
+        StateTransition::IdentityCreateFromAddresses(IdentityCreateFromAddressesTransition::V0(
+            IdentityCreateFromAddressesTransitionV0 {
+                public_keys: vec![],
+                inputs,
+                output: None,
+                fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                user_fee_increase: 7,
+                input_witnesses: vec![],
+            },
+        ))
+    }
+
+    fn assert_outer_variant(t: &StateTransition) {
+        let StateTransition::IdentityCreateFromAddresses(inner) = t else {
+            panic!("expected IdentityCreateFromAddresses");
+        };
+        let IdentityCreateFromAddressesTransition::V0(v0) = inner;
+        assert!(v0.public_keys.is_empty(), "public_keys");
+        assert_eq!(v0.inputs.len(), 1, "inputs.len");
+        assert_eq!(v0.output, None, "output");
+        assert_eq!(v0.user_fee_increase, 7, "user_fee_increase");
+        assert!(v0.input_witnesses.is_empty(), "input_witnesses");
     }
 
     #[test]
     #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = StateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_outer_variant(&recovered);
     }
 
     #[test]
     #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = StateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_outer_variant(&recovered);
     }
 }
 

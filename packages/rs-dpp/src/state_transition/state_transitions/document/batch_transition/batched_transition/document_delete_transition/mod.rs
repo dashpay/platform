@@ -29,6 +29,8 @@ mod json_convertible_tests {
     use crate::state_transition::batch_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
     use platform_value::Identifier;
 
+    /// Non-default values per field so a per-property assertion would catch
+    /// any silent zero-out / flip on round-trip.
     fn fixture() -> DocumentDeleteTransition {
         DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
             base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
@@ -40,21 +42,38 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(t: &DocumentDeleteTransition) {
+        let DocumentDeleteTransition::V0(rec) = t;
+        let DocumentBaseTransition::V0(base) = &rec.base else {
+            panic!("expected base V0");
+        };
+        assert_eq!(base.id, Identifier::new([0xc1; 32]), "base.id");
+        assert_eq!(base.identity_contract_nonce, 9, "base.identity_contract_nonce");
+        assert_eq!(base.document_type_name, "post", "base.document_type_name");
+        assert_eq!(
+            base.data_contract_id,
+            Identifier::new([0xd2; 32]),
+            "base.data_contract_id"
+        );
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = DocumentDeleteTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = DocumentDeleteTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

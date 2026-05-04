@@ -131,25 +131,40 @@ mod json_convertible_tests_token_distribution_info {
     use super::*;
     use platform_value::Identifier;
 
+    /// Non-default `PreProgrammed` variant with distinct timestamp + identifier
+    /// so a per-property assertion catches a silent variant flip or
+    /// inner-zero on round-trip.
     fn fixture() -> TokenDistributionInfo {
         TokenDistributionInfo::PreProgrammed(1_700_000_000_000, Identifier::new([0x42; 32]))
     }
 
+    fn assert_per_property(actual: &TokenDistributionInfo) {
+        match actual {
+            TokenDistributionInfo::PreProgrammed(ts, id) => {
+                assert_eq!(*ts, 1_700_000_000_000, "PreProgrammed.timestamp");
+                assert_eq!(*id, Identifier::new([0x42; 32]), "PreProgrammed.identifier");
+            }
+            other => panic!("expected PreProgrammed, got {:?}", other),
+        }
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = TokenDistributionInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 }

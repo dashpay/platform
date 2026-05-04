@@ -328,17 +328,39 @@ mod test {
 mod json_convertible_tests {
     use super::*;
 
+    use platform_value::{BinaryData, Identifier};
+
     fn fixture() -> IdentityCreditTransferTransition {
-        IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default())
+        IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
+            identity_id: Identifier::new([0x11; 32]),
+            recipient_id: Identifier::new([0x22; 32]),
+            amount: 1_234_567,
+            nonce: 42,
+            user_fee_increase: 7,
+            signature_public_key_id: 3,
+            signature: BinaryData::new(vec![0xa1; 65]),
+        })
+    }
+
+    fn assert_v0_fields(t: &IdentityCreditTransferTransition) {
+        let IdentityCreditTransferTransition::V0(v0) = t;
+        assert_eq!(v0.identity_id, Identifier::new([0x11; 32]), "identity_id");
+        assert_eq!(v0.recipient_id, Identifier::new([0x22; 32]), "recipient_id");
+        assert_eq!(v0.amount, 1_234_567, "amount");
+        assert_eq!(v0.nonce, 42, "nonce");
+        assert_eq!(v0.user_fee_increase, 7, "user_fee_increase");
+        assert_eq!(v0.signature_public_key_id, 3, "signature_public_key_id");
+        assert_eq!(v0.signature, BinaryData::new(vec![0xa1; 65]), "signature");
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = IdentityCreditTransferTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -349,11 +371,12 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = IdentityCreditTransferTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

@@ -103,27 +103,59 @@ impl AsRef<AssetLockProof> for AssetLockProof {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use dashcore::OutPoint;
+    use std::str::FromStr;
 
+    /// Non-default variant (`Chain` with non-zero core height + a real
+    /// outpoint) so per-property assertions catch silent variant flip /
+    /// inner-zero on round-trip — the previous fixture used `Default::default`
+    /// (`Instant` zero proof).
     fn fixture() -> AssetLockProof {
-        AssetLockProof::default()
+        let out_point = OutPoint::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000001:1",
+        )
+        .expect("outpoint");
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 12_345,
+            out_point,
+        })
+    }
+
+    fn assert_per_property(actual: &AssetLockProof) {
+        match actual {
+            AssetLockProof::Chain(c) => {
+                assert_eq!(
+                    c.core_chain_locked_height, 12_345,
+                    "Chain.core_chain_locked_height"
+                );
+                let expected = OutPoint::from_str(
+                    "0000000000000000000000000000000000000000000000000000000000000001:1",
+                )
+                .expect("outpoint");
+                assert_eq!(c.out_point, expected, "Chain.out_point");
+            }
+            other => panic!("expected Chain proof, got {:?}", other),
+        }
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = AssetLockProof::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = AssetLockProof::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_per_property(&recovered);
     }
 }
 pub enum AssetLockProofType {

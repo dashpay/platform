@@ -105,6 +105,8 @@ mod json_convertible_tests {
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use platform_value::Identifier;
 
+    /// Non-default values per field so a per-property assertion would catch
+    /// any silent zero-out / flip on round-trip.
     pub(super) fn fixture() -> TokenBaseTransition {
         TokenBaseTransition::V0(TokenBaseTransitionV0 {
             identity_contract_nonce: 13,
@@ -115,21 +117,32 @@ mod json_convertible_tests {
         })
     }
 
+    fn assert_v0_fields(t: &TokenBaseTransition) {
+        let TokenBaseTransition::V0(rec) = t;
+        assert_eq!(rec.identity_contract_nonce, 13, "identity_contract_nonce");
+        assert_eq!(rec.token_contract_position, 2, "token_contract_position");
+        assert_eq!(rec.data_contract_id, Identifier::new([0xa1; 32]), "data_contract_id");
+        assert_eq!(rec.token_id, Identifier::new([0xb2; 32]), "token_id");
+        assert_eq!(rec.using_group_info, None, "using_group_info");
+    }
+
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = JsonConvertible::to_json(&original).expect("to_json");
         let recovered = <TokenBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = ValueConvertible::to_object(&original).expect("to_object");
         let recovered = <TokenBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

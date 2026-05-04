@@ -814,26 +814,72 @@ mod tests {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use crate::data_contract::config::v0::DataContractConfigV0;
+    use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+    /// Non-default values per field so a per-property assertion would catch
+    /// any silent zero-out / flip on round-trip.
     fn fixture() -> DataContractConfig {
-        DataContractConfig::V0(DataContractConfigV0::default())
+        DataContractConfig::V0(DataContractConfigV0 {
+            can_be_deleted: true,
+            readonly: true,
+            keeps_history: true,
+            documents_keep_history_contract_default: true,
+            documents_mutable_contract_default: false,
+            documents_can_be_deleted_contract_default: false,
+            requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Unique),
+            requires_identity_decryption_bounded_key: Some(StorageKeyRequirements::Multiple),
+        })
+    }
+
+    fn assert_v0_fields(c: &DataContractConfig) {
+        let DataContractConfig::V0(rec) = c else {
+            panic!("expected V0 variant");
+        };
+        assert!(rec.can_be_deleted, "can_be_deleted");
+        assert!(rec.readonly, "readonly");
+        assert!(rec.keeps_history, "keeps_history");
+        assert!(
+            rec.documents_keep_history_contract_default,
+            "documents_keep_history_contract_default"
+        );
+        assert!(
+            !rec.documents_mutable_contract_default,
+            "documents_mutable_contract_default (false)"
+        );
+        assert!(
+            !rec.documents_can_be_deleted_contract_default,
+            "documents_can_be_deleted_contract_default (false)"
+        );
+        assert_eq!(
+            rec.requires_identity_encryption_bounded_key,
+            Some(StorageKeyRequirements::Unique),
+            "requires_identity_encryption_bounded_key"
+        );
+        assert_eq!(
+            rec.requires_identity_decryption_bounded_key,
+            Some(StorageKeyRequirements::Multiple),
+            "requires_identity_decryption_bounded_key"
+        );
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = DataContractConfig::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = DataContractConfig::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }

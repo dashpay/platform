@@ -199,25 +199,63 @@ mod json_convertible_tests {
     use super::*;
     use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 
+    use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+
+    /// Non-default values per field so a per-property assertion would catch
+    /// any silent zero-out / flip on round-trip.
     fn fixture() -> ChangeControlRules {
-        ChangeControlRules::V0(ChangeControlRulesV0::default())
+        ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+            admin_action_takers: AuthorizedActionTakers::MainGroup,
+            changing_authorized_action_takers_to_no_one_allowed: true,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: true,
+        })
+    }
+
+    fn assert_v0_fields(r: &ChangeControlRules) {
+        let ChangeControlRules::V0(rec) = r;
+        assert_eq!(
+            rec.authorized_to_make_change,
+            AuthorizedActionTakers::ContractOwner,
+            "authorized_to_make_change"
+        );
+        assert_eq!(
+            rec.admin_action_takers,
+            AuthorizedActionTakers::MainGroup,
+            "admin_action_takers"
+        );
+        assert!(
+            rec.changing_authorized_action_takers_to_no_one_allowed,
+            "changing_authorized_action_takers_to_no_one_allowed"
+        );
+        assert!(
+            !rec.changing_admin_action_takers_to_no_one_allowed,
+            "changing_admin_action_takers_to_no_one_allowed (false)"
+        );
+        assert!(
+            rec.self_changing_admin_action_takers_allowed,
+            "self_changing_admin_action_takers_allowed"
+        );
     }
 
     #[test]
-    fn json_round_trip() {
+    fn json_round_trip_with_per_property_assertions() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let recovered = ChangeControlRules::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip() {
+    fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
         let recovered = ChangeControlRules::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+        assert_v0_fields(&recovered);
     }
 }
