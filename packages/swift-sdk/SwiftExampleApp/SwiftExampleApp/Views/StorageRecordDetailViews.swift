@@ -1481,12 +1481,49 @@ struct TransactionStorageDetailView: View {
                     FieldRow(label: "TX Size", value: "\(size) bytes")
                 }
             }
-            Section("Relationships") {
-                // Transactions are no longer account-scoped. We
-                // surface the participating accounts (if any)
-                // indirectly via the output / input TXOs.
-                FieldRow(label: "Outputs", value: "\(record.outputs.count)")
-                FieldRow(label: "Inputs", value: "\(record.inputs.count)")
+            // Per-output drill-downs. Each row navigates to the
+            // owning `PersistentTxo` so the address / spent state /
+            // wallet linkage of that single output is one tap away.
+            // Sorted by `vout` so the order matches the on-chain
+            // serialization. The vout column is left-aligned and
+            // monospaced so columns line up across rows.
+            Section {
+                if record.outputs.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(record.outputs.sorted { $0.vout < $1.vout }) { txo in
+                        NavigationLink(destination: TxoStorageDetailView(record: txo)) {
+                            txoRowLabel(txo, indexLabel: "vout \(txo.vout)")
+                        }
+                    }
+                }
+            } header: {
+                Text("Outputs (\(record.outputs.count))")
+            }
+
+            // Per-input drill-downs. Each input is the
+            // `PersistentTxo` of the *previous* output that this tx
+            // consumed — tapping it surfaces where the funds came
+            // from (address, originating tx, amount). No stable
+            // input index column lives on `PersistentTxo`, so rows
+            // are ordered by their canonical outpoint string for
+            // determinism.
+            Section {
+                if record.inputs.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(record.inputs.sorted { $0.outpointHex < $1.outpointHex }) { txo in
+                        NavigationLink(destination: TxoStorageDetailView(record: txo)) {
+                            txoRowLabel(txo, indexLabel: "prev")
+                        }
+                    }
+                }
+            } header: {
+                Text("Inputs (\(record.inputs.count))")
             }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
@@ -1495,6 +1532,69 @@ struct TransactionStorageDetailView: View {
         }
         .navigationTitle("Transaction")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Two-line row label for an input / output cell. Top line:
+    /// `<vout-or-prev>  <amount>  <spent-pill>`. Bottom line: the
+    /// 36-byte outpoint hex (so user can copy to a block explorer)
+    /// followed by the address when present. Address line stays
+    /// truncated-middle so a long Base58 doesn't push the right edge
+    /// off the screen.
+    @ViewBuilder
+    private func txoRowLabel(
+        _ txo: PersistentTxo,
+        indexLabel: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(indexLabel)
+                    .font(.caption2.monospaced())
+                    .foregroundColor(.secondary)
+                Text(txo.formattedAmount)
+                    .font(.caption)
+                if txo.isSpent {
+                    Text("spent")
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .clipShape(Capsule())
+                }
+                if txo.isCoinbase {
+                    Text("coinbase")
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+                if txo.isInstantLocked {
+                    Text("IS")
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.green.opacity(0.15))
+                        .foregroundColor(.green)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+            }
+            Text(txo.outpointHex)
+                .font(.caption2.monospaced())
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if !txo.address.isEmpty {
+                Text(txo.address)
+                    .font(.caption2.monospaced())
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
