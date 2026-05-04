@@ -636,9 +636,10 @@ impl Merge for PlatformAddressChangeSet {
                     .map_or(r, |existing| existing.max(r)),
             );
         }
-        // Fee: last-non-zero-wins. Sync-only merges (which carry
-        // `fee == 0`) preserve a transfer's recorded fee; merging
-        // two transfer changesets sums the fees, matching the
+        // Fee: append-sum via `saturating_add`. Sync-only merges
+        // (`fee == 0`) are a no-op so a transfer's recorded fee
+        // survives untouched; merging two transfer changesets sums
+        // the per-operation fees so the merged total reflects the
         // "total fee paid across operations in this batch" intent.
         self.fee = self.fee.saturating_add(other.fee);
     }
