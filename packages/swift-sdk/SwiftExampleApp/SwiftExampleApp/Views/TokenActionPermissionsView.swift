@@ -794,16 +794,26 @@ struct TokenActionPermissionsView: View {
         guard let identity = resolvedIdentity, let sdk = appState.sdk else {
             return
         }
-        let tokenIdString = token.id.toBase58String()
+        // `PersistentToken.id` is a SwiftData uniqueness key
+        // (`contractId + position.bigEndian`) — *not* the on-chain
+        // canonical token id. The SDK's balance lookup is keyed by
+        // the canonical id, so derive it via `calculateTokenId` here
+        // (same shape `IdentityDetailView` uses).
+        guard let position = UInt16(exactly: token.position) else { return }
+        let contractIdString = token.contractId.toBase58String()
         do {
+            let canonicalTokenId = try sdk.calculateTokenId(
+                contractId: contractIdString,
+                position: position
+            )
             let balances = try await sdk.getIdentityTokenBalances(
                 identityId: identity.identityIdBase58,
-                tokenIds: [tokenIdString]
+                tokenIds: [canonicalTokenId]
             )
             await MainActor.run {
                 // Default missing entries to 0 — the SDK omits tokens
                 // the identity has never held.
-                self.fetchedBalance = balances[tokenIdString] ?? 0
+                self.fetchedBalance = balances[canonicalTokenId] ?? 0
             }
         } catch {
             // Keep the seeded value; per-action views still fall back
