@@ -2228,6 +2228,11 @@ public class PlatformWalletPersistenceHandler {
             // Rust manager (UI owns selection now, scan resume is
             // derived from the highest already-registered slot).
             entriesPtr[i] = entry
+            // Bump the initialized-count so a later abort path's
+            // `release()` only deinitializes slots that were
+            // actually written (see `entriesInitialized`'s
+            // doc-comment for why we can't reuse `entriesCount`).
+            allocation.entriesInitialized = i + 1
         }
 
         let typed = UnsafePointer(entriesPtr)
@@ -2291,8 +2296,23 @@ public class PlatformWalletPersistenceHandler {
             // accessor, which prefers `transaction.txid` and falls
             // back to `outpoint.prefix(32)` so storage-explorer rows
             // and the FFI handoff agree on the same 32-byte identity.
+            //
+            // A row whose `txid` doesn't measure 32 bytes is corrupt
+            // by construction (the model guarantees the prefix on
+            // every write). Treat it the same way as the corrupt
+            // `accountType` case below — abort the whole load so the
+            // caller can surface the error rather than silently
+            // under-restoring the funds set. Symmetric handling
+            // keeps the restore contract uniform.
             let txid = record.txid
-            guard txid.count == 32 else { continue }
+            guard txid.count == 32 else {
+                NSLog(
+                    "[persistor-load:swift] aborting load: UTXO has txid of %d bytes (expected 32) — refusing to silently drop it",
+                    txid.count
+                )
+                buf.deallocate()
+                return (nil, 0, true)
+            }
             // Reject UTXOs whose parent `accountType` (UInt32) doesn't
             // fit in `u8`. Truncating would silently wrap a corrupt
             // 0x100+ value into a potentially-valid tag in 0–255 and
@@ -2573,7 +2593,23 @@ public class PlatformWalletPersistenceHandler {
 /// `loadWalletList` call. Released wholesale by `loadWalletListFree`.
 private final class LoadAllocation {
     var entries: UnsafeMutablePointer<WalletRestoreEntryFFI>?
+    /// Allocated capacity — equal to `restorable.count`. Used for
+    /// `deallocate()` (which only requires "the original allocation
+    /// size") and as the upper bound on `entriesInitialized`.
     var entriesCount: Int = 0
+    /// How many of the `entriesCount` slots have actually been
+    /// written via `entriesPtr[i] = entry`. Tracked separately from
+    /// `entriesCount` because early-abort paths (account-tag
+    /// overflow, UTXO marshalling failure) call `release()` after
+    /// only `0..<i` slots have been initialized; calling
+    /// `deinitialize(count: entriesCount)` over the full capacity
+    /// would deinitialize uninitialized memory, which is UB by
+    /// `UnsafeMutablePointer`'s contract. The fact that
+    /// `WalletRestoreEntryFFI` and its siblings happen to import as
+    /// trivial C structs means the no-op deinit doesn't crash today,
+    /// but any future field that imports as a non-trivial Swift
+    /// type would turn this into real UB.
+    var entriesInitialized: Int = 0
     /// `AccountSpecFFI` arrays per wallet.
     var accountArrays: [(UnsafeMutablePointer<AccountSpecFFI>, Int)] = []
     /// `AddressBalanceEntryFFI` arrays per wallet.
@@ -2603,7 +2639,15 @@ private final class LoadAllocation {
 
     func release() {
         if let entries = entries {
-            entries.deinitialize(count: entriesCount)
+            // Deinitialize ONLY the slots that were actually written
+            // (`entriesInitialized`), then deallocate the full
+            // capacity (`entriesCount`). Per Swift's pointer
+            // contract, `deinitialize(count:)` requires the region
+            // to be initialized; `deallocate()` only requires the
+            // pointer to match the original allocation.
+            if entriesInitialized > 0 {
+                entries.deinitialize(count: entriesInitialized)
+            }
             entries.deallocate()
         }
         for (ptr, count) in accountArrays {

@@ -141,13 +141,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // DashPay accounts are funds-bearing; use the typed
         // `insert_funds` API exposed by the post-split collection
         // rather than wrapping in `OwnedManagedCoreAccount`.
-        let managed =
-            key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
-        info.core_wallet.accounts.insert_funds(managed).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register contact account: {e}"
-            ))
-        })?;
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        info.core_wallet
+            .accounts
+            .insert_funds(managed)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register contact account: {e}"
+                ))
+            })?;
 
         Ok(())
     }
@@ -474,8 +476,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         // DashpayExternalAccount is funds-bearing; insert via the
         // typed `insert_funds` API after the upstream split.
-        let managed =
-            key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
@@ -494,12 +495,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             })?;
 
         // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
-        info.core_wallet.accounts.insert_funds(managed).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register external contact account: {}",
-                e
-            ))
-        })?;
+        info.core_wallet
+            .accounts
+            .insert_funds(managed)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register external contact account: {}",
+                    e
+                ))
+            })?;
 
         tracing::info!(
             our_identity = %our_identity_id,

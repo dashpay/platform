@@ -42,8 +42,7 @@ use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UtxoRestoreEntryFFI,
-    WalletRestoreEntryFFI,
+    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -143,7 +142,11 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Invoked on [`FFIPersister::load`] to pull the persisted wallet
-    /// list back into Rust for watch-only reconstruction.
+    /// list back into Rust for external-signable reconstruction.
+    /// (The function name still reads "watch-only" in older docs; the
+    /// reconstructed `Wallet` is built via
+    /// `Wallet::new_external_signable` so the signer surface routes
+    /// back to the host's keychain.)
     ///
     /// Implementations must set `*out_entries` to a Swift-allocated
     /// array of `WalletRestoreEntryFFI` and `*out_count` to the
@@ -1150,8 +1153,12 @@ impl Drop for LoadGuard {
     }
 }
 
-/// Reconstruct a watch-only [`Wallet`] + matching start-state bucket
-/// from a single `WalletRestoreEntryFFI`.
+/// Reconstruct an external-signable [`Wallet`] + matching start-state
+/// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
+/// stays in the host's keychain; signing requests route back through
+/// the configured signer surface (see
+/// `Wallet::new_external_signable`). Earlier revisions of this code
+/// path produced a `WatchOnly` wallet — that has been replaced.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -1308,10 +1315,7 @@ fn build_wallet_start_state(
             );
             continue;
         };
-        let outpoint = dashcore::OutPoint {
-            txid,
-            vout: u.vout,
-        };
+        let outpoint = dashcore::OutPoint { txid, vout: u.vout };
         let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes.to_vec());
         let Ok(address) = dashcore::Address::from_script(&script_pubkey, network) else {
             dropped_bad_script += 1;
@@ -1360,26 +1364,24 @@ fn build_wallet_start_state(
                 index,
                 user_identity_id,
                 friend_identity_id,
-            } => wallet_info
-                .accounts
-                .dashpay_receival_accounts
-                .get_mut(&key_wallet::account::account_collection::DashpayAccountKey {
+            } => wallet_info.accounts.dashpay_receival_accounts.get_mut(
+                &key_wallet::account::account_collection::DashpayAccountKey {
                     index,
                     user_identity_id,
                     friend_identity_id,
-                }),
+                },
+            ),
             AccountType::DashpayExternalAccount {
                 index,
                 user_identity_id,
                 friend_identity_id,
-            } => wallet_info
-                .accounts
-                .dashpay_external_accounts
-                .get_mut(&key_wallet::account::account_collection::DashpayAccountKey {
+            } => wallet_info.accounts.dashpay_external_accounts.get_mut(
+                &key_wallet::account::account_collection::DashpayAccountKey {
                     index,
                     user_identity_id,
                     friend_identity_id,
-                }),
+                },
+            ),
             _ => None,
         };
         if let Some(funds_account) = target_funds {
@@ -1394,8 +1396,7 @@ fn build_wallet_start_state(
             );
         }
     }
-    let dropped =
-        dropped_account_type + dropped_bad_txid + dropped_bad_script + dropped_no_account;
+    let dropped = dropped_account_type + dropped_bad_txid + dropped_bad_script + dropped_no_account;
     if dropped > 0 {
         // Surface a single rollup line so operators see the totals
         // even with `tracing` set to ERROR-only (the per-row warns
@@ -1735,8 +1736,8 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
     })?;
     Ok(match type_tag {
         AccountTypeTagFFI::Standard => {
-            let standard_tag =
-                StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag).ok_or_else(|| {
+            let standard_tag = StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag)
+                .ok_or_else(|| {
                     PersistenceError::Backend(format!(
                         "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
                         spec.standard_tag

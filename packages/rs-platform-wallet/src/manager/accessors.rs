@@ -266,10 +266,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Uses `blocking_read` on the wallet manager lock; safe from
     /// non-async FFI context but must NOT be called from within a
     /// tokio async task.
-    pub fn account_balances_blocking(
-        &self,
-        wallet_id: &WalletId,
-    ) -> Vec<AccountBalanceRow> {
+    pub fn account_balances_blocking(&self, wallet_id: &WalletId) -> Vec<AccountBalanceRow> {
         let wm = self.wallet_manager.blocking_read();
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
@@ -282,10 +279,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Balance lives on the funds-bearing variant only;
                 // keys-only accounts (identity, asset-lock, provider)
                 // never carry UTXOs.
-                let balance = account
-                    .as_funds()
-                    .map(|a| a.balance)
-                    .unwrap_or_default();
+                let balance = account.as_funds().map(|a| a.balance).unwrap_or_default();
                 // Walk every pool on the account, sum
                 // `used` + total entries. Cheap — pools are bounded by
                 // the gap limit.
@@ -294,11 +288,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .address_pools()
                     .iter()
                     .fold((0u32, 0u32), |(used, total), pool| {
-                        let pool_used = pool
-                            .addresses
-                            .values()
-                            .filter(|info| info.used)
-                            .count() as u32;
+                        let pool_used =
+                            pool.addresses.values().filter(|info| info.used).count() as u32;
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
                     });

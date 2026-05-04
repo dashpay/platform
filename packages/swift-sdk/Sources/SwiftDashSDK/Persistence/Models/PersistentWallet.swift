@@ -36,6 +36,13 @@ public final class PersistentWallet {
     }
     /// Optional wallet name.
     public var name: String?
+    /// Optional free-form user-supplied description. Mirrored into
+    /// the keychain metadata blob (see `WalletKeychainMetadata`) so
+    /// it survives a SwiftData wipe / reinstall via the
+    /// orphan-mnemonic recovery flow. No UI surfaces this yet, but
+    /// the column is wired so existing rows roll forward without a
+    /// schema migration when it lands.
+    public var walletDescription: String?
     /// Birth height — block height when the wallet was created.
     public var birthHeight: UInt32
     /// Last synced core block height.
@@ -71,6 +78,7 @@ public final class PersistentWallet {
         walletId: Data,
         network: Network? = nil,
         name: String? = nil,
+        walletDescription: String? = nil,
         birthHeight: UInt32 = 0,
         syncedHeight: UInt32 = 0,
         isImported: Bool = false
@@ -78,6 +86,7 @@ public final class PersistentWallet {
         self.walletId = walletId
         self.networkRaw = network?.rawValue
         self.name = name
+        self.walletDescription = walletDescription
         self.birthHeight = birthHeight
         self.syncedHeight = syncedHeight
         self.lastSynced = 0

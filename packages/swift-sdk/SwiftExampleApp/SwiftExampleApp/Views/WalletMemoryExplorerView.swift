@@ -13,6 +13,7 @@
 
 import SwiftUI
 import SwiftDashSDK
+import SwiftData
 
 // MARK: - Helpers
 
@@ -139,6 +140,12 @@ private func accountTypeName(typeTag: UInt8, standardTag: UInt8) -> String {
 private struct KVRow: View {
     let label: String
     let value: String
+    /// Optional override for the value text color. Used by the
+    /// SwiftData-counterpart diagnostic to paint mismatch rows red
+    /// (or orange for "linked weakly") so reviewers can scan a long
+    /// list without expanding every entry. Defaults to the system
+    /// foreground color when nil so prior call sites stay unchanged.
+    var valueColor: Color? = nil
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -149,6 +156,7 @@ private struct KVRow: View {
                 .truncationMode(.middle)
                 .textSelection(.enabled)
                 .font(.system(.body, design: .monospaced))
+                .foregroundColor(valueColor)
         }
     }
 }
@@ -926,10 +934,29 @@ struct AccountDrillDownView: View {
     let walletId: Data
     let balance: PlatformWalletManager.AccountBalance
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// SwiftData context — used to cross-check every in-memory UTXO
+    /// against its persisted `PersistentTxo` counterpart and surface
+    /// the side-by-side diff in the explorer. Mismatches point at
+    /// real bugs (orphan rows from incomplete cascades, lingering
+    /// `isSpent == false` rows that the wallet has already evicted,
+    /// out-of-sync amount / height fields, etc.).
+    @Environment(\.modelContext) private var modelContext
 
     @State private var metadata: PlatformWalletManager.AccountMetadataSnapshot?
     @State private var pools: [PlatformWalletManager.AccountAddressPool] = []
     @State private var utxos: [PlatformWalletManager.AccountUtxo] = []
+    /// Snapshot of `PersistentTxo` rows for this wallet+account that
+    /// SwiftData reports as unspent. Keyed by 36-byte outpoint
+    /// (`PersistentTxo.makeOutpoint`) so each in-memory UTXO can do
+    /// an O(1) lookup. Refreshed alongside `utxos` in `load()`.
+    @State private var persistedTxosByOutpoint: [Data: TxoSnapshot] = [:]
+    /// Persisted rows the wallet doesn't currently claim — i.e.,
+    /// `PersistentTxo` rows for this wallet+account where
+    /// `isSpent == false` but the outpoint isn't in the in-memory
+    /// UTXO set. The orphan signature for the persistence /
+    /// cascade-delete bug surfaced during the run-1 → fresh-load
+    /// regression diagnosis.
+    @State private var orphanPersistedTxos: [TxoSnapshot] = []
 
     /// Whether this account is the keys-only variant — drives whether
     /// UTXO-related surfaces are shown. UTXOs are exclusive to the
@@ -952,6 +979,7 @@ struct AccountDrillDownView: View {
             addressPoolsSection
             if !isKeysAccount {
                 utxosSection
+                orphanPersistedSection
             }
             // Per-account in-memory transaction list intentionally
             // omitted: `keep_txs_in_memory` is off and tx history is
@@ -1087,19 +1115,102 @@ struct AccountDrillDownView: View {
             } else {
                 ForEach(Array(utxos.enumerated()), id: \.offset) { _, u in
                     DisclosureGroup {
+                        // In-memory side (Rust-owned, what the wallet
+                        // currently believes about this UTXO).
+                        Text("In-memory (Rust)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                         KVRow(label: "Value", value: formatDuffs(u.valueDuffs))
                         KVRow(label: "Height", value: "\(u.height)")
                         KVRow(label: "Locked", value: u.isLocked ? "yes" : "no")
                         KVRow(label: "Script Len", value: "\(u.scriptPubkey.count)")
-                    } label: {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(
-                                u.outpointTxid.map { String(format: "%02x", $0) }.joined()
-                                + ":" + "\(u.outpointVout)"
+
+                        Divider()
+
+                        // SwiftData side. The persistence handler
+                        // upserts a `PersistentTxo` for each emit; if
+                        // the row is missing here the in-memory wallet
+                        // is ahead of disk (recent receive that
+                        // hasn't flushed yet). If the row is present
+                        // but flagged `isSpent`, that's a real
+                        // disagreement worth investigating.
+                        Text("SwiftData (PersistentTxo)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        let outpointKey = PersistentTxo.makeOutpoint(
+                            txid: u.outpointTxid,
+                            vout: u.outpointVout
+                        )
+                        if let p = persistedTxosByOutpoint[outpointKey] {
+                            KVRow(
+                                label: "Amount",
+                                value: formatDuffs(p.amount),
+                                valueColor: p.amount == u.valueDuffs ? nil : .red
                             )
-                            .font(.caption2.monospaced())
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            KVRow(
+                                label: "Height",
+                                value: "\(p.height)",
+                                valueColor: p.height == u.height ? nil : .red
+                            )
+                            KVRow(
+                                label: "isSpent",
+                                value: p.isSpent ? "yes (DISAGREE)" : "no",
+                                valueColor: p.isSpent ? .red : nil
+                            )
+                            KVRow(label: "isConfirmed", value: p.isConfirmed ? "yes" : "no")
+                            KVRow(label: "isCoinbase", value: p.isCoinbase ? "yes" : "no")
+                            KVRow(label: "isInstantLocked", value: p.isInstantLocked ? "yes" : "no")
+                            KVRow(label: "isLocked", value: p.isLocked ? "yes" : "no")
+                            KVRow(
+                                label: "Address",
+                                value: p.address.isEmpty ? "(none)" : p.address
+                            )
+                            KVRow(
+                                label: "wallet match",
+                                value: p.walletIdMatches ? "yes" : "no",
+                                valueColor: p.walletIdMatches ? nil : .red
+                            )
+                            KVRow(
+                                label: "account linked",
+                                value: p.hasAccountLink ? "yes" : "no",
+                                valueColor: p.hasAccountLink ? nil : .orange
+                            )
+                            KVRow(
+                                label: "coreAddress linked",
+                                value: p.hasCoreAddressLink ? "yes" : "no",
+                                valueColor: p.hasCoreAddressLink ? nil : .orange
+                            )
+                        } else {
+                            Text("Not in SwiftData (in-memory ahead of disk, or never persisted)")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    } label: {
+                        let outpointKey = PersistentTxo.makeOutpoint(
+                            txid: u.outpointTxid,
+                            vout: u.outpointVout
+                        )
+                        let mismatchKind: String? = persistedTxosByOutpoint[outpointKey]
+                            .map { snap in mismatchSummary(persisted: snap, against: u) }
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 6) {
+                                Text(
+                                    u.outpointTxid.map { String(format: "%02x", $0) }.joined()
+                                    + ":" + "\(u.outpointVout)"
+                                )
+                                .font(.caption2.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                if persistedTxosByOutpoint[outpointKey] == nil {
+                                    Text("⚠︎ no row")
+                                        .font(.caption2)
+                                        .foregroundColor(.red)
+                                } else if let kind = mismatchKind, !kind.isEmpty {
+                                    Text("⚠︎ \(kind)")
+                                        .font(.caption2)
+                                        .foregroundColor(.red)
+                                }
+                            }
                             Text(formatDuffs(u.valueDuffs))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -1112,6 +1223,80 @@ struct AccountDrillDownView: View {
         }
     }
 
+    /// SwiftData rows the in-memory wallet doesn't claim. Surfaces
+    /// the cascade / spent-flag / orphan-row class of bugs where
+    /// `load_from_persistor` would over-restore on next launch.
+    @ViewBuilder
+    private var orphanPersistedSection: some View {
+        if !orphanPersistedTxos.isEmpty {
+            Section {
+                Text(
+                    "These PersistentTxo rows are unspent on disk but "
+                    + "the in-memory wallet doesn't list them. They "
+                    + "would surface on the next load_from_persistor "
+                    + "and inflate the restored balance."
+                )
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                ForEach(Array(orphanPersistedTxos.enumerated()), id: \.offset) { _, p in
+                    DisclosureGroup {
+                        KVRow(label: "Amount", value: formatDuffs(p.amount))
+                        KVRow(label: "Height", value: "\(p.height)")
+                        KVRow(label: "isConfirmed", value: p.isConfirmed ? "yes" : "no")
+                        KVRow(label: "isCoinbase", value: p.isCoinbase ? "yes" : "no")
+                        KVRow(label: "isInstantLocked", value: p.isInstantLocked ? "yes" : "no")
+                        KVRow(label: "Address", value: p.address.isEmpty ? "(none)" : p.address)
+                        KVRow(
+                            label: "wallet match",
+                            value: p.walletIdMatches ? "yes" : "no",
+                            valueColor: p.walletIdMatches ? nil : .red
+                        )
+                        KVRow(
+                            label: "account linked",
+                            value: p.hasAccountLink ? "yes" : "no",
+                            valueColor: p.hasAccountLink ? nil : .orange
+                        )
+                        KVRow(
+                            label: "coreAddress linked",
+                            value: p.hasCoreAddressLink ? "yes" : "no",
+                            valueColor: p.hasCoreAddressLink ? nil : .orange
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(p.outpointHex)
+                                .font(.caption2.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(formatDuffs(p.amount))
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+            } header: {
+                Text("Orphan persisted UTXOs (\(orphanPersistedTxos.count))")
+            }
+        }
+    }
+
+    /// Compose a one-word summary of the most-prominent disagreement
+    /// between a `TxoSnapshot` and the in-memory `AccountUtxo`. The
+    /// label badge shows this so reviewers can scan a long list
+    /// without expanding every row. Returns an empty string when
+    /// every checked field agrees.
+    private func mismatchSummary(
+        persisted p: TxoSnapshot,
+        against m: PlatformWalletManager.AccountUtxo
+    ) -> String {
+        if p.isSpent { return "spent on disk" }
+        if !p.walletIdMatches { return "wallet id mismatch" }
+        if p.amount != m.valueDuffs { return "amount mismatch" }
+        if p.height != m.height { return "height mismatch" }
+        if !p.hasAccountLink { return "no account link" }
+        if !p.hasCoreAddressLink { return "no coreAddress link" }
+        return ""
+    }
+
     private func load() {
         metadata = walletManager.accountMetadata(for: walletId, balance: balance)
         pools = walletManager.accountAddressPools(for: walletId, balance: balance)
@@ -1119,6 +1304,98 @@ struct AccountDrillDownView: View {
         // Tx history is event-driven and not held in memory; skip the
         // accessor here — see the comment on the body's omitted
         // `transactionsSection`.
+
+        // Refresh the SwiftData side. Fetch every unspent
+        // `PersistentTxo` for this wallet, then narrow to rows
+        // routed to this account by tag tuple — `PersistentTxo`
+        // links to `PersistentAccount` directly (line 85 in the
+        // model), so we filter on `account.accountType /
+        // accountIndex / standardTag / registrationIndex / keyClass`
+        // in Swift (SwiftData `#Predicate` doesn't traverse
+        // `account?.…` nicely). Result is keyed by 36-byte outpoint
+        // for the per-row comparison loop.
+        let walletIdLocal = walletId
+        let typeTag = balance.typeTag
+        let standardTag = balance.standardTag
+        let accountIdx = balance.index
+        let regIdx = balance.registrationIndex
+        let keyClass = balance.keyClass
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { txo in
+                txo.walletId == walletIdLocal && txo.isSpent == false
+            }
+        )
+        let rows = (try? modelContext.fetch(descriptor)) ?? []
+        var byOutpoint: [Data: TxoSnapshot] = [:]
+        var orphanCandidates: [TxoSnapshot] = []
+        let inMemoryOutpoints: Set<Data> = Set(utxos.map { u in
+            PersistentTxo.makeOutpoint(txid: u.outpointTxid, vout: u.outpointVout)
+        })
+        for row in rows {
+            guard let acc = row.account else {
+                // No account link — definitely orphan, surface in
+                // the orphan section regardless of tag matching.
+                let snap = TxoSnapshot(from: row, expectedWalletId: walletIdLocal)
+                orphanCandidates.append(snap)
+                continue
+            }
+            // Filter on the same account tag tuple the manager uses
+            // when routing in-memory UTXOs into accounts. A row that
+            // doesn't match this account — even if its walletId
+            // matches — belongs to a sibling account in this view's
+            // sibling drill-downs.
+            let matchesThisAccount =
+                UInt8(exactly: acc.accountType) == typeTag
+                && acc.standardTag == standardTag
+                && acc.accountIndex == accountIdx
+                && acc.registrationIndex == regIdx
+                && acc.keyClass == keyClass
+            guard matchesThisAccount else { continue }
+            let snap = TxoSnapshot(from: row, expectedWalletId: walletIdLocal)
+            byOutpoint[row.outpoint] = snap
+            if !inMemoryOutpoints.contains(row.outpoint) {
+                orphanCandidates.append(snap)
+            }
+        }
+        persistedTxosByOutpoint = byOutpoint
+        orphanPersistedTxos = orphanCandidates
+    }
+}
+
+/// Plain-Swift snapshot of the `PersistentTxo` fields the explorer
+/// reads. Decouples the view from the SwiftData @Model so we don't
+/// hand a managed object across `@State` (which fights with
+/// SwiftUI's value-semantics expectations) and so the comparison
+/// helpers don't have to walk the relationship graph mid-render.
+private struct TxoSnapshot: Equatable {
+    let outpoint: Data
+    let outpointHex: String
+    let amount: UInt64
+    let height: UInt32
+    let isConfirmed: Bool
+    let isCoinbase: Bool
+    let isInstantLocked: Bool
+    let isLocked: Bool
+    let isSpent: Bool
+    let address: String
+    let walletIdMatches: Bool
+    let hasAccountLink: Bool
+    let hasCoreAddressLink: Bool
+
+    init(from row: PersistentTxo, expectedWalletId: Data) {
+        self.outpoint = row.outpoint
+        self.outpointHex = row.outpointHex
+        self.amount = row.amount
+        self.height = row.height
+        self.isConfirmed = row.isConfirmed
+        self.isCoinbase = row.isCoinbase
+        self.isInstantLocked = row.isInstantLocked
+        self.isLocked = row.isLocked
+        self.isSpent = row.isSpent
+        self.address = row.address
+        self.walletIdMatches = row.walletId == expectedWalletId
+        self.hasAccountLink = row.account != nil
+        self.hasCoreAddressLink = row.coreAddress != nil
     }
 }
 

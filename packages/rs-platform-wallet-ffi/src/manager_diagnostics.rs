@@ -506,8 +506,7 @@ pub unsafe extern "C" fn platform_wallet_account_address_pools_free(
             // Walk every per-address row first to release its
             // heap-owned `address` C string and `public_key_bytes`
             // buffer before the parent slice is reclaimed.
-            let addrs =
-                std::slice::from_raw_parts(entry.addresses, entry.addresses_count);
+            let addrs = std::slice::from_raw_parts(entry.addresses, entry.addresses_count);
             for a in addrs {
                 if !a.address.is_null() {
                     let _ = CString::from_raw(a.address);
@@ -824,8 +823,8 @@ fn account_type_from_spec_ref(
     })?;
     Ok(match type_tag {
         AccountTypeTagFFI::Standard => {
-            let standard_tag =
-                StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag).ok_or_else(|| {
+            let standard_tag = StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag)
+                .ok_or_else(|| {
                     format!(
                         "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
                         spec.standard_tag
