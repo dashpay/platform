@@ -12,6 +12,13 @@ import SwiftDashSDK
 struct TokenBurnActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
+    /// Balance the parent screen already fetched for this token via
+    /// `sdk.getIdentityTokenBalances`. When non-nil, it's the source of
+    /// truth; when nil, we fall back to the `PersistentTokenBalance`
+    /// row, which may not be populated yet. Declared as `var` (not
+    /// `let`) so the synthesized memberwise init exposes it with the
+    /// default of `nil`.
+    var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
@@ -62,7 +69,7 @@ struct TokenBurnActionView: View {
 
             Section("Amount") {
                 TextField("Amount", text: $amountText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                 if let amountValue = parsedAmount, amountValue > balanceValue {
                     Text("Amount exceeds your balance.")
                         .font(.caption)
@@ -113,11 +120,15 @@ struct TokenBurnActionView: View {
     }
 
     private var balanceValue: UInt64 {
+        if let initialBalance { return initialBalance }
         guard let balance = matchingBalance else { return 0 }
         return balance.balance < 0 ? 0 : UInt64(balance.balance)
     }
 
     private var balanceDisplay: String {
+        if let initialBalance {
+            return formatTokenAmount(initialBalance, decimals: token.decimals)
+        }
         guard let balance = matchingBalance else { return "0" }
         return balance.displayBalance
     }
@@ -129,9 +140,10 @@ struct TokenBurnActionView: View {
         }
     }
 
+    /// See `parseTokenAmount` — input is in display units, scaled to
+    /// raw on-chain units by `token.decimals` before validation.
     private var parsedAmount: UInt64? {
-        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(amountText, decimals: token.decimals)
     }
 
     private var canSubmit: Bool {
@@ -231,4 +243,50 @@ struct TokenBurnActionView: View {
             }
         }
     }
+}
+
+/// Parse a user-entered amount in display units (e.g. "5" or "4.25"
+/// for a token with 8 decimals) into raw on-chain units. Accepts both
+/// "." and "," as the decimal separator so users in either locale can
+/// type naturally. Returns nil for empty / unparseable / negative /
+/// out-of-range input.
+///
+/// Excess fractional digits beyond `decimals` are truncated (rounded
+/// down) rather than rounded — silently rounding *up* would let the
+/// user submit slightly more than they typed, which would surprise on
+/// a balance edge.
+fileprivate func parseTokenAmount(_ text: String, decimals: Int) -> UInt64? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
+    guard let entered = Decimal(string: normalized), entered >= 0 else {
+        return nil
+    }
+
+    let dec = max(0, decimals)
+    let multiplier = pow(Decimal(10), dec)
+    var scaled = entered * multiplier
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &scaled, 0, .down)
+
+    if rounded < 0 || rounded > Decimal(UInt64.max) { return nil }
+    return (rounded as NSDecimalNumber).uint64Value
+}
+
+/// Format a raw u64 token amount with the given decimals using
+/// `Decimal` (not `Double`) so high-decimal tokens with large balances
+/// don't lose precision. Mirrors `IdentityTokenRow.formattedBalance`
+/// in `IdentityDetailView`.
+fileprivate func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
+    let dec = max(0, decimals)
+    let rawDecimal = Decimal(raw)
+    let divisor = pow(Decimal(10), dec)
+    let scaled = divisor == 0 ? rawDecimal : (rawDecimal / divisor)
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.maximumFractionDigits = dec
+    formatter.minimumFractionDigits = 0
+    formatter.usesGroupingSeparator = true
+    return formatter.string(from: scaled as NSNumber) ?? "\(raw)"
 }

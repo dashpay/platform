@@ -632,12 +632,22 @@ struct TokenActionPermissionsView: View {
     /// so the user can pick one to evaluate against.
     @State private var pickedIdentity: PersistentIdentity?
     private let initialIdentity: PersistentIdentity?
+    /// Forwarded to balance-gated action views (Transfer, Burn) so they
+    /// don't have to wait on a `PersistentTokenBalance` row that may
+    /// not exist yet. Only meaningful when paired with a pinned
+    /// `identity`; ignored when the caller lets the user pick.
+    private let initialBalance: UInt64?
 
     @Query private var localIdentities: [PersistentIdentity]
 
-    init(token: PersistentToken, identity: PersistentIdentity? = nil) {
+    init(
+        token: PersistentToken,
+        identity: PersistentIdentity? = nil,
+        initialBalance: UInt64? = nil
+    ) {
         self.token = token
         self.initialIdentity = identity
+        self.initialBalance = initialBalance
         self._pickedIdentity = State(initialValue: identity)
         // Filter to wallet-owned identities on the same network as
         // this token's parent contract; falls back to "any
@@ -825,11 +835,28 @@ struct TokenActionPermissionsView: View {
         _ row: ResolvedTokenAction,
         identity: PersistentIdentity
     ) -> some View {
+        // The cached `initialBalance` was fetched for `initialIdentity`;
+        // if the user picked a different identity, fall back to the
+        // per-view PersistentTokenBalance lookup.
+        let forwardedBalance: UInt64? = {
+            guard let pinned = initialIdentity,
+                  pinned.identityId == identity.identityId
+            else { return nil }
+            return initialBalance
+        }()
         switch row.kind {
         case .transfer:
-            TokenTransferActionView(token: token, identity: identity)
+            TokenTransferActionView(
+                token: token,
+                identity: identity,
+                initialBalance: forwardedBalance
+            )
         case .burn:
-            TokenBurnActionView(token: token, identity: identity)
+            TokenBurnActionView(
+                token: token,
+                identity: identity,
+                initialBalance: forwardedBalance
+            )
         case .mint:
             TokenMintActionView(token: token, identity: identity)
         case .claim:

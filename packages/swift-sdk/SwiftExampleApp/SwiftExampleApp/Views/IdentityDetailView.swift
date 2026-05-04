@@ -291,7 +291,8 @@ struct IdentityDetailView: View {
                             NavigationLink(
                                 destination: TokenActionPermissionsView(
                                     token: entry.token,
-                                    identity: identity
+                                    identity: identity,
+                                    initialBalance: entry.balance
                                 )
                             ) {
                                 IdentityTokenRow(entry: entry)
