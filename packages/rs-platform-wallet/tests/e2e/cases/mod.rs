@@ -7,4 +7,5 @@ pub mod id_002_top_up_identity;
 pub mod id_003_identity_to_identity_transfer;
 pub mod id_005_identity_to_addresses_transfer;
 pub mod id_sweep_recovers_identity_credits;
+pub mod print_bank_address;
 pub mod transfer;

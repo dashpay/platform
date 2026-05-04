@@ -129,6 +129,13 @@ impl BankWallet {
             );
         }
 
+        tracing::info!(
+            address = %primary_receive_address.to_bech32m_string(network),
+            balance = total,
+            network = %network,
+            "Bank wallet ready",
+        );
+
         let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             wallet,
