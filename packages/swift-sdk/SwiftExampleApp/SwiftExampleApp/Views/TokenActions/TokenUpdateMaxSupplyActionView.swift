@@ -71,7 +71,7 @@ struct TokenUpdateMaxSupplyActionView: View {
             Section("New max supply") {
                 Toggle("Remove cap", isOn: $removeCap)
                 TextField("Amount", text: $newMaxSupplyText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                     .disabled(removeCap)
                     .foregroundColor(removeCap ? .secondary : .primary)
                 if !removeCap, let parsed = parsedNewMaxSupply, parsed == 0 {
@@ -122,15 +122,21 @@ struct TokenUpdateMaxSupplyActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
-    /// Display the current max supply as it's stored on `PersistentToken`.
-    /// `maxSupply` is a string-encoded u64; missing means "uncapped".
+    /// Display the current max supply scaled to display units, so the
+    /// number the user sees here is in the same unit they're about to
+    /// type in the input below. `token.maxSupply` is a string-encoded
+    /// raw u64; missing means "uncapped".
     private var currentMaxSupplyDisplay: String {
-        token.maxSupply ?? "Uncapped"
+        guard let raw = token.maxSupply, let value = UInt64(raw) else {
+            return "Uncapped"
+        }
+        return formatTokenAmount(value, decimals: token.decimals)
     }
 
+    /// User input is in display units; scale to raw on-chain units for
+    /// the FFI / config-change payload.
     private var parsedNewMaxSupply: UInt64? {
-        let trimmed = newMaxSupplyText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(newMaxSupplyText, decimals: token.decimals)
     }
 
     private var canSubmit: Bool {

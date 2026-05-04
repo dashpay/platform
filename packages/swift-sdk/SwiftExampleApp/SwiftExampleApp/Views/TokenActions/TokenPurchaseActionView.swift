@@ -43,7 +43,7 @@ struct TokenPurchaseActionView: View {
 
             Section("Amount") {
                 TextField("Tokens to buy", text: $amountText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                 if let amount = parsedAmount, amount == 0 {
                     Text("Amount must be greater than zero.")
                         .font(.caption)
@@ -98,9 +98,9 @@ struct TokenPurchaseActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
+    /// Tokens-to-buy is in display units; the FFI takes raw u64.
     private var parsedAmount: UInt64? {
-        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(amountText, decimals: token.decimals)
     }
 
     /// `PersistentToken` doesn't yet carry a direct-purchase price

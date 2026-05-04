@@ -632,12 +632,16 @@ struct TokenActionPermissionsView: View {
     /// so the user can pick one to evaluate against.
     @State private var pickedIdentity: PersistentIdentity?
     private let initialIdentity: PersistentIdentity?
-    /// Forwarded to balance-gated action views (Transfer, Burn) so they
-    /// don't have to wait on a `PersistentTokenBalance` row that may
-    /// not exist yet. Only meaningful when paired with a pinned
-    /// `identity`; ignored when the caller lets the user pick.
-    private let initialBalance: UInt64?
 
+    /// Live balance for `(resolvedIdentity, token)`. Seeded from the
+    /// caller's `initialBalance` so the first paint isn't blank when
+    /// the parent screen already has the value, then refreshed via
+    /// `sdk.getIdentityTokenBalances` whenever the identity changes.
+    /// `PersistentTokenBalance` rows aren't reliably populated by the
+    /// time this screen opens, so we can't depend on them.
+    @State private var fetchedBalance: UInt64?
+
+    @EnvironmentObject var appState: AppState
     @Query private var localIdentities: [PersistentIdentity]
 
     init(
@@ -647,8 +651,8 @@ struct TokenActionPermissionsView: View {
     ) {
         self.token = token
         self.initialIdentity = identity
-        self.initialBalance = initialBalance
         self._pickedIdentity = State(initialValue: identity)
+        self._fetchedBalance = State(initialValue: initialBalance)
         // Filter to wallet-owned identities on the same network as
         // this token's parent contract; falls back to "any
         // wallet-owned" if the contract isn't loaded.
@@ -777,6 +781,34 @@ struct TokenActionPermissionsView: View {
                 pickedIdentity = localIdentities.first
             }
         }
+        // Refresh the balance for whichever identity is resolved.
+        // `.task(id:)` re-runs when the user switches identity via the
+        // picker, so the value forwarded into Transfer/Burn always
+        // matches the current selection.
+        .task(id: resolvedIdentity?.identityId) {
+            await refreshTokenBalance()
+        }
+    }
+
+    private func refreshTokenBalance() async {
+        guard let identity = resolvedIdentity, let sdk = appState.sdk else {
+            return
+        }
+        let tokenIdString = token.id.toBase58String()
+        do {
+            let balances = try await sdk.getIdentityTokenBalances(
+                identityId: identity.identityIdBase58,
+                tokenIds: [tokenIdString]
+            )
+            await MainActor.run {
+                // Default missing entries to 0 — the SDK omits tokens
+                // the identity has never held.
+                self.fetchedBalance = balances[tokenIdString] ?? 0
+            }
+        } catch {
+            // Keep the seeded value; per-action views still fall back
+            // to the persisted row when this stays nil.
+        }
     }
 
     private var identityPickerBinding: Binding<Data?> {
@@ -835,27 +867,20 @@ struct TokenActionPermissionsView: View {
         _ row: ResolvedTokenAction,
         identity: PersistentIdentity
     ) -> some View {
-        // The cached `initialBalance` was fetched for `initialIdentity`;
-        // if the user picked a different identity, fall back to the
-        // per-view PersistentTokenBalance lookup.
-        let forwardedBalance: UInt64? = {
-            guard let pinned = initialIdentity,
-                  pinned.identityId == identity.identityId
-            else { return nil }
-            return initialBalance
-        }()
+        // `fetchedBalance` is refreshed by `.task(id: resolvedIdentity)`
+        // so it's always for the identity the action will run as.
         switch row.kind {
         case .transfer:
             TokenTransferActionView(
                 token: token,
                 identity: identity,
-                initialBalance: forwardedBalance
+                initialBalance: fetchedBalance
             )
         case .burn:
             TokenBurnActionView(
                 token: token,
                 identity: identity,
-                initialBalance: forwardedBalance
+                initialBalance: fetchedBalance
             )
         case .mint:
             TokenMintActionView(token: token, identity: identity)

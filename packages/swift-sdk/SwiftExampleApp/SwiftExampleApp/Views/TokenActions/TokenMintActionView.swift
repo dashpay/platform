@@ -35,8 +35,11 @@ struct TokenMintActionView: View {
         Form {
             Section("Token") {
                 LabeledContent("Token", value: token.displayName)
-                if let maxSupply = token.maxSupply {
-                    LabeledContent("Max supply", value: maxSupply)
+                if let maxSupplyRaw = parsedMaxSupply {
+                    LabeledContent(
+                        "Max supply",
+                        value: formatTokenAmount(maxSupplyRaw, decimals: token.decimals)
+                    )
                 }
             }
 
@@ -89,7 +92,7 @@ struct TokenMintActionView: View {
 
             Section("Amount") {
                 TextField("Amount", text: $amountText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                 if let amountValue = parsedAmount,
                    let maxSupplyValue = parsedMaxSupply,
                    amountValue > maxSupplyValue {
@@ -146,11 +149,13 @@ struct TokenMintActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
+    /// User input is in display units; scale to raw on-chain units so
+    /// the `amount > maxSupply` check (both raw u64) is meaningful.
     private var parsedAmount: UInt64? {
-        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(amountText, decimals: token.decimals)
     }
 
+    /// `token.maxSupply` is a string-encoded raw u64.
     private var parsedMaxSupply: UInt64? {
         guard let raw = token.maxSupply else { return nil }
         return UInt64(raw)
