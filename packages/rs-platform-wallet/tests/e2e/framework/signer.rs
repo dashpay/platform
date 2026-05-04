@@ -112,13 +112,27 @@ impl Signer<IdentityPublicKey> for SeedBackedIdentitySigner {
     }
 
     fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
-        match key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let pkh = ripemd160_sha256(key.data().as_slice());
-                self.inner.address_private_keys.contains_key(&pkh)
-            }
-            _ => false,
+        match identity_key_lookup(key) {
+            Some(pkh) => self.inner.address_private_keys.contains_key(&pkh),
+            None => false,
         }
+    }
+}
+
+/// Compute the `address_private_keys` lookup key for an
+/// [`IdentityPublicKey`].
+///
+/// `SimpleSigner::from_seed_for_identity` keys its cache by
+/// `ripemd160_sha256(compressed_pubkey)` — so for `ECDSA_SECP256K1` we
+/// hash `key.data()` (the raw pubkey), but for `ECDSA_HASH160`
+/// `key.data()` is **already** the 20-byte hash and re-hashing would
+/// produce `hash160(hash160(pubkey))`, which would never match.
+/// Returns `None` for unsupported key types.
+fn identity_key_lookup(key: &IdentityPublicKey) -> Option<[u8; 20]> {
+    match key.key_type() {
+        KeyType::ECDSA_SECP256K1 => Some(ripemd160_sha256(key.data().as_slice())),
+        KeyType::ECDSA_HASH160 => key.data().as_slice().try_into().ok(),
+        _ => None,
     }
 }
 
@@ -129,7 +143,12 @@ fn lookup_identity_secret(
     inner: &SimpleSigner,
     key: &IdentityPublicKey,
 ) -> Result<[u8; 32], ProtocolError> {
-    let pkh = ripemd160_sha256(key.data().as_slice());
+    let pkh = identity_key_lookup(key).ok_or_else(|| {
+        ProtocolError::Generic(format!(
+            "SeedBackedIdentitySigner: unsupported key type {:?}",
+            key.key_type()
+        ))
+    })?;
     inner
         .address_private_keys
         .get(&pkh)
