@@ -33,6 +33,15 @@ fn min_input_amount(version: &PlatformVersion) -> Credits {
     version.dpp.state_transitions.address_funds.min_input_amount
 }
 
+/// Public mirror of [`min_input_amount`] for tests that want to pin
+/// the cleanup gate against the active platform version (PA-004b /
+/// PA-009 boundary cases). Reads the same field, so a protocol bump
+/// shifts both the harness gate and the test's expected value in
+/// lockstep.
+pub fn cleanup_dust_gate(version: &PlatformVersion) -> Credits {
+    min_input_amount(version)
+}
+
 /// Default per-step timeout for cleanup polls.
 pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 

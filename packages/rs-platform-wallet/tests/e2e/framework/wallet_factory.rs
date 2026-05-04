@@ -298,6 +298,45 @@ impl TestWallet {
         Ok((cs, bytes))
     }
 
+    /// Like [`Self::transfer_capturing_st_bytes`] but does NOT
+    /// broadcast a parallel production transition. Returns just the
+    /// canonical signed bytes of an `AddressFundsTransferTransition`
+    /// built against the supplied inputs / outputs.
+    ///
+    /// Used by PA-006b (concurrent identical broadcasts): the
+    /// captured bytes carry a fresh on-chain nonce (no prior
+    /// production build has consumed it), so two `tokio::spawn`
+    /// tasks each calling `state_transition.broadcast(sdk, None)`
+    /// race for one slot.
+    pub async fn build_transfer_st_bytes(
+        &self,
+        outputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+    ) -> FrameworkResult<Vec<u8>> {
+        use dash_sdk::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
+        use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+
+        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &inputs)
+            .await
+            .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
+        let inputs_with_nonce = nonce_inc(inputs_with_nonce);
+
+        let st = AddressFundsTransferTransition::try_from_inputs_with_signer(
+            inputs_with_nonce,
+            outputs,
+            default_fee_strategy(),
+            &self.signer,
+            Default::default(),
+            PlatformVersion::latest(),
+        )
+        .await
+        .map_err(|err| FrameworkError::Wallet(format!("st build: {err}")))?;
+        PlatformSerializable::serialize_to_bytes(&st)
+            .map_err(|err| FrameworkError::Wallet(format!("st serialize: {err}")))
+    }
+
     /// Network the wallet operates against. Mirrors `wallet.sdk().network`.
     fn network(&self) -> Network {
         self.wallet.sdk().network

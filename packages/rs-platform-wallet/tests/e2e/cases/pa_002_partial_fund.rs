@@ -1,5 +1,15 @@
-//! Self-transfer of credits between two platform-payment addresses
-//! owned by the same test wallet.
+//! PA-002 — Partial-fund + change handling (output < input balance).
+//! Spec: `tests/e2e/TEST_SPEC.md` §3 "Platform Addresses (PA)" → PA-002.
+//! Priority: P0.
+//!
+//! Bank funds `addr_1` with [`FUNDING_CREDITS`]; the wallet self-transfers
+//! [`TRANSFER_CREDITS`] to a fresh `addr_2`. The auto-selector picks
+//! exactly enough input to cover the gross output sum (Σ inputs == Σ
+//! outputs) so addr_1 retains the difference as change. With the default
+//! `[ReduceOutput(0)]` fee strategy the bank's funding output and the
+//! self-transfer's destination output each absorb their respective
+//! chain-time fee — assertions below derive both fees from observed
+//! balances rather than pinning exact numbers.
 //!
 //! Gated behind `#[ignore]` so a stock `cargo test -p platform-wallet`
 //! (or workspace-wide invocation) stays green for contributors and CI
@@ -22,22 +32,22 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 
-// Sized to dodge platform #3040 — AddressFundsTransferTransition's
-// `calculate_min_required_fee` returns the static
+// Sized to dodge platform #3040 — `AddressFundsTransferTransition::
+// calculate_min_required_fee` returns the static
 // `state_transition_min_fees` floor (~6.5M for 1in/1out) but Drive's
 // chain-time fee includes storage + processing costs that scale with
-// the operation set (~14.94M empirically for the same shape). With
+// the operation set (~15M empirically for the same shape). With
 // `[ReduceOutput(0)]`, `output[0]` absorbs the fee at chain time;
 // if it's smaller than the realistic fee the broadcast fails with
 // `AddressesNotEnoughFundsError`. Picking output amounts well above
 // the empirical chain-time ceiling sidesteps the bug until #3040
 // lands at the dpp layer.
 
-/// Gross credits the bank submits when funding `addr_1`. The bank
-/// uses `[ReduceOutput(0)]`, so addr_1 actually receives
-/// `FUNDING_CREDITS − bank_fee`. Sized well above the chain-time
-/// fee (~15M empirically) so addr_1 retains enough headroom to
-/// fund the test's own self-transfer (see #3040 comment above).
+/// Gross credits the bank submits when funding `addr_1`. Bank uses
+/// `[ReduceOutput(0)]`, so addr_1 actually receives
+/// `FUNDING_CREDITS − bank_fee`. Sized well above the chain-time fee
+/// (~15M empirically) so addr_1 retains enough headroom to fund the
+/// test's own self-transfer.
 const FUNDING_CREDITS: u64 = 100_000_000;
 
 /// Lower bound on what addr_1 must receive after the bank's fee
@@ -48,21 +58,35 @@ const FUNDING_FLOOR: u64 = 70_000_000;
 
 /// Gross credits the test wallet submits in its self-transfer to
 /// `addr_2`. Same `[ReduceOutput(0)]` semantics — addr_2 receives
-/// `TRANSFER_CREDITS − transfer_fee`. Sized well above the
-/// empirical chain-time fee (~15M) to avoid #3040.
+/// `TRANSFER_CREDITS − transfer_fee`. Sized well above the empirical
+/// chain-time fee (~15M) to avoid #3040.
 const TRANSFER_CREDITS: u64 = 50_000_000;
 
 /// Lower bound on what addr_2 must receive before the assertions
-/// run. A non-zero floor prevents an empty observation from
-/// passing the wait.
+/// run. A non-zero floor prevents an empty observation from passing
+/// the wait.
 const TRANSFER_FLOOR: u64 = 1_000_000;
+
+/// Upper bound on the chain-time fee for a 1in/1out transition. Empirical
+/// fee at write-time is ~15M credits (per platform #3040's static-vs-
+/// chain-time gap analysis); pinning the regression-guard ceiling at 25M
+/// leaves room for protocol-version drift while still surfacing a fee-
+/// explosion regression. A failure means either (a) the protocol's fee
+/// schedule shifted significantly (update this constant deliberately) or
+/// (b) a wallet-side or dpp-side regression is over-charging.
+const TRANSFER_FEE_CEILING: u64 = 25_000_000;
+
+/// Upper bound on the bank's funding fee (also 1in/1out). Same rationale
+/// as `TRANSFER_FEE_CEILING`. Pinned separately because the bank's
+/// transition shape may diverge from the wallet's self-transfer in
+/// future protocol versions; keep them independently tunable.
+const BANK_FEE_CEILING: u64 = 25_000_000;
 
 /// Per-step deadline for balance observations.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
-async fn transfer_between_two_platform_addresses() {
+async fn pa_002_partial_fund_change() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -138,7 +162,7 @@ async fn transfer_between_two_platform_addresses() {
     let transfer_fee = TRANSFER_CREDITS.saturating_sub(received);
     let bank_fee = total_fees.saturating_sub(transfer_fee);
     tracing::info!(
-        target: "platform_wallet::e2e::cases::transfer",
+        target: "platform_wallet::e2e::cases::pa_002",
         ?addr_1,
         ?addr_2,
         funded = FUNDING_CREDITS,
@@ -149,6 +173,9 @@ async fn transfer_between_two_platform_addresses() {
         "post-transfer balance snapshot"
     );
 
+    // PA-002 asserts: addr_1 retains the difference (Σ inputs ==
+    // Σ outputs invariant — the property fixed in `aaf8be74ee` and
+    // `9ea9e7033c`); addr_2 received the gross-minus-fee amount.
     assert!(
         received >= TRANSFER_FLOOR,
         "addr_2 must hold at least TRANSFER_FLOOR ({TRANSFER_FLOOR}); observed {received}"
@@ -163,12 +190,30 @@ async fn transfer_between_two_platform_addresses() {
         "self-transfer must charge a non-zero fee (received={received})"
     );
     assert!(
-        transfer_fee < TRANSFER_CREDITS,
-        "transfer fee implausibly high: {transfer_fee} >= TRANSFER_CREDITS ({TRANSFER_CREDITS})"
+        transfer_fee < TRANSFER_FEE_CEILING,
+        "self-transfer fee {transfer_fee} exceeds the regression-guard ceiling \
+         {TRANSFER_FEE_CEILING} — protocol fee shift or fee-explosion regression"
     );
     assert!(
         bank_fee > 0,
         "bank funding must charge a non-zero fee (observed_total={observed_total})"
+    );
+    assert!(
+        bank_fee < BANK_FEE_CEILING,
+        "bank funding fee {bank_fee} exceeds the regression-guard ceiling \
+         {BANK_FEE_CEILING} — protocol fee shift or fee-explosion regression"
+    );
+    // Σ inputs == Σ outputs: addr_1 retained exactly the change
+    // (bank delivery − gross transfer amount). The earlier
+    // assertions on bank_fee/transfer_fee already imply this, but
+    // pin the change shape explicitly for spec PA-002.
+    let expected_change = FUNDING_CREDITS
+        .saturating_sub(bank_fee)
+        .saturating_sub(TRANSFER_CREDITS);
+    assert_eq!(
+        remaining, expected_change,
+        "addr_1 change must equal `FUNDING_CREDITS − bank_fee − TRANSFER_CREDITS` \
+         (Σ inputs == Σ outputs invariant); expected {expected_change}, got {remaining}"
     );
 
     s.teardown().await.expect("teardown");
