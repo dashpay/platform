@@ -103,6 +103,22 @@ impl TestWallet {
         // Force the lazy platform-address init now so test code
         // doesn't see a surprise first-use latency hit.
         wallet.platform().initialize().await;
+        // QA-002: pre-consume the slot-0 receive address on the
+        // default DIP-17 (account=0, key_class=0) account so the test
+        // wallet's first `next_unused_address()` returns index 1
+        // instead of index 0. The bank pins
+        // `BankWallet::primary_receive_address` to slot-0 of the same
+        // account/key_class via `derive_platform_address_at_index`,
+        // and (when the test seed shares derivation parameters with
+        // the bank seed) both wallets resolve that slot to the same
+        // P2PKH. When a prior-test cleanup sweep + the current test's
+        // `bank.fund_address` both target that hash in the same
+        // block, drive-abci's recent-zone feed correctly merges them
+        // via `AddToCredits + AddToCredits = saturating_add` —
+        // inflating the BLAST sync surface relative to the value the
+        // registration call attributes to its own input. See
+        // `/tmp/qa002-confirmed.md`.
+        consume_platform_address_index_zero(&wallet).await?;
         let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             seed_bytes,
@@ -638,6 +654,48 @@ impl Drop for SetupGuard {
 /// `PlatformWalletError` → framework error envelope.
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+/// Generate the address at DIP-17 slot-0 of (account=0, key_class=0)
+/// and mark it used in the address pool, so the next call to
+/// `next_unused_receive_address` returns slot-1 instead.
+///
+/// QA-002 fix: shifts every test wallet's "first usable address" off
+/// the slot reserved for [`super::bank::BankWallet::primary_receive_address`].
+async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+    // Generates index 0 with `add_to_state=true`, populating the pool
+    // so `mark_index_used(0)` can find it below.
+    let _index_zero = wallet
+        .platform()
+        .next_unused_receive_address(default_platform_payment_account_key())
+        .await
+        .map_err(wallet_err)?;
+
+    let wallet_id = wallet.wallet_id();
+    let mut wm = wallet.wallet_manager().write().await;
+    let info = wm.get_wallet_info_mut(&wallet_id).ok_or_else(|| {
+        FrameworkError::Wallet(format!(
+            "wallet {} missing from manager during slot-0 consume",
+            hex::encode(wallet_id)
+        ))
+    })?;
+    let account = info
+        .core_wallet
+        .platform_payment_managed_account_at_index_mut(DEFAULT_ACCOUNT_INDEX_PUB)
+        .ok_or_else(|| {
+            FrameworkError::Wallet(format!(
+                "no platform-payment account at index {DEFAULT_ACCOUNT_INDEX_PUB} \
+                 during slot-0 consume"
+            ))
+        })?;
+    if !account.addresses.mark_index_used(0) {
+        return Err(FrameworkError::Wallet(
+            "mark_index_used(0) returned false: slot-0 missing from pool \
+             or already marked used"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
