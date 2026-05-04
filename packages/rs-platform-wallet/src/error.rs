@@ -72,6 +72,9 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
+    #[error("Arithmetic overflow on Credits in {context}")]
+    ArithmeticOverflow { context: String },
+
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
 
