@@ -611,6 +611,7 @@ impl SetupGuard {
         let result = super::cleanup::teardown_one(
             self.ctx.manager(),
             self.ctx.bank(),
+            self.ctx.bank_identity(),
             self.ctx.registry(),
             &self.test_wallet,
         )

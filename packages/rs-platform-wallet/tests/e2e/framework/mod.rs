@@ -19,6 +19,7 @@
 #![allow(dead_code)]
 
 pub mod bank;
+pub mod bank_identity;
 pub mod cleanup;
 pub mod config;
 pub mod context_provider;
@@ -241,10 +242,12 @@ pub async fn setup_with_n_identities(
 ///
 /// Calling [`MultiIdentitySetupGuard::teardown`] consumes the guard
 /// and forwards to the inner [`SetupGuard::teardown`], which sweeps
-/// platform-address balances. Identity-credit cleanup is deferred to
-/// a follow-up PR — see the `#identity-sweep` TODO in
-/// [`cleanup::sweep_identities`]. Until then, every identity
-/// registered here keeps its post-registration credit balance.
+/// both platform-address balances and identity-credit balances.
+/// Identity sweep drains every identity owned by this wallet whose
+/// balance exceeds the per-identity floor back to the shared bank
+/// identity (see [`cleanup::sweep_identities_with_seed`]); identities
+/// whose balance is below the floor are intentionally left for the
+/// next-run orphan sweep to retry.
 pub struct MultiIdentitySetupGuard {
     /// Inner single-wallet guard. Holds the [`E2eContext`] and the
     /// shared [`wallet_factory::TestWallet`] every identity is

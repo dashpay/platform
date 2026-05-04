@@ -629,6 +629,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-001 — Register identity funded from platform addresses
 - **Priority**: P0
+- **Status**: Pass — `tests/e2e/cases/id_001_register_identity_from_addresses.rs` (drives `register_identity_from_addresses` and pins on-chain key count + balance bounds + post-fee residual).
 - **Wallet feature exercised**: `wallet/identity/network/register_from_addresses.rs:65` (`IdentityWallet::register_from_addresses`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_create.rs:13` (`test_create_identity`) — DET uses asset-lock; we use the address-funded variant explicitly.
 - **Preconditions**: bank-funded test wallet; identity-signer harness extension landed.
@@ -656,6 +657,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-002 — Top-up identity from platform addresses
 - **Priority**: P0
+- **Status**: Pass — `tests/e2e/cases/id_002_top_up_identity.rs` (post-top-up identity balance fetched on-chain, fee derived from delta, second-address residual asserted).
 - **Wallet feature exercised**: `wallet/identity/network/top_up_from_addresses.rs:37`.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:63` (`step_top_up_from_platform_addresses`).
 - **Preconditions**: ID-001 setup helper; identity registered with starting balance.
@@ -678,6 +680,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-003 — Identity-to-identity credit transfer
 - **Priority**: P0
+- **Status**: Pass — `tests/e2e/cases/id_003_identity_to_identity_transfer.rs` (uses `setup_with_n_identities(2, …)`; pins receiver-side exact gain + sender-side loss > amount + non-zero fee).
 - **Wallet feature exercised**: `wallet/identity/network/transfer.rs:74` (`transfer_credits_with_external_signer`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:238` (`step_transfer_credits`).
 - **Preconditions**: ID-001 helper × 2 (two registered identities, both funded from same test wallet).
@@ -698,6 +701,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-004 — Identity update: add and disable a key
 - **Priority**: P1
+- **Status**: STUB — deferred to a follow-up PR. The harness's `SeedBackedIdentitySigner` only pre-derives keys for `key_index ∈ 0..DEFAULT_GAP_LIMIT`; signing the next transition with a freshly-issued key needs a `derive_identity_key`-driven cache-injection helper that does not exist yet (mirrors the `ID-flow-009` Blocked entry).
 - **Wallet feature exercised**: `wallet/identity/network/update.rs:89` (`update_identity_with_external_signer`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:188` (`step_add_key`) and `tc_020_identity_mutation_lifecycle`.
 - **Preconditions**: ID-001 helper.
@@ -720,6 +724,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-005 — Transfer credits from identity to platform addresses
 - **Priority**: P1
+- **Status**: Pass — `tests/e2e/cases/id_005_identity_to_addresses_transfer.rs` (pins exact destination-address gain + identity loss > amount + on-chain post-balance equals wallet-returned `Credits`).
 - **Wallet feature exercised**: `wallet/identity/network/transfer_to_addresses.rs:66`.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:291` (`step_transfer_to_addresses`).
 - **Preconditions**: ID-001 helper.
@@ -741,6 +746,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-006 — Refresh and load identity by index
 - **Priority**: P1
+- **Status**: STUB — deferred to a follow-up PR. The "rebuild a fresh `TestWallet` from the same seed and run discovery" path needs a `TestWallet::from_seed_bytes` helper that does not exist today; `load_identity_by_index` itself is exercised by the orphan-recovery branch of `cleanup::sweep_identities_with_seed` but not by a dedicated assertion-bearing test.
 - **Wallet feature exercised**: `wallet/identity/network/loading.rs:28` (`load_identity_by_index`); `loading.rs:162` (`refresh_identity`); `discovery.rs:79` (`discover`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:350` (`tc_025_refresh_identity`); `identity_tasks.rs:420` (`tc_027_load_identity`); `identity_tasks.rs:585` (`tc_031_incremental_address_discovery`).
 - **Preconditions**: ID-001 helper.
@@ -762,6 +768,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-001c — Non-default `StateTransitionSettings`
 - **Priority**: P2
+- **Status**: STUB — P2 deferred. The harness has no "did we wait for proof?" hook today; ID-001c is the right place to add one but lands after the P0/P1 bring-up.
 - **Wallet feature exercised**: `wallet/identity/network/register_from_addresses.rs:65`'s `settings: Option<StateTransitionSettings>` argument; non-default values (e.g. `wait_for_proof = false`, fee multiplier override, signing-key override).
 - **DET parallel**: none.
 - **Preconditions**: ID-001 helper.
@@ -778,6 +785,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-005b — `transfer_credits_to_addresses` with empty outputs
 - **Priority**: P2
+- **Status**: STUB — P2 deferred; pins the empty-`outputs` validation error message after the P0/P1 cohort lands.
 - **Wallet feature exercised**: `wallet/identity/network/transfer_to_addresses.rs:66` validation gate.
 - **DET parallel**: none.
 - **Preconditions**: ID-001 helper; identity with non-zero balance.
@@ -795,6 +803,7 @@ Counts by priority: **P0: 7**, **P1: 16** (incl. 2 post-Task #15), **P2: 52** (i
 
 #### ID-006b — Identity-key derivation index boundary
 - **Priority**: P2
+- **Status**: STUB — P2 deferred; needs the `derive_identity_key` helper exposure for `key_index` (sibling of ID-004's blocked helper).
 - **Wallet feature exercised**: identity-key derivation under `wallet/identity/network/identity_handle.rs::derive_ecdsa_identity_auth_keypair_from_master` at `key_index` boundaries.
 - **DET parallel**: none direct.
 - **Preconditions**: ID-001 helper.

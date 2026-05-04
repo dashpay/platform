@@ -35,6 +35,12 @@ pub mod vars {
     /// the network default (mainnet 9999, testnet 19999); regtest and
     /// devnet have no default and require this var.
     pub const P2P_PORT: &str = "PLATFORM_WALLET_E2E_P2P_PORT";
+    /// Optional 32-byte hex identifier of a pre-registered bank
+    /// identity used as the destination of identity-credit sweeps.
+    /// Unset falls back to "register a fresh bank identity from the
+    /// bank's first platform address on first run and persist its id
+    /// to the workdir slot".
+    pub const BANK_IDENTITY_ID: &str = "PLATFORM_WALLET_E2E_BANK_IDENTITY_ID";
 }
 
 /// Default minimum bank balance in credits.
@@ -80,6 +86,11 @@ pub struct Config {
     /// peer-seeding path treats that as "skip and fall back to DNS
     /// discovery."
     pub p2p_port: Option<u16>,
+    /// Optional pre-registered bank-identity id (32 bytes hex). When
+    /// set, the harness loads it on init; when unset, the harness
+    /// auto-registers a bank identity on first run and persists its
+    /// id under the workdir slot.
+    pub bank_identity_id: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -94,6 +105,7 @@ impl std::fmt::Debug for Config {
             .field("workdir_base", &self.workdir_base)
             .field("trusted_context_url", &self.trusted_context_url)
             .field("p2p_port", &self.p2p_port)
+            .field("bank_identity_id", &self.bank_identity_id)
             .finish()
     }
 }
@@ -109,6 +121,7 @@ impl Default for Config {
             workdir_base: default_workdir_base(),
             trusted_context_url: None,
             p2p_port: default_p2p_port(network),
+            bank_identity_id: None,
         }
     }
 }
@@ -191,6 +204,11 @@ impl Config {
             Err(_) => default_p2p_port(network),
         };
 
+        let bank_identity_id = std::env::var(vars::BANK_IDENTITY_ID)
+            .ok()
+            .map(|raw| raw.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -199,6 +217,7 @@ impl Config {
             workdir_base,
             trusted_context_url,
             p2p_port,
+            bank_identity_id,
         })
     }
 
