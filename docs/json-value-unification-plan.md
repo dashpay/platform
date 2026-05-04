@@ -1,82 +1,67 @@
 # JSON / Value Conversion Unification Plan
 
-**Status**: pass 1 (unification) **complete** as of commit `9f23d675af`. Pass 2 (tests + bug fixes) in progress.
+**Status**: passes 1 + 2 **complete** as of commit `7397c73f31` (May 2026).
 **Scope**: `packages/rs-dpp/` (canonical surface) + `packages/wasm-dpp2/` (downstream consumers).
 
-## Progress (2026-04-30)
+## Progress (2026-05-04)
 
 | Pass | Goal | Status |
 |---|---|---|
 | 1 | Add `JsonConvertible` / `ValueConvertible` impls to ~80 types | ✅ done — `cargo check` passes |
-| 2 | Add round-trip tests; fix bugs that surface | ✅ done (197 conversion tests, 12 ignored, 3 platform_value bugs surfaced) |
+| 2 | Add round-trip tests; fix bugs that surface | ✅ done (197 conversion tests + every §10b bug resolved or correctly classified as fundamental format limitation) |
 | 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ⬜ not started |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
 
-### Pass-2 final test count
+### Final test count (May 2026)
 
-**197 dedicated json_convertible_tests pass, 12 ignored** (tracking real bugs or known fragile cases). 3422 pre-existing dpp lib tests continue to pass — no regressions. **3619 total dpp lib tests pass** with 18 ignored.
+**3633 dpp lib tests pass, 8 ignored**. Of the 8 ignored:
+- 6 are pre-existing `recursive_schema_validator` ignores unrelated to the unification work.
+- 2 are the `StateTransition` umbrella untagged-enum tests (separate plan §10 item — wire-format design decision, not a code bug).
 
-**Discovery**: `crate::tests::fixtures::*` (gated on `feature = "fixtures-and-mocks"` and auto-enabled in dev mode via `all_features_without_client`) provides ready-made fixtures for `DataContract`, `Identity`, `InstantAssetLockProof`, etc. — using these unblocked the DataContract-related tests without exposing `pub(in crate::data_contract)` modules.
+**1036 platform-value lib tests pass.**
 
-### Pass-2 test status (2026-04-30, end of pass)
+### Pass-2 follow-up fix sequence (May 2026, this branch)
 
-**On new convention (non-default fixture + per-property assertion)** — 17 types:
-- 5 address transitions (`Identity{Create,TopUp,CreditTransferTo}FromAddresses`, `Address{FundingFromAssetLock,FundsTransfer,CreditWithdrawal}Transition`)
-- `Identity`, `IdentityPublicKey`, `TokenContractInfo`, `TokenPaymentInfo`, `Pooling` (each variant)
-- `BatchTransition`, `Document` (default fixture for now), `GroupStateTransitionInfo`, `DocumentPatch`
-- `TokenEmergencyAction`, `GasFeesPaidBy`, `YesNoAbstainVoteChoice` (each-variant)
-- `AssetLockProof` (passes via `Default` impl)
+Pass-2 tests surfaced a small family of bugs all rooted in the same serde quirk: **serde's `ContentDeserializer` (used internally for any `#[serde(tag = "...")]` enum) always reports `is_human_readable: true`**, regardless of the upstream source. Custom Deserialize impls that branched on `is_human_readable()` for shape dispatch broke the moment they appeared inside a tagged enum. Each fix below applies the same recipe — single visitor accepting all input shapes; HR branch dispatches via `deserialize_any` to handle both true HR and ContentDeserializer-wrapped non-HR.
 
-**Bugs surfaced** — 1 (logged in §10b):
-- `AddressFundingFromAssetLockTransition` value round-trip fails on `OutPoint` deserialization.
+| Commit | Type / area | What | Tests unblocked |
+|---|---|---|---|
+| `95554c8a7d` | `ExtendedDocument` (Critical-3) | Replaced broken manual serde (`version` ↔ `$version` mismatch, missing `data_contract` field) with `#[serde(tag = "$extendedFormatVersion")]` derive. Inner `Document`'s own `$formatVersion` coexists at top level via `serde(flatten)`. | +2 |
+| `0273e3e068` | `Bytes32` (platform_value) | Dual-visitor accepting strings + bytes in both HR/non-HR branches. Documents the `ContentDeserializer` quirk in-code. | preventive |
+| `e9efa82a93` | `serde_bytes` / `serde_bytes_var` (rs-dpp) | Same dual-visitor pattern in the auto-injected `[u8;N]` and `Vec<u8>` helpers. Removed redundant `signature_serializer` on `ExtendedBlockInfoV0::signature: [u8;96]`. | +6 (ExtendedBlockInfo + 5 shielded transitions) |
+| `09c0a2b771` | `OutPoint` + `Txid` (rs-dpp local wrapper) | `outpoint_serde` module on `ChainAssetLockProof::out_point` with unified visitor for `"txid:vout"` string + `{txid, vout}` struct + seq. `TxidCompat` newtype handles same bug one level deeper for `Txid`. **Upstream PR pending against `dashcore::serde_struct_human_string_impl!` macro** — once landed, drop the local wrapper. | +2 |
+| `c21a3c0d94` | `BlsPublicKey<Bls12381G2Impl>` (rs-dpp local wrapper) | `bls_pubkey_serde` module on `Validator::public_key` (Option) and `ValidatorSetV0::threshold_public_key`. HR path reads owned `String`, hex-decodes 48 bytes, constructs `G1Affine::from_bytes` → `to_curve` → `PublicKey` directly. Bypasses upstream `<&str>::deserialize(d)?` borrowed-string requirement. **Upstream PR pending against `blstrs_plus::deserialize_affine`** — separate from dashcore (different crate, different bug). | +1 |
+| `ec43a2a4e2` | platform_value typed map keys | Removed `MapKeySerializer` (string-only, HR=true) — `serialize_key` now uses the regular Serializer. Map keys become whatever `Value` variant the type emits (`Bytes32` for hashes, `Text` for strings, etc.) — symmetric with the deserialize side. Unblocks `BTreeMap<ProTxHash, _>` round-trips. `Error::KeyMustBeAString` retained for SemVer; no longer produced. | +1 |
+| `7397c73f31` | DataContract JSON test convention | `DataContractCreate/UpdateTransition::json_round_trip` were asserting integer-variant equality (`U32(63) == U32(63)`) which JSON can't preserve — JSON's grammar has a single number type. Added `tests::utils::normalize_integer_variants_for_json_round_trip` and changed the tests to compare modulo sized-int variant. Not a bug fix — a test-convention fix that documents the actual JSON contract. The Value-round-trip path (sized ints preserved) keeps its strict assertion. | +2 |
 
-**Tests `#[ignore]`** — 3:
-- `StateTransition::json_round_trip` and `value_round_trip` (untagged enum, known fragile per plan §10).
-- `AddressFundingFromAssetLockTransition::value_round_trip` (OutPoint bug above).
+**Net**: 3621 → 3633 passing (+12), 20 → 8 ignored (-12).
 
-**Tested in pass 2** (~95 types covered, 181 tests):
-- All 5 address transitions + AddressWitness + AddressFundsFeeStrategyStep with full per-property assertions.
-- Identity, IdentityPublicKey, IdentityV0, PartialIdentity.
-- 7 state-transition outer enums (Identity*, Masternode, PublicKeyInCreation).
-- Document, DocumentPatch, DocumentBaseTransition + 5 document sub-transitions.
-- TokenBaseTransition + 9 token sub-transitions.
-- BatchTransition.
-- Pooling, TokenEmergencyAction, GasFeesPaidBy, YesNoAbstainVoteChoice (each-variant).
-- TokenContractInfo, TokenPaymentInfo, TokenKeepsHistoryRules, TokenMarketplaceRules.
-- AssetLockProof, AssetLockValue, ChainAssetLockProof, InstantAssetLockProof.
-- BlockInfo, ExtendedBlockInfo, ExtendedEpochInfo, FinalizedEpochInfo.
-- Vote, VotePoll, ResourceVoteChoice, ContestedDocumentResourceVotePoll, ContestedDocumentVotePollWinnerInfo.
-- ChangeControlRules, Group, GroupStateTransitionInfo.
-- TokenStatus, IdentityTokenInfo, TokenConfigurationChangeItem, TokenDistributionInfo.
-- Index family (Index, IndexProperty, ContestedIndexResolution, ContestedIndexFieldMatch, ContestedIndexInformation, OrderBy).
-- Epoch (key reconstructed from index via Epoch::new).
-- TokenConfigurationLocalization, TokenConfigurationConvention.
-- DataContractConfig.
-- ResourceVote, ContenderWithSerializedDocument.
-- StorageKeyRequirements, ArrayItemType (each-variant).
-- All 5 shielded transitions (Shield, Unshield, ShieldedTransfer, ShieldFromAssetLock, ShieldedWithdrawal) — JSON works; value tests `#[ignore]` due to [u8;N] platform_value bug.
-- DataContractInSerializationFormat (V0 with config + identifier + version + maps).
-- TokenConfiguration (via default_most_restrictive factory).
-- StateTransitionProofResult (variant matching since type lacks PartialEq).
+### Common pattern surfaced this branch — document it loudly
 
-**Bugs surfaced** (logged in §10b):
-- `OutPoint` round-trip via `platform_value::Value::Map` fails. JSON works.
-- `[u8; 96]` signature with custom serializer fails round-trip via platform_value. JSON works.
+Every fix above shares one root cause:
 
-**Resolved in pass 2** (using existing fixtures):
-- `DataContractCreateTransition`, `DataContractUpdateTransition` — using `crate::tests::fixtures::get_data_contract_fixture` + `TryFromPlatformVersioned<DataContract>` factory. JSON `#[ignore]`d due to sized-int round-trip bug.
-- `IdentityCreateTransition` — using `crate::tests::fixtures::instant_asset_lock_proof_fixture` + `create_identifier()` for matching identity_id.
-- `TokenPreProgrammedDistribution`, `TokenPerpetualDistribution`, `TokenDistributionRules` — explicit fixtures (FixedAmount distribution function, ContractOwner recipient, etc.).
-- `TokenConfigUpdateTransition` — `TokenConfigurationChangeItem::TokenConfigurationNoChange` variant.
-- `Validator` — explicit `ValidatorV0` with `ProTxHash::from_byte_array`, `PubkeyHash::from_byte_array`, `public_key: None`.
+> serde's `ContentDeserializer` (used internally for any `#[serde(tag = "...")]` enum buffer) **always reports `is_human_readable: true`** regardless of the upstream source. Custom `Deserialize` impls that branch on `is_human_readable` and use disjoint visitors per branch (HR-only `visit_str`; non-HR-only `visit_bytes`) silently break when wrapped by a tagged enum: the HR branch is invoked on a buffered non-HR shape and fails.
 
-**Still out of scope**:
-- `ValidatorSet` — needs real BLS public key, requires crypto setup.
-- `ExtendedDocument` — Critical-3 known-broken serde (writes `version`, reads `$version`).
-- `StateTransition` umbrella (`#[ignore]`) — untagged enum, deserialize ambiguity.
+**Recipe** (now used in `Bytes32`, `BinaryData`, `Identifier`, `serde_bytes`, `serde_bytes_var`, `outpoint_serde`, `TxidCompat`, `bls_pubkey_serde`):
 
-**Pass-2 also fixed**: derived `PartialEq` on `StateTransitionProofResult` + `StoredAssetLockInfo` (was missing, blocking round-trip assert_eq).
+1. **One** visitor implementing **all** input shapes (`visit_str`, `visit_bytes`, `visit_byte_buf`, `visit_seq`, `visit_map` as relevant).
+2. HR branch: `deserialize_any(visitor)` — handles true HR (serde_json) AND ContentDeserializer-wrapped non-HR.
+3. Non-HR branch: explicit shape hint (`deserialize_byte_buf` / `deserialize_struct`) — bincode is non-self-describing and refuses `deserialize_any` (`Serde(AnyNotSupported)`).
+
+When adding a new custom-serde type that may end up inside a tagged enum, follow this template. Three places now document the quirk in-code: `rs-platform-value/src/types/{bytes_32, binary_data, identifier}.rs`.
+
+### Upstream PRs ready to send
+
+Both reduce maintenance surface — once landed and the dependency is bumped, drop the corresponding local wrapper.
+
+1. **dashcore `serde_struct_human_string_impl!` macro** (`dash/src/serde_utils.rs:361`) — apply unified-visitor pattern at the macro source. Benefits `OutPoint`, `Txid`, `BlockHash`, every `hash_newtype!`-generated type. Drops `outpoint_serde` and `TxidCompat`. **Repo**: `https://github.com/dashpay/rust-dashcore` (already forked).
+2. **`blstrs_plus`** (`src/serde_impl.rs:119,160`) — replace `<&str>::deserialize(d)?` with `<String>::deserialize(d)?` (or a Visitor with `visit_str`/`visit_string`/`visit_borrowed_str`) so owned-string sources round-trip cleanly. Drops `bls_pubkey_serde`. **Repo**: `https://github.com/mikelodder7/blstrs` (NOT forked into dashpay; would need new fork or upstream PR).
+
+### Out of scope for this branch
+
+- `StateTransition` umbrella (`#[ignore]` × 2) — untagged enum, deserialize ambiguity. Real fix is to make it `#[serde(tag = "type")]` but that's a wire-format change observable to wasm-dpp / swift-sdk consumers. Needs coordinated migration; tracked in plan §10.
+- `recursive_schema_validator` (× 6 ignored) — unrelated, pre-existing.
 
 **Crate policy** —
 - `packages/wasm-dpp` (legacy) — **scheduled for removal but not now**. Apply *minimum-changes-to-compile* rule: don't migrate its non-canonical call sites; don't add new functionality; only patch what's needed to keep it building when rs-dpp internals shift. Critical features must keep working; cosmetic regressions are acceptable.
