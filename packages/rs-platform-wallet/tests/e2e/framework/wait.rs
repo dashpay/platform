@@ -174,13 +174,16 @@ pub async fn wait_for_identity_balance(
             ),
         }
 
-        if Instant::now() >= deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
             return Err(FrameworkError::Cleanup(format!(
                 "wait_for_identity_balance timed out after {timeout:?} \
                  (identity_id={identity_id:?} expected={expected})"
             )));
         }
-        tokio::time::sleep(BACKSTOP_WAKE_INTERVAL).await;
+        // Cap the sleep against the remaining budget so a sub-2s
+        // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
     }
 }
 
@@ -226,11 +229,14 @@ pub async fn wait_for_dpns_name_visible(
             ),
         }
 
-        if Instant::now() >= deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
             return Err(FrameworkError::Cleanup(format!(
                 "wait_for_dpns_name_visible timed out after {timeout:?} (name={name:?})"
             )));
         }
-        tokio::time::sleep(BACKSTOP_WAKE_INTERVAL).await;
+        // Cap the sleep against the remaining budget so a sub-2s
+        // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
     }
 }
