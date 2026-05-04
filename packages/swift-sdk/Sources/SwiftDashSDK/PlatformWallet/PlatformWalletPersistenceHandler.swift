@@ -1947,17 +1947,29 @@ public class PlatformWalletPersistenceHandler {
     /// array, wallet id from the top-level struct.
     ///
     /// Returns `(nil, 0)` if nothing is restorable.
-    func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int) {
+    func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         onQueue {
         let walletDescriptor = FetchDescriptor<PersistentWallet>()
-        guard let wallets = try? backgroundContext.fetch(walletDescriptor) else {
-            return (nil, 0)
+        let wallets: [PersistentWallet]
+        do {
+            wallets = try backgroundContext.fetch(walletDescriptor)
+        } catch {
+            // Surfacing the SwiftData failure to Rust is critical —
+            // returning success-with-empty here would let restore
+            // appear to "succeed" with zero wallets, hiding a real
+            // database fault from the user. The callback returns
+            // non-zero on `errored == true`.
+            NSLog(
+                "[persistor-load:swift] PersistentWallet fetch failed: %@",
+                String(describing: error)
+            )
+            return (nil, 0, true)
         }
         let restorable = wallets.filter { wallet in
             wallet.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
         }
         if restorable.isEmpty {
-            return (nil, 0)
+            return (nil, 0, false)
         }
 
         let allocation = LoadAllocation()
@@ -1980,26 +1992,40 @@ public class PlatformWalletPersistenceHandler {
                 predicate: #Predicate { $0.isSpent == false }
             )
             unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account, \.account?.wallet]
-            if let unspent = try? backgroundContext.fetch(unspentDescriptor) {
-                unspentBuckets.reserveCapacity(restorable.count)
-                for row in unspent {
-                    guard row.account != nil else { continue }
-                    let key: Data
-                    if !row.walletId.isEmpty {
-                        key = row.walletId
-                    } else if let account = row.account {
-                        // `account.wallet` is non-optional on the
-                        // model but is a fault-loaded relationship;
-                        // a relationship-store inconsistency would
-                        // crash here, so guard via Optional cast.
-                        let wallet: PersistentWallet? = account.wallet
-                        guard let resolved = wallet else { continue }
-                        key = resolved.walletId
-                    } else {
-                        continue
-                    }
-                    unspentBuckets[key, default: []].append(row)
+            // Bail with `errored = true` on a SwiftData failure rather
+            // than degrading to an empty bucket map. Without this, Rust
+            // would see `entry.utxos_count == 0` for every wallet,
+            // skip `wallet_info.update_balance()`, and the restore
+            // would silently report zero core-chain funds — exactly
+            // the failure mode this code path was added to eliminate.
+            let unspent: [PersistentTxo]
+            do {
+                unspent = try backgroundContext.fetch(unspentDescriptor)
+            } catch {
+                NSLog(
+                    "[persistor-load:swift] PersistentTxo unspent fetch failed: %@",
+                    String(describing: error)
+                )
+                return (nil, 0, true)
+            }
+            unspentBuckets.reserveCapacity(restorable.count)
+            for row in unspent {
+                guard row.account != nil else { continue }
+                let key: Data
+                if !row.walletId.isEmpty {
+                    key = row.walletId
+                } else if let account = row.account {
+                    // `account.wallet` is non-optional on the
+                    // model but is a fault-loaded relationship;
+                    // a relationship-store inconsistency would
+                    // crash here, so guard via Optional cast.
+                    let wallet: PersistentWallet? = account.wallet
+                    guard let resolved = wallet else { continue }
+                    key = resolved.walletId
+                } else {
+                    continue
                 }
+                unspentBuckets[key, default: []].append(row)
             }
         }
 
@@ -2155,7 +2181,7 @@ public class PlatformWalletPersistenceHandler {
 
         let typed = UnsafePointer(entriesPtr)
         loadAllocations[UnsafeRawPointer(typed)] = allocation
-        return (typed, restorable.count)
+        return (typed, restorable.count, false)
         }  // onQueue
     }
 
@@ -2729,10 +2755,14 @@ private func loadWalletListCallback(
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
         .takeUnretainedValue()
-    let (entries, count) = handler.loadWalletList()
+    let (entries, count, errored) = handler.loadWalletList()
     outEntries.pointee = entries
     outCount.pointee = UInt(count)
-    return 0
+    // Surface SwiftData fetch failures as a non-zero callback return so
+    // the Rust loader aborts instead of silently degrading to an empty
+    // restore (which previously masked database faults as
+    // "successful 0-balance restore").
+    return errored ? 1 : 0
 }
 
 private func loadWalletListFreeCallback(

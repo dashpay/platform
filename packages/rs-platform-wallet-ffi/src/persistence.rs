@@ -869,8 +869,8 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
     // variants stay at their zero value and are ignored on the
     // receiving side per the struct docs.
     let mut spec = AccountSpecFFI {
-        type_tag: AccountTypeTagFFI::Standard,
-        standard_tag: StandardAccountTypeTagFFI::Bip44,
+        type_tag: AccountTypeTagFFI::Standard as u8,
+        standard_tag: StandardAccountTypeTagFFI::Bip44 as u8,
         index: 0,
         registration_index: 0,
         key_class: 0,
@@ -879,59 +879,64 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
         account_xpub_bytes: xpub_bytes.as_ptr(),
         account_xpub_bytes_len: xpub_bytes.len(),
     };
+    // The producer side casts each `AccountTypeTagFFI` /
+    // `StandardAccountTypeTagFFI` variant to `u8` because both fields
+    // are now FFI-typed as plain `u8` (see the field comments on
+    // `AccountSpecFFI`). The consumer validates the byte via
+    // `try_from_u8` before any `match`.
     match account_type {
         AccountType::Standard {
             index,
             standard_account_type,
         } => {
-            spec.type_tag = AccountTypeTagFFI::Standard;
+            spec.type_tag = AccountTypeTagFFI::Standard as u8;
             spec.standard_tag = match standard_account_type {
-                StandardAccountType::BIP44Account => StandardAccountTypeTagFFI::Bip44,
-                StandardAccountType::BIP32Account => StandardAccountTypeTagFFI::Bip32,
+                StandardAccountType::BIP44Account => StandardAccountTypeTagFFI::Bip44 as u8,
+                StandardAccountType::BIP32Account => StandardAccountTypeTagFFI::Bip32 as u8,
             };
             spec.index = *index;
         }
         AccountType::CoinJoin { index } => {
-            spec.type_tag = AccountTypeTagFFI::CoinJoin;
+            spec.type_tag = AccountTypeTagFFI::CoinJoin as u8;
             spec.index = *index;
         }
         AccountType::IdentityRegistration => {
-            spec.type_tag = AccountTypeTagFFI::IdentityRegistration;
+            spec.type_tag = AccountTypeTagFFI::IdentityRegistration as u8;
         }
         AccountType::IdentityTopUp { registration_index } => {
-            spec.type_tag = AccountTypeTagFFI::IdentityTopUp;
+            spec.type_tag = AccountTypeTagFFI::IdentityTopUp as u8;
             spec.registration_index = *registration_index;
         }
         AccountType::IdentityTopUpNotBoundToIdentity => {
-            spec.type_tag = AccountTypeTagFFI::IdentityTopUpNotBoundToIdentity;
+            spec.type_tag = AccountTypeTagFFI::IdentityTopUpNotBoundToIdentity as u8;
         }
         AccountType::IdentityInvitation => {
-            spec.type_tag = AccountTypeTagFFI::IdentityInvitation;
+            spec.type_tag = AccountTypeTagFFI::IdentityInvitation as u8;
         }
         AccountType::AssetLockAddressTopUp => {
-            spec.type_tag = AccountTypeTagFFI::AssetLockAddressTopUp;
+            spec.type_tag = AccountTypeTagFFI::AssetLockAddressTopUp as u8;
         }
         AccountType::AssetLockShieldedAddressTopUp => {
-            spec.type_tag = AccountTypeTagFFI::AssetLockShieldedAddressTopUp;
+            spec.type_tag = AccountTypeTagFFI::AssetLockShieldedAddressTopUp as u8;
         }
         AccountType::ProviderVotingKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderVotingKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderVotingKeys as u8;
         }
         AccountType::ProviderOwnerKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderOwnerKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderOwnerKeys as u8;
         }
         AccountType::ProviderOperatorKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderOperatorKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderOperatorKeys as u8;
         }
         AccountType::ProviderPlatformKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderPlatformKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderPlatformKeys as u8;
         }
         AccountType::DashpayReceivingFunds {
             index,
             user_identity_id,
             friend_identity_id,
         } => {
-            spec.type_tag = AccountTypeTagFFI::DashpayReceivingFunds;
+            spec.type_tag = AccountTypeTagFFI::DashpayReceivingFunds as u8;
             spec.index = *index;
             spec.user_identity_id = *user_identity_id;
             spec.friend_identity_id = *friend_identity_id;
@@ -941,13 +946,13 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
             user_identity_id,
             friend_identity_id,
         } => {
-            spec.type_tag = AccountTypeTagFFI::DashpayExternalAccount;
+            spec.type_tag = AccountTypeTagFFI::DashpayExternalAccount as u8;
             spec.index = *index;
             spec.user_identity_id = *user_identity_id;
             spec.friend_identity_id = *friend_identity_id;
         }
         AccountType::PlatformPayment { account, key_class } => {
-            spec.type_tag = AccountTypeTagFFI::PlatformPayment;
+            spec.type_tag = AccountTypeTagFFI::PlatformPayment as u8;
             spec.index = *account;
             spec.key_class = *key_class;
         } // TODO(events): the `IdentityAuthenticationEcdsa` /
@@ -1698,9 +1703,27 @@ fn identity_status_from_tag(tag: u8) -> IdentityStatus {
 }
 
 fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, PersistenceError> {
-    Ok(match spec.type_tag {
+    // Validate the foreign byte before matching — `spec.type_tag` and
+    // `spec.standard_tag` are now plain `u8` on the FFI surface
+    // (previously typed as `repr(u8)` enum fields, which would have
+    // been UB for out-of-range bytes from a corrupt SwiftData row /
+    // forward-versioned tag / malformed host buffer).
+    let type_tag = AccountTypeTagFFI::try_from_u8(spec.type_tag).ok_or_else(|| {
+        PersistenceError::Backend(format!(
+            "AccountSpecFFI carries unknown type_tag byte {} (out of declared range)",
+            spec.type_tag
+        ))
+    })?;
+    Ok(match type_tag {
         AccountTypeTagFFI::Standard => {
-            let standard_account_type = match spec.standard_tag {
+            let standard_tag =
+                StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag).ok_or_else(|| {
+                    PersistenceError::Backend(format!(
+                        "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
+                        spec.standard_tag
+                    ))
+                })?;
+            let standard_account_type = match standard_tag {
                 StandardAccountTypeTagFFI::Bip44 => StandardAccountType::BIP44Account,
                 StandardAccountTypeTagFFI::Bip32 => StandardAccountType::BIP32Account,
             };
@@ -1752,7 +1775,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         | AccountTypeTagFFI::IdentityAuthenticationBls => {
             return Err(PersistenceError::Backend(format!(
                 "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType after the upstream event-bus refactor (TODO(events))",
-                spec.type_tag
+                type_tag
             )));
         }
     })

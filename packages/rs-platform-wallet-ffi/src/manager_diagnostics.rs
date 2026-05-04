@@ -812,9 +812,26 @@ fn account_type_from_spec_ref(
 ) -> Result<key_wallet::account::AccountType, String> {
     use crate::wallet_restore_types::{AccountTypeTagFFI, StandardAccountTypeTagFFI};
     use key_wallet::account::{AccountType, StandardAccountType};
-    Ok(match spec.type_tag {
+    // `spec.type_tag` is now a plain `u8` on the FFI surface — validate
+    // before matching so an out-of-range byte from a corrupt SwiftData
+    // row / forward-versioned tag doesn't trigger UB on a `repr(u8)`
+    // enum match. Same shape as `persistence::account_type_from_spec`.
+    let type_tag = AccountTypeTagFFI::try_from_u8(spec.type_tag).ok_or_else(|| {
+        format!(
+            "AccountSpecFFI carries unknown type_tag byte {} (out of declared range)",
+            spec.type_tag
+        )
+    })?;
+    Ok(match type_tag {
         AccountTypeTagFFI::Standard => {
-            let standard_account_type = match spec.standard_tag {
+            let standard_tag =
+                StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag).ok_or_else(|| {
+                    format!(
+                        "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
+                        spec.standard_tag
+                    )
+                })?;
+            let standard_account_type = match standard_tag {
                 StandardAccountTypeTagFFI::Bip44 => StandardAccountType::BIP44Account,
                 StandardAccountTypeTagFFI::Bip32 => StandardAccountType::BIP32Account,
             };
@@ -858,7 +875,7 @@ fn account_type_from_spec_ref(
         | AccountTypeTagFFI::IdentityAuthenticationBls => {
             return Err(format!(
                 "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType",
-                spec.type_tag
+                type_tag
             ));
         }
     })

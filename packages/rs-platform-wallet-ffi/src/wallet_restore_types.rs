@@ -27,7 +27,11 @@ use crate::types::FFINetwork;
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
 /// Keep the integer values stable across releases — they end up in
-/// SwiftData rows on the client.
+/// SwiftData rows on the client. Carried across the FFI boundary as
+/// a plain `u8` (see `AccountSpecFFI.type_tag`); validated via
+/// [`AccountTypeTagFFI::try_from_u8`] before any `match`. Reading a
+/// foreign `u8` directly into a `repr(u8)` enum field would be UB
+/// for out-of-range values *before* the match runs.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountTypeTagFFI {
@@ -56,13 +60,54 @@ pub enum AccountTypeTagFFI {
     IdentityAuthenticationBls = 16,
 }
 
+impl AccountTypeTagFFI {
+    /// Validating constructor for an FFI byte. Out-of-range bytes
+    /// (corrupt SwiftData row, forward-versioned tag, malformed
+    /// host buffer) return `None` so callers surface a recoverable
+    /// validation error rather than triggering UB on an enum match.
+    pub fn try_from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => Self::Standard,
+            1 => Self::CoinJoin,
+            2 => Self::IdentityRegistration,
+            3 => Self::IdentityTopUp,
+            4 => Self::IdentityTopUpNotBoundToIdentity,
+            5 => Self::IdentityInvitation,
+            6 => Self::AssetLockAddressTopUp,
+            7 => Self::AssetLockShieldedAddressTopUp,
+            8 => Self::ProviderVotingKeys,
+            9 => Self::ProviderOwnerKeys,
+            10 => Self::ProviderOperatorKeys,
+            11 => Self::ProviderPlatformKeys,
+            12 => Self::DashpayReceivingFunds,
+            13 => Self::DashpayExternalAccount,
+            14 => Self::PlatformPayment,
+            15 => Self::IdentityAuthenticationEcdsa,
+            16 => Self::IdentityAuthenticationBls,
+            _ => return None,
+        })
+    }
+}
+
 /// Discriminant for [`key_wallet::account::StandardAccountType`].
-/// Only meaningful when `AccountSpecFFI.type_tag == AccountTypeTagFFI::Standard`.
+/// Only meaningful when the parent `type_tag` is
+/// [`AccountTypeTagFFI::Standard`]. Same FFI-`u8`-with-validating-ctor
+/// shape as `AccountTypeTagFFI` for the same UB-avoidance reason.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardAccountTypeTagFFI {
     Bip44 = 0,
     Bip32 = 1,
+}
+
+impl StandardAccountTypeTagFFI {
+    pub fn try_from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => Self::Bip44,
+            1 => Self::Bip32,
+            _ => return None,
+        })
+    }
 }
 
 /// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
@@ -87,8 +132,14 @@ pub enum StandardAccountTypeTagFFI {
 ///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
 #[repr(C)]
 pub struct AccountSpecFFI {
-    pub type_tag: AccountTypeTagFFI,
-    pub standard_tag: StandardAccountTypeTagFFI,
+    /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
+    /// [`AccountTypeTagFFI::try_from_u8`] on the Rust side before any
+    /// `match` — reading a foreign byte directly into a `repr(u8)`
+    /// enum field would be UB for out-of-range values.
+    pub type_tag: u8,
+    /// Raw byte projection of [`StandardAccountTypeTagFFI`]. Same
+    /// validation pattern as `type_tag`.
+    pub standard_tag: u8,
     pub index: u32,
     pub registration_index: u32,
     pub key_class: u32,
@@ -230,8 +281,11 @@ pub struct IdentityRestoreEntryFFI {
 /// no C-string field is needed here.
 #[repr(C)]
 pub struct UtxoRestoreEntryFFI {
-    pub type_tag: AccountTypeTagFFI,
-    pub standard_tag: StandardAccountTypeTagFFI,
+    /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
+    /// [`AccountTypeTagFFI::try_from_u8`] on the Rust side. See
+    /// `AccountSpecFFI.type_tag` for the UB-avoidance rationale.
+    pub type_tag: u8,
+    pub standard_tag: u8,
     pub account_index: u32,
     pub registration_index: u32,
     pub key_class: u32,
