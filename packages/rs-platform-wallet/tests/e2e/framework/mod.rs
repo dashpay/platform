@@ -211,6 +211,15 @@ pub async fn setup_with_n_identities(
         identities.push(registered);
     }
 
+    // `register_from_addresses` consumes the funding addresses without
+    // refreshing the cached `(balance, nonce)` pair on each — by design
+    // (see `register_from_addresses.rs` cache TODO). Without a sync the
+    // returned wallet would still report each address at its
+    // pre-registration balance, and a follow-up auto-select would pick
+    // already-spent inputs. One sync at the end refreshes balances and
+    // nonces together for every consumed address in a single round-trip.
+    base.test_wallet.sync_balances().await?;
+
     Ok(MultiIdentitySetupGuard { base, identities })
 }
 
