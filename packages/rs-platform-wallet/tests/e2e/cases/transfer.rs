@@ -160,22 +160,25 @@ async fn transfer_between_two_platform_addresses() {
         "post-transfer balance snapshot"
     );
 
-    // Under `[DeductFromInput(0)]`, addr_1 receives the exact
-    // requested amount; the bank absorbs the fee.
+    // Under [ReduceOutput(0)], the protocol deducts the transfer fee
+    // from output[0] — addr_2's received amount — not from addr_1's
+    // residual. So addr_1 retains FUNDING_CREDITS - TRANSFER_CREDITS
+    // and addr_2 receives TRANSFER_CREDITS - transfer_fee.
     assert_eq!(
         remaining,
-        FUNDING_CREDITS - transfer_fee,
-        "addr_1 must retain FUNDING_CREDITS minus the transfer fee \
-         (bank_pre={bank_pre} bank_post={bank_post} funded={FUNDING_CREDITS})"
+        FUNDING_CREDITS - TRANSFER_CREDITS,
+        "addr_1 must retain FUNDING_CREDITS - TRANSFER_CREDITS \
+         (transfer_fee is deducted from addr_2's amount, not addr_1's residual). \
+         observed remaining={remaining} expected={}",
+        FUNDING_CREDITS - TRANSFER_CREDITS,
     );
-    assert!(
-        received >= TRANSFER_FLOOR,
-        "addr_2 must hold at least TRANSFER_FLOOR ({TRANSFER_FLOOR}); observed {received}"
-    );
-    assert!(
-        received < TRANSFER_CREDITS,
-        "addr_2 must hold less than TRANSFER_CREDITS ({TRANSFER_CREDITS}) \
-         after `ReduceOutput(0)` fee deduction; observed {received}"
+    assert_eq!(
+        received,
+        TRANSFER_CREDITS - transfer_fee,
+        "addr_2 must receive TRANSFER_CREDITS minus the transfer fee \
+         (ReduceOutput(0) deducts fee from the transferred amount). \
+         observed received={received} expected={}",
+        TRANSFER_CREDITS - transfer_fee,
     );
     assert!(
         transfer_fee > 0,
