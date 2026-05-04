@@ -635,6 +635,11 @@ struct SyncProgressRow: View {
 struct WalletRowView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var platformState: AppState
+    /// Canonical Core-balance source. The previously-persisted
+    /// `PersistentWallet.balanceConfirmed`/etc. fields were removed —
+    /// Rust's in-memory account totals (via `accountBalances(for:)`)
+    /// are the single source of truth, mirroring `BalanceCardView`.
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
     /// Per-wallet BLAST-synced platform-address balances. Mirrors
     /// `BalanceCardView` so the summary row sees the same balance as
@@ -669,20 +674,39 @@ struct WalletRowView: View {
         }
     }
 
-    private var totalCoreBalance: UInt64 {
-        wallet.balanceConfirmed + wallet.balanceUnconfirmed
-            + wallet.balanceImmature + wallet.balanceLocked
+    /// One-shot snapshot of the wallet's per-account Core balances.
+    /// `accountBalances(for:)` is a blocking FFI call; the prior
+    /// shape (a `coreBalances` computed property + four `coreX` sums)
+    /// hit the FFI four times per render and again from
+    /// `balanceBreakdown`. Capturing in `body` and threading the
+    /// tuple through reduces every render to a single FFI roundtrip.
+    private typealias CoreBalanceTotals = (
+        confirmed: UInt64,
+        unconfirmed: UInt64,
+        immature: UInt64,
+        locked: UInt64
+    )
+
+    private func coreBalanceTotals() -> CoreBalanceTotals {
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(into: (UInt64(0), UInt64(0), UInt64(0), UInt64(0))) { acc, b in
+                acc.0 += b.confirmed
+                acc.1 += b.unconfirmed
+                acc.2 += b.immature
+                acc.3 += b.locked
+            }
     }
 
-    /// Combined wallet balance expressed in DASH. Core uses 1e8
-    /// duffs/DASH; Platform uses 1e11 credits/DASH.
-    private var combinedDashAmount: Double {
-        Double(totalCoreBalance) / 100_000_000.0
+    private static func sumCoreBalance(_ totals: CoreBalanceTotals) -> UInt64 {
+        totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
+    }
+
+    /// Combined wallet balance expressed in DASH for a precomputed
+    /// totals tuple. Core uses 1e8 duffs/DASH; Platform uses 1e11
+    /// credits/DASH.
+    private func combinedDashAmount(coreTotal: UInt64) -> Double {
+        Double(coreTotal) / 100_000_000.0
             + Double(platformBalance) / 100_000_000_000.0
-    }
-
-    private var hasAnyBalance: Bool {
-        totalCoreBalance > 0 || platformBalance > 0
     }
 
     private var walletIdShort: String {
@@ -725,19 +749,19 @@ struct WalletRowView: View {
         return String(format: "%.4f DASH", dash)
     }
 
-    private func balanceBreakdown() -> String? {
+    private func balanceBreakdown(_ totals: CoreBalanceTotals) -> String? {
         var parts: [String] = []
-        if wallet.balanceConfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceConfirmed)) confirmed")
+        if totals.confirmed > 0 {
+            parts.append("\(formatBalance(totals.confirmed)) confirmed")
         }
-        if wallet.balanceUnconfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceUnconfirmed)) unconfirmed")
+        if totals.unconfirmed > 0 {
+            parts.append("\(formatBalance(totals.unconfirmed)) unconfirmed")
         }
-        if wallet.balanceImmature > 0 {
-            parts.append("\(formatBalance(wallet.balanceImmature)) immature")
+        if totals.immature > 0 {
+            parts.append("\(formatBalance(totals.immature)) immature")
         }
-        if wallet.balanceLocked > 0 {
-            parts.append("\(formatBalance(wallet.balanceLocked)) locked")
+        if totals.locked > 0 {
+            parts.append("\(formatBalance(totals.locked)) locked")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -756,7 +780,14 @@ struct WalletRowView: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // Single FFI snapshot per render — `coreBalanceTotals()` calls
+        // `walletManager.accountBalances(for:)` once; everything below
+        // reads from `core` / `coreTotal` / `hasAny` instead of
+        // re-invoking the accessor.
+        let core = coreBalanceTotals()
+        let coreTotal = Self.sumCoreBalance(core)
+        let hasAny = coreTotal > 0 || platformBalance > 0
+        return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 6) {
@@ -770,10 +801,10 @@ struct WalletRowView: View {
                     }
                 }
                 Spacer()
-                Text(hasAnyBalance ? formatDash(combinedDashAmount) : "Empty")
+                Text(hasAny ? formatDash(combinedDashAmount(coreTotal: coreTotal)) : "Empty")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(hasAnyBalance ? .primary : .secondary)
+                    .foregroundColor(hasAny ? .primary : .secondary)
             }
 
             // Row 1: network + created date.
@@ -790,7 +821,7 @@ struct WalletRowView: View {
             WalletInfoRow(
                 icon: "bitcoinsign.circle",
                 iconColor: .green,
-                text: balanceBreakdown() ?? "No Core balance"
+                text: balanceBreakdown(core) ?? "No Core balance"
             )
 
             // Row 3: account + identity counts.

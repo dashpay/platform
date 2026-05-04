@@ -215,6 +215,7 @@ enum Category: CaseIterable, Hashable {
     case legacyIdentityPrivateKey
     case specialKey
     case walletMnemonic
+    case walletMetadata
     case biometric
     case other
 
@@ -224,6 +225,7 @@ enum Category: CaseIterable, Hashable {
         case .legacyIdentityPrivateKey: return "Identity Private Keys (legacy)"
         case .specialKey: return "Special Keys (Voting / Owner / Payout)"
         case .walletMnemonic: return "Per-Wallet Mnemonics"
+        case .walletMetadata: return "Per-Wallet Metadata"
         case .biometric: return "Biometric Material"
         case .other: return "Other"
         }
@@ -235,6 +237,7 @@ enum Category: CaseIterable, Hashable {
         case .legacyIdentityPrivateKey: return "key"
         case .specialKey: return "key.icloud"
         case .walletMnemonic: return "doc.text"
+        case .walletMetadata: return "tag"
         case .biometric: return "faceid"
         case .other: return "questionmark.square.dashed"
         }
@@ -249,6 +252,11 @@ enum Category: CaseIterable, Hashable {
         // derivation-path-keyed layout above.
         if account.hasPrefix("privkey_") { return .legacyIdentityPrivateKey }
         if account.hasPrefix("specialkey_") { return .specialKey }
+        // Order matters: `wallet.metadata.` must be matched before
+        // `wallet.mnemonic.` because both share the `wallet.`
+        // prefix; the explorer relies on the trailing namespace
+        // segment to disambiguate.
+        if account.hasPrefix("\(WalletStorage.metadataAccountPrefix).") { return .walletMetadata }
         if account.hasPrefix("wallet.mnemonic.") { return .walletMnemonic }
         if account == "wallet.biometric" { return .biometric }
         return .other
@@ -288,6 +296,10 @@ enum Category: CaseIterable, Hashable {
         case .walletMnemonic:
             let hex = String(account.dropFirst("wallet.mnemonic.".count))
             return "Wallet \(shortHex(hex))"
+        case .walletMetadata:
+            let prefix = "\(WalletStorage.metadataAccountPrefix)."
+            let hex = String(account.dropFirst(prefix.count))
+            return "Wallet \(shortHex(hex)) · metadata"
         case .biometric:
             return "Biometric"
         case .other:
@@ -307,6 +319,13 @@ enum Category: CaseIterable, Hashable {
 
 struct KeychainItemDetailView: View {
     let item: KeychainItemSummary
+
+    /// Decoded `WalletKeychainMetadata` blob for `walletMetadata`
+    /// rows. Pulled lazily on `.onAppear` so the rest of the detail
+    /// view (which only renders attribute metadata) doesn't pay
+    /// the cost of touching the keychain value path on every cell.
+    /// Stays `nil` for non-metadata rows.
+    @State private var walletMetadata: WalletMetadataPreview?
 
     var body: some View {
         List {
@@ -351,12 +370,45 @@ struct KeychainItemDetailView: View {
                 }
             }
 
+            // For wallet-metadata rows the stored value is the
+            // user-typed name + description + networks + birth
+            // height (NOT a secret), so we surface its decoded
+            // form here. Mnemonic / private-key rows fall through
+            // and are never read.
+            if Category.from(item.account) == .walletMetadata,
+               let preview = walletMetadata {
+                Section("Wallet metadata") {
+                    if let name = preview.name {
+                        labeledRow("Name", name)
+                    } else {
+                        labeledRow("Name", "(none)")
+                    }
+                    if let desc = preview.walletDescription {
+                        labeledRow("Description", desc)
+                    } else {
+                        labeledRow("Description", "(none)")
+                    }
+                    if let nets = preview.networks, !nets.isEmpty {
+                        labeledRow("Networks", nets.joined(separator: ", "))
+                    } else {
+                        labeledRow("Networks", "(none)")
+                    }
+                    if let bh = preview.birthHeight {
+                        labeledRow("Birth height", String(bh))
+                    } else {
+                        labeledRow("Birth height", "(none)")
+                    }
+                }
+            }
+
             Section {
                 Text(
-                    "Key material is never read by this explorer — rows "
-                    + "show keychain attribute metadata only. To extract a "
-                    + "value you'd have to call the owning API path "
-                    + "(KeychainManager / WalletStorage) directly."
+                    "Secret material (mnemonics, private keys) is "
+                    + "never read by this explorer — rows show keychain "
+                    + "attribute metadata only. The wallet-metadata "
+                    + "category surfaces its plain-text payload because "
+                    + "the user typed those strings; everything else "
+                    + "stays opaque."
                 )
                 .font(.caption2)
                 .foregroundColor(.secondary)
@@ -364,6 +416,55 @@ struct KeychainItemDetailView: View {
         }
         .navigationTitle("Keychain Item")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: loadWalletMetadataIfNeeded)
+    }
+
+    /// On first appear of a `walletMetadata` row, decode the value
+    /// blob into `WalletKeychainMetadata` and snapshot it locally.
+    /// Non-metadata rows are no-ops.
+    private func loadWalletMetadataIfNeeded() {
+        guard walletMetadata == nil,
+              Category.from(item.account) == .walletMetadata else { return }
+        let prefix = "\(WalletStorage.metadataAccountPrefix)."
+        guard item.account.hasPrefix(prefix) else { return }
+        let hex = String(item.account.dropFirst(prefix.count))
+        guard let walletId = Self.dataFromHex(hex) else { return }
+        let storage = WalletStorage()
+        guard let stored = (try? storage.metadata(for: walletId)) ?? nil else { return }
+        walletMetadata = WalletMetadataPreview(
+            name: stored.name,
+            walletDescription: stored.walletDescription,
+            networks: stored.networks,
+            birthHeight: stored.birthHeight
+        )
+    }
+
+    /// Local hex decoder so the explorer doesn't depend on the
+    /// private decoder inside `WalletStorage`. Safe to call on the
+    /// trimmed account suffix because `Category.from` already
+    /// validated the prefix.
+    private static func dataFromHex(_ hex: String) -> Data? {
+        guard hex.count % 2 == 0 else { return nil }
+        var data = Data(capacity: hex.count / 2)
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            data.append(byte)
+            index = next
+        }
+        return data
+    }
+
+    /// Plain Swift mirror of the decoded metadata blob the detail
+    /// view shows. Avoids passing a `WalletKeychainMetadata`
+    /// directly through `@State` so the SDK type doesn't have to
+    /// adopt `Hashable`.
+    private struct WalletMetadataPreview: Equatable {
+        let name: String?
+        let walletDescription: String?
+        let networks: [String]?
+        let birthHeight: UInt32?
     }
 
     @ViewBuilder

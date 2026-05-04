@@ -352,6 +352,13 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Per-account balances
 
     /// Per-account balance snapshot read from Rust's in-memory state.
+    ///
+    /// `keysUsed` / `keysTotal` are the number of derived addresses
+    /// across every pool on the account, with `keysUsed` further
+    /// filtered by `AddressInfo.used`. The fields are populated for
+    /// both funds and keys variants — the explorer surfaces them as
+    /// the headline number on keys-only rows where balance is zero by
+    /// construction.
     public struct AccountBalance {
         public let typeTag: UInt8
         public let standardTag: UInt8
@@ -364,6 +371,8 @@ public class PlatformWalletManager: ObservableObject {
         public let unconfirmed: UInt64
         public let immature: UInt64
         public let locked: UInt64
+        public let keysUsed: UInt32
+        public let keysTotal: UInt32
     }
 
     /// Query per-account balances directly from the Rust-side
@@ -422,7 +431,9 @@ public class PlatformWalletManager: ObservableObject {
                 confirmed: entry.confirmed,
                 unconfirmed: entry.unconfirmed,
                 immature: entry.immature,
-                locked: entry.locked
+                locked: entry.locked,
+                keysUsed: entry.keys_used,
+                keysTotal: entry.keys_total
             )
         }
     }

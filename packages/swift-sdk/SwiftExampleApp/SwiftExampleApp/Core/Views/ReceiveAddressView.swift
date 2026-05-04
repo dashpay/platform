@@ -32,14 +32,15 @@ struct ReceiveAddressView: View {
     @State private var faucetStatus: String?
     @State private var isFaucetLoading = false
 
-    /// Lowest-indexed unused external address on the primary BIP44
-    /// account. `PersistentCoreAddress` rows are populated by the Rust
+    /// Lowest-indexed external address on the primary BIP44 account
+    /// that has never received an inbound transaction.
+    /// `PersistentCoreAddress` rows are populated by the Rust
     /// `on_persist_account_address_pools_fn` callback at wallet creation
     /// (initial gap-limit fill), so they're available without a
     /// runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {
         guard let account = primaryBip44Account else { return nil }
-        return firstUnusedAddress(in: account, poolTag: 0)
+        return firstUnreceivedAddress(in: account, poolTag: 0)
     }
 
     /// Lowest-indexed unused address on the primary PlatformPayment
@@ -83,16 +84,20 @@ struct ReceiveAddressView: View {
         return nil
     }
 
-    /// Lowest-indexed unused address in the given pool on the given
-    /// account, or nil if the pool has no unused slots.
-    private func firstUnusedAddress(
+    /// Lowest-indexed address in the given pool on the given account
+    /// that has never received an inbound transaction. `PersistentTxo`
+    /// rows are created on the SPV inbound-UTXO path and only ever
+    /// flagged spent (never deleted), so `addr.txos.isEmpty` is a
+    /// reliable "never received" signal — strictly stronger than the
+    /// `isUsed` flag, which doesn't always survive sync edge cases.
+    private func firstUnreceivedAddress(
         in account: PersistentAccount,
         poolTag: UInt8
     ) -> PersistentCoreAddress? {
         var best: PersistentCoreAddress? = nil
         for addr in account.coreAddresses {
             if addr.poolTypeTag != poolTag { continue }
-            if addr.isUsed { continue }
+            if !addr.txos.isEmpty { continue }
             if let current = best, current.addressIndex <= addr.addressIndex {
                 continue
             }
