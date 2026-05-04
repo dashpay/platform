@@ -307,24 +307,6 @@ where
     candidates
 }
 
-/// Module-scope view of the per-input fee estimator so [`select_inputs`]
-/// can drive it without an instance of [`PlatformAddressWallet`].
-fn estimate_fee_for_inputs_pub(
-    input_count: usize,
-    output_count: usize,
-    fee_strategy: &[AddressFundsFeeStrategyStep],
-    outputs: &BTreeMap<PlatformAddress, Credits>,
-    platform_version: &PlatformVersion,
-) -> Credits {
-    PlatformAddressWallet::estimate_fee_for_inputs(
-        input_count,
-        output_count,
-        fee_strategy,
-        outputs,
-        platform_version,
-    )
-}
-
 /// `[DeductFromInput(0)]` selector. Order-agnostic: walks
 /// `candidates` as-is and picks the smallest covering prefix.
 ///
@@ -414,7 +396,7 @@ fn select_inputs_deduct_from_input(
             "select_inputs_deduct_from_input: prefix accumulator",
         )?;
 
-        let estimated_fee = estimate_fee_for_inputs_pub(
+        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
             prefix.len(),
             output_count,
             fee_strategy,
@@ -733,7 +715,7 @@ fn select_inputs_reduce_output(
     // Phase 4: ReduceOutput(0) takes the fee from output 0 at chain
     // time; verify the chosen output 0 has enough to absorb it.
     //
-    // KNOWN BUG — platform #3040: `estimate_fee_for_inputs_pub` returns
+    // KNOWN BUG — platform #3040: `PlatformAddressWallet::estimate_fee_for_inputs` returns
     // `AddressFundsTransferTransition::estimate_min_fee`, which models only
     // the static `state_transition_min_fees` floor. The chain-time fee
     // includes storage + processing costs that scale with the actual
@@ -747,7 +729,7 @@ fn select_inputs_reduce_output(
     // rather than the absorbing output. The Phase 4 check below remains as
     // the static lower-bound gate; it cannot reject the chain-time-only
     // failure mode.
-    let estimated_fee = estimate_fee_for_inputs_pub(
+    let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
         selected.len(),
         output_count,
         fee_strategy,
@@ -942,8 +924,13 @@ mod auto_select_tests {
 
         // Headroom invariant: addr_a's post-consumption remaining
         // (= balance − consumed) must be ≥ estimated fee.
-        let estimated_fee =
-            estimate_fee_for_inputs_pub(selected.len(), outputs.len(), &fee_strategy, &outputs, pv);
+        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+            selected.len(),
+            outputs.len(),
+            &fee_strategy,
+            &outputs,
+            pv,
+        );
         let remaining = addr_a_balance - selected[&addr_a];
         assert!(
             remaining >= estimated_fee,
@@ -1016,8 +1003,13 @@ mod auto_select_tests {
         assert_eq!(selected.keys().next(), Some(&addr_a));
 
         // Headroom invariant.
-        let estimated_fee =
-            estimate_fee_for_inputs_pub(selected.len(), outputs.len(), &fee_strategy, &outputs, pv);
+        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+            selected.len(),
+            outputs.len(),
+            &fee_strategy,
+            &outputs,
+            pv,
+        );
         assert!(
             addr_a_balance - selected[&addr_a] >= estimated_fee,
             "fee target must retain ≥ estimated_fee for DeductFromInput(0)"
@@ -1062,8 +1054,13 @@ mod auto_select_tests {
         );
 
         // (3) Fee target's post-consumption remaining ≥ estimated fee.
-        let estimated_fee =
-            estimate_fee_for_inputs_pub(selected.len(), outputs.len(), &fee_strategy, &outputs, pv);
+        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+            selected.len(),
+            outputs.len(),
+            &fee_strategy,
+            &outputs,
+            pv,
+        );
         let remaining = addr_a_balance - selected[&addr_a];
         assert!(
             remaining >= estimated_fee,
@@ -1223,8 +1220,13 @@ mod auto_select_tests {
 
         // The fee target (lex-smallest of selected = addr_large here, since it's the only entry)
         // has remaining = 100M - 30M = 70M, far above any plausible fee.
-        let estimated_fee =
-            estimate_fee_for_inputs_pub(selected.len(), outputs.len(), &fee_strategy, &outputs, pv);
+        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+            selected.len(),
+            outputs.len(),
+            &fee_strategy,
+            &outputs,
+            pv,
+        );
         let remaining = 100_000_000u64 - selected[&addr_large];
         assert!(remaining >= estimated_fee);
 
@@ -1451,7 +1453,8 @@ mod auto_select_tests {
         let candidates = vec![(addr_in, 100_000_000u64)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
 
-        let estimated_fee = estimate_fee_for_inputs_pub(1, 1, &fee_strategy, &outputs, pv);
+        let estimated_fee =
+            PlatformAddressWallet::estimate_fee_for_inputs(1, 1, &fee_strategy, &outputs, pv);
         // Sanity guard: this test is meaningful only when the output
         // really cannot cover the fee.
         assert!(
