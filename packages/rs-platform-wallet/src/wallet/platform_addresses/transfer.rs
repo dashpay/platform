@@ -408,7 +408,11 @@ fn select_inputs_deduct_from_input(
 
     for (address, balance) in candidates {
         prefix.push((address, balance));
-        accumulated = accumulated.saturating_add(balance);
+        accumulated = checked_credits_add(
+            accumulated,
+            balance,
+            "select_inputs_deduct_from_input: prefix accumulator",
+        )?;
 
         let estimated_fee = estimate_fee_for_inputs_pub(
             prefix.len(),
@@ -418,7 +422,11 @@ fn select_inputs_deduct_from_input(
             platform_version,
         );
         last_estimated_fee = estimated_fee;
-        let required = total_output.saturating_add(estimated_fee);
+        let required = checked_credits_add(
+            total_output,
+            estimated_fee,
+            "select_inputs_deduct_from_input: total_output + estimated_fee",
+        )?;
 
         if accumulated < required {
             continue;
@@ -431,12 +439,21 @@ fn select_inputs_deduct_from_input(
             .copied()
             .expect("prefix is non-empty: we just pushed");
 
+        // `estimated_fee` may exceed `fee_target_balance` for a thin
+        // fee target; saturating to 0 makes the `fee_target_min <=
+        // fee_target_max` headroom check below reject this prefix size
+        // and grow. Not an overflow site.
         let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
         let other_total: Credits = prefix
             .iter()
             .filter(|(addr, _)| addr != &fee_target_addr)
             .map(|(_, bal)| *bal)
             .sum();
+        // `other_total` may exceed `total_output` when peers alone
+        // cover the outputs; the saturating floor of 0 is intentional —
+        // combined with `max(min_input_amount, ..)` it yields
+        // `min_input_amount`, the smallest legal consumption for the
+        // fee target. Not an overflow site.
         let fee_target_min =
             std::cmp::max(min_input_amount, total_output.saturating_sub(other_total));
 
@@ -456,14 +473,16 @@ fn select_inputs_deduct_from_input(
     else {
         // Distinguish "couldn't cover total_output + fee" from
         // "covered but no headroom-feasible fee target".
-        if accumulated < total_output.saturating_add(last_estimated_fee) {
+        let required_total = checked_credits_add(
+            total_output,
+            last_estimated_fee,
+            "select_inputs_deduct_from_input: required_total in error path",
+        )?;
+        if accumulated < required_total {
             return Err(PlatformWalletError::AddressOperation(format!(
                 "Insufficient balance: available {} credits, required {} \
                  (outputs {} + estimated fee {})",
-                accumulated,
-                total_output.saturating_add(last_estimated_fee),
-                total_output,
-                last_estimated_fee,
+                accumulated, required_total, total_output, last_estimated_fee,
             )));
         }
         return Err(PlatformWalletError::AddressOperation(format!(
@@ -481,10 +500,18 @@ fn select_inputs_deduct_from_input(
     // the fee target — `validate_structure` would otherwise reject the
     // transition with `InputBelowMinimumError`.
     let mut fee_target_consumed = fee_target_min;
-    let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
+    let fee_target_max = checked_credits_sub(
+        fee_target_balance,
+        estimated_fee,
+        "select_inputs_deduct_from_input: Phase 4 fee_target_max",
+    )?;
     let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
 
-    let mut remaining = total_output.saturating_sub(fee_target_consumed);
+    let mut remaining = checked_credits_sub(
+        total_output,
+        fee_target_consumed,
+        "select_inputs_deduct_from_input: Phase 4 remaining",
+    )?;
     let mut residue_to_fee_target: Credits = 0;
     for (addr, bal) in prefix.iter() {
         if *addr == fee_target_addr {
@@ -499,16 +526,32 @@ fn select_inputs_deduct_from_input(
         }
         if tentative < min_input_amount {
             // Sub-minimum input — fold into the fee target.
-            residue_to_fee_target = residue_to_fee_target.saturating_add(tentative);
-            remaining = remaining.saturating_sub(tentative);
+            residue_to_fee_target = checked_credits_add(
+                residue_to_fee_target,
+                tentative,
+                "select_inputs_deduct_from_input: residue_to_fee_target",
+            )?;
+            remaining = checked_credits_sub(
+                remaining,
+                tentative,
+                "select_inputs_deduct_from_input: remaining after residue fold",
+            )?;
             continue;
         }
         selected.insert(*addr, tentative);
-        remaining = remaining.saturating_sub(tentative);
+        remaining = checked_credits_sub(
+            remaining,
+            tentative,
+            "select_inputs_deduct_from_input: remaining after select",
+        )?;
     }
 
     if residue_to_fee_target > 0 {
-        let new_consumed = fee_target_consumed.saturating_add(residue_to_fee_target);
+        let new_consumed = checked_credits_add(
+            fee_target_consumed,
+            residue_to_fee_target,
+            "select_inputs_deduct_from_input: new_consumed",
+        )?;
         if new_consumed > fee_target_max {
             // Should be unreachable given Phase 3's headroom check, but
             // guarded explicitly: silently shipping an invalid
@@ -538,6 +581,8 @@ fn select_inputs_deduct_from_input(
         Some(fee_target_addr),
         "fee target must be the BTreeMap index-0 (lex-smallest) entry"
     );
+    // Saturating-sub is fine here: the assert exists to catch a
+    // negative remaining (which saturates to 0 and trips `>= estimated_fee`).
     debug_assert!(
         fee_target_balance.saturating_sub(fee_target_consumed) >= estimated_fee,
         "fee target must retain ≥ estimated_fee remaining balance for DeductFromInput(0)"
@@ -619,7 +664,11 @@ fn select_inputs_reduce_output(
     let mut accumulated: Credits = 0;
     for (address, balance) in candidates {
         prefix.push((address, balance));
-        accumulated = accumulated.saturating_add(balance);
+        accumulated = checked_credits_add(
+            accumulated,
+            balance,
+            "select_inputs_reduce_output: prefix accumulator",
+        )?;
         if accumulated >= total_output {
             break;
         }
@@ -640,6 +689,11 @@ fn select_inputs_reduce_output(
     let last_index = prefix.len() - 1;
     for (i, (addr, balance)) in prefix.iter().enumerate() {
         let consumed = if i == last_index {
+            // Loop above stops as soon as `accumulated >= total_output`,
+            // so before the final push we had `accumulated_prev <
+            // total_output`, hence `surplus = accumulated_prev +
+            // balance - total_output < balance`. Saturating-sub is
+            // documentary defense, the underflow path is unreachable.
             balance.saturating_sub(surplus)
         } else {
             *balance
@@ -654,18 +708,21 @@ fn select_inputs_reduce_output(
     let last_consumed = selected[&last_addr];
     if last_consumed < min_input_amount && prefix.len() > 1 {
         let shift = min_input_amount - last_consumed;
+        let donor_threshold = checked_credits_add(
+            min_input_amount,
+            shift,
+            "select_inputs_reduce_output: donor_threshold",
+        )?;
         let donor_addr = prefix
             .iter()
             .filter(|(addr, _)| *addr != last_addr)
-            .find(|(_, balance)| *balance >= min_input_amount.saturating_add(shift))
+            .find(|(_, balance)| *balance >= donor_threshold)
             .map(|(addr, _)| *addr);
         let Some(donor_addr) = donor_addr else {
             return Err(PlatformWalletError::AddressOperation(format!(
                 "Cannot satisfy per-input minimum: trimming the last input to \
                  {} (below {}) and no peer has ≥ {} of headroom to redistribute",
-                last_consumed,
-                min_input_amount,
-                min_input_amount.saturating_add(shift),
+                last_consumed, min_input_amount, donor_threshold,
             )));
         };
         let donor_consumed = selected[&donor_addr];
@@ -730,6 +787,39 @@ fn format_address(addr: &PlatformAddress) -> String {
         PlatformAddress::P2pkh(hash) => format!("p2pkh({})", hex::encode(hash)),
         PlatformAddress::P2sh(hash) => format!("p2sh({})", hex::encode(hash)),
     }
+}
+
+/// Checked add of two `Credits` values. Returns
+/// [`PlatformWalletError::ArithmeticOverflow`] when the addition would
+/// wrap. `Credits` is `u64`; total Dash supply (≈ 21M DASH ×
+/// 100_000_000 duffs/DASH × the credit conversion factor) is far below
+/// `u64::MAX`, so this overflow is unreachable in practice — the helper
+/// is defensive correctness, not a bug fix.
+#[inline]
+fn checked_credits_add(
+    a: Credits,
+    b: Credits,
+    context: &str,
+) -> Result<Credits, PlatformWalletError> {
+    a.checked_add(b)
+        .ok_or_else(|| PlatformWalletError::ArithmeticOverflow {
+            context: context.to_string(),
+        })
+}
+
+/// Checked sub of two `Credits` values. Returns
+/// [`PlatformWalletError::ArithmeticOverflow`] when the subtraction
+/// would wrap. Mirrors [`checked_credits_add`] — defensive only.
+#[inline]
+fn checked_credits_sub(
+    a: Credits,
+    b: Credits,
+    context: &str,
+) -> Result<Credits, PlatformWalletError> {
+    a.checked_sub(b)
+        .ok_or_else(|| PlatformWalletError::ArithmeticOverflow {
+            context: context.to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -1453,6 +1543,40 @@ mod auto_select_tests {
             ],
             "output address must be dropped; remaining candidates sort balance-descending",
         );
+    }
+
+    /// `checked_credits_add` / `checked_credits_sub` happy path returns
+    /// the wrapped sum/difference; the overflow path produces a typed
+    /// `ArithmeticOverflow` carrying the supplied call-site context so
+    /// downstream observers can pinpoint where the overflow happened.
+    #[test]
+    fn checked_credits_helpers_typed_errors() {
+        assert_eq!(checked_credits_add(2, 3, "ctx").unwrap(), 5);
+        assert_eq!(checked_credits_sub(5, 3, "ctx").unwrap(), 2);
+
+        let add_err = checked_credits_add(u64::MAX, 1, "add-site")
+            .expect_err("expected ArithmeticOverflow on add");
+        match add_err {
+            PlatformWalletError::ArithmeticOverflow { context } => {
+                assert!(
+                    context.contains("add-site"),
+                    "unexpected context: {context}"
+                );
+            }
+            other => panic!("expected ArithmeticOverflow, got {other:?}"),
+        }
+
+        let sub_err =
+            checked_credits_sub(0, 1, "sub-site").expect_err("expected ArithmeticOverflow on sub");
+        match sub_err {
+            PlatformWalletError::ArithmeticOverflow { context } => {
+                assert!(
+                    context.contains("sub-site"),
+                    "unexpected context: {context}"
+                );
+            }
+            other => panic!("expected ArithmeticOverflow, got {other:?}"),
+        }
     }
 
     /// End-to-end structural validation: feed the selector's output
