@@ -1,19 +1,20 @@
 //! Self-transfer of credits between two platform-payment addresses
 //! owned by the same test wallet.
 //!
-//! Runs by default (no `#[ignore]`). Operator setup lives in
-//! `tests/.env` (template: `tests/.env.example`). A missing
-//! `PLATFORM_WALLET_E2E_BANK_MNEMONIC` surfaces as a
+//! Gated behind `#[ignore]` so a stock `cargo test -p platform-wallet`
+//! (or workspace-wide invocation) stays green for contributors and CI
+//! jobs that lack a funded testnet bank wallet, live DAPI access, and
+//! the operator `.env`. Operator setup lives in `tests/.env`
+//! (template: `tests/.env.example`); a missing
+//! `PLATFORM_WALLET_E2E_BANK_MNEMONIC` would otherwise surface as a
 //! [`FrameworkError::Bank`](crate::framework::FrameworkError::Bank)
-//! during context init; an under-funded bank wallet panics with the
-//! README's "top up at <address>" pointer so operators get an
-//! actionable target.
+//! during context init, escalated to a panic by `setup().expect(..)`.
 //!
 //! ```bash
 //! cp packages/rs-platform-wallet/tests/.env.example \
 //!    packages/rs-platform-wallet/tests/.env
 //! # edit tests/.env to set PLATFORM_WALLET_E2E_BANK_MNEMONIC
-//! cargo test --test e2e -- --nocapture
+//! cargo test --test e2e -- --ignored --nocapture
 //! ```
 
 use std::collections::BTreeMap;
@@ -60,6 +61,7 @@ const TRANSFER_FLOOR: u64 = 1_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared)]
+#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn transfer_between_two_platform_addresses() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
