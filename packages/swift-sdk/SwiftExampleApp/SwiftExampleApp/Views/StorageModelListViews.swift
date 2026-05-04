@@ -1285,6 +1285,67 @@ struct TxoStorageListView: View {
     }
 }
 
+// MARK: - PersistentPendingInput
+
+/// Diagnostic list of every `PersistentPendingInput` row — one per
+/// transaction-input outpoint whose previous-output `PersistentTxo`
+/// hasn't landed in SwiftData yet. A non-empty list is informational
+/// rather than alarming on its own (entries resolve and self-delete
+/// when the matching `upsertUtxo` arrives), but a *long-lived*
+/// non-zero count points at a real reconciliation gap — addresses
+/// that the wallet never derives, or input outpoints whose previous
+/// output isn't ours and will never resolve.
+struct PendingInputStorageListView: View {
+    @Query(sort: [SortDescriptor(\PersistentPendingInput.createdAt, order: .reverse)])
+    private var records: [PersistentPendingInput]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: PendingInputStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(outpointHex(record.outpoint))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text("input \(record.inputIndex)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(record.createdAt, style: .relative)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Pending Inputs (\(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView(
+                    "No Pending Inputs",
+                    systemImage: "hourglass"
+                )
+            }
+        }
+    }
+
+    /// 36-byte outpoint as `<txid hex (display order)>:<vout>`. Mirrors
+    /// `PersistentTxo.outpointHex` so the same row is identifiable
+    /// across both surfaces.
+    private func outpointHex(_ outpoint: Data) -> String {
+        guard outpoint.count == 36 else {
+            return outpoint.map { String(format: "%02x", $0) }.joined()
+        }
+        let txid = outpoint.prefix(32)
+        let voutBytes = outpoint.suffix(4)
+        let vout = voutBytes.withUnsafeBytes { raw in
+            raw.load(as: UInt32.self).littleEndian
+        }
+        let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(txidHex):\(vout)"
+    }
+}
+
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageListView: View {

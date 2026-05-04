@@ -1660,6 +1660,78 @@ struct TxoStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentPendingInput
+
+struct PendingInputStorageDetailView: View {
+    let record: PersistentPendingInput
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Outpoint", value: outpointHex(record.outpoint))
+                FieldRow(label: "Input Index", value: "\(record.inputIndex)")
+                // Display order matches the canonical block-explorer
+                // form (byte-reversed from on-disk wire order) — same
+                // convention `PersistentTransaction.txidHex` uses.
+                FieldRow(
+                    label: "Spending TXID",
+                    value: record.spendingTxid.reversed()
+                        .map { String(format: "%02x", $0) }
+                        .joined()
+                )
+                FieldRow(label: "Wallet ID", value: record.walletId.isEmpty ? "—" : hexString(record.walletId))
+            }
+            Section("Relationships") {
+                if let spending = record.spendingTransaction {
+                    NavigationLink(destination: TransactionStorageDetailView(record: spending)) {
+                        FieldRow(label: "Spending Transaction", value: spending.txidHex)
+                    }
+                } else {
+                    // The pending row's parent transaction may not have
+                    // faulted in (rare — the cascade-delete relationship
+                    // keeps them in lockstep, but the field is optional
+                    // for SwiftData's brief-window tolerance). Surface
+                    // explicitly so reviewers can spot the orphan.
+                    FieldRow(label: "Spending Transaction", value: "— (unlinked)")
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+            }
+            Section {
+                Text(
+                    "A pending input lives here until its previous-output "
+                    + "PersistentTxo arrives. On `upsertUtxo`, the matching "
+                    + "row is consumed: the new TXO is marked spent, "
+                    + "linked to this row's spendingTransaction, and the "
+                    + "pending entry is deleted in one pass."
+                )
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle("Pending Input")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// 36-byte outpoint as `<txid hex (display order)>:<vout>`.
+    /// Duplicates the helper in the list view rather than threading
+    /// it through a shared file — the function is small and the two
+    /// surfaces don't otherwise collaborate.
+    private func outpointHex(_ outpoint: Data) -> String {
+        guard outpoint.count == 36 else {
+            return outpoint.map { String(format: "%02x", $0) }.joined()
+        }
+        let txid = outpoint.prefix(32)
+        let voutBytes = outpoint.suffix(4)
+        let vout = voutBytes.withUnsafeBytes { raw in
+            raw.load(as: UInt32.self).littleEndian
+        }
+        let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(txidHex):\(vout)"
+    }
+}
+
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageDetailView: View {

@@ -91,6 +91,9 @@ struct StorageExplorerView: View {
             modelRow("TXOs", icon: "bitcoinsign.circle", type: PersistentTxo.self) {
                 TxoStorageListView()
             }
+            modelRow("Pending Inputs", icon: "hourglass", type: PersistentPendingInput.self) {
+                PendingInputStorageListView()
+            }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView()
             }
@@ -171,6 +174,7 @@ struct StorageExplorerView: View {
         count(PersistentAccount.self)
         count(PersistentTransaction.self)
         count(PersistentTxo.self)
+        count(PersistentPendingInput.self)
         count(PersistentWalletManagerMetadata.self)
         // Core and Platform address rows live in separate models now
         // (PersistentCoreAddress vs PersistentPlatformAddress), so
