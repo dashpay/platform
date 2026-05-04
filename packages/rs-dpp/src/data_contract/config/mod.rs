@@ -816,9 +816,11 @@ mod json_convertible_tests {
     use super::*;
     use crate::data_contract::config::v0::DataContractConfigV0;
     use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+    use platform_value::platform_value;
+    use serde_json::json;
 
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     fn fixture() -> DataContractConfig {
         DataContractConfig::V0(DataContractConfigV0 {
             can_be_deleted: true,
@@ -832,54 +834,54 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(c: &DataContractConfig) {
-        let DataContractConfig::V0(rec) = c else {
-            panic!("expected V0 variant");
-        };
-        assert!(rec.can_be_deleted, "can_be_deleted");
-        assert!(rec.readonly, "readonly");
-        assert!(rec.keeps_history, "keeps_history");
-        assert!(
-            rec.documents_keep_history_contract_default,
-            "documents_keep_history_contract_default"
-        );
-        assert!(
-            !rec.documents_mutable_contract_default,
-            "documents_mutable_contract_default (false)"
-        );
-        assert!(
-            !rec.documents_can_be_deleted_contract_default,
-            "documents_can_be_deleted_contract_default (false)"
-        );
-        assert_eq!(
-            rec.requires_identity_encryption_bounded_key,
-            Some(StorageKeyRequirements::Unique),
-            "requires_identity_encryption_bounded_key"
-        );
-        assert_eq!(
-            rec.requires_identity_decryption_bounded_key,
-            Some(StorageKeyRequirements::Multiple),
-            "requires_identity_decryption_bounded_key"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Wire shape — full JSON visible at the call site. `StorageKeyRequirements`
+        // is `#[repr(u8)]` with `Serialize_repr`, so Unique = 0, Multiple = 1.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "canBeDeleted": true,
+                "readonly": true,
+                "keepsHistory": true,
+                "documentsKeepHistoryContractDefault": true,
+                "documentsMutableContractDefault": false,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": 0,
+                "requiresIdentityDecryptionBoundedKey": 1,
+            })
+        );
         let recovered = DataContractConfig::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Note `0u8` / `1u8` suffixes: `StorageKeyRequirements` is `#[repr(u8)]`,
+        // and platform_value preserves sized variants (`Value::U8` here, not
+        // the U64 a bare integer literal would expand to).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "canBeDeleted": true,
+                "readonly": true,
+                "keepsHistory": true,
+                "documentsKeepHistoryContractDefault": true,
+                "documentsMutableContractDefault": false,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": 0u8,
+                "requiresIdentityDecryptionBoundedKey": 1u8,
+            })
+        );
         let recovered = DataContractConfig::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

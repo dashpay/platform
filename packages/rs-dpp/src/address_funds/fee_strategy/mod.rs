@@ -187,10 +187,15 @@ impl crate::serialization::ValueConvertible for AddressFundsFeeStrategyStep {}
 mod json_convertible_tests_address_funds_fee_strategy_step {
     use super::*;
 
+    use platform_value::platform_value;
+    use serde_json::json;
+
     #[test]
     fn json_round_trip_deduct_from_input() {
         use crate::serialization::JsonConvertible;
-        let json = AddressFundsFeeStrategyStep::DeductFromInput(7).to_json().expect("to_json");
+        let original = AddressFundsFeeStrategyStep::DeductFromInput(7);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"type": "deductFromInput", "index": 7}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
     }
@@ -198,7 +203,9 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
     #[test]
     fn json_round_trip_reduce_output() {
         use crate::serialization::JsonConvertible;
-        let json = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX).to_json().expect("to_json");
+        let original = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"type": "reduceOutput", "index": u16::MAX}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
     }
@@ -206,7 +213,13 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
     #[test]
     fn value_round_trip_deduct_from_input() {
         use crate::serialization::ValueConvertible;
-        let value = AddressFundsFeeStrategyStep::DeductFromInput(7).to_object().expect("to_object");
+        let original = AddressFundsFeeStrategyStep::DeductFromInput(7);
+        let value = original.to_object().expect("to_object");
+        // Note `7u16`: explicit suffix forces `Value::U16` in the expected,
+        // matching the field's actual u16 type. A bare `7` would expand via
+        // `to_value(&7i32)` and produce `Value::I32`, which would fail —
+        // catching any future change that silently widened the index type.
+        assert_eq!(value, platform_value!({"type": "deductFromInput", "index": 7u16}));
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
     }
@@ -214,7 +227,9 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
     #[test]
     fn value_round_trip_reduce_output() {
         use crate::serialization::ValueConvertible;
-        let value = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX).to_object().expect("to_object");
+        let original = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX);
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!({"type": "reduceOutput", "index": u16::MAX}));
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
     }
