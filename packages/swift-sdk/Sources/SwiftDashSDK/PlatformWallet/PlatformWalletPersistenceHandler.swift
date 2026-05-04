@@ -2159,15 +2159,35 @@ public class PlatformWalletPersistenceHandler {
         walletId: Data,
         allocation: LoadAllocation
     ) -> (UnsafeMutablePointer<UtxoRestoreEntryFFI>?, Int) {
+        // Pre-walletId-denorm rows still exist in older databases —
+        // `walletId` defaults to `Data()` and is filled in by the
+        // inbound-tx path on next touch (see the backfill at the
+        // `record.walletId.isEmpty, !resolvedWalletId.isEmpty` branch
+        // upstream in this file). Pull both buckets in one fetch and
+        // filter Swift-side so legacy rows route via their parent
+        // account's wallet relationship.
         let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.walletId == walletId && $0.isSpent == false }
+            predicate: #Predicate {
+                $0.isSpent == false
+                    && ($0.walletId == walletId || $0.walletId.isEmpty)
+            }
         )
         guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
             return (nil, 0)
         }
-        // Rows missing a parent `account` can't be routed Rust-side.
-        // Drop them rather than emit an unmappable row.
-        let routable = rows.filter { $0.account != nil }
+        // Rows missing a parent `account` can't be routed Rust-side
+        // (no tags). Empty-walletId rows additionally need to belong
+        // to *this* wallet via the account → wallet relationship —
+        // a concurrent legacy row from a sibling wallet would
+        // otherwise leak in.
+        let routable = rows.filter { row in
+            guard let account = row.account else { return false }
+            if row.walletId == walletId { return true }
+            if row.walletId.isEmpty {
+                return account.wallet.walletId == walletId
+            }
+            return false
+        }
         if routable.isEmpty {
             return (nil, 0)
         }
