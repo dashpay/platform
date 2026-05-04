@@ -32,6 +32,7 @@ const TOP_UP_AMOUNT: Credits = 25_000_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_002_top_up_identity_from_addresses() {
     let _ = tracing_subscriber::fmt()

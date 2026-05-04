@@ -36,6 +36,7 @@ const TRANSFER_AMOUNT: Credits = 20_000_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_005_identity_to_addresses_transfer() {
     let _ = tracing_subscriber::fmt()

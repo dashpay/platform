@@ -42,13 +42,6 @@ use simple_signer::signer::SimpleSigner;
 const DEFAULT_ACCOUNT_INDEX: u32 = 0;
 const DEFAULT_KEY_CLASS: u32 = 0;
 
-/// Generous upper bound on the fee `bank.fund_address` will deduct
-/// from a recipient via `ReduceOutput(0)`. Used by funding waits to
-/// avoid blocking forever on an exact `funding_per` balance the
-/// recipient never reaches. 10M credits comfortably covers current
-/// testnet fees with room to spare.
-const REDUCE_OUTPUT_FEE_HEADROOM: dpp::fee::Credits = 10_000_000;
-
 /// Build a [`SimpleSigner`] populated with the DIP-17 platform-payment
 /// gap window for `seed_bytes` on `network`. Pins to
 /// `account=0`/`key_class=0` to match
@@ -217,12 +210,12 @@ pub async fn setup_with_n_identities(
             .bank()
             .fund_address(&funding_addr, funding_per)
             .await?;
-        // `bank.fund_address` uses ReduceOutput(0) — fee comes out of the recipient.
-        // Wait for funding_per minus a generous headroom for the fee.
+        // `bank.fund_address` uses `[DeductFromInput(0)]` (PR #3579) —
+        // the recipient receives the exact requested amount.
         wait_for_balance(
             &base.test_wallet,
             &funding_addr,
-            funding_per.saturating_sub(REDUCE_OUTPUT_FEE_HEADROOM),
+            funding_per,
             Duration::from_secs(60),
         )
         .await?;

@@ -38,6 +38,7 @@ const SWEEP_GAIN_FLOOR: u64 = 30_000_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
+#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_sweep_recovers_identity_credits() {
     let _ = tracing_subscriber::fmt()
