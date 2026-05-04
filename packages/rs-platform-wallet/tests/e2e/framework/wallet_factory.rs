@@ -290,11 +290,12 @@ impl TestWallet {
     /// platform-address balances.
     ///
     /// The helper:
-    /// 1. Picks a fresh receive address and verifies it has at
-    ///    least `funding` credits (the caller is responsible for
-    ///    funding that address — typically via
+    /// 1. Accepts a caller-provided `funding_address` (the caller is
+    ///    responsible for funding it — typically via
     ///    `bank.fund_address` + [`super::wait::wait_for_balance`]
-    ///    before this call).
+    ///    before this call). No pre-check is performed; passing an
+    ///    under-funded address surfaces as a registration failure
+    ///    downstream rather than a clear error here.
     /// 2. Derives MASTER + HIGH ECDSA auth keys at DIP-9 slot
     ///    `(identity_index, 0)` and `(identity_index, 1)`.
     /// 3. Builds a placeholder [`Identity`] populated with those
