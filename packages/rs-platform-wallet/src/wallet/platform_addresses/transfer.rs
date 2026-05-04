@@ -1278,58 +1278,94 @@ mod auto_select_tests {
     }
 
     /// Tail entry's tentative consumption falls below `min_input_amount`.
-    /// The selector must either fold the residue back into the fee
-    /// target (so every input ≥ `min_input_amount`) or error out — never
-    /// silently ship a sub-minimum input that `validate_structure`
-    /// would reject with `InputBelowMinimumError`.
+    /// The selector must fold the residue back into the fee target
+    /// (so every shipped input ≥ `min_input_amount`) — never silently
+    /// ship a sub-minimum input that `validate_structure` would reject
+    /// with `InputBelowMinimumError`.
     ///
     /// Production callers filter sub-minimum candidates upstream in
     /// `auto_select_inputs`; this test feeds the helper directly to
-    /// exercise its in-helper redistribution path.
+    /// exercise its in-helper redistribution path. The fixture is
+    /// engineered so the Ok branch is reachable: with
+    /// `input_cost=500_000`, `output_cost=6_000_000` the static fee is
+    /// `500_000*N + 6_000_000*max(M,1)`, and the chosen balances make
+    /// Phase 1 grow the prefix to [x,y,z] before Phase 3 finds
+    /// headroom.
     #[test]
     fn non_fee_target_below_min_input_redistributes() {
         let addr_x = p2pkh(0x01); // lex-smallest → fee target
-        let addr_y = p2pkh(0x02);
+        let addr_y = p2pkh(0x02); // sub-min peer; folds into fee target
+        let addr_z = p2pkh(0x03); // large peer; absorbs the bulk
         let target = p2pkh(0x99);
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
-        // total_output sits above `min_output_amount` (500_000) so the
-        // separate per-output minimum check doesn't shadow what we're
-        // testing — the input-side redistribution path.
-        let total_output = 950_000u64;
-        let addr_x_balance = 1_000_000u64; // covers total_output + fee on its own
-        let addr_y_balance = 30_000u64; // below min_input_amount
+        // Engineered fixture (numbers chosen against fee schedule
+        // `500_000 * N + 6_000_000`):
+        // - prefix [x] (acc 10M) doesn't cover required 10.5M (=4M+fee_1in).
+        // - prefix [x,y] (acc 10.08M) doesn't cover 11M (=4M+fee_2in).
+        // - prefix [x,y,z] (acc 12.08M) covers 11.5M (=4M+fee_3in).
+        //   fee_target_max(x) = 10M-7.5M = 2.5M;
+        //   fee_target_min = max(100k, 4M-2.08M) = 1.92M;
+        //   1.92M ≤ 2.5M → Phase 3 succeeds.
+        // - Phase 4: fee_target_consumed=1.92M, remaining=2.08M;
+        //   y's tentative=80k folds (residue=80k); z's tentative=2M
+        //   selected; new_consumed=2M ≤ fee_target_max ✓.
+        let total_output = 4_000_000u64;
+        let addr_x_balance = 10_000_000u64;
+        let addr_y_balance = 80_000u64; // below min_input_amount (100_000)
+        let addr_z_balance = 2_000_000u64;
         let outputs = outputs_for(target, total_output);
-        let candidates = vec![(addr_x, addr_x_balance), (addr_y, addr_y_balance)];
+        let candidates = vec![
+            (addr_x, addr_x_balance),
+            (addr_y, addr_y_balance),
+            (addr_z, addr_z_balance),
+        ];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-        let result =
-            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv);
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("redistribute path must reach Ok with engineered fixture");
 
-        match result {
-            Ok(selected) => {
-                // Every selected input must satisfy the per-input minimum.
-                for (addr, amount) in selected.iter() {
-                    assert!(
-                        *amount >= min_input,
-                        "input {} consumes {} which is below min_input_amount {}",
-                        format_address(addr),
-                        amount,
-                        min_input,
-                    );
-                }
-                let input_sum: Credits = selected.values().sum();
-                assert_eq!(input_sum, total_output);
-                assert_selection_validates(&selected, &outputs, fee_strategy, pv);
-            }
-            Err(PlatformWalletError::AddressOperation(_)) => {
-                // Acceptable: the helper errored out rather than
-                // redistribute. The failure we're guarding against
-                // is a silent sub-minimum input.
-            }
-            Err(other) => panic!("unexpected error variant: {other:?}"),
+        // (1) Every selected input satisfies the per-input minimum
+        //     (the redistribute path's invariant — sub-min y must NOT
+        //     appear in `selected`).
+        for (addr, amount) in selected.iter() {
+            assert!(
+                *amount >= min_input,
+                "input {} consumes {} which is below min_input_amount {}",
+                format_address(addr),
+                amount,
+                min_input,
+            );
         }
+
+        // (2) Sub-min y was folded — must not be in the inputs map.
+        assert!(
+            !selected.contains_key(&addr_y),
+            "sub-min addr_y must not appear as an input; expected fold into fee target"
+        );
+
+        // (3) Σ inputs == Σ outputs.
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(input_sum, total_output);
+
+        // (4) Fee target (lex-smallest x) absorbed the y residue —
+        //     selected[x] = fee_target_min + addr_y_balance.
+        let expected_fee_target_min = total_output - addr_y_balance - addr_z_balance;
+        assert_eq!(
+            selected.get(&addr_x),
+            Some(&(expected_fee_target_min + addr_y_balance)),
+            "fee target must consume fee_target_min plus the folded y residue"
+        );
+        assert_eq!(
+            selected.get(&addr_z),
+            Some(&addr_z_balance),
+            "z absorbs its full balance as a non-fee-target peer"
+        );
+
+        // (5) Structural validation against dpp.
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
     /// Single input fully covers `total_output`; the input is trimmed
