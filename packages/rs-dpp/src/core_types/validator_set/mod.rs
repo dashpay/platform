@@ -178,14 +178,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "Distinct bug: BTreeMap<ProTxHash, ValidatorV0> map-key asymmetry. \
-                platform_value's MapKeySerializer reports is_human_readable=true (forces \
-                ProTxHash through its hex-string serialize path → Value::Text key), but \
-                platform_value's Deserializer reports is_human_readable=false (forces \
-                ProTxHash through its bytes-expecting BytesVisitor on the deserialize side). \
-                Round-trip fails with 'invalid type: string ..., expected bytes'. The BlsPublicKey \
-                borrowed-string bug — the original reason this test was ignored — is now fixed \
-                (json_round_trip passes); see core_types::bls_pubkey_serde."]
     fn value_round_trip_with_per_property_assertions() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
