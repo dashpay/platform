@@ -1661,7 +1661,7 @@ mod auto_select_tests {
             [(addr_a, min_input), (addr_b, min_input)]
                 .into_iter()
                 .collect();
-        let address_balances = vec![(addr_a, min_input * 5), (addr_b, min_input * 4)];
+        let address_balances = [(addr_a, min_input * 5), (addr_b, min_input * 4)];
 
         let err = detect_only_output_addresses_funded(
             address_balances.iter().copied(),
@@ -1703,7 +1703,7 @@ mod auto_select_tests {
         let addr_b = p2pkh(0xB2);
         let outputs = outputs_for(addr_a, min_input);
         // Both below floor — no funded addresses at all.
-        let address_balances = vec![(addr_a, min_input / 2), (addr_b, min_input / 4)];
+        let address_balances = [(addr_a, min_input / 2), (addr_b, min_input / 4)];
 
         let err = detect_only_output_addresses_funded(
             address_balances.iter().copied(),
@@ -1730,7 +1730,7 @@ mod auto_select_tests {
         let addr_out = p2pkh(0xC3);
         let addr_in = p2pkh(0xD4);
         let outputs = outputs_for(addr_out, min_input);
-        let address_balances = vec![(addr_out, min_input * 5), (addr_in, min_input * 3)];
+        let address_balances = [(addr_out, min_input * 5), (addr_in, min_input * 3)];
 
         // Both funded; addr_out IS an output, addr_in is NOT. The
         // helper still scans for funded outputs and would produce a
