@@ -238,11 +238,15 @@ impl TestWallet {
     /// bytes via `sdk.broadcast_state_transition` and assert the
     /// platform rejects the duplicate. The captured bytes are taken
     /// from a sibling build (separate nonce fetch, separate signing
-    /// pass) — they are NOT byte-equal to the broadcast transition,
-    /// because the production path bumps nonces independently. For
-    /// PA-006 that's the right shape: the test confirms the second
-    /// submission is rejected regardless of the nonce relationship
-    /// between the two builds.
+    /// pass) — they are NOT byte-equal to the broadcast transition
+    /// because ECDSA signing is non-deterministic (no RFC 6979 enforced
+    /// here). Both transitions share identical address nonces: the
+    /// sibling capture never broadcasts, so on-chain state between the
+    /// two builds is unchanged. For PA-006 this means re-broadcast is
+    /// rejected on nonce-duplicate detection (not content-hash duplicate
+    /// detection); assertions should target the nonce-duplicate
+    /// rejection reason, or capture bytes from the production submission
+    /// so the replayed transition shares both nonce and signature.
     pub async fn transfer_capturing_st_bytes(
         &self,
         outputs: BTreeMap<PlatformAddress, Credits>,
