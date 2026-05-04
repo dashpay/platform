@@ -28,10 +28,10 @@ use super::platform_wallet::PlatformWalletInfo;
 // ---------------------------------------------------------------------------
 
 impl WalletInfoInterface for PlatformWalletInfo {
-    fn from_wallet(wallet: &Wallet) -> Self {
+    fn from_wallet(wallet: &Wallet, birth_height: CoreBlockHeight) -> Self {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletInfo::from_wallet(wallet);
+        let inner = ManagedWalletInfo::from_wallet(wallet, birth_height);
         Self {
             core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
@@ -40,10 +40,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         }
     }
 
-    fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
+    fn from_wallet_with_name(wallet: &Wallet, name: String, birth_height: CoreBlockHeight) -> Self {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name);
+        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name, birth_height);
         Self {
             core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
@@ -78,10 +78,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn birth_height(&self) -> CoreBlockHeight {
         self.core_wallet.birth_height()
-    }
-
-    fn set_birth_height(&mut self, height: CoreBlockHeight) {
-        self.core_wallet.set_birth_height(height);
     }
 
     fn first_loaded_at(&self) -> u64 {

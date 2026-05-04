@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -15,37 +16,17 @@ pub unsafe extern "C" fn core_wallet_next_receive_address(
     handle: Handle,
     account_index: u32,
     out_address: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_address.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_address);
 
-    CORE_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            match runtime().block_on(wallet.next_receive_address_for_account(account_index)) {
-                Ok(addr) => {
-                    let addr_str = addr.to_string();
-                    match CString::new(addr_str) {
-                        Ok(c_str) => {
-                            *out_address = c_str.into_raw();
-                            PlatformWalletFFIResult::Success
-                        }
-                        Err(_) => PlatformWalletFFIResult::ErrorUtf8Conversion,
-                    }
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            e.to_string(),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.next_receive_address_for_account(account_index))
+    });
+    let result = unwrap_option_or_return!(option);
+    let addr = unwrap_result_or_return!(result);
+    let c_str = unwrap_result_or_return!(CString::new(addr.to_string()));
+    *out_address = c_str.into_raw();
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the next unused BIP-44 internal (change) address for a specific account.
@@ -57,37 +38,17 @@ pub unsafe extern "C" fn core_wallet_next_change_address(
     handle: Handle,
     account_index: u32,
     out_address: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_address.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_address);
 
-    CORE_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            match runtime().block_on(wallet.next_change_address_for_account(account_index)) {
-                Ok(addr) => {
-                    let addr_str = addr.to_string();
-                    match CString::new(addr_str) {
-                        Ok(c_str) => {
-                            *out_address = c_str.into_raw();
-                            PlatformWalletFFIResult::Success
-                        }
-                        Err(_) => PlatformWalletFFIResult::ErrorUtf8Conversion,
-                    }
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            e.to_string(),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.next_change_address_for_account(account_index))
+    });
+    let result = unwrap_option_or_return!(option);
+    let addr = unwrap_result_or_return!(result);
+    let c_str = unwrap_result_or_return!(CString::new(addr.to_string()));
+    *out_address = c_str.into_raw();
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free an address string returned by `core_wallet_next_receive_address`

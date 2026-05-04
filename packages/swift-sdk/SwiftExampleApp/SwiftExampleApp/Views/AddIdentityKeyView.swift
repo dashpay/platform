@@ -302,7 +302,7 @@ struct AddIdentityKeyView: View {
             errorMessage = "Wallet not loaded in the wallet manager."
             return
         }
-        let network = appState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+        let network = appState.sdk?.network ?? .testnet
         let chosenKeyId = nextKeyId
         let chosenSecurityLevel = effectiveSecurityLevel
 
@@ -345,15 +345,12 @@ struct AddIdentityKeyView: View {
             //    Validation goes against the compressed pubkey
             //    (33 bytes) regardless of `keyType`; the HASH160
             //    variant just stores a different on-chain payload.
-            // `DashSDKNetwork` is a `(rawValue: UInt32)` struct;
-            // 0 = mainnet, 1 = testnet (see SDK.swift's default).
-            let isMainnet = (network.rawValue == 0)
             guard
                 KeyValidation.validatePrivateKeyForPublicKey(
                     privateKeyHex: preview.privateKeyData.toHexString(),
                     publicKeyHex: preview.publicKeyHex,
                     keyType: .ecdsaSecp256k1,
-                    isTestnet: !isMainnet
+                    network: network
                 )
             else {
                 isSubmitting = false

@@ -261,7 +261,7 @@ struct ContentView: View {
             // is created by the persister callback downstream of
             // `walletManager.createWallet` — we only need to
             // stamp the `isImported` flag here.
-            let platformNetwork: PlatformNetwork = .testnet
+            let platformNetwork: Network = .testnet
             let label = "Recovered Wallet"
             let managed = try walletManager.createWallet(
                 mnemonic: mnemonic,

@@ -14,18 +14,18 @@ public final class PersistentWallet {
     /// the row was created by a changeset before `persistWalletMetadata`
     /// filled the network in. Views treat `nil` as unknown.
     ///
-    /// Stored as the `AppNetwork.rawValue` `Int?` so SwiftData
+    /// Stored as the `Network.rawValue` `UInt32?` so SwiftData
     /// `#Predicate` expressions can evaluate it directly. See
     /// `PersistentIdentity.networkRaw` for the full rationale.
-    public var networkRaw: Int?
+    public var networkRaw: UInt32?
 
     /// Type-safe accessor over `networkRaw`. `nil` round-trips as
     /// `nil`; non-nil reads fall back to `.testnet` if the stored
-    /// raw value ever drifts out of the `AppNetwork` range.
-    public var network: AppNetwork? {
+    /// raw value ever drifts out of the `Network` range.
+    public var network: Network? {
         get {
             guard let raw = networkRaw else { return nil }
-            return AppNetwork(rawValue: raw) ?? .testnet
+            return Network(rawValue: raw) ?? .testnet
         }
         set { networkRaw = newValue?.rawValue }
     }
@@ -72,7 +72,7 @@ public final class PersistentWallet {
 
     public init(
         walletId: Data,
-        network: AppNetwork? = nil,
+        network: Network? = nil,
         name: String? = nil,
         birthHeight: UInt32 = 0,
         syncedHeight: UInt32 = 0,

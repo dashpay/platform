@@ -469,7 +469,7 @@ var body: some View {
 
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
-                network: platformNetwork(from: platformState.currentNetwork),
+                network: platformState.currentNetwork,
                 peers: peers,
                 restrictToConfiguredPeers: useLocalCore,
                 masternodeSyncEnabled: masternodesEnabled
@@ -508,14 +508,6 @@ var body: some View {
         }
     }
 
-    private func platformNetwork(from network: AppNetwork) -> PlatformNetwork {
-        switch network {
-        case .mainnet: return .mainnet
-        case .testnet: return .testnet
-        case .devnet: return .devnet
-        case .regtest: return .testnet
-        }
-    }
 }
 
 // MARK: - Compact Sync Row

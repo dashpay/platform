@@ -361,18 +361,39 @@ fn account_index_of(at: &key_wallet::account::AccountType) -> u32 {
     }
 }
 
+/// Per-account balance entry returned by the query FFI. Carries the
+/// same `AccountTypeTagFFI` discriminants as `AccountSpecFFI` plus
+/// four balance fields from `WalletCoreBalance`.
+#[repr(C)]
+pub struct AccountBalanceEntryFFI {
+    pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    pub standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub confirmed: u64,
+    pub unconfirmed: u64,
+    pub immature: u64,
+    pub locked: u64,
+}
+
 /// Subset of [`crate::wallet_restore_types::AccountSpecFFI`] carrying
 /// only the tag/discriminator fields — no xpub. Used by the
 /// changeset emit path to populate
 /// [`AccountChangeSetFFI`]'s typed tags so the Swift persister can
-/// upsert on the same composite key the load path uses.
-struct AccountChangeSetTags {
-    type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
-    standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
-    registration_index: u32,
-    key_class: u32,
-    user_identity_id: [u8; 32],
-    friend_identity_id: [u8; 32],
+/// upsert on the same composite key the load path uses. Also used by
+/// [`AccountBalanceEntryFFI`] to carry per-account routing context
+/// for balance queries.
+pub struct AccountChangeSetTags {
+    pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    pub standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
 }
 
 /// Project an upstream [`AccountType`] into the flat FFI tag layout.
@@ -381,12 +402,13 @@ struct AccountChangeSetTags {
 /// match arms but emits only the tag/discriminator fields — the
 /// xpub is load-path-only and not relevant on the changeset emit
 /// path.
-fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountChangeSetTags {
+pub fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountChangeSetTags {
     use crate::wallet_restore_types::{AccountTypeTagFFI, StandardAccountTypeTagFFI};
     use key_wallet::account::{AccountType, StandardAccountType};
     let mut tags = AccountChangeSetTags {
         type_tag: AccountTypeTagFFI::Standard,
         standard_tag: StandardAccountTypeTagFFI::Bip44,
+        index: 0,
         registration_index: 0,
         key_class: 0,
         user_identity_id: [0u8; 32],
@@ -394,17 +416,19 @@ fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountChangeS
     };
     match at {
         AccountType::Standard {
+            index,
             standard_account_type,
-            ..
         } => {
+            tags.index = *index;
             tags.type_tag = AccountTypeTagFFI::Standard;
             tags.standard_tag = match standard_account_type {
                 StandardAccountType::BIP44Account => StandardAccountTypeTagFFI::Bip44,
                 StandardAccountType::BIP32Account => StandardAccountTypeTagFFI::Bip32,
             };
         }
-        AccountType::CoinJoin { .. } => {
+        AccountType::CoinJoin { index } => {
             tags.type_tag = AccountTypeTagFFI::CoinJoin;
+            tags.index = *index;
         }
         AccountType::IdentityRegistration => {
             tags.type_tag = AccountTypeTagFFI::IdentityRegistration;
@@ -438,25 +462,28 @@ fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountChangeS
             tags.type_tag = AccountTypeTagFFI::ProviderPlatformKeys;
         }
         AccountType::DashpayReceivingFunds {
+            index,
             user_identity_id,
             friend_identity_id,
-            ..
         } => {
             tags.type_tag = AccountTypeTagFFI::DashpayReceivingFunds;
+            tags.index = *index;
             tags.user_identity_id = *user_identity_id;
             tags.friend_identity_id = *friend_identity_id;
         }
         AccountType::DashpayExternalAccount {
+            index,
             user_identity_id,
             friend_identity_id,
-            ..
         } => {
             tags.type_tag = AccountTypeTagFFI::DashpayExternalAccount;
+            tags.index = *index;
             tags.user_identity_id = *user_identity_id;
             tags.friend_identity_id = *friend_identity_id;
         }
-        AccountType::PlatformPayment { key_class, .. } => {
+        AccountType::PlatformPayment { account, key_class } => {
             tags.type_tag = AccountTypeTagFFI::PlatformPayment;
+            tags.index = *account;
             tags.key_class = *key_class;
         }
     }

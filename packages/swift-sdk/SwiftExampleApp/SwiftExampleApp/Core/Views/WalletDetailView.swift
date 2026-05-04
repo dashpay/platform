@@ -73,7 +73,7 @@ struct WalletDetailView: View {
             .padding(.top, 8)
 
             // Balance Card
-            BalanceCardView(wallet: wallet, walletTxos: walletTxos)
+            BalanceCardView(wallet: wallet)
                 .padding()
 
             // Action Buttons
@@ -151,7 +151,7 @@ struct WalletDetailView: View {
             .padding(.top)
 
             // Account List
-            AccountListView(wallet: wallet, walletTxos: walletTxos)
+            AccountListView(wallet: wallet)
         }
         .navigationTitle(wallet.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -526,7 +526,7 @@ struct WalletInfoView: View {
         }
     }
 
-    private func enableNetwork(_ network: AppNetwork) async {
+    private func enableNetwork(_ network: Network) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
@@ -580,43 +580,17 @@ struct WalletInfoView: View {
 
 struct BalanceCardView: View {
     let wallet: PersistentWallet
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
 
-    /// Per-wallet platform-address balance rows. SwiftData drives
-    /// the sum directly so every wallet's card reflects its own
-    /// funds — the previous code read
-    /// `platformBalanceSyncService.totalPlatformBalance`, a
-    /// singleton tied to whichever wallet was most recently
-    /// configured, which caused every wallet's balance to show the
-    /// last-synced wallet's total.
     @Query private var addressBalances: [PersistentPlatformAddress]
-    /// Network-scoped BLAST sync watermark. One row per network —
-    /// shared across every wallet on that network — so this query
-    /// filters by `network` rather than `walletId`. Used only to
-    /// distinguish "synced with zero balance" from "never synced".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    /// Per-wallet TXO rows passed down from `WalletDetailView` so we
-    /// share a single `@Query<PersistentTxo>` subscription across
-    /// every child view that needs the balance. Originally each of
-    /// `BalanceCardView` / `AccountListView` / `WalletDetailView`
-    /// had its own subscription; during sync the SwiftData
-    /// change-tracking ran 3× per TXO insert and the persister
-    /// stalled visibly. One subscription, one walk.
-    let walletTxos: [PersistentTxo]
-
-    init(wallet: PersistentWallet, walletTxos: [PersistentTxo]) {
+    init(wallet: PersistentWallet) {
         self.wallet = wallet
-        self.walletTxos = walletTxos
         let walletId = wallet.walletId
-        // `PersistentPlatformAddressesSyncState.network` is a required AppNetwork;
-        // `.testnet` is a harmless sentinel for wallets that haven't
-        // had their network stamped yet — they won't have a matching
-        // sync state row either, so the query naturally returns empty.
-        // Filter against `networkRaw` (the Int-backed shadow field) —
-        // Foundation's predicate engine can't capture `AppNetwork`.
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
@@ -626,20 +600,18 @@ struct BalanceCardView: View {
         )
     }
 
-    /// Sum of unspent + confirmed TXO amounts. Walks the wallet-TXO
-    /// query result; one pass, one pred + add per row.
+    /// Confirmed core-chain balance summed from Rust's in-memory
+    /// per-account state via FFI.
     private var confirmedBalance: UInt64 {
-        walletTxos.lazy
-            .filter { !$0.isSpent && $0.isConfirmed }
-            .reduce(0) { $0 + $1.amount }
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(0) { $0 + $1.confirmed }
     }
 
-    /// Sum of unspent + unconfirmed (mempool / IS-locked-but-not-in-block)
-    /// TXO amounts.
+    /// Unconfirmed core-chain balance summed from Rust's in-memory
+    /// per-account state via FFI.
     private var unconfirmedBalance: UInt64 {
-        walletTxos.lazy
-            .filter { !$0.isSpent && !$0.isConfirmed }
-            .reduce(0) { $0 + $1.amount }
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(0) { $0 + $1.unconfirmed }
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
