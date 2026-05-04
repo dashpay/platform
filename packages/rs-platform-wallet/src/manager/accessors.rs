@@ -22,12 +22,30 @@ use super::PlatformWalletManager;
 /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-event
 /// counters, returned from
 /// [`PlatformWalletManager::platform_address_sync_config_blocking`].
+///
+/// `last_event_wallet_count` was dropped — it aliased
+/// `watch_list_size` (both read `wallets.len()`) and rendering it as
+/// an independent observation in the explorer was misleading. If a
+/// real per-event footprint metric ever lands on the sync manager,
+/// add it back as a separate field sourced from there.
 #[derive(Debug, Clone, Copy)]
 pub struct PlatformAddressSyncConfigSnapshot {
     pub interval_seconds: u64,
     pub watch_list_size: usize,
-    pub last_event_wallet_count: u32,
     pub last_event_unix_seconds: u64,
+}
+
+/// One row of the account-balance snapshot returned by
+/// [`PlatformWalletManager::account_balances_blocking`]. Named fields
+/// rather than a positional tuple so adding the next field
+/// (`pool_count`, `last_used_height`, …) doesn't ripple through every
+/// destructuring site.
+#[derive(Debug, Clone, Copy)]
+pub struct AccountBalanceRow {
+    pub account_type: AccountType,
+    pub balance: WalletCoreBalance,
+    pub keys_used: u32,
+    pub keys_total: u32,
 }
 
 /// Snapshot of [`IdentitySyncManager`] tunables / queue depth, returned
@@ -236,13 +254,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Read per-account balance + key-usage snapshots for a wallet.
     ///
-    /// Returns one tuple per managed account: the wallet's `AccountType`,
-    /// the live `WalletCoreBalance` (zero on keys-only variants by
-    /// construction), and (`keys_used`, `keys_total`) totals across the
-    /// account's address pools. Funds variants and keys variants both
-    /// expose pools the same way, so the count is meaningful in both
-    /// directions — the explorer surfaces it as the headline number on
-    /// keys-only rows where balance has no semantic content.
+    /// Returns one [`AccountBalanceSnapshot`] per managed account: the
+    /// wallet's `AccountType`, the live `WalletCoreBalance` (zero on
+    /// keys-only variants by construction), and (`keys_used`,
+    /// `keys_total`) totals across the account's address pools.
+    /// Funds variants and keys variants both expose pools the same
+    /// way, so the count is meaningful in both directions — the
+    /// explorer surfaces it as the headline number on keys-only rows
+    /// where balance has no semantic content.
     ///
     /// Uses `blocking_read` on the wallet manager lock; safe from
     /// non-async FFI context but must NOT be called from within a
@@ -250,7 +269,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub fn account_balances_blocking(
         &self,
         wallet_id: &WalletId,
-    ) -> Vec<(AccountType, WalletCoreBalance, u32, u32)> {
+    ) -> Vec<AccountBalanceRow> {
         let wm = self.wallet_manager.blocking_read();
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
@@ -283,12 +302,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
                     });
-                (
-                    account.managed_account_type().to_account_type(),
+                AccountBalanceRow {
+                    account_type: account.managed_account_type().to_account_type(),
                     balance,
                     keys_used,
                     keys_total,
-                )
+                }
             })
             .collect()
     }
@@ -305,11 +324,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-
-    /// pass counters. The "watch list size" / "last event wallet
-    /// count" pair are the same value today (the sync manager doesn't
-    /// keep a separate watch list — every registered wallet is in the
-    /// pass), but the snapshot exposes both fields so the diagnostic
-    /// surface can grow if the two ever diverge.
+    /// pass timestamp. `watch_list_size` is `wallets.len()` — every
+    /// registered wallet participates in each pass since the sync
+    /// manager doesn't keep a separate watch list.
     pub fn platform_address_sync_config_blocking(&self) -> PlatformAddressSyncConfigSnapshot {
         let wallets = self.wallets.blocking_read();
         let count = wallets.len();
@@ -322,7 +339,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         PlatformAddressSyncConfigSnapshot {
             interval_seconds: interval.as_secs().max(1),
             watch_list_size: count,
-            last_event_wallet_count: count as u32,
             last_event_unix_seconds: last,
         }
     }

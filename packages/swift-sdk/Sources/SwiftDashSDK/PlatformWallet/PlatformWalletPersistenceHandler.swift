@@ -1967,6 +1967,42 @@ public class PlatformWalletPersistenceHandler {
         allocation.entries = entriesPtr
         allocation.entriesCount = restorable.count
 
+        // Single bucketed fetch of every unspent `PersistentTxo` so
+        // each wallet's per-iteration buffer build is a dictionary
+        // lookup instead of a fresh database round-trip. Prefetches
+        // `account.wallet` to keep the legacy-walletId routing path
+        // (rows whose `walletId` field defaults to `Data()` because
+        // they predate the denorm) from triggering one SwiftData
+        // fault per row when we resolve the parent wallet.
+        var unspentBuckets: [Data: [PersistentTxo]] = [:]
+        do {
+            var unspentDescriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.isSpent == false }
+            )
+            unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account, \.account?.wallet]
+            if let unspent = try? backgroundContext.fetch(unspentDescriptor) {
+                unspentBuckets.reserveCapacity(restorable.count)
+                for row in unspent {
+                    guard row.account != nil else { continue }
+                    let key: Data
+                    if !row.walletId.isEmpty {
+                        key = row.walletId
+                    } else if let account = row.account {
+                        // `account.wallet` is non-optional on the
+                        // model but is a fault-loaded relationship;
+                        // a relationship-store inconsistency would
+                        // crash here, so guard via Optional cast.
+                        let wallet: PersistentWallet? = account.wallet
+                        guard let resolved = wallet else { continue }
+                        key = resolved.walletId
+                    } else {
+                        continue
+                    }
+                    unspentBuckets[key, default: []].append(row)
+                }
+            }
+        }
+
         for (i, w) in restorable.enumerated() {
             let sortedAccounts = w.accounts
                 .filter { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
@@ -2105,7 +2141,7 @@ public class PlatformWalletPersistenceHandler {
             // account isn't a funds variant get silently skipped on
             // the receiving side.
             let (utxoBuf, utxoCount) = buildUtxoRestoreBuffer(
-                walletId: w.walletId,
+                rows: unspentBuckets[w.walletId] ?? [],
                 allocation: allocation
             )
             entry.utxos = utxoBuf.map { UnsafePointer($0) }
@@ -2155,45 +2191,22 @@ public class PlatformWalletPersistenceHandler {
     /// Rows whose `outpoint` payload isn't 32 bytes are skipped — the
     /// model stores it as `Data` (`outpoint: Data`) and bad data
     /// shouldn't crash the FFI handoff.
+    /// Build the per-wallet UTXO restore buffer from a list of
+    /// `PersistentTxo` rows already bucketed for this wallet by the
+    /// caller. The bucketing pass in `loadWalletList` does the
+    /// SwiftData fetch once for the whole batch (legacy empty-walletId
+    /// rows route via `account.wallet.walletId`), so this function is
+    /// pure marshalling.
     private func buildUtxoRestoreBuffer(
-        walletId: Data,
+        rows: [PersistentTxo],
         allocation: LoadAllocation
     ) -> (UnsafeMutablePointer<UtxoRestoreEntryFFI>?, Int) {
-        // Pre-walletId-denorm rows still exist in older databases —
-        // `walletId` defaults to `Data()` and is filled in by the
-        // inbound-tx path on next touch (see the backfill at the
-        // `record.walletId.isEmpty, !resolvedWalletId.isEmpty` branch
-        // upstream in this file). Pull both buckets in one fetch and
-        // filter Swift-side so legacy rows route via their parent
-        // account's wallet relationship.
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate {
-                $0.isSpent == false
-                    && ($0.walletId == walletId || $0.walletId.isEmpty)
-            }
-        )
-        guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
+        if rows.isEmpty {
             return (nil, 0)
         }
-        // Rows missing a parent `account` can't be routed Rust-side
-        // (no tags). Empty-walletId rows additionally need to belong
-        // to *this* wallet via the account → wallet relationship —
-        // a concurrent legacy row from a sibling wallet would
-        // otherwise leak in.
-        let routable = rows.filter { row in
-            guard let account = row.account else { return false }
-            if row.walletId == walletId { return true }
-            if row.walletId.isEmpty {
-                return account.wallet.walletId == walletId
-            }
-            return false
-        }
-        if routable.isEmpty {
-            return (nil, 0)
-        }
-        let buf = UnsafeMutablePointer<UtxoRestoreEntryFFI>.allocate(capacity: routable.count)
+        let buf = UnsafeMutablePointer<UtxoRestoreEntryFFI>.allocate(capacity: rows.count)
         var written = 0
-        for record in routable {
+        for record in rows {
             guard let account = record.account else { continue }
             // `outpoint` on `PersistentTxo` is 36 bytes (32-byte txid
             // followed by LE u32 vout) — composed via

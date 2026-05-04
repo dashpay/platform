@@ -287,7 +287,6 @@ struct WalletMemoryExplorerView: View {
                 if let cfg = addressSyncConfig {
                     KVRow(label: "Interval (s)", value: "\(cfg.intervalSeconds)")
                     KVRow(label: "Watch List Size", value: "\(cfg.watchListSize)")
-                    KVRow(label: "Last Event Wallets", value: "\(cfg.lastEventWalletCount)")
                     KVRow(
                         label: "Last Event",
                         value: formatTimestamp(cfg.lastEventUnixSeconds)

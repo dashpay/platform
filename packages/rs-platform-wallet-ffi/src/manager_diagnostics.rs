@@ -111,7 +111,6 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_config(
     *out_state = PlatformAddressSyncConfigFFI {
         interval_seconds: snap.interval_seconds,
         watch_list_size: snap.watch_list_size,
-        last_event_wallet_count: snap.last_event_wallet_count,
         last_event_unix_seconds: snap.last_event_unix_seconds,
     };
     PlatformWalletFFIResult::ok()

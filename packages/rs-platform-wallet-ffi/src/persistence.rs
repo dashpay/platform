@@ -1432,19 +1432,41 @@ fn build_wallet_start_state(
             )
         }
     };
+    let mut dropped_unknown_account = 0usize;
+    let mut dropped_unsupported_address_type = 0usize;
     for persisted in platform_balance_entries {
         if persisted.address.address_type != 0 {
-            return Err("only P2PKH platform address persistence is supported".into());
+            // Non-P2PKH rows aren't supported on the persistence path
+            // yet. Skip rather than abort the whole load — the next
+            // platform-address sync will repopulate from authoritative
+            // state.
+            dropped_unsupported_address_type += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                address_type = persisted.address.address_type,
+                account_index = persisted.account_index,
+                "load: skipping persisted platform-address row with unsupported address_type"
+            );
+            continue;
         }
 
-        let account_state = per_account
-            .get_mut(&persisted.account_index)
-            .ok_or_else(|| {
-                format!(
-                    "persisted platform address references unknown account {}",
-                    persisted.account_index
-                )
-            })?;
+        // `per_account` is built only from the reconstructed wallet's
+        // platform-payment account map; the cached
+        // `platform_address_balances` slice can include rows whose
+        // referenced account didn't make it into the snapshot
+        // (deleted, not-yet-hydrated, stale cache). Skip-and-warn so
+        // a single drift row doesn't abort the whole `load()` — the
+        // sync coordinator will recompute on the next pass.
+        let Some(account_state) = per_account.get_mut(&persisted.account_index) else {
+            dropped_unknown_account += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                account_index = persisted.account_index,
+                address_index = persisted.address_index,
+                "load: skipping persisted platform-address row referencing unknown account"
+            );
+            continue;
+        };
         let p2pkh = key_wallet::PlatformP2PKHAddress::new(persisted.address.hash);
         account_state.insert_persisted_entry(
             persisted.address_index,
@@ -1453,6 +1475,14 @@ fn build_wallet_start_state(
                 nonce: persisted.nonce,
                 balance: persisted.balance,
             },
+        );
+    }
+    if dropped_unknown_account > 0 || dropped_unsupported_address_type > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            dropped_unknown_account,
+            dropped_unsupported_address_type,
+            "load: persisted platform-address rows skipped during restore"
         );
     }
 

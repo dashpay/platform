@@ -393,12 +393,14 @@ pub struct AccountBalanceEntryFFI {
 // iOS memory explorer. Each struct mirrors a `*Snapshot` type in
 // `platform-wallet`'s `manager::accessors` module 1:1.
 
-/// Snapshot of [`PlatformAddressSyncManager`] configuration / counters.
+/// Snapshot of [`PlatformAddressSyncManager`] configuration / last-pass
+/// timestamp. `last_event_wallet_count` was dropped — it aliased
+/// `watch_list_size` and rendering it as an independent field invited
+/// confused interpretation.
 #[repr(C)]
 pub struct PlatformAddressSyncConfigFFI {
     pub interval_seconds: u64,
     pub watch_list_size: usize,
-    pub last_event_wallet_count: u32,
     pub last_event_unix_seconds: u64,
 }
 

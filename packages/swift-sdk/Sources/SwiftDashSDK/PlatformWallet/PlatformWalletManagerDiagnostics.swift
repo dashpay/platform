@@ -30,7 +30,6 @@ extension PlatformWalletManager {
     public struct PlatformAddressSyncConfigSnapshot {
         public let intervalSeconds: UInt64
         public let watchListSize: Int
-        public let lastEventWalletCount: UInt32
         public let lastEventUnixSeconds: UInt64
     }
 
@@ -39,7 +38,6 @@ extension PlatformWalletManager {
         var out = PlatformAddressSyncConfigFFI(
             interval_seconds: 0,
             watch_list_size: 0,
-            last_event_wallet_count: 0,
             last_event_unix_seconds: 0
         )
         let res = platform_wallet_manager_platform_address_sync_config(handle, &out)
@@ -47,7 +45,6 @@ extension PlatformWalletManager {
         return PlatformAddressSyncConfigSnapshot(
             intervalSeconds: out.interval_seconds,
             watchListSize: Int(out.watch_list_size),
-            lastEventWalletCount: out.last_event_wallet_count,
             lastEventUnixSeconds: out.last_event_unix_seconds
         )
     }

@@ -463,9 +463,12 @@ impl PlatformPaymentAddressProvider {
     /// Diagnostic getter — the unified-pass watermark height as a
     /// `u32` (the SDK exposes it as `u64` internally; the diagnostic
     /// surface is `u32` to match the rest of the explorer's height
-    /// fields).
+    /// fields). Saturates at `u32::MAX` rather than silently wrapping
+    /// — Dash core heights never reach that range in practice, so
+    /// any value that would truncate is corruption / a sentinel that
+    /// should surface visibly in the diagnostic panel.
     pub fn diagnostic_sync_height_u32(&self) -> u32 {
-        self.sync_height as u32
+        u32::try_from(self.sync_height).unwrap_or(u32::MAX)
     }
 }
 

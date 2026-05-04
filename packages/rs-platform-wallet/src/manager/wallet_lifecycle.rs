@@ -268,27 +268,40 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // `AddressPool` scan `initialize` would otherwise do.
         // Per-wallet UTXOs / unused asset locks ship in the snapshot
         // but don't have an active restore path yet.
+        //
+        // The two `?` returns below would otherwise leave the wallet
+        // half-registered (present in `wallet_manager` from the
+        // earlier `insert_wallet`, absent from `self.wallets`),
+        // poisoning every retry on `WalletAlreadyExists`. Roll back
+        // before bailing — same shape as `manager::load`.
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
-        } = platform_wallet.load_persisted().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to load persisted wallet state: {}",
-                e
-            ))
-        })?;
+        } = match platform_wallet.load_persisted() {
+            Ok(state) => state,
+            Err(e) => {
+                let mut wm = self.wallet_manager.write().await;
+                let _ = wm.remove_wallet(&wallet_id);
+                return Err(PlatformWalletError::WalletCreation(format!(
+                    "Failed to load persisted wallet state: {}",
+                    e
+                )));
+            }
+        };
 
         if let Some(persisted) = platform_addresses.remove(&wallet_id) {
-            platform_wallet
+            if let Err(e) = platform_wallet
                 .platform()
                 .initialize_from_persisted(persisted)
                 .await
-                .map_err(|e| {
-                    PlatformWalletError::WalletCreation(format!(
-                        "Failed to restore persisted platform address state: {}",
-                        e
-                    ))
-                })?;
+            {
+                let mut wm = self.wallet_manager.write().await;
+                let _ = wm.remove_wallet(&wallet_id);
+                return Err(PlatformWalletError::WalletCreation(format!(
+                    "Failed to restore persisted platform address state: {}",
+                    e
+                )));
+            }
         } else {
             platform_wallet.platform().initialize().await;
         }
