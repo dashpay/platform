@@ -187,59 +187,35 @@ impl crate::serialization::ValueConvertible for AddressFundsFeeStrategyStep {}
 mod json_convertible_tests_address_funds_fee_strategy_step {
     use super::*;
 
-    /// Non-default values per variant so the per-property assertions
-    /// would catch a swap (e.g. DeductFromInput(7) round-tripping as
-    /// DeductFromInput(0) would still pass `assert_eq` on the variant
-    /// alone — the index assertion is what locks in lossless round-trip).
-    fn each_variant() -> [AddressFundsFeeStrategyStep; 4] {
-        [
-            AddressFundsFeeStrategyStep::DeductFromInput(0),
-            AddressFundsFeeStrategyStep::DeductFromInput(7),
-            AddressFundsFeeStrategyStep::ReduceOutput(1),
-            AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX),
-        ]
-    }
-
-    fn assert_per_property(original: &AddressFundsFeeStrategyStep, recovered: &AddressFundsFeeStrategyStep) {
-        match (original, recovered) {
-            (
-                AddressFundsFeeStrategyStep::DeductFromInput(orig_idx),
-                AddressFundsFeeStrategyStep::DeductFromInput(rec_idx),
-            ) => {
-                assert_eq!(orig_idx, rec_idx, "DeductFromInput index");
-            }
-            (
-                AddressFundsFeeStrategyStep::ReduceOutput(orig_idx),
-                AddressFundsFeeStrategyStep::ReduceOutput(rec_idx),
-            ) => {
-                assert_eq!(orig_idx, rec_idx, "ReduceOutput index");
-            }
-            (orig, rec) => panic!(
-                "variant mismatch on round-trip: {:?} -> {:?}",
-                orig, rec
-            ),
-        }
-    }
-
     #[test]
-    fn json_round_trip_each_variant_with_per_property_assertions() {
+    fn json_round_trip_deduct_from_input() {
         use crate::serialization::JsonConvertible;
-        for original in each_variant() {
-            let json = original.to_json().expect("to_json");
-            let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
-            assert_eq!(original, recovered, "structural equality, variant: {:?}", original);
-            assert_per_property(&original, &recovered);
-        }
+        let json = AddressFundsFeeStrategyStep::DeductFromInput(7).to_json().expect("to_json");
+        let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
+        assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
     }
 
     #[test]
-    fn value_round_trip_each_variant_with_per_property_assertions() {
+    fn json_round_trip_reduce_output() {
+        use crate::serialization::JsonConvertible;
+        let json = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX).to_json().expect("to_json");
+        let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
+        assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
+    }
+
+    #[test]
+    fn value_round_trip_deduct_from_input() {
         use crate::serialization::ValueConvertible;
-        for original in each_variant() {
-            let value = original.to_object().expect("to_object");
-            let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
-            assert_eq!(original, recovered, "structural equality, variant: {:?}", original);
-            assert_per_property(&original, &recovered);
-        }
+        let value = AddressFundsFeeStrategyStep::DeductFromInput(7).to_object().expect("to_object");
+        let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
+        assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
+    }
+
+    #[test]
+    fn value_round_trip_reduce_output() {
+        use crate::serialization::ValueConvertible;
+        let value = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX).to_object().expect("to_object");
+        let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
+        assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
     }
 }

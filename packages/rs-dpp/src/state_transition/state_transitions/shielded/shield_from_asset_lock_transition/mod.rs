@@ -98,13 +98,14 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(original: &ShieldFromAssetLockTransition, recovered: &ShieldFromAssetLockTransition) {
-        let ShieldFromAssetLockTransition::V0(orig) = original;
-        let ShieldFromAssetLockTransition::V0(v0) = recovered;
-        assert_eq!(
-            v0.asset_lock_proof, orig.asset_lock_proof,
-            "asset_lock_proof"
-        );
+    fn assert_v0_fields(t: &ShieldFromAssetLockTransition) {
+        // Hardcoded expected values per the fixture above. Note:
+        // `asset_lock_proof` is intentionally absent from this helper —
+        // `instant_asset_lock_proof_fixture` is non-deterministic (random
+        // one-time-private-key per call), so there is no stable expected
+        // value to assert against. The structural `assert_eq!(original,
+        // recovered)` in each test still covers that field's round-trip.
+        let ShieldFromAssetLockTransition::V0(v0) = t;
         assert_eq!(v0.actions.len(), 1, "actions.len");
         assert_eq!(v0.actions[0].nullifier, [0x11; 32], "actions[0].nullifier");
         assert_eq!(v0.actions[0].rk, [0x22; 32], "actions[0].rk");
@@ -133,7 +134,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         let recovered = ShieldFromAssetLockTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&original, &recovered);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
@@ -150,6 +151,6 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         let recovered = ShieldFromAssetLockTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&original, &recovered);
+        assert_v0_fields(&recovered);
     }
 }
