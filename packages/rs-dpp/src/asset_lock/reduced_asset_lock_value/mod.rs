@@ -24,7 +24,9 @@ pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
     serde::Deserialize,
 )]
 #[platform_serialize(unversioned)]
+#[serde(tag = "$formatVersion")]
 pub enum AssetLockValue {
+    #[serde(rename = "0")]
     V0(AssetLockValueV0),
 }
 
@@ -150,20 +152,18 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // `AssetLockValue` is `#[platform_serialize(unversioned)]` with no
-        // `#[serde(tag = ...)]`, so serde uses the default externally-tagged
-        // enum form: `{ "V0": { ... } }`. `Bytes32` is base64 in JSON HR.
-        // `Vec<u8>` for `tx_out_script` is serialized as an array of numbers
-        // (NOT base64), because plain `Vec<u8>` has no `#[serde(with = ...)]`.
+        // `AssetLockValue` uses the standard `tag = "$formatVersion"`
+        // convention. `Bytes32` is base64 in JSON HR. `Vec<u8>` for
+        // `tx_out_script` is serialized as an array of numbers (NOT base64),
+        // because plain `Vec<u8>` has no `#[serde(with = ...)]`.
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "initial_credit_value": 1_000_000,
-                    "tx_out_script": [0xaa, 0xbb, 0xcc, 0xdd],
-                    "remaining_credit_value": 500_000,
-                    "used_tags": ["QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI="],
-                }
+                "$formatVersion": "0",
+                "initial_credit_value": 1_000_000,
+                "tx_out_script": [0xaa, 0xbb, 0xcc, 0xdd],
+                "remaining_credit_value": 500_000,
+                "used_tags": ["QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI="],
             })
         );
         let recovered = AssetLockValue::from_json(json).expect("from_json");
@@ -183,12 +183,11 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "initial_credit_value": 1_000_000u64,
-                    "tx_out_script": [0xaau8, 0xbbu8, 0xccu8, 0xddu8],
-                    "remaining_credit_value": 500_000u64,
-                    "used_tags": [Value::Bytes32([0x42; 32])],
-                }
+                "$formatVersion": "0",
+                "initial_credit_value": 1_000_000u64,
+                "tx_out_script": [0xaau8, 0xbbu8, 0xccu8, 0xddu8],
+                "remaining_credit_value": 500_000u64,
+                "used_tags": [Value::Bytes32([0x42; 32])],
             })
         );
         let recovered = AssetLockValue::from_object(value).expect("from_object");

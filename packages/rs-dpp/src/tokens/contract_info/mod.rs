@@ -27,9 +27,13 @@ pub mod v0;
 #[cfg_attr(
     any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize),
-    serde(untagged)
+    serde(tag = "$formatVersion")
 )]
 pub enum TokenContractInfo {
+    #[cfg_attr(
+        any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
+        serde(rename = "0")
+    )]
     V0(TokenContractInfoV0),
 }
 
@@ -76,8 +80,7 @@ mod json_convertible_tests {
         })
     }
 
-    // Note: `TokenContractInfo` is `#[serde(untagged)]`, so the V0 variant
-    // serializes as a flat object with no `$formatVersion` tag.
+    // `TokenContractInfo` uses the standard `tag = "$formatVersion"` convention.
 
     #[test]
     fn json_round_trip_with_full_wire_shape() {
@@ -91,6 +94,7 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
+                "$formatVersion": "0",
                 "contractId": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
                 "tokenContractPosition": 7,
             })
@@ -108,6 +112,7 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
+                "$formatVersion": "0",
                 "contractId": contract_id,
                 "tokenContractPosition": 7u16,
             })
