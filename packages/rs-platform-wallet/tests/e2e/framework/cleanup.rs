@@ -11,6 +11,7 @@ use std::time::Duration;
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
+use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
@@ -202,10 +203,17 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
 }
 
-/// Drain every owned platform address back to `bank_addr` in a single
-/// transition. Inputs map = full balances, output = the sum, fee comes
-/// out of the bank's incoming amount via `ReduceOutput(0)`. Sweep gate
-/// is "address balance > 0".
+/// Drain every recoverable platform address back to `bank_addr` in a
+/// single transition. Inputs map = balances ≥ `min_input_amount`,
+/// output = the sum, fee comes out of the bank's incoming amount via
+/// `ReduceOutput(0)`.
+///
+/// Tests that distribute funds across multiple addresses (PA-004b
+/// dust-boundary, PA-009 min-input) leave change on every spent
+/// address; the sweep must walk the full balance map. Addresses
+/// below `min_input_amount` are intentionally skipped — the protocol
+/// rejects any transition that includes a sub-floor input, and
+/// sweeping a dust address is impossible by definition.
 async fn sweep_platform_addresses<S>(
     wallet: &Arc<PlatformWallet>,
     signer: &S,
@@ -214,18 +222,50 @@ async fn sweep_platform_addresses<S>(
 where
     S: Signer<PlatformAddress> + Send + Sync,
 {
-    let inputs: BTreeMap<PlatformAddress, Credits> = wallet
-        .platform()
-        .addresses_with_balances()
-        .await
-        .into_iter()
-        .filter(|(_, b)| *b > 0)
-        .collect();
+    let platform_version = PlatformVersion::latest();
+    let candidates: Vec<(PlatformAddress, Credits)> =
+        wallet.platform().addresses_with_balances().await;
+    let SweepPlan {
+        inputs,
+        skipped_dust,
+        ..
+    } = build_sweep_plan(&candidates, platform_version);
+
+    if !skipped_dust.is_empty() {
+        let stranded: Credits = skipped_dust.iter().map(|(_, v)| *v).sum();
+        tracing::warn!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            stranded_count = skipped_dust.len(),
+            stranded_total = stranded,
+            min_input = min_input_amount(platform_version),
+            "sweep skipping addresses below min_input_amount"
+        );
+    }
+
     if inputs.is_empty() {
+        tracing::debug!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            "sweep_platform_addresses: no recoverable inputs; nothing to sweep"
+        );
         return Ok(());
     }
 
     let total: Credits = inputs.values().sum();
+    let estimated_fee =
+        AddressFundsTransferTransition::estimate_min_fee(inputs.len(), 1, platform_version);
+    if total <= estimated_fee {
+        tracing::warn!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            total,
+            estimated_fee,
+            "sweep_platform_addresses: Σ recoverable ≤ estimated fee; skipping"
+        );
+        return Ok(());
+    }
+
     let outputs: BTreeMap<PlatformAddress, Credits> =
         std::iter::once((*bank_addr, total)).collect();
     let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
@@ -245,12 +285,47 @@ where
             InputSelection::Explicit(inputs),
             outputs,
             fee_strategy,
-            Some(PlatformVersion::latest()),
+            Some(platform_version),
             signer,
         )
         .await
         .map_err(wallet_err)?;
     Ok(())
+}
+
+/// Result of partitioning the wallet's per-address balances into a
+/// recoverable input set and the dust set that falls below the
+/// per-input protocol floor. Output by [`build_sweep_plan`].
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SweepPlan {
+    inputs: BTreeMap<PlatformAddress, Credits>,
+    skipped_dust: Vec<(PlatformAddress, Credits)>,
+}
+
+/// Pure helper: split per-address balances into sweep inputs (balance
+/// ≥ `min_input_amount`) and the dust set that would be rejected as
+/// a sub-floor input. Empty / zero balances are dropped silently.
+fn build_sweep_plan(
+    candidates: &[(PlatformAddress, Credits)],
+    platform_version: &PlatformVersion,
+) -> SweepPlan {
+    let floor = min_input_amount(platform_version);
+    let mut inputs: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+    let mut skipped_dust: Vec<(PlatformAddress, Credits)> = Vec::new();
+    for (addr, balance) in candidates {
+        if *balance == 0 {
+            continue;
+        }
+        if *balance >= floor {
+            inputs.insert(*addr, *balance);
+        } else {
+            skipped_dust.push((*addr, *balance));
+        }
+    }
+    SweepPlan {
+        inputs,
+        skipped_dust,
+    }
 }
 
 /// Drain identity credit balances back to the bank identity. Noop until
@@ -285,4 +360,75 @@ async fn sweep_unused_core_asset_locks(_wallet: &Arc<PlatformWallet>) -> Framewo
 // transition that empties the note set into a bank-controlled note.
 async fn sweep_shielded(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(byte: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([byte; 20])
+    }
+
+    /// Mixed: one above the floor, one dust. The above-floor address
+    /// becomes the only input; the dust is reported as stranded.
+    #[test]
+    fn build_sweep_plan_drops_dust_keeps_recoverable() {
+        let pv = PlatformVersion::latest();
+        let floor = min_input_amount(pv);
+        let big = addr(0x01);
+        let dust = addr(0x02);
+        let candidates = vec![(big, floor + 100), (dust, floor.saturating_sub(1))];
+        let plan = build_sweep_plan(&candidates, pv);
+        assert_eq!(plan.inputs.len(), 1);
+        assert_eq!(plan.inputs.get(&big).copied(), Some(floor + 100));
+        assert_eq!(plan.skipped_dust, vec![(dust, floor.saturating_sub(1))]);
+    }
+
+    /// Both addresses above the floor: each becomes an input. This
+    /// pins the multi-input sweep path that the original addr_1-only
+    /// behaviour would have skipped.
+    #[test]
+    fn build_sweep_plan_keeps_two_above_floor() {
+        let pv = PlatformVersion::latest();
+        let floor = min_input_amount(pv);
+        let a = addr(0x01);
+        let b = addr(0x02);
+        let candidates = vec![(a, floor + 1_000), (b, floor + 2_000)];
+        let plan = build_sweep_plan(&candidates, pv);
+        assert_eq!(plan.inputs.len(), 2);
+        assert_eq!(plan.skipped_dust.len(), 0);
+        let total: Credits = plan.inputs.values().sum();
+        assert_eq!(total, 2 * floor + 3_000);
+    }
+
+    /// All addresses below the floor: no inputs, all marked dust.
+    /// `sweep_platform_addresses` will short-circuit with no broadcast.
+    #[test]
+    fn build_sweep_plan_all_dust_yields_no_inputs() {
+        let pv = PlatformVersion::latest();
+        let floor = min_input_amount(pv);
+        // Floor is small enough that this can fail on PlatformVersions
+        // where it's at zero — guard against that pathology.
+        if floor == 0 {
+            return;
+        }
+        let a = addr(0x01);
+        let b = addr(0x02);
+        let candidates = vec![(a, floor - 1), (b, floor / 2)];
+        let plan = build_sweep_plan(&candidates, pv);
+        assert!(plan.inputs.is_empty());
+        assert_eq!(plan.skipped_dust.len(), 2);
+    }
+
+    /// Zero balances are silently dropped from both buckets; they
+    /// represent addresses already swept on a previous pass.
+    #[test]
+    fn build_sweep_plan_drops_zero_balances() {
+        let pv = PlatformVersion::latest();
+        let candidates = vec![(addr(0x01), 0), (addr(0x02), 0)];
+        let plan = build_sweep_plan(&candidates, pv);
+        assert!(plan.inputs.is_empty());
+        assert!(plan.skipped_dust.is_empty());
+    }
 }
