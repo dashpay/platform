@@ -9,8 +9,13 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
 
+use dash_sdk::platform::Fetch;
+use dash_sdk::Sdk;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::Identity;
+use dpp::prelude::Identifier;
 
 use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
@@ -115,5 +120,123 @@ pub async fn wait_for_balance(
         // earlier via the `Notified` future.
         let cap = std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL);
         let _ = tokio::time::timeout(cap, notified.as_mut()).await;
+    }
+}
+
+/// Wait for an on-chain identity balance to reach at least `expected`.
+///
+/// Polls `Identity::fetch(sdk, identity_id)` every
+/// [`BACKSTOP_WAKE_INTERVAL`] and returns the observed balance when
+/// it meets the threshold. Network errors during polling are treated
+/// as transient (logged at `debug`); a missing identity (the SDK
+/// returns `None`) is treated as "not yet visible" and re-polled.
+pub async fn wait_for_identity_balance(
+    sdk: &Sdk,
+    identity_id: Identifier,
+    expected: Credits,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        match Identity::fetch(sdk, identity_id).await {
+            Ok(Some(identity)) => {
+                let balance = identity.balance();
+                if balance >= expected {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        ?identity_id,
+                        observed = balance,
+                        expected,
+                        elapsed = ?start.elapsed(),
+                        "identity balance reached target"
+                    );
+                    return Ok(balance);
+                }
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?identity_id,
+                    current = balance,
+                    expected,
+                    "identity balance below target"
+                );
+            }
+            Ok(None) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                ?identity_id,
+                "identity not yet visible on chain"
+            ),
+            Err(err) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                error = %err,
+                "fetch::<Identity> failed during wait_for_identity_balance"
+            ),
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_identity_balance timed out after {timeout:?} \
+                 (identity_id={identity_id:?} expected={expected})"
+            )));
+        }
+        // Cap the sleep against the remaining budget so a sub-2s
+        // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
+    }
+}
+
+/// Wait for a DPNS `<name>.dash` registration to become visible to
+/// resolvers.
+///
+/// Polls [`Sdk::resolve_dpns_name`] every [`BACKSTOP_WAKE_INTERVAL`]
+/// until it returns `Some(..)` or the timeout elapses. Returns the
+/// resolved owning identity id on success. Test authors typically
+/// pair this with the wallet's `register_name_with_external_signer`
+/// call so the assertion side of the test waits on observable
+/// propagation, not just on the state-transition's broadcast
+/// acknowledgement.
+pub async fn wait_for_dpns_name_visible(
+    sdk: &Sdk,
+    name: &str,
+    timeout: Duration,
+) -> FrameworkResult<Identifier> {
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        match sdk.resolve_dpns_name(name).await {
+            Ok(Some(id)) => {
+                tracing::info!(
+                    target: "platform_wallet::e2e::wait",
+                    name,
+                    elapsed = ?start.elapsed(),
+                    "DPNS name visible"
+                );
+                return Ok(id);
+            }
+            Ok(None) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                name,
+                "DPNS name not yet visible"
+            ),
+            Err(err) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                name,
+                error = %err,
+                "DPNS resolve failed during wait_for_dpns_name_visible"
+            ),
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_dpns_name_visible timed out after {timeout:?} (name={name:?})"
+            )));
+        }
+        // Cap the sleep against the remaining budget so a sub-2s
+        // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
     }
 }

@@ -244,6 +244,28 @@ impl PlatformAddressWallet {
             .unwrap_or_default()
     }
 
+    /// Read the current incremental-sync watermark from the unified
+    /// platform-address provider.
+    ///
+    /// Returns `None` when the provider hasn't been initialised yet
+    /// (no [`Self::initialize`] call) or when the provider has no stored
+    /// watermark (whether restored via [`Self::apply_sync_state`] or
+    /// produced by a previous sync). The value is monotonic non-decreasing
+    /// across [`Self::sync_balances`](super::sync) calls against the
+    /// same chain — a later sync can only advance the watermark, never
+    /// roll it back. A zero-valued watermark is reported as `None` to
+    /// match the "no stored watermark" convention used elsewhere in
+    /// the wallet (see [`Self::apply_sync_state`]).
+    pub async fn sync_watermark(&self) -> Option<u64> {
+        let guard = self.provider.read().await;
+        let raw = guard.as_ref().map(|p| p.last_known_recent_block())?;
+        if raw == 0 {
+            None
+        } else {
+            Some(raw)
+        }
+    }
+
     /// Get total platform credits across all addresses.
     ///
     /// Returns the sum of all cached balances.

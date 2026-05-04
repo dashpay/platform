@@ -142,6 +142,13 @@ impl PersistentTestWalletRegistry {
             .map(|(hash, entry)| (*hash, entry.clone()))
             .collect()
     }
+
+    /// Status of the entry for `wallet_id`, or `None` if no entry
+    /// exists. Cheaper than [`Self::list_orphans`] for tests that
+    /// only need to assert on a single entry's lifecycle.
+    pub fn get_status(&self, wallet_id: WalletSeedHash) -> Option<EntryStatus> {
+        self.state.lock().get(&wallet_id).map(|entry| entry.status)
+    }
 }
 
 /// Write-temp + rename JSON persist. On Windows
