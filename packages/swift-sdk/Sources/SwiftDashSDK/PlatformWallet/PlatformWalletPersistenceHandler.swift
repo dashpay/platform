@@ -2063,12 +2063,21 @@ public class PlatformWalletPersistenceHandler {
                     // wrap a corrupt 0x100+ value into a potentially-
                     // valid tag in the 0–255 range, defeating Rust's
                     // `AccountTypeTagFFI::try_from_u8` validation.
+                    //
+                    // A `continue` here would silently drop a
+                    // funds-bearing account from the snapshot and
+                    // still report a successful restore — so abort
+                    // the whole load callback instead. The Rust
+                    // loader treats `errored = true` as a hard fail
+                    // and won't construct a half-loaded manager.
                     guard let typeTagByte = UInt8(exactly: acc.accountType) else {
                         NSLog(
-                            "[persistor-load:swift] skipping account row: accountType %u out of UInt8 range",
+                            "[persistor-load:swift] aborting load: account row has accountType %u out of UInt8 range — refusing to silently drop it",
                             acc.accountType
                         )
-                        continue
+                        buf.deallocate()
+                        allocation.release()
+                        return (nil, 0, true)
                     }
                     let xpubBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: xpub.count)
                     xpub.copyBytes(to: xpubBuffer, count: xpub.count)
@@ -2200,10 +2209,18 @@ public class PlatformWalletPersistenceHandler {
             // the matching funds-bearing account by tag; rows whose
             // account isn't a funds variant get silently skipped on
             // the receiving side.
-            let (utxoBuf, utxoCount) = buildUtxoRestoreBuffer(
+            let (utxoBuf, utxoCount, utxoErrored) = buildUtxoRestoreBuffer(
                 rows: unspentBuckets[w.walletId] ?? [],
                 allocation: allocation
             )
+            // `buildUtxoRestoreBuffer` already deallocated its own
+            // buffer on the errored path; release everything else
+            // we've accumulated and abort the load callback so Rust
+            // doesn't see a partial / dropped-row snapshot.
+            if utxoErrored {
+                allocation.release()
+                return (nil, 0, true)
+            }
             entry.utxos = utxoBuf.map { UnsafePointer($0) }
             entry.utxos_count = UInt(utxoCount)
             // Primary-identity selection + gap-limit scan watermark
@@ -2260,9 +2277,9 @@ public class PlatformWalletPersistenceHandler {
     private func buildUtxoRestoreBuffer(
         rows: [PersistentTxo],
         allocation: LoadAllocation
-    ) -> (UnsafeMutablePointer<UtxoRestoreEntryFFI>?, Int) {
+    ) -> (UnsafeMutablePointer<UtxoRestoreEntryFFI>?, Int, Bool) {
         if rows.isEmpty {
-            return (nil, 0)
+            return (nil, 0, false)
         }
         let buf = UnsafeMutablePointer<UtxoRestoreEntryFFI>.allocate(capacity: rows.count)
         var written = 0
@@ -2279,13 +2296,17 @@ public class PlatformWalletPersistenceHandler {
             // Reject UTXOs whose parent `accountType` (UInt32) doesn't
             // fit in `u8`. Truncating would silently wrap a corrupt
             // 0x100+ value into a potentially-valid tag in 0–255 and
-            // bypass Rust's `try_from_u8` validation.
+            // bypass Rust's `try_from_u8` validation. Drop-and-continue
+            // would also silently under-restore the funds set, so we
+            // signal `errored = true` and let `loadWalletList` fail
+            // the whole callback — the persisted snapshot is corrupt.
             guard let typeTagByte = UInt8(exactly: account.accountType) else {
                 NSLog(
-                    "[persistor-load:swift] skipping UTXO row: accountType %u out of UInt8 range",
+                    "[persistor-load:swift] aborting load: UTXO has parent accountType %u out of UInt8 range — refusing to silently drop it",
                     account.accountType
                 )
-                continue
+                buf.deallocate()
+                return (nil, 0, true)
             }
 
             // Allocate + copy the script_pubkey bytes. Empty scripts
@@ -2328,10 +2349,10 @@ public class PlatformWalletPersistenceHandler {
         }
         if written == 0 {
             buf.deallocate()
-            return (nil, 0)
+            return (nil, 0, false)
         }
         allocation.utxoArrays.append((buf, written))
-        return (buf, written)
+        return (buf, written, false)
     }
 
     private func buildIdentityRestoreBuffer(
