@@ -1180,13 +1180,27 @@ fn build_wallet_start_state(
         // such row exists in SwiftData. Treating it as recoverable
         // snapshot drift matches how the UTXO loop a few lines below
         // handles the same failure mode.
-        let Ok(account_type) = account_type_from_spec(spec) else {
-            tracing::warn!(
-                wallet_id = %hex::encode(entry.wallet_id),
-                type_tag = ?spec.type_tag,
-                "load: skipping persisted account row with unmappable AccountType"
-            );
-            continue;
+        //
+        // Only the *legacy* tag bytes (15 / 16) are skip-and-continue;
+        // real validation errors (out-of-range bytes from a corrupt
+        // SwiftData row) propagate so the corruption surfaces rather
+        // than silently under-restoring accounts.
+        let account_type = match account_type_from_spec(spec) {
+            Ok(t) => t,
+            Err(e) => {
+                let is_legacy_tag = spec.type_tag
+                    == AccountTypeTagFFI::IdentityAuthenticationEcdsa as u8
+                    || spec.type_tag == AccountTypeTagFFI::IdentityAuthenticationBls as u8;
+                if is_legacy_tag {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        type_tag = spec.type_tag,
+                        "load: skipping legacy IdentityAuthentication account tag"
+                    );
+                    continue;
+                }
+                return Err(e);
+            }
         };
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
@@ -1268,18 +1282,29 @@ fn build_wallet_start_state(
             account_xpub_bytes: std::ptr::null(),
             account_xpub_bytes_len: 0,
         };
-        // Tags that don't map to any current `AccountType` (e.g.
-        // legacy `IdentityAuthentication{Ecdsa,Bls}`) are skipped —
-        // the SwiftData row can't be restored cleanly and the next
-        // sync will recover any funds it represents.
-        let Ok(account_type) = account_type_from_spec(&spec) else {
-            dropped_account_type += 1;
-            tracing::warn!(
-                wallet_id = %hex::encode(entry.wallet_id),
-                type_tag = ?u.type_tag,
-                "load: skipping persisted UTXO with unmappable AccountType"
-            );
-            continue;
+        // Skip-and-continue is correct ONLY for the legacy
+        // `IdentityAuthentication{Ecdsa,Bls}` tag bytes (15 / 16)
+        // whose upstream `AccountType` variants were removed. Real
+        // validation errors (out-of-range bytes from a corrupt
+        // SwiftData row, etc.) propagate so the corruption surfaces
+        // rather than silently under-restoring the UTXO set.
+        let account_type = match account_type_from_spec(&spec) {
+            Ok(t) => t,
+            Err(e) => {
+                let is_legacy_tag = u.type_tag
+                    == AccountTypeTagFFI::IdentityAuthenticationEcdsa as u8
+                    || u.type_tag == AccountTypeTagFFI::IdentityAuthenticationBls as u8;
+                if is_legacy_tag {
+                    dropped_account_type += 1;
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        type_tag = u.type_tag,
+                        "load: skipping persisted UTXO on legacy IdentityAuthentication tag"
+                    );
+                    continue;
+                }
+                return Err(e);
+            }
         };
         let Ok(txid) = dashcore::Txid::from_slice(&u.prev_txid) else {
             dropped_bad_txid += 1;

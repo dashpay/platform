@@ -1972,13 +1972,6 @@ public class PlatformWalletPersistenceHandler {
             return (nil, 0, false)
         }
 
-        let allocation = LoadAllocation()
-        let entriesPtr = UnsafeMutablePointer<WalletRestoreEntryFFI>.allocate(
-            capacity: restorable.count
-        )
-        allocation.entries = entriesPtr
-        allocation.entriesCount = restorable.count
-
         // Single bucketed fetch of every unspent `PersistentTxo` so
         // each wallet's per-iteration buffer build is a dictionary
         // lookup instead of a fresh database round-trip. Prefetches
@@ -1986,6 +1979,12 @@ public class PlatformWalletPersistenceHandler {
         // (rows whose `walletId` field defaults to `Data()` because
         // they predate the denorm) from triggering one SwiftData
         // fault per row when we resolve the parent wallet.
+        //
+        // The fetch happens BEFORE we allocate `entriesPtr` /
+        // `LoadAllocation` so an early fetch failure doesn't leak
+        // the entries buffer (`LoadAllocation.release` is only
+        // called on the path through `loadAllocations` after the
+        // pointer hand-off to Rust succeeds).
         var unspentBuckets: [Data: [PersistentTxo]] = [:]
         do {
             var unspentDescriptor = FetchDescriptor<PersistentTxo>(
@@ -2029,6 +2028,18 @@ public class PlatformWalletPersistenceHandler {
             }
         }
 
+        // Allocate `entriesPtr` and the `LoadAllocation` here — past
+        // the fallible SwiftData fetch above — so an early-error path
+        // doesn't leak the entries buffer (LoadAllocation only gets
+        // released through the `loadAllocations` map after the
+        // successful pointer hand-off at the bottom of this fn).
+        let allocation = LoadAllocation()
+        let entriesPtr = UnsafeMutablePointer<WalletRestoreEntryFFI>.allocate(
+            capacity: restorable.count
+        )
+        allocation.entries = entriesPtr
+        allocation.entriesCount = restorable.count
+
         for (i, w) in restorable.enumerated() {
             let sortedAccounts = w.accounts
                 .filter { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
@@ -2037,19 +2048,34 @@ public class PlatformWalletPersistenceHandler {
                         < ($1.accountType, $1.accountIndex, $1.registrationIndex, $1.keyClass)
                 }
             let accountsBuffer: UnsafeMutablePointer<AccountSpecFFI>?
+            let accountsWritten: Int
             if sortedAccounts.isEmpty {
                 accountsBuffer = nil
+                accountsWritten = 0
             } else {
                 let buf = UnsafeMutablePointer<AccountSpecFFI>.allocate(capacity: sortedAccounts.count)
-                for (j, acc) in sortedAccounts.enumerated() {
+                var written = 0
+                for acc in sortedAccounts {
                     // Filter above guarantees non-nil + non-empty.
                     let xpub = acc.accountExtendedPubKeyBytes ?? Data()
+                    // Reject rows whose `accountType` (UInt32) doesn't
+                    // fit in `u8`. `truncatingIfNeeded` would silently
+                    // wrap a corrupt 0x100+ value into a potentially-
+                    // valid tag in the 0–255 range, defeating Rust's
+                    // `AccountTypeTagFFI::try_from_u8` validation.
+                    guard let typeTagByte = UInt8(exactly: acc.accountType) else {
+                        NSLog(
+                            "[persistor-load:swift] skipping account row: accountType %u out of UInt8 range",
+                            acc.accountType
+                        )
+                        continue
+                    }
                     let xpubBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: xpub.count)
                     xpub.copyBytes(to: xpubBuffer, count: xpub.count)
                     allocation.scalarBuffers.append((xpubBuffer, xpub.count))
 
                     var spec = AccountSpecFFI()
-                    spec.type_tag = UInt8(truncatingIfNeeded: acc.accountType)
+                    spec.type_tag = typeTagByte
                     spec.standard_tag = acc.standardTag
                     spec.index = acc.accountIndex
                     spec.registration_index = acc.registrationIndex
@@ -2058,10 +2084,18 @@ public class PlatformWalletPersistenceHandler {
                     copyBytes(acc.friendIdentityId, into: &spec.friend_identity_id)
                     spec.account_xpub_bytes = UnsafePointer(xpubBuffer)
                     spec.account_xpub_bytes_len = UInt(xpub.count)
-                    buf[j] = spec
+                    buf[written] = spec
+                    written += 1
                 }
-                accountsBuffer = buf
-                allocation.accountArrays.append((buf, sortedAccounts.count))
+                if written == 0 {
+                    buf.deallocate()
+                    accountsBuffer = nil
+                    accountsWritten = 0
+                } else {
+                    accountsBuffer = buf
+                    accountsWritten = written
+                    allocation.accountArrays.append((buf, written))
+                }
             }
 
             let cachedBalances = loadCachedBalancesOnQueue(walletId: w.walletId)
@@ -2135,7 +2169,7 @@ public class PlatformWalletPersistenceHandler {
             copyBytes(w.walletId, into: &entry.wallet_id)
             entry.network = (w.network ?? .testnet).ffiValue
             entry.accounts = accountsBuffer.map { UnsafePointer($0) }
-            entry.accounts_count = UInt(sortedAccounts.count)
+            entry.accounts_count = UInt(accountsWritten)
             entry.platform_address_balances = addressBalancesBuffer.map { UnsafePointer($0) }
             entry.platform_address_balances_count = UInt(addressBalancesWritten)
             entry.platform_sync_height = syncState?.syncHeight ?? 0
@@ -2242,6 +2276,17 @@ public class PlatformWalletPersistenceHandler {
             // and the FFI handoff agree on the same 32-byte identity.
             let txid = record.txid
             guard txid.count == 32 else { continue }
+            // Reject UTXOs whose parent `accountType` (UInt32) doesn't
+            // fit in `u8`. Truncating would silently wrap a corrupt
+            // 0x100+ value into a potentially-valid tag in 0–255 and
+            // bypass Rust's `try_from_u8` validation.
+            guard let typeTagByte = UInt8(exactly: account.accountType) else {
+                NSLog(
+                    "[persistor-load:swift] skipping UTXO row: accountType %u out of UInt8 range",
+                    account.accountType
+                )
+                continue
+            }
 
             // Allocate + copy the script_pubkey bytes. Empty scripts
             // pass through with a null pointer + zero len.
@@ -2258,11 +2303,10 @@ public class PlatformWalletPersistenceHandler {
             }
 
             var utxo = UtxoRestoreEntryFFI()
-            // Match the existing AccountSpecFFI population pattern —
-            // cbindgen imports both tag enums as `UInt8` aliases, so
-            // assign the raw byte directly rather than constructing a
-            // `RawRepresentable`.
-            utxo.type_tag = UInt8(truncatingIfNeeded: account.accountType)
+            // Tag fields are FFI-typed `u8` and validated via
+            // `try_from_u8` on the Rust side; pass the exact byte
+            // we just guarded above.
+            utxo.type_tag = typeTagByte
             utxo.standard_tag = account.standardTag
             utxo.account_index = account.accountIndex
             utxo.registration_index = account.registrationIndex
