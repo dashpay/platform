@@ -136,7 +136,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         documents_batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -200,7 +207,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
 
         documents_batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
     #[cfg(feature = "state-transition-signing")]
@@ -248,7 +262,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
 
         documents_batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -313,7 +334,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
 
         documents_batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -378,7 +406,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         .into();
 
         documents_batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -445,7 +480,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -510,7 +552,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -575,7 +624,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -615,7 +671,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -684,7 +747,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 
@@ -725,7 +795,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         batch_transition
-            .validate_and_sign(identity_public_key, signer, None, platform_version, options)
+            .validate_and_sign(
+                identity_public_key,
+                signer,
+                None,
+                None,
+                platform_version,
+                options,
+            )
             .await
     }
 }

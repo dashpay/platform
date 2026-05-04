@@ -96,8 +96,9 @@ impl BatchTransition {
 
         for transitions in document_transitions_by_contracts.values() {
             // Keep the document branch batch-level only here. Transition-local
-            // document checks either require contract/state context or are
-            // reserved for constructor-only pre-sign validation.
+            // document checks either require contract/state context or run in
+            // constructor-only pre-sign builders while `DocumentTypeRef` is
+            // still available.
             for transition in transitions {
                 // We need to make sure that the identity contract nonce is within the allowed bounds
                 // This means that it is stored on 40 bits
@@ -526,7 +527,7 @@ mod tests {
         let bad_nonce: u64 = u64::MAX;
         let batch = make_batch_v0(vec![make_invalid_create(owner_id_v0(), bad_nonce)]);
 
-        match batch.validate_base_structure_pre_sign(pv) {
+        match batch.validate_base_structure_pre_sign(None, pv) {
             Err(ProtocolError::ConsensusErrors(errors)) => {
                 assert_eq!(errors.len(), 2, "expected all accumulated errors");
                 assert!(errors.iter().any(|error| matches!(
@@ -548,7 +549,7 @@ mod tests {
         let bad_nonce: u64 = u64::MAX;
         let batch = make_token_batch_v1(vec![make_invalid_token_burn(bad_nonce)]);
 
-        match batch.validate_base_structure_pre_sign(pv) {
+        match batch.validate_base_structure_pre_sign(None, pv) {
             Err(ProtocolError::ConsensusErrors(errors)) => {
                 assert_eq!(errors.len(), 2, "expected all accumulated errors");
                 assert!(errors.iter().any(|error| matches!(

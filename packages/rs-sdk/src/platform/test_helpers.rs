@@ -66,13 +66,45 @@ pub(crate) fn test_identity_public_key() -> IdentityPublicKey {
     })
 }
 
+/// Optional document-type capability flags for tests that need to surface
+/// the new constructor-only structure validators (mutability, transferability,
+/// trade-mode, deletability). Defaults enable every operation so happy-path
+/// tests using the basic `test_data_contract` helper continue to pass.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TestDocumentTypeOptions {
+    pub mutable: bool,
+    pub can_be_deleted: bool,
+    pub transferable: bool,
+    pub direct_purchase: bool,
+}
+
+impl Default for TestDocumentTypeOptions {
+    fn default() -> Self {
+        Self {
+            mutable: true,
+            can_be_deleted: true,
+            transferable: true,
+            direct_purchase: true,
+        }
+    }
+}
+
 pub(crate) fn test_data_contract(
     document_type_name: &str,
+) -> Arc<dpp::data_contract::DataContract> {
+    test_data_contract_with_options(document_type_name, TestDocumentTypeOptions::default())
+}
+
+pub(crate) fn test_data_contract_with_options(
+    document_type_name: &str,
+    options: TestDocumentTypeOptions,
 ) -> Arc<dpp::data_contract::DataContract> {
     let platform_version = dpp::version::PlatformVersion::latest();
     let config =
         DataContractConfig::default_for_version(platform_version).expect("create contract config");
 
+    // `transferable: 1` and `tradeMode: 1` (DirectPurchase) match the values
+    // expected by the per-transition constructor validators in DPP.
     let schema = platform_value!({
         "type": "object",
         "properties": {
@@ -83,6 +115,10 @@ pub(crate) fn test_data_contract(
             }
         },
         "additionalProperties": false,
+        "documentsMutable": options.mutable,
+        "canBeDeleted": options.can_be_deleted,
+        "transferable": if options.transferable { 1u64 } else { 0u64 },
+        "tradeMode": if options.direct_purchase { 1u64 } else { 0u64 },
     });
 
     let document_type = DocumentType::try_from_schema(

@@ -5,6 +5,7 @@ use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
+use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::validate_structure::DocumentPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 use crate::state_transition::batch_transition::batched_transition::DocumentPurchaseTransition;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
@@ -29,16 +30,28 @@ impl DocumentPurchaseTransition {
                 .bounds
                 .default_current_version,
         ) {
-            0 => Ok(DocumentPurchaseTransitionV0::from_document(
-                document,
-                document_type,
-                price,
-                token_payment_info,
-                identity_contract_nonce,
-                platform_version,
-                base_feature_version,
-            )?
-            .into()),
+            0 => {
+                let transition: DocumentPurchaseTransition =
+                    DocumentPurchaseTransitionV0::from_document(
+                        document,
+                        document_type,
+                        price,
+                        token_payment_info,
+                        identity_contract_nonce,
+                        platform_version,
+                        base_feature_version,
+                    )?
+                    .into();
+                if let Some(error) = transition
+                    .validate_structure(document_type, platform_version)?
+                    .errors
+                    .into_iter()
+                    .next()
+                {
+                    return Err(error.into());
+                }
+                Ok(transition)
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentPurchaseTransition::from_document".to_string(),
                 known_versions: vec![0],

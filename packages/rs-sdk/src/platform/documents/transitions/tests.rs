@@ -5,15 +5,51 @@ use super::replace::DocumentReplaceTransitionBuilder;
 use super::set_price::DocumentSetPriceTransitionBuilder;
 use super::transfer::DocumentTransferTransitionBuilder;
 use crate::platform::test_helpers::{
-    new_mock_sdk_with_contract_nonce, test_data_contract, test_identity_public_key, TestSigner,
-    TEST_DOCUMENT_TYPE_NAME,
+    new_mock_sdk_with_contract_nonce, test_data_contract, test_data_contract_with_options,
+    test_identity_public_key, TestDocumentTypeOptions, TestSigner, TEST_DOCUMENT_TYPE_NAME,
 };
+use crate::Error;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::prelude::Identifier;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionLike;
+use dpp::ProtocolError;
 use std::sync::Arc;
+
+/// Asserts the error chain returned by an SDK builder matches a single
+/// `InvalidDocumentTransitionActionError` carrying the expected message
+/// fragment, surfaced by the new DPP `from_document` constructor validators.
+#[track_caller]
+fn assert_invalid_document_transition_action(
+    result: Result<StateTransition, Error>,
+    expected_message_fragment: &str,
+) {
+    match result {
+        Err(Error::Protocol(ProtocolError::ConsensusError(boxed))) => match *boxed {
+            ConsensusError::BasicError(BasicError::InvalidDocumentTransitionActionError(
+                ref err,
+            )) => {
+                assert!(
+                    err.action().contains(expected_message_fragment),
+                    "expected action message containing {:?}, got {:?}",
+                    expected_message_fragment,
+                    err.action()
+                );
+            }
+            other => panic!(
+                "expected InvalidDocumentTransitionActionError, got {:?}",
+                other
+            ),
+        },
+        other => panic!(
+            "expected ProtocolError::ConsensusError(InvalidDocumentTransitionActionError), got {:?}",
+            other
+        ),
+    }
+}
 
 fn test_document(owner_id: Identifier) -> Document {
     Document::V0(DocumentV0 {
@@ -326,5 +362,208 @@ async fn document_transfer_builder_sign_succeeds_for_valid_input() {
     assert!(
         st.signature().is_some_and(|sig| !sig.is_empty()),
         "transition should have a non-empty signature"
+    );
+}
+
+// ----------------------------------------------------------------------------
+// Constructor-only structure validators surfaced through the SDK builders.
+// Each of these tests proves that the new DPP `from_document` (or higher
+// constructor) hook fails before signing when the document type rejects the
+// requested operation. They exist so future changes to the dispatch wiring
+// keep the public SDK builder reachable.
+// ----------------------------------------------------------------------------
+
+#[tokio::test]
+async fn document_replace_builder_sign_fails_when_type_is_immutable() {
+    let data_contract = test_data_contract_with_options(
+        TEST_DOCUMENT_TYPE_NAME,
+        TestDocumentTypeOptions {
+            mutable: false,
+            ..Default::default()
+        },
+    );
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentReplaceTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_action(result, "is not mutable and can not be replaced");
+}
+
+#[tokio::test]
+async fn document_delete_builder_sign_fails_when_type_is_undeletable() {
+    let data_contract = test_data_contract_with_options(
+        TEST_DOCUMENT_TYPE_NAME,
+        TestDocumentTypeOptions {
+            can_be_deleted: false,
+            ..Default::default()
+        },
+    );
+    let owner_id = Identifier::random();
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentDeleteTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        Identifier::random(),
+        owner_id,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_action(result, "can not be deleted");
+}
+
+#[tokio::test]
+async fn document_transfer_builder_sign_fails_when_type_is_not_transferable() {
+    let data_contract = test_data_contract_with_options(
+        TEST_DOCUMENT_TYPE_NAME,
+        TestDocumentTypeOptions {
+            transferable: false,
+            ..Default::default()
+        },
+    );
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let recipient_id = Identifier::random();
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentTransferTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        recipient_id,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_action(result, "is not a transferable document type");
+}
+
+#[tokio::test]
+async fn document_purchase_builder_sign_fails_when_type_is_not_direct_purchase() {
+    let data_contract = test_data_contract_with_options(
+        TEST_DOCUMENT_TYPE_NAME,
+        TestDocumentTypeOptions {
+            direct_purchase: false,
+            ..Default::default()
+        },
+    );
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let purchaser_id = Identifier::random();
+    let sdk = new_mock_sdk_with_contract_nonce(purchaser_id, data_contract.id(), 0).await;
+
+    let builder = DocumentPurchaseTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        purchaser_id,
+        100,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_action(
+        result,
+        "trade mode is not direct purchase but we are trying to purchase directly",
+    );
+}
+
+#[tokio::test]
+async fn document_purchase_builder_sign_fails_when_purchaser_already_owns_document() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    // Same identity is the document owner and the purchaser → self-purchase.
+    let document = test_document(owner_id);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentPurchaseTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        owner_id,
+        100,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_action(result, "is already owned by the purchaser");
+}
+
+#[tokio::test]
+async fn document_set_price_builder_sign_fails_when_seller_cannot_set_price() {
+    let data_contract = test_data_contract_with_options(
+        TEST_DOCUMENT_TYPE_NAME,
+        TestDocumentTypeOptions {
+            direct_purchase: false,
+            ..Default::default()
+        },
+    );
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentSetPriceTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        200,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_action(
+        result,
+        "does not support the seller setting the price",
     );
 }

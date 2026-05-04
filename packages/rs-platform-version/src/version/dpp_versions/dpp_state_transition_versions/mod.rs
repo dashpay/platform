@@ -76,4 +76,25 @@ pub struct DocumentsBatchTransitionValidationVersions {
     /// independent of the drive-abci action validator (which has its own
     /// version field under `drive_abci.validation_and_processing`).
     pub document_create_transition_structure_validation: FeatureVersion,
+    /// DPP-side dispatch for the constructor-only document replace transition
+    /// structure validator used by `from_document` to surface unsafe local
+    /// structure (e.g. immutable document type) before signing.
+    pub document_replace_transition_structure_validation: FeatureVersion,
+    /// DPP-side dispatch for the constructor-only document transfer transition
+    /// structure validator used by `from_document` to surface unsafe local
+    /// structure (e.g. non-transferable document type) before signing.
+    pub document_transfer_transition_structure_validation: FeatureVersion,
+    /// DPP-side dispatch for the constructor-only document purchase transition
+    /// structure validator used by `from_document` to surface unsafe local
+    /// structure (e.g. wrong trade mode) before signing.
+    pub document_purchase_transition_structure_validation: FeatureVersion,
+    /// DPP-side dispatch for the constructor-only document update-price
+    /// transition structure validator used by `from_document` to surface
+    /// unsafe local structure (e.g. trade mode does not let the seller set
+    /// price) before signing.
+    pub document_update_price_transition_structure_validation: FeatureVersion,
+    /// DPP-side dispatch for the constructor-only document delete transition
+    /// structure validator used by `from_document` to surface unsafe local
+    /// structure (e.g. non-deletable document type) before signing.
+    pub document_delete_transition_structure_validation: FeatureVersion,
 }

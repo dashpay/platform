@@ -4,6 +4,7 @@ use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
+use crate::state_transition::batch_transition::batched_transition::document_delete_transition::validate_structure::DocumentDeleteTransitionStructureValidation;
 use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use crate::state_transition::batch_transition::batched_transition::DocumentDeleteTransition;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
@@ -27,15 +28,27 @@ impl DocumentDeleteTransition {
                 .bounds
                 .default_current_version,
         ) {
-            0 => Ok(DocumentDeleteTransitionV0::from_document(
-                document,
-                document_type,
-                token_payment_info,
-                identity_contract_nonce,
-                platform_version,
-                base_feature_version,
-            )?
-            .into()),
+            0 => {
+                let transition: DocumentDeleteTransition =
+                    DocumentDeleteTransitionV0::from_document(
+                        document,
+                        document_type,
+                        token_payment_info,
+                        identity_contract_nonce,
+                        platform_version,
+                        base_feature_version,
+                    )?
+                    .into();
+                if let Some(error) = transition
+                    .validate_structure(document_type, platform_version)?
+                    .errors
+                    .into_iter()
+                    .next()
+                {
+                    return Err(error.into());
+                }
+                Ok(transition)
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransition::from_document".to_string(),
                 known_versions: vec![0],

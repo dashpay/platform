@@ -126,6 +126,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
+                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -168,6 +169,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
+                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -212,6 +214,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
+                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -254,6 +257,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
+                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -298,6 +302,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
+                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -319,6 +324,18 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
+        // Mirrors the drive-abci action validator self-purchase check.
+        if document.owner_id() == new_owner_id {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                crate::consensus::basic::document::InvalidDocumentTransitionActionError::new(
+                    format!(
+                        "on document type: {} identity trying to purchase a document that is already owned by the purchaser",
+                        document_type.name()
+                    ),
+                )
+                .into(),
+            )));
+        }
         let resolved_options = options.unwrap_or_default();
         let purchase_transition = DocumentPurchaseTransition::from_document(
             document,
@@ -342,6 +359,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
+                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
