@@ -23,6 +23,11 @@ pub mod wallet;
 pub use error::PlatformWalletError;
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+// Surface the upstream `DerivedAddress` event payload through this
+// crate so downstream FFI consumers (rs-platform-wallet-ffi) can
+// project `CoreChangeSet.addresses_derived` without taking an extra
+// direct dependency on `key-wallet-manager`.
+pub use key_wallet_manager::DerivedAddress;
 pub use manager::identity_sync::{
     IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
     DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,

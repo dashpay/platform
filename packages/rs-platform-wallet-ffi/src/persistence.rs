@@ -466,6 +466,49 @@ impl PlatformWalletPersistence for FFIPersister {
 
         // Send core wallet changeset (accounts, transactions, UTXOs).
         if let Some(ref core_cs) = changeset.core {
+            // Fan out gap-limit-extension addresses BEFORE the wallet
+            // changeset itself: the changeset's UTXOs reference these
+            // addresses, and the Swift-side `upsertUtxo`'s
+            // `coreAddress` link lookup is keyed on the address row
+            // existing. Emitting the pool snapshot first means a
+            // brand-new TXO landing on a freshly-derived address
+            // finds the matching `PersistentCoreAddress` in the same
+            // changeset round and the cascade-delete chain stays
+            // intact. Reuses `on_persist_account_address_pools_fn`
+            // so the Swift side handles both registration-time emit
+            // and event-time emit through `persistAccountAddresses`
+            // — single Swift code path covers both.
+            if !core_cs.addresses_derived.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_account_address_pools_fn {
+                    match build_address_pools_from_derived(&core_cs.addresses_derived) {
+                        Ok((pools, _address_storage, _string_storage)) => {
+                            let result = unsafe {
+                                cb(
+                                    self.callbacks.context,
+                                    wallet_id.as_ptr(),
+                                    pools.as_ptr(),
+                                    pools.len(),
+                                )
+                            };
+                            drop(pools);
+                            drop(_address_storage);
+                            drop(_string_storage);
+                            if result != 0 {
+                                eprintln!(
+                                    "Derived-address persistence callback returned error code {}",
+                                    result
+                                );
+                                round_success = false;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to encode derived address pool entries: {}", e);
+                            round_success = false;
+                        }
+                    }
+                }
+            }
+
             if let Some(cb) = self.callbacks.on_persist_wallet_changeset_fn {
                 let ffi_cs = WalletChangeSetFFI::from_changeset(core_cs);
                 let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), &ffi_cs) };
@@ -1130,6 +1173,147 @@ fn build_core_address_entry_ffi(
         address_base58: address_ptr,
         derivation_path: path_ptr,
     })
+}
+
+/// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
+/// same `AccountAddressPoolFFI` shape `build_address_pools_for_callback`
+/// produces, so the event-driven gap-limit-extension flow can fan out
+/// through the existing `on_persist_account_address_pools_fn` pipeline
+/// rather than introducing a parallel callback.
+///
+/// Each upstream entry already carries `(account_type, pool_type,
+/// derivation_index, address, public_key)`; we group on
+/// `(account_type, pool_type)` so a single block that pushed the
+/// gap-limit boundary on multiple pools (e.g. an internal change
+/// receive that extends Internal AND a separate external receive that
+/// extends External) emits one pool snapshot per pool variant.
+///
+/// `derivation_path` is intentionally empty on this path —
+/// `key_wallet_manager::DerivedAddress` deliberately omits it ("consumers
+/// can recompute deterministically from `(account_type, pool_type,
+/// derivation_index)` rather than shipping a redundant string"). The
+/// next full pool snapshot (registration-time emit, or a follow-up
+/// path that has access to the wallet manager) overwrites with the
+/// canonical BIP32 string. Empty is safe: `PersistentCoreAddress.address`
+/// stays the authoritative join key, and the storage explorer just
+/// renders an empty derivation-path field for these rows until the
+/// follow-up emit lands.
+#[allow(clippy::type_complexity)]
+fn build_address_pools_from_derived(
+    derived: &[platform_wallet::DerivedAddress],
+) -> Result<
+    (
+        Vec<AccountAddressPoolFFI>,
+        Vec<Vec<CoreAddressEntryFFI>>,
+        Vec<CString>,
+    ),
+    String,
+> {
+    use std::collections::BTreeMap;
+    if derived.is_empty() {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    }
+
+    // Bucket key: (account_type, pool_type). Preserve arrival order
+    // within a bucket — the upstream `project_derived_addresses`
+    // already deduped by `(account_type, pool_type, derivation_index)`,
+    // so two entries in the same bucket here always have distinct
+    // indices.
+    let mut buckets: BTreeMap<(usize, AddressPoolType), Vec<&platform_wallet::DerivedAddress>> =
+        BTreeMap::new();
+    // We can't use AccountType as the BTreeMap key directly (no `Ord`
+    // upstream), so keep an account-type index per bucket and look it
+    // up by the discriminant order entries arrive in.
+    let mut account_types: Vec<AccountType> = Vec::new();
+    let mut account_type_to_idx: Vec<(AccountType, usize)> = Vec::new();
+    for d in derived {
+        let idx = account_type_to_idx
+            .iter()
+            .find(|(at, _)| *at == d.account_type)
+            .map(|(_, i)| *i)
+            .unwrap_or_else(|| {
+                let i = account_types.len();
+                account_types.push(d.account_type);
+                account_type_to_idx.push((d.account_type, i));
+                i
+            });
+        buckets.entry((idx, d.pool_type)).or_default().push(d);
+    }
+
+    let mut owned_strings: Vec<CString> = Vec::new();
+    let mut address_storage: Vec<Vec<CoreAddressEntryFFI>> = Vec::with_capacity(buckets.len());
+    let mut pools: Vec<AccountAddressPoolFFI> = Vec::with_capacity(buckets.len());
+
+    for ((account_idx, pool_type), bucket) in buckets {
+        let account_type = account_types[account_idx];
+        let pool_tag = match pool_type {
+            AddressPoolType::External => AddressPoolTypeTagFFI::External,
+            AddressPoolType::Internal => AddressPoolTypeTagFFI::Internal,
+            AddressPoolType::Absent => AddressPoolTypeTagFFI::Absent,
+            AddressPoolType::AbsentHardened => AddressPoolTypeTagFFI::AbsentHardened,
+        } as u8;
+        let is_platform_payment = matches!(account_type, AccountType::PlatformPayment { .. });
+
+        let mut pool_entries: Vec<CoreAddressEntryFFI> = Vec::with_capacity(bucket.len());
+        for d in bucket {
+            // Re-render the address. PlatformPayment uses DIP-0018
+            // bech32m; everything else base58check (matching
+            // `build_core_address_entry_ffi`'s logic).
+            let rendered_address = if is_platform_payment {
+                let network = *d.address.network();
+                let converted: Result<PlatformAddress, _> =
+                    PlatformAddress::try_from(d.address.clone());
+                converted
+                    .map(|p| p.to_bech32m_string(network))
+                    .unwrap_or_else(|_| d.address.to_string())
+            } else {
+                d.address.to_string()
+            };
+            let address_c = CString::new(rendered_address)
+                .map_err(|e| format!("derived address contained NUL byte: {}", e))?;
+            // Empty derivation_path placeholder — see fn doc-comment
+            // for rationale.
+            let path_c = CString::new("").expect("empty CString construction cannot fail");
+            let address_ptr = address_c.as_ptr();
+            let path_ptr = path_c.as_ptr();
+            owned_strings.push(address_c);
+            owned_strings.push(path_c);
+
+            pool_entries.push(CoreAddressEntryFFI {
+                public_key: d.public_key,
+                has_public_key: true,
+                pool_type_tag: pool_tag,
+                address_index: d.derivation_index,
+                // Newly-derived addresses haven't been seen in any
+                // tx yet (they came from gap-limit extension,
+                // not from observing the address as used). The
+                // upstream `mark_address_used` flow that triggered
+                // this derivation marks the OLD address that got
+                // matched, not these new ones; their `is_used`
+                // stays false until SPV later observes a tx paying
+                // to one of them.
+                is_used: false,
+                balance: 0,
+                address_base58: address_ptr,
+                derivation_path: path_ptr,
+            });
+        }
+
+        let empty_xpub: &[u8] = &[];
+        let spec = build_account_spec_ffi(&account_type, empty_xpub);
+        let addresses_ptr = pool_entries.as_ptr();
+        let addresses_count = pool_entries.len();
+        address_storage.push(pool_entries);
+
+        pools.push(AccountAddressPoolFFI {
+            account: spec,
+            pool_type_tag: pool_tag,
+            addresses_ptr,
+            addresses_count,
+        });
+    }
+
+    Ok((pools, address_storage, owned_strings))
 }
 
 /// RAII drop-guard that invokes the paired free callback on exit, so
