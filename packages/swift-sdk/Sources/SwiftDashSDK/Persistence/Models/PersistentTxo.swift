@@ -77,6 +77,20 @@ public final class PersistentTxo {
     /// the spending tx must not cascade-delete this row.
     public var spendingTransaction: PersistentTransaction?
 
+    /// Position of this output within `spendingTransaction.input`
+    /// (i.e. the canonical "vin index"). Captured at the moment the
+    /// spend is reconciled — sourced from
+    /// `TransactionRecordFFI.input_outpoints` index, which itself
+    /// comes from `tx.input.iter()` on the Rust side, so the value
+    /// matches the serialized transaction's input ordering exactly.
+    /// `nil` when the TXO is unspent (no spending tx, no vin index)
+    /// or when migrated from an older row that predates the column.
+    /// Surfaced by `TransactionStorageDetailView` so input rows
+    /// render in serialized vin order with their real positions
+    /// rather than being re-sorted by outpoint hex (which loses
+    /// the relationship between row and serialized index).
+    public var spendingInputIndex: UInt32? = nil
+
     /// Parent account. No longer paired with an inverse on the
     /// account side — the canonical account path is
     /// `coreAddress?.account`. This field is the fallback when the

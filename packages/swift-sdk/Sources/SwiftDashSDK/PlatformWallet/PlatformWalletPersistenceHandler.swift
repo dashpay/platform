@@ -483,11 +483,18 @@ public class PlatformWalletPersistenceHandler {
             // an idempotent re-upsert of the same tx must not
             // gratuitously bump `lastUpdated` and trigger a follow-on
             // changeset emit.
-            if !txo.isSpent || txo.spendingTransaction?.txid != spendingTxid {
+            let linkageChanged =
+                !txo.isSpent
+                || txo.spendingTransaction?.txid != spendingTxid
+                || txo.spendingInputIndex != inputIndex
+            if linkageChanged {
                 txo.isSpent = true
                 if txo.spendingTransaction?.txid != spendingTxid {
                     txo.spendingTransaction = spendingTransaction
                 }
+                // Capture the canonical vin index so the detail
+                // view can render inputs in serialized order.
+                txo.spendingInputIndex = inputIndex
                 txo.lastUpdated = Date()
             }
             // A pending entry from an earlier write is now stale —
@@ -644,6 +651,13 @@ public class PlatformWalletPersistenceHandler {
             // observation; the rest are dropped.
             let chosen = pendingRows.max(by: { $0.createdAt < $1.createdAt }) ?? pendingRows[0]
             record.isSpent = true
+            // Carry the vin index forward so the spending tx's
+            // detail view can render its inputs in the canonical
+            // serialized order. Same source as the linkage write
+            // in `resolveInputOutpoint` — the only path that creates
+            // pending rows captures the index from FFI's
+            // `input_outpoints` slice, which mirrors `tx.input.iter()`.
+            record.spendingInputIndex = chosen.inputIndex
             if let spending = chosen.spendingTransaction {
                 if record.spendingTransaction?.txid != spending.txid {
                     record.spendingTransaction = spending

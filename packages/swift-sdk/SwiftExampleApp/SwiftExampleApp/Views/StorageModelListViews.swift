@@ -836,6 +836,23 @@ struct TransactionStorageListView: View {
                     }
                 }
             }
+            // Render the filter-narrowed empty state INSIDE the List
+            // (not as an `.overlay`) so the filter Section above
+            // remains tappable. Overlaying ContentUnavailableView on
+            // top of the same List that hosts the filter controls
+            // makes "no matches" a dead-end — the user can't change
+            // direction / type / search to recover. As inline list
+            // content, the message scrolls in below the filter row
+            // and leaves the controls fully reachable.
+            if !records.isEmpty && visible.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No matching transactions",
+                        systemImage: "magnifyingglass",
+                        description: Text("Adjust the search / direction / type filters")
+                    )
+                }
+            }
             ForEach(visible) { record in
                 NavigationLink(destination: TransactionStorageDetailView(record: record)) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -879,17 +896,15 @@ struct TransactionStorageListView: View {
             placement: .navigationBarDrawer(displayMode: .always),
             prompt: "Search by tx id (hex)"
         )
+        // Only the "no records at all" state uses an overlay — there's
+        // nothing to interact with in that case, so blocking the List
+        // is fine. The filter-narrowed empty state is rendered as
+        // list content above (see the inline Section).
         .overlay {
             if records.isEmpty {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "arrow.left.arrow.right.circle"
-                )
-            } else if visible.isEmpty {
-                ContentUnavailableView(
-                    "No matching transactions",
-                    systemImage: "magnifyingglass",
-                    description: Text("Adjust the search / direction / type filters")
                 )
             }
         }
@@ -1228,6 +1243,19 @@ struct TxoStorageListView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            // Render the filter-narrowed empty state as inline list
+            // content rather than as an `.overlay` over the List —
+            // see the matching note in `TransactionStorageListView`.
+            // Overlay would block the segmented Picker above and
+            // dead-end the user.
+            if !records.isEmpty && visible.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No \(filter.title) TXOs",
+                        systemImage: "bitcoinsign.circle"
+                    )
+                }
+            }
             ForEach(visible) { record in
                 NavigationLink(destination: TxoStorageDetailView(record: record)) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1258,14 +1286,12 @@ struct TxoStorageListView: View {
         .navigationTitle(filter == .all
             ? "TXOs (\(records.count))"
             : "TXOs (\(visible.count) / \(records.count))")
+        // Overlay only the no-records-at-all case; the
+        // filter-narrowed empty state lives inline above so the
+        // Picker stays reachable.
         .overlay {
             if records.isEmpty {
                 ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle")
-            } else if visible.isEmpty {
-                ContentUnavailableView(
-                    "No \(filter.title) TXOs",
-                    systemImage: "bitcoinsign.circle"
-                )
             }
         }
     }

@@ -1506,19 +1506,35 @@ struct TransactionStorageDetailView: View {
             // Per-input drill-downs. Each input is the
             // `PersistentTxo` of the *previous* output that this tx
             // consumed — tapping it surfaces where the funds came
-            // from (address, originating tx, amount). No stable
-            // input index column lives on `PersistentTxo`, so rows
-            // are ordered by their canonical outpoint string for
-            // determinism.
+            // from (address, originating tx, amount). Rows are
+            // ordered by `spendingInputIndex` (the canonical vin
+            // position captured when the spend was reconciled), so
+            // row N matches input N in the serialized transaction.
+            // The fallback ordering (`outpointHex`) only kicks in
+            // for legacy rows that predate the column or for rows
+            // whose pending-input resolution didn't run with an
+            // index — both rare edge cases that drop to the bottom
+            // of the list with a sentinel "prev" label.
             Section {
                 if record.inputs.isEmpty {
                     Text("None")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(record.inputs.sorted { $0.outpointHex < $1.outpointHex }) { txo in
+                    let orderedInputs = record.inputs.sorted { lhs, rhs in
+                        switch (lhs.spendingInputIndex, rhs.spendingInputIndex) {
+                        case let (.some(l), .some(r)): return l < r
+                        case (.some, .none): return true
+                        case (.none, .some): return false
+                        case (.none, .none): return lhs.outpointHex < rhs.outpointHex
+                        }
+                    }
+                    ForEach(orderedInputs) { txo in
                         NavigationLink(destination: TxoStorageDetailView(record: txo)) {
-                            txoRowLabel(txo, indexLabel: "prev")
+                            txoRowLabel(
+                                txo,
+                                indexLabel: txo.spendingInputIndex.map { "vin \($0)" } ?? "prev"
+                            )
                         }
                     }
                 }
@@ -1536,10 +1552,14 @@ struct TransactionStorageDetailView: View {
 
     /// Two-line row label for an input / output cell. Top line:
     /// `<vout-or-prev>  <amount>  <spent-pill>`. Bottom line: the
-    /// 36-byte outpoint hex (so user can copy to a block explorer)
+    /// canonical block-explorer outpoint string —
+    /// `<display-order txid hex>:<vout>` via `PersistentTxo.outpointHex`,
+    /// which is what users paste into DashScan / mempool explorers —
     /// followed by the address when present. Address line stays
     /// truncated-middle so a long Base58 doesn't push the right edge
-    /// off the screen.
+    /// off the screen. (If you ever need the raw 36-byte outpoint
+    /// hex instead, use `hexString(txo.outpoint)` — the
+    /// `outpointHex` accessor flips byte order on the txid half.)
     @ViewBuilder
     private func txoRowLabel(
         _ txo: PersistentTxo,
