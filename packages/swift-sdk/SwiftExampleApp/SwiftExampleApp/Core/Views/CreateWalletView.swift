@@ -313,8 +313,9 @@ struct CreateWalletView: View {
                     // recovery flow can enumerate all of them on
                     // launch. Best-effort — failure here doesn't
                     // block wallet creation.
+                    let storage = WalletStorage()
                     do {
-                        try WalletStorage().storeMnemonic(
+                        try storage.storeMnemonic(
                             mnemonicPhrase,
                             for: managed.walletId
                         )
@@ -338,9 +339,37 @@ struct CreateWalletView: View {
                     let descriptor = FetchDescriptor<PersistentWallet>(
                         predicate: #Predicate { $0.walletId == walletIdMatch }
                     )
-                    if let row = try? modelContext.fetch(descriptor).first {
+                    let row = try? modelContext.fetch(descriptor).first
+                    if let row = row {
                         row.isImported = showImportOption
                         try? modelContext.save()
+                    }
+                    // Mirror the user-typed name + the networks the
+                    // user explicitly ticked + the SPV-tip-derived
+                    // birth height into the keychain alongside the
+                    // mnemonic. Read back by the orphan-mnemonic
+                    // recovery flow so a wipe + reinstall restores
+                    // the original label / networks / birth height
+                    // instead of resurrecting the wallet on testnet
+                    // with a synthetic genesis.
+                    //
+                    // `selectedNetworks` carries every network the
+                    // user ticked even though `walletManager` only
+                    // currently consumes the first; persisting the
+                    // full list now means the multi-network TODO on
+                    // the Rust side won't need a metadata migration.
+                    do {
+                        let metadata = WalletKeychainMetadata(
+                            name: walletLabel,
+                            walletDescription: nil,
+                            networks: selectedNetworks.map { $0.networkName },
+                            birthHeight: row?.birthHeight
+                        )
+                        try storage.setMetadata(metadata, for: managed.walletId)
+                    } catch {
+                        SDKLogger.error(
+                            "Failed to persist wallet metadata to keychain: \(error.localizedDescription)"
+                        )
                     }
                     dismiss()
                 }

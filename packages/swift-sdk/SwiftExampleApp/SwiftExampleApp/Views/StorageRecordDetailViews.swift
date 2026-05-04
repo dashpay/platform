@@ -1228,12 +1228,6 @@ struct WalletStorageDetailView: View {
                 FieldRow(label: "Synced Height", value: "\(record.syncedHeight)")
                 FieldRow(label: "Imported", value: record.isImported ? "Yes" : "No")
             }
-            Section("Balance") {
-                FieldRow(label: "Confirmed", value: "\(record.balanceConfirmed)")
-                FieldRow(label: "Unconfirmed", value: "\(record.balanceUnconfirmed)")
-                FieldRow(label: "Immature", value: "\(record.balanceImmature)")
-                FieldRow(label: "Locked", value: "\(record.balanceLocked)")
-            }
             Section("Relationships") {
                 FieldRow(label: "Accounts", value: "\(record.accounts.count)")
                 // Inverse of `PersistentIdentity.wallet`. Surfaces

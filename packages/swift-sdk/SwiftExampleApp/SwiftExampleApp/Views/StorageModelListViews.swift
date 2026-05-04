@@ -1025,30 +1025,94 @@ struct PlatformAddressStorageListView: View {
 // MARK: - PersistentTxo
 
 struct TxoStorageListView: View {
-    @Query(sort: \PersistentTxo.createdAt, order: .reverse)
+    /// Sort by block height descending — newest at the top, mempool
+    /// (`height == 0`) ahead of confirmed entries. The previous
+    /// `createdAt` sort meant rows were ordered by when they happened
+    /// to flush into SwiftData rather than chain order, which fights
+    /// the mental model when scanning for a specific block range.
+    @Query(sort: [SortDescriptor(\PersistentTxo.height, order: .reverse)])
     private var records: [PersistentTxo]
 
+    /// Spent / unspent filter. `.all` shows the full set (matches the
+    /// previous behavior); `.unspent` and `.spent` narrow to the
+    /// matching `isSpent` value. Toggled via a segmented Picker
+    /// pinned to the top of the list so the choice survives scroll
+    /// position.
+    @State private var filter: SpentFilter = .all
+
+    private var filteredRecords: [PersistentTxo] {
+        switch filter {
+        case .all: return records
+        case .unspent: return records.filter { !$0.isSpent }
+        case .spent: return records.filter { $0.isSpent }
+        }
+    }
+
     var body: some View {
-        List(records) { record in
-            NavigationLink(destination: TxoStorageDetailView(record: record)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.outpointHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1).truncationMode(.middle)
-                    HStack {
-                        Text(record.formattedAmount).font(.caption)
-                        Spacer()
-                        if record.isSpent {
-                            Text("Spent").font(.caption2).foregroundColor(.red)
-                        } else {
-                            Text("Unspent").font(.caption2).foregroundColor(.green)
+        let visible = filteredRecords
+        List {
+            Section {
+                Picker("Filter", selection: $filter) {
+                    ForEach(SpentFilter.allCases, id: \.self) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            ForEach(visible) { record in
+                NavigationLink(destination: TxoStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(record.outpointHex)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1).truncationMode(.middle)
+                        HStack(spacing: 8) {
+                            Text(record.formattedAmount).font(.caption)
+                            // `height == 0` is the SPV convention for
+                            // "not yet in a block" (mempool /
+                            // unconfirmed). Render as a friendly
+                            // string instead of a literal "0" so the
+                            // distinction reads clearly.
+                            Text(record.height == 0 ? "mempool" : "h \(record.height)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if record.isSpent {
+                                Text("Spent").font(.caption2).foregroundColor(.red)
+                            } else {
+                                Text("Unspent").font(.caption2).foregroundColor(.green)
+                            }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("TXOs (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle") } }
+        .navigationTitle(filter == .all
+            ? "TXOs (\(records.count))"
+            : "TXOs (\(visible.count) / \(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle")
+            } else if visible.isEmpty {
+                ContentUnavailableView(
+                    "No \(filter.title) TXOs",
+                    systemImage: "bitcoinsign.circle"
+                )
+            }
+        }
+    }
+
+    private enum SpentFilter: CaseIterable, Hashable {
+        case all
+        case unspent
+        case spent
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .unspent: return "Unspent"
+            case .spent: return "Spent"
+            }
+        }
     }
 }
 
