@@ -59,6 +59,39 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
 
+# E2E test framework — see `tests/e2e/` for the integration harness
+# that exercises the wallet → SDK → broadcast pipeline against a
+# live testnet bank wallet. Pinned to the canonical published crate
+# names; cargo normalizes dash/underscore in keys but the published
+# name is the source of truth (e.g. `tokio-shared-rt`).
+tokio-shared-rt = "0.1"
+tempfile = "3"
+dotenvy = "0.15"
+bip39 = "2"
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+simple-signer = { path = "../simple-signer", features = ["derive"] }
+parking_lot = "0.12"
+# `dash-async::block_on` is the runtime-flavor-agnostic bridge used by
+# `framework/context_provider.rs` to call `SpvRuntime`'s async API
+# from the synchronous `ContextProvider` trait. Handles all three
+# tokio runtime scenarios (no runtime, current-thread, multi-thread)
+# without the `block_in_place` panic that `tokio::task::block_in_place`
+# triggers on a current-thread runtime.
+dash-async = { path = "../rs-dash-async" }
+# `rt` feature gives us `CancellationToken` for the panic-hook +
+# graceful-shutdown wiring described in the e2e plan.
+tokio-util = { version = "0.7", features = ["rt"] }
+# `TrustedHttpContextProvider` is the e2e harness's current default
+# context provider. It backs `Sdk::set_context_provider` with the
+# operator-trusted Quorum HTTP endpoint built into the crate (per
+# network) so testnet / mainnet runs work without spinning up an
+# SPV client. The SPV-backed provider lives in `framework/spv.rs`
+# and `framework/context_provider.rs` and is currently disabled
+# (see harness.rs) — re-enable when SPV cold-start is stable
+# (Task #15).
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
+
 
 [features]
 default = ["bls", "eddsa"]
