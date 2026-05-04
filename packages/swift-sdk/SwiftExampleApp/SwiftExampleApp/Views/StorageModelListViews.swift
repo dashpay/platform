@@ -737,24 +737,193 @@ struct TransactionStorageListView: View {
     @Query(sort: \PersistentTransaction.firstSeen, order: .reverse)
     private var records: [PersistentTransaction]
 
+    /// Live-search needle — matches against the canonical block-explorer
+    /// `txidHex` (byte-reversed) so a user can paste an explorer link's
+    /// id directly. Case-insensitive substring; empty disables the
+    /// filter entirely.
+    @State private var searchText: String = ""
+    /// Direction filter. `PersistentTransaction.direction` carries the
+    /// four values exposed by `TransactionDirection` on the Rust side
+    /// (`Incoming`/`Outgoing`/`Internal`/`CoinJoin`); `.all` keeps
+    /// everything.
+    @State private var directionFilter: DirectionFilter = .all
+    /// Transaction-type filter. Keyed on `transactionType` strings the
+    /// Rust FFI emits via `format!("{:?}", …)` on
+    /// `dashcore::TransactionType` (e.g. `"Classic Transaction"`,
+    /// `"Asset Lock Transaction"`). The legacy default placeholder
+    /// `"Standard"` is also tolerated so older rows still match
+    /// "Classic". `nil` means "any type".
+    @State private var typeFilter: String? = nil
+
+    /// Pre-defined list of every type the data model exposes. Not
+    /// derived from the live record set so that the picker shape stays
+    /// stable as the user changes filters and so reviewers can spot a
+    /// type that has zero rows (data exists / not exists is itself a
+    /// signal). Strings match the FFI-emitted Debug form on
+    /// `TransactionType`.
+    private static let knownTypes: [String] = [
+        "Classic Transaction",
+        "Provider Registration Transaction",
+        "Provider Update Service Transaction",
+        "Provider Update Registrar Transaction",
+        "Provider Update Revocation Transaction",
+        "Coinbase Transaction",
+        "Quorum Commitment Transaction",
+        "MNHF Signal Transaction",
+        "Asset Lock Transaction",
+        "Asset Unlock Transaction",
+    ]
+
+    private var filteredRecords: [PersistentTransaction] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let needle = trimmed.lowercased()
+        return records.filter { record in
+            // Direction.
+            switch directionFilter {
+            case .all: break
+            case .incoming where record.direction != 0: return false
+            case .outgoing where record.direction != 1: return false
+            case .internalTx where record.direction != 2: return false
+            case .coinjoin where record.direction != 3: return false
+            default: break
+            }
+            // Type. Treat the legacy `"Standard"` placeholder (the
+            // default the persister uses when the FFI column is nil)
+            // as equivalent to `"Classic Transaction"` so users
+            // searching for classic txs still see those rows.
+            if let want = typeFilter {
+                let actual = record.transactionType
+                let normalized = actual == "Standard" ? "Classic Transaction" : actual
+                if normalized != want { return false }
+            }
+            // Search needle.
+            if !needle.isEmpty {
+                if !record.txidHex.lowercased().contains(needle) { return false }
+            }
+            return true
+        }
+    }
+
     var body: some View {
-        List(records) { record in
-            NavigationLink(destination: TransactionStorageDetailView(record: record)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.txidHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1).truncationMode(.middle)
+        let visible = filteredRecords
+        List {
+            Section {
+                Picker("Direction", selection: $directionFilter) {
+                    ForEach(DirectionFilter.allCases, id: \.self) { d in
+                        Text(d.title).tag(d)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                // Type selection. 10+ options doesn't fit a segmented
+                // picker — use a `Menu` so the row stays single-line.
+                Menu {
+                    Button("All Types") { typeFilter = nil }
+                    Divider()
+                    ForEach(Self.knownTypes, id: \.self) { t in
+                        Button(displayName(forType: t)) { typeFilter = t }
+                    }
+                } label: {
                     HStack {
-                        Text(record.directionName).font(.caption)
+                        Text("Type")
+                            .foregroundColor(.primary)
                         Spacer()
-                        Text(record.formattedAmount)
-                            .font(.caption).foregroundColor(record.netAmount >= 0 ? .green : .red)
+                        Text(typeFilter.map(displayName(forType:)) ?? "All")
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            ForEach(visible) { record in
+                NavigationLink(destination: TransactionStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(record.txidHex)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1).truncationMode(.middle)
+                        HStack(spacing: 8) {
+                            Text(record.directionName).font(.caption)
+                            // Only surface the type label when it
+                            // isn't the default Classic — saves a
+                            // line on the most-common row shape.
+                            let normalizedType =
+                                record.transactionType == "Standard"
+                                    ? "Classic Transaction"
+                                    : record.transactionType
+                            if normalizedType != "Classic Transaction" {
+                                Text(displayName(forType: normalizedType))
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.purple.opacity(0.15))
+                                    .foregroundColor(.purple)
+                                    .clipShape(Capsule())
+                            }
+                            Spacer()
+                            Text(record.formattedAmount)
+                                .font(.caption)
+                                .foregroundColor(record.netAmount >= 0 ? .green : .red)
+                        }
                     }
                 }
             }
         }
-        .navigationTitle("Transactions (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.left.arrow.right.circle") } }
+        .navigationTitle(
+            (directionFilter == .all && typeFilter == nil && searchText.isEmpty)
+                ? "Transactions (\(records.count))"
+                : "Transactions (\(visible.count) / \(records.count))"
+        )
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search by tx id (hex)"
+        )
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "arrow.left.arrow.right.circle"
+                )
+            } else if visible.isEmpty {
+                ContentUnavailableView(
+                    "No matching transactions",
+                    systemImage: "magnifyingglass",
+                    description: Text("Adjust the search / direction / type filters")
+                )
+            }
+        }
+    }
+
+    /// Drop the redundant trailing "Transaction" word so the
+    /// segmented row + picker stay readable. `"Asset Lock
+    /// Transaction"` → `"Asset Lock"`, etc. The full string is what
+    /// gets compared against `record.transactionType` — only the
+    /// label is shortened.
+    private func displayName(forType raw: String) -> String {
+        let suffix = " Transaction"
+        if raw.hasSuffix(suffix) {
+            return String(raw.dropLast(suffix.count))
+        }
+        return raw
+    }
+
+    private enum DirectionFilter: CaseIterable, Hashable {
+        case all
+        case incoming
+        case outgoing
+        case internalTx
+        case coinjoin
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .incoming: return "In"
+            case .outgoing: return "Out"
+            case .internalTx: return "Internal"
+            case .coinjoin: return "CoinJoin"
+            }
+        }
     }
 }
 
