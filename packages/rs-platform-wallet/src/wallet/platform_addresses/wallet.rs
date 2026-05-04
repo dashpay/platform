@@ -248,8 +248,9 @@ impl PlatformAddressWallet {
     /// platform-address provider.
     ///
     /// Returns `None` when the provider hasn't been initialised yet
-    /// (no [`Self::initialize`] call) or when no sync has produced a
-    /// watermark in this session. The value is monotonic non-decreasing
+    /// (no [`Self::initialize`] call) or when the provider has no stored
+    /// watermark (whether restored via [`Self::apply_sync_state`] or
+    /// produced by a previous sync). The value is monotonic non-decreasing
     /// across [`Self::sync_balances`](super::sync) calls against the
     /// same chain — a later sync can only advance the watermark, never
     /// roll it back. A zero-valued watermark is reported as `None` to
