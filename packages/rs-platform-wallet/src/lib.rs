@@ -12,6 +12,7 @@
 #![allow(clippy::doc_lazy_continuation)]
 #![allow(clippy::doc_overindented_list_items)]
 
+pub mod address_paths;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;
@@ -28,6 +29,12 @@ pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFu
 // project `CoreChangeSet.addresses_derived` without taking an extra
 // direct dependency on `key-wallet-manager`.
 pub use key_wallet_manager::DerivedAddress;
+// Re-export the path-rendering helpers so FFI shims and other
+// consumers can render `DerivedAddress.derivation_path` without
+// reimplementing the layout rules.
+pub use address_paths::{
+    derivation_path_for_derived_address, derivation_path_string_for_derived_address,
+};
 pub use manager::identity_sync::{
     IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
     DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,
