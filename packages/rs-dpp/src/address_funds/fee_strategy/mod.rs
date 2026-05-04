@@ -195,6 +195,9 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         use crate::serialization::JsonConvertible;
         let original = AddressFundsFeeStrategyStep::DeductFromInput(7);
         let json = original.to_json().expect("to_json");
+        // `index` is a `u16` in the source type. JSON has only one number
+        // type, so the wire shape erases the U16 distinction (the value-path
+        // assertion below uses `7u16` explicitly to lock in the typed variant).
         assert_eq!(json, json!({"type": "deductFromInput", "index": 7}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
@@ -205,6 +208,7 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         use crate::serialization::JsonConvertible;
         let original = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX);
         let json = original.to_json().expect("to_json");
+        // `index` is a `u16`; JSON erases the size — see the deduct test above.
         assert_eq!(json, json!({"type": "reduceOutput", "index": u16::MAX}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
@@ -215,10 +219,11 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         use crate::serialization::ValueConvertible;
         let original = AddressFundsFeeStrategyStep::DeductFromInput(7);
         let value = original.to_object().expect("to_object");
-        // Note `7u16`: explicit suffix forces `Value::U16` in the expected,
-        // matching the field's actual u16 type. A bare `7` would expand via
-        // `to_value(&7i32)` and produce `Value::I32`, which would fail —
-        // catching any future change that silently widened the index type.
+        // `7u16`: explicit suffix forces `Value::U16` in the expected, matching
+        // the field's actual u16 type. A bare `7` would expand via
+        // `to_value(&7i32)` and produce `Value::I32`, which would fail — that
+        // distinction is exactly what JSON can't preserve but `platform_value`
+        // does, and what we want this test to lock in.
         assert_eq!(value, platform_value!({"type": "deductFromInput", "index": 7u16}));
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));

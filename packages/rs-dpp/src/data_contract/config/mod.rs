@@ -839,8 +839,11 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // Wire shape — full JSON visible at the call site. `StorageKeyRequirements`
-        // is `#[repr(u8)]` with `Serialize_repr`, so Unique = 0, Multiple = 1.
+        // `requiresIdentity{En,De}cryptionBoundedKey` are `Option<StorageKeyRequirements>`
+        // where `StorageKeyRequirements` is `#[repr(u8)]` with `Serialize_repr`
+        // (Unique = 0, Multiple = 1). JSON has only one number type, so the
+        // u8-ness of these fields is erased on the wire — the Value-path
+        // assertion below uses `0u8` / `1u8` to lock in the sized variant.
         assert_eq!(
             json,
             json!({
@@ -864,9 +867,8 @@ mod json_convertible_tests {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        // Note `0u8` / `1u8` suffixes: `StorageKeyRequirements` is `#[repr(u8)]`,
-        // and platform_value preserves sized variants (`Value::U8` here, not
-        // the U64 a bare integer literal would expand to).
+        // `0u8` / `1u8`: `StorageKeyRequirements` is `#[repr(u8)]`, and
+        // platform_value preserves sized variants (`Value::U8`, not `Value::U64`).
         assert_eq!(
             value,
             platform_value!({
