@@ -1166,7 +1166,23 @@ fn build_wallet_start_state(
         unsafe { slice::from_raw_parts(entry.accounts, entry.accounts_count) }
     };
     for spec in specs {
-        let account_type = account_type_from_spec(spec)?;
+        // Skip-and-continue on legacy `IdentityAuthentication{Ecdsa,Bls}`
+        // rows — those `AccountTypeTagFFI` discriminants are still ABI-
+        // valid but their upstream `AccountType` variants were removed,
+        // so `account_type_from_spec` deliberately returns `Err` for
+        // them. Propagating that with `?` would abort the entire
+        // `load()` (every wallet, every launch) the moment a single
+        // such row exists in SwiftData. Treating it as recoverable
+        // snapshot drift matches how the UTXO loop a few lines below
+        // handles the same failure mode.
+        let Ok(account_type) = account_type_from_spec(spec) else {
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                type_tag = ?spec.type_tag,
+                "load: skipping persisted account row with unmappable AccountType"
+            );
+            continue;
+        };
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
@@ -1215,7 +1231,18 @@ fn build_wallet_start_state(
     } else {
         unsafe { slice::from_raw_parts(entry.utxos, entry.utxos_count) }
     };
+    // Track each skip reason separately so a non-zero `dropped` value
+    // is debuggable without a native trace. The four categories have
+    // very different operational meanings — corruption (bad txid /
+    // unrenderable script), legitimate drift (no matching account),
+    // and ABI-only-present-tag (unmappable type for keys-only / legacy
+    // identity-auth rows). Each emits a `tracing::warn!` so a host
+    // running a subscriber sees the breakdown in real time.
     let mut routed = 0usize;
+    let mut dropped_account_type = 0usize;
+    let mut dropped_bad_txid = 0usize;
+    let mut dropped_bad_script = 0usize;
+    let mut dropped_no_account = 0usize;
     for u in utxo_entries {
         // Bring `Hash` into scope locally so `Txid::from_slice` is
         // available — matches the pattern used elsewhere in this
@@ -1237,13 +1264,24 @@ fn build_wallet_start_state(
             account_xpub_bytes_len: 0,
         };
         // Tags that don't map to any current `AccountType` (e.g.
-        // legacy `IdentityAuthentication{Ecdsa,Bls}`) are silently
-        // skipped — the SwiftData row can't be restored cleanly and
-        // the next sync will recover any funds it represents.
+        // legacy `IdentityAuthentication{Ecdsa,Bls}`) are skipped —
+        // the SwiftData row can't be restored cleanly and the next
+        // sync will recover any funds it represents.
         let Ok(account_type) = account_type_from_spec(&spec) else {
+            dropped_account_type += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                type_tag = ?u.type_tag,
+                "load: skipping persisted UTXO with unmappable AccountType"
+            );
             continue;
         };
         let Ok(txid) = dashcore::Txid::from_slice(&u.prev_txid) else {
+            dropped_bad_txid += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                "load: skipping persisted UTXO with malformed txid bytes"
+            );
             continue;
         };
         let outpoint = dashcore::OutPoint {
@@ -1252,6 +1290,13 @@ fn build_wallet_start_state(
         };
         let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes.to_vec());
         let Ok(address) = dashcore::Address::from_script(&script_pubkey, network) else {
+            dropped_bad_script += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                txid = %txid,
+                vout = u.vout,
+                "load: skipping persisted UTXO with un-decodable script_pubkey"
+            );
             continue;
         };
         let txout = dashcore::TxOut {
@@ -1316,11 +1361,31 @@ fn build_wallet_start_state(
         if let Some(funds_account) = target_funds {
             funds_account.utxos.insert(utxo.outpoint, utxo);
             routed += 1;
+        } else {
+            dropped_no_account += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                ?account_type,
+                "load: skipping persisted UTXO with no matching funds account in snapshot"
+            );
         }
-        // Snapshot drift (UTXO references an account that didn't
-        // make it into `entry.accounts`, or the account is keys-only
-        // / PlatformPayment) is silently skipped — re-sync will
-        // recover the row.
+    }
+    let dropped =
+        dropped_account_type + dropped_bad_txid + dropped_bad_script + dropped_no_account;
+    if dropped > 0 {
+        // Surface a single rollup line so operators see the totals
+        // even with `tracing` set to ERROR-only (the per-row warns
+        // above are the breakdown).
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            routed,
+            dropped,
+            dropped_account_type,
+            dropped_bad_txid,
+            dropped_bad_script,
+            dropped_no_account,
+            "load: persisted UTXO restore completed with skipped rows"
+        );
     }
 
     // Recompute balances from the freshly-loaded UTXO set. Raw
@@ -1328,9 +1393,13 @@ fn build_wallet_start_state(
     // path that keeps the per-account `balance` field in sync, so
     // the per-account confirmed/unconfirmed/immature/locked totals
     // and the wallet-level rollup stay zero unless we tell the info
-    // to reread them. `update_balance` walks every funds account,
-    // recomputes from `utxos` against `metadata.last_processed_height`,
-    // and sums into `wallet_info.balance`. The lock-free
+    // to reread them. `update_balance` walks every funds account
+    // and recomputes from `utxos` against the wallet's
+    // `metadata.synced_height` (passed through to
+    // `ManagedCoreFundsAccount::update_balance` as the
+    // `last_processed_height` parameter — that's the maturity
+    // baseline upstream uses; the parameter naming is historical),
+    // then sums into `wallet_info.balance`. The lock-free
     // `Arc<WalletBalance>` the UI reads is mirrored in
     // `manager::load::load_from_persistor` (`WalletBalance::set` is
     // `pub(crate)` to platform-wallet).

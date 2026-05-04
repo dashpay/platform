@@ -2003,40 +2003,53 @@ public class PlatformWalletPersistenceHandler {
             }
 
             let cachedBalances = loadCachedBalancesOnQueue(walletId: w.walletId)
+            // Compact-write into the buffer with a `written` counter so
+            // a malformed row (`hash.count != 20`) doesn't leave an
+            // uninitialized slot in the published slice. Rust reads
+            // exactly `entry.platform_address_balances_count` entries
+            // from the pointer; any uninit slot would be undefined
+            // behaviour. Same pattern the UTXO loader below uses.
             let addressBalancesBuffer: UnsafeMutablePointer<AddressBalanceEntryFFI>?
+            let addressBalancesWritten: Int
             if cachedBalances.isEmpty {
                 addressBalancesBuffer = nil
+                addressBalancesWritten = 0
             } else {
                 let buf = UnsafeMutablePointer<AddressBalanceEntryFFI>.allocate(
                     capacity: cachedBalances.count
                 )
-                for (j, cached) in cachedBalances.enumerated() {
+                var written = 0
+                for cached in cachedBalances {
                     let (addressType, hash, balance, nonce, accountIndex, addressIndex) = cached
-                    guard hash.count == 20 else {
-                        continue
-                    }
+                    guard hash.count == 20 else { continue }
 
                     var hashTuple:
                         (
                             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
                         ) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-                    if hash.count == 20 {
-                        withUnsafeMutableBytes(of: &hashTuple) { raw in
-                            raw.copyBytes(from: hash)
-                        }
+                    withUnsafeMutableBytes(of: &hashTuple) { raw in
+                        raw.copyBytes(from: hash)
                     }
 
-                    buf[j] = AddressBalanceEntryFFI(
+                    buf[written] = AddressBalanceEntryFFI(
                         address: PlatformAddressFFI(address_type: addressType, hash: hashTuple),
                         balance: balance,
                         nonce: nonce,
                         account_index: accountIndex,
                         address_index: addressIndex
                     )
+                    written += 1
                 }
-                addressBalancesBuffer = buf
-                allocation.addressBalanceArrays.append((buf, cachedBalances.count))
+                if written == 0 {
+                    buf.deallocate()
+                    addressBalancesBuffer = nil
+                    addressBalancesWritten = 0
+                } else {
+                    addressBalancesBuffer = buf
+                    addressBalancesWritten = written
+                    allocation.addressBalanceArrays.append((buf, written))
+                }
             }
 
             let syncState = w.network.flatMap { loadCachedSyncStateOnQueue(network: $0) }
@@ -2062,23 +2075,26 @@ public class PlatformWalletPersistenceHandler {
             entry.accounts = accountsBuffer.map { UnsafePointer($0) }
             entry.accounts_count = UInt(sortedAccounts.count)
             entry.platform_address_balances = addressBalancesBuffer.map { UnsafePointer($0) }
-            entry.platform_address_balances_count = UInt(cachedBalances.count)
+            entry.platform_address_balances_count = UInt(addressBalancesWritten)
             entry.platform_sync_height = syncState?.syncHeight ?? 0
             entry.platform_sync_timestamp = syncState?.syncTimestamp ?? 0
             entry.platform_last_known_recent_block = syncState?.lastKnownRecentBlock ?? 0
             entry.identities = identitiesBuffer.map { UnsafePointer($0) }
             entry.identities_count = UInt(sortedIdentities.count)
-            // Core-chain sync metadata. `last_processed_height` is
-            // intentionally NOT synthesized from `syncedHeight` — the
-            // two can diverge, and overstating processed progress on
-            // restore would let SPV skip blocks it still needs to
-            // replay. Persist a real watermark column to feed it; for
-            // now send 0 so the Rust loader's
-            // `ManagedWalletInfo::from_wallet` seed
-            // (`birth_height.saturating_sub(1)`) survives untouched.
+            // Core-chain sync metadata. `PersistentWallet` doesn't
+            // carry a separate `lastProcessedHeight` column today;
+            // for non-pruning SPV wallets the two heights advance in
+            // lockstep at runtime, so re-using `syncedHeight` keeps
+            // the restored wallet aligned with the runtime invariant.
+            // Sending `0` here would leave `metadata.last_processed_height`
+            // at `birth_height - 1` after restore, which mis-buckets
+            // matured coinbase outputs as immature in
+            // `update_balance` until SPV next advances. The proper
+            // fix is a dedicated column on `PersistentWallet` —
+            // tracked separately.
             entry.birth_height = w.birthHeight
             entry.synced_height = w.syncedHeight
-            entry.last_processed_height = 0
+            entry.last_processed_height = w.syncedHeight
             entry.last_synced = w.lastSynced
 
             // Persisted unspent UTXOs for this wallet. The SPV inbound
@@ -2267,15 +2283,23 @@ public class PlatformWalletPersistenceHandler {
                     var row = IdentityKeyRestoreFFI()
                     row.key_id = UInt32(bitPattern: pk.keyId)
                     // PersistentPublicKey stores the discriminants as
-                    // `String(rawValue)` of the original `UInt8` — same
-                    // shape as the `purposeEnum` / `securityLevelEnum` /
-                    // `keyTypeEnum` accessors on the model. Decode
-                    // back to `UInt8`; fall back to 0 (the safest DPP
-                    // default for each enum) on parse failure so we
-                    // don't drop the row entirely.
-                    row.key_type = UInt8(pk.keyType) ?? 0
-                    row.purpose = UInt8(pk.purpose) ?? 0
-                    row.security_level = UInt8(pk.securityLevel) ?? 0
+                    // `String(rawValue)` of the original `UInt8` —
+                    // same shape as the `purposeEnum` /
+                    // `securityLevelEnum` / `keyTypeEnum` accessors on
+                    // the model. Decode back to `UInt8`; fall back to
+                    // `UInt8.max` (an out-of-range sentinel) on parse
+                    // failure so Rust's
+                    // `KeyType::try_from(u8)` /
+                    // `Purpose::try_from(u8)` /
+                    // `SecurityLevel::try_from(u8)` rejects the row
+                    // and `build_identity_public_keys` drops it. The
+                    // prior fallback (`?? 0`) silently coerced
+                    // corrupt rows into ECDSA_SECP256K1 / AUTHENTICATION
+                    // / MASTER — a far worse outcome than a clean
+                    // skip-and-continue.
+                    row.key_type = UInt8(pk.keyType) ?? UInt8.max
+                    row.purpose = UInt8(pk.purpose) ?? UInt8.max
+                    row.security_level = UInt8(pk.securityLevel) ?? UInt8.max
                     row.read_only = pk.readOnly
 
                     // Allocate a dedicated byte buffer for the public

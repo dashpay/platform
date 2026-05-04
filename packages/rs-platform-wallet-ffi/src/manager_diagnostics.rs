@@ -78,7 +78,14 @@ pub unsafe extern "C" fn platform_wallet_manager_list_wallet_ids(
 pub unsafe extern "C" fn platform_wallet_manager_free_wallet_ids(bytes: *mut u8, count: usize) {
     if !bytes.is_null() && count > 0 {
         let total = count * 32;
-        drop(Vec::from_raw_parts(bytes, total, total));
+        // `Box::from_raw(slice_from_raw_parts_mut(...))` mirrors the
+        // producer side (`Box::into_raw(vec.into_boxed_slice())`)
+        // exactly. Using `Vec::from_raw_parts` would technically work
+        // because `into_boxed_slice` shrinks capacity to length, but
+        // its documented contract is "originally allocated by Vec";
+        // the boxed-slice form is unambiguous and matches the rest
+        // of this file.
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, total));
     }
 }
 
@@ -335,9 +342,12 @@ pub unsafe extern "C" fn platform_wallet_instant_send_locks(
 
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_instant_send_locks_free(bytes: *mut u8, count: usize) {
+    // See `platform_wallet_manager_free_wallet_ids` for the rationale
+    // on the `Box::from_raw` / `slice_from_raw_parts_mut` form (matches
+    // the producer's `Box::into_raw(vec.into_boxed_slice())`).
     if !bytes.is_null() && count > 0 {
         let total = count * 32;
-        drop(Vec::from_raw_parts(bytes, total, total));
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, total));
     }
 }
 
@@ -592,9 +602,8 @@ pub unsafe extern "C" fn platform_wallet_account_utxos_free(
     let slice = std::slice::from_raw_parts(utxos, count);
     for entry in slice {
         if !entry.script_pubkey.is_null() && entry.script_pubkey_len > 0 {
-            drop(Vec::from_raw_parts(
+            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                 entry.script_pubkey,
-                entry.script_pubkey_len,
                 entry.script_pubkey_len,
             ));
         }
@@ -719,7 +728,9 @@ pub unsafe extern "C" fn platform_wallet_identity_manager_out_of_wallet_ids_free
 ) {
     if !bytes.is_null() && count > 0 {
         let total = count * 32;
-        drop(Vec::from_raw_parts(bytes, total, total));
+        // Match the producer's `Box::into_raw(vec.into_boxed_slice())`
+        // shape — see `platform_wallet_manager_free_wallet_ids`.
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, total));
     }
 }
 

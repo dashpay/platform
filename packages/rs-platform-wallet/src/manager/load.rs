@@ -82,6 +82,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracked_asset_locks,
             };
 
+            // Insert into `wallet_manager` first so we have a wallet
+            // handle to validate against, then either keep the
+            // registration or roll it back. The two failure modes
+            // below — recomputed id mismatch and platform-address
+            // restore — used to leave the wallet half-registered:
+            // present in `wallet_manager` but absent from
+            // `self.wallets`, which broke the manager's invariant
+            // that the two collections describe the same set and
+            // poisoned any retry path.
             let wallet_id = {
                 let mut wm = self.wallet_manager.write().await;
                 wm.insert_wallet(wallet, platform_info).map_err(|e| {
@@ -93,6 +102,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
 
             if wallet_id != expected_wallet_id {
+                // Roll back the insert before bailing — the wallet
+                // we just registered isn't the one the snapshot
+                // claimed it was, and leaving it in `wallet_manager`
+                // would collide on the next retry.
+                let mut wm = self.wallet_manager.write().await;
+                let _ = wm.remove_wallet(&wallet_id);
                 return Err(PlatformWalletError::WalletCreation(format!(
                     "Persisted wallet id {} does not match recomputed id {}",
                     hex::encode(expected_wallet_id),
@@ -116,17 +131,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // Initialize the platform-address provider. If the snapshot
             // carried a slice for this wallet, restore it directly;
             // otherwise do a fresh scan from the live wallet manager.
+            // Roll back the `insert_wallet` on failure so the caller
+            // can retry without stepping over a stale registration.
             if let Some(persisted) = platform_addresses.remove(&wallet_id) {
-                platform_wallet
+                if let Err(e) = platform_wallet
                     .platform()
                     .initialize_from_persisted(persisted)
                     .await
-                    .map_err(|e| {
-                        PlatformWalletError::WalletCreation(format!(
-                            "Failed to restore platform address state: {}",
-                            e
-                        ))
-                    })?;
+                {
+                    let mut wm = self.wallet_manager.write().await;
+                    let _ = wm.remove_wallet(&wallet_id);
+                    return Err(PlatformWalletError::WalletCreation(format!(
+                        "Failed to restore platform address state: {}",
+                        e
+                    )));
+                }
             } else {
                 platform_wallet.platform().initialize().await;
             }
