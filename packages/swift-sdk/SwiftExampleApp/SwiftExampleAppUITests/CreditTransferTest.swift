@@ -4,10 +4,12 @@
 //
 //  Imports a wallet from a known testnet mnemonic that already has a
 //  registered identity, runs identity discovery, and asserts that the
-//  expected identity's balance is readable from the identity-detail
-//  view. We do not assert a non-zero floor — that would couple the
-//  test to live testnet funding state. The credit-transfer assertion
-//  is deferred to a follow-up.
+//  expected identity surfaces with a non-zero balance. The fixture
+//  identity is intentionally pre-funded; if it ever drains, top it up
+//  rather than weaken the assertion (otherwise a regression that breaks
+//  balance discovery would render `0` and silently pass —
+//  IdentityDetailView.onAppear doesn't refresh balance). The credit-
+//  transfer assertion itself is deferred to a follow-up.
 //
 //  Skipped automatically when the env var is unset, so the rest of the
 //  suite can run locally without test-network credentials.
@@ -25,6 +27,25 @@
 import XCTest
 
 final class CreditTransferTest: XCTestCase {
+    // The two constants below are deterministic functions of the
+    // mnemonic stored in the `UI_TEST_MNEMONIC` GitHub Actions secret.
+    // **They MUST be regenerated whenever the secret is rotated** — a
+    // mismatched fixture will surface as an opaque
+    // `waitForIdentityRow` timeout ("identity row not found within
+    // 60s") with no breadcrumb pointing here.
+    //
+    // Regeneration steps (manual, one-time per rotation):
+    //   1. `simctl erase` a fresh simulator.
+    //   2. Run `testImportWalletAndDiscoverIdentity` locally with the
+    //      new mnemonic in `TEST_RUNNER_UI_TEST_MNEMONIC`.
+    //   3. Watch the Wallets tab for the `wallets.walletRow.<hex>`
+    //      identifier on the imported wallet — that hex is
+    //      `expectedSenderWalletIdHex`.
+    //   4. After discovery, watch the Identities tab for the
+    //      `identities.row.<base58>` identifier on the discovered
+    //      identity — that base58 is `expectedSenderIdentityIdBase58`.
+    //   5. Paste both here and update the PR.
+
     /// The pre-registered identity behind the sender mnemonic. Discovery
     /// must surface this exact ID — that's the regression check on the
     /// discovery path.
@@ -107,11 +128,17 @@ final class CreditTransferTest: XCTestCase {
         let senderRow = waitForIdentityRow(idBase58: expectedSenderIdentityIdBase58, in: app)
         senderRow.tap()
 
-        // Helper XCTFails if the balance can't be parsed; reaching this
-        // line confirms identityDetail.balanceLabel exposed a readable
-        // credit count. We deliberately don't assert a non-zero floor —
-        // the test's scope is discovery + balance readability, not the
-        // external testnet-funding state of the fixture identity.
-        _ = readIdentityBalanceCredits(in: app)
+        // The fixture identity is pre-funded; assert > 0 so a regression
+        // that breaks balance discovery (returns 0) actually fails this
+        // test. `IdentityDetailView.onAppear` only refreshes
+        // DPNS/DashPay/tokens — it doesn't refresh balance — so without
+        // this floor the assertion would only check parseability and a
+        // 0-credit render would silently pass.
+        let credits = readIdentityBalanceCredits(in: app)
+        XCTAssertGreaterThan(
+            credits,
+            0,
+            "Expected discovered identity \(expectedSenderIdentityIdBase58) to surface a non-zero balance. If the testnet fixture identity has drained, top it up rather than weaken this assertion."
+        )
     }
 }

@@ -404,7 +404,8 @@ func switchAppNetworkToTestnet(
         file: file, line: line
     )
 
-    if !testnetButton.isSelected {
+    let tappedToSwitch = !testnetButton.isSelected
+    if tappedToSwitch {
         testnetButton.tap()
     }
 
@@ -437,6 +438,33 @@ func switchAppNetworkToTestnet(
         "Expected network status label.",
         file: file, line: line
     )
+
+    // When we actually tapped to switch, observe the "Switching..." state
+    // before trusting "Connected". The status label isn't network-aware
+    // (it cycles between "Connected", "Switching...", "Disconnected"), so
+    // a stale "Connected" from the *previous* network can satisfy the
+    // predicate before the AppState chain (`currentNetwork.didSet` →
+    // `beginNetworkSwitch` → `isSwitchingNetwork = true` → SwiftUI
+    // rerender) has flipped the label. Observing "Switching..." first
+    // proves that chain ran. Idempotent path (already on testnet) skips
+    // this — there's no transition to wait for.
+    if tappedToSwitch {
+        let switchingPredicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement, element.exists else { return false }
+            return element.label.contains("Switching")
+        }
+        let switchingResult = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: switchingPredicate, object: statusLabel)],
+            timeout: 10
+        )
+        XCTAssertEqual(
+            switchingResult,
+            .completed,
+            "Status label never showed 'Switching...' after the testnet tap. Either the AppState chain didn't fire or the switch completed faster than the XCUITest poll cadence. Last label: \(statusLabel.label).",
+            file: file, line: line
+        )
+    }
+
     let connectedPredicate = NSPredicate { object, _ in
         guard let element = object as? XCUIElement, element.exists else { return false }
         return element.label.contains("Connected")
@@ -481,18 +509,22 @@ func runIdentityDiscovery(
     // computes a `{-1, -1}` hit point on freshly-shown menu items, the
     // auto-retry then taps a stale element, and the sheet never opens.
     // Wrap "open menu, tap item, verify sheet" in a retry loop driven
-    // by the actual signal (Search Wallets nav bar appears). Re-tap
-    // `addMenu` only when the menu item from the previous attempt isn't
-    // still visible — re-tapping while the menu is open *closes* it.
+    // by the actual signal (Search Wallets nav bar appears).
+    //
+    // Re-tap `addMenu` unconditionally on each retry. A previous attempt
+    // to skip the re-tap when the menu item was already visible turned
+    // out to lock us into the same bad hit point — if the item-tap
+    // missed but the menu stayed open, the next iteration re-tapped the
+    // same dead spot. Closing-and-reopening the menu forces a fresh
+    // accessibility-tree snapshot with a new hit point.
     let searchSheetNavBar = app.navigationBars["Search Wallets"]
     var sheetOpened = false
     for _ in 0..<3 where !sheetOpened {
+        addMenu.tap()
+
         let searchMenuItem = app.descendants(matching: .any)
             .matching(identifier: Identifier.Identities.searchWalletsMenuItem)
             .firstMatch
-        if !searchMenuItem.exists {
-            addMenu.tap()
-        }
         if searchMenuItem.waitForExistence(timeout: 3) {
             searchMenuItem.tap()
         } else {
@@ -580,7 +612,13 @@ func runIdentityDiscovery(
     let foundPredicate = NSPredicate { object, _ in
         guard let element = object as? XCUIElement, element.exists else { return false }
         let label = element.label
-        return label.hasPrefix("+") && label != "+0"
+        // SearchWalletsForIdentitiesView renders `"+\(foundCount)"`, so
+        // require literally "+<digits>" (excluding "+0") rather than
+        // accepting any "+"-prefixed string. Defends against future
+        // label format drift without coupling to a specific count.
+        return label.hasPrefix("+")
+            && label.dropFirst().allSatisfy(\.isNumber)
+            && label != "+0"
     }
     XCTAssertEqual(
         XCTWaiter.wait(
@@ -671,34 +709,26 @@ func readIdentityBalanceCredits(
 /// `Wallet operation: Wallet already exists` because walletId is
 /// deterministic from the mnemonic.
 ///
-/// Sweeps the entire wallets list (not just the current viewport): a
-/// developer with N accumulated `ImportTransfer-*` wallets from prior
-/// runs has some sitting below the fold, where `firstMatch` of an
-/// unrooted predicate query won't see them.
+/// Bails as soon as no matching row is visible: an earlier full-sweep
+/// implementation issued blind `swipeUp` calls on an empty wallets list
+/// and routinely tripped XCUITest's 60s event-synthesis timeout (per
+/// swipe), blowing the test runtime out by ~20+ minutes. If a developer
+/// has accumulated more `ImportTransfer-*` wallets than the viewport
+/// can hold, `simctl erase` is the right recovery (documented in
+/// SwiftExampleAppUITests/README.md).
 @MainActor
 func cleanupWalletsByPrefix(_ prefix: String, in app: XCUIApplication) {
     let walletsScreen = element(Identifier.walletsScreen, in: app)
     guard walletsScreen.waitForExistence(timeout: 10) else { return }
 
     let predicate = NSPredicate(format: "label BEGINSWITH %@", prefix)
-
-    // Reset toward the top so the sweep starts at a known position.
-    for _ in 0..<6 { app.swipeDown() }
-
-    // Each iteration: if a matching row is visible, delete it (which
-    // navigates away) and reset back to the wallets list, then continue
-    // from the top. If nothing visible, scroll up to expose more rows.
-    // 20 iterations = up to ~10 deletions + ~10 swipes worth of list.
-    for _ in 0..<20 {
+    for _ in 0..<10 {
         let row = app.buttons.matching(predicate).firstMatch
-        if row.exists {
-            let name = row.label
-            bestEffortDeleteWallet(named: name, in: app)
-            openWalletsTab(in: app)
-            for _ in 0..<6 { app.swipeDown() }
-            continue
+        if !row.waitForExistence(timeout: 1) {
+            return
         }
-        app.swipeUp()
+        let name = row.label
+        bestEffortDeleteWallet(named: name, in: app)
     }
 }
 
@@ -712,6 +742,25 @@ func cleanupWalletsByPrefix(_ prefix: String, in app: XCUIApplication) {
 /// instead of XCTAssert calls.
 @MainActor
 func bestEffortDeleteWallet(named walletName: String, in app: XCUIApplication) {
+    // If a previous failure left Keychain mnemonics behind without
+    // matching SwiftData rows, the cold-launch shows the orphan-mnemonic
+    // recovery prompt before any UI we care about. Dismiss it
+    // best-effort so the rest of the helper isn't silently no-oped by
+    // a modal blocking the wallets tab. The prompt's "Cancel" button
+    // declines the recovery offer (we then proceed with the deletion
+    // we came here to do).
+    let recoverAlert = app.alerts["Recover Wallet?"]
+    if recoverAlert.waitForExistence(timeout: 1) {
+        if recoverAlert.buttons["Cancel"].exists {
+            recoverAlert.buttons["Cancel"].tap()
+        } else if recoverAlert.buttons["Don't Recover"].exists {
+            recoverAlert.buttons["Don't Recover"].tap()
+        } else {
+            // Last-ditch: tap whatever the dismissive button is by index.
+            recoverAlert.buttons.element(boundBy: 0).tap()
+        }
+    }
+
     let walletsScreen = element(Identifier.walletsScreen, in: app)
     if !walletsScreen.exists {
         let walletsTab = app.tabBars.buttons

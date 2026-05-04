@@ -196,13 +196,20 @@ jobs:
             -resultBundlePath "$RESULT_BUNDLE_PATH"
 
       - name: Upload XCUITest result bundle
-        if: always()
+        # `failure()` only — xcresult bundles include the XCUITest activity
+        # log (which records `typeText` arguments) and may include failure
+        # screenshots. `importWallet` types the testnet mnemonic into a
+        # plain TextField, so a successful run's artifact would archive
+        # the mnemonic in the activity log. Restricting to failures
+        # narrows the leak surface (you only get the artifact when there's
+        # something to debug). 7-day retention also reduces exposure.
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: SwiftExampleAppUITests-xcresult
           path: ${{ runner.temp }}/SwiftExampleAppUITests.xcresult
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 7
 
       - name: Delete disposable simulator
         if: always() && steps.simulator.outputs.udid != ''
