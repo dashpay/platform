@@ -791,9 +791,16 @@ struct TokenActionPermissionsView: View {
     }
 
     private func refreshTokenBalance() async {
+        // Drop any stale value first so a slow / failed lookup can't
+        // forward the *previous* identity's balance into Transfer or
+        // Burn while the new fetch is in flight.
+        await MainActor.run { self.fetchedBalance = nil }
+
         guard let identity = resolvedIdentity, let sdk = appState.sdk else {
             return
         }
+        let identityIdAtStart = identity.identityId
+
         // `PersistentToken.id` is a SwiftData uniqueness key
         // (`contractId + position.bigEndian`) — *not* the on-chain
         // canonical token id. The SDK's balance lookup is keyed by
@@ -811,13 +818,18 @@ struct TokenActionPermissionsView: View {
                 tokenIds: [canonicalTokenId]
             )
             await MainActor.run {
+                // The user may have switched identity while we were
+                // awaiting; only commit if the resolved identity still
+                // matches the one this fetch was for.
+                guard self.resolvedIdentity?.identityId == identityIdAtStart
+                else { return }
                 // Default missing entries to 0 — the SDK omits tokens
                 // the identity has never held.
                 self.fetchedBalance = balances[canonicalTokenId] ?? 0
             }
         } catch {
-            // Keep the seeded value; per-action views still fall back
-            // to the persisted row when this stays nil.
+            // `fetchedBalance` already cleared above; per-action views
+            // fall back to the persisted row when this stays nil.
         }
     }
 

@@ -17,6 +17,15 @@ import Foundation
 /// naturally. Returns `nil` for empty / unparseable / negative /
 /// out-of-`UInt64`-range input.
 ///
+/// The grammar is deliberately strict: digits, optionally followed by
+/// a single separator and more digits — *no* thousands separators, no
+/// trailing junk, no scientific notation. `Decimal(string:)` on its
+/// own happily accepts a valid prefix and silently drops the rest, so
+/// `"5abc"` would parse as `5` and a pasted `"1,234.56"` (after the
+/// `,` → `.` normalization) would become `"1.234.56"` and parse as
+/// `1.234`. Either of those would let the user submit a materially
+/// different raw amount than what they think they typed.
+///
 /// Excess fractional digits beyond `decimals` are truncated (rounded
 /// down). Silently rounding *up* would let the user submit slightly
 /// more than they typed, which would surprise on a balance edge.
@@ -25,6 +34,11 @@ func parseTokenAmount(_ text: String, decimals: Int) -> UInt64? {
     guard !trimmed.isEmpty else { return nil }
 
     let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
+
+    // Strict grammar: `\d+(\.\d+)?` or `\.\d+` (a leading-dot like
+    // ".5" is what `.decimalPad` actually emits in some locales).
+    guard isWellFormedDecimal(normalized) else { return nil }
+
     guard let entered = Decimal(string: normalized), entered >= 0 else {
         return nil
     }
@@ -37,6 +51,22 @@ func parseTokenAmount(_ text: String, decimals: Int) -> UInt64? {
 
     if rounded < 0 || rounded > Decimal(UInt64.max) { return nil }
     return (rounded as NSDecimalNumber).uint64Value
+}
+
+private func isWellFormedDecimal(_ s: String) -> Bool {
+    var sawDigit = false
+    var sawDot = false
+    for ch in s {
+        if ch.isASCII, let ascii = ch.asciiValue, ascii >= 0x30 && ascii <= 0x39 {
+            sawDigit = true
+        } else if ch == "." {
+            if sawDot { return false }
+            sawDot = true
+        } else {
+            return false
+        }
+    }
+    return sawDigit
 }
 
 /// Format a raw u64 token amount with the given decimals. Uses the

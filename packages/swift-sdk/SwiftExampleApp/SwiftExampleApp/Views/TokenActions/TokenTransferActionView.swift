@@ -126,11 +126,13 @@ struct TokenTransferActionView: View {
         return balance.displayBalance
     }
 
+    /// Match against the SwiftData relationship key. The earlier
+    /// `tb.tokenId == token.id.toBase58String()` arm of this matcher
+    /// was always false: `tb.tokenId` holds the canonical on-chain
+    /// token id while `token.id` is a `contractId + position` SwiftData
+    /// uniqueness key.
     private var matchingBalance: PersistentTokenBalance? {
-        identity.tokenBalances.first { tb in
-            tb.tokenId == token.id.toBase58String()
-                || tb.token?.id == token.id
-        }
+        identity.tokenBalances.first { $0.token?.id == token.id }
     }
 
     /// Parse the user's input as a decimal number in display units and
