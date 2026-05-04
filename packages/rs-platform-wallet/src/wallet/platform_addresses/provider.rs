@@ -432,6 +432,41 @@ impl PlatformPaymentAddressProvider {
         self.sync_timestamp = timestamp;
         self.last_known_recent_block = last_known_recent_block;
     }
+
+    /// Diagnostic snapshot counts used by the read-only memory
+    /// explorer surface on
+    /// [`crate::manager::PlatformWalletManager::platform_address_provider_state_blocking`].
+    /// Returns `(accounts_watched, found_count, known_balances_count)`
+    /// for `wallet_id`. Reading both `found.len()` and `addresses.len()`
+    /// from the same per-account state captures the two concepts the
+    /// explorer wants to surface separately.
+    pub fn diagnostic_counts(&self, wallet_id: &WalletId) -> (usize, usize, usize) {
+        let Some(state) = self.per_wallet.get(wallet_id) else {
+            return (0, 0, 0);
+        };
+        let accounts_watched = state.len();
+        let mut found_count = 0;
+        let mut known_balances_count = 0;
+        for account_state in state.values() {
+            // `found` holds proven-present addresses with balances —
+            // this is exactly the "currently has a balance" set the
+            // SDK seeds the next pass with.
+            found_count += account_state.found.len();
+            // `addresses` is the bijection of every derivation index
+            // we've ever tracked for this account, so its size is the
+            // "known balances slot count" the explorer reports.
+            known_balances_count += account_state.addresses.len();
+        }
+        (accounts_watched, found_count, known_balances_count)
+    }
+
+    /// Diagnostic getter — the unified-pass watermark height as a
+    /// `u32` (the SDK exposes it as `u64` internally; the diagnostic
+    /// surface is `u32` to match the rest of the explorer's height
+    /// fields).
+    pub fn diagnostic_sync_height_u32(&self) -> u32 {
+        self.sync_height as u32
+    }
 }
 
 #[async_trait]

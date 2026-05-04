@@ -59,6 +59,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
 
             let balance = Arc::new(WalletBalance::new());
+            // Mirror the inner `ManagedWalletInfo.balance` (already
+            // recomputed from the freshly-loaded UTXO set on the FFI
+            // side via `update_balance`) into the lock-free `Arc` the
+            // UI reads. Without this, `wallet.balance()` reports zero
+            // for restored wallets even though the per-account totals
+            // and the inner `core_wallet.balance` are correct.
+            // `WalletBalance::set` is `pub(crate)`, which is why this
+            // step has to live inside `platform_wallet` rather than
+            // the FFI loader.
+            let core_balance = &wallet_info.balance;
+            balance.set(
+                core_balance.confirmed(),
+                core_balance.unconfirmed(),
+                core_balance.immature(),
+                core_balance.locked(),
+            );
             let platform_info = PlatformWalletInfo {
                 core_wallet: wallet_info,
                 balance: Arc::clone(&balance),

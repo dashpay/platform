@@ -151,7 +151,7 @@ pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
 
     let entries: Vec<crate::core_wallet_types::AccountBalanceEntryFFI> = balances
         .into_iter()
-        .map(|(account_type, balance)| {
+        .map(|(account_type, balance, keys_used, keys_total)| {
             let tags = crate::core_wallet_types::account_type_to_tags(&account_type);
             crate::core_wallet_types::AccountBalanceEntryFFI {
                 type_tag: tags.type_tag,
@@ -165,6 +165,8 @@ pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
                 unconfirmed: balance.unconfirmed(),
                 immature: balance.immature(),
                 locked: balance.locked(),
+                keys_used,
+                keys_total,
             }
         })
         .collect();

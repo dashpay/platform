@@ -3,9 +3,14 @@ import SwiftData
 
 /// SwiftData model for persisting core wallet metadata.
 ///
-/// Represents a single HD wallet with its sync state and balance.
+/// Represents a single HD wallet with its sync state.
 /// Owns accounts via cascade delete — removing a wallet removes all
 /// its accounts, transactions, and UTXOs.
+///
+/// The wallet-level cached balance fields were removed — the canonical
+/// "live" Core balance is summed on demand from
+/// `PlatformWalletManager.accountBalances(for:)` (Rust in-memory FFI).
+/// Per-account totals continue to live on `PersistentAccount`.
 @Model
 public final class PersistentWallet {
     /// 32-byte wallet ID (SHA256 of root public key).
@@ -37,14 +42,6 @@ public final class PersistentWallet {
     public var syncedHeight: UInt32
     /// Timestamp of last sync (Unix seconds).
     public var lastSynced: UInt64
-    /// Confirmed balance in duffs.
-    public var balanceConfirmed: UInt64
-    /// Unconfirmed balance in duffs.
-    public var balanceUnconfirmed: UInt64
-    /// Immature balance in duffs.
-    public var balanceImmature: UInt64
-    /// Locked balance in duffs.
-    public var balanceLocked: UInt64
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for
@@ -84,10 +81,6 @@ public final class PersistentWallet {
         self.birthHeight = birthHeight
         self.syncedHeight = syncedHeight
         self.lastSynced = 0
-        self.balanceConfirmed = 0
-        self.balanceUnconfirmed = 0
-        self.balanceImmature = 0
-        self.balanceLocked = 0
         self.isImported = isImported
         self.createdAt = Date()
         self.lastUpdated = Date()

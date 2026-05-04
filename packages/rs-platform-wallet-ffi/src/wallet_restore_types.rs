@@ -215,6 +215,40 @@ pub struct IdentityRestoreEntryFFI {
     pub keys_count: usize,
 }
 
+/// One unspent UTXO row to rehydrate into a funds-bearing account's
+/// `ManagedCoreFundsAccount.utxos` map at startup.
+///
+/// The leading account-tag block is the same `(type_tag, standard_tag,
+/// index, registration_index, key_class, user_identity_id,
+/// friend_identity_id)` shape `AccountSpecFFI` uses, so the loader can
+/// reuse `account_type_from_spec` for routing. Keys-only and
+/// PlatformPayment variants are skipped on the receive side — they
+/// don't carry UTXOs.
+///
+/// `script_pubkey` is a Swift-owned byte buffer; the address string is
+/// reconstructed from `(script_pubkey, network)` on the Rust side, so
+/// no C-string field is needed here.
+#[repr(C)]
+pub struct UtxoRestoreEntryFFI {
+    pub type_tag: AccountTypeTagFFI,
+    pub standard_tag: StandardAccountTypeTagFFI,
+    pub account_index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub prev_txid: [u8; 32],
+    pub vout: u32,
+    pub value_duffs: u64,
+    pub script_pubkey: *const u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_coinbase: bool,
+    pub is_confirmed: bool,
+    pub is_instantlocked: bool,
+    pub is_locked: bool,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -242,6 +276,20 @@ pub struct WalletRestoreEntryFFI {
     /// `null` / `0` when the wallet has no persisted identities.
     pub identities: *const IdentityRestoreEntryFFI,
     pub identities_count: usize,
+    /// Core-chain sync metadata stamped onto the rebuilt
+    /// `ManagedWalletInfo.metadata` at load time. Zero is treated as
+    /// "unknown" — the snapshot leaves the field at its default in
+    /// that case (which `from_wallet` already seeds from
+    /// `birth_height - 1`). `last_synced` is Unix seconds.
+    pub birth_height: u32,
+    pub synced_height: u32,
+    pub last_processed_height: u32,
+    pub last_synced: u64,
+    /// Persisted unspent UTXOs to repopulate funds-bearing accounts.
+    /// Swift-owned, freed by `LoadWalletListFreeFn` — including each
+    /// row's `script_pubkey` buffer.
+    pub utxos: *const UtxoRestoreEntryFFI,
+    pub utxos_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
@@ -255,6 +303,8 @@ unsafe impl Send for IdentityRestoreEntryFFI {}
 unsafe impl Sync for IdentityRestoreEntryFFI {}
 unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
+unsafe impl Send for UtxoRestoreEntryFFI {}
+unsafe impl Sync for UtxoRestoreEntryFFI {}
 
 /// Paired free callback for the wallet-list load callback. Releases
 /// any memory Swift allocated for the entries array, the per-wallet

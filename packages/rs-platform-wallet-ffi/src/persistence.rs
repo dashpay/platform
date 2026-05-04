@@ -10,6 +10,7 @@ use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
@@ -41,7 +42,8 @@ use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
+    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UtxoRestoreEntryFFI,
+    WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -1178,13 +1180,163 @@ fn build_wallet_start_state(
             .map_err(|e| format!("AccountCollection::insert failed: {}", e))?;
     }
 
-    // Watch-only wallet via the new unit-variant constructor — takes
-    // the wallet_id directly (no recomputation from a root xpub we
-    // don't store anymore). Signing ops error out until a follow-up
-    // unlock path builds a signing wallet from the mnemonic.
-    let wallet = Wallet::new_watch_only(network, entry.wallet_id, accounts);
+    // External-signable wallet — the mnemonic / seed lives in the
+    // iOS Keychain, not in this Rust handle. Signing requests route
+    // back to the host through the configured signer surface; the
+    // host fetches the mnemonic from the Keychain on demand. The
+    // wallet_id is passed in directly (no recomputation from a root
+    // xpub the snapshot doesn't carry).
+    let wallet = Wallet::new_external_signable(network, entry.wallet_id, accounts);
 
-    let wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    // Stamp the persisted core-chain sync metadata onto the rebuilt
+    // managed-info. `from_wallet` seeds `synced_height` and
+    // `last_processed_height` to `birth_height - 1`; we then override
+    // with the values Swift actually persisted, treating zero as
+    // "unknown" so we don't clobber the seeded default for fresh /
+    // never-synced wallets.
+    let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, entry.birth_height);
+    if entry.synced_height > 0 {
+        wallet_info.metadata.synced_height = entry.synced_height;
+    }
+    if entry.last_processed_height > 0 {
+        wallet_info.metadata.last_processed_height = entry.last_processed_height;
+    }
+    if entry.last_synced > 0 {
+        wallet_info.metadata.last_synced = Some(entry.last_synced);
+    }
+
+    // Persisted unspent UTXOs → funds-bearing accounts. Keys-only and
+    // PlatformPayment variants are skipped: the former never carry
+    // UTXOs, the latter route through `PlatformAddressSyncStartState`.
+    // Each row is mapped from `(prev_txid, vout, script_pubkey,
+    // value, height, flags)` into the target account's `utxos` map.
+    let utxo_entries: &[UtxoRestoreEntryFFI] = if entry.utxos.is_null() || entry.utxos_count == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(entry.utxos, entry.utxos_count) }
+    };
+    let mut routed = 0usize;
+    for u in utxo_entries {
+        // Bring `Hash` into scope locally so `Txid::from_slice` is
+        // available — matches the pattern used elsewhere in this
+        // crate (see e.g. asset_lock/sync.rs).
+        use dashcore::hashes::Hash;
+        let script_bytes = unsafe { slice_from_raw(u.script_pubkey, u.script_pubkey_len) };
+        // Build the AccountType via the same helper the per-spec path
+        // uses, repackaged as an `AccountSpecFFI` so we can reuse
+        // `account_type_from_spec` (it ignores `account_xpub_bytes`).
+        let spec = AccountSpecFFI {
+            type_tag: u.type_tag,
+            standard_tag: u.standard_tag,
+            index: u.account_index,
+            registration_index: u.registration_index,
+            key_class: u.key_class,
+            user_identity_id: u.user_identity_id,
+            friend_identity_id: u.friend_identity_id,
+            account_xpub_bytes: std::ptr::null(),
+            account_xpub_bytes_len: 0,
+        };
+        // Tags that don't map to any current `AccountType` (e.g.
+        // legacy `IdentityAuthentication{Ecdsa,Bls}`) are silently
+        // skipped — the SwiftData row can't be restored cleanly and
+        // the next sync will recover any funds it represents.
+        let Ok(account_type) = account_type_from_spec(&spec) else {
+            continue;
+        };
+        let Ok(txid) = dashcore::Txid::from_slice(&u.prev_txid) else {
+            continue;
+        };
+        let outpoint = dashcore::OutPoint {
+            txid,
+            vout: u.vout,
+        };
+        let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes.to_vec());
+        let Ok(address) = dashcore::Address::from_script(&script_pubkey, network) else {
+            continue;
+        };
+        let txout = dashcore::TxOut {
+            value: u.value_duffs,
+            script_pubkey,
+        };
+        let utxo = key_wallet::Utxo {
+            outpoint,
+            txout,
+            address,
+            height: u.height,
+            is_coinbase: u.is_coinbase,
+            is_confirmed: u.is_confirmed,
+            is_instantlocked: u.is_instantlocked,
+            is_locked: u.is_locked,
+            // `is_trusted` is a runtime-only flag derived from the
+            // tx graph (we created it ourselves and it pays back to
+            // us). Recompute on the next SPV pass; default to false.
+            is_trusted: false,
+        };
+        // Route into the target funds-bearing account. Match on the
+        // resolved `AccountType` and look up the right map field. Keys
+        // and Platform variants are intentionally no-ops.
+        let target_funds = match account_type {
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP44Account,
+            } => wallet_info.accounts.standard_bip44_accounts.get_mut(&index),
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP32Account,
+            } => wallet_info.accounts.standard_bip32_accounts.get_mut(&index),
+            AccountType::CoinJoin { index } => {
+                wallet_info.accounts.coinjoin_accounts.get_mut(&index)
+            }
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info
+                .accounts
+                .dashpay_receival_accounts
+                .get_mut(&key_wallet::account::account_collection::DashpayAccountKey {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                }),
+            AccountType::DashpayExternalAccount {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&key_wallet::account::account_collection::DashpayAccountKey {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                }),
+            _ => None,
+        };
+        if let Some(funds_account) = target_funds {
+            funds_account.utxos.insert(utxo.outpoint, utxo);
+            routed += 1;
+        }
+        // Snapshot drift (UTXO references an account that didn't
+        // make it into `entry.accounts`, or the account is keys-only
+        // / PlatformPayment) is silently skipped — re-sync will
+        // recover the row.
+    }
+
+    // Recompute balances from the freshly-loaded UTXO set. Raw
+    // `account.utxos.insert` bypasses the normal `record_transaction`
+    // path that keeps the per-account `balance` field in sync, so
+    // the per-account confirmed/unconfirmed/immature/locked totals
+    // and the wallet-level rollup stay zero unless we tell the info
+    // to reread them. `update_balance` walks every funds account,
+    // recomputes from `utxos` against `metadata.last_processed_height`,
+    // and sums into `wallet_info.balance`. The lock-free
+    // `Arc<WalletBalance>` the UI reads is mirrored in
+    // `manager::load::load_from_persistor` (`WalletBalance::set` is
+    // `pub(crate)` to platform-wallet).
+    if routed > 0 {
+        wallet_info.update_balance();
+    }
 
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {

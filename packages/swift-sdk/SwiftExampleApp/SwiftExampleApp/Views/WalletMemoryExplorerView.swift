@@ -50,6 +50,69 @@ private func formatDuffs(_ duffs: UInt64) -> String {
         ?? String(format: "%.8f DASH", dash)
 }
 
+/// Coarse classification of which underlying Rust variant carries the
+/// account: `ManagedCoreFundsAccount`, `ManagedCoreKeysAccount`, or the
+/// separate `ManagedPlatformAccount`. Drives the row badge so the
+/// natural emptiness of keys-only rows (no balance, no UTXOs) reads as
+/// intentional rather than a missing-data bug.
+///
+/// Mapping mirrors the post-split account-collection layout in
+/// `key-wallet/src/managed_account/managed_account_collection.rs`:
+/// Standard BIP44/BIP32, CoinJoin, and DashPay receive/external sit in
+/// the funds variant; identity / asset-lock / provider account slots
+/// were promoted to the keys variant; PlatformPayment is its own type.
+private enum AccountVariantKind {
+    case funds
+    case keys
+    case platform
+
+    var label: String {
+        switch self {
+        case .funds: return "Funds"
+        case .keys: return "Keys"
+        case .platform: return "Platform"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .funds: return .green
+        case .keys: return .blue
+        case .platform: return .purple
+        }
+    }
+}
+
+private func accountVariantKind(typeTag: UInt8) -> AccountVariantKind {
+    switch typeTag {
+    // 0 Standard, 1 CoinJoin, 12 DashpayReceiving, 13 DashpayExternal
+    case 0, 1, 12, 13: return .funds
+    // 14 PlatformPayment lives on `ManagedPlatformAccount`, a distinct
+    // type from the core funds/keys split.
+    case 14: return .platform
+    // Everything else (identity registration / topup / invitation /
+    // asset-lock / provider keys / identity auth) is keys-only — no
+    // UTXOs, no balance, by construction.
+    default: return .keys
+    }
+}
+
+/// Capsule badge rendered alongside the account row label. Color
+/// coding matches `AccountVariantKind.color`.
+private struct AccountVariantBadge: View {
+    let kind: AccountVariantKind
+
+    var body: some View {
+        Text(kind.label)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(kind.color.opacity(0.18))
+            .foregroundColor(kind.color)
+            .clipShape(Capsule())
+    }
+}
+
 private func accountTypeName(typeTag: UInt8, standardTag: UInt8) -> String {
     switch typeTag {
     case 0: return standardTag == 0 ? "BIP44" : "BIP32"
@@ -101,6 +164,9 @@ struct WalletMemoryExplorerView: View {
     @State private var identitySyncRunning = false
     @State private var identitySyncing = false
     @State private var identityTokenRows: [IdentityTokenSyncRow] = []
+    @State private var atomicWalletIds: [Data] = []
+    @State private var addressSyncConfig: PlatformWalletManager.PlatformAddressSyncConfigSnapshot?
+    @State private var identitySyncConfig: PlatformWalletManager.IdentitySyncConfigSnapshot?
     @State private var loadError: String?
 
     var body: some View {
@@ -108,6 +174,7 @@ struct WalletMemoryExplorerView: View {
             spvSection
             addressSyncSection
             identityTokenSyncSection
+            managerLevelSection
             walletsSection
             if let loadError {
                 Section {
@@ -129,7 +196,13 @@ struct WalletMemoryExplorerView: View {
         Section("SPV Sync") {
             let p = walletManager.spvProgress
             KVRow(label: "State", value: p.overallState.label)
-            KVRow(label: "Progress", value: String(format: "%.1f%%", p.overallPercentage))
+            // `overallPercentage` is a 0.0–1.0 fraction (the same value
+            // ContentView feeds straight into `ProgressView(value:)`),
+            // so multiply by 100 before formatting as a percent.
+            KVRow(
+                label: "Progress",
+                value: String(format: "%.1f%%", p.overallPercentage * 100)
+            )
             if let h = p.headers {
                 KVRow(label: "Headers", value: "\(h.currentHeight)/\(h.targetHeight)")
             }
@@ -188,6 +261,55 @@ struct WalletMemoryExplorerView: View {
             }
         } header: {
             Text("Identity Token Sync")
+        }
+    }
+
+    // MARK: - Manager-level diagnostics
+
+    private var managerLevelSection: some View {
+        Section {
+            DisclosureGroup("Atomic Wallet IDs (\(atomicWalletIds.count))") {
+                if atomicWalletIds.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(atomicWalletIds, id: \.self) { wid in
+                        Text(wid.map { String(format: "%02x", $0) }.joined())
+                            .font(.caption2.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            DisclosureGroup("PlatformAddressSyncManager Config") {
+                if let cfg = addressSyncConfig {
+                    KVRow(label: "Interval (s)", value: "\(cfg.intervalSeconds)")
+                    KVRow(label: "Watch List Size", value: "\(cfg.watchListSize)")
+                    KVRow(label: "Last Event Wallets", value: "\(cfg.lastEventWalletCount)")
+                    KVRow(
+                        label: "Last Event",
+                        value: formatTimestamp(cfg.lastEventUnixSeconds)
+                    )
+                } else {
+                    Text("Unavailable")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            DisclosureGroup("IdentitySyncManager Config") {
+                if let cfg = identitySyncConfig {
+                    KVRow(label: "Interval (s)", value: "\(cfg.intervalSeconds)")
+                    KVRow(label: "Queue Depth", value: "\(cfg.queueDepth)")
+                } else {
+                    Text("Unavailable")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        } header: {
+            Text("Manager State")
         }
     }
 
@@ -283,6 +405,9 @@ struct WalletMemoryExplorerView: View {
         } catch {
             errors.append("Token sync state: \(error.localizedDescription)")
         }
+        atomicWalletIds = walletManager.listWalletIdsAtomic()
+        addressSyncConfig = walletManager.platformAddressSyncConfigSnapshot()
+        identitySyncConfig = walletManager.identitySyncConfigSnapshot()
         if !errors.isEmpty {
             loadError = errors.joined(separator: "\n")
         }
@@ -306,12 +431,35 @@ struct WalletMemoryDetailView: View {
     @State private var idLabels: [Identifier: String] = [:]
     @State private var loadError: String?
 
+    // Diagnostic sections (Phases 3, 4, 7).
+    @State private var coreState: PlatformWalletManager.CoreWalletStateSnapshot?
+    @State private var identityWalletState: PlatformWalletManager.IdentityWalletStateSnapshot?
+    @State private var providerState: PlatformWalletManager.PlatformAddressProviderStateSnapshot?
+    @State private var trackedAssetLocks: [PlatformWalletManager.TrackedAssetLockSnapshot] = []
+    @State private var instantSendLocks: [Data] = []
+    @State private var outOfWalletIds: [Data] = []
+    @State private var walletIdentityRows: [PlatformWalletManager.WalletIdentityRow] = []
+
     var body: some View {
         Form {
             walletInfoSection
+            // PlatformWalletInfo metadata block (name / description /
+            // birth+synced+last-processed heights / total transactions /
+            // first loaded at) was removed: every meaningful field
+            // either duplicates `Core Wallet State` or reads "0/never"
+            // because nothing populates it (total_transactions is
+            // event-driven, first_loaded_at isn't stamped on this
+            // path). The Rust accessor + FFI wrapper are gone too.
+            coreStateSection
+            identityWalletStateSection
+            platformAddressProviderSection
             balanceSection
-            accountBalancesSection
+            fundsAccountBalancesSection
+            keysAccountBalancesSection
             summarySection
+            identityManagerSection
+            trackedAssetLocksSection
+            instantSendLocksSection
             identitiesSection
             watchedSection
             if let loadError {
@@ -339,6 +487,55 @@ struct WalletMemoryDetailView: View {
         }
     }
 
+    // MARK: - Core wallet state
+
+    private var coreStateSection: some View {
+        Section("Core Wallet State") {
+            if let s = coreState {
+                KVRow(label: "Synced Height", value: "\(s.syncedHeight)")
+                KVRow(label: "Last Processed", value: "\(s.lastProcessedHeight)")
+                KVRow(label: "Monitor Revision (max)", value: "\(s.monitorRevision)")
+            } else {
+                Text("Unavailable")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Identity wallet scan state
+
+    private var identityWalletStateSection: some View {
+        Section("Identity Wallet Scan State") {
+            if let s = identityWalletState {
+                KVRow(label: "Last Scanned Index", value: "\(s.lastScannedIndex)")
+                KVRow(label: "Scan Pending", value: s.scanPending ? "yes" : "no")
+            } else {
+                Text("Unavailable")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Platform Address Provider state
+
+    private var platformAddressProviderSection: some View {
+        Section("Platform Address Provider") {
+            if let s = providerState {
+                KVRow(label: "Initialized", value: s.initialized ? "yes" : "no")
+                KVRow(label: "Accounts Watched", value: "\(s.accountsWatched)")
+                KVRow(label: "Found Count", value: "\(s.foundCount)")
+                KVRow(label: "Known Balances", value: "\(s.knownBalancesCount)")
+                KVRow(label: "Watermark Height", value: "\(s.watermarkHeight)")
+            } else {
+                Text("Unavailable")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
     // MARK: - Balance
 
     private var balanceSection: some View {
@@ -358,40 +555,221 @@ struct WalletMemoryDetailView: View {
     }
 
     // MARK: - Account Balances
+    //
+    // Funds and Keys variants are split into separate sections so the
+    // headline number on each row reads correctly: balance for funds
+    // (real money, summable), keys-used for keys (no balance by
+    // construction — the Rust-side `ManagedCoreKeysAccount` doesn't
+    // carry UTXOs). Platform-payment accounts (the third variant on
+    // `ManagedAccountCollection`) ride along on the funds section
+    // because they DO carry balance, just under a different in-memory
+    // type.
 
-    private var accountBalancesSection: some View {
-        Section {
-            if accountBalances.isEmpty {
-                Text("No accounts")
+    /// Funds + Platform-payment accounts; rendered with the C/U/I/L
+    /// balance breakdown.
+    private var fundsAccountBalancesSection: some View {
+        let rows = accountBalances.filter {
+            accountVariantKind(typeTag: $0.typeTag) != .keys
+        }
+        return Section {
+            if rows.isEmpty {
+                Text("None")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
-                ForEach(Array(accountBalances.enumerated()), id: \.offset) { _, acct in
-                    let name = accountTypeName(
-                        typeTag: acct.typeTag,
-                        standardTag: acct.standardTag
-                    )
-                    let total = acct.confirmed + acct.unconfirmed
-                        + acct.immature + acct.locked
-                    DisclosureGroup {
-                        KVRow(label: "Confirmed", value: formatDuffs(acct.confirmed))
-                        KVRow(label: "Unconfirmed", value: formatDuffs(acct.unconfirmed))
-                        KVRow(label: "Immature", value: formatDuffs(acct.immature))
-                        KVRow(label: "Locked", value: formatDuffs(acct.locked))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, acct in
+                    NavigationLink {
+                        AccountDrillDownView(walletId: walletId, balance: acct)
                     } label: {
-                        HStack {
-                            Text("\(name) #\(acct.index)")
-                                .font(.system(.body, design: .monospaced))
-                            Spacer()
-                            Text(formatDuffs(total))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        fundsAccountRow(acct: acct)
                     }
                 }
             }
         } header: {
-            Text("Core Account Balances (\(accountBalances.count))")
+            Text("Core Funds Accounts (\(rows.count))")
+        }
+    }
+
+    /// Keys-only accounts (identity / asset-lock / provider). The
+    /// headline number is `keysUsed / keysTotal` rather than balance —
+    /// these accounts derive special-purpose keys and never carry
+    /// UTXOs.
+    private var keysAccountBalancesSection: some View {
+        let rows = accountBalances.filter {
+            accountVariantKind(typeTag: $0.typeTag) == .keys
+        }
+        return Section {
+            if rows.isEmpty {
+                Text("None")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, acct in
+                    NavigationLink {
+                        AccountDrillDownView(walletId: walletId, balance: acct)
+                    } label: {
+                        keysAccountRow(acct: acct)
+                    }
+                }
+            }
+        } header: {
+            Text("Core Keys Accounts (\(rows.count))")
+        }
+    }
+
+    @ViewBuilder
+    private func fundsAccountRow(
+        acct: PlatformWalletManager.AccountBalance
+    ) -> some View {
+        let name = accountTypeName(
+            typeTag: acct.typeTag,
+            standardTag: acct.standardTag
+        )
+        let kind = accountVariantKind(typeTag: acct.typeTag)
+        let total = acct.confirmed + acct.unconfirmed + acct.immature + acct.locked
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("\(name) #\(acct.index)")
+                    .font(.system(.body, design: .monospaced))
+                AccountVariantBadge(kind: kind)
+                Spacer()
+                Text(formatDuffs(total))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            HStack(spacing: 6) {
+                Text("C: \(formatDuffs(acct.confirmed))")
+                Text("·")
+                Text("U: \(formatDuffs(acct.unconfirmed))")
+                Text("·")
+                Text("I: \(formatDuffs(acct.immature))")
+                Text("·")
+                Text("L: \(formatDuffs(acct.locked))")
+            }
+            .font(.caption2.monospaced())
+            .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func keysAccountRow(
+        acct: PlatformWalletManager.AccountBalance
+    ) -> some View {
+        let name = accountTypeName(
+            typeTag: acct.typeTag,
+            standardTag: acct.standardTag
+        )
+        // Keys variants always badge as `Keys`; pinning the kind here
+        // avoids re-classifying inside the row.
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("\(name) #\(acct.index)")
+                    .font(.system(.body, design: .monospaced))
+                AccountVariantBadge(kind: .keys)
+                Spacer()
+                Text("\(acct.keysUsed) / \(acct.keysTotal) keys")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Tracked asset locks
+
+    private var trackedAssetLocksSection: some View {
+        Section {
+            if trackedAssetLocks.isEmpty {
+                Text("None")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(Array(trackedAssetLocks.enumerated()), id: \.offset) { _, lock in
+                    DisclosureGroup {
+                        KVRow(
+                            label: "Outpoint",
+                            value: lock.outpointTxid.prefix(8).map {
+                                String(format: "%02x", $0)
+                            }.joined() + ":" + "\(lock.outpointVout)"
+                        )
+                        KVRow(label: "Lock Type", value: trackedAssetLockTypeLabel(lock.lockType))
+                        KVRow(label: "Status", value: trackedAssetLockStatusLabel(lock.status))
+                        KVRow(label: "Reg Index", value: "\(lock.registrationIndex)")
+                        KVRow(label: "InstantLock", value: lock.instantLockPresent ? "yes" : "no")
+                        KVRow(label: "ChainLock Height", value: "\(lock.chainLockHeight)")
+                    } label: {
+                        Text("Lock #\(trackedAssetLocks.firstIndex(where: { $0.outpointTxid == lock.outpointTxid && $0.outpointVout == lock.outpointVout }) ?? 0)")
+                            .font(.system(.body, design: .monospaced))
+                    }
+                }
+            }
+        } header: {
+            Text("Tracked Asset Locks (\(trackedAssetLocks.count))")
+        }
+    }
+
+    // MARK: - InstantSend lock txids
+
+    private var instantSendLocksSection: some View {
+        Section {
+            if instantSendLocks.isEmpty {
+                Text("None")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(instantSendLocks, id: \.self) { txid in
+                    Text(txid.map { String(format: "%02x", $0) }.joined())
+                        .font(.caption2.monospaced())
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
+        } header: {
+            Text("InstantSend Locks (\(instantSendLocks.count))")
+        }
+    }
+
+    // MARK: - Identity Manager structure
+
+    private var identityManagerSection: some View {
+        Section {
+            DisclosureGroup("Wallet Identities (\(walletIdentityRows.count))") {
+                if walletIdentityRows.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(walletIdentityRows.enumerated()), id: \.offset) { _, row in
+                        HStack {
+                            Text("#\(row.registrationIndex)")
+                                .font(.system(.body, design: .monospaced))
+                            Spacer()
+                            Text(row.identityId.map { String(format: "%02x", $0) }.joined())
+                                .font(.caption2.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+            DisclosureGroup("Out-of-Wallet Identities (\(outOfWalletIds.count))") {
+                if outOfWalletIds.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(outOfWalletIds, id: \.self) { id in
+                        Text(id.map { String(format: "%02x", $0) }.joined())
+                            .font(.caption2.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        } header: {
+            Text("Identity Manager Structure")
         }
     }
 
@@ -530,9 +908,252 @@ struct WalletMemoryDetailView: View {
                 idLabels[id] = label
             }
         }
+        coreState = walletManager.coreWalletState(for: walletId)
+        identityWalletState = walletManager.identityWalletState(for: walletId)
+        providerState = walletManager.platformAddressProviderState(for: walletId)
+        trackedAssetLocks = walletManager.trackedAssetLocks(for: walletId)
+        instantSendLocks = walletManager.instantSendLockTxids(for: walletId)
+        outOfWalletIds = walletManager.identityManagerOutOfWalletIds(for: walletId)
+        walletIdentityRows = walletManager.identityManagerWalletIdentities(for: walletId)
         if !errors.isEmpty {
             loadError = errors.joined(separator: "\n")
         }
+    }
+}
+
+// MARK: - Per-account drill-down view
+
+struct AccountDrillDownView: View {
+    let walletId: Data
+    let balance: PlatformWalletManager.AccountBalance
+    @EnvironmentObject var walletManager: PlatformWalletManager
+
+    @State private var metadata: PlatformWalletManager.AccountMetadataSnapshot?
+    @State private var pools: [PlatformWalletManager.AccountAddressPool] = []
+    @State private var utxos: [PlatformWalletManager.AccountUtxo] = []
+
+    /// Whether this account is the keys-only variant — drives whether
+    /// UTXO-related surfaces are shown. UTXOs are exclusive to the
+    /// `ManagedCoreFundsAccount` Rust variant; keys-only accounts
+    /// (identity / asset-lock / provider) never carry them.
+    private var isKeysAccount: Bool {
+        accountVariantKind(typeTag: balance.typeTag) == .keys
+    }
+
+    var body: some View {
+        Form {
+            // Balance + UTXOs both live on the funds variant only.
+            // Suppress them on keys-only accounts so the drill-down
+            // doesn't render five zero rows that look like missing
+            // data rather than "by design".
+            if !isKeysAccount {
+                balanceHeaderSection
+            }
+            metadataSection
+            addressPoolsSection
+            if !isKeysAccount {
+                utxosSection
+            }
+            // Per-account in-memory transaction list intentionally
+            // omitted: `keep_txs_in_memory` is off and tx history is
+            // delivered through the event channel rather than stored
+            // on `ManagedCoreFundsAccount.transactions`. The Rust-side
+            // `account_transactions_blocking` accessor and its FFI /
+            // Swift wrapper still exist (return empty by design) for
+            // builds that flip the feature on.
+        }
+        .navigationTitle(
+            accountTypeName(typeTag: balance.typeTag, standardTag: balance.standardTag)
+            + " #\(balance.index)"
+        )
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { load() }
+    }
+
+    private var balanceHeaderSection: some View {
+        Section("Balance") {
+            KVRow(label: "Confirmed", value: formatDuffs(balance.confirmed))
+            KVRow(label: "Unconfirmed", value: formatDuffs(balance.unconfirmed))
+            KVRow(label: "Immature", value: formatDuffs(balance.immature))
+            KVRow(label: "Locked", value: formatDuffs(balance.locked))
+            KVRow(
+                label: "Total",
+                value: formatDuffs(
+                    balance.confirmed + balance.unconfirmed
+                    + balance.immature + balance.locked
+                )
+            )
+        }
+    }
+
+    private var metadataSection: some View {
+        Section("Account Metadata") {
+            if let m = metadata {
+                // `totalTransactions` is intentionally not surfaced —
+                // it counts the in-memory transaction map, which is
+                // empty by design when `keep_txs_in_memory` is off.
+                // "Watch Only" and "Custom Name" rows were dropped in
+                // lockstep with upstream removing those fields from
+                // the underlying `ManagedCore*Account` variants —
+                // watch-only is wallet-level now, custom names are
+                // gone entirely.
+                if !isKeysAccount {
+                    // Hide "Total UTXOs" on keys-only accounts: they
+                    // never carry UTXOs, so the row would always read
+                    // 0 and add noise.
+                    KVRow(label: "Total UTXOs", value: "\(m.totalUtxos)")
+                }
+                KVRow(label: "Monitor Revision", value: "\(m.monitorRevision)")
+            } else {
+                Text("Unavailable")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var addressPoolsSection: some View {
+        Section {
+            if pools.isEmpty {
+                Text("No pools")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(Array(pools.enumerated()), id: \.offset) { idx, pool in
+                    DisclosureGroup {
+                        KVRow(label: "Gap Limit", value: "\(pool.gapLimit)")
+                        KVRow(
+                            label: "Last Used Index",
+                            value: pool.lastUsedIndex < 0
+                                ? "—"
+                                : "\(pool.lastUsedIndex)"
+                        )
+                        KVRow(label: "Address Count", value: "\(pool.addresses.count)")
+                        ForEach(Array(pool.addresses.enumerated()), id: \.offset) { _, info in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text("idx \(info.addressIndex)")
+                                        .font(.caption2.monospaced())
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(info.isUsed ? "used" : "unused")
+                                        .font(.caption2)
+                                        .foregroundColor(info.isUsed ? .accentColor : .secondary)
+                                }
+                                // Encoded address — the prominent line
+                                // for the row.
+                                Text(info.address.isEmpty ? "—" : info.address)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                                // Public-key bytes (hex). Empty when
+                                // the pool didn't retain the
+                                // derivation source — falls back to
+                                // the 20-byte pubkey-hash so the row
+                                // always carries some cryptographic
+                                // identity for the user.
+                                let pkHex = (info.publicKeyBytes.isEmpty
+                                    ? info.pubkeyHash
+                                    : info.publicKeyBytes
+                                ).map { String(format: "%02x", $0) }.joined()
+                                let pkLabel = info.publicKeyBytes.isEmpty
+                                    ? "hash160: \(pkHex)"
+                                    : "pubkey: \(pkHex)"
+                                Text(pkLabel)
+                                    .font(.caption2.monospaced())
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .foregroundColor(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    } label: {
+                        Text("Pool \(idx) (\(addressPoolTypeLabel(pool.poolType)))")
+                            .font(.system(.body, design: .monospaced))
+                    }
+                }
+            }
+        } header: {
+            Text("Address Pools (\(pools.count))")
+        }
+    }
+
+    private var utxosSection: some View {
+        Section {
+            if utxos.isEmpty {
+                Text("None")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(Array(utxos.enumerated()), id: \.offset) { _, u in
+                    DisclosureGroup {
+                        KVRow(label: "Value", value: formatDuffs(u.valueDuffs))
+                        KVRow(label: "Height", value: "\(u.height)")
+                        KVRow(label: "Locked", value: u.isLocked ? "yes" : "no")
+                        KVRow(label: "Script Len", value: "\(u.scriptPubkey.count)")
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(
+                                u.outpointTxid.map { String(format: "%02x", $0) }.joined()
+                                + ":" + "\(u.outpointVout)"
+                            )
+                            .font(.caption2.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            Text(formatDuffs(u.valueDuffs))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("UTXOs (\(utxos.count))")
+        }
+    }
+
+    private func load() {
+        metadata = walletManager.accountMetadata(for: walletId, balance: balance)
+        pools = walletManager.accountAddressPools(for: walletId, balance: balance)
+        utxos = walletManager.accountUtxos(for: walletId, balance: balance)
+        // Tx history is event-driven and not held in memory; skip the
+        // accessor here — see the comment on the body's omitted
+        // `transactionsSection`.
+    }
+}
+
+// MARK: - Helper labels
+
+private func addressPoolTypeLabel(_ tag: UInt8) -> String {
+    switch tag {
+    case 0: return "External"
+    case 1: return "Internal"
+    case 2: return "Absent"
+    case 3: return "AbsentHardened"
+    default: return "Unknown(\(tag))"
+    }
+}
+
+private func trackedAssetLockTypeLabel(_ tag: UInt8) -> String {
+    switch tag {
+    case 0: return "IdentityRegistration"
+    case 1: return "IdentityTopUp"
+    case 2: return "IdentityTopUpNotBound"
+    case 3: return "IdentityInvitation"
+    case 4: return "AssetLockAddressTopUp"
+    case 5: return "AssetLockShieldedAddressTopUp"
+    default: return "Unknown(\(tag))"
+    }
+}
+
+private func trackedAssetLockStatusLabel(_ tag: UInt8) -> String {
+    switch tag {
+    case 0: return "Built"
+    case 1: return "Broadcast"
+    case 2: return "InstantSendLocked"
+    case 3: return "ChainLocked"
+    default: return "Unknown(\(tag))"
     }
 }
 

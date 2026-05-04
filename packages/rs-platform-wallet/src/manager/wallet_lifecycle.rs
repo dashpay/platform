@@ -129,9 +129,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .all_managed_accounts()
             .iter()
             .map(|managed| {
-                let account_type = managed.managed_account_type.to_account_type();
+                // `all_managed_accounts()` returns `ManagedAccountRef`;
+                // the upstream split made `managed_account_type` a
+                // delegating method (it was a field on the pre-split
+                // unified `ManagedCoreAccount`).
+                let account_type = managed.managed_account_type().to_account_type();
                 let pools = managed
-                    .managed_account_type
+                    .managed_account_type()
                     .address_pools()
                     .iter()
                     .map(|pool| {

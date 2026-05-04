@@ -233,13 +233,13 @@ public class PlatformWalletPersistenceHandler {
                 wallet.lastUpdated = Date()
             }
 
-            // Balance delta — apply signed changes to cached totals.
+            // Balance delta — Rust still emits per-round deltas, but the
+            // PersistentWallet `balance*` fields they used to update were
+            // removed (canonical source is now the in-memory account
+            // totals via `walletManager.accountBalances(for:)`). Bump the
+            // updated timestamp so the row reflects the persistence round
+            // and discard the payload itself.
             if cs.has_balance {
-                let b = cs.balance
-                wallet.balanceConfirmed = addDelta(wallet.balanceConfirmed, b.confirmed_delta)
-                wallet.balanceUnconfirmed = addDelta(wallet.balanceUnconfirmed, b.unconfirmed_delta)
-                wallet.balanceImmature = addDelta(wallet.balanceImmature, b.immature_delta)
-                wallet.balanceLocked = addDelta(wallet.balanceLocked, b.locked_delta)
                 wallet.lastUpdated = Date()
             }
 
@@ -2068,6 +2068,31 @@ public class PlatformWalletPersistenceHandler {
             entry.platform_last_known_recent_block = syncState?.lastKnownRecentBlock ?? 0
             entry.identities = identitiesBuffer.map { UnsafePointer($0) }
             entry.identities_count = UInt(sortedIdentities.count)
+            // Core-chain sync metadata. `PersistentWallet` doesn't
+            // carry a separate `lastProcessedHeight` column today —
+            // re-use `syncedHeight` for both. The Rust loader treats
+            // zero as "unknown" and falls back to the
+            // `birth_height - 1` seed from `ManagedWalletInfo::from_wallet`,
+            // so freshly-recovered wallets without a sync watermark
+            // round-trip cleanly.
+            entry.birth_height = w.birthHeight
+            entry.synced_height = w.syncedHeight
+            entry.last_processed_height = w.syncedHeight
+            entry.last_synced = w.lastSynced
+
+            // Persisted unspent UTXOs for this wallet. The SPV inbound
+            // path writes `PersistentTxo` rows and flips `isSpent`
+            // (rather than deleting) on spend, so the unspent set is
+            // exactly `isSpent == false`. Rust routes each row into
+            // the matching funds-bearing account by tag; rows whose
+            // account isn't a funds variant get silently skipped on
+            // the receiving side.
+            let (utxoBuf, utxoCount) = buildUtxoRestoreBuffer(
+                walletId: w.walletId,
+                allocation: allocation
+            )
+            entry.utxos = utxoBuf.map { UnsafePointer($0) }
+            entry.utxos_count = UInt(utxoCount)
             // Primary-identity selection + gap-limit scan watermark
             // were dropped from the FFI shape — both moved off the
             // Rust manager (UI owns selection now, scan resume is
@@ -2101,6 +2126,94 @@ public class PlatformWalletPersistenceHandler {
     /// on `PersistentIdentity` and is read directly by the UI; it
     /// no longer roundtrips through Rust now that `ManagedIdentity`
     /// dropped its `label` field.
+    /// Build a contiguous `[UtxoRestoreEntryFFI]` buffer for one
+    /// wallet's unspent UTXOs. Walks `PersistentTxo` rows scoped to
+    /// `walletId` and `isSpent == false`, copies the account-tag
+    /// fields off the parent `PersistentAccount`, and emits one row
+    /// per UTXO. Returns `(nil, 0)` for empty input — Rust treats
+    /// `null` + `count == 0` as "no UTXOs to restore".
+    ///
+    /// Per-row script_pubkey buffers and the outer array are tracked
+    /// on `allocation` so `loadWalletListFree` can release them.
+    /// Rows whose `outpoint` payload isn't 32 bytes are skipped — the
+    /// model stores it as `Data` (`outpoint: Data`) and bad data
+    /// shouldn't crash the FFI handoff.
+    private func buildUtxoRestoreBuffer(
+        walletId: Data,
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<UtxoRestoreEntryFFI>?, Int) {
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.walletId == walletId && $0.isSpent == false }
+        )
+        guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
+            return (nil, 0)
+        }
+        // Rows missing a parent `account` can't be routed Rust-side.
+        // Drop them rather than emit an unmappable row.
+        let routable = rows.filter { $0.account != nil }
+        if routable.isEmpty {
+            return (nil, 0)
+        }
+        let buf = UnsafeMutablePointer<UtxoRestoreEntryFFI>.allocate(capacity: routable.count)
+        var written = 0
+        for record in routable {
+            guard let account = record.account else { continue }
+            // `outpoint` on `PersistentTxo` is 36 bytes (32-byte txid
+            // followed by LE u32 vout) — composed via
+            // `makeOutpoint(txid:vout:)`. Use the dedicated `txid`
+            // accessor, which prefers `transaction.txid` and falls
+            // back to `outpoint.prefix(32)` so storage-explorer rows
+            // and the FFI handoff agree on the same 32-byte identity.
+            let txid = record.txid
+            guard txid.count == 32 else { continue }
+
+            // Allocate + copy the script_pubkey bytes. Empty scripts
+            // pass through with a null pointer + zero len.
+            let scriptBytes = record.scriptPubKey
+            let scriptPtr: UnsafePointer<UInt8>?
+            let scriptLen = scriptBytes.count
+            if scriptLen > 0 {
+                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: scriptLen)
+                scriptBytes.copyBytes(to: buffer, count: scriptLen)
+                allocation.scalarBuffers.append((buffer, scriptLen))
+                scriptPtr = UnsafePointer(buffer)
+            } else {
+                scriptPtr = nil
+            }
+
+            var utxo = UtxoRestoreEntryFFI()
+            // Match the existing AccountSpecFFI population pattern —
+            // cbindgen imports both tag enums as `UInt8` aliases, so
+            // assign the raw byte directly rather than constructing a
+            // `RawRepresentable`.
+            utxo.type_tag = UInt8(truncatingIfNeeded: account.accountType)
+            utxo.standard_tag = account.standardTag
+            utxo.account_index = account.accountIndex
+            utxo.registration_index = account.registrationIndex
+            utxo.key_class = account.keyClass
+            copyBytes(account.userIdentityId, into: &utxo.user_identity_id)
+            copyBytes(account.friendIdentityId, into: &utxo.friend_identity_id)
+            copyBytes(txid, into: &utxo.prev_txid)
+            utxo.vout = record.vout
+            utxo.value_duffs = record.amount
+            utxo.script_pubkey = scriptPtr
+            utxo.script_pubkey_len = UInt(scriptLen)
+            utxo.height = record.height
+            utxo.is_coinbase = record.isCoinbase
+            utxo.is_confirmed = record.isConfirmed
+            utxo.is_instantlocked = record.isInstantLocked
+            utxo.is_locked = record.isLocked
+            buf[written] = utxo
+            written += 1
+        }
+        if written == 0 {
+            buf.deallocate()
+            return (nil, 0)
+        }
+        allocation.utxoArrays.append((buf, written))
+        return (buf, written)
+    }
+
     private func buildIdentityRestoreBuffer(
         identities: [PersistentIdentity],
         allocation: LoadAllocation
@@ -2335,6 +2448,9 @@ private final class LoadAllocation {
     /// `cStringBuffers`; releasing this array doesn't touch the
     /// underlying strings.
     var cStringPointerArrays: [(UnsafeMutablePointer<UnsafePointer<CChar>?>, Int)] = []
+    /// Per-wallet `UtxoRestoreEntryFFI` arrays. The script bytes each
+    /// row references live in `scalarBuffers`.
+    var utxoArrays: [(UnsafeMutablePointer<UtxoRestoreEntryFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -2364,6 +2480,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, _) in cStringPointerArrays {
+            ptr.deallocate()
+        }
+        for (ptr, count) in utxoArrays {
+            ptr.deinitialize(count: count)
             ptr.deallocate()
         }
     }

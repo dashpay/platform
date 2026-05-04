@@ -635,6 +635,11 @@ struct SyncProgressRow: View {
 struct WalletRowView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var platformState: AppState
+    /// Canonical Core-balance source. The previously-persisted
+    /// `PersistentWallet.balanceConfirmed`/etc. fields were removed —
+    /// Rust's in-memory account totals (via `accountBalances(for:)`)
+    /// are the single source of truth, mirroring `BalanceCardView`.
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
     /// Per-wallet BLAST-synced platform-address balances. Mirrors
     /// `BalanceCardView` so the summary row sees the same balance as
@@ -669,9 +674,32 @@ struct WalletRowView: View {
         }
     }
 
+    /// Per-account Core balances pulled from Rust's in-memory totals.
+    /// Computed once per body evaluation; both `totalCoreBalance` and
+    /// `balanceBreakdown()` read from this so we don't hit the FFI
+    /// four times per row.
+    private var coreBalances: [PlatformWalletManager.AccountBalance] {
+        walletManager.accountBalances(for: wallet.walletId)
+    }
+
+    private var coreConfirmed: UInt64 {
+        coreBalances.reduce(0) { $0 + $1.confirmed }
+    }
+
+    private var coreUnconfirmed: UInt64 {
+        coreBalances.reduce(0) { $0 + $1.unconfirmed }
+    }
+
+    private var coreImmature: UInt64 {
+        coreBalances.reduce(0) { $0 + $1.immature }
+    }
+
+    private var coreLocked: UInt64 {
+        coreBalances.reduce(0) { $0 + $1.locked }
+    }
+
     private var totalCoreBalance: UInt64 {
-        wallet.balanceConfirmed + wallet.balanceUnconfirmed
-            + wallet.balanceImmature + wallet.balanceLocked
+        coreConfirmed + coreUnconfirmed + coreImmature + coreLocked
     }
 
     /// Combined wallet balance expressed in DASH. Core uses 1e8
@@ -727,17 +755,21 @@ struct WalletRowView: View {
 
     private func balanceBreakdown() -> String? {
         var parts: [String] = []
-        if wallet.balanceConfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceConfirmed)) confirmed")
+        let confirmed = coreConfirmed
+        let unconfirmed = coreUnconfirmed
+        let immature = coreImmature
+        let locked = coreLocked
+        if confirmed > 0 {
+            parts.append("\(formatBalance(confirmed)) confirmed")
         }
-        if wallet.balanceUnconfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceUnconfirmed)) unconfirmed")
+        if unconfirmed > 0 {
+            parts.append("\(formatBalance(unconfirmed)) unconfirmed")
         }
-        if wallet.balanceImmature > 0 {
-            parts.append("\(formatBalance(wallet.balanceImmature)) immature")
+        if immature > 0 {
+            parts.append("\(formatBalance(immature)) immature")
         }
-        if wallet.balanceLocked > 0 {
-            parts.append("\(formatBalance(wallet.balanceLocked)) locked")
+        if locked > 0 {
+            parts.append("\(formatBalance(locked)) locked")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }

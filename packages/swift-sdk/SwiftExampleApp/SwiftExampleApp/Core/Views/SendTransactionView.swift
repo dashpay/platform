@@ -161,8 +161,13 @@ struct SendTransactionView: View {
 
     // MARK: - Computed
 
+    /// Spendable Core balance, summed from Rust's in-memory per-account
+    /// totals. The persisted `PersistentWallet.balanceConfirmed` field
+    /// was removed; `accountBalances(for:)` is now the canonical
+    /// source (same path `BalanceCardView` uses).
     private var coreBalance: UInt64 {
-        wallet.balanceConfirmed
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(0) { $0 + $1.confirmed }
     }
 
     private var shieldedBalance: UInt64 {
