@@ -35,61 +35,87 @@ mod json_convertible_tests {
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
     use crate::state_transition::batch_transition::batched_transition::token_config_update_transition::v0::TokenConfigUpdateTransitionV0;
-    use platform_value::Identifier;
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
 
-    fn token_base_fixture() -> TokenBaseTransition {
-        TokenBaseTransition::V0(TokenBaseTransitionV0 {
-            identity_contract_nonce: 13,
-            token_contract_position: 2,
-            data_contract_id: Identifier::new([0xa1; 32]),
-            token_id: Identifier::new([0xb2; 32]),
-            using_group_info: None,
-        })
-    }
-
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip. The fixture uses the
+    /// `TokenConfigurationNoChange` unit variant of
+    /// `TokenConfigurationChangeItem` so the inline wire shape stays small;
+    /// the richer variants are covered by `TokenConfigurationChangeItem`'s
+    /// own tests.
     fn fixture() -> TokenConfigUpdateTransition {
         TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
-            base: token_base_fixture(),
-            update_token_configuration_item: TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 13,
+                token_contract_position: 2,
+                data_contract_id: Identifier::new([0xa1; 32]),
+                token_id: Identifier::new([0xb2; 32]),
+                using_group_info: None,
+            }),
+            update_token_configuration_item:
+                TokenConfigurationChangeItem::TokenConfigurationNoChange,
             public_note: Some("config update".to_string()),
         })
     }
 
-    fn assert_v0_fields(t: &TokenConfigUpdateTransition) {
-        let TokenConfigUpdateTransition::V0(rec) = t;
-        let TokenBaseTransition::V0(base) = &rec.base;
-        assert_eq!(base.identity_contract_nonce, 13, "base.identity_contract_nonce");
-        assert_eq!(base.token_contract_position, 2, "base.token_contract_position");
-        assert_eq!(base.data_contract_id, Identifier::new([0xa1; 32]), "base.data_contract_id");
-        assert_eq!(base.token_id, Identifier::new([0xb2; 32]), "base.token_id");
-        assert_eq!(base.using_group_info, None, "base.using_group_info");
-        assert_eq!(
-            rec.update_token_configuration_item,
-            TokenConfigurationChangeItem::TokenConfigurationNoChange,
-            "update_token_configuration_item"
-        );
-        assert_eq!(rec.public_note, Some("config update".to_string()), "public_note");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
-        let json = JsonConvertible::to_json(&original).expect("to_json");
-        let recovered = <TokenConfigUpdateTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let json = original.to_json().expect("to_json");
+        // Doubly-tagged externally enum: outer `V0` for the variant; inner
+        // `V0` for the flattened token base. The unit variant
+        // `TokenConfigurationNoChange` of `TokenConfigurationChangeItem`
+        // (which uses `rename_all = "camelCase"`) serializes to the bare
+        // string `"tokenConfigurationNoChange"`. `updateTokenConfigurationItem`
+        // and `publicNote` come from the parent struct's camelCase rule.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "V0": {
+                        "$identity-contract-nonce": 13,
+                        "$tokenContractPosition": 2,
+                        "$dataContractId": Identifier::new([0xa1; 32]),
+                        "$tokenId": Identifier::new([0xb2; 32]),
+                    },
+                    "updateTokenConfigurationItem": "tokenConfigurationNoChange",
+                    "publicNote": "config update",
+                }
+            })
+        );
+        let recovered =
+            TokenConfigUpdateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
-        let value = ValueConvertible::to_object(&original).expect("to_object");
-        let recovered = <TokenConfigUpdateTransition as ValueConvertible>::from_object(value).expect("from_object");
+        let value = original.to_object().expect("to_object");
+        // `13u64`/`2u16`: identity_contract_nonce is `u64`,
+        // token_contract_position is `u16`. The unit-variant
+        // `TokenConfigurationNoChange` is encoded as a `Value::Text` exactly
+        // like its JSON form.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "V0": {
+                        "$identity-contract-nonce": 13u64,
+                        "$tokenContractPosition": 2u16,
+                        "$dataContractId": Identifier::new([0xa1; 32]),
+                        "$tokenId": Identifier::new([0xb2; 32]),
+                    },
+                    "updateTokenConfigurationItem": "tokenConfigurationNoChange",
+                    "publicNote": "config update",
+                }
+            })
+        );
+        let recovered =
+            TokenConfigUpdateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

@@ -104,10 +104,12 @@ impl AsRef<AssetLockProof> for AssetLockProof {
 mod json_convertible_tests {
     use super::*;
     use dashcore::OutPoint;
+    use platform_value::platform_value;
+    use serde_json::json;
     use std::str::FromStr;
 
     /// Non-default variant (`Chain` with non-zero core height + a real
-    /// outpoint) so per-property assertions catch silent variant flip /
+    /// outpoint) so the wire-shape assertion catches silent variant flip /
     /// inner-zero on round-trip — the previous fixture used `Default::default`
     /// (`Instant` zero proof).
     fn fixture() -> AssetLockProof {
@@ -121,41 +123,56 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_per_property(actual: &AssetLockProof) {
-        match actual {
-            AssetLockProof::Chain(c) => {
-                assert_eq!(
-                    c.core_chain_locked_height, 12_345,
-                    "Chain.core_chain_locked_height"
-                );
-                let expected = OutPoint::from_str(
-                    "0000000000000000000000000000000000000000000000000000000000000001:1",
-                )
-                .expect("outpoint");
-                assert_eq!(c.out_point, expected, "Chain.out_point");
-            }
-            other => panic!("expected Chain proof, got {:?}", other),
-        }
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `AssetLockProof` is internally tagged (`#[serde(tag = "type")]`), so
+        // the inner `ChainAssetLockProof`'s fields are flattened next to the
+        // discriminator. Surprising shape: `OutPoint` has a *string-form*
+        // Serialize impl ("<txid>:<vout>") in dashcore which JSON consumes
+        // as-is — so on the JSON wire, `outPoint` is a single string. The
+        // platform_value layer goes through a different path (see the
+        // value-side test below) and produces a typed Map with `Bytes32` txid
+        // and `U32` vout. `coreChainLockedHeight` is `u32`; JSON erases the
+        // size — see the value-path assertion.
+        assert_eq!(
+            json,
+            json!({
+                "type": "chain",
+                "coreChainLockedHeight": 12_345,
+                "outPoint": "0000000000000000000000000000000000000000000000000000000000000001:1",
+            })
+        );
         let recovered = AssetLockProof::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // platform_value path: `OutPoint` serializes via its derived structural
+        // impl producing a Map { txid: Bytes32, vout: U32 } (NOT the string form
+        // produced on the JSON side). `coreChainLockedHeight` is `u32` so
+        // `12_345u32` locks in `Value::U32`.
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes[0] = 1;
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "chain",
+                "coreChainLockedHeight": 12_345u32,
+                "outPoint": {
+                    "txid": platform_value::Value::Bytes32(txid_bytes),
+                    "vout": 1u32,
+                },
+            })
+        );
         let recovered = AssetLockProof::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 }
 pub enum AssetLockProofType {

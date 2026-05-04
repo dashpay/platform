@@ -112,41 +112,54 @@ mod tests {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     /// Non-default variant (`WonByIdentity` with a non-zero identifier) so
-    /// per-property assertions catch silent variant-flip / identifier-zero
+    /// the wire-shape assertion catches silent variant-flip / identifier-zero
     /// on round-trip — the previous fixture used `Default` (`NoWinner`),
     /// which carries no inner state.
     fn fixture() -> ContestedDocumentVotePollWinnerInfo {
         ContestedDocumentVotePollWinnerInfo::WonByIdentity(Identifier::new([0xab; 32]))
     }
 
-    fn assert_per_property(actual: &ContestedDocumentVotePollWinnerInfo) {
-        match actual {
-            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id) => {
-                assert_eq!(*id, Identifier::new([0xab; 32]), "WonByIdentity.id");
-            }
-            other => panic!("expected WonByIdentity, got {:?}", other),
-        }
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `ContestedDocumentVotePollWinnerInfo` uses adjacent tagging
+        // (`tag = "type", content = "data"`, `rename_all = "camelCase"`), so
+        // newtype variants serialize as `{ "type": "wonByIdentity", "data": <id> }`.
+        // `Identifier` -> base58 string in JSON.
+        assert_eq!(
+            json,
+            json!({
+                "type": "wonByIdentity",
+                "data": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
+            })
+        );
         let recovered = ContestedDocumentVotePollWinnerInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        let recovered = ContestedDocumentVotePollWinnerInfo::from_object(value).expect("from_object");
+        // platform_value preserves typed `Identifier` variants — interpolate
+        // through the macro so Serialize emits `Value::Identifier`.
+        let id = Identifier::new([0xab; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "wonByIdentity",
+                "data": id,
+            })
+        );
+        let recovered =
+            ContestedDocumentVotePollWinnerInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 }

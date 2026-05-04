@@ -40,9 +40,11 @@ mod json_convertible_tests {
     use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
     use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
     use crate::data_contract::change_control_rules::ChangeControlRules;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     /// Non-default values per inner field (non-NoOne action takers + flipped
-    /// bool flags) so per-property assertions catch silent zero-out / flip.
+    /// bool flags) so the wire-shape assertion catches silent zero-out / flip.
     fn fixture() -> TokenMarketplaceRules {
         TokenMarketplaceRules::V0(TokenMarketplaceRulesV0 {
             trade_mode: TokenTradeMode::NotTradeable,
@@ -56,52 +58,57 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(r: &TokenMarketplaceRules) {
-        let TokenMarketplaceRules::V0(rec) = r;
-        assert!(
-            matches!(rec.trade_mode, TokenTradeMode::NotTradeable),
-            "trade_mode = NotTradeable"
-        );
-        let ChangeControlRules::V0(rules) = &rec.trade_mode_change_rules;
-        assert!(
-            matches!(rules.authorized_to_make_change, AuthorizedActionTakers::ContractOwner),
-            "authorized_to_make_change = ContractOwner"
-        );
-        assert!(
-            matches!(rules.admin_action_takers, AuthorizedActionTakers::MainGroup),
-            "admin_action_takers = MainGroup"
-        );
-        assert!(
-            rules.changing_authorized_action_takers_to_no_one_allowed,
-            "changing_authorized_action_takers_to_no_one_allowed"
-        );
-        assert!(
-            !rules.changing_admin_action_takers_to_no_one_allowed,
-            "changing_admin_action_takers_to_no_one_allowed (false)"
-        );
-        assert!(
-            rules.self_changing_admin_action_takers_allowed,
-            "self_changing_admin_action_takers_allowed"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `TokenTradeMode` is an externally-tagged enum with a single unit
+        // variant (`NotTradeable`) that serializes as a bare string.
+        // `ChangeControlRules` is a versioned enum with `tag = "$formatVersion"`,
+        // and `AuthorizedActionTakers` unit variants serialize as bare strings.
+        // No sized integers in this fixture — only Text + Bool.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "tradeMode": "NotTradeable",
+                "tradeModeChangeRules": {
+                    "$formatVersion": "0",
+                    "authorizedToMakeChange": "ContractOwner",
+                    "adminActionTakers": "MainGroup",
+                    "changingAuthorizedActionTakersToNoOneAllowed": true,
+                    "changingAdminActionTakersToNoOneAllowed": false,
+                    "selfChangingAdminActionTakersAllowed": true,
+                },
+            })
+        );
         let recovered = TokenMarketplaceRules::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // No sized integers here — Text + Bool only. Both wire formats agree.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "tradeMode": "NotTradeable",
+                "tradeModeChangeRules": {
+                    "$formatVersion": "0",
+                    "authorizedToMakeChange": "ContractOwner",
+                    "adminActionTakers": "MainGroup",
+                    "changingAuthorizedActionTakersToNoOneAllowed": true,
+                    "changingAdminActionTakersToNoOneAllowed": false,
+                    "selfChangingAdminActionTakersAllowed": true,
+                },
+            })
+        );
         let recovered = TokenMarketplaceRules::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

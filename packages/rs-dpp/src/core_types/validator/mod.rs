@@ -127,10 +127,18 @@ mod json_convertible_tests {
     use crate::core_types::validator::v0::ValidatorV0;
     use dashcore::hashes::Hash;
     use dashcore::{ProTxHash, PubkeyHash};
+    use platform_value::platform_value;
+    use serde_json::json;
 
     fn fixture() -> Validator {
         Validator::V0(ValidatorV0 {
             pro_tx_hash: ProTxHash::from_byte_array([0x11; 32]),
+            // Tier 4 caveat: BlsPublicKey serializes as hex in HR / bytes in non-HR,
+            // and a default fixture value (e.g. generator) would be deterministic
+            // but the Bls12381G2 (96-byte) literal is huge; we keep `None` here so
+            // the wire-shape stays compact while still locking down the option/Null
+            // representation. The dedicated BLS unit tests cover the public key
+            // round-trip on its own.
             public_key: None,
             node_ip: "127.0.0.1".to_string(),
             node_id: PubkeyHash::from_byte_array([0x22; 20]),
@@ -141,35 +149,62 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(v: &Validator) {
-        let Validator::V0(v0) = v;
-        assert_eq!(v0.pro_tx_hash, ProTxHash::from_byte_array([0x11; 32]), "pro_tx_hash");
-        assert_eq!(v0.public_key, None, "public_key");
-        assert_eq!(v0.node_ip, "127.0.0.1", "node_ip");
-        assert_eq!(v0.node_id, PubkeyHash::from_byte_array([0x22; 20]), "node_id");
-        assert_eq!(v0.core_port, 9999, "core_port");
-        assert_eq!(v0.platform_http_port, 443, "platform_http_port");
-        assert_eq!(v0.platform_p2p_port, 26656, "platform_p2p_port");
-        assert!(!v0.is_banned, "is_banned");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `Validator` is an externally-tagged enum (no `#[serde(tag = ...)]` attr),
+        // so its variants nest under `"V0"` (uppercase, default serde rename).
+        // Inner fields are serialized snake_case (no rename_all directive).
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `core_port`/`platform_http_port`/`platform_p2p_port` (u16). The
+        // value-path assertion uses explicit `u16` suffixes. Hash fields
+        // (`pro_tx_hash` ProTxHash, `node_id` PubkeyHash) serialize as
+        // lowercase hex strings in HR; in non-HR they become typed
+        // `Value::Bytes32` / `Value::Bytes20`.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "pro_tx_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+                    "public_key": serde_json::Value::Null,
+                    "node_ip": "127.0.0.1",
+                    "node_id": "2222222222222222222222222222222222222222",
+                    "core_port": 9999,
+                    "platform_http_port": 443,
+                    "platform_p2p_port": 26656,
+                    "is_banned": false,
+                }
+            })
+        );
         let recovered = Validator::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Explicit `u16` suffixes lock the port variants. Hash byte arrays
+        // become `Value::Bytes32` (32) and `Value::Bytes20` (20) on non-HR.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "pro_tx_hash": platform_value::Value::Bytes32([0x11; 32]),
+                    "public_key": platform_value::Value::Null,
+                    "node_ip": "127.0.0.1",
+                    "node_id": platform_value::Value::Bytes20([0x22; 20]),
+                    "core_port": 9999u16,
+                    "platform_http_port": 443u16,
+                    "platform_p2p_port": 26656u16,
+                    "is_banned": false,
+                }
+            })
+        );
         let recovered = Validator::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

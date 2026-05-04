@@ -41,12 +41,13 @@ mod json_convertible_tests_resource_vote {
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use crate::voting::vote_polls::VotePoll;
-    use platform_value::{Identifier, Value};
+    use platform_value::{platform_value, Identifier, Value};
+    use serde_json::json;
 
     /// Non-default values per inner field (named contract / index / values
     /// inside the poll, plus a `TowardsIdentity` choice with non-zero
-    /// identifier) so per-property assertions catch silent zero-out / variant
-    /// flip on round-trip.
+    /// identifier) so the wire-shape assertion catches silent zero-out /
+    /// variant flip on round-trip.
     fn fixture() -> ResourceVote {
         ResourceVote::V0(ResourceVoteV0 {
             vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
@@ -61,41 +62,67 @@ mod json_convertible_tests_resource_vote {
         })
     }
 
-    fn assert_v0_fields(v: &ResourceVote) {
-        let ResourceVote::V0(rec) = v;
-        match &rec.vote_poll {
-            VotePoll::ContestedDocumentResourceVotePoll(p) => {
-                assert_eq!(p.contract_id, Identifier::new([0xc1; 32]), "contract_id");
-                assert_eq!(p.document_type_name, "preorder", "document_type_name");
-                assert_eq!(p.index_name, "parentNameAndLabel", "index_name");
-                assert_eq!(p.index_values.len(), 1, "index_values.len");
-            }
-        }
-        match rec.resource_vote_choice {
-            ResourceVoteChoice::TowardsIdentity(id) => {
-                assert_eq!(id, Identifier::new([0xab; 32]), "resource_vote_choice.id");
-            }
-            other => panic!("expected TowardsIdentity, got {:?}", other),
-        }
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `VotePoll` and `ResourceVoteChoice` use adjacent tagging
+        // (`tag = "type", content = "data"`), so each variant serializes as
+        // `{ "type": "...", "data": <payload> }`. Identifiers render as base58
+        // strings in JSON.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "votePoll": {
+                    "type": "contestedDocumentResourceVotePoll",
+                    "data": {
+                        "contractId": "E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS",
+                        "documentTypeName": "preorder",
+                        "indexName": "parentNameAndLabel",
+                        "indexValues": ["dash"],
+                    },
+                },
+                "resourceVoteChoice": {
+                    "type": "towardsIdentity",
+                    "data": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
+                },
+            })
+        );
         let recovered = ResourceVote::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // platform_value preserves typed `Identifier` variants. Interpolate
+        // through the macro so Serialize emits `Value::Identifier`.
+        let contract_id = Identifier::new([0xc1; 32]);
+        let voter_id = Identifier::new([0xab; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "votePoll": {
+                    "type": "contestedDocumentResourceVotePoll",
+                    "data": {
+                        "contractId": contract_id,
+                        "documentTypeName": "preorder",
+                        "indexName": "parentNameAndLabel",
+                        "indexValues": ["dash"],
+                    },
+                },
+                "resourceVoteChoice": {
+                    "type": "towardsIdentity",
+                    "data": voter_id,
+                },
+            })
+        );
         let recovered = ResourceVote::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

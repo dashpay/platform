@@ -364,7 +364,8 @@ mod json_convertible_tests {
 
     use crate::identity::core_script::CoreScript;
     use crate::withdrawal::Pooling;
-    use platform_value::{BinaryData, Identifier};
+    use platform_value::{platform_value, BinaryData, Identifier};
+    use serde_json::json;
 
     fn fixture() -> IdentityCreditWithdrawalTransition {
         IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
@@ -380,49 +381,65 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &IdentityCreditWithdrawalTransition) {
-        let IdentityCreditWithdrawalTransition::V0(v0) = t else {
-            panic!("expected V0");
-        };
-        assert_eq!(v0.identity_id, Identifier::new([0x33; 32]), "identity_id");
-        assert_eq!(v0.amount, 9_876_543, "amount");
-        assert_eq!(v0.core_fee_per_byte, 5, "core_fee_per_byte");
-        assert_eq!(v0.pooling, Pooling::Never, "pooling");
-        assert_eq!(
-            v0.output_script,
-            CoreScript::from_bytes(vec![0x76, 0xa9, 0x14]),
-            "output_script"
-        );
-        assert_eq!(v0.nonce, 11, "nonce");
-        assert_eq!(v0.user_fee_increase, 2, "user_fee_increase");
-        assert_eq!(v0.signature_public_key_id, 4, "signature_public_key_id");
-        assert_eq!(v0.signature, BinaryData::new(vec![0xb2; 65]), "signature");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `coreFeePerByte` (u32), `nonce` (u64), `userFeeIncrease` (u16),
+        // `signaturePublicKeyId` (u32). The value-path assertion below uses
+        // explicit suffixes to lock in the typed variants.
+        // `pooling` uses a custom `pooling_serde` that emits the camelCase name
+        // string in HR and the u8 discriminant in non-HR.
+        // `outputScript` is base64 in HR (CoreScript Serialize) and bytes in non-HR.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x33; 32]),
+                "amount": 9_876_543u64,
+                "coreFeePerByte": 5u32,
+                "pooling": "never",
+                "outputScript": "dqkU",
+                "nonce": 11u64,
+                "userFeeIncrease": 2u16,
+                "signaturePublicKeyId": 4u32,
+                "signature": "srKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrI=",
+            })
+        );
         let recovered = IdentityCreditWithdrawalTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        let recovered = IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
+        // Explicit suffixes lock in sized variants: `amount` u64, `coreFeePerByte`
+        // u32, `nonce` u64 (IdentityNonce), `userFeeIncrease` u16,
+        // `signaturePublicKeyId` u32 (KeyID).
+        // `pooling`: `pooling_serde` emits the u8 discriminant on the non-HR
+        // path (`Pooling::Never as u8 == 0`).
+        // `outputScript`: CoreScript serializes as Bytes on the non-HR path.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x33; 32]),
+                "amount": 9_876_543u64,
+                "coreFeePerByte": 5u32,
+                "pooling": 0u8,
+                "outputScript": BinaryData::new(vec![0x76, 0xa9, 0x14]),
+                "nonce": 11u64,
+                "userFeeIncrease": 2u16,
+                "signaturePublicKeyId": 4u32,
+                "signature": BinaryData::new(vec![0xb2; 65]),
+            })
+        );
+        let recovered =
+            IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

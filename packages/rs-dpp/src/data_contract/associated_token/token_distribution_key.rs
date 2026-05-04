@@ -129,42 +129,57 @@ impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests_token_distribution_info {
     use super::*;
-    use platform_value::Identifier;
+    use platform_value::{Identifier, Value};
+    use serde_json::json;
 
     /// Non-default `PreProgrammed` variant with distinct timestamp + identifier
-    /// so a per-property assertion catches a silent variant flip or
-    /// inner-zero on round-trip.
+    /// so the wire-shape assertion catches a silent variant flip or inner-zero
+    /// on round-trip.
     fn fixture() -> TokenDistributionInfo {
         TokenDistributionInfo::PreProgrammed(1_700_000_000_000, Identifier::new([0x42; 32]))
     }
 
-    fn assert_per_property(actual: &TokenDistributionInfo) {
-        match actual {
-            TokenDistributionInfo::PreProgrammed(ts, id) => {
-                assert_eq!(*ts, 1_700_000_000_000, "PreProgrammed.timestamp");
-                assert_eq!(*id, Identifier::new([0x42; 32]), "PreProgrammed.identifier");
-            }
-            other => panic!("expected PreProgrammed, got {:?}", other),
-        }
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Externally-tagged tuple variant: `{ "PreProgrammed": [<ts>, <id>] }`.
+        // `TimestampMillis` is `u64`; JSON erases the size — see the value-
+        // path assertion which uses `1_700_000_000_000u64` to lock in `Value::U64`.
+        // `Identifier` is rendered as the base58-encoded string in JSON.
+        assert_eq!(
+            json,
+            json!({
+                "PreProgrammed": [
+                    1_700_000_000_000u64,
+                    "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                ],
+            })
+        );
         let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `Identifier`'s `Serialize` impl emits the typed `Value::Identifier`
+        // variant (NOT `Value::Bytes32`). `platform_value!` interpolation goes
+        // through Serialize, so a raw `Value::Identifier(...)` literal in the
+        // macro would conflict — instead we construct the expected map by hand
+        // so the variant is preserved exactly.
+        let expected = Value::Map(vec![(
+            Value::Text("PreProgrammed".to_string()),
+            Value::Array(vec![
+                Value::U64(1_700_000_000_000),
+                Value::Identifier([0x42; 32]),
+            ]),
+        )]);
+        assert_eq!(value, expected);
         let recovered = TokenDistributionInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 }

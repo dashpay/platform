@@ -497,9 +497,15 @@ mod json_convertible_tests {
         assert!(v0.input_witnesses.is_empty(), "input_witnesses");
     }
 
+    // These tests stay `#[ignore]`'d while the umbrella `StateTransition` is
+    // `serde(untagged)`. A full inline wire-shape assertion would just be the
+    // shape of the chosen inner variant (because `untagged` flattens), and
+    // every inner variant already has its own per-type wire-shape test below
+    // its module. Renamed to the new convention so they are picked up
+    // uniformly when (in pass 2) the umbrella switches to a tagged shape.
     #[test]
     #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
@@ -510,7 +516,7 @@ mod json_convertible_tests {
 
     #[test]
     #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");

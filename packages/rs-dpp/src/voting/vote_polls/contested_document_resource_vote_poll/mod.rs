@@ -80,9 +80,11 @@ impl ContestedDocumentResourceVotePoll {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     /// Non-default values per field (real contract id, named type/index, two
-    /// index values) so a per-property assertion catches silent zero-out /
+    /// index values) so the wire-shape assertion catches silent zero-out /
     /// vec-truncate on round-trip.
     fn fixture() -> ContestedDocumentResourceVotePoll {
         ContestedDocumentResourceVotePoll {
@@ -96,40 +98,46 @@ mod json_convertible_tests {
         }
     }
 
-    fn assert_per_property(p: &ContestedDocumentResourceVotePoll) {
-        assert_eq!(p.contract_id, Identifier::new([0xc1; 32]), "contract_id");
-        assert_eq!(p.document_type_name, "preorder", "document_type_name");
-        assert_eq!(p.index_name, "parentNameAndLabel", "index_name");
-        assert_eq!(p.index_values.len(), 2, "index_values.len");
-        assert_eq!(
-            p.index_values[0],
-            Value::Text("dash".to_string()),
-            "index_values[0]"
-        );
-        assert_eq!(
-            p.index_values[1],
-            Value::Text("alice".to_string()),
-            "index_values[1]"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // This is a plain struct (no `#[serde(tag)]`), so there is no
+        // `$formatVersion` on the wire. `Identifier` -> base58 string.
+        // `Value::Text` inside the array -> JSON string.
+        assert_eq!(
+            json,
+            json!({
+                "contractId": "E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS",
+                "documentTypeName": "preorder",
+                "indexName": "parentNameAndLabel",
+                "indexValues": ["dash", "alice"],
+            })
+        );
         let recovered = ContestedDocumentResourceVotePoll::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Interpolate the `Identifier` via `platform_value!` so Serialize emits
+        // `Value::Identifier` (NOT `Value::Bytes32`). `index_values` is a
+        // `Vec<Value>` round-tripped element-wise.
+        let id = Identifier::new([0xc1; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "contractId": id,
+                "documentTypeName": "preorder",
+                "indexName": "parentNameAndLabel",
+                "indexValues": ["dash", "alice"],
+            })
+        );
         let recovered = ContestedDocumentResourceVotePoll::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 }

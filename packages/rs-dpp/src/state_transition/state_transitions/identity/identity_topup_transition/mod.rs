@@ -218,6 +218,10 @@ mod json_convertible_tests {
     use crate::tests::fixtures::instant_asset_lock_proof_fixture;
     use platform_value::{BinaryData, Identifier};
 
+    // Tier 4: `instant_asset_lock_proof_fixture` produces NON-DETERMINISTIC bytes
+    // (random transaction / instantLock per run), so wire-shape assertions on the
+    // asset_lock_proof field stay envelope-only — the deterministic siblings
+    // (identity_id, user_fee_increase, signature) get full literal assertions.
     fn fixture() -> IdentityTopUpTransition {
         IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
             asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
@@ -227,38 +231,81 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &IdentityTopUpTransition) {
-        let IdentityTopUpTransition::V0(v0) = t;
-        assert_eq!(v0.identity_id, Identifier::new([0x44; 32]), "identity_id");
-        assert_eq!(v0.user_fee_increase, 9, "user_fee_increase");
-        assert_eq!(v0.signature, BinaryData::new(vec![0xc3; 65]), "signature");
-        // asset_lock_proof structural equality covered by outer assert_eq
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        let obj = json.as_object().expect("json is an object");
+        assert_eq!(obj.get("$formatVersion"), Some(&serde_json::json!("0")));
+        assert_eq!(
+            obj.get("identityId"),
+            Some(&serde_json::json!(Identifier::new([0x44; 32])))
+        );
+        // `userFeeIncrease` is `u16` (UserFeeIncrease) in the source type. JSON
+        // erases the size on the wire — the value-path assertion uses `9u16`.
+        assert_eq!(obj.get("userFeeIncrease"), Some(&serde_json::json!(9)));
+        // 65-byte signature serialized as base64 (BinaryData)
+        assert_eq!(
+            obj.get("signature"),
+            Some(&serde_json::json!(
+                "w8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8M="
+            ))
+        );
+        let proof = obj
+            .get("assetLockProof")
+            .and_then(|v| v.as_object())
+            .expect("assetLockProof is an object");
+        assert_eq!(proof.get("type"), Some(&serde_json::json!("instant")));
+        assert_eq!(proof.get("outputIndex"), Some(&serde_json::json!(0)));
+        assert!(proof.get("instantLock").is_some_and(|v| v.is_string()));
+        assert!(proof.get("transaction").is_some_and(|v| v.is_string()));
         let recovered = IdentityTopUpTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        let map = value.as_map().expect("value is a map");
+        let get = |key: &str| {
+            map.iter()
+                .find(|(k, _)| k.as_text() == Some(key))
+                .map(|(_, v)| v)
+        };
+        assert_eq!(
+            get("$formatVersion"),
+            Some(&platform_value::Value::Text("0".to_string()))
+        );
+        assert_eq!(
+            get("identityId"),
+            Some(&platform_value::Value::Identifier([0x44; 32]))
+        );
+        // `9u16`: UserFeeIncrease is `u16`; value-path preserves U16.
+        assert_eq!(get("userFeeIncrease"), Some(&platform_value::Value::U16(9)));
+        assert_eq!(
+            get("signature"),
+            Some(&platform_value::Value::Bytes(vec![0xc3; 65]))
+        );
+        let proof = get("assetLockProof")
+            .and_then(|v| v.as_map())
+            .expect("assetLockProof is a map");
+        let pget = |key: &str| {
+            proof
+                .iter()
+                .find(|(k, _)| k.as_text() == Some(key))
+                .map(|(_, v)| v)
+        };
+        assert_eq!(
+            pget("type"),
+            Some(&platform_value::Value::Text("instant".to_string()))
+        );
+        assert_eq!(pget("outputIndex"), Some(&platform_value::Value::U32(0)));
+        assert!(pget("instantLock").is_some_and(|v| matches!(v, platform_value::Value::Bytes(_))));
+        assert!(pget("transaction").is_some_and(|v| matches!(v, platform_value::Value::Bytes(_))));
         let recovered = IdentityTopUpTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

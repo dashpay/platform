@@ -79,6 +79,8 @@ mod json_convertible_tests {
     use crate::shielded::SerializedAction;
     use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
     use crate::withdrawal::Pooling;
+    use platform_value::{platform_value, BinaryData, Bytes32};
+    use serde_json::json;
 
     fn fixture() -> ShieldedWithdrawalTransition {
         ShieldedWithdrawalTransition::V0(ShieldedWithdrawalTransitionV0 {
@@ -100,46 +102,71 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &ShieldedWithdrawalTransition) {
-        let ShieldedWithdrawalTransition::V0(v0) = t;
-        assert_eq!(v0.actions.len(), 1, "actions.len");
-        assert_eq!(v0.unshielding_amount, 750_000, "unshielding_amount");
-        assert_eq!(v0.anchor, [0x77; 32], "anchor");
-        assert_eq!(v0.proof, vec![0x88; 192], "proof");
-        assert_eq!(v0.binding_signature, [0x99; 64], "binding_signature");
-        assert_eq!(v0.core_fee_per_byte, 21, "core_fee_per_byte");
-        assert_eq!(v0.pooling, Pooling::IfAvailable, "pooling");
-        assert_eq!(
-            v0.output_script,
-            CoreScript::from_bytes(vec![0xaa, 0xbb]),
-            "output_script"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `unshieldingAmount` (u64), `coreFeePerByte` (u32). `pooling` uses
+        // `pooling_serde` which emits the camelCase name in HR and u8 in non-HR.
+        // `outputScript` is base64 in HR (CoreScript Serialize) and bytes in non-HR.
+        // SerializedAction 32-byte fields → base64 in HR, `Value::Bytes32` non-HR.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "actions": [{
+                    "nullifier": "ERERERERERERERERERERERERERERERERERERERERERE=",
+                    "rk": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+                    "cmx": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+                    "encryptedNote": "RERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERE",
+                    "cvNet": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+                    "spendAuthSig": "ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZg==",
+                }],
+                "unshieldingAmount": 750_000,
+                "anchor": "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=",
+                "proof": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+                "bindingSignature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmQ==",
+                "coreFeePerByte": 21,
+                "pooling": "ifAvailable",
+                "outputScript": "qrs=",
+            })
+        );
         let recovered = ShieldedWithdrawalTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `unshieldingAmount` u64,
+        // `coreFeePerByte` u32. `pooling` non-HR path emits the u8 discriminant
+        // (`Pooling::IfAvailable as u8 == 1`). `outputScript` non-HR → bytes.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "actions": [{
+                    "nullifier": Bytes32::new([0x11; 32]),
+                    "rk": Bytes32::new([0x22; 32]),
+                    "cmx": Bytes32::new([0x33; 32]),
+                    "encryptedNote": platform_value::Value::Bytes(vec![0x44; 216]),
+                    "cvNet": Bytes32::new([0x55; 32]),
+                    "spendAuthSig": platform_value::Value::Bytes(vec![0x66; 64]),
+                }],
+                "unshieldingAmount": 750_000u64,
+                "anchor": Bytes32::new([0x77; 32]),
+                "proof": platform_value::Value::Bytes(vec![0x88; 192]),
+                "bindingSignature": platform_value::Value::Bytes(vec![0x99; 64]),
+                "coreFeePerByte": 21u32,
+                "pooling": 1u8,
+                "outputScript": BinaryData::new(vec![0xaa, 0xbb]),
+            })
+        );
         let recovered = ShieldedWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

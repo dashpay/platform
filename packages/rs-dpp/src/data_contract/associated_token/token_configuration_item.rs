@@ -762,40 +762,41 @@ impl crate::serialization::ValueConvertible for TokenConfigurationChangeItem {}
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     /// Non-default variant (`MaxSupply(Some(...))`) with a non-zero inner amount
-    /// so a per-property assertion would catch a silent variant flip or
-    /// inner-zero on round-trip.
+    /// so the wire-shape assertion catches a silent variant flip or inner-zero
+    /// on round-trip.
     fn fixture() -> TokenConfigurationChangeItem {
         TokenConfigurationChangeItem::MaxSupply(Some(123_456_789u64))
     }
 
-    fn assert_per_property(actual: &TokenConfigurationChangeItem) {
-        match actual {
-            TokenConfigurationChangeItem::MaxSupply(Some(v)) => {
-                assert_eq!(*v, 123_456_789u64, "MaxSupply inner amount");
-            }
-            other => panic!("expected MaxSupply(Some(_)), got {:?}", other),
-        }
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `TokenConfigurationChangeItem` uses serde external tagging (no
+        // `#[serde(tag = "...")]`). A newtype variant carrying `Option<u64>`
+        // serializes as `{ "maxSupply": <inner> }` where `Some(x)` -> `x`.
+        // `TokenAmount` is `u64`; JSON has only one number type, so the U64
+        // distinction is erased on the wire — the value-path assertion uses
+        // `123_456_789u64` to lock in `Value::U64`.
+        assert_eq!(json, json!({"maxSupply": 123_456_789u64}));
         let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `123_456_789u64`: explicit suffix forces `Value::U64`, matching
+        // `TokenAmount`'s u64 type. Bare integer would expand to `Value::I32`.
+        assert_eq!(value, platform_value!({"maxSupply": 123_456_789u64}));
         let recovered = TokenConfigurationChangeItem::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 }

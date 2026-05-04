@@ -76,6 +76,8 @@ impl StateTransitionFieldTypes for UnshieldTransition {
 mod json_convertible_tests {
     use super::*;
     use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
+    use platform_value::{platform_value, Bytes32};
+    use serde_json::json;
 
     fn fixture_action() -> crate::shielded::SerializedAction {
         crate::shielded::SerializedAction {
@@ -99,44 +101,69 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &UnshieldTransition) {
-        let UnshieldTransition::V0(v0) = t;
-        assert_eq!(
-            v0.output_address,
-            crate::address_funds::PlatformAddress::P2pkh([0xa1; 20]),
-            "output_address"
-        );
-        assert_eq!(v0.actions, vec![fixture_action()], "actions");
-        assert_eq!(v0.unshielding_amount, 250_000, "unshielding_amount");
-        assert_eq!(v0.anchor, [0x77; 32], "anchor");
-        assert_eq!(v0.proof, vec![0x88; 192], "proof");
-        assert_eq!(v0.binding_signature, [0x99; 64], "binding_signature");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Sized-int field whose JSON wire encoding loses size info:
+        // `unshieldingAmount` (u64). `outputAddress` is a `PlatformAddress` which
+        // serializes as hex string in HR (1 byte type + 20 byte hash) and bytes
+        // non-HR. SerializedAction byte fields: 32-byte arrays are base64 (HR);
+        // value-path uses `Value::Bytes32`.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "outputAddress": "00a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+                "actions": [{
+                    "nullifier": "ERERERERERERERERERERERERERERERERERERERERERE=",
+                    "rk": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+                    "cmx": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+                    "encryptedNote": "RERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERE",
+                    "cvNet": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+                    "spendAuthSig": "ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZg==",
+                }],
+                "unshieldingAmount": 250_000,
+                "anchor": "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=",
+                "proof": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+                "bindingSignature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmQ==",
+            })
+        );
         let recovered = UnshieldTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Explicit suffix locks `unshieldingAmount` as u64. `PlatformAddress` on the
+        // non-HR path serializes as raw bytes (21 = 1 type + 20 hash); for P2pkh the
+        // type byte is 0x00. Fixed-size 32-byte fields → `Value::Bytes32`.
+        let mut output_address_bytes = vec![0x00];
+        output_address_bytes.extend(vec![0xa1; 20]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "outputAddress": platform_value::Value::Bytes(output_address_bytes),
+                "actions": [{
+                    "nullifier": Bytes32::new([0x11; 32]),
+                    "rk": Bytes32::new([0x22; 32]),
+                    "cmx": Bytes32::new([0x33; 32]),
+                    "encryptedNote": platform_value::Value::Bytes(vec![0x44; 216]),
+                    "cvNet": Bytes32::new([0x55; 32]),
+                    "spendAuthSig": platform_value::Value::Bytes(vec![0x66; 64]),
+                }],
+                "unshieldingAmount": 250_000u64,
+                "anchor": Bytes32::new([0x77; 32]),
+                "proof": platform_value::Value::Bytes(vec![0x88; 192]),
+                "bindingSignature": platform_value::Value::Bytes(vec![0x99; 64]),
+            })
+        );
         let recovered = UnshieldTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

@@ -490,7 +490,8 @@ mod json_convertible_tests {
     use super::*;
 
     use crate::identity::{KeyType, Purpose, SecurityLevel};
-    use platform_value::BinaryData;
+    use platform_value::{platform_value, BinaryData};
+    use serde_json::json;
 
     fn fixture() -> IdentityPublicKeyInCreation {
         IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
@@ -505,42 +506,56 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &IdentityPublicKeyInCreation) {
-        let IdentityPublicKeyInCreation::V0(v0) = t;
-        assert_eq!(v0.id, 7, "id");
-        assert_eq!(v0.key_type, KeyType::ECDSA_SECP256K1, "key_type");
-        assert_eq!(v0.purpose, Purpose::AUTHENTICATION, "purpose");
-        assert_eq!(v0.security_level, SecurityLevel::HIGH, "security_level");
-        assert_eq!(v0.contract_bounds, None, "contract_bounds");
-        assert!(v0.read_only, "read_only");
-        assert_eq!(v0.data, BinaryData::new(vec![0x88; 33]), "data");
-        assert_eq!(v0.signature, BinaryData::new(vec![0x99; 65]), "signature");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `id` (u32 KeyID), `type`/`purpose`/`securityLevel` (u8 repr enums).
+        // The value-path assertion below uses explicit suffixes for size lock-in.
+        // Note `key_type` is renamed to `"type"` in the wire shape.
+        // `securityLevel` = 2 because `SecurityLevel::HIGH as u8 == 2`.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "id": 7,
+                "type": 0,
+                "purpose": 0,
+                "securityLevel": 2,
+                "contractBounds": serde_json::Value::Null,
+                "readOnly": true,
+                "data": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+                "signature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk=",
+            })
+        );
         let recovered = IdentityPublicKeyInCreation::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `id` u32 (KeyID),
+        // `type`/`purpose`/`securityLevel` u8 (#[repr(u8)] enums).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "id": 7u32,
+                "type": 0u8,
+                "purpose": 0u8,
+                "securityLevel": 2u8,
+                "contractBounds": platform_value::Value::Null,
+                "readOnly": true,
+                "data": BinaryData::new(vec![0x88; 33]),
+                "signature": BinaryData::new(vec![0x99; 65]),
+            })
+        );
         let recovered = IdentityPublicKeyInCreation::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

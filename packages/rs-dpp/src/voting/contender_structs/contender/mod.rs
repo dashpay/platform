@@ -460,11 +460,12 @@ mod tests {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests_contender_with_serialized_document {
     use super::*;
-    use platform_value::Identifier;
+    use platform_value::{platform_value, Identifier, Value};
+    use serde_json::json;
 
     /// Non-default values per field (real identity_id bytes, non-empty
-    /// serialized_document, non-zero tally) so a per-property assertion would
-    /// catch silent zero-out / flip on round-trip.
+    /// serialized_document, non-zero tally) so the wire-shape assertion
+    /// catches silent zero-out / flip on round-trip.
     fn fixture() -> ContenderWithSerializedDocument {
         ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
             identity_id: Identifier::new([0xa1; 32]),
@@ -473,34 +474,55 @@ mod json_convertible_tests_contender_with_serialized_document {
         })
     }
 
-    fn assert_v0_fields(c: &ContenderWithSerializedDocument) {
-        let ContenderWithSerializedDocument::V0(rec) = c;
-        assert_eq!(rec.identity_id, Identifier::new([0xa1; 32]), "identity_id");
-        assert_eq!(
-            rec.serialized_document,
-            Some(vec![0xde, 0xad, 0xbe, 0xef]),
-            "serialized_document"
-        );
-        assert_eq!(rec.vote_tally, Some(42), "vote_tally");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `Identifier` renders as base58 in JSON. `Vec<u8>` (from the default
+        // `serialize_seq` in serde_json) renders as an array of numbers — NOT
+        // bytes — so each element appears as `Number(...)`. `vote_tally` is
+        // `Option<u32>`; JSON erases the size — the value-path assertion uses
+        // `42u32` to lock in `Value::U32`.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "identityId": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                "serializedDocument": [222, 173, 190, 239],
+                "voteTally": 42,
+            })
+        );
         let recovered = ContenderWithSerializedDocument::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // platform_value preserves typed variants: `Identifier` renders as
+        // `Value::Identifier`, `Vec<u8>` renders as `Value::Array([U8(...), ...])`
+        // (NOT `Value::Bytes`, because `Vec<u8>` uses the generic `serialize_seq`
+        // path), `Option<u32>` becomes `Value::U32`.
+        let id = Identifier::new([0xa1; 32]);
+        let bytes_array = Value::Array(vec![
+            Value::U8(0xde),
+            Value::U8(0xad),
+            Value::U8(0xbe),
+            Value::U8(0xef),
+        ]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "identityId": id,
+                "serializedDocument": bytes_array,
+                "voteTally": 42u32,
+            })
+        );
         let recovered = ContenderWithSerializedDocument::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

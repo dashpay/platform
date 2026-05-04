@@ -79,11 +79,12 @@ impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use platform_value::Identifier;
+    use platform_value::{Identifier, Value};
+    use serde_json::json;
 
     /// Non-default variant `VerifiedTokenBalance(id, amount)` with both
-    /// tuple fields set so a per-property assertion catches silent
-    /// variant flip / inner-zero on round-trip.
+    /// tuple fields set so the wire-shape assertion catches silent variant
+    /// flip / inner-zero on round-trip.
     fn fixture() -> StateTransitionProofResult {
         StateTransitionProofResult::VerifiedTokenBalance(
             Identifier::new([0xab; 32]),
@@ -91,33 +92,49 @@ mod json_convertible_tests {
         )
     }
 
-    fn assert_per_property(actual: &StateTransitionProofResult) {
-        match actual {
-            StateTransitionProofResult::VerifiedTokenBalance(id, amount) => {
-                assert_eq!(*id, Identifier::new([0xab; 32]), "VerifiedTokenBalance.id");
-                assert_eq!(*amount, 123_456_789u64, "VerifiedTokenBalance.amount");
-            }
-            other => panic!("expected VerifiedTokenBalance, got {}", other),
-        }
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `StateTransitionProofResult` uses serde external tagging (default,
+        // no `#[serde(tag = ...)]`). Tuple variants serialize as
+        // `{ "VariantName": [field0, field1, ...] }`. `Identifier` -> base58
+        // string in JSON; `TokenAmount` is `u64` and JSON erases the size —
+        // see the value-path assertion which uses `123_456_789u64`.
+        assert_eq!(
+            json,
+            json!({
+                "VerifiedTokenBalance": [
+                    "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
+                    123_456_789u64,
+                ],
+            })
+        );
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // platform_value preserves typed `Identifier` and `U64` variants. We
+        // construct the expected `Value::Map` by hand: `platform_value!{...}`
+        // would convert the `Identifier` interpolation through Serialize
+        // (correct) but the outer shape has only one (Text-keyed) entry whose
+        // value is an Array of mixed-typed Values, so it's clearer to write
+        // the literal Map.
+        let expected = Value::Map(vec![(
+            Value::Text("VerifiedTokenBalance".to_string()),
+            Value::Array(vec![
+                Value::Identifier([0xab; 32]),
+                Value::U64(123_456_789),
+            ]),
+        )]);
+        assert_eq!(value, expected);
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_per_property(&recovered);
     }
 }

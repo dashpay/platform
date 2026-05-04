@@ -27,68 +27,75 @@ mod json_convertible_tests {
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::DocumentPurchaseTransitionV0;
-    use platform_value::{Identifier, Value};
-    use std::collections::BTreeMap;
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
 
-    fn base_fixture() -> DocumentBaseTransition {
-        DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
-            id: Identifier::new([0xc1; 32]),
-            identity_contract_nonce: 11,
-            document_type_name: "post".to_string(),
-            data_contract_id: Identifier::new([0xd2; 32]),
-        })
-    }
-
-    fn data_fixture() -> BTreeMap<String, Value> {
-        let mut data = BTreeMap::new();
-        data.insert("name".to_string(), Value::Text("alice".to_string()));
-        data
-    }
-
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     fn fixture() -> DocumentPurchaseTransition {
         DocumentPurchaseTransition::V0(DocumentPurchaseTransitionV0 {
-            base: base_fixture(),
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::new([0xc1; 32]),
+                identity_contract_nonce: 11,
+                document_type_name: "post".to_string(),
+                data_contract_id: Identifier::new([0xd2; 32]),
+            }),
             revision: 3,
             price: 999_000,
         })
     }
 
-    fn assert_v0_fields(t: &DocumentPurchaseTransition) {
-        let DocumentPurchaseTransition::V0(rec) = t;
-        let DocumentBaseTransition::V0(base) = &rec.base else {
-            panic!("expected base V0");
-        };
-        assert_eq!(base.id, Identifier::new([0xc1; 32]), "base.id");
-        assert_eq!(base.identity_contract_nonce, 11, "base.identity_contract_nonce");
-        assert_eq!(base.document_type_name, "post", "base.document_type_name");
-        assert_eq!(
-            base.data_contract_id,
-            Identifier::new([0xd2; 32]),
-            "base.data_contract_id"
-        );
-        assert_eq!(rec.revision, 3, "revision");
-        assert_eq!(rec.price, 999_000, "price");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
-        let json = JsonConvertible::to_json(&original).expect("to_json");
-        let recovered = <DocumentPurchaseTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let json = original.to_json().expect("to_json");
+        // Doubly-tagged externally enum: outer `V0` for the variant; inner
+        // `V0` for the flattened `base`. `$identityContractNonce`,
+        // `$revision`, and `price` are `u64`; JSON erases the size.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "V0": {
+                        "$id": Identifier::new([0xc1; 32]),
+                        "$identityContractNonce": 11,
+                        "$type": "post",
+                        "$dataContractId": Identifier::new([0xd2; 32]),
+                    },
+                    "$revision": 3,
+                    "price": 999_000,
+                }
+            })
+        );
+        let recovered = DocumentPurchaseTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
-        let value = ValueConvertible::to_object(&original).expect("to_object");
-        let recovered = <DocumentPurchaseTransition as ValueConvertible>::from_object(value).expect("from_object");
+        let value = original.to_object().expect("to_object");
+        // `11u64`/`3u64`/`999_000u64`: `IdentityNonce`, `Revision`, and
+        // `Credits` are all `u64` aliases — explicit suffixes lock in
+        // `Value::U64`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "V0": {
+                        "$id": Identifier::new([0xc1; 32]),
+                        "$identityContractNonce": 11u64,
+                        "$type": "post",
+                        "$dataContractId": Identifier::new([0xd2; 32]),
+                    },
+                    "$revision": 3u64,
+                    "price": 999_000u64,
+                }
+            })
+        );
+        let recovered = DocumentPurchaseTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

@@ -113,10 +113,11 @@ mod json_convertible_tests {
     use super::*;
     use crate::data_contract::group::v0::GroupV0;
     use platform_value::Identifier;
+    use serde_json::json;
     use std::collections::BTreeMap;
 
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     fn fixture() -> Group {
         let mut members = BTreeMap::new();
         members.insert(Identifier::new([0xa0; 32]), 1u32);
@@ -127,39 +128,56 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(g: &Group) {
-        let Group::V0(rec) = g;
-        assert_eq!(rec.members.len(), 2, "members.len");
-        assert_eq!(
-            rec.members.get(&Identifier::new([0xa0; 32])).copied(),
-            Some(1u32),
-            "members[0xa0..]"
-        );
-        assert_eq!(
-            rec.members.get(&Identifier::new([0xb1; 32])).copied(),
-            Some(2u32),
-            "members[0xb1..]"
-        );
-        assert_eq!(rec.required_power, 2, "required_power");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `members` keys are `Identifier` — JSON renders them as the
+        // base58-encoded string (e.g. "Bp2HuBWdciXFKV2CnoC1Z4V44QfCmArCQHdzKpArYJc7"
+        // for `[0xa0; 32]`). Member-power values are `u32`; JSON has only one
+        // number type, so the U32 distinction is erased on the wire — the
+        // value-path assertion below uses `1u32` / `2u32` to lock it in.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "members": {
+                    "Bp2HuBWdciXFKV2CnoC1Z4V44QfCmArCQHdzKpArYJc7": 1,
+                    "CxeKLJRofna6h2GqCsjdVwc2D7EdDFX8uDy9KGw3Ey68": 2,
+                },
+                "requiredPower": 2,
+            })
+        );
         let recovered = Group::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `members` is `BTreeMap<Identifier, u32>`. platform_value renders
+        // the BTreeMap as a `Value::Map([(Identifier, U32), ...])` (NOT the
+        // textual-keyed `{ ... }` form, because the keys are Identifiers, not
+        // strings) and preserves the U32 variant on the values. We construct
+        // the expected map directly because `platform_value!{...}` only emits
+        // string-keyed Maps.
+        use platform_value::Value;
+        let expected = Value::Map(vec![
+            (Value::Text("$formatVersion".to_string()), Value::Text("0".to_string())),
+            (
+                Value::Text("members".to_string()),
+                Value::Map(vec![
+                    (Value::Identifier([0xa0; 32]), Value::U32(1)),
+                    (Value::Identifier([0xb1; 32]), Value::U32(2)),
+                ]),
+            ),
+            (Value::Text("requiredPower".to_string()), Value::U32(2)),
+        ]);
+        assert_eq!(value, expected);
         let recovered = Group::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

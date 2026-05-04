@@ -197,12 +197,13 @@ mod tests {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
-
     use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+    use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+    use platform_value::platform_value;
+    use serde_json::json;
 
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     fn fixture() -> ChangeControlRules {
         ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
@@ -213,49 +214,48 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(r: &ChangeControlRules) {
-        let ChangeControlRules::V0(rec) = r;
-        assert_eq!(
-            rec.authorized_to_make_change,
-            AuthorizedActionTakers::ContractOwner,
-            "authorized_to_make_change"
-        );
-        assert_eq!(
-            rec.admin_action_takers,
-            AuthorizedActionTakers::MainGroup,
-            "admin_action_takers"
-        );
-        assert!(
-            rec.changing_authorized_action_takers_to_no_one_allowed,
-            "changing_authorized_action_takers_to_no_one_allowed"
-        );
-        assert!(
-            !rec.changing_admin_action_takers_to_no_one_allowed,
-            "changing_admin_action_takers_to_no_one_allowed (false)"
-        );
-        assert!(
-            rec.self_changing_admin_action_takers_allowed,
-            "self_changing_admin_action_takers_allowed"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `AuthorizedActionTakers` is a serde-default enum. Unit variants
+        // serialize as bare strings ("ContractOwner", "MainGroup"); newtype
+        // variants would emit `{"variantName": payload}` shapes.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "authorizedToMakeChange": "ContractOwner",
+                "adminActionTakers": "MainGroup",
+                "changingAuthorizedActionTakersToNoOneAllowed": true,
+                "changingAdminActionTakersToNoOneAllowed": false,
+                "selfChangingAdminActionTakersAllowed": true,
+            })
+        );
         let recovered = ChangeControlRules::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // No sized integers in this fixture — only Text + Bool. Unit variants
+        // serialize as plain Text strings on both wire formats.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "authorizedToMakeChange": "ContractOwner",
+                "adminActionTakers": "MainGroup",
+                "changingAuthorizedActionTakersToNoOneAllowed": true,
+                "changingAdminActionTakersToNoOneAllowed": false,
+                "selfChangingAdminActionTakersAllowed": true,
+            })
+        );
         let recovered = ChangeControlRules::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

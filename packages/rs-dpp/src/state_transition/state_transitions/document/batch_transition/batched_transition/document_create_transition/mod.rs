@@ -141,11 +141,12 @@ mod json_convertible_tests {
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
-    use platform_value::{Identifier, Value};
+    use platform_value::{platform_value, Identifier, Value};
+    use serde_json::json;
     use std::collections::BTreeMap;
 
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     fn fixture() -> DocumentCreateTransition {
         let mut data = BTreeMap::new();
         data.insert("name".to_string(), Value::Text("alice".to_string()));
@@ -162,43 +163,69 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &DocumentCreateTransition) {
-        let DocumentCreateTransition::V0(rec) = t;
-        let DocumentBaseTransition::V0(base) = &rec.base else { panic!("expected base V0"); };
-        assert_eq!(base.id, Identifier::new([0xc1; 32]), "base.id");
-        assert_eq!(base.identity_contract_nonce, 11, "base.identity_contract_nonce");
-        assert_eq!(base.document_type_name, "post", "base.document_type_name");
-        assert_eq!(base.data_contract_id, Identifier::new([0xd2; 32]), "base.data_contract_id");
-        assert_eq!(rec.entropy, [0xab; 32], "entropy");
-        assert_eq!(
-            rec.data.get("name"),
-            Some(&Value::Text("alice".to_string())),
-            "data.name"
-        );
-        assert_eq!(
-            rec.prefunded_voting_balance,
-            Some(("uniqueName".to_string(), 50_000)),
-            "prefunded_voting_balance"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
-        let json = JsonConvertible::to_json(&original).expect("to_json");
-        let recovered = <DocumentCreateTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let json = original.to_json().expect("to_json");
+        let entropy_vec: Vec<u8> = vec![0xab; 32];
+        // Externally-tagged enum: outer `V0` wraps the variant; the inner
+        // `base` field is itself an enum (`DocumentBaseTransition::V0`),
+        // so it appears as `{"V0": {...base fields...}}` flattened into the
+        // outer map. `$entropy` is a `[u8; 32]` -> JSON renders it as an
+        // array of numbers (no base64 envelope). `$identityContractNonce`
+        // is `u64`; JSON has only one number type, so the size is erased.
+        // `data` is `#[serde(flatten)]` -> the map's keys become top-level.
+        // `$prefundedVotingBalance` is `Option<(String, u64)>` and
+        // serializes as a 2-element JSON array.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "V0": {
+                        "$id": Identifier::new([0xc1; 32]),
+                        "$identityContractNonce": 11,
+                        "$type": "post",
+                        "$dataContractId": Identifier::new([0xd2; 32]),
+                    },
+                    "$entropy": entropy_vec,
+                    "name": "alice",
+                    "$prefundedVotingBalance": ["uniqueName", 50_000],
+                }
+            })
+        );
+        let recovered = DocumentCreateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
-        let value = ValueConvertible::to_object(&original).expect("to_object");
-        let recovered = <DocumentCreateTransition as ValueConvertible>::from_object(value).expect("from_object");
+        let value = original.to_object().expect("to_object");
+        let entropy: [u8; 32] = [0xab; 32];
+        // `11u64`: `IdentityNonce` is a `u64` alias; explicit suffix locks in
+        // the sized `Value::U64`. `[u8; 32]`: each element preserved as
+        // `Value::U8` via the platform_value! array path. `50_000u64`:
+        // `Credits` is a `u64` alias. `Identifier`s interpolate via
+        // `Serialize` -> `Value::Identifier`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "V0": {
+                        "$id": Identifier::new([0xc1; 32]),
+                        "$identityContractNonce": 11u64,
+                        "$type": "post",
+                        "$dataContractId": Identifier::new([0xd2; 32]),
+                    },
+                    "$entropy": entropy,
+                    "name": "alice",
+                    "$prefundedVotingBalance": ["uniqueName", 50_000u64],
+                }
+            })
+        );
+        let recovered = DocumentCreateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

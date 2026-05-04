@@ -87,11 +87,39 @@ mod json_convertible_tests {
         })
     }
 
+    // Tier 3: ExtendedDocument embeds a full `DataContract` (with all schemas
+    // + tokens + groups), so an inline wire-shape assertion would be enormous
+    // and brittle. We assert envelope only on the top-level discriminator and
+    // deterministic siblings; the embedded `Document` and `DataContract` have
+    // their own per-type round-trip tests that lock down their wire shapes.
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = JsonConvertible::to_json(&original).expect("to_json");
+        // Envelope assertions: the inner Document and DataContract are flattened
+        // into the root, so the surface includes BOTH wrappers (`$extendedFormatVersion`,
+        // `$type`, `$dataContractId`, `$dataContract`, `$entropy`, `$tokenPaymentInfo`,
+        // `$metadata`) AND all the embedded Document `$id` / `$ownerId` / `$revision`
+        // / `$createdAt*` / `$updatedAt*` / `$transferredAt*` / `$creatorId` keys.
+        // We only lock down the wrapper-specific keys and trust that
+        // Document and DataContract have their own per-type round-trip tests.
+        let obj = json.as_object().expect("json is an object");
+        assert_eq!(obj.get("$extendedFormatVersion"), Some(&serde_json::json!("0")));
+        assert_eq!(obj.get("$type"), Some(&serde_json::json!("niceDocument")));
+        // entropy is `Bytes32` → base64 in JSON
+        assert_eq!(
+            obj.get("$entropy"),
+            Some(&serde_json::json!(
+                "zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMw="
+            ))
+        );
+        assert_eq!(obj.get("$tokenPaymentInfo"), Some(&serde_json::Value::Null));
+        assert_eq!(obj.get("$metadata"), Some(&serde_json::Value::Null));
+        assert!(obj.get("$dataContractId").is_some_and(|v| v.is_string()));
+        assert!(obj.get("$dataContract").is_some_and(|v| v.is_object()));
+        // Document is flattened, so `$formatVersion` (the document's) is at the root too.
+        assert_eq!(obj.get("$formatVersion"), Some(&serde_json::json!("0")));
         let recovered = <ExtendedDocument as JsonConvertible>::from_json(json).expect("from_json");
         // ExtendedDocument lacks PartialEq — match variant + assert key fields.
         let ExtendedDocument::V0(orig_v0) = original;
@@ -103,10 +131,39 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = ValueConvertible::to_object(&original).expect("to_object");
+        // Envelope assertions: see json test above — Document + DataContract
+        // are flattened into the root; we only lock down wrapper-specific keys.
+        let map = value.as_map().expect("value is a map");
+        let get = |key: &str| {
+            map.iter()
+                .find(|(k, _)| k.as_text() == Some(key))
+                .map(|(_, v)| v)
+        };
+        assert_eq!(
+            get("$extendedFormatVersion"),
+            Some(&platform_value::Value::Text("0".to_string()))
+        );
+        assert_eq!(
+            get("$type"),
+            Some(&platform_value::Value::Text("niceDocument".to_string()))
+        );
+        assert_eq!(
+            get("$entropy"),
+            Some(&platform_value::Value::Bytes32([0xcc; 32]))
+        );
+        assert_eq!(get("$tokenPaymentInfo"), Some(&platform_value::Value::Null));
+        assert_eq!(get("$metadata"), Some(&platform_value::Value::Null));
+        assert!(get("$dataContractId").is_some_and(|v| matches!(v, platform_value::Value::Identifier(_))));
+        assert!(get("$dataContract").is_some_and(|v| v.is_map()));
+        // Document is flattened into the root.
+        assert_eq!(
+            get("$formatVersion"),
+            Some(&platform_value::Value::Text("0".to_string()))
+        );
         let recovered = <ExtendedDocument as ValueConvertible>::from_object(value).expect("from_object");
         let ExtendedDocument::V0(orig_v0) = original;
         let ExtendedDocument::V0(rec_v0) = recovered;

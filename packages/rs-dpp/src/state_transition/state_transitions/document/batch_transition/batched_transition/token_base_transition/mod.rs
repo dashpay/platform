@@ -103,10 +103,11 @@ impl DocumentTransitionObjectLike for TokenBaseTransition {
 mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
-    use platform_value::Identifier;
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
 
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     pub(super) fn fixture() -> TokenBaseTransition {
         TokenBaseTransition::V0(TokenBaseTransitionV0 {
             identity_contract_nonce: 13,
@@ -117,32 +118,62 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &TokenBaseTransition) {
-        let TokenBaseTransition::V0(rec) = t;
-        assert_eq!(rec.identity_contract_nonce, 13, "identity_contract_nonce");
-        assert_eq!(rec.token_contract_position, 2, "token_contract_position");
-        assert_eq!(rec.data_contract_id, Identifier::new([0xa1; 32]), "data_contract_id");
-        assert_eq!(rec.token_id, Identifier::new([0xb2; 32]), "token_id");
-        assert_eq!(rec.using_group_info, None, "using_group_info");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
-        let json = JsonConvertible::to_json(&original).expect("to_json");
-        let recovered = <TokenBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
+        // `TokenBaseTransition` has two `to_json`/`from_json`-style impls
+        // (one from `DocumentTransitionObjectLike`, one from
+        // `JsonConvertible`); use fully-qualified syntax to disambiguate.
+        let json = <TokenBaseTransition as JsonConvertible>::to_json(&original).expect("to_json");
+        // Externally-tagged enum: outer `V0`. Note the hyphenated rename
+        // `$identity-contract-nonce` (not camelCase) is intentional here —
+        // it's the explicit `serde(rename = "$identity-contract-nonce")` on
+        // the field. `$tokenContractPosition` is `u16`; JSON erases that
+        // size — see the Value-path assertion for `2u16`.
+        // `using_group_info` is `Option<GroupStateTransitionInfo>` flattened;
+        // when `None`, it contributes no keys to the wire shape.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "$identity-contract-nonce": 13,
+                    "$tokenContractPosition": 2,
+                    "$dataContractId": Identifier::new([0xa1; 32]),
+                    "$tokenId": Identifier::new([0xb2; 32]),
+                }
+            })
+        );
+        let recovered =
+            <TokenBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
-        let value = ValueConvertible::to_object(&original).expect("to_object");
-        let recovered = <TokenBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
+        // Same disambiguation as the JSON test above; both `to_object` and
+        // `from_object` are provided by two overlapping traits.
+        let value =
+            <TokenBaseTransition as ValueConvertible>::to_object(&original).expect("to_object");
+        // `13u64`: `IdentityNonce` is a `u64` alias. `2u16`:
+        // `token_contract_position` is `u16`; explicit suffix locks in
+        // `Value::U16`. `Identifier`s interpolate via `Serialize` ->
+        // `Value::Identifier`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "$identity-contract-nonce": 13u64,
+                    "$tokenContractPosition": 2u16,
+                    "$dataContractId": Identifier::new([0xa1; 32]),
+                    "$tokenId": Identifier::new([0xb2; 32]),
+                }
+            })
+        );
+        let recovered =
+            <TokenBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

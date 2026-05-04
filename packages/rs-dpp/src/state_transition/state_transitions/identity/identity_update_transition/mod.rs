@@ -288,7 +288,8 @@ mod test {
 mod json_convertible_tests {
     use super::*;
 
-    use platform_value::{BinaryData, Identifier};
+    use platform_value::{platform_value, BinaryData, Identifier};
+    use serde_json::json;
 
     fn fixture() -> IdentityUpdateTransition {
         IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
@@ -303,42 +304,56 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &IdentityUpdateTransition) {
-        let IdentityUpdateTransition::V0(v0) = t;
-        assert_eq!(v0.identity_id, Identifier::new([0x55; 32]), "identity_id");
-        assert_eq!(v0.revision, 3, "revision");
-        assert_eq!(v0.nonce, 17, "nonce");
-        assert!(v0.add_public_keys.is_empty(), "add_public_keys");
-        assert_eq!(v0.disable_public_keys, vec![1, 2, 3], "disable_public_keys");
-        assert_eq!(v0.user_fee_increase, 4, "user_fee_increase");
-        assert_eq!(v0.signature_public_key_id, 6, "signature_public_key_id");
-        assert_eq!(v0.signature, BinaryData::new(vec![0xd4; 65]), "signature");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `revision` (u64), `nonce` (u64), `userFeeIncrease` (u16),
+        // `signaturePublicKeyId` (u32), `disablePublicKeys` items (u32 KeyIDs).
+        // The value-path assertion below uses explicit suffixes to lock variants.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x55; 32]),
+                "revision": 3,
+                "nonce": 17,
+                "addPublicKeys": [],
+                "disablePublicKeys": [1, 2, 3],
+                "userFeeIncrease": 4,
+                "signaturePublicKeyId": 6,
+                "signature": "1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NQ=",
+            })
+        );
         let recovered = IdentityUpdateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `revision` u64, `nonce` u64,
+        // `userFeeIncrease` u16, `signaturePublicKeyId` u32 (KeyID),
+        // `disablePublicKeys` items u32 (KeyID).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x55; 32]),
+                "revision": 3u64,
+                "nonce": 17u64,
+                "addPublicKeys": Vec::<platform_value::Value>::new(),
+                "disablePublicKeys": [1u32, 2u32, 3u32],
+                "userFeeIncrease": 4u16,
+                "signaturePublicKeyId": 6u32,
+                "signature": BinaryData::new(vec![0xd4; 65]),
+            })
+        );
         let recovered = IdentityUpdateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

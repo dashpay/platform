@@ -741,37 +741,91 @@ impl crate::serialization::ValueConvertible for AddressWitness {}
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use platform_value::BinaryData;
+    use platform_value::{platform_value, BinaryData};
+    use serde_json::json;
 
-    fn each_variant() -> [AddressWitness; 2] {
-        [
-            AddressWitness::P2pkh {
-                signature: BinaryData::new(vec![0xa1; 65]),
-            },
-            AddressWitness::P2sh {
-                redeem_script: BinaryData::new(vec![0xb2; 30]),
-                signatures: vec![BinaryData::new(vec![0xc3; 65])],
-            },
-        ]
-    }
+    // `AddressWitness` has a manual Serialize/Deserialize that emits a
+    // `{ "type": "p2pkh"|"p2sh", ... }` discriminator shape. `BinaryData` is
+    // base64-encoded in JSON (HR), and stored as `Value::Bytes` in non-HR.
 
     #[test]
-    fn json_round_trip_each_variant() {
+    fn json_round_trip_p2pkh_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
-        for original in each_variant() {
-            let json = original.to_json().expect("to_json");
-            let recovered = AddressWitness::from_json(json).expect("from_json");
-            assert_eq!(original, recovered);
-        }
+        let original = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0xa1; 65]),
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "type": "p2pkh",
+                "signature": "oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaE=",
+            })
+        );
+        let recovered = AddressWitness::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 
     #[test]
-    fn value_round_trip_each_variant() {
+    fn json_round_trip_p2sh_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = AddressWitness::P2sh {
+            redeem_script: BinaryData::new(vec![0xb2; 30]),
+            signatures: vec![BinaryData::new(vec![0xc3; 65])],
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "type": "p2sh",
+                "signatures": [
+                    "w8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8M=",
+                ],
+                "redeemScript": "srKysrKysrKysrKysrKysrKysrKysrKysrKysrKy",
+            })
+        );
+        let recovered = AddressWitness::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_p2pkh_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
-        for original in each_variant() {
-            let value = original.to_object().expect("to_object");
-            let recovered = AddressWitness::from_object(value).expect("from_object");
-            assert_eq!(original, recovered);
-        }
+        use platform_value::Value;
+        let original = AddressWitness::P2pkh {
+            signature: BinaryData::new(vec![0xa1; 65]),
+        };
+        let value = original.to_object().expect("to_object");
+        // `BinaryData` serializes as `Value::Bytes(Vec<u8>)` in non-HR mode.
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "p2pkh",
+                "signature": Value::Bytes(vec![0xa1; 65]),
+            })
+        );
+        let recovered = AddressWitness::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_p2sh_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = AddressWitness::P2sh {
+            redeem_script: BinaryData::new(vec![0xb2; 30]),
+            signatures: vec![BinaryData::new(vec![0xc3; 65])],
+        };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "p2sh",
+                "signatures": [Value::Bytes(vec![0xc3; 65])],
+                "redeemScript": Value::Bytes(vec![0xb2; 30]),
+            })
+        );
+        let recovered = AddressWitness::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

@@ -48,57 +48,77 @@ mod json_convertible_tests {
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
     use crate::state_transition::batch_transition::batched_transition::token_direct_purchase_transition::v0::TokenDirectPurchaseTransitionV0;
-    use platform_value::Identifier;
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
 
-    fn token_base_fixture() -> TokenBaseTransition {
-        TokenBaseTransition::V0(TokenBaseTransitionV0 {
-            identity_contract_nonce: 13,
-            token_contract_position: 2,
-            data_contract_id: Identifier::new([0xa1; 32]),
-            token_id: Identifier::new([0xb2; 32]),
-            using_group_info: None,
-        })
-    }
-
-    /// Non-default values per field so a per-property assertion would catch
-    /// any silent zero-out / flip on round-trip.
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
     fn fixture() -> TokenDirectPurchaseTransition {
         TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
-            base: token_base_fixture(),
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 13,
+                token_contract_position: 2,
+                data_contract_id: Identifier::new([0xa1; 32]),
+                token_id: Identifier::new([0xb2; 32]),
+                using_group_info: None,
+            }),
             token_count: 100,
             total_agreed_price: 999_000,
         })
     }
 
-    fn assert_v0_fields(t: &TokenDirectPurchaseTransition) {
-        let TokenDirectPurchaseTransition::V0(rec) = t;
-        let TokenBaseTransition::V0(base) = &rec.base;
-        assert_eq!(base.identity_contract_nonce, 13, "base.identity_contract_nonce");
-        assert_eq!(base.token_contract_position, 2, "base.token_contract_position");
-        assert_eq!(base.data_contract_id, Identifier::new([0xa1; 32]), "base.data_contract_id");
-        assert_eq!(base.token_id, Identifier::new([0xb2; 32]), "base.token_id");
-        assert_eq!(base.using_group_info, None, "base.using_group_info");
-        assert_eq!(rec.token_count, 100, "token_count");
-        assert_eq!(rec.total_agreed_price, 999_000, "total_agreed_price");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
-        let json = JsonConvertible::to_json(&original).expect("to_json");
-        let recovered = <TokenDirectPurchaseTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let json = original.to_json().expect("to_json");
+        // `tokenCount` / `totalAgreedPrice` come from `rename_all =
+        // "camelCase"` on the v0 struct.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "V0": {
+                        "$identity-contract-nonce": 13,
+                        "$tokenContractPosition": 2,
+                        "$dataContractId": Identifier::new([0xa1; 32]),
+                        "$tokenId": Identifier::new([0xb2; 32]),
+                    },
+                    "tokenCount": 100,
+                    "totalAgreedPrice": 999_000,
+                }
+            })
+        );
+        let recovered =
+            TokenDirectPurchaseTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
-        let value = ValueConvertible::to_object(&original).expect("to_object");
-        let recovered = <TokenDirectPurchaseTransition as ValueConvertible>::from_object(value).expect("from_object");
+        let value = original.to_object().expect("to_object");
+        // `100u64`/`999_000u64`: `TokenAmount` and `Credits` are `u64`
+        // aliases. `13u64`/`2u16`: identity_contract_nonce is `u64`,
+        // token_contract_position is `u16`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "V0": {
+                        "$identity-contract-nonce": 13u64,
+                        "$tokenContractPosition": 2u16,
+                        "$dataContractId": Identifier::new([0xa1; 32]),
+                        "$tokenId": Identifier::new([0xb2; 32]),
+                    },
+                    "tokenCount": 100u64,
+                    "totalAgreedPrice": 999_000u64,
+                }
+            })
+        );
+        let recovered =
+            TokenDirectPurchaseTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }
