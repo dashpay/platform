@@ -36,7 +36,16 @@ public final class PersistentDocument {
     public var transferredAtCoreBlockHeight: Int64?
 
     // Network
-    public var network: AppNetwork
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: UInt32
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // Deletion flag
     public var isDeleted: Bool = false
@@ -110,7 +119,7 @@ public final class PersistentDocument {
         data: Data,
         contractId: String,
         ownerId: String,
-        network: AppNetwork
+        network: Network
     ) {
         self.documentId = documentId
         self.documentType = documentType
@@ -120,7 +129,7 @@ public final class PersistentDocument {
         self.ownerId = ownerId
         self.contractIdData = Data.identifier(fromBase58: contractId) ?? Data()
         self.ownerIdData = Data.identifier(fromBase58: ownerId) ?? Data()
-        self.network = network
+        self.networkRaw = network.rawValue
         self.createdAt = Date()
         self.updatedAt = Date()
         self.localCreatedAt = Date()
@@ -150,9 +159,13 @@ public final class PersistentDocument {
         }
     }
 
-    public static func predicate(contractId: String, network: AppNetwork) -> Predicate<PersistentDocument> {
-        #Predicate<PersistentDocument> { doc in
-            doc.contractId == contractId && doc.network == network && doc.isDeleted == false
+    public static func predicate(contractId: String, network: Network) -> Predicate<PersistentDocument> {
+        // See `PersistentIdentity.predicate(network:)` — Foundation's
+        // predicate engine can't capture `Network`, so we filter on
+        // the UInt32-backed `networkRaw` shadow field.
+        let target = network.rawValue
+        return #Predicate<PersistentDocument> { doc in
+            doc.contractId == contractId && doc.networkRaw == target && doc.isDeleted == false
         }
     }
 

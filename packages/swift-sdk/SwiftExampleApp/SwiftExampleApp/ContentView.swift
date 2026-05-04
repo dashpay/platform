@@ -4,7 +4,7 @@ import SwiftData
 import LocalAuthentication
 
 enum RootTab: Hashable {
-    case sync, wallets, identities, friends, settings
+    case sync, wallets, identities, contracts, settings
 }
 
 struct ContentView: View {
@@ -14,6 +14,7 @@ struct ContentView: View {
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var platformState: AppState
     @Environment(\.modelContext) private var modelContext
 
     /// All locally persisted wallet records. Drives the
@@ -77,6 +78,7 @@ struct ContentView: View {
 
                 // Tab 2: Wallets
                 WalletsTabView()
+                    .accessibilityIdentifier("rootTab.wallets")
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
                     }
@@ -89,12 +91,19 @@ struct ContentView: View {
                     }
                     .tag(RootTab.identities)
 
-                // Tab 4: Friends
-                FriendsView()
+                // Tab 4: Contracts (locally-persisted data contracts +
+                // their tokens). Friends moved to a per-identity drill-in
+                // under the DashPay section of IdentityDetailView.
+                //
+                // The current network is threaded in so the contracts +
+                // tokens lists stay scoped to it — `PersistentDataContract`
+                // rows from another network would otherwise leak into
+                // the picker after a network switch.
+                ContractsTabView(network: platformState.currentNetwork)
                     .tabItem {
-                        Label("Friends", systemImage: "person.2")
+                        Label("Contracts", systemImage: "doc.text")
                     }
-                    .tag(RootTab.friends)
+                    .tag(RootTab.contracts)
 
                 // Tab 5: Settings (includes Platform section)
                 SettingsView()
@@ -237,27 +246,51 @@ struct ContentView: View {
             return
         }
 
+        let storage = WalletStorage()
         let mnemonic: String
         do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+            mnemonic = try storage.retrieveMnemonic(for: walletId)
         } catch {
             recoveryError = "Failed to read stored mnemonic: \(error.localizedDescription)"
             return
         }
 
+        // Pull the user-facing name + description + networks +
+        // birth height out of the keychain (written alongside the
+        // mnemonic at wallet creation time). If the metadata blob
+        // is missing — older installs that predate this feature —
+        // fall back to the generic "Recovered Wallet" placeholder
+        // and the previous testnet default so the row is still
+        // clickable.
+        let restoredMetadata: WalletKeychainMetadata? =
+            (try? storage.metadata(for: walletId)) ?? nil
+        let restoredName: String = {
+            guard let raw = restoredMetadata?.name else { return "Recovered Wallet" }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Recovered Wallet" : trimmed
+        }()
+        let restoredDescription: String? = restoredMetadata?.walletDescription
+        // First valid stored network wins; the
+        // `walletManager.createWallet` API still takes a single
+        // network. Multi-network support is a TODO on the Rust
+        // side (`WalletDetailView.swift:533`) — when it lands the
+        // full `restoredMetadata?.resolvedNetworks` list is
+        // already there to feed in.
+        let restoredNetwork: Network =
+            restoredMetadata?.resolvedNetworks.first ?? .testnet
+        let restoredBirthHeight: UInt32? = restoredMetadata?.birthHeight
+
         do {
-            // Default the restored wallet to testnet with a
-            // recognizable label. The user can rename via the
-            // wallet list afterwards. The `PersistentWallet` row
-            // is created by the persister callback downstream of
-            // `walletManager.createWallet` — we only need to
-            // stamp the `isImported` flag here.
-            let platformNetwork: PlatformNetwork = .testnet
-            let label = "Recovered Wallet"
+            // The `PersistentWallet` row is created by the
+            // persister callback downstream of
+            // `walletManager.createWallet`; we only need to stamp
+            // the `isImported` flag and the carried-over
+            // description / birth height on top of what the
+            // persister wrote.
             let managed = try walletManager.createWallet(
                 mnemonic: mnemonic,
-                network: platformNetwork,
-                name: label
+                network: restoredNetwork,
+                name: restoredName
             )
             let walletIdMatch = managed.walletId
             let descriptor = FetchDescriptor<PersistentWallet>(
@@ -265,6 +298,19 @@ struct ContentView: View {
             )
             if let row = try? modelContext.fetch(descriptor).first {
                 row.isImported = true
+                if row.walletDescription == nil {
+                    row.walletDescription = restoredDescription
+                }
+                // Persisted birth height wins over the synthetic
+                // value the persister stamped from the live SPV
+                // tip — otherwise a recovered wallet would scan
+                // forward from "now" and lose all transactions
+                // older than the recovery moment. Skip the
+                // override only if we have no record (`nil` →
+                // keep whatever the persister wrote).
+                if let stored = restoredBirthHeight {
+                    row.birthHeight = stored
+                }
                 try? modelContext.save()
             }
             advanceToNextOrphan()
@@ -274,12 +320,19 @@ struct ContentView: View {
     }
 
     /// Remove the currently-selected orphan's mnemonic from the
-    /// keychain and advance to the next orphan in the queue.
+    /// keychain and advance to the next orphan in the queue. Also
+    /// drops any associated keychain metadata blob so the row is
+    /// fully cleared.
     @MainActor
     private func deleteStoredMnemonic() {
         guard let walletId = pendingOrphans.first else { return }
         do {
-            try WalletStorage().deleteMnemonic(for: walletId)
+            let storage = WalletStorage()
+            try storage.deleteMnemonic(for: walletId)
+            // Best-effort: metadata follows the mnemonic. If this
+            // fails the metadata row is harmless (it has no secret
+            // material and gets overwritten on the next setMetadata).
+            try? storage.deleteMetadata(for: walletId)
             advanceToNextOrphan()
         } catch {
             recoveryError = "Failed to delete mnemonic: \(error.localizedDescription)"

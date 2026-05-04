@@ -65,7 +65,7 @@ pub enum IdentityLocation {
 /// Manages identities for a platform wallet.
 ///
 /// See the module docs for the bucket layout.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct IdentityManager {
     /// Identities the wallet observes but cannot sign for, keyed by
     /// identity id. Replaces the old `WatchedIdentity` bucket — the
@@ -95,16 +95,6 @@ pub struct IdentityManager {
     /// callers that need to drop an identity reach the buckets through
     /// `remove_for_apply` so the index stays in sync.
     location_index: BTreeMap<Identifier, IdentityLocation>,
-}
-
-impl Default for IdentityManager {
-    fn default() -> Self {
-        Self {
-            out_of_wallet_identities: BTreeMap::new(),
-            wallet_identities: BTreeMap::new(),
-            location_index: BTreeMap::new(),
-        }
-    }
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -312,7 +302,7 @@ mod tests {
         let removed = manager.remove_identity(&identity_id, &p).unwrap();
 
         assert_eq!(removed.id(), identity_id);
-        assert!(manager.wallet_identities.get(&wallet_id).is_none());
+        assert!(!manager.wallet_identities.contains_key(&wallet_id));
         assert_eq!(manager.identity_count(), 0);
     }
 

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
@@ -21,13 +22,20 @@ impl PlatformAddressWallet {
     ///
     /// If `platform_version` is `None`, the latest platform version's fee
     /// schedule is used for fee estimation during auto-selection.
-    pub async fn transfer(
+    ///
+    /// `address_signer` produces ECDSA signatures for the input
+    /// [`PlatformAddress`]es. The wallet struct itself carries no key
+    /// material — callers supply a seed-backed, hardware, or
+    /// FFI-trampoline signer per their environment (iOS routes through
+    /// `KeychainSigner` via `VTableSigner`).
+    pub async fn transfer<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
         input_selection: InputSelection,
         outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
+        address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
@@ -45,7 +53,7 @@ impl PlatformAddressWallet {
                     ));
                 }
                 self.sdk
-                    .transfer_address_funds(inputs, outputs, fee_strategy, self, None)
+                    .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
                     .await?
             }
             InputSelection::ExplicitWithNonces(inputs) => {
@@ -55,7 +63,13 @@ impl PlatformAddressWallet {
                     ));
                 }
                 self.sdk
-                    .transfer_address_funds_with_nonce(inputs, outputs, fee_strategy, self, None)
+                    .transfer_address_funds_with_nonce(
+                        inputs,
+                        outputs,
+                        fee_strategy,
+                        address_signer,
+                        None,
+                    )
                     .await?
             }
             InputSelection::Auto => {
@@ -63,7 +77,7 @@ impl PlatformAddressWallet {
                     .auto_select_inputs(account_index, &outputs, &fee_strategy, version)
                     .await?;
                 self.sdk
-                    .transfer_address_funds(inputs, outputs, fee_strategy, self, None)
+                    .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
                     .await?
             }
         };

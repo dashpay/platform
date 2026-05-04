@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct DocumentFieldsView: View {
     let documentType: PersistentDocumentType

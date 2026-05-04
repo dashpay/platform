@@ -33,7 +33,6 @@ struct SwiftExampleAppApp: App {
     // Remaining services.
     @StateObject private var shieldedService = ShieldedService()
     @StateObject private var platformBalanceSyncService = PlatformBalanceSyncService()
-    @StateObject private var unifiedStateManager = UnifiedStateManager()
     @StateObject private var transitionState = TransitionState()
     @StateObject private var appUIState = AppUIState()
 
@@ -59,7 +58,7 @@ struct SwiftExampleAppApp: App {
         WalletStorage.cleanupLegacyItems()
 
         do {
-            self.modelContainer = try ModelContainerHelper.createContainer()
+            self.modelContainer = try DashModelContainer.create()
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -72,7 +71,6 @@ struct SwiftExampleAppApp: App {
                 .environmentObject(walletManager)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
-                .environmentObject(unifiedStateManager)
                 .environmentObject(transitionState)
                 .environmentObject(appUIState)
                 .environment(\.modelContext, modelContainer.mainContext)
@@ -193,15 +191,6 @@ struct SwiftExampleAppApp: App {
     }
 
     // MARK: - Helpers
-
-    private func platformNetwork(from network: AppNetwork) -> PlatformNetwork {
-        switch network {
-        case .mainnet: return .mainnet
-        case .testnet: return .testnet
-        case .devnet: return .devnet
-        case .regtest: return .testnet
-        }
-    }
 
     /// Read local Core peers from UserDefaults (comma-separated addresses).
     private func readLocalCorePeers() -> [String] {

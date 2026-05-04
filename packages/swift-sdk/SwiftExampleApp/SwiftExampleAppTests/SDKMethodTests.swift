@@ -34,7 +34,7 @@ final class SDKMethodTests: XCTestCase {
 
     // Initialize SDK
     SDK.initialize()
-    let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+    let sdk = try SDK(network: .testnet)
 
     print("SDK created: \(sdk)")
     print("SDK handle: \(String(describing: sdk.handle))")
@@ -61,7 +61,7 @@ final class SDKMethodTests: XCTestCase {
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
           UInt(key.count),
-          DashSDKNetwork(rawValue: 1)
+          Network.testnet.ffiValue
         )
       }
 
@@ -76,11 +76,12 @@ final class SDKMethodTests: XCTestCase {
         dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
       }
 
+      nonisolated(unsafe) let signerPtr = OpaquePointer(signer)
       _ = try await sdk.transferCredits(
         from: identity,
         toIdentityId: toId,
         amount: amount,
-        signer: OpaquePointer(signer)
+        signer: signerPtr
       )
       XCTFail("transferCredits should fail with dummy data")
     } catch {
@@ -92,7 +93,7 @@ final class SDKMethodTests: XCTestCase {
     print("=== Testing Simple Identity Fetch ===")
 
     SDK.initialize()
-    let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+    let sdk = try SDK(network: .testnet)
 
     do {
       // Use a known testnet identity

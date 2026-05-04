@@ -25,7 +25,7 @@ use std::sync::Arc;
 use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
-use dpp::prelude::{AssetLockProof, Identifier};
+use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -40,7 +40,6 @@ use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
 /// Default gap limit for identity discovery scanning.
 ///
@@ -67,13 +66,39 @@ pub(crate) fn identity_auth_derivation_path(
     identity_index: u32,
     key_index: u32,
 ) -> Result<DerivationPath, PlatformWalletError> {
+    identity_auth_derivation_path_for_type(
+        network,
+        KeyDerivationType::ECDSA,
+        identity_index,
+        key_index,
+    )
+}
+
+/// Build the DIP-9 identity-authentication derivation path for the
+/// given `(key_derivation_type, identity_index, key_index)` on
+/// `network`. Generalizes the ECDSA-hardcoded
+/// [`identity_auth_derivation_path`] so callers building keys for
+/// different key types (BLS, EdDSA) can reach the right slot.
+///
+/// Path format:
+/// `m/9'/COIN_TYPE'/5'/0'/key_derivation_type'/identity_index'/key_index'`
+///
+/// Promoted to `pub` so the FFI crate's mnemonic-driven derivation
+/// path can call the library version instead of duplicating the
+/// path-building logic.
+pub fn identity_auth_derivation_path_for_type(
+    network: key_wallet::Network,
+    key_derivation_type: KeyDerivationType,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<DerivationPath, PlatformWalletError> {
     let base_path: DerivationPath = match network {
         key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
         _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
     }
     .into();
 
-    let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+    let key_type_index: u32 = key_derivation_type.into();
 
     Ok(base_path.extend([
         ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
@@ -86,6 +111,73 @@ pub(crate) fn identity_auth_derivation_path(
             PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
         })?,
     ]))
+}
+
+/// One ECDSA identity-authentication keypair derived from a master
+/// xpriv at a specific `(identity_index, key_index)` slot. Wraps
+/// the secret scalar in [`Zeroizing`] so it is wiped on drop —
+/// callers that ship the bytes elsewhere (FFI, Keychain) should
+/// copy what they need and let this struct fall out of scope to
+/// reclaim the secret memory.
+pub struct DerivedIdentityAuthKey {
+    /// Full DIP-9 path used (so callers can persist the breadcrumb).
+    pub derivation_path: DerivationPath,
+    /// 32-byte secp256k1 secret scalar.
+    pub private_key: Zeroizing<[u8; 32]>,
+    /// 33-byte compressed secp256k1 public key.
+    pub public_key: [u8; 33],
+}
+
+/// Derive a single ECDSA identity-authentication keypair from a
+/// master xpriv at `(identity_index, key_index)`. Pure function —
+/// no `Wallet` required, so this works for watch-only wallets where
+/// the seed is held outside the in-memory wallet manager.
+///
+/// Used by the FFI's mnemonic-driven derivation paths
+/// (`platform_wallet_derive_identity_key_at_slot`,
+/// `dash_sdk_derive_identity_keys_from_mnemonic`) so the path
+/// builder + secp256k1 derive pass aren't duplicated in the FFI
+/// crate. The mnemonic-to-master step still lives in the FFI
+/// because mnemonic parsing pulls `key_wallet::mnemonic`, which
+/// the library doesn't otherwise need.
+pub fn derive_ecdsa_identity_auth_keypair_from_master(
+    master: &ExtendedPrivKey,
+    network: key_wallet::Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
+    use dashcore::secp256k1::Secp256k1;
+    use key_wallet::bip32::ExtendedPubKey;
+
+    let path = identity_auth_derivation_path_for_type(
+        network,
+        KeyDerivationType::ECDSA,
+        identity_index,
+        key_index,
+    )?;
+    let secp = Secp256k1::new();
+    // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
+    // wrap it in `Zeroizing` directly — but its inner
+    // `secp256k1::SecretKey` does implement `Drop` with a memzero,
+    // so the secret scalar is scrubbed when `derived` falls out of
+    // scope. The surrounding `chain_code` / `depth` /
+    // `parent_fingerprint` / `child_number` are non-secret BIP-32
+    // metadata; leaking them on the stack is a non-event. The
+    // returned `private_key` is wrapped in `Zeroizing` below so
+    // the 32-byte scalar copy crossing the function boundary is
+    // also scrubbed on the caller's drop.
+    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
+        ))
+    })?;
+    let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+
+    Ok(DerivedIdentityAuthKey {
+        derivation_path: path,
+        private_key: Zeroizing::new(derived.private_key.secret_bytes()),
+        public_key: extended_pub.public_key.serialize(),
+    })
 }
 
 /// Derive the DIP-9 identity-authentication keypair at
@@ -209,20 +301,6 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Create an [`IdentitySigner`] for the given identity index.
-    ///
-    /// The returned signer implements `Signer<IdentityPublicKey>` and derives
-    /// private keys on-the-fly from the wallet using the DIP-9 identity
-    /// authentication path.
-    pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
-        IdentitySigner::new(
-            self.wallet_manager.clone(),
-            self.wallet_id,
-            self.sdk.network,
-            identity_index,
-        )
-    }
-
     /// Build the DIP-9 identity authentication derivation path.
     ///
     /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`
@@ -298,34 +376,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         Ok(Zeroizing::new(secret_key.secret_bytes()))
     }
 
-    /// Create a [`ManagedIdentitySigner`] for a managed identity by its ID.
-    ///
-    /// Looks up the identity's BIP-9 HD index in the manager and binds
-    /// the signer to it. Private keys are derived on demand from the
-    /// wallet seed at the DIP-9 identity authentication path —
-    /// `ManagedIdentity` no longer carries a `KeyStorage`.
-    pub async fn signer_for(
-        &self,
-        identity_id: &Identifier,
-    ) -> Result<ManagedIdentitySigner, PlatformWalletError> {
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            crate::error::PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
-        let identity_index = info
-            .identity_manager
-            .identity_index(identity_id)
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(ManagedIdentitySigner::new(
-            self.wallet_manager.clone(),
-            self.wallet_id,
-            identity_index,
-            self.sdk.network,
-        ))
-    }
-
     /// Get a read-lock handle to the shared [`WalletManager`].
     ///
     /// Access wallet info via `wm.get_wallet_info(&wallet_id)` and key material
@@ -366,8 +416,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Derive the ECDH private key for the given identity's encryption
     /// key (DashPay ECDH).
     ///
-    /// Uses the same DIP-9 derivation as [`IdentitySigner`] but returns
-    /// the raw `secp256k1::SecretKey` needed for ECDH with a contact.
+    /// Uses the DIP-9 identity-authentication derivation path and
+    /// returns the raw `secp256k1::SecretKey` needed for ECDH with a
+    /// contact.
     ///
     /// The encryption key must be `ECDSA_SECP256K1` or `ECDSA_HASH160`;
     /// other key types are not supported for ECDH derivation.

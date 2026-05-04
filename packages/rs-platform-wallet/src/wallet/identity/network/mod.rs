@@ -16,6 +16,7 @@
 //! to `SpvBroadcaster` so most call sites don't need to name it.
 
 // Core handle + identity-lifecycle operations.
+mod contract;
 mod discovery;
 mod dpns;
 mod identity_handle;
@@ -37,10 +38,17 @@ mod dashpay_sync;
 mod payments;
 mod profile;
 
+// Token state-transition operations (same `IdentityWallet` impl blocks).
+// Bookkeeping (watch / sync / balance) lives on
+// `crate::manager::identity_sync::IdentitySyncManager`.
+mod tokens;
+
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{
-    derive_identity_auth_keypair, IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair,
+    identity_auth_derivation_path_for_type, DerivedIdentityAuthKey, IdentityWallet,
+    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 
 // Helpers declared on `identity_handle.rs` that siblings reach

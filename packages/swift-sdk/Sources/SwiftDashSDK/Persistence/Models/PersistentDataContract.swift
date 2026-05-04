@@ -30,7 +30,16 @@ public final class PersistentDataContract {
     public var groupsData: Data?
 
     // Network
-    public var network: AppNetwork
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: UInt32
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // Timestamps
     public var lastUpdated: Date
@@ -56,6 +65,15 @@ public final class PersistentDataContract {
 
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.dataContract)
     public var documents: [PersistentDocument]
+
+    // Owner identity — populated when the owner happens to also live in
+    // the local store. May be nil even when `ownerId` is set, because
+    // most contracts in the local cache will be owned by identities the
+    // user doesn't hold. Back-filled lazily by
+    // `ContractIdentityLinker.linkContractToOwner` when either side is
+    // inserted.
+    @Relationship(deleteRule: .nullify, inverse: \PersistentIdentity.ownedDataContracts)
+    public var ownerIdentity: PersistentIdentity?
 
     // Token support tracking
     public var hasTokens: Bool
@@ -161,7 +179,7 @@ public final class PersistentDataContract {
         keywords: [String] = [],
         description: String? = nil,
         hasTokens: Bool = false,
-        network: AppNetwork
+        network: Network
     ) {
         self.id = id
         self.name = name
@@ -189,8 +207,15 @@ public final class PersistentDataContract {
         // Documents
         self.documents = []
 
+        // Owner identity link is back-filled later by
+        // `ContractIdentityLinker`. Initialise explicitly because
+        // SwiftData's auto-init of optional relationships has
+        // historically been flaky enough in this codebase to be
+        // worth the line.
+        self.ownerIdentity = nil
+
         // Network and timestamps
-        self.network = network
+        self.networkRaw = network.rawValue
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
 
@@ -270,15 +295,20 @@ extension PersistentDataContract {
         }
     }
 
-    public static func predicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
-        #Predicate<PersistentDataContract> { contract in
-            contract.network == network
+    public static func predicate(network: Network) -> Predicate<PersistentDataContract> {
+        // See `PersistentIdentity.predicate(network:)` — Foundation's
+        // predicate engine can't capture `Network`, so we filter on
+        // the UInt32-backed `networkRaw` shadow field.
+        let target = network.rawValue
+        return #Predicate<PersistentDataContract> { contract in
+            contract.networkRaw == target
         }
     }
 
-    public static func contractsWithTokensPredicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
-        #Predicate<PersistentDataContract> { contract in
-            contract.hasTokens == true && contract.network == network
+    public static func contractsWithTokensPredicate(network: Network) -> Predicate<PersistentDataContract> {
+        let target = network.rawValue
+        return #Predicate<PersistentDataContract> { contract in
+            contract.hasTokens == true && contract.networkRaw == target
         }
     }
 }

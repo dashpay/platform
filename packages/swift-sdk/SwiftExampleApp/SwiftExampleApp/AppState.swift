@@ -9,17 +9,9 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    // Identity, contract, document, and token state is now read
-    // directly from SwiftData via `@Query` on the
-    // `PersistentIdentity`, `PersistentDataContract`,
-    // `PersistentDocument`, and `PersistentToken` /
-    // `PersistentTokenBalance` models. AppState no longer mirrors
-    // any of them as `@Published` arrays.
-    @Published var dataContracts: [DPPDataContract] = []
-
-    @Published var currentNetwork: AppNetwork {
+    @Published var currentNetwork: Network {
         didSet {
-            UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
+            UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
             Task {
                 await switchNetwork(to: currentNetwork)
             }
@@ -39,11 +31,12 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Backward-compat computed properties (read-only)
-    var useLocalPlatform: Bool { useDockerSetup }
-    var useLocalCore: Bool { useDockerSetup }
-
-    private let testSigner = TestSigner()
+    // Identity-key signing is performed per-flow via a fresh
+    // `KeychainSigner` constructed from the active `ModelContainer`
+    // (see `CreateIdentityView.submit()`). `AppState` no longer holds
+    // a long-lived signer field — there is no shared signing state to
+    // amortize across flows, and the keychain-backed lookup makes
+    // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 
@@ -52,7 +45,7 @@ class AppState: ObservableObject {
         // `object(forKey:)` and cast — `integer(forKey:)` returns 0
         // for missing keys, which would silently pin to mainnet.
         if let rawInt = UserDefaults.standard.object(forKey: "currentNetwork") as? Int,
-           let network = AppNetwork(rawValue: rawInt) {
+           let network = Network(rawValue: UInt32(rawInt)) {
             self.currentNetwork = network
         } else {
             self.currentNetwork = .testnet
@@ -85,17 +78,13 @@ class AppState: ObservableObject {
                 SDK.initialize()
                 SDK.enableLogging(level: .debug)
 
-                let sdkNetwork: DashSDKNetwork = currentNetwork.sdkNetwork
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                let newSDK = try SDK(network: sdkNetwork)
+                let newSDK = try SDK(network: currentNetwork)
                 sdk = newSDK
                 NSLog("✅ AppState: SDK created successfully")
 
                 // Load known contracts into the SDK's trusted provider
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-                // Load persisted data first
-                await loadPersistedData()
 
                 isLoading = false
             } catch {
@@ -107,20 +96,12 @@ class AppState: ObservableObject {
         }
     }
 
-    func loadPersistedData() async {
-        // No-op: identities, contracts, and documents are sourced
-        // directly from SwiftData via @Query in each view. Kept as a
-        // stub for call-site parity until all initializers migrate
-        // to reading from SwiftData directly.
-        _ = dataManager
-    }
-
     func showError(message: String) {
         errorMessage = message
         showError = true
     }
 
-    func switchNetwork(to network: AppNetwork) async {
+    func switchNetwork(to network: Network) async {
         guard let modelContext = modelContext else { return }
 
         // Identities, contracts, documents, and token balances are
@@ -136,15 +117,11 @@ class AppState: ObservableObject {
             isLoading = true
 
             // Create new SDK instance for the network
-            let sdkNetwork: DashSDKNetwork = network.sdkNetwork
-            let newSDK = try SDK(network: sdkNetwork)
+            let newSDK = try SDK(network: network)
             sdk = newSDK
 
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-            // Reload data for the new network
-            await loadPersistedData()
 
             isLoading = false
         } catch {

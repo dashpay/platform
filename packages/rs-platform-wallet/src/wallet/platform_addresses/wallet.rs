@@ -163,6 +163,16 @@ impl PlatformAddressWallet {
         )
         .await;
     }
+
+    /// Internal accessor for the diagnostic snapshot path on
+    /// [`crate::manager::PlatformWalletManager`]. The provider lock is
+    /// otherwise crate-private — the manager-level snapshot needs to
+    /// `blocking_read` it, which requires re-exposing the `Arc`.
+    pub(crate) fn provider_for_diagnostics(
+        &self,
+    ) -> Arc<RwLock<Option<super::provider::PlatformPaymentAddressProvider>>> {
+        Arc::clone(&self.provider)
+    }
 }
 
 impl PlatformAddressWallet {
@@ -218,7 +228,7 @@ impl PlatformAddressWallet {
 
         let address = managed_account
             .addresses
-            .next_unused(&key_source)
+            .next_unused(&key_source, true)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
 
         PlatformAddress::try_from(address).map_err(|e| {

@@ -45,7 +45,7 @@ struct LoadIdentityView: View {
 
     private var formView: some View {
         Form {
-            if appState.sdk?.network.rawValue == 1 && testnetNodes != nil { // testnet
+            if appState.sdk?.network == .testnet && testnetNodes != nil {
                 Section {
                     HStack {
                         Button("Fill Random HPMN") {
@@ -442,6 +442,14 @@ struct LoadIdentityView: View {
                             network: network
                         )
                         modelContext.insert(row)
+                        // Back-fill any locally-cached contracts that
+                        // name this identity as their owner. The
+                        // existing `try? modelContext.save()` later
+                        // in this block persists the link.
+                        ContractIdentityLinker.linkIdentityToOwnedContracts(
+                            identity: row,
+                            modelContext: modelContext
+                        )
                     }
 
                     // Insert PersistentPublicKey rows for every key
@@ -461,7 +469,7 @@ struct LoadIdentityView: View {
                         if let matched = KeyValidation.matchPrivateKeyToPublicKeys(
                             privateKeyData: privateKey,
                             publicKeys: capturedPublicKeys,
-                            isTestnet: network == .testnet
+                            network: network
                         ), let persistentKey = row.publicKeys.first(
                             where: { $0.keyId == Int32(matched.id) }
                         ), let keychainId = KeychainManager.shared.storePrivateKey(

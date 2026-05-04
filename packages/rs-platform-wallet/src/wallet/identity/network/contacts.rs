@@ -138,12 +138,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let info = wm
             .get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
-        info.core_wallet.accounts.insert(managed).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register contact account: {e}"
-            ))
-        })?;
+        // DashPay accounts are funds-bearing; use the typed
+        // `insert_funds` API exposed by the post-split collection
+        // rather than wrapping in `OwnedManagedCoreAccount`.
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+        info.core_wallet
+            .accounts
+            .insert_funds(managed)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register contact account: {e}"
+                ))
+            })?;
 
         Ok(())
     }
@@ -225,7 +231,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 user_identity_id,
                 friend_identity_id,
                 ..
-            } = &account.account_type
+            } = &account.managed_account_type
             else {
                 // Routing invariant: dashpay_receival_accounts must
                 // only contain DashpayReceivingFunds. If this ever
@@ -468,7 +474,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             is_watch_only: true,
         };
 
-        let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
+        // DashpayExternalAccount is funds-bearing; insert via the
+        // typed `insert_funds` API after the upstream split.
+        let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
@@ -486,13 +494,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 ))
             })?;
 
-        // (b) Insert ManagedCoreAccount for address-pool tracking.
-        info.core_wallet.accounts.insert(managed).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register external contact account: {}",
-                e
-            ))
-        })?;
+        // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
+        info.core_wallet
+            .accounts
+            .insert_funds(managed)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register external contact account: {}",
+                    e
+                ))
+            })?;
 
         tracing::info!(
             our_identity = %our_identity_id,

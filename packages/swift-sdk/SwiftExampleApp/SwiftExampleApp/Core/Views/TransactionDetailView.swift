@@ -111,10 +111,10 @@ struct TransactionDetailView: View {
                                 .foregroundColor(.secondary)
 
                             Button {
-                                copyToClipboard(transaction.txid)
+                                copyToClipboard(transaction.txidHex)
                             } label: {
                                 HStack {
-                                    Text(transaction.txid)
+                                    Text(transaction.txidHex)
                                         .font(.system(.footnote, design: .monospaced))
                                         .foregroundColor(.primary)
                                         .lineLimit(nil)

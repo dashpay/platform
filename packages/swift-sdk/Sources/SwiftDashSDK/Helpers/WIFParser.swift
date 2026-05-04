@@ -1,6 +1,17 @@
 import Foundation
+import DashSDKFFI
 
-/// Helper for parsing WIF (Wallet Import Format) private keys
+/// Helper for parsing WIF (Wallet Import Format) private keys.
+///
+/// Encoding delegates to the Rust FFI's `dash_sdk_private_key_to_wif`
+/// — `dashcore::PrivateKey::to_wif()` is the single source of truth
+/// for Dash WIF (correct version bytes — `0xCC` mainnet / `0xEF`
+/// testnet, NOT Bitcoin's `0x80` / `0xEF` — and the trailing `0x01`
+/// compression flag every modern Dash wallet emits). Implementing
+/// the byte layout in Swift was the original shape of this file; it
+/// silently produced Bitcoin-shaped WIFs (mainnet starting with
+/// `5…` / `K…` instead of `7…` / `X…`), so the Swift encoder is
+/// gone.
 public enum WIFParser {
 
     /// Parse a WIF-encoded private key
@@ -45,66 +56,38 @@ public enum WIFParser {
         return Data(privateKey)
     }
 
-    /// Encode a private key to WIF format
+    /// Encode a private key to Dash WIF format.
+    ///
+    /// Delegates to `dash_sdk_private_key_to_wif` so the Dash
+    /// version bytes (`0xCC` mainnet / `0xEF` testnet) and the
+    /// compressed-key `0x01` flag come from `dashcore`'s canonical
+    /// implementation rather than a hand-rolled Swift duplicate.
+    /// Returns `nil` on any FFI error (bad key length, allocation
+    /// failure, etc.) — matches the prior Swift signature.
+    ///
     /// - Parameters:
-    ///   - privateKey: The raw private key data (32 bytes)
-    ///   - isTestnet: Whether to encode for testnet (default true)
-    /// - Returns: The WIF-encoded string if successful, nil otherwise
-    public static func encodeToWIF(_ privateKey: Data, isTestnet: Bool = true) -> String? {
+    ///   - privateKey: The raw 32-byte secp256k1 secret scalar.
+    ///   - network: Which network the key belongs to (default: testnet).
+    ///     Mainnet uses version byte `0xCC`; every other network uses
+    ///     the testnet `0xEF` byte.
+    public static func encodeToWIF(_ privateKey: Data, network: Network = .testnet) -> String? {
         guard privateKey.count == 32 else { return nil }
 
-        // Version byte: 0xef for testnet, 0x80 for mainnet
-        let versionByte: UInt8 = isTestnet ? 0xef : 0x80
-
-        // Combine version byte + private key
-        var data = Data([versionByte])
-        data.append(privateKey)
-
-        // Calculate checksum (double SHA256)
-        let hash1 = sha256(data)
-        let hash2 = sha256(hash1)
-        let checksum = hash2.prefix(4)
-
-        // Append checksum
-        data.append(checksum)
-
-        // Encode to Base58
-        return encodeBase58(data)
-    }
-
-    /// Encode data to Base58
-    private static func encodeBase58(_ data: Data) -> String {
-        let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-        if data.isEmpty { return "" }
-
-        // Count leading zeros
-        let zeroCount = data.prefix(while: { $0 == 0 }).count
-
-        // Convert data to big integer
-        let num = data.reduce(into: [UInt8]()) { result, byte in
-            var carry = UInt(byte)
-            for i in 0..<result.count {
-                carry += UInt(result[i]) << 8
-                result[i] = UInt8(carry % 58)
-                carry /= 58
-            }
-            while carry > 0 {
-                result.append(UInt8(carry % 58))
-                carry /= 58
-            }
+        // The FFI takes a NUL-terminated hex string for the private
+        // key. Encode → call → free → parse the returned C string.
+        let privateKeyHex = privateKey.toHexString()
+        let result = privateKeyHex.withCString { hexPtr in
+            dash_sdk_private_key_to_wif(hexPtr, network.ffiValue)
         }
 
-        // Convert to string
-        var encoded = ""
-        for digit in num.reversed() {
-            encoded.append(alphabet[alphabet.index(alphabet.startIndex, offsetBy: Int(digit))])
+        if let error = result.error {
+            dash_sdk_error_free(error)
+            return nil
         }
-
-        // Add '1' for each leading zero byte
-        encoded = String(repeating: "1", count: zeroCount) + encoded
-
-        return encoded
+        guard let dataPtr = result.data else { return nil }
+        let cstrPtr = dataPtr.assumingMemoryBound(to: CChar.self)
+        defer { dash_sdk_string_free(cstrPtr) }
+        return String(cString: cstrPtr)
     }
 
     /// Decode a Base58 string

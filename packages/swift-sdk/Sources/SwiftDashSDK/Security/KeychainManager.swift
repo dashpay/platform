@@ -384,16 +384,21 @@ public final class KeychainManager: Sendable {
         return status == errSecSuccess ? identifier : nil
     }
 
-    /// Retrieve data from the keychain by identifier
+    /// Retrieve data from the keychain by identifier.
+    ///
+    /// `nonisolated` so the FFI signer trampoline (which runs from
+    /// any Tokio worker, off the main actor) can call it directly.
+    /// `SecItemCopyMatching` is thread-safe and this type's state is
+    /// `let` — same rationale as `storePrivateKeyNonisolated`.
     /// - Parameter identifier: The identifier for the stored data
     /// - Returns: The stored data, or nil if not found
-    public func retrieveKeyData(identifier: String) -> Data? {
+    public nonisolated func retrieveKeyData(identifier: String) -> Data? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: identifier,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
         if let accessGroup = accessGroup {
@@ -445,11 +450,64 @@ public final class KeychainManager: Sendable {
 // MARK: - Identity-key storage (derivation-path keyed)
 
 extension KeychainManager {
+    /// Compute the 20-byte RIPEMD160(SHA256(pubkey)) hash160 of the
+    /// public-key bytes, returned as a lowercase hex string. Used to
+    /// stamp `IdentityPrivateKeyMetadata.publicKeyHash` on identity
+    /// private-key Keychain rows so the diagnostic explorer can show
+    /// it without re-deriving.
+    ///
+    /// Backed by the Rust `platform_wallet_hash160` FFI helper (the
+    /// only RIPEMD-160 implementation available without adding a new
+    /// dependency on the iOS side — neither CryptoKit nor
+    /// CommonCrypto exposes one).
+    ///
+    /// Returns `""` on empty input or FFI failure (matches the
+    /// pre-change "no hash" sentinel — callers don't have to special-
+    /// case the empty data path).
+    public nonisolated static func computePublicKeyHashHex(_ publicKey: Data) -> String {
+        guard !publicKey.isEmpty else { return "" }
+        var out = [UInt8](repeating: 0, count: 20)
+        let rc: Int32 = publicKey.withUnsafeBytes { raw -> Int32 in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+            return out.withUnsafeMutableBufferPointer { buf -> Int32 in
+                guard let outBase = buf.baseAddress else { return -1 }
+                return platform_wallet_hash160(base, UInt(publicKey.count), outBase)
+            }
+        }
+        guard rc == 0 else { return "" }
+        return out.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Module-level alias so cross-module callers can reference the
+/// metadata type without the (apparently brittle in some Xcode
+/// toolchains) `KeychainManager.IdentityPrivateKeyMetadata` nested
+/// path. Both names point at the same struct; pick whichever reads
+/// better at the call site.
+public typealias IdentityPrivateKeyMetadata = KeychainManager.IdentityPrivateKeyMetadata
+
+extension KeychainManager {
     /// Metadata stamped into each identity-private-key keychain item
     /// as a JSON blob on `kSecAttrGeneric`. Everything here is
-    /// non-secret — pub-key bytes + hash + derivation breadcrumbs —
-    /// so the diagnostic keychain explorer can pretty-print it.
-    public struct IdentityPrivateKeyMetadata: Encodable, Sendable {
+    /// non-secret — pub-key bytes + hash + DPP key descriptor +
+    /// derivation breadcrumbs — so the diagnostic keychain explorer
+    /// can pretty-print it.
+    ///
+    /// `keyType` / `purpose` / `securityLevel` use the same DPP
+    /// `repr(u8)` discriminants every other FFI surface speaks
+    /// (`IdentityPubkeyFFI`, `IdentityKeyEntryFFI`,
+    /// `IdentityKeyRestoreFFI`):
+    /// - `keyType`: 0 = ECDSA_SECP256K1, etc.
+    /// - `purpose`: 0 = AUTHENTICATION, etc.
+    /// - `securityLevel`: 0 = MASTER, 1 = CRITICAL, 2 = HIGH,
+    ///   3 = MEDIUM.
+    ///
+    /// **Codable migration**: the three new descriptor fields plus
+    /// `publicKeyHash` are all optional-decoded (default 0 / empty
+    /// string) so existing rows written before this struct grew don't
+    /// fail to decode — the explorer just shows the older shape.
+    /// New writes always populate everything.
+    public struct IdentityPrivateKeyMetadata: Codable, Sendable {
         public let identityId: String     // base58
         public let keyId: UInt32
         public let walletId: String       // hex
@@ -458,6 +516,9 @@ extension KeychainManager {
         public let derivationPath: String
         public let publicKey: String      // hex (compressed, 33 bytes typically)
         public let publicKeyHash: String  // hex (20 bytes, RIPEMD160(SHA256))
+        public let keyType: UInt8         // DPP KeyType discriminant
+        public let purpose: UInt8         // DPP Purpose discriminant
+        public let securityLevel: UInt8   // DPP SecurityLevel discriminant
 
         public init(
             identityId: String,
@@ -467,7 +528,10 @@ extension KeychainManager {
             keyIndex: UInt32,
             derivationPath: String,
             publicKey: String,
-            publicKeyHash: String
+            publicKeyHash: String,
+            keyType: UInt8,
+            purpose: UInt8,
+            securityLevel: UInt8
         ) {
             self.identityId = identityId
             self.keyId = keyId
@@ -477,6 +541,39 @@ extension KeychainManager {
             self.derivationPath = derivationPath
             self.publicKey = publicKey
             self.publicKeyHash = publicKeyHash
+            self.keyType = keyType
+            self.purpose = purpose
+            self.securityLevel = securityLevel
+        }
+
+        // Backward-compatible decoding: rows written before the
+        // descriptor + hash fields existed should still load (the
+        // explorer just won't have those breadcrumbs to render).
+        // Default `publicKeyHash` to "" and the three discriminants
+        // to 0 (the canonical "first" enum value in each DPP enum,
+        // which happens to be MASTER / AUTHENTICATION /
+        // ECDSA_SECP256K1 — same as the convention used by the
+        // registration path for the master key, so it's a sane "I
+        // don't actually know" fallback).
+        enum CodingKeys: String, CodingKey {
+            case identityId, keyId, walletId, identityIndex, keyIndex,
+                 derivationPath, publicKey, publicKeyHash,
+                 keyType, purpose, securityLevel
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.identityId = try c.decode(String.self, forKey: .identityId)
+            self.keyId = try c.decode(UInt32.self, forKey: .keyId)
+            self.walletId = try c.decode(String.self, forKey: .walletId)
+            self.identityIndex = try c.decode(UInt32.self, forKey: .identityIndex)
+            self.keyIndex = try c.decode(UInt32.self, forKey: .keyIndex)
+            self.derivationPath = try c.decode(String.self, forKey: .derivationPath)
+            self.publicKey = try c.decode(String.self, forKey: .publicKey)
+            self.publicKeyHash = try c.decodeIfPresent(String.self, forKey: .publicKeyHash) ?? ""
+            self.keyType = try c.decodeIfPresent(UInt8.self, forKey: .keyType) ?? 0
+            self.purpose = try c.decodeIfPresent(UInt8.self, forKey: .purpose) ?? 0
+            self.securityLevel = try c.decodeIfPresent(UInt8.self, forKey: .securityLevel) ?? 0
         }
     }
 
@@ -532,6 +629,108 @@ extension KeychainManager {
         return status == errSecSuccess ? account : nil
     }
 
+    /// Look up a stored identity private-key row by its public-key
+    /// bytes (hex-encoded — matches the `publicKey` field of
+    /// [`IdentityPrivateKeyMetadata`]).
+    ///
+    /// This is the lookup the FFI signer trampoline
+    /// (`KeychainSigner`) uses when no `PersistentPublicKey` row is
+    /// available yet — for example mid-identity-registration, where
+    /// the keys have been pre-derived + persisted to the Keychain by
+    /// Swift but the SwiftData row is only inserted by the Rust
+    /// persister callback once registration completes.
+    ///
+    /// Scans every `identity_privkey.*` keychain item, parses the
+    /// metadata blob on `kSecAttrGeneric`, and returns the row whose
+    /// `publicKey` matches `publicKeyHex`. `nil` if nothing matches.
+    ///
+    /// `nonisolated` because Security-framework calls are thread-safe
+    /// and this type's state is `let` — safe to call from the FFI
+    /// trampoline on any Tokio worker thread.
+    public nonisolated func retrieveIdentityPrivateKey(publicKeyHex: String) -> Data? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return nil
+        }
+
+        let decoder = JSONDecoder()
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                let metadata = try? decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
+            else {
+                continue
+            }
+            // Case-insensitive hex compare — both producers downcase
+            // their hex but be defensive against future writers.
+            if metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
+                return item[kSecValueData as String] as? Data
+            }
+        }
+        return nil
+    }
+
+    /// Existence check for the wallet-derived identity-private-key
+    /// scheme (`identity_privkey.<derivationPath>` items keyed by
+    /// public-key hex in metadata). Mirrors
+    /// `retrieveIdentityPrivateKey(publicKeyHex:)` but skips
+    /// `kSecReturnData` so the secret bytes never enter Swift
+    /// memory — only the metadata blob is loaded and matched.
+    /// Useful for UI diagnostics ("do we hold the private bytes
+    /// for this public key?") that should not surface the key
+    /// material itself.
+    public nonisolated func hasIdentityPrivateKey(publicKeyHex: String) -> Bool {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return false
+        }
+
+        let decoder = JSONDecoder()
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                let metadata = try? decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
+            else {
+                continue
+            }
+            if metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Delete the identity private-key row for `derivationPath`.
     /// Idempotent; returns true on success or "not found".
     @discardableResult
@@ -549,3 +748,17 @@ extension KeychainManager {
         return status == errSecSuccess || status == errSecItemNotFound
     }
 }
+
+// MARK: - Platform-address private-key storage — REMOVED
+//
+// Platform-address private keys are NOT persisted. They are pure
+// derivation outputs of `(mnemonic, derivation-path)` and exist only
+// for the duration of a single signing call. The FFI signer
+// trampoline (see `KeychainSigner.swift`'s `key_type == 0xFF` branch)
+// pulls the mnemonic from Keychain via `WalletStorage.retrieveMnemonic`
+// and the derivation path from `PersistentPlatformAddress`, then
+// hands both to `dash_sdk_sign_with_mnemonic_and_path` which derives,
+// signs, and zeroes the buffers before returning.
+//
+// No `platform_address_privkey.*` Keychain account convention exists
+// any more.

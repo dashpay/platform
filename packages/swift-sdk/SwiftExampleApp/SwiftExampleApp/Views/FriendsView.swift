@@ -3,11 +3,16 @@ import SwiftData
 import SwiftDashSDK
 
 struct FriendsView: View {
+    /// The identity whose DashPay contacts/requests/friends are being
+    /// browsed. Always supplied by the parent — the view used to host
+    /// its own identity picker but that's been removed; the only entry
+    /// point now is the per-identity drill-in from `IdentityDetailView`.
+    let identity: PersistentIdentity
+
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
     @StateObject private var dashPayService = ObservableDashPayService()
-    @Query private var identities: [PersistentIdentity]
-    @State private var selectedIdentityId: String = ""
     @State private var contacts: [DashPayContact] = []
     @State private var incomingRequests: [DashPayContactRequest] = []
     @State private var sentRequests: [DashPayContactRequest] = []
@@ -21,99 +26,56 @@ struct FriendsView: View {
     /// `DashPayContact` is `Identifiable` via its `identityId: Data`.
     @State private var paymentTarget: DashPayContact?
 
-    var availableIdentities: [PersistentIdentity] {
-        identities
-    }
-
-    var selectedIdentity: PersistentIdentity? {
-        availableIdentities.first { $0.identityIdBase58 == selectedIdentityId }
-    }
-
     var body: some View {
-        NavigationStack {
-            if availableIdentities.isEmpty {
-                // No identities view
+        // No outer NavigationStack — this view is always pushed inside
+        // the parent's stack (IdentityDetailView's tab NavigationStack).
+        // Single `List` so the Incoming Requests `Section` actually
+        // gets sectioned styling — a `Section` directly inside a
+        // `VStack` is a no-op visually, just rendering its rows
+        // without a header/separator.
+        //
+        // We qualify with `SwiftUI.Group` here because
+        // `SwiftDashSDK.Group` is a `Codable` DPP type, and an
+        // unqualified `Group { ... }` resolves to its Codable
+        // initializer rather than the SwiftUI view builder — Swift
+        // surfaces that as a "trailing closure passed to parameter
+        // of type 'any Decoder'" diagnostic.
+        SwiftUI.Group {
+            if contacts.isEmpty && !isLoading && incomingRequests.isEmpty {
                 VStack(spacing: 20) {
                     Spacer()
 
-                    Image(systemName: "person.crop.circle.badge.exclamationmark")
-                        .font(.system(size: 60))
+                    Image(systemName: "person.2.slash")
+                        .font(.system(size: 50))
                         .foregroundColor(.gray)
 
-                    Text("No Identity Found")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                    Text("No Friends Yet")
+                        .font(.title3)
+                        .fontWeight(.medium)
 
-                    Text("Please create or load an identity first\nto manage your friends")
+                    Text("Add friends to send messages\nand share documents")
                         .multilineTextAlignment(.center)
+                        .font(.caption)
                         .foregroundColor(.secondary)
 
-                    HStack(spacing: 20) {
-                        NavigationLink(destination: LoadIdentityView()) {
-                            Label("Load Identity", systemImage: "square.and.arrow.down")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-
-                        NavigationLink(destination: TransitionDetailView(transitionKey: "identityCreate", transitionLabel: "Create Identity")) {
-                            Label("Create Identity", systemImage: "plus.circle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
+                    Button {
+                        showAddFriend = true
+                    } label: {
+                        Label("Add Friend", systemImage: "person.badge.plus")
                     }
-                    .padding(.horizontal)
+                    .buttonStyle(.borderedProminent)
 
                     Spacer()
                 }
-                .navigationTitle("Friends")
-                .navigationBarTitleDisplayMode(.large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isLoading && contacts.isEmpty && incomingRequests.isEmpty {
+                VStack {
+                    Spacer()
+                    ProgressView("Loading contacts...")
+                    Spacer()
+                }
             } else {
-                VStack(spacing: 0) {
-                    // Identity selector
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text("Selected Identity")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-
-                        Picker("Identity", selection: $selectedIdentityId) {
-                            // Placeholder tag matching the initial
-                            // empty-string state, so SwiftUI doesn't
-                            // warn "the selection '' is invalid and
-                            // does not have an associated tag". The
-                            // `onAppear` default-selector replaces
-                            // this with the first real identity.
-                            Text("Select an identity").tag("")
-                            ForEach(availableIdentities) { identity in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(identity.alias ?? "Identity")
-                                            .font(.headline)
-                                        Text(identity.identityIdBase58.prefix(12) + "...")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    if identity.balance > 0 {
-                                        Text(formatBalance(UInt64(bitPattern: identity.balance)))
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-                                .tag(identity.identityIdBase58)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                        .background(Color(UIColor.secondarySystemBackground))
-                    }
-
-                    // Incoming requests section
+                List {
                     if !incomingRequests.isEmpty {
                         Section {
                             ForEach(incomingRequests) { request in
@@ -128,42 +90,8 @@ struct FriendsView: View {
                         }
                     }
 
-                    // Friends list
-                    if contacts.isEmpty && !isLoading && incomingRequests.isEmpty {
-                        VStack(spacing: 20) {
-                            Spacer()
-
-                            Image(systemName: "person.2.slash")
-                                .font(.system(size: 50))
-                                .foregroundColor(.gray)
-
-                            Text("No Friends Yet")
-                                .font(.title3)
-                                .fontWeight(.medium)
-
-                            Text("Add friends to send messages\nand share documents")
-                                .multilineTextAlignment(.center)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Button {
-                                showAddFriend = true
-                            } label: {
-                                Label("Add Friend", systemImage: "person.badge.plus")
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if isLoading {
-                        VStack {
-                            Spacer()
-                            ProgressView("Loading contacts...")
-                            Spacer()
-                        }
-                    } else {
-                        List {
+                    if !contacts.isEmpty {
+                        Section {
                             ForEach(contacts.filter { !$0.isHidden }) { contact in
                                 Button {
                                     paymentTarget = contact
@@ -172,47 +100,41 @@ struct FriendsView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                        } header: {
+                            Text("Friends (\(contacts.filter { !$0.isHidden }.count))")
                         }
                     }
-                }
-                .navigationTitle("Friends")
-                .navigationBarTitleDisplayMode(.large)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showAddFriend = true
-                        } label: {
-                            Image(systemName: "person.badge.plus")
-                        }
-                    }
-                }
-                .sheet(isPresented: $showAddFriend) {
-                    AddFriendView(
-                        selectedIdentity: selectedIdentity,
-                        onSent: { loadFriends() }
-                    )
-                    .environmentObject(walletManager)
-                }
-                .sheet(item: $paymentTarget) { contact in
-                    if let identity = selectedIdentity {
-                        SendDashPayPaymentSheet(
-                            senderIdentity: identity,
-                            contact: contact,
-                            onSent: { loadFriends() }
-                        )
-                        .environmentObject(walletManager)
-                    }
-                }
-                .onAppear {
-                    // Set initial selected identity if not set
-                    if selectedIdentityId.isEmpty && !availableIdentities.isEmpty {
-                        selectedIdentityId = availableIdentities[0].identityIdBase58
-                    }
-                }
-                .onChange(of: selectedIdentityId) { _, newValue in
-                    loadFriends()
                 }
             }
+        }
+        .navigationTitle("Friends")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showAddFriend = true
+                } label: {
+                    Image(systemName: "person.badge.plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showAddFriend) {
+            AddFriendView(
+                selectedIdentity: identity,
+                onSent: { loadFriends() }
+            )
+            .environmentObject(walletManager)
+        }
+        .sheet(item: $paymentTarget) { contact in
+            SendDashPayPaymentSheet(
+                senderIdentity: identity,
+                contact: contact,
+                onSent: { loadFriends() }
+            )
+            .environmentObject(walletManager)
+        }
+        .onAppear {
+            loadFriends()
         }
     }
 
@@ -235,7 +157,7 @@ struct FriendsView: View {
         return wallet
     }
 
-    /// Refresh the friends list for the currently-selected identity.
+    /// Refresh the friends list for this view's identity.
     ///
     /// Two-stage:
     ///   1. `wallet.syncContactRequests()` — fetches incoming
@@ -246,7 +168,6 @@ struct FriendsView: View {
     ///      (incoming / sent / established ID arrays) and convert
     ///      to the UI value types.
     private func loadFriends() {
-        guard let identity = selectedIdentity else { return }
         let wallet: ManagedPlatformWallet
         do {
             wallet = try requireWallet(for: identity)
@@ -322,7 +243,6 @@ struct FriendsView: View {
     }
 
     private func acceptRequest(_ request: DashPayContactRequest) {
-        guard let identity = selectedIdentity else { return }
         Task { @MainActor in
             do {
                 let wallet = try requireWallet(for: identity)
@@ -333,7 +253,8 @@ struct FriendsView: View {
                     errorMessage = "Incoming request from \(request.senderId.toHexString().prefix(12))… not in local state"
                     return
                 }
-                _ = try await wallet.acceptContactRequest(contactRequest)
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                _ = try await wallet.acceptContactRequest(contactRequest, signer: signer)
                 errorMessage = nil
                 loadFriends()
             } catch {
@@ -343,7 +264,6 @@ struct FriendsView: View {
     }
 
     private func rejectRequest(_ request: DashPayContactRequest) {
-        guard let identity = selectedIdentity else { return }
         Task { @MainActor in
             do {
                 let wallet = try requireWallet(for: identity)
@@ -359,26 +279,6 @@ struct FriendsView: View {
         }
     }
 
-    private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
-
-        if dash == 0 {
-            return "0 DASH"
-        }
-
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 8
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-
-        if let formatted = formatter.string(from: NSNumber(value: dash)) {
-            return formatted
-        }
-
-        return String(format: "%.8f", dash)
-    }
 }
 
 // MARK: - Contact Row View
@@ -484,6 +384,7 @@ struct AddFriendView: View {
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var searchText = ""
     @State private var searchMethod = 0 // 0: DPNS, 1: Identity ID
     @State private var isSending = false
@@ -595,9 +496,18 @@ struct AddFriendView: View {
                     recipientId = parsed
                 }
 
+                // Construct a fresh `KeychainSigner` and route through
+                // the platform-wallet
+                // `IdentityWallet::send_contact_request_with_external_signer`
+                // path. CAVEAT: the contact-request encryption step
+                // still derives the sender's ECDH key Rust-side from
+                // the wallet seed (watch-only wallets fail there) —
+                // see the docstring on `sendContactRequest(...,signer:)`.
+                let signer = KeychainSigner(modelContainer: modelContext.container)
                 _ = try await wallet.sendContactRequest(
                     senderIdentityId: identity.identityId,
-                    recipientIdentityId: recipientId
+                    recipientIdentityId: recipientId,
+                    signer: signer
                 )
                 onSent()
                 dismiss()
@@ -945,7 +855,6 @@ struct SendDashPayPaymentSheet: View {
     }
 }
 
-#Preview {
-    FriendsView()
-        .environmentObject(AppState())
-}
+// #Preview omitted — FriendsView now requires a live
+// `PersistentIdentity`, which isn't easy to fabricate in a preview
+// context. Exercise via the IdentityDetailView -> Friends drill-in.

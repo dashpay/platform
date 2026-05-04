@@ -1,13 +1,20 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
+use async_trait::async_trait;
+use dpp::address_funds::AddressWitness;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
+use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::KeyType;
+use dpp::identity::SecurityLevel;
+use dpp::platform_value::BinaryData;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::ProtocolError;
 use key_wallet::account::AccountType;
 
 use dash_sdk::platform::dashpay::EcdhProvider;
@@ -17,39 +24,83 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
-use crate::wallet::signer::IdentitySigner;
 use dash_sdk::platform::dashpay::SendContactRequestInput;
+
+// Borrowed-signer adapter — see `dpns.rs` for the pattern.
+struct SignerRef<'a, S: ?Sized>(&'a S);
+
+impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SignerRef")
+    }
+}
+
+#[async_trait]
+impl<'a, K, S> Signer<K> for SignerRef<'a, S>
+where
+    K: Send + Sync,
+    S: Signer<K> + ?Sized + Send + Sync,
+{
+    async fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        self.0.sign(key, data).await
+    }
+
+    async fn sign_create_witness(
+        &self,
+        key: &K,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        self.0.sign_create_witness(key, data).await
+    }
+
+    fn can_sign_with(&self, key: &K) -> bool {
+        self.0.can_sign_with(key)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Send contact request
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Send a contact request to another identity.
+    /// Send a contact request to another identity using an
+    /// externally-supplied signer for the document state-transition.
     ///
-    /// All parameters that can be resolved internally are resolved automatically:
+    /// All parameters that can be resolved internally are resolved
+    /// automatically:
     /// - **identity_index**: looked up from the local `ManagedIdentity`
     /// - **sender_key_index**: first key with `Purpose::ENCRYPTION` on the sender
     /// - **recipient_key_index**: first key with `Purpose::DECRYPTION` on the recipient
     /// - **account_index**: defaults to `0`
-    /// - **ECDH**: performed SDK-side using the sender's derived encryption private key
+    /// - **ECDH**: performed SDK-side using the sender's derived
+    ///   encryption private key.
     ///
-    /// # Arguments
+    /// Document signing is routed through `signer` — the
+    /// architecturally correct path per `swift-sdk/CLAUDE.md`.
     ///
-    /// * `sender_identity_id`    - Identity that owns the contact request.
-    /// * `recipient_identity_id` - Identity the request is sent to.
-    /// * `account_label`         - Optional account label (plaintext; encrypted by SDK).
-    /// * `auto_accept_proof`     - Optional auto-accept proof bytes (38-102 bytes).
+    /// CAVEAT — ECDH derivation: this method still derives the
+    /// sender's ECDH private key from the wallet seed via
+    /// `derive_encryption_private_key`. Watch-only wallets (no seed
+    /// Rust-side) WILL fail at this step. A follow-up FFI is needed
+    /// to push ECDH derivation across the FFI (it's a one-shot raw
+    /// scalar derivation, not a `Signer<K>::sign` call, so it
+    /// doesn't fit the existing signer trampoline). For wallets
+    /// where the seed is in-process (the common case during this
+    /// migration sweep) this variant works end-to-end.
     #[allow(clippy::type_complexity)]
-    pub async fn send_contact_request(
+    pub async fn send_contact_request_with_external_signer<S>(
         &self,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: Option<Vec<u8>>,
-    ) -> Result<ContactRequest, PlatformWalletError> {
-        // 1. Retrieve the sender identity and its HD index from the local manager
-        //    via a single managed_identity() call.
+        signer: &S,
+    ) -> Result<ContactRequest, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        // 1. Retrieve the sender identity and its HD index from the
+        //    local manager.
         let (sender_identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -81,7 +132,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .ok_or_else(|| PlatformWalletError::IdentityNotFound(*recipient_identity_id))?
         };
 
-        // 3. Resolve key indices — sender ENCRYPTION, recipient DECRYPTION.
+        // 3. Resolve key indices.
         let sender_encryption_key = sender_identity
             .public_keys()
             .iter()
@@ -105,8 +156,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 )
             })?;
 
-        // 4. Derive both the DashPay receiving-account xpub and the ECDH
-        //    private key under a single read lock.
+        // 4. Derive the DashPay receiving xpub + ECDH private key from
+        //    the wallet seed. NOTE: this step still requires the seed
+        //    in-process (see CAVEAT in the docstring).
         let account_index: u32 = 0;
         let (xpub_bytes, ecdh_private_key) = {
             let wm = self.wallet_manager.read().await;
@@ -145,25 +197,29 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             (xpub, ecdh_key)
         };
 
-        // 5. Build the signing key and signer.
-        let signer = IdentitySigner::new(
-            self.wallet_manager.clone(),
-            self.wallet_id,
-            self.sdk.network,
-            identity_index,
-        );
+        // 5. Build the signing key reference for document signing.
         let identity_public_key = sender_identity
-            .public_keys()
-            .values()
-            .find(|k| k.purpose() == Purpose::AUTHENTICATION)
+            // Contact-request send writes a document state transition,
+            // which DPP requires to be signed by a HIGH-or-stricter
+            // authentication key. MASTER is rejected on document writes.
+            .get_first_public_key_matching(
+                Purpose::AUTHENTICATION,
+                [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
+                [KeyType::ECDSA_SECP256K1].into(),
+                false,
+            )
             .cloned()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no authentication key for signing".to_string(),
+                    "Sender identity has no HIGH or CRITICAL authentication key \
+                     (required for document state transitions)"
+                        .to_string(),
                 )
             })?;
 
-        // 6. Prepare SDK input and submit.
+        // 6. Build SDK input. Wrap the borrowed signer in `SignerRef`
+        //    so it satisfies the owned-by-bound `Signer<IdentityPublicKey>`
+        //    requirement on `SendContactRequestInput`.
         let contact_request_input = dash_sdk::platform::dashpay::ContactRequestInput {
             sender_identity: sender_identity.clone(),
             recipient: dash_sdk::platform::dashpay::RecipientIdentity::Identity(recipient_identity),
@@ -177,7 +233,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let send_input = SendContactRequestInput {
             contact_request: contact_request_input,
             identity_public_key,
-            signer,
+            signer: SignerRef(signer),
         };
 
         let expected_key_id = sender_key_index;
@@ -217,19 +273,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 ))
             })?;
 
-        // 7. Store the sent request in the local manager.
+        // 7. Mirror the local-state bookkeeping in `send_contact_request`.
         let contact_request = ContactRequest::new(
             *sender_identity_id,
             result.recipient_id,
             sender_key_index,
             recipient_key_index,
             result.account_reference,
-            // The encrypted xpub was already submitted to Platform as part of the
-            // contact request document. We don't store the real ciphertext locally
-            // because it is only needed by the recipient. A zeroed placeholder of the
-            // correct length (96 bytes) is kept so the struct remains consistently
-            // sized. Changing this field to Option<Vec<u8>> would be more precise but
-            // requires updating all constructors and serialization code.
             vec![0u8; 96],
             result.document.created_at_core_block_height().unwrap_or(0),
             result.document.created_at().unwrap_or(0),
@@ -247,8 +297,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             managed.add_sent_contact_request(contact_request.clone(), &self.persister);
         }
 
-        // Register the contact account in ManagedWalletInfo so SPV monitors
-        // incoming payment addresses from this contact.
         self.register_contact_account(sender_identity_id, recipient_identity_id, account_index)
             .await?;
 
@@ -408,22 +456,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Accept an incoming contact request by sending a reciprocal request and
-    /// establishing the contact locally.
+    /// Accept an incoming contact request using an externally-supplied
+    /// signer.
     ///
-    /// All parameters are resolved internally from the incoming [`ContactRequest`]:
-    /// - The recipient of the reciprocal request is derived from `request.sender_id`.
-    /// - Our identity ID is `request.recipient_id`.
-    /// - ECDH, signing key, identity index, and account index are resolved the
-    ///   same way as [`send_contact_request`].
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - The incoming [`ContactRequest`] to accept.
-    pub async fn accept_contact_request(
+    /// Routes through
+    /// [`Self::send_contact_request_with_external_signer`] so signing
+    /// crosses the FFI via the supplied `&S: Signer<IdentityPublicKey>`.
+    /// Same ECDH caveat applies — see that method's docstring.
+    pub async fn accept_contact_request_with_external_signer<S>(
         &self,
         request: &ContactRequest,
-    ) -> Result<EstablishedContact, PlatformWalletError> {
+        signer: &S,
+    ) -> Result<EstablishedContact, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
 
@@ -442,23 +489,25 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             }
         }
 
-        // 2. Capture the key indices and encrypted xpub from the incoming request
-        //    before sending the reciprocal request (which moves the lock and
-        //    the request may be consumed or overwritten).
+        // 2. Capture the encrypted xpub + key indices BEFORE sending
+        //    the reciprocal request (same ordering as the legacy
+        //    `accept_contact_request`).
         let contact_encrypted_xpub = request.encrypted_public_key.clone();
         let our_decryption_key_index = request.recipient_key_index;
         let contact_encryption_key_index = request.sender_key_index;
 
-        // 3. Send reciprocal request (this also stores it as a sent request
-        //    in the managed identity which, combined with the existing
-        //    incoming request, will auto-establish the contact).
-        self.send_contact_request(&our_identity_id, &sender_id, None, None)
-            .await?;
+        // 3. Send reciprocal request via the external-signer path.
+        self.send_contact_request_with_external_signer(
+            &our_identity_id,
+            &sender_id,
+            None,
+            None,
+            signer,
+        )
+        .await?;
 
-        // 4. Register the watch-only external account so we can derive
-        //    sending addresses for this contact. Failures here are logged
-        //    but do not abort the acceptance — the external account can be
-        //    re-registered later.
+        // 4. Best-effort external-account registration. Failures are
+        //    logged but do not abort.
         if let Err(e) = self
             .register_external_contact_account(
                 &our_identity_id,
@@ -473,13 +522,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 our_identity = %our_identity_id,
                 contact = %sender_id,
                 error = %e,
-                "Failed to register external contact account after accept — \
+                "Failed to register external contact account after accept (external signer) — \
                  re-run register_external_contact_account to retry"
             );
         }
 
-        // 5. The auto-establish logic in ManagedIdentity should have created
-        //    the established contact. Retrieve and return it.
+        // 5. Retrieve the auto-established contact.
         let wm = self.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&self.wallet_id)

@@ -18,7 +18,14 @@ errors=0
 
 # Extract model type names from DashModelContainer.modelTypes array.
 # Matches lines like "PersistentFoo.self," and extracts "PersistentFoo".
-model_types=$(grep -oE '[A-Z][A-Za-z]+\.self' "$CONTAINER" | sed 's/\.self//' | sort)
+# Scoped to the body of the `modelTypes` computed property so other
+# `.self` references in the file (e.g. `migrationPlan:
+# DashMigrationPlan.self` passed to ModelContainer) aren't mistaken
+# for SwiftData models.
+model_types=$(awk '/var modelTypes/{flag=1} flag{print} flag && /^    \}/{flag=0}' "$CONTAINER" \
+    | grep -oE '[A-Z][A-Za-z0-9]+\.self' \
+    | sed 's/\.self//' \
+    | sort -u)
 
 if [ -z "$model_types" ]; then
     echo "ERROR: Could not extract any model types from DashModelContainer.swift"

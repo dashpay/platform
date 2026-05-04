@@ -10,6 +10,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     try_from_options, try_from_options_optional, try_to_fixed_bytes, try_to_u32, try_to_u64,
+    try_vec_to_fixed_bytes,
 };
 use crate::version::PlatformVersionLikeJs;
 use dpp::dashcore::Network;
@@ -86,7 +87,7 @@ export interface IdentityPublicKeyJSON {
     id: number;
     purpose: number;
     securityLevel: number;
-    contractBounds?: object;
+    contractBounds?: ContractBoundsJSON;
     type: number;
     readOnly: boolean;
     data: string;
@@ -198,14 +199,8 @@ impl IdentityPublicKeyWasm {
         private_key_bytes_input: Vec<u8>,
         network: NetworkLikeJs,
     ) -> WasmDppResult<bool> {
-        if private_key_bytes_input.len() != 32 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "Private key must be exactly 32 bytes, got {}",
-                private_key_bytes_input.len()
-            )));
-        }
-        let mut private_key_bytes = [0u8; 32];
-        private_key_bytes.copy_from_slice(&private_key_bytes_input);
+        let private_key_bytes: [u8; 32] =
+            try_vec_to_fixed_bytes(private_key_bytes_input, "privateKey")?;
 
         let network: Network = network.try_into()?;
 

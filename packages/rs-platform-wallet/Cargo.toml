@@ -26,7 +26,6 @@ async-trait = "0.1"
 arc-swap = "1"
 
 # Collections
-indexmap = "2.0"
 bimap = "0.6"
 
 # Async runtime
@@ -38,6 +37,8 @@ tracing = "0.1"
 
 # Encoding
 hex = "0.4"
+bs58 = "0.5"
+serde_json = "1.0"
 
 # Image processing (DIP-15 avatar hash + fingerprint)
 sha2 = "0.10"
@@ -54,6 +55,9 @@ zip32 = { version = "0.2.0", default-features = false, optional = true }
 rand = "0.8"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Re-enable the SDK with mocks feature for test-only mock builders;
+# the non-test build keeps the leaner default-feature SDK above.
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
 
 
 [features]

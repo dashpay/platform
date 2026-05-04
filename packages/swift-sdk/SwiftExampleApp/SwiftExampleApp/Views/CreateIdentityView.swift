@@ -45,6 +45,15 @@ struct CreateIdentityView: View {
     /// re-fire a SwiftData query.
     @Query private var allAccounts: [PersistentAccount]
 
+    /// All persisted identities. Used by `unusedIdentityIndices(for:)`
+    /// as the truth source for which identity-registration slots are
+    /// already taken — the per-`PersistentCoreAddress.isUsed` flag can
+    /// be stale for *discovered* identities (gap-limit scan finds an
+    /// existing identity on Platform; the persister callback writes
+    /// `PersistentIdentity` but doesn't currently flip the matching
+    /// Core-address `isUsed` flag).
+    @Query private var allIdentities: [PersistentIdentity]
+
     // MARK: - Selection state
 
     /// The source wallet selection. `nil` encodes "pick nothing yet";
@@ -87,14 +96,21 @@ struct CreateIdentityView: View {
     var body: some View {
         NavigationStack {
             Form {
-                sourceWalletSection
-                fundingSection
-                amountSection
-                identityIndexSection
+                // Once registration succeeds, collapse the form down to
+                // just the success banner — the input sections (funding
+                // source, amount, registration-index stepper with its
+                // now-irrelevant collision warning) are noise at that
+                // point.
                 if createdIdentityId != nil {
                     successSection
-                } else if canSubmit {
-                    submitSection
+                } else {
+                    sourceWalletSection
+                    fundingSection
+                    amountSection
+                    identityIndexSection
+                    if canSubmit {
+                        submitSection
+                    }
                 }
             }
             .navigationTitle("Create Identity")
@@ -136,12 +152,13 @@ struct CreateIdentityView: View {
                 // through.
                 fundingSelection = nil
                 walletlessProof = ""
-                // Default the identity-registration index to the
-                // first unused slot on the newly-selected wallet,
-                // or clear it for the walletless / no-selection
-                // branches.
+                // Default the identity-registration index to one
+                // past the highest already-used slot on the newly-
+                // selected wallet (identities aren't gap-limited; we
+                // can derive any index N from the mnemonic on demand).
+                // Walletless / no-selection branches clear it.
                 if case .wallet(let walletId) = newValue {
-                    identityIndex = firstUnusedIdentityIndex(for: walletId)
+                    identityIndex = nextUnusedIdentityIndex(for: walletId)
                 } else {
                     identityIndex = nil
                 }
@@ -248,27 +265,38 @@ struct CreateIdentityView: View {
         // creations don't burn an identity-registration slot off our
         // HD tree.
         if case .wallet(let walletId) = walletSelection {
-            let unused = unusedIdentityIndices(for: walletId)
+            let used = usedIdentityIndices(for: walletId)
+            let collision = identityIndex.map { used.contains($0) } ?? false
             Section {
-                if unused.isEmpty {
-                    Text("No unused identity registration keys available.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                } else {
-                    Picker("Identity Registration Index", selection: $identityIndex) {
-                        ForEach(unused, id: \.self) { index in
-                            Text("#\(index)")
-                                .tag(Optional(index))
-                        }
+                Stepper(value: Binding(
+                    get: { identityIndex ?? 0 },
+                    set: { identityIndex = $0 }
+                ), in: 0...UInt32.max) {
+                    HStack {
+                        Text("Identity Registration Index")
+                        Spacer()
+                        Text("#\(identityIndex ?? 0)")
+                            .foregroundColor(collision ? .red : .secondary)
+                            .monospacedDigit()
                     }
+                }
+                if collision {
+                    Text(
+                        "Index #\(identityIndex ?? 0) is already taken on "
+                        + "this wallet. Pick a different index."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.red)
                 }
             } header: {
                 Text("Identity Registration Index")
             } footer: {
                 Text(
-                    "The identity-registration key slot the new identity "
-                    + "will consume. Defaults to the lowest unused slot in "
-                    + "the wallet; override to pick any other unused index."
+                    "The DIP-9 identity-registration slot the new identity "
+                    + "will consume "
+                    + "(`m/9'/coin'/5'/0'/0'/N'/0'`). Defaults to one past "
+                    + "the highest index already used on this wallet; "
+                    + "override to pick any other unused index."
                 )
             }
         }
@@ -337,8 +365,15 @@ struct CreateIdentityView: View {
             return !walletlessProof
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
-        case (.wallet, .some):
-            guard identityIndex != nil else { return false }
+        case (.wallet(let walletId), .some):
+            guard let identityIndex = identityIndex else { return false }
+            // Block submit on collision with an existing identity's
+            // registration index. The picker shows a red collision
+            // hint, but the button stays disabled regardless so the
+            // user can't punch through.
+            if usedIdentityIndices(for: walletId).contains(identityIndex) {
+                return false
+            }
             if let account = selectedPlatformAccount {
                 guard let credits = parsedAmountCredits else { return false }
                 return credits > 0 && credits <= accountBalance(account)
@@ -376,16 +411,42 @@ struct CreateIdentityView: View {
             return
         }
 
-        // Identity registration needs the BIP-39 mnemonic to derive
-        // DIP-9 auth keys + sign on the Rust side. The wallet struct
-        // itself is watch-only / external-signable; the secret lives
-        // in Keychain, keyed by walletId.
-        let mnemonic: String
+        // Identity registration goes through the Swift `KeychainSigner`
+        // now: every state-transition signature crosses the FFI via
+        // the signer's vtable, so the BIP-39 mnemonic stays in
+        // Keychain (not handed across the FFI).
+        //
+        // We pre-persist ONLY the identity-key private keys, looked
+        // up by pubkey bytes (`key_type < 5` dispatch). Identity keys
+        // ARE meant to live in the Keychain as primary storage —
+        // they are not seed-derived afresh per request, but read
+        // back from the Keychain by the trampoline.
+        //
+        // Platform-address private keys (the `key_type == 0xFF`
+        // dispatch) are NOT pre-persisted. The trampoline derives
+        // them on demand per signing call from `(mnemonic, path)`
+        // via `dash_sdk_sign_with_mnemonic_and_path` and zeroes the
+        // buffers immediately. The mnemonic stays in Keychain; the
+        // derivation path lives on `PersistentPlatformAddress`.
+        let signer = KeychainSigner(modelContainer: modelContext.container)
+        let identityPubkeys: [ManagedPlatformWallet.IdentityPubkey]
         do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+            // Single-FFI derive + persist. The Rust side owns the
+            // per-key MASTER-vs-HIGH policy and ships back the
+            // ready-to-use `IdentityPubkey` rows; the Swift caller
+            // does not recreate the policy. See
+            // swift-sdk/CLAUDE.md "no mnemonic round-tripping" —
+            // both the mnemonic fetch and the per-key Keychain
+            // write are now Rust → Swift callbacks orchestrated by
+            // the Rust loop, not Swift-side glue.
+            identityPubkeys = try managedWallet.prePersistIdentityKeysForRegistration(
+                identityIndex: identityIndex,
+                keyCount: Self.defaultKeyCount,
+                network: platformState.currentNetwork
+            )
         } catch {
             submitError = .init(
-                message: "Could not read the wallet's mnemonic from Keychain: \(error.localizedDescription)"
+                message: "Could not pre-derive identity keys: \(error.localizedDescription)"
             )
             return
         }
@@ -404,7 +465,7 @@ struct CreateIdentityView: View {
 
         isCreating = true
 
-        let network: AppNetwork = platformState.currentNetwork
+        let network: Network = platformState.currentNetwork
 
         Task {
             do {
@@ -412,9 +473,9 @@ struct CreateIdentityView: View {
                     inputs: inputs,
                     output: nil,
                     identityIndex: identityIndex,
-                    keyCount: Self.defaultKeyCount,
-                    mnemonic: mnemonic,
-                    passphrase: nil
+                    identityPubkeys: identityPubkeys,
+                    identitySigner: signer,
+                    addressSigner: signer
                 )
 
                 try await MainActor.run {
@@ -510,7 +571,7 @@ struct CreateIdentityView: View {
     /// `"derived:<path>"` identifiers — no Keychain write needed.
     private func persistCreatedIdentity(
         _ created: ManagedPlatformWallet.CreatedIdentity,
-        network: AppNetwork
+        network: Network
     ) throws {
         let identityId = created.identityId
         let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -628,7 +689,7 @@ struct CreateIdentityView: View {
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
         allAccounts
             .filter { account in
-                guard account.wallet?.walletId == walletId else { return false }
+                guard account.wallet.walletId == walletId else { return false }
                 guard CreateIdentityView.isFundingAccount(account) else { return false }
                 return CreateIdentityView.accountBalanceSummary(account).hasBalance
             }
@@ -653,25 +714,39 @@ struct CreateIdentityView: View {
     /// registration slot keyed by `addressIndex`; `isUsed` flips to
     /// true once the slot has been consumed by a prior identity
     /// creation. Returns an ascending list of the remaining slots.
-    private func unusedIdentityIndices(for walletId: Data) -> [UInt32] {
-        guard let account = identityRegistrationAccount(for: walletId) else {
-            return []
-        }
-        return account.coreAddresses
-            .filter { !$0.isUsed }
-            .map { $0.addressIndex }
-            .sorted()
+    /// Identity-registration indices currently claimed by an existing
+    /// `PersistentIdentity` on this wallet. Single source of truth —
+    /// the deprecated `PersistentCoreAddress.isUsed` flag was a
+    /// denormalized cache that drifted (discovered identities never
+    /// flipped it).
+    private func usedIdentityIndices(for walletId: Data) -> Set<UInt32> {
+        Set(
+            allIdentities
+                .filter { $0.wallet?.walletId == walletId }
+                .map { $0.identityIndex }
+        )
     }
 
-    /// Lowest unused identity-registration index on a wallet, or
-    /// `nil` if no slots remain. Drives the picker's default value.
-    private func firstUnusedIdentityIndex(for walletId: Data) -> UInt32? {
-        unusedIdentityIndices(for: walletId).first
+    /// One past the highest used registration index on this wallet,
+    /// or `0` for a wallet that has never registered an identity.
+    /// Identity-registration keys aren't gap-limited — any `N` is
+    /// derivable from the mnemonic at `m/9'/coin'/5'/0'/0'/N'/0'` —
+    /// so "next unused" is just `max + 1`.
+    ///
+    /// Uses checked addition: at `UInt32.max` we leave the picker at
+    /// `UInt32.max` rather than wrapping to `0` (which would silently
+    /// pre-fill a colliding slot). The user can still adjust the
+    /// stepper, and `canSubmit` keeps the button disabled until the
+    /// chosen index isn't already taken.
+    private func nextUnusedIdentityIndex(for walletId: Data) -> UInt32 {
+        let used = usedIdentityIndices(for: walletId)
+        guard let highest = used.max() else { return 0 }
+        return highest == UInt32.max ? UInt32.max : highest + 1
     }
 
     private func identityRegistrationAccount(for walletId: Data) -> PersistentAccount? {
         allAccounts.first { account in
-            account.wallet?.walletId == walletId && account.accountType == 2
+            account.wallet.walletId == walletId && account.accountType == 2
         }
     }
 

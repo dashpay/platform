@@ -1,11 +1,16 @@
-//! C-compatible types for watch-only wallet restore via the load-side
-//! callbacks on [`PersistenceCallbacks`](crate::persistence::PersistenceCallbacks).
+//! C-compatible types for external-signable wallet restore via the
+//! load-side callbacks on
+//! [`PersistenceCallbacks`](crate::persistence::PersistenceCallbacks).
 //!
-//! On write: `on_persist_wallet_root_xpub_fn` and `on_persist_account_fn`
-//! fire with these shapes so Swift can store them in SwiftData.
+//! On write: `on_persist_account_registrations_fn` fires with the
+//! `AccountSpecFFI` shape so Swift can store accounts in SwiftData.
 //! On load: `on_load_wallet_list_fn` returns an array of
-//! `WalletRestoreEntryFFI` which Rust assembles into a watch-only
-//! `Wallet` via `Wallet::from_xpub` + per-account `Account::from_xpub`.
+//! `WalletRestoreEntryFFI` which Rust assembles into an
+//! external-signable `Wallet` via `Wallet::new_external_signable` +
+//! per-account `Account::from_xpub`. (The mnemonic stays in the
+//! host's keychain; signing routes back through the configured
+//! signer surface. Earlier revisions reconstructed a `WatchOnly`
+//! wallet — that path has been replaced.)
 //!
 //! All `*const u8` pointers must stay valid for the duration of the
 //! load callback. Swift owns the allocation and is asked to free it
@@ -22,11 +27,16 @@
 use std::os::raw::{c_char, c_void};
 
 use crate::platform_address_types::AddressBalanceEntryFFI;
+use crate::types::FFINetwork;
 
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
 /// Keep the integer values stable across releases — they end up in
-/// SwiftData rows on the client.
+/// SwiftData rows on the client. Carried across the FFI boundary as
+/// a plain `u8` (see `AccountSpecFFI.type_tag`); validated via
+/// [`AccountTypeTagFFI::try_from_u8`] before any `match`. Reading a
+/// foreign `u8` directly into a `repr(u8)` enum field would be UB
+/// for out-of-range values *before* the match runs.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountTypeTagFFI {
@@ -55,13 +65,54 @@ pub enum AccountTypeTagFFI {
     IdentityAuthenticationBls = 16,
 }
 
+impl AccountTypeTagFFI {
+    /// Validating constructor for an FFI byte. Out-of-range bytes
+    /// (corrupt SwiftData row, forward-versioned tag, malformed
+    /// host buffer) return `None` so callers surface a recoverable
+    /// validation error rather than triggering UB on an enum match.
+    pub fn try_from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => Self::Standard,
+            1 => Self::CoinJoin,
+            2 => Self::IdentityRegistration,
+            3 => Self::IdentityTopUp,
+            4 => Self::IdentityTopUpNotBoundToIdentity,
+            5 => Self::IdentityInvitation,
+            6 => Self::AssetLockAddressTopUp,
+            7 => Self::AssetLockShieldedAddressTopUp,
+            8 => Self::ProviderVotingKeys,
+            9 => Self::ProviderOwnerKeys,
+            10 => Self::ProviderOperatorKeys,
+            11 => Self::ProviderPlatformKeys,
+            12 => Self::DashpayReceivingFunds,
+            13 => Self::DashpayExternalAccount,
+            14 => Self::PlatformPayment,
+            15 => Self::IdentityAuthenticationEcdsa,
+            16 => Self::IdentityAuthenticationBls,
+            _ => return None,
+        })
+    }
+}
+
 /// Discriminant for [`key_wallet::account::StandardAccountType`].
-/// Only meaningful when `AccountSpecFFI.type_tag == AccountTypeTagFFI::Standard`.
+/// Only meaningful when the parent `type_tag` is
+/// [`AccountTypeTagFFI::Standard`]. Same FFI-`u8`-with-validating-ctor
+/// shape as `AccountTypeTagFFI` for the same UB-avoidance reason.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardAccountTypeTagFFI {
     Bip44 = 0,
     Bip32 = 1,
+}
+
+impl StandardAccountTypeTagFFI {
+    pub fn try_from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => Self::Bip44,
+            1 => Self::Bip32,
+            _ => return None,
+        })
+    }
 }
 
 /// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
@@ -86,8 +137,14 @@ pub enum StandardAccountTypeTagFFI {
 ///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
 #[repr(C)]
 pub struct AccountSpecFFI {
-    pub type_tag: AccountTypeTagFFI,
-    pub standard_tag: StandardAccountTypeTagFFI,
+    /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
+    /// [`AccountTypeTagFFI::try_from_u8`] on the Rust side before any
+    /// `match` — reading a foreign byte directly into a `repr(u8)`
+    /// enum field would be UB for out-of-range values.
+    pub type_tag: u8,
+    /// Raw byte projection of [`StandardAccountTypeTagFFI`]. Same
+    /// validation pattern as `type_tag`.
+    pub standard_tag: u8,
     pub index: u32,
     pub registration_index: u32,
     pub key_class: u32,
@@ -97,6 +154,49 @@ pub struct AccountSpecFFI {
     /// callback duration only; Swift owns the allocation.
     pub account_xpub_bytes: *const u8,
     pub account_xpub_bytes_len: usize,
+}
+
+/// Per-identity public-key row carried on
+/// [`IdentityRestoreEntryFFI::keys`].
+///
+/// Mirrors the persisted `PersistentPublicKey` columns Swift writes
+/// during the `on_persist_identity_keys_fn` round. Carrying them on the
+/// load path means each restored `Identity` enters the in-memory
+/// `IdentityManager` with a populated `public_keys` `BTreeMap` instead
+/// of an empty one — the original gap that left
+/// `Identity::public_keys()` empty after cold-start until the next sync
+/// round repopulated it.
+///
+/// Field discriminants match the DPP `repr(u8)` enum layouts (same
+/// convention used by [`crate::identity_registration_with_signer::IdentityPubkeyFFI`]):
+/// - `key_type`: [`dpp::identity::KeyType`] discriminant
+///   (0 = ECDSA_SECP256K1, …).
+/// - `purpose`: [`dpp::identity::Purpose`] discriminant
+///   (0 = AUTHENTICATION, …).
+/// - `security_level`: [`dpp::identity::SecurityLevel`] discriminant
+///   (0 = MASTER, 1 = CRITICAL, 2 = HIGH, 3 = MEDIUM).
+///
+/// `data` is the public-key bytes (compressed secp256k1 → 33 bytes;
+/// BLS → 48; etc.). The pointer is Swift-owned and valid only for the
+/// duration of the load callback.
+///
+/// Disabled-at, contract-bounds and other non-essential fields are
+/// intentionally omitted — they're either always `None` for newly
+/// derived identity-auth keys or get re-populated by the next
+/// identity sync round if they exist on chain. The scope of this
+/// restore is narrowly "make `Identity.public_keys` non-empty so
+/// auth-key gates pass".
+#[repr(C)]
+pub struct IdentityKeyRestoreFFI {
+    pub key_id: u32,
+    pub key_type: u8,
+    pub purpose: u8,
+    pub security_level: u8,
+    pub read_only: bool,
+    /// Public-key bytes (33 for ECDSA_SECP256K1; 48 for BLS; etc.).
+    /// Valid for callback duration only; Swift owns the allocation.
+    pub data: *const u8,
+    pub data_len: usize,
 }
 
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].
@@ -115,16 +215,18 @@ pub struct AccountSpecFFI {
 /// `IdentityManager::apply_identity_entry` does on the changeset
 /// replay path — so no full `Identity` blob crosses the FFI.
 ///
-/// Public keys are NOT carried here; they live in the per-identity
-/// `PersistentPublicKey` rows on the Swift side and arrive separately
-/// via the existing `on_persist_identity_keys_fn` callback during the
-/// next sync round. Identities load with empty `public_keys` —
-/// sufficient to surface them in the explorer and
-/// `IdentityManager::managed_identity()` lookups.
+/// Public keys ride along on `keys` / `keys_count` as
+/// `IdentityKeyRestoreFFI` rows assembled from the per-identity
+/// `PersistentPublicKey` rows on the Swift side. Each row is converted
+/// into an `IdentityPublicKey::V0` and inserted into the
+/// reconstructed `Identity.public_keys` map keyed by `key_id`. When
+/// `keys_count == 0` the identity loads with an empty `public_keys`
+/// map (e.g. an in-flight registration whose key persist round
+/// hasn't completed); a subsequent sync round refreshes it.
 ///
-/// All pointer fields (`dpns_names`, `contested_dpns_names`) are
-/// Swift-owned and valid only for the duration of the load callback.
-/// The matching free callback releases them.
+/// All pointer fields (`dpns_names`, `contested_dpns_names`, `keys`)
+/// are Swift-owned and valid only for the duration of the load
+/// callback. The matching free callback releases them.
 #[repr(C)]
 pub struct IdentityRestoreEntryFFI {
     /// 32-byte identifier.
@@ -159,6 +261,51 @@ pub struct IdentityRestoreEntryFFI {
     /// Same array shape as `dpns_names`. `null` when none.
     pub contested_dpns_names: *const *const c_char,
     pub contested_dpns_names_count: usize,
+    /// Identity public-key rows assembled from the per-identity
+    /// `PersistentPublicKey` SwiftData rows. Each row is folded into
+    /// the reconstructed `Identity.public_keys` map keyed by
+    /// `key_id`. `null` / `0` when the identity has no persisted
+    /// keys (e.g. an in-flight registration whose key-persist round
+    /// hasn't completed).
+    pub keys: *const IdentityKeyRestoreFFI,
+    pub keys_count: usize,
+}
+
+/// One unspent UTXO row to rehydrate into a funds-bearing account's
+/// `ManagedCoreFundsAccount.utxos` map at startup.
+///
+/// The leading account-tag block is the same `(type_tag, standard_tag,
+/// index, registration_index, key_class, user_identity_id,
+/// friend_identity_id)` shape `AccountSpecFFI` uses, so the loader can
+/// reuse `account_type_from_spec` for routing. Keys-only and
+/// PlatformPayment variants are skipped on the receive side — they
+/// don't carry UTXOs.
+///
+/// `script_pubkey` is a Swift-owned byte buffer; the address string is
+/// reconstructed from `(script_pubkey, network)` on the Rust side, so
+/// no C-string field is needed here.
+#[repr(C)]
+pub struct UtxoRestoreEntryFFI {
+    /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
+    /// [`AccountTypeTagFFI::try_from_u8`] on the Rust side. See
+    /// `AccountSpecFFI.type_tag` for the UB-avoidance rationale.
+    pub type_tag: u8,
+    pub standard_tag: u8,
+    pub account_index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub prev_txid: [u8; 32],
+    pub vout: u32,
+    pub value_duffs: u64,
+    pub script_pubkey: *const u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_coinbase: bool,
+    pub is_confirmed: bool,
+    pub is_instantlocked: bool,
+    pub is_locked: bool,
 }
 
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
@@ -169,10 +316,9 @@ pub struct IdentityRestoreEntryFFI {
 #[repr(C)]
 pub struct WalletRestoreEntryFFI {
     pub wallet_id: [u8; 32],
-    /// [`key_wallet::Network`] discriminant, matching
-    /// `platform_wallet_manager_create_wallet_from_seed`:
-    /// 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
-    pub network: u8,
+    /// Network this wallet was created on. Mirrors what was supplied to
+    /// `platform_wallet_manager_create_wallet_from_seed`.
+    pub network: FFINetwork,
     pub accounts: *const AccountSpecFFI,
     pub accounts_count: usize,
     /// Cached platform-address balances for this wallet. The pointer is
@@ -189,6 +335,20 @@ pub struct WalletRestoreEntryFFI {
     /// `null` / `0` when the wallet has no persisted identities.
     pub identities: *const IdentityRestoreEntryFFI,
     pub identities_count: usize,
+    /// Core-chain sync metadata stamped onto the rebuilt
+    /// `ManagedWalletInfo.metadata` at load time. Zero is treated as
+    /// "unknown" — the snapshot leaves the field at its default in
+    /// that case (which `from_wallet` already seeds from
+    /// `birth_height - 1`). `last_synced` is Unix seconds.
+    pub birth_height: u32,
+    pub synced_height: u32,
+    pub last_processed_height: u32,
+    pub last_synced: u64,
+    /// Persisted unspent UTXOs to repopulate funds-bearing accounts.
+    /// Swift-owned, freed by `LoadWalletListFreeFn` — including each
+    /// row's `script_pubkey` buffer.
+    pub utxos: *const UtxoRestoreEntryFFI,
+    pub utxos_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
@@ -196,63 +356,22 @@ pub struct WalletRestoreEntryFFI {
 // use must happen within the callback window.
 unsafe impl Send for AccountSpecFFI {}
 unsafe impl Sync for AccountSpecFFI {}
+unsafe impl Send for IdentityKeyRestoreFFI {}
+unsafe impl Sync for IdentityKeyRestoreFFI {}
 unsafe impl Send for IdentityRestoreEntryFFI {}
 unsafe impl Sync for IdentityRestoreEntryFFI {}
 unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
+unsafe impl Send for UtxoRestoreEntryFFI {}
+unsafe impl Sync for UtxoRestoreEntryFFI {}
 
-/// Function-pointer type for the load callback.
-///
-/// Implementations must set `*out_entries` to a Swift-allocated array
-/// of `WalletRestoreEntryFFI` and `*out_count` to the length. The
-/// allocation is freed by the caller via `LoadWalletListFreeFn` once
-/// Rust has consumed it.
-///
-/// Returns 0 on success, non-zero on failure. On failure Rust does not
-/// call the free callback.
-pub type LoadWalletListFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    out_entries: *mut *const WalletRestoreEntryFFI,
-    out_count: *mut usize,
-) -> i32;
-
-/// Paired free callback for `LoadWalletListFn`. Releases any memory
-/// Swift allocated for the entries array, the per-wallet accounts
-/// arrays, the optional per-wallet platform-address balance arrays,
-/// every xpub byte buffer, the per-wallet identity arrays, and every
-/// nested c-string + c-string pointer array carried by the identity
-/// entries. Called exactly once after a successful `LoadWalletListFn`
-/// invocation.
+/// Paired free callback for the wallet-list load callback. Releases
+/// any memory Swift allocated for the entries array, the per-wallet
+/// accounts arrays, the optional per-wallet platform-address balance
+/// arrays, every xpub byte buffer, the per-wallet identity arrays,
+/// every nested c-string + c-string pointer array carried by the
+/// identity entries, and every per-identity `IdentityKeyRestoreFFI`
+/// array together with the public-key byte buffers each row points
+/// at. Called exactly once after a successful load.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);
-
-/// Fires once per account when it's added to a wallet. Swift should
-/// upsert into `PersistentAccount` keyed by `(wallet_id, type_tag,
-/// index, ...)`.
-///
-/// `spec.account_xpub_bytes` is valid only for the duration of the
-/// callback.
-pub type PersistAccountFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    spec: *const AccountSpecFFI,
-) -> i32;
-
-/// Fires once per wallet at registration time carrying Swift-visible
-/// metadata that isn't derivable from the xpub: network tag + birth
-/// height.
-///
-/// `network` uses the same discriminant as
-/// [`WalletRestoreEntryFFI.network`] (0 = Mainnet, 1 = Testnet,
-/// 2 = Devnet, 3 = Regtest).
-///
-/// `birth_height` is the best estimate of the block height at which
-/// the wallet started. Zero means "scan from genesis / unknown";
-/// callers can overwrite with a better value when SPV discovers the
-/// chain tip.
-pub type PersistWalletMetadataFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    network: u8,
-    birth_height: u32,
-) -> i32;

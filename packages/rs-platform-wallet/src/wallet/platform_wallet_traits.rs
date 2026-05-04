@@ -28,31 +28,27 @@ use super::platform_wallet::PlatformWalletInfo;
 // ---------------------------------------------------------------------------
 
 impl WalletInfoInterface for PlatformWalletInfo {
-    fn from_wallet(wallet: &Wallet) -> Self {
+    fn from_wallet(wallet: &Wallet, birth_height: CoreBlockHeight) -> Self {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletInfo::from_wallet(wallet);
+        let inner = ManagedWalletInfo::from_wallet(wallet, birth_height);
         Self {
             core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            token_watched: std::collections::BTreeMap::new(),
-            token_balances: std::collections::BTreeMap::new(),
         }
     }
 
-    fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
+    fn from_wallet_with_name(wallet: &Wallet, name: String, birth_height: CoreBlockHeight) -> Self {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name);
+        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name, birth_height);
         Self {
             core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            token_watched: std::collections::BTreeMap::new(),
-            token_balances: std::collections::BTreeMap::new(),
         }
     }
 
@@ -84,17 +80,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: CoreBlockHeight) {
-        self.core_wallet.set_birth_height(height);
-    }
-
-    fn first_loaded_at(&self) -> u64 {
-        self.core_wallet.first_loaded_at()
-    }
-
-    fn set_first_loaded_at(&mut self, timestamp: u64) {
-        self.core_wallet.set_first_loaded_at(timestamp);
-    }
+    // `first_loaded_at` / `set_first_loaded_at` were dropped from
+    // `WalletInfoInterface` upstream and have no backing methods on
+    // `ManagedWalletInfo` anymore. The field still exists on
+    // `WalletMetadata` but is read/written directly there; the trait
+    // surface no longer requires delegating accessors here.
 
     fn update_last_synced(&mut self, timestamp: u64) {
         self.core_wallet.update_last_synced(timestamp);
@@ -108,12 +98,16 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.utxos()
     }
 
+    fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
+        self.core_wallet.get_spendable_utxos()
+    }
+
     fn balance(&self) -> WalletCoreBalance {
         self.core_wallet.balance()
     }
 
-    fn update_balance(&mut self) -> key_wallet::changeset::WalletChangeSet {
-        self.core_wallet.update_balance()
+    fn update_balance(&mut self) {
+        self.core_wallet.update_balance();
     }
 
     fn transaction_history(&self) -> Vec<&TransactionRecord> {
@@ -132,19 +126,33 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.immature_transactions()
     }
 
+    fn last_processed_height(&self) -> CoreBlockHeight {
+        self.core_wallet.last_processed_height()
+    }
+
     fn synced_height(&self) -> CoreBlockHeight {
         self.core_wallet.synced_height()
+    }
+
+    fn update_last_processed_height(&mut self, current_height: u32) {
+        self.core_wallet
+            .update_last_processed_height(current_height);
     }
 
     fn update_synced_height(&mut self, current_height: u32) {
         self.core_wallet.update_synced_height(current_height);
     }
 
-    fn mark_instant_send_utxos(
-        &mut self,
-        txid: &Txid,
-        lock: &InstantLock,
-    ) -> (bool, key_wallet::changeset::WalletChangeSet) {
+    fn matured_coinbase_records(
+        &self,
+        old_height: CoreBlockHeight,
+        new_height: CoreBlockHeight,
+    ) -> Vec<TransactionRecord> {
+        self.core_wallet
+            .matured_coinbase_records(old_height, new_height)
+    }
+
+    fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
         self.core_wallet.mark_instant_send_utxos(txid, lock)
     }
 

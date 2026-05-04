@@ -19,14 +19,15 @@ pub mod platform_address_sync_start_state;
 pub mod traits;
 
 pub use changeset::{
-    AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, IdentityChangeSet,
-    IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
+    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, AssetLockEntry,
+    ContactChangeSet, ContactRequestEntry, CoreChangeSet, IdentityChangeSet, IdentityEntry,
+    IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
     PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
+    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
-pub use core_bridge::CorePersistenceBridge;
+pub use core_bridge::spawn_wallet_event_adapter;
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use merge::Merge;
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;

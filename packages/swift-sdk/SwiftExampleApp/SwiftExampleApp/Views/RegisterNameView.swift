@@ -1,11 +1,23 @@
 import SwiftUI
 import SwiftDashSDK
+import SwiftData
 
 struct RegisterNameView: View {
   let identity: PersistentIdentity
+  /// Optional success callback invoked on the main actor right after
+  /// the FFI call returns the registered full domain name. The parent
+  /// uses this to refresh its own DPNS-names state — `IdentityDetailView`
+  /// holds the list in `@State` (not `@Query`-bound), so the sheet
+  /// dismissing alone is not enough to trigger a re-fetch.
+  var onRegistered: ((String) -> Void)? = nil
   @EnvironmentObject var appState: AppState
   @EnvironmentObject var walletManager: PlatformWalletManager
   @Environment(\.dismiss) var dismiss
+  // Required by `KeychainSigner` so its trampoline can fetch
+  // `PersistentPublicKey` rows on a private background context. The
+  // view doesn't query SwiftData itself — `modelContext.container`
+  // is the only thing it threads through to the signer.
+  @Environment(\.modelContext) private var modelContext
 
   @State private var username = ""
   @State private var isChecking = false
@@ -367,17 +379,17 @@ struct RegisterNameView: View {
   }
 
   private func registerName() {
-    // Route through the platform-wallet `IdentityWallet::register_name`
-    // path instead of `dash_sdk_dpns_register_name`. Benefits:
-    //   - Signing key resolution happens in Rust against the
-    //     identity's `key_storage`, so Swift doesn't have to build
-    //     identity/pubkey/signer FFI handles by hand.
+    // Route through the platform-wallet
+    // `IdentityWallet::register_name_with_external_signer` path
+    // (via `registerDpnsName(identityId:name:signer:)`). Benefits:
+    //   - Signing crosses the FFI through the Swift `KeychainSigner`,
+    //     same model identity registration uses — so the wallet's
+    //     own seed never participates and watch-only restored
+    //     wallets can register names too.
     //   - On success the Rust side appends the new name to
     //     `ManagedIdentity.dpns_names` and queues an `IdentityChangeSet`
     //     so `PersistentIdentity.dpnsName` refreshes automatically via
     //     the persister callback — no manual SwiftData upsert needed.
-    //   - Removes ~100 lines of FFI plumbing that previously had to
-    //     mirror `KeyManager` + `dash_sdk_identity_create_from_components`.
     guard let walletId = identity.wallet?.walletId,
           let wallet = walletManager.wallet(for: walletId) else {
       errorMessage = "No wallet available for this identity"
@@ -385,26 +397,57 @@ struct RegisterNameView: View {
       return
     }
 
+    // Construct a fresh `KeychainSigner` for this registration the
+    // same way `CreateIdentityView.submit()` does. The signer holds
+    // a `+1`-retained C-side handle that's released in `deinit`;
+    // keeping it in a local across the awaited Task is enough to
+    // pin its lifetime past the FFI calls. The trampoline performs
+    // the `PersistentPublicKey` → Keychain lookup on a private
+    // background `ModelContext` derived from
+    // `modelContext.container`.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+
+    // The DPNS document stores `label` (display form, what the user
+    // typed) and `normalizedLabel` (homograph-safe lowercase, used
+    // for uniqueness lookup). The SDK side derives `normalizedLabel`
+    // from `label` via `convert_to_homograph_safe_chars`, so we hand
+    // it the raw trimmed input — passing `normalizedUsername` here
+    // makes both columns identical and the original casing /
+    // i-vs-1, o-vs-0 letters are lost from the cache and every
+    // subsequent display.
+    let displayLabel = username.trimmingCharacters(in: .whitespacesAndNewlines)
+
     isRegistering = true
 
     Task {
       do {
         let registeredName = try await wallet.registerDpnsName(
           identityId: identity.identityId,
-          name: normalizedUsername
+          name: displayLabel,
+          signer: signer
         )
 
         await MainActor.run {
-          // The Rust-side `IdentityWallet::register_name` already
-          // appended the new label to `ManagedIdentity.dpns_names`
-          // and emitted an `IdentityChangeSet` — the Swift persister
-          // callback wrote the update to `PersistentIdentity`, and
-          // every view that uses `@Query` picks up the change
-          // automatically. No in-memory mirror needed.
+          // Rust persister callback writes the new label to
+          // `PersistentIdentity` asynchronously, but the parent
+          // (`IdentityDetailView`) caches the list in plain `@State`
+          // populated only at `onAppear` — so `@Query` reactivity
+          // doesn't help here. Fire `onRegistered` so the parent
+          // can immediately add this name to its local state and
+          // skip the "wait until I leave + come back" round-trip.
+          //
+          // Pass the bare display label (what we just registered),
+          // NOT the FFI's full-domain return value
+          // (`registeredName` = "name.dash"). The parent's
+          // `dpnsNames` array stores bare labels — that's what
+          // `managed.getDpnsNames()` returns — so passing the full
+          // domain here would render "label.dash" instead of "label"
+          // until the next `loadDPNSNames` round.
+          onRegistered?(displayLabel)
 
           registrationSuccess = true
           errorMessage = isContested ?
-          "Successfully started contest for \(normalizedUsername). Follow \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes") to resolution." :
+          "Successfully started contest for \(displayLabel). Follow \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes") to resolution." :
           "Successfully registered \(registeredName)!"
           showingError = true
           isRegistering = false

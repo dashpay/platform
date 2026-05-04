@@ -3,9 +3,14 @@ import SwiftData
 
 /// SwiftData model for persisting core wallet metadata.
 ///
-/// Represents a single HD wallet with its sync state and balance.
+/// Represents a single HD wallet with its sync state.
 /// Owns accounts via cascade delete — removing a wallet removes all
 /// its accounts, transactions, and UTXOs.
+///
+/// The wallet-level cached balance fields were removed — the canonical
+/// "live" Core balance is summed on demand from
+/// `PlatformWalletManager.accountBalances(for:)` (Rust in-memory FFI).
+/// Per-account totals continue to live on `PersistentAccount`.
 @Model
 public final class PersistentWallet {
     /// 32-byte wallet ID (SHA256 of root public key).
@@ -13,29 +18,37 @@ public final class PersistentWallet {
     /// Network this wallet belongs to. `nil` means "not yet known" —
     /// the row was created by a changeset before `persistWalletMetadata`
     /// filled the network in. Views treat `nil` as unknown.
-    public var network: AppNetwork?
+    ///
+    /// Stored as the `Network.rawValue` `UInt32?` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: UInt32?
+
+    /// Type-safe accessor over `networkRaw`. `nil` round-trips as
+    /// `nil`; non-nil reads fall back to `.testnet` if the stored
+    /// raw value ever drifts out of the `Network` range.
+    public var network: Network? {
+        get {
+            guard let raw = networkRaw else { return nil }
+            return Network(rawValue: raw) ?? .testnet
+        }
+        set { networkRaw = newValue?.rawValue }
+    }
     /// Optional wallet name.
     public var name: String?
+    /// Optional free-form user-supplied description. Mirrored into
+    /// the keychain metadata blob (see `WalletKeychainMetadata`) so
+    /// it survives a SwiftData wipe / reinstall via the
+    /// orphan-mnemonic recovery flow. No UI surfaces this yet, but
+    /// the column is wired so existing rows roll forward without a
+    /// schema migration when it lands.
+    public var walletDescription: String?
     /// Birth height — block height when the wallet was created.
     public var birthHeight: UInt32
     /// Last synced core block height.
     public var syncedHeight: UInt32
     /// Timestamp of last sync (Unix seconds).
     public var lastSynced: UInt64
-    /// Confirmed balance in duffs.
-    public var balanceConfirmed: UInt64
-    /// Unconfirmed balance in duffs.
-    public var balanceUnconfirmed: UInt64
-    /// Immature balance in duffs.
-    public var balanceImmature: UInt64
-    /// Locked balance in duffs.
-    public var balanceLocked: UInt64
-    /// Wallet is spend-disabled — either bootstrapped watch-only
-    /// (no seed) or every account is watch-only. Surfaces as the
-    /// "👁 Watch-only" badge in the wallets list. Default `false`
-    /// keeps the schema migration trivial for rows that predate
-    /// this column.
-    public var isWatchOnly: Bool = false
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for
@@ -63,24 +76,20 @@ public final class PersistentWallet {
 
     public init(
         walletId: Data,
-        network: AppNetwork? = nil,
+        network: Network? = nil,
         name: String? = nil,
+        walletDescription: String? = nil,
         birthHeight: UInt32 = 0,
         syncedHeight: UInt32 = 0,
-        isWatchOnly: Bool = false,
         isImported: Bool = false
     ) {
         self.walletId = walletId
-        self.network = network
+        self.networkRaw = network?.rawValue
         self.name = name
+        self.walletDescription = walletDescription
         self.birthHeight = birthHeight
         self.syncedHeight = syncedHeight
         self.lastSynced = 0
-        self.balanceConfirmed = 0
-        self.balanceUnconfirmed = 0
-        self.balanceImmature = 0
-        self.balanceLocked = 0
-        self.isWatchOnly = isWatchOnly
         self.isImported = isImported
         self.createdAt = Date()
         self.lastUpdated = Date()

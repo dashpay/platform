@@ -207,7 +207,7 @@ mod tests {
     // Helper function to create a mock SDK handle
     fn create_mock_sdk_handle() -> *mut SDKHandle {
         let config = DashSDKConfig {
-            network: crate::types::DashSDKNetwork::SDKLocal,
+            network: crate::types::FFINetwork::Regtest,
             dapi_addresses: ptr::null(), // Use mock SDK
             skip_asset_lock_proof_verification: false,
             request_retry_count: 3,
@@ -244,8 +244,9 @@ mod tests {
     // Mock async sign callback for the completion-callback signer vtable.
     unsafe extern "C" fn mock_sign_callback(
         _signer: *const std::os::raw::c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
         completion_ctx: *mut std::os::raw::c_void,
@@ -264,8 +265,9 @@ mod tests {
 
     unsafe extern "C" fn mock_can_sign_callback(
         _signer: *const std::os::raw::c_void,
-        _key_bytes: *const u8,
-        _key_len: usize,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
     ) -> bool {
         true
     }
