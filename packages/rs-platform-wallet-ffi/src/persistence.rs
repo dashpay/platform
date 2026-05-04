@@ -1188,10 +1188,7 @@ fn build_wallet_start_state(
         let account_type = match account_type_from_spec(spec) {
             Ok(t) => t,
             Err(e) => {
-                let is_legacy_tag = spec.type_tag
-                    == AccountTypeTagFFI::IdentityAuthenticationEcdsa as u8
-                    || spec.type_tag == AccountTypeTagFFI::IdentityAuthenticationBls as u8;
-                if is_legacy_tag {
+                if is_legacy_removed_account_tag(spec.type_tag) {
                     tracing::warn!(
                         wallet_id = %hex::encode(entry.wallet_id),
                         type_tag = spec.type_tag,
@@ -1291,10 +1288,7 @@ fn build_wallet_start_state(
         let account_type = match account_type_from_spec(&spec) {
             Ok(t) => t,
             Err(e) => {
-                let is_legacy_tag = u.type_tag
-                    == AccountTypeTagFFI::IdentityAuthenticationEcdsa as u8
-                    || u.type_tag == AccountTypeTagFFI::IdentityAuthenticationBls as u8;
-                if is_legacy_tag {
+                if is_legacy_removed_account_tag(u.type_tag) {
                     dropped_account_type += 1;
                     tracing::warn!(
                         wallet_id = %hex::encode(entry.wallet_id),
@@ -1804,6 +1798,18 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
             )));
         }
     })
+}
+
+/// Returns `true` for the ABI-only `IdentityAuthentication{Ecdsa,Bls}`
+/// tag bytes whose upstream `AccountType` variants were removed
+/// (TODO(events)). These are the only tags `account_type_from_spec`
+/// deliberately returns `Err` for while still being valid
+/// discriminants — callers use this predicate to distinguish
+/// "recoverable drift" (warn + continue) from "real corruption /
+/// out-of-range byte" (propagate the error).
+fn is_legacy_removed_account_tag(type_tag: u8) -> bool {
+    type_tag == AccountTypeTagFFI::IdentityAuthenticationEcdsa as u8
+        || type_tag == AccountTypeTagFFI::IdentityAuthenticationBls as u8
 }
 
 /// Read `len` bytes from a Swift-owned pointer as a `&[u8]`.
