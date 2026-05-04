@@ -643,33 +643,119 @@ impl crate::serialization::ValueConvertible for ArrayItemType {}
 mod json_convertible_tests {
     use super::*;
 
-    fn each_variant() -> Vec<ArrayItemType> {
-        vec![
-            ArrayItemType::Integer,
-            ArrayItemType::Number,
-            ArrayItemType::String(Some(3), Some(50)),
-            ArrayItemType::ByteArray(Some(0), Some(64)),
-            ArrayItemType::Identifier,
-        ]
-    }
-
     #[test]
-    fn json_round_trip_each_variant() {
+    fn json_round_trip_integer_variant() {
         use crate::serialization::JsonConvertible;
-        for original in each_variant() {
-            let json = original.to_json().expect("to_json");
-            let recovered = ArrayItemType::from_json(json).expect("from_json");
-            assert_eq!(original, recovered);
-        }
+        use serde_json::json;
+        // `Integer` is a unit variant — externally-tagged enum form serializes
+        // as the bare string discriminator.
+        let original = ArrayItemType::Integer;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("Integer"));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 
     #[test]
-    fn value_round_trip_each_variant() {
+    fn json_round_trip_number_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = ArrayItemType::Number;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("Number"));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_string_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `String(Option<usize>, Option<usize>)` — tuple variant in
+        // externally-tagged form: `{"String": [min, max]}`. JSON erases the
+        // `usize` size.
+        let original = ArrayItemType::String(Some(3), Some(50));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"String": [3, 50]}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_byte_array_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = ArrayItemType::ByteArray(Some(0), Some(64));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"ByteArray": [0, 64]}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_identifier_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = ArrayItemType::Identifier;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("Identifier"));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_integer_variant() {
         use crate::serialization::ValueConvertible;
-        for original in each_variant() {
-            let value = original.to_object().expect("to_object");
-            let recovered = ArrayItemType::from_object(value).expect("from_object");
-            assert_eq!(original, recovered);
-        }
+        use platform_value::platform_value;
+        let original = ArrayItemType::Integer;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("Integer"));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_number_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::Number;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("Number"));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_string_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        // `usize` serializes through serde as `u64`-like → `Value::U64` in non-HR.
+        let original = ArrayItemType::String(Some(3), Some(50));
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!({"String": [3u64, 50u64]}));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_byte_array_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::ByteArray(Some(0), Some(64));
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!({"ByteArray": [0u64, 64u64]}));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_identifier_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::Identifier;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("Identifier"));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

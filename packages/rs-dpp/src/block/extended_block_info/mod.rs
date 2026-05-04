@@ -184,6 +184,8 @@ mod json_convertible_tests_extendedblockinfo {
     use super::*;
     use crate::block::block_info::BlockInfo;
     use crate::block::extended_block_info::v0::ExtendedBlockInfoV0;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     fn fixture() -> ExtendedBlockInfo {
         ExtendedBlockInfo::V0(ExtendedBlockInfoV0 {
@@ -197,33 +199,66 @@ mod json_convertible_tests_extendedblockinfo {
         })
     }
 
-    fn assert_v0_fields(t: &ExtendedBlockInfo) {
-        let ExtendedBlockInfo::V0(rec) = t;
-        assert_eq!(rec.app_hash, [0x11; 32], "app_hash");
-        assert_eq!(rec.quorum_hash, [0x22; 32], "quorum_hash");
-        assert_eq!(rec.block_id_hash, [0x33; 32], "block_id_hash");
-        assert_eq!(rec.proposer_pro_tx_hash, [0x44; 32], "proposer_pro_tx_hash");
-        assert_eq!(rec.signature, [0x55; 96], "signature");
-        assert_eq!(rec.round, 3, "round");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `json_safe_fields` proc-macro converts u64 -> string only when above
+        // JS_MAX_SAFE_INTEGER. Default `BlockInfo` (zeros) stays numeric.
+        // 32-byte arrays are emitted as base64 strings (`appHash`, etc.); the
+        // 96-byte signature is also base64 (no Bytes32 path). JSON erases
+        // size for `round` (u32) — value-path locks `3u32` below.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "basicInfo": {
+                    "timeMs": 0,
+                    "height": 0,
+                    "coreHeight": 0,
+                    "epoch": {"index": 0},
+                },
+                "appHash": "ERERERERERERERERERERERERERERERERERERERERERE=",
+                "quorumHash": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+                "blockIdHash": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+                "proposerProTxHash": "REREREREREREREREREREREREREREREREREREREREREQ=",
+                "signature": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV",
+                "round": 3,
+            })
+        );
         let recovered = ExtendedBlockInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::Value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `[u8; 32]` -> `Value::Bytes32`, `[u8; 96]` -> `Value::Bytes`,
+        // `round` is `u32` -> `Value::U32`. `BlockInfo` fields use their
+        // native typed variants (U64 / U32 / U16).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "basicInfo": {
+                    "timeMs": 0u64,
+                    "height": 0u64,
+                    "coreHeight": 0u32,
+                    "epoch": {"index": 0u16},
+                },
+                "appHash": Value::Bytes32([0x11; 32]),
+                "quorumHash": Value::Bytes32([0x22; 32]),
+                "blockIdHash": Value::Bytes32([0x33; 32]),
+                "proposerProTxHash": Value::Bytes32([0x44; 32]),
+                "signature": Value::Bytes(vec![0x55; 96]),
+                "round": 3u32,
+            })
+        );
         let recovered = ExtendedBlockInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

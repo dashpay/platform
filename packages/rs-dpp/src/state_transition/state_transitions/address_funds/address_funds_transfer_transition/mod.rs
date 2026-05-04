@@ -104,7 +104,8 @@ mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
-    use platform_value::BinaryData;
+    use platform_value::{platform_value, BinaryData, Value};
+    use serde_json::json;
     use std::collections::BTreeMap;
 
     fn fixture() -> AddressFundsTransferTransition {
@@ -126,36 +127,88 @@ mod json_convertible_tests {
         AddressFundsTransferTransition::V0(v0)
     }
 
-    fn assert_v0_fields(t: &AddressFundsTransferTransition) {
-        let AddressFundsTransferTransition::V0(rec) = t;
-        assert_eq!(rec.inputs.len(), 1, "inputs count");
-        assert_eq!(rec.outputs.len(), 1, "outputs count");
-        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy");
-        assert_eq!(rec.user_fee_increase, 17, "user_fee_increase");
-        assert_eq!(rec.input_witnesses.len(), 1, "input_witnesses");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Inputs/outputs go through helpers that emit `[{address, nonce, amount}]`
+        // and `[{address, amount}]` shapes. PlatformAddress is a hex string in
+        // JSON HR; BinaryData (witness signature) is base64. Sized integers
+        // (nonce u32, amount u64, fee_strategy index u16, user_fee_increase u16)
+        // are erased on the JSON wire — Value path locks the variants.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "inputs": [
+                    {
+                        "address": "00f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+                        "nonce": 10,
+                        "amount": 800_000,
+                    },
+                ],
+                "outputs": [
+                    {
+                        "address": "01f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+                        "amount": 700_000,
+                    },
+                ],
+                "feeStrategy": [
+                    {"type": "reduceOutput", "index": 0},
+                ],
+                "userFeeIncrease": 17,
+                "inputWitnesses": [
+                    {
+                        "type": "p2pkh",
+                        "signature": "qampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqak=",
+                    },
+                ],
+            })
+        );
         let recovered = AddressFundsTransferTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // PlatformAddress / BinaryData both serialize to `Value::Bytes` in
+        // non-HR. Sized ints stay sized.
+        let mut input_addr = vec![0x00u8];
+        input_addr.extend_from_slice(&[0xf1u8; 20]);
+        let mut output_addr = vec![0x01u8];
+        output_addr.extend_from_slice(&[0xf2u8; 20]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "inputs": [
+                    {
+                        "address": Value::Bytes(input_addr),
+                        "nonce": 10u32,
+                        "amount": 800_000u64,
+                    },
+                ],
+                "outputs": [
+                    {
+                        "address": Value::Bytes(output_addr),
+                        "amount": 700_000u64,
+                    },
+                ],
+                "feeStrategy": [
+                    {"type": "reduceOutput", "index": 0u16},
+                ],
+                "userFeeIncrease": 17u16,
+                "inputWitnesses": [
+                    {
+                        "type": "p2pkh",
+                        "signature": Value::Bytes(vec![0xa9; 65]),
+                    },
+                ],
+            })
+        );
         let recovered = AddressFundsTransferTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
-    }
-
-    #[test]
-    fn json_preserves_format_version_tag() {
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
     }
 }

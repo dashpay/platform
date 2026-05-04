@@ -113,7 +113,8 @@ mod json_convertible_tests {
     use crate::identity::core_script::CoreScript;
     use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
     use crate::withdrawal::Pooling;
-    use platform_value::BinaryData;
+    use platform_value::{platform_value, BinaryData, Value};
+    use serde_json::json;
     use std::collections::BTreeMap;
 
     fn fixture() -> AddressCreditWithdrawalTransition {
@@ -135,45 +136,101 @@ mod json_convertible_tests {
         AddressCreditWithdrawalTransition::V0(v0)
     }
 
-    fn assert_v0_fields(t: &AddressCreditWithdrawalTransition) {
-        let AddressCreditWithdrawalTransition::V0(rec) = t;
-        assert_eq!(rec.inputs.len(), 1, "inputs count");
-        assert_eq!(
-            rec.output,
-            Some((PlatformAddress::P2sh([0x02; 20]), 100_000u64)),
-            "output"
-        );
-        assert_eq!(rec.fee_strategy.len(), 1, "fee_strategy");
-        assert_eq!(rec.core_fee_per_byte, 21, "core_fee_per_byte");
-        assert_eq!(rec.pooling, Pooling::IfAvailable, "pooling");
-        assert_eq!(rec.user_fee_increase, 19, "user_fee_increase");
-        assert_eq!(rec.input_witnesses.len(), 1, "input_witnesses");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Sized-int fields lose their size on the JSON wire (single number type):
+        //   - `inputs[].nonce` is u32, `inputs[].amount` / `output.amount` are u64,
+        //   - `feeStrategy[].index` is u16,
+        //   - `coreFeePerByte` is u32, `userFeeIncrease` is u16.
+        // The Value-path assertion below locks the typed variants.
+        // `pooling` is encoded as the camelCase string `"ifAvailable"` in JSON
+        // (HR path of the custom `pooling_serde`), but as `Value::U8(1)` in
+        // non-HR. `outputScript` (CoreScript) is base64 in JSON, raw bytes in
+        // Value. `BinaryData` (witness signature, address bytes) is base64 in
+        // JSON, `Value::Bytes` in Value. `PlatformAddress` is hex string in
+        // JSON, raw bytes in Value.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "inputs": [
+                    {
+                        "address": "000101010101010101010101010101010101010101",
+                        "nonce": 5,
+                        "amount": 900_000,
+                    },
+                ],
+                "output": {
+                    "address": "010202020202020202020202020202020202020202",
+                    "amount": 100_000,
+                },
+                "feeStrategy": [
+                    {"type": "deductFromInput", "index": 0},
+                ],
+                "coreFeePerByte": 21,
+                "pooling": "ifAvailable",
+                "outputScript": "qrvM",
+                "userFeeIncrease": 19,
+                "inputWitnesses": [
+                    {
+                        "type": "p2pkh",
+                        "signature": "7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+8=",
+                    },
+                ],
+            })
+        );
         let recovered = AddressCreditWithdrawalTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // PlatformAddress emits raw bytes (21-byte: 1 type byte + 20 hash) in
+        // non-HR. Pooling::IfAvailable is `Value::U8(1)`. CoreScript and
+        // BinaryData both serialize as `Value::Bytes`. Sized integers stay
+        // sized: nonces are U32, credit amounts U64, fee_strategy index U16,
+        // core_fee_per_byte U32, user_fee_increase U16, pooling U8.
+        let mut input_addr_bytes = vec![0x00u8];
+        input_addr_bytes.extend_from_slice(&[0x01u8; 20]);
+        let mut output_addr_bytes = vec![0x01u8];
+        output_addr_bytes.extend_from_slice(&[0x02u8; 20]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "inputs": [
+                    {
+                        "address": Value::Bytes(input_addr_bytes),
+                        "nonce": 5u32,
+                        "amount": 900_000u64,
+                    },
+                ],
+                "output": {
+                    "address": Value::Bytes(output_addr_bytes),
+                    "amount": 100_000u64,
+                },
+                "feeStrategy": [
+                    {"type": "deductFromInput", "index": 0u16},
+                ],
+                "coreFeePerByte": 21u32,
+                "pooling": 1u8,
+                "outputScript": Value::Bytes(vec![0xaa, 0xbb, 0xcc]),
+                "userFeeIncrease": 19u16,
+                "inputWitnesses": [
+                    {
+                        "type": "p2pkh",
+                        "signature": Value::Bytes(vec![0xef; 65]),
+                    },
+                ],
+            })
+        );
         let recovered = AddressCreditWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
-    }
-
-    #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
     }
 }

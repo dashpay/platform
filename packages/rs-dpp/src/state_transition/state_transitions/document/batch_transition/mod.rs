@@ -114,7 +114,8 @@ impl StateTransitionFieldTypes for BatchTransition {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use platform_value::{BinaryData, Identifier};
+    use platform_value::{platform_value, BinaryData, Identifier};
+    use serde_json::json;
 
     fn fixture() -> BatchTransition {
         BatchTransition::V0(BatchTransitionV0 {
@@ -126,42 +127,54 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &BatchTransition) {
-        let BatchTransition::V0(rec) = t else {
-            panic!("expected V0 variant");
-        };
-        assert_eq!(rec.owner_id, Identifier::new([0xc0; 32]), "owner_id");
-        assert_eq!(rec.transitions.len(), 0, "transitions");
-        assert_eq!(rec.user_fee_increase, 23, "user_fee_increase");
-        assert_eq!(rec.signature_public_key_id, 4, "signature_public_key_id");
-        assert_eq!(rec.signature, BinaryData::new(vec![0xd0; 65]), "signature");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `BatchTransition` is internally tagged `$formatVersion`; V0 fields use
+        // camelCase. `userFeeIncrease` is `u16`, `signaturePublicKeyId` is `u32`
+        // — JSON has only one number type, so sized variants are erased on the
+        // wire (the value-path test below pins the typed variants). `Identifier`
+        // is base58 in JSON HR; `BinaryData` is base64.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "ownerId": "DyRkUpQxYG2VnP2SkMdQs5BTsVPeKCpSHLxzByc2Sxvj",
+                "transitions": [],
+                "userFeeIncrease": 23,
+                "signaturePublicKeyId": 4,
+                "signature": "0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NA=",
+            })
+        );
         let recovered = BatchTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
-    }
-
-    #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::Value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        let owner_id = Identifier::new([0xc0; 32]);
+        // `userFeeIncrease` is `u16` (UserFeeIncrease alias), `signaturePublicKeyId`
+        // is `u32` (KeyID alias) — explicit suffixes lock in the typed variants.
+        // `BinaryData` is `Value::Bytes` in non-HR.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "ownerId": owner_id,
+                "transitions": Value::Array(vec![]),
+                "userFeeIncrease": 23u16,
+                "signaturePublicKeyId": 4u32,
+                "signature": Value::Bytes(vec![0xd0; 65]),
+            })
+        );
         let recovered = BatchTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }
 

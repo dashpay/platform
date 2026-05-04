@@ -130,16 +130,31 @@ mod json_convertible_tests {
     use dashcore::blsful::{Bls12381G2Impl, SecretKey};
     use dashcore::hashes::Hash;
     use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
+    use platform_value::{platform_value, Value};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use serde_json::json;
     use std::collections::BTreeMap;
 
-    fn fixture() -> ValidatorSet {
+    /// Build the fixture with deterministic BLS keys (seeded RNG) plus the
+    /// derived public-key wire forms — both as `serde_json::Value` (HR: 96-char
+    /// hex) and `platform_value::Value` (non-HR: typed-bytes variant). The BLS
+    /// keys ARE deterministic, but the 96-char hex / 48-byte literal is too
+    /// unwieldy to inline as a string constant, so we interpolate the actual
+    /// `to_value`/`to_json` of the same pubkey objects we put in the fixture.
+    /// (The dedicated `bls_pubkey_serde` unit tests independently cover the
+    /// pubkey round-trip.)
+    fn build_fixture() -> (
+        ValidatorSet,
+        BlsPublicKey<Bls12381G2Impl>,
+        BlsPublicKey<Bls12381G2Impl>,
+    ) {
         let mut rng = StdRng::seed_from_u64(42);
         let pro_tx_hash = ProTxHash::from_byte_array([0x11; 32]);
+        let validator_pubkey = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
         let validator_v0 = ValidatorV0 {
             pro_tx_hash,
-            public_key: Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key()),
+            public_key: Some(validator_pubkey),
             node_ip: "127.0.0.1".to_string(),
             node_id: PubkeyHash::from_byte_array([0x22; 20]),
             core_port: 9999,
@@ -150,40 +165,106 @@ mod json_convertible_tests {
         let mut members = BTreeMap::new();
         members.insert(pro_tx_hash, validator_v0);
 
-        ValidatorSet::V0(ValidatorSetV0 {
+        let threshold_pubkey = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let set = ValidatorSet::V0(ValidatorSetV0 {
             quorum_hash: QuorumHash::from_byte_array([0x33; 32]),
             quorum_index: Some(7),
             core_height: 1234,
             members,
-            threshold_public_key: SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key(),
-        })
-    }
-
-    fn assert_v0_fields(v: &ValidatorSet) {
-        let ValidatorSet::V0(rec) = v;
-        assert_eq!(rec.quorum_hash.as_byte_array(), &[0x33; 32], "quorum_hash");
-        assert_eq!(rec.quorum_index, Some(7), "quorum_index");
-        assert_eq!(rec.core_height, 1234, "core_height");
-        assert_eq!(rec.members.len(), 1, "members count");
+            threshold_public_key: threshold_pubkey,
+        });
+        (set, validator_pubkey, threshold_pubkey)
     }
 
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
-        let original = fixture();
+        let (original, validator_pubkey, threshold_pubkey) = build_fixture();
         let json = original.to_json().expect("to_json");
+
+        // BLS public keys serialize as 96-char compressed-G1 hex on the HR
+        // path. We interpolate `serde_json::to_value` of the same pubkeys
+        // rather than baking in the literal hex — the values are deterministic
+        // for the seeded `StdRng(42)` but inlining a 96-char string per key
+        // hurts readability (and the `bls_pubkey_serde` module has its own
+        // dedicated tests for the BLS round-trip). The rest of the wire
+        // structure is fully asserted: externally-tagged enum (`"V0": {...}`),
+        // snake_case inner fields (no `rename_all`), `BTreeMap` members
+        // emitted as a struct keyed by ProTxHash hex, hash fields as lowercase
+        // hex strings, sized-int fields preserved.
+        let validator_pk_json = serde_json::to_value(&validator_pubkey).expect("pk to json");
+        let threshold_pk_json = serde_json::to_value(&threshold_pubkey).expect("pk to json");
+        // ProTxHash serializes as 64-char lowercase hex when used as a JSON
+        // map key.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "quorum_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+                    "quorum_index": 7,
+                    "core_height": 1234,
+                    "members": {
+                        "1111111111111111111111111111111111111111111111111111111111111111": {
+                            "pro_tx_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+                            "public_key": validator_pk_json,
+                            "node_ip": "127.0.0.1",
+                            "node_id": "2222222222222222222222222222222222222222",
+                            "core_port": 9999,
+                            "platform_http_port": 443,
+                            "platform_p2p_port": 26656,
+                            "is_banned": false,
+                        }
+                    },
+                    "threshold_public_key": threshold_pk_json,
+                }
+            })
+        );
         let recovered = ValidatorSet::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
-        let original = fixture();
+        let (original, validator_pubkey, threshold_pubkey) = build_fixture();
         let value = original.to_object().expect("to_object");
+
+        // On the non-HR path BLS pubkeys serialize as a 48-byte tuple, which
+        // platform_value collapses into a typed bytes variant. Same as for
+        // JSON: we interpolate the canonical Value form of the actual
+        // fixture pubkeys rather than spelling out 48 bytes inline. Hash
+        // fields (`Bytes32`/`Bytes20`) are explicit.
+        // ProTxHash on the BTreeMap-key side serializes through dashcore as
+        // a `Value::Bytes32` (32-byte sized variant) on the non-HR path.
+        // The `platform_value!` macro doesn't accept non-string keys (it only
+        // takes literal/parenthesized-expression keys that implement
+        // `Into<Value>` from a string-like form), so we build the inner
+        // members map by hand for the typed-bytes key.
+        let validator_pk_value =
+            platform_value::to_value(&validator_pubkey).expect("pk to value");
+        let threshold_pk_value =
+            platform_value::to_value(&threshold_pubkey).expect("pk to value");
+        let inner_validator = platform_value!({
+            "pro_tx_hash": Value::Bytes32([0x11; 32]),
+            "public_key": validator_pk_value,
+            "node_ip": "127.0.0.1",
+            "node_id": Value::Bytes20([0x22; 20]),
+            "core_port": 9999u16,
+            "platform_http_port": 443u16,
+            "platform_p2p_port": 26656u16,
+            "is_banned": false,
+        });
+        let members_value = Value::Map(vec![(Value::Bytes32([0x11; 32]), inner_validator)]);
+        let v0_inner = platform_value!({
+            "quorum_hash": Value::Bytes32([0x33; 32]),
+            "quorum_index": 7u32,
+            "core_height": 1234u32,
+            "members": members_value,
+            "threshold_public_key": threshold_pk_value,
+        });
+        let expected = Value::Map(vec![(Value::Text("V0".to_string()), v0_inner)]);
+        assert_eq!(value, expected);
         let recovered = ValidatorSet::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

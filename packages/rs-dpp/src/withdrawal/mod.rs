@@ -169,29 +169,73 @@ pub mod pooling_serde {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests_pooling {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
-    /// Test every variant — per-property assertion equivalent for unit enums.
-    fn each_variant() -> [Pooling; 3] {
-        [Pooling::Never, Pooling::IfAvailable, Pooling::Standard]
-    }
+    // `Pooling` is `#[repr(u8)]` with `Serialize_repr` / `Deserialize_repr`, so
+    // the wire shape is the raw `u8` discriminant: `0` / `1` / `2`. JSON has
+    // only one number type, so `0u8` is erased to `Number(0)`; the value-path
+    // assertion uses explicit `0u8` etc. to lock in `Value::U8`.
 
     #[test]
-    fn json_round_trip_each_variant() {
+    fn json_round_trip_never() {
         use crate::serialization::JsonConvertible;
-        for original in each_variant() {
-            let json = original.to_json().expect("to_json");
-            let recovered = Pooling::from_json(json).expect("from_json");
-            assert_eq!(original, recovered, "variant: {:?}", original);
-        }
+        let original = Pooling::Never;
+        let json = original.to_json().expect("to_json");
+        // u8 size erased in JSON.
+        assert_eq!(json, json!(0));
+        let recovered = Pooling::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 
     #[test]
-    fn value_round_trip_each_variant() {
+    fn json_round_trip_if_available() {
+        use crate::serialization::JsonConvertible;
+        let original = Pooling::IfAvailable;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!(1));
+        let recovered = Pooling::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_standard() {
+        use crate::serialization::JsonConvertible;
+        let original = Pooling::Standard;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!(2));
+        let recovered = Pooling::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_never() {
         use crate::serialization::ValueConvertible;
-        for original in each_variant() {
-            let value = original.to_object().expect("to_object");
-            let recovered = Pooling::from_object(value).expect("from_object");
-            assert_eq!(original, recovered, "variant: {:?}", original);
-        }
+        let original = Pooling::Never;
+        let value = original.to_object().expect("to_object");
+        // `0u8` locks `Value::U8` (not I32 from a bare `0`).
+        assert_eq!(value, platform_value!(0u8));
+        let recovered = Pooling::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_if_available() {
+        use crate::serialization::ValueConvertible;
+        let original = Pooling::IfAvailable;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!(1u8));
+        let recovered = Pooling::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_standard() {
+        use crate::serialization::ValueConvertible;
+        let original = Pooling::Standard;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!(2u8));
+        let recovered = Pooling::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

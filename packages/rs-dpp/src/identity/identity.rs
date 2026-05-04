@@ -62,10 +62,10 @@ impl ValueConvertible for PartialIdentity {}
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
-    use platform_value::BinaryData;
+    use platform_value::{platform_value, BinaryData, Value};
+    use serde_json::json;
 
     fn fixture_pubkey(id: u32, byte: u8) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -92,35 +92,107 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_fields(identity: &Identity) {
-        assert_eq!(identity.id(), Identifier::new([0x42; 32]), "id");
-        assert_eq!(identity.balance(), 1_000_000, "balance");
-        assert_eq!(identity.revision(), 7, "revision");
-        assert_eq!(identity.public_keys().len(), 2, "public_keys count");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Internally-tagged enum (`tag = "$formatVersion"`); inner V0 has
+        // `rename_all = "camelCase"`. `public_keys` uses a custom serde wrapper
+        // that emits a `Vec` of `IdentityPublicKey` values (keys dropped, then
+        // reconstructed on deserialize from each key's `id`). Each
+        // `IdentityPublicKey` is itself an internally-tagged enum, so the inner
+        // wire shape mirrors the per-key test in
+        // `identity_public_key::mod::json_convertible_tests`.
+        // Sized-int fields with JSON loss:
+        // - `balance`: u64 (Credits)
+        // - `revision`: u64 (Revision)
+        // - inner `id`: u32, `purpose`/`securityLevel`/`type`: u8 reprs.
+        // `Identifier` serializes as base58 in JSON; `BinaryData` as base64.
+        // Purpose::AUTHENTICATION = 0, KeyType::ECDSA_SECP256K1 = 0,
+        // SecurityLevel::MASTER = 0.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "id": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                "publicKeys": [
+                    {
+                        "$formatVersion": "0",
+                        "id": 0,
+                        "purpose": 0,
+                        "securityLevel": 0,
+                        "contractBounds": serde_json::Value::Null,
+                        "type": 0,
+                        "readOnly": false,
+                        "data": "oKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg",
+                        "disabledAt": serde_json::Value::Null,
+                    },
+                    {
+                        "$formatVersion": "0",
+                        "id": 1,
+                        "purpose": 0,
+                        "securityLevel": 0,
+                        "contractBounds": serde_json::Value::Null,
+                        "type": 0,
+                        "readOnly": false,
+                        "data": "sbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGx",
+                        "disabledAt": serde_json::Value::Null,
+                    },
+                ],
+                "balance": 1_000_000u64,
+                "revision": 7,
+            })
+        );
         let recovered = Identity::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Explicit `u32` / `u8` / `u64` suffixes lock typed-int variants.
+        // `Identifier` interpolates as `Value::Identifier`; `BinaryData` of
+        // length 33 lacks a fixed-sized variant, so it stays as
+        // `Value::Bytes(Vec<u8>)`.
+        let id = Identifier::new([0x42; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "id": id,
+                "publicKeys": [
+                    {
+                        "$formatVersion": "0",
+                        "id": 0u32,
+                        "purpose": 0u8,
+                        "securityLevel": 0u8,
+                        "contractBounds": Value::Null,
+                        "type": 0u8,
+                        "readOnly": false,
+                        "data": Value::Bytes(vec![0xa0; 33]),
+                        "disabledAt": Value::Null,
+                    },
+                    {
+                        "$formatVersion": "0",
+                        "id": 1u32,
+                        "purpose": 0u8,
+                        "securityLevel": 0u8,
+                        "contractBounds": Value::Null,
+                        "type": 0u8,
+                        "readOnly": false,
+                        "data": Value::Bytes(vec![0xb1; 33]),
+                        "disabledAt": Value::Null,
+                    },
+                ],
+                "balance": 1_000_000u64,
+                "revision": 7u64,
+            })
+        );
         let recovered = Identity::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
-    }
-
-    #[test]
-    fn json_preserves_format_version_tag() {
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
     }
 }
 

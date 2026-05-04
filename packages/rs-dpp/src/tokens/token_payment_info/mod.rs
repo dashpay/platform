@@ -225,6 +225,8 @@ impl TryFrom<TokenPaymentInfo> for Value {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     fn fixture() -> TokenPaymentInfo {
         TokenPaymentInfo::V0(TokenPaymentInfoV0 {
@@ -236,47 +238,53 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &TokenPaymentInfo) {
-        let TokenPaymentInfo::V0(rec) = t;
-        assert_eq!(
-            rec.payment_token_contract_id,
-            Some(Identifier::new([0x99; 32])),
-            "payment_token_contract_id"
-        );
-        assert_eq!(rec.token_contract_position, 3, "token_contract_position");
-        assert_eq!(rec.minimum_token_cost, Some(100), "minimum_token_cost");
-        assert_eq!(rec.maximum_token_cost, Some(1_000), "maximum_token_cost");
-        assert_eq!(
-            rec.gas_fees_paid_by,
-            GasFeesPaidBy::ContractOwner,
-            "gas_fees_paid_by"
-        );
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Internally-tagged enum (`tag = "$formatVersion"`); inner V0 has
+        // `rename_all = "camelCase"`. `Identifier` -> base58 in JSON.
+        // `token_contract_position` is `TokenContractPosition` (= u16) and
+        // `minimum_token_cost` / `maximum_token_cost` are `TokenAmount` (= u64);
+        // JSON erases the size — see the value-path assertion for typed locks.
+        // `gas_fees_paid_by` is the unit enum `GasFeesPaidBy` and serializes
+        // as `"ContractOwner"` (no `rename_all`).
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "paymentTokenContractId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+                "tokenContractPosition": 3,
+                "minimumTokenCost": 100,
+                "maximumTokenCost": 1_000,
+                "gasFeesPaidBy": "ContractOwner",
+            })
+        );
         let recovered = TokenPaymentInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `Identifier` flows as `Value::Identifier` when interpolated.
+        // `3u16` locks `Value::U16`; `100u64` / `1_000u64` lock `Value::U64`.
+        let payment_token_contract_id = Identifier::new([0x99; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "paymentTokenContractId": payment_token_contract_id,
+                "tokenContractPosition": 3u16,
+                "minimumTokenCost": 100u64,
+                "maximumTokenCost": 1_000u64,
+                "gasFeesPaidBy": "ContractOwner",
+            })
+        );
         let recovered = TokenPaymentInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
-    }
-
-    #[test]
-    fn json_preserves_format_version_tag() {
-        use crate::serialization::JsonConvertible;
-        let json = fixture().to_json().expect("to_json");
-        assert_eq!(json["$formatVersion"], "0");
     }
 }

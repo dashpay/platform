@@ -43,30 +43,50 @@ mod json_convertible_tests_documentpatch {
         }
     }
 
-    fn assert_fields(p: &DocumentPatch) {
-        assert_eq!(p.id, Identifier::new([0x77; 32]), "id");
-        assert_eq!(p.properties.len(), 2, "properties count");
-        assert_eq!(p.revision, Some(3), "revision");
-        assert_eq!(p.updated_at, Some(1_700_000_000_000), "updated_at");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
+        use serde_json::json;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `DocumentPatch` uses `#[serde(flatten)]` for `properties`, so the
+        // `name` / `count` keys are inlined at the top level. `Identifier` is
+        // base58 in JSON. `revision` is `Option<Revision>` (u64) and
+        // `updated_at` is `Option<TimestampMillis>` (u64); JSON erases the
+        // u64 distinction (value-path locks `3u64` / `1_700_000_000_000_u64`).
+        assert_eq!(
+            json,
+            json!({
+                "$id": "93MB2qRDNVLxbmmPuYpLdAqn3u2x9ZhaVZK5wELHueP8",
+                "count": 42,
+                "name": "alice",
+                "$revision": 3,
+                "$updatedAt": 1_700_000_000_000_u64,
+            })
+        );
         let recovered = DocumentPatch::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Non-HR: `$id` stays `Value::Identifier`; `count` was stored as
+        // `Value::U64(42)` directly in the fixture; revision/updated_at are u64.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$id": Identifier::new([0x77; 32]),
+                "count": 42u64,
+                "name": "alice",
+                "$revision": 3u64,
+                "$updatedAt": 1_700_000_000_000_u64,
+            })
+        );
         let recovered = DocumentPatch::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
     }
 }

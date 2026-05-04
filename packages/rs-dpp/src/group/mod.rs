@@ -68,6 +68,8 @@ pub struct GroupStateTransitionResolvedInfo {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests_groupstatetransitioninfo {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     fn fixture() -> GroupStateTransitionInfo {
         GroupStateTransitionInfo {
@@ -77,29 +79,45 @@ mod json_convertible_tests_groupstatetransitioninfo {
         }
     }
 
-    fn assert_fields(g: &GroupStateTransitionInfo) {
-        assert_eq!(g.group_contract_position, 5, "group_contract_position");
-        assert_eq!(g.action_id, Identifier::new([0x33; 32]), "action_id");
-        assert!(g.action_is_proposer, "action_is_proposer");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Each field has an explicit `serde(rename = "$..." )` so the wire keys
+        // are `$groupContractPosition` / `$groupActionId` / `$groupActionIsProposer`.
+        // `group_contract_position` is `GroupContractPosition` (= u16), so JSON
+        // erases the size — the value-path assertion uses `5u16`.
+        // `action_id` is `Identifier` and serializes as base58 in JSON.
+        assert_eq!(
+            json,
+            json!({
+                "$groupContractPosition": 5,
+                "$groupActionId": "4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4",
+                "$groupActionIsProposer": true,
+            })
+        );
         let recovered = GroupStateTransitionInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `5u16` locks `Value::U16`. `Identifier` flows through as
+        // `Value::Identifier` when interpolated into `platform_value!`.
+        let action_id = Identifier::new([0x33; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "$groupContractPosition": 5u16,
+                "$groupActionId": action_id,
+                "$groupActionIsProposer": true,
+            })
+        );
         let recovered = GroupStateTransitionInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
     }
 }

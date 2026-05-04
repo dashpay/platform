@@ -271,7 +271,10 @@ mod tests {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
-    use dashcore::OutPoint;
+    use dashcore::hashes::Hash;
+    use dashcore::{OutPoint, Txid};
+    use platform_value::platform_value;
+    use serde_json::json;
     use std::str::FromStr;
 
     fn fixture() -> ChainAssetLockProof {
@@ -284,27 +287,68 @@ mod json_convertible_tests {
         }
     }
 
-    fn assert_fields(p: &ChainAssetLockProof) {
-        assert_eq!(p.core_chain_locked_height, 12345, "core_chain_locked_height");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `ChainAssetLockProof` is a plain struct with `rename_all = "camelCase"`.
+        // The local `outpoint_serde` wrapper (commit 09c0a2b771) delegates to
+        // dashcore's `OutPoint::serialize`, which is HR-aware: in JSON this
+        // emits the `"<txid>:<vout>"` string form. `core_chain_locked_height`
+        // is `u32`; JSON erases the size — see the value-path assertion.
+        // The HR string form mirrors the input we passed to `from_str`.
+        assert_eq!(
+            json,
+            json!({
+                "coreChainLockedHeight": 12345,
+                "outPoint": "0000000000000000000000000000000000000000000000000000000000000001:0",
+            })
+        );
         let recovered = ChainAssetLockProof::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `12345u32` locks `Value::U32`. The non-HR path of `OutPoint::serialize`
+        // emits a `{txid, vout}` STRUCT, NOT the `"<txid>:<vout>"` string —
+        // and `Txid` itself serializes as a 32-byte array on the non-HR path
+        // (collapsing to `Value::Bytes32` via platform_value's sized-bytes
+        // detection). `vout` is `u32`. This is exactly the dual-shape behaviour
+        // the local `outpoint_serde` wrapper has to round-trip via
+        // `ContentDeserializer` (the HR=true / non-HR=false split that broke
+        // round-tripping before commit 09c0a2b771).
+        // NOTE on byte order: the JSON/hex form (`00...01`, lowest nibble at
+        // the end) is REVERSED from the raw-bytes form. dashcore's `Txid`
+        // follows the Bitcoin convention — `as_byte_array()` returns the raw
+        // buffer where index 0 holds what shows as the LAST hex digit. So
+        // the displayed `00...01` corresponds to raw `[0x01, 0, 0, ..., 0]`.
+        // The local `outpoint_serde` wrapper bridges the two shapes.
+        let mut raw = [0u8; 32];
+        raw[0] = 0x01;
+        assert_eq!(
+            value,
+            platform_value!({
+                "coreChainLockedHeight": 12345u32,
+                "outPoint": {
+                    "txid": platform_value::Value::Bytes32(raw),
+                    "vout": 0u32,
+                },
+            })
+        );
         let recovered = ChainAssetLockProof::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_fields(&recovered);
+
+        // Sanity check that the byte-array matches the real Txid bytes (so
+        // any future flip in dashcore's byte-order convention fails loud).
+        let txid_from_str = Txid::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        assert_eq!(txid_from_str.as_byte_array(), &raw);
     }
 }

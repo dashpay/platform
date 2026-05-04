@@ -67,29 +67,55 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &TokenConfigurationConvention) {
-        let TokenConfigurationConvention::V0(rec) = t;
-        assert_eq!(rec.localizations.len(), 1, "localizations count");
-        assert_eq!(rec.decimals, 8, "decimals");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
+        use serde_json::json;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `decimals` is `u8`; JSON erases the size — value-path locks `8u8` below.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "localizations": {
+                    "en": {
+                        "$formatVersion": "0",
+                        "shouldCapitalize": true,
+                        "singularForm": "Token",
+                        "pluralForm": "Tokens",
+                    }
+                },
+                "decimals": 8,
+            })
+        );
         let recovered = TokenConfigurationConvention::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // `decimals` is u8 → `Value::U8`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "localizations": {
+                    "en": {
+                        "$formatVersion": "0",
+                        "shouldCapitalize": true,
+                        "singularForm": "Token",
+                        "pluralForm": "Tokens",
+                    }
+                },
+                "decimals": 8u8,
+            })
+        );
         let recovered = TokenConfigurationConvention::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

@@ -39,30 +39,52 @@ impl TokenEmergencyAction {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests_tokenemergencyaction {
+mod json_convertible_tests {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
-    fn each_variant() -> [TokenEmergencyAction; 2] {
-        [TokenEmergencyAction::Pause, TokenEmergencyAction::Resume]
-    }
+    // `TokenEmergencyAction` uses `#[serde(rename_all = "camelCase")]` over a
+    // unit-only enum, so it (de)serializes as a plain camelCase string in both
+    // JSON and platform_value.
 
     #[test]
-    fn json_round_trip_each_variant() {
+    fn json_round_trip_pause() {
         use crate::serialization::JsonConvertible;
-        for original in each_variant() {
-            let json = original.to_json().expect("to_json");
-            let recovered = TokenEmergencyAction::from_json(json).expect("from_json");
-            assert_eq!(original, recovered, "variant: {:?}", original);
-        }
+        let original = TokenEmergencyAction::Pause;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("pause"));
+        let recovered = TokenEmergencyAction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 
     #[test]
-    fn value_round_trip_each_variant() {
+    fn json_round_trip_resume() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenEmergencyAction::Resume;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("resume"));
+        let recovered = TokenEmergencyAction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_pause() {
         use crate::serialization::ValueConvertible;
-        for original in each_variant() {
-            let value = original.to_object().expect("to_object");
-            let recovered = TokenEmergencyAction::from_object(value).expect("from_object");
-            assert_eq!(original, recovered, "variant: {:?}", original);
-        }
+        let original = TokenEmergencyAction::Pause;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("pause"));
+        let recovered = TokenEmergencyAction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_resume() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenEmergencyAction::Resume;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("resume"));
+        let recovered = TokenEmergencyAction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

@@ -110,7 +110,8 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
 mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-    use platform_value::Identifier;
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
 
     fn fixture() -> DocumentBaseTransition {
         DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
@@ -121,31 +122,54 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &DocumentBaseTransition) {
-        let DocumentBaseTransition::V0(rec) = t else { panic!("expected V0") };
-        assert_eq!(rec.id, Identifier::new([0xa1; 32]), "id");
-        assert_eq!(rec.identity_contract_nonce, 7, "identity_contract_nonce");
-        assert_eq!(rec.document_type_name, "user", "document_type_name");
-        assert_eq!(rec.data_contract_id, Identifier::new([0xb2; 32]), "data_contract_id");
-    }
+    // Note: `DocumentBaseTransition` derives `Serialize/Deserialize` without a
+    // `#[serde(tag = ...)]` attribute, so the enum uses serde's default
+    // externally-tagged shape: `{"V0": { ... }}`.
 
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = JsonConvertible::to_json(&original).expect("to_json");
+        // `identityContractNonce` is `u64` — JSON has only one number type so
+        // the U64 distinction is erased on the wire (the value-path test below
+        // pins the typed variant). Identifiers render as base58 in JSON HR.
+        assert_eq!(
+            json,
+            json!({
+                "V0": {
+                    "$id": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                    "$identityContractNonce": 7,
+                    "$type": "user",
+                    "$dataContractId": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
+                },
+            })
+        );
         let recovered = <DocumentBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = ValueConvertible::to_object(&original).expect("to_object");
+        let id = Identifier::new([0xa1; 32]);
+        let data_contract_id = Identifier::new([0xb2; 32]);
+        // Externally-tagged enum: `{"V0": {<fields>}}`. `7u64` keeps the typed
+        // U64 variant for `identity_contract_nonce`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "V0": {
+                    "$id": id,
+                    "$identityContractNonce": 7u64,
+                    "$type": "user",
+                    "$dataContractId": data_contract_id,
+                },
+            })
+        );
         let recovered = <DocumentBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

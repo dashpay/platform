@@ -56,30 +56,41 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &TokenConfigurationLocalization) {
-        let TokenConfigurationLocalization::V0(rec) = t;
-        assert!(rec.should_capitalize, "should_capitalize");
-        assert_eq!(rec.singular_form, "Token", "singular_form");
-        assert_eq!(rec.plural_form, "Tokens", "plural_form");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
+        use serde_json::json;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "shouldCapitalize": true,
+                "singularForm": "Token",
+                "pluralForm": "Tokens",
+            })
+        );
         let recovered = TokenConfigurationLocalization::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "shouldCapitalize": true,
+                "singularForm": "Token",
+                "pluralForm": "Tokens",
+            })
+        );
         let recovered = TokenConfigurationLocalization::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

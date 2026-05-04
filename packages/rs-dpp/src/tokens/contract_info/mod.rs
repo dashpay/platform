@@ -66,43 +66,53 @@ impl TokenContractInfo {
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
 mod json_convertible_tests {
     use super::*;
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
 
     fn fixture() -> TokenContractInfo {
         TokenContractInfo::V0(crate::tokens::contract_info::v0::TokenContractInfoV0 {
-            contract_id: platform_value::Identifier::new([0xab; 32]),
+            contract_id: Identifier::new([0xab; 32]),
             token_contract_position: 7,
         })
     }
 
-    fn assert_v0_fields(t: &TokenContractInfo) {
-        let TokenContractInfo::V0(rec) = t;
-        assert_eq!(
-            rec.contract_id,
-            platform_value::Identifier::new([0xab; 32]),
-            "contract_id"
-        );
-        assert_eq!(rec.token_contract_position, 7, "token_contract_position");
-    }
+    // Note: `TokenContractInfo` is `#[serde(untagged)]`, so the V0 variant
+    // serializes as a flat object with no `$formatVersion` tag.
 
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `Identifier` renders as base58 in JSON HR. `tokenContractPosition` is
+        // a `u16` (TokenContractPosition alias); JSON has only one number type
+        // so the U16 distinction is erased — the Value-path assertion below
+        // uses `7u16` to lock in the sized variant.
+        assert_eq!(
+            json,
+            json!({
+                "contractId": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
+                "tokenContractPosition": 7,
+            })
+        );
         let recovered = TokenContractInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        let contract_id = Identifier::new([0xab; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "contractId": contract_id,
+                "tokenContractPosition": 7u16,
+            })
+        );
         let recovered = TokenContractInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
-
-    // Note: TokenContractInfo is `serde(untagged)` — no $formatVersion in JSON.
 }

@@ -81,30 +81,71 @@ impl TryFrom<u64> for GasFeesPaidBy {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests_gasfeespaidby {
+mod json_convertible_tests {
     use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
 
-    fn each_variant() -> [GasFeesPaidBy; 3] {
-        [GasFeesPaidBy::DocumentOwner, GasFeesPaidBy::ContractOwner, GasFeesPaidBy::PreferContractOwner]
-    }
+    // `GasFeesPaidBy` is a unit-only enum without `rename_all`, so each variant
+    // (de)serializes as its PascalCase Rust name in both JSON and platform_value.
 
     #[test]
-    fn json_round_trip_each_variant() {
+    fn json_round_trip_document_owner() {
         use crate::serialization::JsonConvertible;
-        for original in each_variant() {
-            let json = original.to_json().expect("to_json");
-            let recovered = GasFeesPaidBy::from_json(json).expect("from_json");
-            assert_eq!(original, recovered, "variant: {:?}", original);
-        }
+        let original = GasFeesPaidBy::DocumentOwner;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("DocumentOwner"));
+        let recovered = GasFeesPaidBy::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 
     #[test]
-    fn value_round_trip_each_variant() {
+    fn json_round_trip_contract_owner() {
+        use crate::serialization::JsonConvertible;
+        let original = GasFeesPaidBy::ContractOwner;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("ContractOwner"));
+        let recovered = GasFeesPaidBy::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_prefer_contract_owner() {
+        use crate::serialization::JsonConvertible;
+        let original = GasFeesPaidBy::PreferContractOwner;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!("PreferContractOwner"));
+        let recovered = GasFeesPaidBy::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_document_owner() {
         use crate::serialization::ValueConvertible;
-        for original in each_variant() {
-            let value = original.to_object().expect("to_object");
-            let recovered = GasFeesPaidBy::from_object(value).expect("from_object");
-            assert_eq!(original, recovered, "variant: {:?}", original);
-        }
+        let original = GasFeesPaidBy::DocumentOwner;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("DocumentOwner"));
+        let recovered = GasFeesPaidBy::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_contract_owner() {
+        use crate::serialization::ValueConvertible;
+        let original = GasFeesPaidBy::ContractOwner;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("ContractOwner"));
+        let recovered = GasFeesPaidBy::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_prefer_contract_owner() {
+        use crate::serialization::ValueConvertible;
+        let original = GasFeesPaidBy::PreferContractOwner;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!("PreferContractOwner"));
+        let recovered = GasFeesPaidBy::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

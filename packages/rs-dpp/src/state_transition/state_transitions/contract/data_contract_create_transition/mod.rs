@@ -490,13 +490,54 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_envelope_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::{platform_value, Value};
         let original = fixture();
         let value = ValueConvertible::to_object(&original).expect("to_object");
+        // Tier 3 envelope-only: the inner `dataContract` is a fully-fledged
+        // versioned `DataContractInSerializationFormat` with embedded JSON
+        // Schemas, group / token / keyword maps, etc. — far too large to inline
+        // here. We assert the outer envelope shape (every non-`dataContract`
+        // field) with sized-int suffixes (`5u64` for `identityNonce` u64,
+        // `3u16` for `userFeeIncrease` u16, `1u32` for `signaturePublicKeyId`
+        // u32, `BinaryData` -> `Value::Bytes`), and check that the
+        // `dataContract` slot is a `Value::Map` (its full shape is exercised
+        // by the round-trip-equality assertion further down + the tests living
+        // alongside `DataContractInSerializationFormat`).
+        let envelope: std::collections::BTreeMap<String, Value> = match &value {
+            Value::Map(entries) => entries
+                .iter()
+                .filter_map(|(k, v)| match k {
+                    Value::Text(s) if s != "dataContract" => Some((s.clone(), v.clone())),
+                    _ => None,
+                })
+                .collect(),
+            _ => panic!("value is not a Map"),
+        };
+        let envelope_value: Value = envelope.into();
+        // Note: assertion uses alphabetical key order — BTreeMap sorts.
+        assert_eq!(
+            envelope_value,
+            platform_value!({
+                "$formatVersion": "0",
+                "identityNonce": 5u64,
+                "signature": Value::Bytes(vec![0xab; 65]),
+                "signaturePublicKeyId": 1u32,
+                "userFeeIncrease": 3u16,
+            })
+        );
+        // dataContract slot is present and is a Map (full inline shape skipped)
+        let has_data_contract = matches!(
+            &value,
+            Value::Map(entries) if entries.iter().any(|(k, v)|
+                matches!(k, Value::Text(s) if s == "dataContract") &&
+                matches!(v, Value::Map(_))
+            )
+        );
+        assert!(has_data_contract, "dataContract slot must be a Value::Map");
         let recovered =
             <DataContractCreateTransition as ValueConvertible>::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }

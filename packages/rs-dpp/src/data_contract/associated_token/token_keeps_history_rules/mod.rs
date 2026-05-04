@@ -36,34 +36,48 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &TokenKeepsHistoryRules) {
-        let TokenKeepsHistoryRules::V0(rec) = t;
-        assert!(rec.keeps_transfer_history, "keeps_transfer_history");
-        assert!(!rec.keeps_freezing_history, "keeps_freezing_history");
-        assert!(rec.keeps_minting_history, "keeps_minting_history");
-        assert!(!rec.keeps_burning_history, "keeps_burning_history");
-        assert!(rec.keeps_direct_pricing_history, "keeps_direct_pricing_history");
-        assert!(!rec.keeps_direct_purchase_history, "keeps_direct_purchase_history");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
+        use serde_json::json;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "keepsTransferHistory": true,
+                "keepsFreezingHistory": false,
+                "keepsMintingHistory": true,
+                "keepsBurningHistory": false,
+                "keepsDirectPricingHistory": true,
+                "keepsDirectPurchaseHistory": false,
+            })
+        );
         let recovered = TokenKeepsHistoryRules::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "keepsTransferHistory": true,
+                "keepsFreezingHistory": false,
+                "keepsMintingHistory": true,
+                "keepsBurningHistory": false,
+                "keepsDirectPricingHistory": true,
+                "keepsDirectPurchaseHistory": false,
+            })
+        );
         let recovered = TokenKeepsHistoryRules::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }
 

@@ -1193,33 +1193,65 @@ mod json_convertible_tests {
         })
     }
 
-    fn assert_v0_fields(t: &DataContractInSerializationFormat) {
-        let DataContractInSerializationFormat::V0(rec) = t else { panic!("expected V0") };
-        assert_eq!(rec.id, Identifier::new([0xa1; 32]), "id");
-        assert_eq!(rec.version, 1, "version");
-        assert_eq!(rec.owner_id, Identifier::new([0xb2; 32]), "owner_id");
-        assert!(rec.schema_defs.is_none(), "schema_defs");
-        assert!(rec.document_schemas.is_empty(), "document_schemas");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
+        use serde_json::json;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Tier 3 envelope-only: `DataContractInSerializationFormat` embeds a
+        // versioned `DataContractConfig` and arbitrary `document_schemas` /
+        // `schema_defs` Values. The full inline expansion is verified for the
+        // `DataContractConfig` in its own module. We still pin the top-level
+        // envelope keys + their types here so that any silent drop / rename /
+        // re-keying at this layer would fail the test.
+        assert_eq!(json["$formatVersion"], "0");
+        assert_eq!(
+            json["id"],
+            json!("Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp")
+        );
+        assert_eq!(
+            json["ownerId"],
+            json!("D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq")
+        );
+        assert_eq!(json["version"], json!(1));
+        assert_eq!(json["schemaDefs"], json!(null));
+        assert_eq!(json["documentSchemas"], json!({}));
+        assert!(json.get("config").is_some(), "config envelope present");
+        assert_eq!(json["config"]["$formatVersion"], "0");
         let recovered = DataContractInSerializationFormat::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
+        use platform_value::Value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Tier 3 envelope-only: see JSON test above. Keys remain `Identifier` /
+        // `Map` / typed integers in non-HR mode (no base58 stringification).
+        let map = match &value {
+            Value::Map(m) => m,
+            other => panic!("expected Value::Map, got {:?}", other),
+        };
+        let get = |k: &str| -> &Value {
+            map.iter()
+                .find(|(key, _)| matches!(key, Value::Text(t) if t == k))
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| panic!("missing key {k}"))
+        };
+        assert_eq!(get("$formatVersion"), &Value::Text("0".to_string()));
+        assert_eq!(get("id"), &Value::Identifier([0xa1; 32]));
+        assert_eq!(get("ownerId"), &Value::Identifier([0xb2; 32]));
+        assert_eq!(get("version"), &Value::U32(1));
+        assert_eq!(get("schemaDefs"), &Value::Null);
+        // documentSchemas: empty Map
+        assert!(matches!(get("documentSchemas"), Value::Map(m) if m.is_empty()));
+        // config: nested Map with its own $formatVersion="0"
+        assert!(matches!(get("config"), Value::Map(_)));
         let recovered = DataContractInSerializationFormat::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]

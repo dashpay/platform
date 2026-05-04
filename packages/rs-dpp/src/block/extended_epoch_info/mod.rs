@@ -128,6 +128,8 @@ mod tests {
 mod json_convertible_tests_extendedepochinfo {
     use super::*;
     use crate::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+    use platform_value::platform_value;
+    use serde_json::json;
 
     fn fixture() -> ExtendedEpochInfo {
         ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
@@ -140,33 +142,51 @@ mod json_convertible_tests_extendedepochinfo {
         })
     }
 
-    fn assert_v0_fields(t: &ExtendedEpochInfo) {
-        let ExtendedEpochInfo::V0(rec) = t;
-        assert_eq!(rec.index, 7, "index");
-        assert_eq!(rec.first_block_time, 1_700_000_000_000, "first_block_time");
-        assert_eq!(rec.first_block_height, 100, "first_block_height");
-        assert_eq!(rec.first_core_block_height, 50, "first_core_block_height");
-        assert_eq!(rec.fee_multiplier_permille, 1500, "fee_multiplier_permille");
-        assert_eq!(rec.protocol_version, 9, "protocol_version");
-    }
-
     #[test]
-    fn json_round_trip_with_per_property_assertions() {
+    fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // `json_safe_fields` wraps u64 values above JS_MAX_SAFE_INTEGER as
+        // strings. 1_700_000_000_000 is below the threshold (~9.0e15), so it
+        // stays numeric. JSON erases u16/u32/u64 size — the value-path
+        // assertion below uses explicit suffixes.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "index": 7,
+                "firstBlockTime": 1_700_000_000_000_u64,
+                "firstBlockHeight": 100,
+                "firstCoreBlockHeight": 50,
+                "feeMultiplierPermille": 1500,
+                "protocolVersion": 9,
+            })
+        );
         let recovered = ExtendedEpochInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 
     #[test]
-    fn value_round_trip_with_per_property_assertions() {
+    fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Source field types: index u16, first_block_time u64, first_block_height u64,
+        // first_core_block_height u32, fee_multiplier_permille u64, protocol_version u32.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "index": 7u16,
+                "firstBlockTime": 1_700_000_000_000_u64,
+                "firstBlockHeight": 100u64,
+                "firstCoreBlockHeight": 50u32,
+                "feeMultiplierPermille": 1500u64,
+                "protocolVersion": 9u32,
+            })
+        );
         let recovered = ExtendedEpochInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-        assert_v0_fields(&recovered);
     }
 }
