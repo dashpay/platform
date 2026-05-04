@@ -10,6 +10,12 @@ use crate::framework::prelude::*;
 #[tokio_shared_rt::test(shared)]
 #[ignore = "operational utility — prints bank primary address; run on demand"]
 async fn print_bank_primary_address() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .with_test_writer()
+        .try_init();
     let s = setup().await.expect("e2e setup failed");
     let bank = s.ctx.bank();
     let network = bank.network();
