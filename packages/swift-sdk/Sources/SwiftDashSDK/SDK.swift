@@ -175,13 +175,12 @@ public final class SDK: @unchecked Sendable {
 
     // Check for errors
     if result.error != nil {
-      let error = result.error!.pointee
-      let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      let sdkError = SDKError.fromDashSDKError(result.error!.pointee)
       defer {
         dash_sdk_error_free(result.error)
       }
 
-      throw SDKError.internalError("Failed to create SDK: \(errorMessage)")
+      throw sdkError
     }
 
     guard result.data != nil else {
@@ -233,13 +232,12 @@ public final class SDK: @unchecked Sendable {
 
     // Check for errors
     if result.error != nil {
-      let error = result.error!.pointee
-      let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      let sdkError = SDKError.fromDashSDKError(result.error!.pointee)
       defer {
         dash_sdk_error_free(result.error)
       }
 
-      throw SDKError.internalError("Failed to add known contracts: \(errorMessage)")
+      throw sdkError
     }
 
     print("✅ Successfully loaded \(contracts.count) known contracts into SDK")
@@ -261,12 +259,11 @@ public final class SDK: @unchecked Sendable {
 
     // Check for error
     if result.error != nil {
-      let error = result.error!.pointee
-      let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      let sdkError = SDKError.fromDashSDKError(result.error!.pointee)
       defer {
         dash_sdk_error_free(result.error)
       }
-      throw SDKError.internalError("Failed to get SDK status: \(errorMessage)")
+      throw sdkError
     }
 
     // Parse the JSON result
@@ -318,6 +315,27 @@ public struct SDKStatus: Codable {
   public let quorumCount: Int
 }
 
+/// Structured detail for a single protocol consensus error, mirroring
+/// `DashSDKConsensusError` from the Rust FFI layer.
+public struct SDKConsensusError: Equatable, Sendable {
+  /// Numeric consensus error code from DPP's `ErrorWithCode`.
+  public let code: UInt32
+  /// High-level kind, e.g. `BasicError`, `StateError`, `SignatureError`,
+  /// `FeeError`, `DefaultError`.
+  public let kind: String
+  /// Specific error name (currently mirrors `kind`).
+  public let name: String
+  /// Human-readable message.
+  public let message: String
+
+  public init(code: UInt32, kind: String, name: String, message: String) {
+    self.code = code
+    self.kind = kind
+    self.name = name
+    self.message = message
+  }
+}
+
 /// SDK Error handling
 public enum SDKError: Error {
   case invalidParameter(String)
@@ -325,6 +343,7 @@ public enum SDKError: Error {
   case networkError(String)
   case serializationError(String)
   case protocolError(String)
+  case protocolErrorWithDetails(String, [SDKConsensusError])
   case cryptoError(String)
   case notFound(String)
   case timeout(String)
@@ -345,6 +364,9 @@ public enum SDKError: Error {
     case DashSDKErrorCode(rawValue: 4): // Serialization error
       return .serializationError(message)
     case DashSDKErrorCode(rawValue: 5): // Protocol error
+      if let consensusErrors = consensusErrors(fromDashSDKError: error) {
+        return .protocolErrorWithDetails(message, consensusErrors)
+      }
       return .protocolError(message)
     case DashSDKErrorCode(rawValue: 6): // Crypto error
       return .cryptoError(message)
@@ -358,6 +380,83 @@ public enum SDKError: Error {
       return .internalError(message)
     default:
       return .unknown(message)
+    }
+  }
+
+  /// Returns the structured consensus errors carried by `error`, if any.
+  ///
+  /// The plain `SDKError.protocolError(String)` case remains available for
+  /// protocol errors that carry no structured sidecar details; this helper
+  /// exposes the additional structured detail surfaced by the Rust FFI sidecar
+  /// (`DashSDKConsensusError`). Returns
+  /// `nil` if `error` is not a `ProtocolError` or has no structured details.
+  ///
+  /// Must be called before `dash_sdk_error_free` is invoked on `error`.
+  public static func consensusErrors(fromDashSDKError error: DashSDKError)
+    -> [SDKConsensusError]?
+  {
+    var errorCopy = error
+    let count = withUnsafePointer(to: &errorCopy) { ptr -> Int in
+      Int(dash_sdk_error_consensus_error_count(ptr))
+    }
+    guard count > 0 else { return nil }
+
+    var result: [SDKConsensusError] = []
+    result.reserveCapacity(count)
+    for index in 0..<count {
+      let detailPtr = withUnsafePointer(to: &errorCopy) { ptr in
+        dash_sdk_error_consensus_error_at(ptr, UInt(index))
+      }
+      guard let detail = detailPtr else { continue }
+      defer { dash_sdk_consensus_error_free(detail) }
+
+      let entry = detail.pointee
+      let kind = entry.kind != nil ? String(cString: entry.kind!) : ""
+      let name = entry.name != nil ? String(cString: entry.name!) : ""
+      let message = entry.message != nil ? String(cString: entry.message!) : ""
+      result.append(
+        SDKConsensusError(code: entry.code, kind: kind, name: name, message: message))
+    }
+    return result.isEmpty ? nil : result
+  }
+
+  /// Convenience that returns both the mapped `SDKError` and any structured
+  /// consensus errors carried by `error`. Useful when callers need to display
+  /// the readable message *and* introspect each consensus error individually.
+  public static func fromDashSDKErrorWithConsensusErrors(_ error: DashSDKError)
+    -> (SDKError, [SDKConsensusError]?)
+  {
+    let mapped = SDKError.fromDashSDKError(error)
+    return (mapped, mapped.consensusErrors)
+  }
+
+  /// Human-readable message carried by this error, regardless of case.
+  public var message: String {
+    switch self {
+    case .invalidParameter(let message),
+      .invalidState(let message),
+      .networkError(let message),
+      .serializationError(let message),
+      .protocolError(let message),
+      .cryptoError(let message),
+      .notFound(let message),
+      .timeout(let message),
+      .notImplemented(let message),
+      .internalError(let message),
+      .unknown(let message):
+      return message
+    case .protocolErrorWithDetails(let message, _):
+      return message
+    }
+  }
+
+  /// Structured consensus errors surfaced by protocol errors, if available.
+  public var consensusErrors: [SDKConsensusError]? {
+    switch self {
+    case .protocolErrorWithDetails(_, let consensusErrors):
+      return consensusErrors
+    default:
+      return nil
     }
   }
 }
@@ -375,6 +474,15 @@ extension SDKError: LocalizedError {
       return "Serialization Error: \(message)"
     case .protocolError(let message):
       return "Protocol Error: \(message)"
+    case .protocolErrorWithDetails(let message, let consensusErrors):
+      let details =
+        consensusErrors
+        .map { "\($0.kind)[\($0.code)]: \($0.message)" }
+        .joined(separator: "; ")
+      if details.isEmpty {
+        return "Protocol Error: \(message)"
+      }
+      return "Protocol Error: \(message) (\(details))"
     case .cryptoError(let message):
       return "Cryptographic Error: \(message)"
     case .notFound(let message):
@@ -390,7 +498,6 @@ extension SDKError: LocalizedError {
     }
   }
 }
-
 
 /// Identities operations
 public class Identities {
