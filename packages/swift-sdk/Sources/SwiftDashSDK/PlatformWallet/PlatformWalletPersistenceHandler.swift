@@ -2068,16 +2068,17 @@ public class PlatformWalletPersistenceHandler {
             entry.platform_last_known_recent_block = syncState?.lastKnownRecentBlock ?? 0
             entry.identities = identitiesBuffer.map { UnsafePointer($0) }
             entry.identities_count = UInt(sortedIdentities.count)
-            // Core-chain sync metadata. `PersistentWallet` doesn't
-            // carry a separate `lastProcessedHeight` column today —
-            // re-use `syncedHeight` for both. The Rust loader treats
-            // zero as "unknown" and falls back to the
-            // `birth_height - 1` seed from `ManagedWalletInfo::from_wallet`,
-            // so freshly-recovered wallets without a sync watermark
-            // round-trip cleanly.
+            // Core-chain sync metadata. `last_processed_height` is
+            // intentionally NOT synthesized from `syncedHeight` — the
+            // two can diverge, and overstating processed progress on
+            // restore would let SPV skip blocks it still needs to
+            // replay. Persist a real watermark column to feed it; for
+            // now send 0 so the Rust loader's
+            // `ManagedWalletInfo::from_wallet` seed
+            // (`birth_height.saturating_sub(1)`) survives untouched.
             entry.birth_height = w.birthHeight
             entry.synced_height = w.syncedHeight
-            entry.last_processed_height = w.syncedHeight
+            entry.last_processed_height = 0
             entry.last_synced = w.lastSynced
 
             // Persisted unspent UTXOs for this wallet. The SPV inbound

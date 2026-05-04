@@ -398,7 +398,16 @@ extension PlatformWalletManager {
         pageOffset: Int = 0,
         pageLimit: Int = 0
     ) -> [AccountTransaction] {
-        guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else { return [] }
+        // `Int → UInt` traps on negative input; guard up front so a
+        // misuse (e.g. negative offset) returns an empty result rather
+        // than crashing. `pageLimit == 0` is reserved for "no limit"
+        // by the Rust accessor, so 0 is a valid lower bound for both.
+        guard isConfigured,
+              handle != NULL_HANDLE,
+              walletId.count == 32,
+              pageOffset >= 0,
+              pageLimit >= 0
+        else { return [] }
         var spec = makeAccountSpec(from: balance)
         var outTxs: UnsafePointer<AccountTransactionEntryFFI>? = nil
         var outCount: UInt = 0
