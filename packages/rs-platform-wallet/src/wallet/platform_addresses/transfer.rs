@@ -110,11 +110,15 @@ impl PlatformAddressWallet {
             }
         };
 
-        // Estimated fee = the same min-fee formula the protocol uses
-        // for validation. With `DeductFromInput(_)` (the canonical
-        // strategy used everywhere in this crate) the entire fee is
-        // charged to the targeted input's remaining balance, so this
-        // value matches the on-chain debit.
+        // Lower-bound static estimate from `estimate_min_fee` —
+        // captures the `state_transition_min_fees` floor only, with
+        // no adjustment for the chosen `fee_strategy`. This crate
+        // ships transfers under both `[ReduceOutput(0)]` (the
+        // wallet-factory default) and `[DeductFromInput(0)]`; either
+        // way the chain-time fee scales with storage + processing
+        // costs and is typically larger than this value (see
+        // `PlatformAddressChangeSet::estimated_min_fee` for the
+        // honest doc and platform issue #3040).
         let fee_paid =
             AddressFundsTransferTransition::estimate_min_fee(input_count, output_count, version);
 
