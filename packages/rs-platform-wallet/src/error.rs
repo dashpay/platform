@@ -1,3 +1,4 @@
+use dpp::address_funds::PlatformAddress;
 use dpp::identifier::Identifier;
 use key_wallet::Network;
 
@@ -74,6 +75,13 @@ pub enum PlatformWalletError {
 
     #[error("Arithmetic overflow on Credits in {context}")]
     ArithmeticOverflow { context: String },
+
+    #[error(
+        "all funded addresses are also outputs of this transfer: {outputs:?}; \
+         either rotate to a fresh receive address or use \
+         InputSelection::Explicit and split the operation"
+    )]
+    OnlyOutputAddressesFunded { outputs: Vec<PlatformAddress> },
 
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
