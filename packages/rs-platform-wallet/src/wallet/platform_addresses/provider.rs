@@ -411,17 +411,30 @@ impl PlatformPaymentAddressProvider {
         Ok(())
     }
 
-    /// Update incremental sync state from a completed sync result.
+    /// Merge an incremental sync result into the provider's
+    /// watermarks, taking the per-field maximum so concurrent or
+    /// out-of-order completions can never roll the watermark
+    /// backwards. Each field tracks "latest height/time/block we are
+    /// confident we have scanned through", so taking the max is the
+    /// safe monotonic combine even if results arrive in a different
+    /// order than they finished on the network.
     pub(crate) fn update_sync_state(
         &mut self,
         result: &AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>,
     ) {
-        self.sync_height = result.new_sync_height;
-        self.sync_timestamp = result.new_sync_timestamp;
-        self.last_known_recent_block = result.last_known_recent_block;
+        self.sync_height = self.sync_height.max(result.new_sync_height);
+        self.sync_timestamp = self.sync_timestamp.max(result.new_sync_timestamp);
+        self.last_known_recent_block = self
+            .last_known_recent_block
+            .max(result.last_known_recent_block);
     }
 
-    /// Restore incremental-sync watermark from persisted state.
+    /// Restore the incremental-sync watermark from persisted state.
+    /// Unlike [`Self::update_sync_state`], this is an unconditional
+    /// overwrite — callers use it during initialization to seed the
+    /// watermark from on-disk state before any incremental result
+    /// arrives. The monotonic invariant is maintained at update-time,
+    /// not load-time.
     pub(crate) fn set_stored_sync_state(
         &mut self,
         height: u64,
@@ -647,5 +660,99 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 
     fn last_known_recent_block_height(&self) -> u64 {
         self.last_known_recent_block
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use key_wallet::Network;
+    use key_wallet_manager::WalletManager;
+
+    /// Build a minimal provider with empty wallet/account state for
+    /// exercising the watermark merge logic. The address state itself
+    /// is irrelevant — `update_sync_state` only touches the three
+    /// watermark fields.
+    fn empty_provider() -> PlatformPaymentAddressProvider {
+        PlatformPaymentAddressProvider {
+            wallet_manager: Arc::new(RwLock::new(WalletManager::new(Network::Testnet))),
+            per_wallet: BTreeMap::new(),
+            per_wallet_in_sync: BTreeMap::new(),
+            pending: BiBTreeMap::new(),
+            sync_height: 0,
+            sync_timestamp: 0,
+            last_known_recent_block: 0,
+        }
+    }
+
+    fn sync_result(
+        height: u64,
+        timestamp: u64,
+        last_known_recent_block: u64,
+    ) -> AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress> {
+        let mut r = AddressSyncResult::default();
+        r.new_sync_height = height;
+        r.new_sync_timestamp = timestamp;
+        r.last_known_recent_block = last_known_recent_block;
+        r
+    }
+
+    /// QA-002: forward updates lift the watermarks to the new values
+    /// across all three fields (the trivial monotonic case).
+    #[test]
+    fn update_sync_state_advances_watermarks() {
+        let mut p = empty_provider();
+        p.update_sync_state(&sync_result(100, 1_700_000_000, 99));
+        assert_eq!(p.sync_height, 100);
+        assert_eq!(p.sync_timestamp, 1_700_000_000);
+        assert_eq!(p.last_known_recent_block, 99);
+    }
+
+    /// QA-002: a backwards result (every field lower than the
+    /// current watermark) must NOT roll the watermarks back. Out-of-
+    /// order completion of a stale incremental scan is the canonical
+    /// trigger for this branch.
+    #[test]
+    fn update_sync_state_rejects_backwards_full_result() {
+        let mut p = empty_provider();
+        p.update_sync_state(&sync_result(200, 1_800_000_000, 199));
+        p.update_sync_state(&sync_result(100, 1_700_000_000, 99));
+        assert_eq!(p.sync_height, 200);
+        assert_eq!(p.sync_timestamp, 1_800_000_000);
+        assert_eq!(p.last_known_recent_block, 199);
+    }
+
+    /// QA-002: the merge is per-field — a result that advances some
+    /// fields and regresses others lifts only the advancing ones.
+    /// Each watermark is its own monotonic counter; tying them
+    /// together would either lose progress (reject the whole result)
+    /// or roll some fields back (accept the whole result).
+    #[test]
+    fn update_sync_state_merges_per_field() {
+        let mut p = empty_provider();
+        p.update_sync_state(&sync_result(200, 1_800_000_000, 199));
+        // height advances, timestamp regresses, recent_block ties.
+        p.update_sync_state(&sync_result(300, 1_700_000_000, 199));
+        assert_eq!(p.sync_height, 300, "advanced");
+        assert_eq!(p.sync_timestamp, 1_800_000_000, "regression rejected");
+        assert_eq!(p.last_known_recent_block, 199, "tie kept");
+    }
+
+    /// `set_stored_sync_state` is an unconditional overwrite — it's
+    /// the load-from-persistence entry point, used before any
+    /// incremental result has merged. The monotonic merge is
+    /// `update_sync_state`'s job, not the loader's.
+    #[test]
+    fn set_stored_sync_state_overwrites_unconditionally() {
+        let mut p = empty_provider();
+        p.update_sync_state(&sync_result(500, 1_900_000_000, 499));
+        // Load smaller persisted values: an unconditional overwrite
+        // is the documented semantic. (Production callers sequence
+        // load → updates, so the regression seen here cannot occur
+        // in flight.)
+        p.set_stored_sync_state(100, 1_700_000_000, 99);
+        assert_eq!(p.sync_height, 100);
+        assert_eq!(p.sync_timestamp, 1_700_000_000);
+        assert_eq!(p.last_known_recent_block, 99);
     }
 }
