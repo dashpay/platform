@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Combine
+import DashSDKFFI
 
 /// The one thing SwiftUI needs for all wallet operations.
 ///
@@ -74,10 +75,8 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
-            var stopError = PlatformWalletFFIError()
-            _ = platform_wallet_manager_platform_address_sync_stop(handle, &stopError)
-            var error = PlatformWalletFFIError()
-            _ = platform_wallet_manager_destroy(handle, &error)
+            platform_wallet_manager_platform_address_sync_stop(handle).discard()
+            platform_wallet_manager_destroy(handle).discard()
         }
     }
 
@@ -91,10 +90,12 @@ public class PlatformWalletManager: ObservableObject {
     public func configure(sdk: SDK, modelContainer: ModelContainer? = nil) throws {
         precondition(!isConfigured, "PlatformWalletManager already configured")
         guard let sdkHandle = sdk.handle else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter("SDK has no handle")
         }
         guard let innerSdkPtr = dash_sdk_get_inner_sdk_ptr(sdkHandle) else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter(
+                "dash_sdk_get_inner_sdk_ptr returned NULL for the supplied SDK"
+            )
         }
         try configure(sdkPointer: UnsafeRawPointer(innerSdkPtr), modelContainer: modelContainer)
     }
@@ -102,7 +103,6 @@ public class PlatformWalletManager: ObservableObject {
     /// Configure with a raw Sdk pointer (advanced usage).
     public func configure(sdkPointer: UnsafeRawPointer, modelContainer: ModelContainer? = nil) throws {
         var handle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
 
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
@@ -118,17 +118,12 @@ public class PlatformWalletManager: ObservableObject {
         let eventHandler = PlatformWalletEventHandler(manager: self)
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
 
-        let result = platform_wallet_manager_create(
+        try platform_wallet_manager_create(
             sdkPointer,
             &persistence,
             &eventHandlerCallbacks,
-            &handle,
-            &error
-        )
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &handle
+        ).check()
 
         self.handle = handle
         self.persistenceHandler = handler
@@ -154,35 +149,26 @@ public class PlatformWalletManager: ObservableObject {
     @discardableResult
     public func createWallet(
         mnemonic: String,
-        network: PlatformNetwork,
+        network: Network,
         name: String? = nil,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
         var walletHandle: Handle = NULL_HANDLE
-        var walletId: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var error = PlatformWalletFFIError()
 
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
-        let result = mnemonic.withCString { mnemonicPtr in
-            platform_wallet_manager_create_wallet_from_mnemonic(
+        try mnemonic.withCString { mnemonicPtr in
+            try platform_wallet_manager_create_wallet_from_mnemonic(
                 handle,
                 mnemonicPtr,
-                network.rawValue,
+                network.ffiValue,
                 accountOptions,
                 &walletHandle,
-                &walletId,
-                &error
-            )
-        }
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
+                &walletId
+            ).check()
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
@@ -198,40 +184,33 @@ public class PlatformWalletManager: ObservableObject {
     @discardableResult
     public func createWallet(
         seed: Data,
-        network: PlatformNetwork,
+        network: Network,
         name: String? = nil,
         createDefaultAccounts: Bool = true
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
         guard seed.count == 64 else {
-            throw PlatformWalletError.invalidParameter
+            throw PlatformWalletError.invalidParameter(
+                "seed must be 64 bytes, got \(seed.count)"
+            )
         }
 
         var walletHandle: Handle = NULL_HANDLE
-        var walletId: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var error = PlatformWalletFFIError()
 
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
-        let result = seed.withUnsafeBytes { seedPtr in
-            platform_wallet_manager_create_wallet_from_seed(
+        try seed.withUnsafeBytes { seedPtr in
+            try platform_wallet_manager_create_wallet_from_seed(
                 handle,
-                network.rawValue,
+                network.ffiValue,
                 seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 UInt(seed.count),
                 accountOptions,
                 &walletHandle,
-                &walletId,
-                &error
-            )
-        }
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
+                &walletId
+            ).check()
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
@@ -266,11 +245,7 @@ public class PlatformWalletManager: ObservableObject {
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
         try ensureConfigured()
 
-        var error = PlatformWalletFFIError()
-        let loadResult = platform_wallet_manager_load_from_persistor(handle, &error)
-        guard loadResult == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: loadResult, error: error)
-        }
+        try platform_wallet_manager_load_from_persistor(handle).check()
 
         // Ask SwiftData for the list of wallet ids we just told Rust
         // to load. We reuse the same container rather than shipping a
@@ -286,30 +261,30 @@ public class PlatformWalletManager: ObservableObject {
         for walletId in walletIds {
             guard walletId.count == 32 else { continue }
             var walletHandle: Handle = NULL_HANDLE
-            var fetchError = PlatformWalletFFIError()
-            let fetchResult = walletId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-                // C signature is `const uint8_t (*wallet_id)[32]`, which Swift
-                // imports as `UnsafePointer<FFIByteTuple32>?`. Rebind the raw
-                // 32-byte buffer to that 32-tuple shape so the call type-checks.
-                guard let base = idPtr.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
-                    return PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER
+            do {
+                try walletId.withUnsafeBytes { idPtr in
+                    // C signature is `const uint8_t (*wallet_id)[32]`, which Swift
+                    // imports as `UnsafePointer<FFIByteTuple32>?`. Rebind the raw
+                    // 32-byte buffer to that 32-tuple shape so the call type-checks.
+                    guard let base = idPtr.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
+                        throw PlatformWalletError.nullPointer(
+                            "wallet_id buffer base address was nil"
+                        )
+                    }
+                    try platform_wallet_manager_get_wallet(
+                        handle,
+                        base,
+                        &walletHandle
+                    ).check()
                 }
-                return platform_wallet_manager_get_wallet(
-                    handle,
-                    base,
-                    &walletHandle,
-                    &fetchError
-                )
-            }
-            if fetchResult == PLATFORM_WALLET_FFI_RESULT_SUCCESS {
                 let managedWallet = ManagedPlatformWallet(handle: walletHandle, walletId: walletId)
                 restored.append(managedWallet)
                 self.wallets[walletId] = managedWallet
-            } else {
+            } catch {
                 // Log and skip — one wallet failing doesn't fail the
                 // whole restore. Usually means wallet_id / xpub
                 // disagreement (SwiftData drift vs. Rust recompute).
-                self.lastError = PlatformWalletError(result: fetchResult, error: fetchError)
+                self.lastError = error
             }
         }
 
@@ -350,19 +325,23 @@ public class PlatformWalletManager: ObservableObject {
     public static func accountExtendedPubKeyString(bytes: Data) -> String? {
         guard !bytes.isEmpty else { return nil }
         var outPtr: UnsafeMutablePointer<CChar>? = nil
-        var error = PlatformWalletFFIError()
-        let result: PlatformWalletFFIResult = bytes.withUnsafeBytes { raw in
-            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                return PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER
+        do {
+            try bytes.withUnsafeBytes { raw in
+                guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    throw PlatformWalletError.nullPointer(
+                        "xpub bytes buffer base address was nil"
+                    )
+                }
+                try platform_wallet_account_xpub_to_string(
+                    base,
+                    UInt(bytes.count),
+                    &outPtr
+                ).check()
             }
-            return platform_wallet_account_xpub_to_string(
-                base,
-                UInt(bytes.count),
-                &outPtr,
-                &error
-            )
+        } catch {
+            return nil
         }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS, let cStr = outPtr else {
+        guard let cStr = outPtr else {
             return nil
         }
         let str = String(cString: cStr)
@@ -370,11 +349,91 @@ public class PlatformWalletManager: ObservableObject {
         return str
     }
 
+    // MARK: - Per-account balances
+
+    /// Per-account balance snapshot read from Rust's in-memory state.
+    public struct AccountBalance {
+        public let typeTag: UInt8
+        public let standardTag: UInt8
+        public let index: UInt32
+        public let registrationIndex: UInt32
+        public let keyClass: UInt32
+        public let userIdentityId: Data
+        public let friendIdentityId: Data
+        public let confirmed: UInt64
+        public let unconfirmed: UInt64
+        public let immature: UInt64
+        public let locked: UInt64
+    }
+
+    /// Query per-account balances directly from the Rust-side
+    /// `WalletManager`'s in-memory state. No disk I/O — reads the
+    /// live `ManagedCoreAccount.balance` values maintained during SPV
+    /// processing.
+    public func accountBalances(for walletId: Data) -> [AccountBalance] {
+        guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else {
+            return []
+        }
+
+        var outEntries: UnsafePointer<AccountBalanceEntryFFI>?
+        var outCount: UInt = 0
+
+        let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+            let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            return platform_wallet_manager_get_account_balances(
+                handle,
+                base,
+                &outEntries,
+                &outCount
+            )
+        }
+
+        let result = PlatformWalletResult(ffiResult)
+
+
+        guard result.isSuccess else {
+            self.lastError = PlatformWalletError(result: result)
+            return []
+        }
+
+        guard let entries = outEntries, outCount > 0 else {
+            return []
+        }
+
+        defer {
+            platform_wallet_manager_free_account_balances(
+                UnsafeMutablePointer(mutating: entries),
+                outCount
+            )
+        }
+
+        return (0..<Int(outCount)).map { i in
+            var entry = entries[i]
+            let uid = withUnsafeBytes(of: &entry.user_identity_id) { Data($0) }
+            let fid = withUnsafeBytes(of: &entry.friend_identity_id) { Data($0) }
+            return AccountBalance(
+                typeTag: entry.type_tag,
+                standardTag: entry.standard_tag,
+                index: entry.index,
+                registrationIndex: entry.registration_index,
+                keyClass: entry.key_class,
+                userIdentityId: uid,
+                friendIdentityId: fid,
+                confirmed: entry.confirmed,
+                unconfirmed: entry.unconfirmed,
+                immature: entry.immature,
+                locked: entry.locked
+            )
+        }
+    }
+
     // MARK: - Internals
 
     private func ensureConfigured() throws {
         if !isConfigured || handle == NULL_HANDLE {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
     }
 

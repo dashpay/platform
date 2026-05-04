@@ -9,9 +9,9 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    @Published var currentNetwork: AppNetwork {
+    @Published var currentNetwork: Network {
         didSet {
-            UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
+            UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
             Task {
                 await switchNetwork(to: currentNetwork)
             }
@@ -45,7 +45,7 @@ class AppState: ObservableObject {
         // `object(forKey:)` and cast — `integer(forKey:)` returns 0
         // for missing keys, which would silently pin to mainnet.
         if let rawInt = UserDefaults.standard.object(forKey: "currentNetwork") as? Int,
-           let network = AppNetwork(rawValue: rawInt) {
+           let network = Network(rawValue: UInt32(rawInt)) {
             self.currentNetwork = network
         } else {
             self.currentNetwork = .testnet
@@ -78,9 +78,8 @@ class AppState: ObservableObject {
                 SDK.initialize()
                 SDK.enableLogging(level: .debug)
 
-                let sdkNetwork: DashSDKNetwork = currentNetwork.sdkNetwork
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                let newSDK = try SDK(network: sdkNetwork)
+                let newSDK = try SDK(network: currentNetwork)
                 sdk = newSDK
                 NSLog("✅ AppState: SDK created successfully")
 
@@ -102,7 +101,7 @@ class AppState: ObservableObject {
         showError = true
     }
 
-    func switchNetwork(to network: AppNetwork) async {
+    func switchNetwork(to network: Network) async {
         guard let modelContext = modelContext else { return }
 
         // Identities, contracts, documents, and token balances are
@@ -118,8 +117,7 @@ class AppState: ObservableObject {
             isLoading = true
 
             // Create new SDK instance for the network
-            let sdkNetwork: DashSDKNetwork = network.sdkNetwork
-            let newSDK = try SDK(network: sdkNetwork)
+            let newSDK = try SDK(network: network)
             sdk = newSDK
 
             // Load known contracts into the SDK's trusted provider

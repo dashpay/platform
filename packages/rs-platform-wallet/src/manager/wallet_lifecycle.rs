@@ -98,7 +98,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet: Wallet,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
         let balance = Arc::new(WalletBalance::new());
 
@@ -129,9 +129,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .all_managed_accounts()
             .iter()
             .map(|managed| {
-                let account_type = managed.account_type.to_account_type();
+                let account_type = managed.managed_account_type.to_account_type();
                 let pools = managed
-                    .account_type
+                    .managed_account_type
                     .address_pools()
                     .iter()
                     .map(|pool| {

@@ -24,17 +24,17 @@ public final class PersistentDashpayProfile {
     /// shared local store.
     #Unique<PersistentDashpayProfile>([\.networkRaw, \.identity])
 
-    /// Network discriminant. `Int` mirror of `AppNetwork.rawValue` —
+    /// Network discriminant. `UInt32` mirror of `Network.rawValue` —
     /// Foundation's predicate engine compares it directly without a
     /// custom converter. Stays in sync with `identity.networkRaw`
     /// (set by the init); identities don't migrate between networks.
-    public var networkRaw: Int
+    public var networkRaw: UInt32
 
     /// Type-safe accessor over `networkRaw`. Falls back to `.testnet`
     /// if the stored raw value drifts — matches
     /// `PersistentIdentity.network`.
-    public var network: AppNetwork {
-        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
         set { networkRaw = newValue.rawValue }
     }
 

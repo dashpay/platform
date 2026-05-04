@@ -192,15 +192,6 @@ struct SwiftExampleAppApp: App {
 
     // MARK: - Helpers
 
-    private func platformNetwork(from network: AppNetwork) -> PlatformNetwork {
-        switch network {
-        case .mainnet: return .mainnet
-        case .testnet: return .testnet
-        case .devnet: return .devnet
-        case .regtest: return .testnet
-        }
-    }
-
     /// Read local Core peers from UserDefaults (comma-separated addresses).
     private func readLocalCorePeers() -> [String] {
         if let csv = UserDefaults.standard.string(forKey: "localCorePeers"), !csv.isEmpty {

@@ -7,11 +7,10 @@
 //! flat snapshot read API for the per-identity cache (single
 //! identity or whole-store) with a paired free helper.
 //!
-//! All `*const` and `*mut` parameters follow the same convention as
-//! the rest of this crate: pointers may be null, the function returns
-//! [`PlatformWalletFFIResult::ErrorNullPointer`] if a non-optional
-//! pointer is null, and detailed error context lands in the optional
-//! `out_error` slot when supplied.
+//! Error handling follows the same shape as the rest of this crate:
+//! every entry point returns a `PlatformWalletFFIResult` carrying the
+//! typed code + Rust-supplied detail; null / invalid inputs surface
+//! through the `check_ptr!` and `unwrap_option_or_return!` macros.
 
 use std::time::Duration;
 
@@ -20,6 +19,7 @@ use platform_wallet::{IdentityTokenSyncInfo, IdentityTokenSyncState};
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
+use crate::{check_ptr, unwrap_option_or_return};
 
 /// Flattened per-(identity, token) row mirroring
 /// [`IdentityTokenSyncInfo`].
@@ -64,45 +64,25 @@ impl IdentityTokenSyncInfoFFI {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_start(
     handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let _entered = runtime().enter();
-            manager.identity_sync_arc().start();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let _entered = runtime().enter();
+        manager.identity_sync_arc().start();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Stop the identity-token sync manager if it is running.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_stop(
     handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            manager.identity_sync().stop();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.identity_sync().stop();
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether the identity-token sync background loop is running.
@@ -110,26 +90,14 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_stop(
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_is_running(
     handle: Handle,
     out_running: *mut bool,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_running.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_running);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            *out_running = manager.identity_sync().is_running();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(handle, |manager| manager.identity_sync().is_running());
+    let running = unwrap_option_or_return!(option);
+    *out_running = running;
+    PlatformWalletFFIResult::ok()
 }
 
 /// Whether an identity-token sync pass is currently in flight.
@@ -137,26 +105,14 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_is_running(
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_is_syncing(
     handle: Handle,
     out_syncing: *mut bool,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_syncing.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_syncing);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            *out_syncing = manager.identity_sync().is_syncing();
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(handle, |manager| manager.identity_sync().is_syncing());
+    let syncing = unwrap_option_or_return!(option);
+    *out_syncing = syncing;
+    PlatformWalletFFIResult::ok()
 }
 
 /// Unix seconds of the last completed identity-token sync pass for
@@ -170,32 +126,21 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_last_sync_unix_se
     handle: Handle,
     identity_id_ptr: *const u8,
     out_last_sync_unix: *mut u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if identity_id_ptr.is_null() || out_last_sync_unix.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(identity_id_ptr);
+    check_ptr!(out_last_sync_unix);
+
     let mut id_bytes = [0u8; 32];
     std::ptr::copy_nonoverlapping(identity_id_ptr, id_bytes.as_mut_ptr(), 32);
     let identity_id = dpp::prelude::Identifier::from(id_bytes);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let mgr = manager.identity_sync_arc();
-            let value = runtime()
-                .block_on(async move { mgr.last_sync_unix_for_identity(&identity_id).await });
-            *out_last_sync_unix = value.unwrap_or(0);
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let mgr = manager.identity_sync_arc();
+        runtime().block_on(async move { mgr.last_sync_unix_for_identity(&identity_id).await })
+    });
+    let value = unwrap_option_or_return!(option);
+    *out_last_sync_unix = value.unwrap_or(0);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Set the background identity-token sync interval in seconds.
@@ -203,24 +148,14 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_last_sync_unix_se
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
     handle: Handle,
     interval_seconds: u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            manager
-                .identity_sync()
-                .set_interval(Duration::from_secs(interval_seconds));
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager
+            .identity_sync()
+            .set_interval(Duration::from_secs(interval_seconds));
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Run one identity-token sync pass across all registered wallets.
@@ -233,22 +168,12 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
     handle: Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            runtime().block_on(manager.identity_sync().sync_now());
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.identity_sync().sync_now());
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Snapshot the identity-token sync state for one identity.
@@ -272,54 +197,41 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_state_for_identit
     out_rows: *mut *mut IdentityTokenSyncInfoFFI,
     out_rows_count: *mut usize,
     out_last_sync_unix: *mut u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if identity_id_ptr.is_null()
-        || out_rows.is_null()
-        || out_rows_count.is_null()
-        || out_last_sync_unix.is_null()
-    {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(identity_id_ptr);
+    check_ptr!(out_rows);
+    check_ptr!(out_rows_count);
+    check_ptr!(out_last_sync_unix);
 
     let mut id_bytes = [0u8; 32];
     std::ptr::copy_nonoverlapping(identity_id_ptr, id_bytes.as_mut_ptr(), 32);
     let identity_id = dpp::prelude::Identifier::from(id_bytes);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let mgr = manager.identity_sync_arc();
-            let row = runtime().block_on(async move { mgr.state_for_identity(&identity_id).await });
-            match row {
-                Some(state) => {
-                    let rows: Vec<IdentityTokenSyncInfoFFI> = state
-                        .tokens
-                        .iter()
-                        .map(|info| IdentityTokenSyncInfoFFI::from_state_row(&state, info))
-                        .collect();
-                    let len = rows.len();
-                    let boxed = rows.into_boxed_slice();
-                    *out_rows = Box::into_raw(boxed) as *mut IdentityTokenSyncInfoFFI;
-                    *out_rows_count = len;
-                    *out_last_sync_unix = state.last_sync_unix;
-                }
-                None => {
-                    *out_rows = std::ptr::null_mut();
-                    *out_rows_count = 0;
-                    *out_last_sync_unix = 0;
-                }
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let mgr = manager.identity_sync_arc();
+        runtime().block_on(async move { mgr.state_for_identity(&identity_id).await })
+    });
+    let row = unwrap_option_or_return!(option);
+    match row {
+        Some(state) => {
+            let rows: Vec<IdentityTokenSyncInfoFFI> = state
+                .tokens
+                .iter()
+                .map(|info| IdentityTokenSyncInfoFFI::from_state_row(&state, info))
+                .collect();
+            let len = rows.len();
+            let boxed = rows.into_boxed_slice();
+            *out_rows = Box::into_raw(boxed) as *mut IdentityTokenSyncInfoFFI;
+            *out_rows_count = len;
+            *out_last_sync_unix = state.last_sync_unix;
+        }
+        None => {
+            *out_rows = std::ptr::null_mut();
+            *out_rows_count = 0;
+            *out_last_sync_unix = 0;
+        }
+    }
+    PlatformWalletFFIResult::ok()
 }
 
 /// Snapshot the identity-token sync state for every cached identity
@@ -340,42 +252,31 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_state_all(
     handle: Handle,
     out_rows: *mut *mut IdentityTokenSyncInfoFFI,
     out_rows_count: *mut usize,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_rows.is_null() || out_rows_count.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_rows);
+    check_ptr!(out_rows_count);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let mgr = manager.identity_sync_arc();
-            let snapshot = runtime().block_on(async move { mgr.all_state().await });
-            let mut rows: Vec<IdentityTokenSyncInfoFFI> = Vec::new();
-            for state in snapshot.values() {
-                for info in &state.tokens {
-                    rows.push(IdentityTokenSyncInfoFFI::from_state_row(state, info));
-                }
-            }
-            let len = rows.len();
-            if len == 0 {
-                *out_rows = std::ptr::null_mut();
-                *out_rows_count = 0;
-            } else {
-                let boxed = rows.into_boxed_slice();
-                *out_rows = Box::into_raw(boxed) as *mut IdentityTokenSyncInfoFFI;
-                *out_rows_count = len;
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let mgr = manager.identity_sync_arc();
+        runtime().block_on(async move { mgr.all_state().await })
+    });
+    let snapshot = unwrap_option_or_return!(option);
+    let mut rows: Vec<IdentityTokenSyncInfoFFI> = Vec::new();
+    for state in snapshot.values() {
+        for info in &state.tokens {
+            rows.push(IdentityTokenSyncInfoFFI::from_state_row(state, info));
+        }
+    }
+    let len = rows.len();
+    if len == 0 {
+        *out_rows = std::ptr::null_mut();
+        *out_rows_count = 0;
+    } else {
+        let boxed = rows.into_boxed_slice();
+        *out_rows = Box::into_raw(boxed) as *mut IdentityTokenSyncInfoFFI;
+        *out_rows_count = len;
+    }
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free a heap-owned `IdentityTokenSyncInfoFFI` array returned by one
@@ -426,34 +327,25 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_register_identity
     identity_id_ptr: *const u8,
     token_ids_ptr: *const u8,
     token_ids_count: usize,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if identity_id_ptr.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(identity_id_ptr);
     let mut id_bytes = [0u8; 32];
     std::ptr::copy_nonoverlapping(identity_id_ptr, id_bytes.as_mut_ptr(), 32);
     let identity_id = dpp::prelude::Identifier::from(id_bytes);
 
     let Some(token_ids) = read_token_ids(token_ids_ptr, token_ids_count) else {
-        return PlatformWalletFFIResult::ErrorNullPointer;
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "token_ids_ptr is null with non-zero count",
+        );
     };
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let mgr = manager.identity_sync_arc();
-            runtime().block_on(async move { mgr.register_identity(identity_id, token_ids).await });
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let mgr = manager.identity_sync_arc();
+        runtime().block_on(async move { mgr.register_identity(identity_id, token_ids).await });
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Unregister an identity from the token-sync registry.
@@ -464,30 +356,18 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_register_identity
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_unregister_identity(
     handle: Handle,
     identity_id_ptr: *const u8,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if identity_id_ptr.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(identity_id_ptr);
     let mut id_bytes = [0u8; 32];
     std::ptr::copy_nonoverlapping(identity_id_ptr, id_bytes.as_mut_ptr(), 32);
     let identity_id = dpp::prelude::Identifier::from(id_bytes);
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let mgr = manager.identity_sync_arc();
-            runtime().block_on(async move { mgr.unregister_identity(&identity_id).await });
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let mgr = manager.identity_sync_arc();
+        runtime().block_on(async move { mgr.unregister_identity(&identity_id).await });
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Replace the watched-token list for an already-registered identity.
@@ -505,33 +385,23 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_update_watched_to
     identity_id_ptr: *const u8,
     token_ids_ptr: *const u8,
     token_ids_count: usize,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if identity_id_ptr.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(identity_id_ptr);
     let mut id_bytes = [0u8; 32];
     std::ptr::copy_nonoverlapping(identity_id_ptr, id_bytes.as_mut_ptr(), 32);
     let identity_id = dpp::prelude::Identifier::from(id_bytes);
 
     let Some(token_ids) = read_token_ids(token_ids_ptr, token_ids_count) else {
-        return PlatformWalletFFIResult::ErrorNullPointer;
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "token_ids_ptr is null with non-zero count",
+        );
     };
 
-    PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| {
-            let mgr = manager.identity_sync_arc();
-            runtime()
-                .block_on(async move { mgr.update_watched_tokens(identity_id, token_ids).await });
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid manager handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let mgr = manager.identity_sync_arc();
+        runtime().block_on(async move { mgr.update_watched_tokens(identity_id, token_ids).await });
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }

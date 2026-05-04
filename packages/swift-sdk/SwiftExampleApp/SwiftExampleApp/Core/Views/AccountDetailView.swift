@@ -5,6 +5,7 @@ import SwiftData
 // MARK: - Account Detail View
 struct AccountDetailView: View {
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var walletManager: PlatformWalletManager
     let wallet: PersistentWallet
     let account: PersistentAccount
 
@@ -149,12 +150,18 @@ struct AccountDetailView: View {
     }
 
     private func balanceCard() -> some View {
-        // PlatformPayment balances are in credits (1e11/DASH), live on
-        // `PersistentPlatformAddress.balance`, and have no
-        // confirmed / pending split on-chain.
         if account.accountType == 14 {
             return AnyView(platformBalanceCard())
         }
+
+        let balances = walletManager.accountBalances(for: wallet.walletId)
+        let match = balances.first { b in
+            UInt32(b.typeTag) == account.accountType &&
+            b.standardTag == account.standardTag &&
+            b.index == account.accountIndex
+        }
+        let confirmed = match?.confirmed ?? 0
+        let unconfirmed = match?.unconfirmed ?? 0
 
         return AnyView(VStack(alignment: .leading, spacing: 12) {
             Label("Balance", systemImage: "bitcoinsign.circle.fill")
@@ -168,19 +175,19 @@ struct AccountDetailView: View {
                     Text("Confirmed")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatBalance(account.balanceConfirmed))
+                    Text(formatBalance(confirmed))
                         .font(.title3)
                         .fontWeight(.semibold)
                 }
 
                 Spacer()
 
-                if account.balanceUnconfirmed > 0 {
+                if unconfirmed > 0 {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("Pending")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balanceUnconfirmed))
+                        Text(formatBalance(unconfirmed))
                             .font(.title3)
                             .fontWeight(.semibold)
                             .foregroundColor(.orange)
@@ -195,7 +202,7 @@ struct AccountDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                Text(formatBalance(account.balanceConfirmed + account.balanceUnconfirmed))
+                Text(formatBalance(confirmed + unconfirmed))
                     .font(.headline)
                     .fontWeight(.bold)
             }
