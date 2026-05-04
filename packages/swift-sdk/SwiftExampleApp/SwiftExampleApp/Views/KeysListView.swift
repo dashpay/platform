@@ -456,18 +456,11 @@ struct PrivateKeyView: View {
   }
 
   private func getWIFForPrivateKey(_ privateKeyData: Data) -> String? {
-    // Mainnet → `X…` compressed prefix; testnet → `c…`. The SDK
-    // exposes the active network on its handle; fall back to
-    // testnet when the SDK isn't loaded so the call still produces
-    // *some* WIF rather than `nil`.
-    let isTestnet: Bool = {
-      guard let sdkNetwork = appState.sdk?.network else { return true }
-      // `DashSDKNetwork(rawValue: 0)` is mainnet in the FFI;
-      // anything else is treated as testnet for WIF version-byte
-      // selection (devnet / regtest share the testnet byte).
-      return sdkNetwork.rawValue != 0
-    }()
-    return WIFParser.encodeToWIF(privateKeyData, isTestnet: isTestnet)
+    // Mainnet → `X…` compressed prefix; every other network → `c…`.
+    // Fall back to testnet when the SDK isn't loaded so the call
+    // still produces *some* WIF rather than `nil`.
+    let network = appState.sdk?.network ?? .testnet
+    return WIFParser.encodeToWIF(privateKeyData, network: network)
   }
 }
 

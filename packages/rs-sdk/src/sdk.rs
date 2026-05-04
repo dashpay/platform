@@ -25,6 +25,7 @@ use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
+use rs_dapi_client::Address;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
@@ -62,6 +63,41 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     connect_timeout: None,
     max_decoding_message_size: None,
 };
+
+/// Build the default DAPI bootstrap address list for `network` from
+/// [`dash_network_seeds`].
+///
+/// The seed lists are single-source-of-truth, weekly-refreshed upstream in
+/// `rust-dashcore`. We filter to Evo (HPMN) masternodes — the only ones that
+/// run Dash Platform — and build `https://<ip>:<platform_http_port>` URIs.
+/// The Core port on `seed.address` is intentionally discarded: DAPI clients
+/// need the platform HTTP port, not the Core P2P port.
+///
+/// Malformed upstream entries are silently skipped rather than panicking;
+/// the DAPI client handles retry/rotation across the remaining addresses.
+///
+/// ## Panics
+///
+/// Panics on networks other than `Mainnet` and `Testnet` — no upstream
+/// seed list exists for devnet/regtest.
+fn default_address_list_for_network(network: Network) -> AddressList {
+    if !matches!(network, Network::Mainnet | Network::Testnet) {
+        panic!("default address list is only available for mainnet and testnet");
+    }
+    let mut list = AddressList::new();
+    for seed in dash_network_seeds::evo_seeds(network) {
+        let Some(port) = seed.platform_http_port else {
+            continue;
+        };
+        let url = format!("https://{}:{}", seed.address.ip(), port);
+        if let Ok(uri) = url.parse::<Uri>() {
+            if let Ok(address) = Address::try_from(uri) {
+                list.add(address);
+            }
+        }
+    }
+    list
+}
 
 /// Dash Platform SDK
 ///
@@ -747,18 +783,18 @@ impl SdkBuilder {
         Self::default()
     }
 
-    /// Create a new SdkBuilder instance preconfigured for testnet. NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for testnet.
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for testnet use.
     /// Use this method if you want to connect to Dash Platform testnet during development and testing
     /// of your solution.
     pub fn new_testnet() -> Self {
-        unimplemented!(
-            "Testnet address list not implemented yet. Use new() and provide address list."
-        )
+        let address_list = default_address_list_for_network(Network::Testnet);
+
+        Self::new(address_list).with_network(Network::Testnet)
     }
 
-    /// Create a new SdkBuilder instance preconfigured for mainnet (production network). NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for mainnet (production network).
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
@@ -771,9 +807,9 @@ impl SdkBuilder {
     ///
     /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
-        unimplemented!(
-            "Mainnet address list not implemented yet. Use new() and provide address list."
-        )
+        let address_list = default_address_list_for_network(Network::Mainnet);
+
+        Self::new(address_list).with_network(Network::Mainnet)
     }
 
     /// Configure network type.
@@ -1101,6 +1137,80 @@ mod test {
     use test_case::test_matrix;
 
     use crate::SdkBuilder;
+
+    use super::Network;
+
+    /// Mainnet Evo masternodes expose the Platform HTTP endpoint on 443.
+    const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
+    /// Testnet Evo masternodes expose the Platform HTTP endpoint on 1443.
+    const TESTNET_PLATFORM_HTTP_PORT: u16 = 1443;
+
+    #[test]
+    fn new_testnet_sources_bootstrap_from_seeds() {
+        let builder = SdkBuilder::new_testnet();
+        let address_list = builder
+            .addresses
+            .as_ref()
+            .expect("testnet builder should configure default addresses");
+
+        assert_eq!(builder.network, Network::Testnet);
+        assert!(
+            !address_list.is_empty(),
+            "testnet must have at least one bootstrap address"
+        );
+        for address in address_list.get_live_addresses() {
+            assert_eq!(
+                address.uri().port_u16(),
+                Some(TESTNET_PLATFORM_HTTP_PORT),
+                "testnet bootstrap address must use the platform HTTP port",
+            );
+        }
+    }
+
+    #[test]
+    fn new_mainnet_sources_bootstrap_from_seeds() {
+        let builder = SdkBuilder::new_mainnet();
+        let address_list = builder
+            .addresses
+            .as_ref()
+            .expect("mainnet builder should configure default addresses");
+
+        assert_eq!(builder.network, Network::Mainnet);
+        assert!(
+            !address_list.is_empty(),
+            "mainnet must have at least one bootstrap address"
+        );
+        for address in address_list.get_live_addresses() {
+            assert_eq!(
+                address.uri().port_u16(),
+                Some(MAINNET_PLATFORM_HTTP_PORT),
+                "mainnet bootstrap address must use the platform HTTP port",
+            );
+        }
+    }
+
+    /// Smoke signal: the upstream seed lists are far larger than 10 entries on
+    /// both networks. If parsing drops most of them we want a loud test
+    /// failure rather than silently shipping a near-empty bootstrap list.
+    #[test]
+    fn bootstrap_counts_reasonable() {
+        let mainnet = SdkBuilder::new_mainnet()
+            .addresses
+            .expect("mainnet builder should configure default addresses");
+        let testnet = SdkBuilder::new_testnet()
+            .addresses
+            .expect("testnet builder should configure default addresses");
+        assert!(
+            mainnet.len() >= 10,
+            "expected >=10 mainnet bootstrap addresses, got {}",
+            mainnet.len()
+        );
+        assert!(
+            testnet.len() >= 10,
+            "expected >=10 testnet bootstrap addresses, got {}",
+            testnet.len()
+        );
+    }
 
     #[test_matrix(97..102, 100, 2, false; "valid height")]
     #[test_case(103, 100, 2, true; "invalid height")]

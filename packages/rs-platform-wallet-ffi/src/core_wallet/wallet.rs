@@ -2,15 +2,14 @@
 
 use crate::error::*;
 use crate::handle::*;
+use crate::types::FFINetwork;
+use crate::{check_ptr, unwrap_option_or_return};
 
 /// Destroy a CoreWallet handle.
 #[no_mangle]
-pub unsafe extern "C" fn core_wallet_destroy(
-    handle: Handle,
-    _out_error: *mut PlatformWalletFFIError,
-) -> PlatformWalletFFIResult {
+pub unsafe extern "C" fn core_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
     CORE_WALLET_STORAGE.remove(handle);
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get lock-free balance (spendable, unconfirmed, immature, locked).
@@ -23,50 +22,37 @@ pub unsafe extern "C" fn core_wallet_get_balance(
     out_unconfirmed: *mut u64,
     out_immature: *mut u64,
     out_locked: *mut u64,
-    _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    CORE_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            let balance = wallet.balance();
-            if !out_confirmed.is_null() {
-                *out_confirmed = balance.confirmed();
-            }
-            if !out_unconfirmed.is_null() {
-                *out_unconfirmed = balance.unconfirmed();
-            }
-            if !out_immature.is_null() {
-                *out_immature = balance.immature();
-            }
-            if !out_locked.is_null() {
-                *out_locked = balance.locked();
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        let b = wallet.balance();
+        (b.confirmed(), b.unconfirmed(), b.immature(), b.locked())
+    });
+    let (confirmed, unconfirmed, immature, locked) = unwrap_option_or_return!(option);
+
+    if !out_confirmed.is_null() {
+        *out_confirmed = confirmed;
+    }
+    if !out_unconfirmed.is_null() {
+        *out_unconfirmed = unconfirmed;
+    }
+    if !out_immature.is_null() {
+        *out_immature = immature;
+    }
+    if !out_locked.is_null() {
+        *out_locked = locked;
+    }
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get the network this wallet operates on.
-///
-/// Returns: 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_get_network(
     handle: Handle,
-    out_network: *mut u32,
-    _out_error: *mut PlatformWalletFFIError,
+    out_network: *mut FFINetwork,
 ) -> PlatformWalletFFIResult {
-    if out_network.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_network);
 
-    CORE_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            *out_network = match wallet.network() {
-                key_wallet::Network::Mainnet => 0,
-                key_wallet::Network::Testnet => 1,
-                key_wallet::Network::Devnet => 2,
-                key_wallet::Network::Regtest => 3,
-            };
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| wallet.network().into());
+    *out_network = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }

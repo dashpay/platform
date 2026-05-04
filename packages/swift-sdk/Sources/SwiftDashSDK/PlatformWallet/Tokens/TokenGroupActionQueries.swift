@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 // MARK: - Public types
 
@@ -301,24 +302,19 @@ extension ManagedPlatformWallet {
         let statusRaw = status.rawValue
 
         return try await Task.detached(priority: .userInitiated) {
-            var error = PlatformWalletFFIError()
             var jsonOut: UnsafeMutablePointer<CChar>? = nil
-            let result = contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                ManagedPlatformWallet.tokenWithOptionalActionIdBytes(startBytes) { startPtr in
-                    platform_wallet_token_pending_group_actions(
+            try contractBytes.withUnsafeBufferPointer { contractBp in
+                try ManagedPlatformWallet.tokenWithOptionalActionIdBytes(startBytes) { startPtr in
+                    try platform_wallet_token_pending_group_actions(
                         handle,
                         contractBp.baseAddress!,
                         groupContractPosition,
                         statusRaw,
                         startPtr,
                         limit,
-                        &jsonOut,
-                        &error
-                    )
+                        &jsonOut
+                    ).check()
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
             return try ManagedPlatformWallet.consumeJSONArray(jsonOut)
         }.value
@@ -338,23 +334,18 @@ extension ManagedPlatformWallet {
         let statusRaw = status.rawValue
 
         return try await Task.detached(priority: .userInitiated) {
-            var error = PlatformWalletFFIError()
             var jsonOut: UnsafeMutablePointer<CChar>? = nil
-            let result = contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                actionBytes.withUnsafeBufferPointer { actionBp in
-                    platform_wallet_token_group_action_signers(
+            try contractBytes.withUnsafeBufferPointer { contractBp in
+                try actionBytes.withUnsafeBufferPointer { actionBp in
+                    try platform_wallet_token_group_action_signers(
                         handle,
                         contractBp.baseAddress!,
                         groupContractPosition,
                         statusRaw,
                         actionBp.baseAddress!,
-                        &jsonOut,
-                        &error
-                    )
+                        &jsonOut
+                    ).check()
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
             return try ManagedPlatformWallet.consumeJSONArray(jsonOut)
         }.value
@@ -366,13 +357,13 @@ extension ManagedPlatformWallet {
     /// when no action id is present (initial page of pending actions).
     fileprivate static func tokenWithOptionalActionIdBytes<R>(
         _ value: [UInt8]?,
-        _ body: (UnsafePointer<UInt8>?) -> R
-    ) -> R {
+        _ body: (UnsafePointer<UInt8>?) throws -> R
+    ) rethrows -> R {
         guard let value = value else {
-            return body(nil)
+            return try body(nil)
         }
-        return value.withUnsafeBufferPointer { bp in
-            body(bp.baseAddress)
+        return try value.withUnsafeBufferPointer { bp in
+            try body(bp.baseAddress)
         }
     }
 

@@ -39,7 +39,8 @@ mod payments;
 mod profile;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
-// Bookkeeping (watch / sync / balance) stays on `TokenWallet`.
+// Bookkeeping (watch / sync / balance) lives on
+// `crate::manager::identity_sync::IdentitySyncManager`.
 mod tokens;
 
 pub use discovery::IdentityDiscoveryOptions;

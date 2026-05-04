@@ -307,6 +307,152 @@ struct PublicKeyStorageListView: View {
     }
 }
 
+// MARK: - PersistentDPNSName
+
+/// Storage-explorer list of every confirmed DPNS label across all
+/// identities. Newest acquisition first — `acquiredAt` is Unix-millis
+/// from `DpnsNameInfo.acquired_at` and zero-valued rows (legacy,
+/// un-timestamped) naturally fall to the bottom.
+struct DPNSNameStorageListView: View {
+    @Query(sort: \PersistentDPNSName.acquiredAt, order: .reverse)
+    private var records: [PersistentDPNSName]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: DPNSNameStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(record.label).\(record.parentDomainName)")
+                        .font(.body).lineLimit(1)
+                    Text(record.identity.identityIdBase58)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("DPNS Names (\(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "at")
+            }
+        }
+    }
+}
+
+// MARK: - PersistentDashpayProfile
+
+/// Storage-explorer list of every cached DashPay profile. One row
+/// per (network, identity). Newest profile update first.
+struct DashpayProfileStorageListView: View {
+    @Query(sort: \PersistentDashpayProfile.lastUpdated, order: .reverse)
+    private var records: [PersistentDashpayProfile]
+
+    var body: some View {
+        List(records) { record in
+            NavigationLink(destination: DashpayProfileStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.displayName ?? "(no display name)")
+                        .font(.body).lineLimit(1)
+                    Text(record.identity.identityIdBase58)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("DashPay Profiles (\(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "person.text.rectangle")
+            }
+        }
+    }
+}
+
+// MARK: - PersistentDashpayContactRequest
+
+/// Storage-explorer list of every DashPay contact-request row.
+/// Grouped by direction (Outgoing / Incoming) — `isOutgoing` partitions
+/// the rows because the encrypted payload differs per direction (each
+/// side seals to the other party's identity key), so the two
+/// directions are inherently distinct rows even for the same
+/// (owner, contact) pair. Within each section, newest request first
+/// (`createdAtMillis` desc; `0` falls to the bottom).
+struct DashpayContactRequestStorageListView: View {
+    @Query private var records: [PersistentDashpayContactRequest]
+
+    private var outgoing: [PersistentDashpayContactRequest] {
+        records.filter { $0.isOutgoing }
+            .sorted { $0.createdAtMillis > $1.createdAtMillis }
+    }
+
+    private var incoming: [PersistentDashpayContactRequest] {
+        records.filter { !$0.isOutgoing }
+            .sorted { $0.createdAtMillis > $1.createdAtMillis }
+    }
+
+    var body: some View {
+        List {
+            if !outgoing.isEmpty {
+                Section("Outgoing (\(outgoing.count))") {
+                    ForEach(outgoing) { record in
+                        contactRequestLink(record)
+                    }
+                }
+            }
+            if !incoming.isEmpty {
+                Section("Incoming (\(incoming.count))") {
+                    ForEach(incoming) { record in
+                        contactRequestLink(record)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Contact Requests (\(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "person.crop.circle.badge.plus"
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contactRequestLink(
+        _ record: PersistentDashpayContactRequest
+    ) -> some View {
+        NavigationLink(destination: DashpayContactRequestStorageDetailView(record: record)) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(shortHex(record.contactIdentityId))
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("from \(shortHex(record.ownerIdentityId))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    /// Render a 32-byte identity id as a "<first 4 hex>…<last 4 hex>"
+    /// to keep the row concise. Mirrors the truncation pattern other
+    /// storage list views use for ids.
+    private func shortHex(_ data: Data) -> String {
+        guard data.count >= 8 else {
+            return data.map { String(format: "%02x", $0) }.joined()
+        }
+        let head = data.prefix(4).map { String(format: "%02x", $0) }.joined()
+        let tail = data.suffix(4).map { String(format: "%02x", $0) }.joined()
+        return "\(head)…\(tail)"
+    }
+}
+
 // MARK: - PersistentToken
 
 struct TokenStorageListView: View {
@@ -621,6 +767,11 @@ struct CoreAddressStorageListView: View {
     @Query(sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)])
     private var records: [PersistentCoreAddress]
 
+    /// Live-search query. Matches case-insensitively against the
+    /// Base58Check address, derivation path, and address index.
+    /// Empty string disables the filter.
+    @State private var searchText: String = ""
+
     /// Composite key identifying one (wallet, account) bucket. All
     /// pools (External / Internal / Absent / Absent Hardened) for a
     /// given account collapse into a single section — the pool name
@@ -646,12 +797,30 @@ struct CoreAddressStorageListView: View {
         }
     }
 
+    /// Records narrowed by `searchText`. Empty query passes
+    /// everything through. Match runs case-insensitively against the
+    /// address, derivation path, and stringified `addressIndex` so
+    /// the user can paste a Base58Check, type "44'/1'", or just
+    /// "/3" to find a specific row. Done before grouping so empty
+    /// sections drop out cleanly.
+    private var filteredRecords: [PersistentCoreAddress] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return records }
+        let needle = trimmed.lowercased()
+        return records.filter { record in
+            if record.address.lowercased().contains(needle) { return true }
+            if record.derivationPath.lowercased().contains(needle) { return true }
+            if String(record.addressIndex).contains(needle) { return true }
+            return false
+        }
+    }
+
     /// Group addresses by (wallet, account). Addresses within a group
     /// are sorted by (pool tag, derivation index) so external pool
     /// entries come first, followed by internal, followed by any
     /// absent-pool entries — each in index order.
     private var groups: [(GroupKey, [PersistentCoreAddress])] {
-        let grouped = Dictionary(grouping: records) { record -> GroupKey in
+        let grouped = Dictionary(grouping: filteredRecords) { record -> GroupKey in
             let account = record.account
             let wallet = account?.wallet
             return GroupKey(
@@ -689,13 +858,16 @@ struct CoreAddressStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Core Addresses (\(records.count))")
+        .navigationTitle("Core Addresses (\(filteredRecords.count))")
+        .searchable(text: $searchText, prompt: "Search address, path, or index")
         .overlay {
             if records.isEmpty {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "square.and.pencil"
                 )
+            } else if filteredRecords.isEmpty {
+                ContentUnavailableView.search(text: searchText)
             }
         }
     }
@@ -853,30 +1025,94 @@ struct PlatformAddressStorageListView: View {
 // MARK: - PersistentTxo
 
 struct TxoStorageListView: View {
-    @Query(sort: \PersistentTxo.createdAt, order: .reverse)
+    /// Sort by block height descending — newest at the top, mempool
+    /// (`height == 0`) ahead of confirmed entries. The previous
+    /// `createdAt` sort meant rows were ordered by when they happened
+    /// to flush into SwiftData rather than chain order, which fights
+    /// the mental model when scanning for a specific block range.
+    @Query(sort: [SortDescriptor(\PersistentTxo.height, order: .reverse)])
     private var records: [PersistentTxo]
 
+    /// Spent / unspent filter. `.all` shows the full set (matches the
+    /// previous behavior); `.unspent` and `.spent` narrow to the
+    /// matching `isSpent` value. Toggled via a segmented Picker
+    /// pinned to the top of the list so the choice survives scroll
+    /// position.
+    @State private var filter: SpentFilter = .all
+
+    private var filteredRecords: [PersistentTxo] {
+        switch filter {
+        case .all: return records
+        case .unspent: return records.filter { !$0.isSpent }
+        case .spent: return records.filter { $0.isSpent }
+        }
+    }
+
     var body: some View {
-        List(records) { record in
-            NavigationLink(destination: TxoStorageDetailView(record: record)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.outpointHex)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1).truncationMode(.middle)
-                    HStack {
-                        Text(record.formattedAmount).font(.caption)
-                        Spacer()
-                        if record.isSpent {
-                            Text("Spent").font(.caption2).foregroundColor(.red)
-                        } else {
-                            Text("Unspent").font(.caption2).foregroundColor(.green)
+        let visible = filteredRecords
+        List {
+            Section {
+                Picker("Filter", selection: $filter) {
+                    ForEach(SpentFilter.allCases, id: \.self) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            ForEach(visible) { record in
+                NavigationLink(destination: TxoStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(record.outpointHex)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1).truncationMode(.middle)
+                        HStack(spacing: 8) {
+                            Text(record.formattedAmount).font(.caption)
+                            // `height == 0` is the SPV convention for
+                            // "not yet in a block" (mempool /
+                            // unconfirmed). Render as a friendly
+                            // string instead of a literal "0" so the
+                            // distinction reads clearly.
+                            Text(record.height == 0 ? "mempool" : "h \(record.height)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if record.isSpent {
+                                Text("Spent").font(.caption2).foregroundColor(.red)
+                            } else {
+                                Text("Unspent").font(.caption2).foregroundColor(.green)
+                            }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("TXOs (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle") } }
+        .navigationTitle(filter == .all
+            ? "TXOs (\(records.count))"
+            : "TXOs (\(visible.count) / \(records.count))")
+        .overlay {
+            if records.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle")
+            } else if visible.isEmpty {
+                ContentUnavailableView(
+                    "No \(filter.title) TXOs",
+                    systemImage: "bitcoinsign.circle"
+                )
+            }
+        }
+    }
+
+    private enum SpentFilter: CaseIterable, Hashable {
+        case all
+        case unspent
+        case spent
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .unspent: return "Unspent"
+            case .spent: return "Spent"
+            }
+        }
     }
 }
 

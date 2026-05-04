@@ -35,7 +35,7 @@ struct CreateWalletView: View {
         case mnemonic
     }
 
-    var currentNetwork: AppNetwork {
+    var currentNetwork: Network {
         platformState.currentNetwork
     }
 
@@ -280,27 +280,18 @@ struct CreateWalletView: View {
                 print("Import option enabled: \(showImportOption)")
 
                 // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [AppNetwork] = [
-                    createForMainnet ? AppNetwork.mainnet : nil,
-                    createForTestnet ? AppNetwork.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
+                let selectedNetworks: [Network] = [
+                    createForMainnet ? Network.mainnet : nil,
+                    createForTestnet ? Network.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
                 ].compactMap { $0 }
 
-                guard let primaryNetwork = selectedNetworks.first else {
+                guard let platformNetwork = selectedNetworks.first else {
                     struct MissingNetwork: LocalizedError {
                         var errorDescription: String? { "No network selected" }
                     }
                     throw MissingNetwork()
                 }
-
-                let platformNetwork: PlatformNetwork = {
-                    switch primaryNetwork {
-                    case .mainnet: return .mainnet
-                    case .testnet: return .testnet
-                    case .devnet: return .devnet
-                    case .regtest: return .testnet
-                    }
-                }()
 
                 // Create exactly one wallet via PlatformWalletManager.
                 // The Rust-side wallet creation emits
@@ -322,8 +313,9 @@ struct CreateWalletView: View {
                     // recovery flow can enumerate all of them on
                     // launch. Best-effort — failure here doesn't
                     // block wallet creation.
+                    let storage = WalletStorage()
                     do {
-                        try WalletStorage().storeMnemonic(
+                        try storage.storeMnemonic(
                             mnemonicPhrase,
                             for: managed.walletId
                         )
@@ -347,14 +339,42 @@ struct CreateWalletView: View {
                     let descriptor = FetchDescriptor<PersistentWallet>(
                         predicate: #Predicate { $0.walletId == walletIdMatch }
                     )
-                    if let row = try? modelContext.fetch(descriptor).first {
+                    let row = try? modelContext.fetch(descriptor).first
+                    if let row = row {
                         row.isImported = showImportOption
                         try? modelContext.save()
+                    }
+                    // Mirror the user-typed name + the networks the
+                    // user explicitly ticked + the SPV-tip-derived
+                    // birth height into the keychain alongside the
+                    // mnemonic. Read back by the orphan-mnemonic
+                    // recovery flow so a wipe + reinstall restores
+                    // the original label / networks / birth height
+                    // instead of resurrecting the wallet on testnet
+                    // with a synthetic genesis.
+                    //
+                    // `selectedNetworks` carries every network the
+                    // user ticked even though `walletManager` only
+                    // currently consumes the first; persisting the
+                    // full list now means the multi-network TODO on
+                    // the Rust side won't need a metadata migration.
+                    do {
+                        let metadata = WalletKeychainMetadata(
+                            name: walletLabel,
+                            walletDescription: nil,
+                            networks: selectedNetworks.map { $0.networkName },
+                            birthHeight: row?.birthHeight
+                        )
+                        try storage.setMetadata(metadata, for: managed.walletId)
+                    } catch {
+                        SDKLogger.error(
+                            "Failed to persist wallet metadata to keychain: \(error.localizedDescription)"
+                        )
                     }
                     dismiss()
                 }
 
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
+                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(platformNetwork.displayName) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")

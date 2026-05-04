@@ -7,6 +7,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     ToSerdeJSONExt, try_from_options, try_from_options_optional, try_from_options_with,
+    try_vec_to_fixed_bytes,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -355,15 +356,7 @@ impl DocumentWasm {
                 self.entropy = None;
             }
             Some(bytes) => {
-                if bytes.len() != 32 {
-                    return Err(WasmDppError::invalid_argument(format!(
-                        "Entropy must be exactly 32 bytes, got {}",
-                        bytes.len()
-                    )));
-                }
-                let mut entropy_bytes = [0u8; 32];
-                entropy_bytes.copy_from_slice(&bytes);
-                self.entropy = Some(entropy_bytes);
+                self.entropy = Some(try_vec_to_fixed_bytes(bytes, "entropy")?);
             }
         }
         Ok(())
@@ -708,17 +701,7 @@ impl DocumentWasm {
         let data_contract_id: Identifier = data_contract_id.try_into()?;
 
         let entropy_bytes: [u8; 32] = match entropy {
-            Some(entropy_vec) => {
-                if entropy_vec.len() != 32 {
-                    return Err(WasmDppError::invalid_argument(format!(
-                        "Entropy must be exactly 32 bytes, got {}",
-                        entropy_vec.len()
-                    )));
-                }
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&entropy_vec);
-                arr
-            }
+            Some(entropy_vec) => try_vec_to_fixed_bytes(entropy_vec, "entropy")?,
             None => entropy_generator::DefaultEntropyGenerator
                 .generate()
                 .map_err(|err| WasmDppError::serialization(err.to_string()))?,

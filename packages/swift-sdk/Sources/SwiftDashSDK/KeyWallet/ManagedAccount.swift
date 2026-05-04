@@ -18,9 +18,9 @@ public class ManagedAccount {
     // MARK: - Properties
 
     /// Get the network this account is on
-    public var network: KeyWalletNetwork {
+    public var network: Network {
         let ffiNetwork = managed_core_account_get_network(handle)
-        return KeyWalletNetwork(ffiNetwork: ffiNetwork)
+        return Network(ffiNetwork: ffiNetwork)
     }
 
     /// Get the account type
@@ -30,10 +30,11 @@ public class ManagedAccount {
         return AccountType(ffiType: ffiType)
     }
 
-    /// Check if this is a watch-only account
-    public var isWatchOnly: Bool {
-        return managed_core_account_get_is_watch_only(handle)
-    }
+    // `isWatchOnly` was removed in lockstep with upstream dropping the
+    // per-core-account flag (it's now a wallet-level property on
+    // `WalletType::WatchOnly`). The corresponding C getter
+    // `managed_core_account_get_is_watch_only` is gone too. Query
+    // watch-only from the parent wallet handle if needed.
 
     /// Get the account index
     public var index: UInt32 {

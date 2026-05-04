@@ -1,35 +1,6 @@
 import Foundation
 import DashSDKFFI
 
-// MARK: - Network Types
-
-/// Network type for Dash networks
-public enum KeyWalletNetwork: UInt32 {
-    case mainnet = 0  // DASH
-    case testnet = 1  // TESTNET
-    case regtest = 2  // REGTEST
-    case devnet = 3   // DEVNET
-
-    var ffiValue: FFINetwork {
-        switch self {
-        case .mainnet: return FFINetwork(rawValue: 0)  // Dash = 0
-        case .testnet: return FFINetwork(rawValue: 1)  // Testnet = 1
-        case .regtest: return FFINetwork(rawValue: 2)  // Regtest = 2
-        case .devnet: return FFINetwork(rawValue: 3)   // Devnet = 3
-        }
-    }
-
-    init(ffiNetwork: FFINetwork) {
-        switch ffiNetwork.rawValue {
-        case 0: self = .mainnet  // Dash = 0
-        case 1: self = .testnet  // Testnet = 1
-        case 2: self = .regtest  // Regtest = 2
-        case 3: self = .devnet   // Devnet = 3
-        default: self = .mainnet
-        }
-    }
-}
-
 // MARK: - Account Types
 
 /// Account type for wallet accounts

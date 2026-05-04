@@ -49,13 +49,15 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "ea33cbc84179666c25515dfc817ce32210953037" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e2e8fcf852130383b5922d3c2d907dda334296ee" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.

@@ -21,14 +21,14 @@ public final class PersistentTokenBalance {
     public var tokenDecimals: Int32?
 
     // MARK: - Network
-    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
     /// `#Predicate` expressions can evaluate it directly. See
     /// `PersistentIdentity.networkRaw` for the full rationale.
-    public var networkRaw: Int
+    public var networkRaw: UInt32
 
     /// Type-safe accessor over `networkRaw`. Setter writes through.
-    public var network: AppNetwork {
-        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
         set { networkRaw = newValue.rawValue }
     }
 
@@ -45,7 +45,7 @@ public final class PersistentTokenBalance {
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
         tokenDecimals: Int32? = nil,
-        network: AppNetwork
+        network: Network
     ) {
         self.tokenId = tokenId
         self.identityId = identityId

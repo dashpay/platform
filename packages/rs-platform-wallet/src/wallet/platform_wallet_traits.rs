@@ -28,31 +28,27 @@ use super::platform_wallet::PlatformWalletInfo;
 // ---------------------------------------------------------------------------
 
 impl WalletInfoInterface for PlatformWalletInfo {
-    fn from_wallet(wallet: &Wallet) -> Self {
+    fn from_wallet(wallet: &Wallet, birth_height: CoreBlockHeight) -> Self {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletInfo::from_wallet(wallet);
+        let inner = ManagedWalletInfo::from_wallet(wallet, birth_height);
         Self {
             core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            token_watched: std::collections::BTreeMap::new(),
-            token_balances: std::collections::BTreeMap::new(),
         }
     }
 
-    fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
+    fn from_wallet_with_name(wallet: &Wallet, name: String, birth_height: CoreBlockHeight) -> Self {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
-        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name);
+        let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name, birth_height);
         Self {
             core_wallet: inner,
             balance: std::sync::Arc::new(super::core::WalletBalance::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
-            token_watched: std::collections::BTreeMap::new(),
-            token_balances: std::collections::BTreeMap::new(),
         }
     }
 
@@ -84,17 +80,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: CoreBlockHeight) {
-        self.core_wallet.set_birth_height(height);
-    }
-
-    fn first_loaded_at(&self) -> u64 {
-        self.core_wallet.first_loaded_at()
-    }
-
-    fn set_first_loaded_at(&mut self, timestamp: u64) {
-        self.core_wallet.set_first_loaded_at(timestamp);
-    }
+    // `first_loaded_at` / `set_first_loaded_at` were dropped from
+    // `WalletInfoInterface` upstream and have no backing methods on
+    // `ManagedWalletInfo` anymore. The field still exists on
+    // `WalletMetadata` but is read/written directly there; the trait
+    // surface no longer requires delegating accessors here.
 
     fn update_last_synced(&mut self, timestamp: u64) {
         self.core_wallet.update_last_synced(timestamp);

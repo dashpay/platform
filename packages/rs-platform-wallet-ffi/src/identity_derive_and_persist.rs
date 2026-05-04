@@ -76,10 +76,10 @@ use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
+use crate::types::{FFINetwork, Network};
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use rs_sdk_ffi::DashSDKNetwork;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::derive_and_persist_callbacks::{
@@ -89,9 +89,10 @@ use crate::derive_and_persist_callbacks::{
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::{
-    identity_auth_derivation_path, map_network, parse_mnemonic_any_language,
+    identity_auth_derivation_path, parse_mnemonic_any_language,
 };
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
+use crate::{check_ptr, unwrap_result_or_return};
 
 /// DPP `KeyType::ECDSA_SECP256K1` discriminant byte.
 const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
@@ -136,8 +137,6 @@ const SECURITY_LEVEL_HIGH: u8 = 2;
 ///   [`crate::dash_sdk_derive_identity_keys_from_mnemonic_free`]
 ///   — same memory layout as the lower-level FFI's output, so the
 ///   existing free path handles it correctly.
-/// - `out_error`: populated on failure with the usual
-///   [`PlatformWalletFFIError`] detail.
 ///
 /// On error `*out_pubkeys` is left at the empty zero state. Any
 /// keys persisted by partial success before the failing iteration
@@ -154,27 +153,18 @@ const SECURITY_LEVEL_HIGH: u8 = 2;
 ///   functions and remain valid for the duration of the call.
 /// - `out_pubkeys` must be a valid, writable
 ///   [`IdentityRegistrationKeyDerivationsFFI`] pointer.
-/// - `out_error` may be null.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
-    network: DashSDKNetwork,
+    network: FFINetwork,
     wallet_id_bytes: *const u8,
     identity_index: u32,
     key_count: u32,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     persister_handle: *mut IdentityKeyPersisterHandle,
     out_pubkeys: *mut IdentityRegistrationKeyDerivationsFFI,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_pubkeys.is_null() {
-        write_err(
-            out_error,
-            PlatformWalletFFIResult::ErrorNullPointer,
-            "out_pubkeys is null",
-        );
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_pubkeys);
     // Pre-zero so a failed call leaves the caller staring at a known
     // empty struct, never uninitialized memory.
     *out_pubkeys = IdentityRegistrationKeyDerivationsFFI {
@@ -182,18 +172,12 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
         count: 0,
     };
 
-    if wallet_id_bytes.is_null() || mnemonic_resolver_handle.is_null() || persister_handle.is_null()
-    {
-        write_err(
-            out_error,
-            PlatformWalletFFIResult::ErrorNullPointer,
-            "wallet_id_bytes, mnemonic_resolver_handle and persister_handle are required",
-        );
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(persister_handle);
 
     if key_count == 0 {
-        return PlatformWalletFFIResult::Success;
+        return PlatformWalletFFIResult::ok();
     }
 
     // ---- Resolve mnemonic ----------------------------------------------------
@@ -214,64 +198,36 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     match rc {
         x if x == mnemonic_resolver_result::SUCCESS => {}
         x if x == mnemonic_resolver_result::NOT_FOUND => {
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
             );
-            return PlatformWalletFFIResult::ErrorWalletOperation;
         }
         x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
             );
-            return PlatformWalletFFIResult::ErrorWalletOperation;
         }
         _ => {
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: failed (other / Keychain access error)",
             );
-            return PlatformWalletFFIResult::ErrorWalletOperation;
         }
     }
     if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        write_err(
-            out_error,
-            PlatformWalletFFIResult::ErrorWalletOperation,
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
             "mnemonic resolver: returned invalid length",
         );
-        return PlatformWalletFFIResult::ErrorWalletOperation;
     }
 
     // Validate UTF-8 once over the prefix the resolver claimed to
     // write. Done in-place so we never construct a `String`
     // (Swift's String can't be zeroized; ours can).
-    let mnemonic_str = match std::str::from_utf8(&mnemonic_buf[..mnemonic_len]) {
-        Ok(s) => s,
-        Err(e) => {
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorUtf8Conversion,
-                format!("mnemonic resolver returned non-UTF-8 bytes: {e}"),
-            );
-            return PlatformWalletFFIResult::ErrorUtf8Conversion;
-        }
-    };
-    let mnemonic = match parse_mnemonic_any_language(mnemonic_str) {
-        Ok(m) => m,
-        Err(e) => {
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorInvalidParameter,
-                format!("mnemonic resolver returned an invalid BIP-39 phrase: {e}"),
-            );
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let mnemonic_str = unwrap_result_or_return!(std::str::from_utf8(&mnemonic_buf[..mnemonic_len]));
+    let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
 
     // ---- Derive seed + master xpriv ------------------------------------------
     // Empty passphrase to mirror the rest of the SDK (no caller
@@ -281,18 +237,8 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     // (non-zeroized) `String` storage early.
     drop(mnemonic);
 
-    let kw_network = map_network(network);
-    let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
-        Ok(m) => m,
-        Err(e) => {
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorWalletOperation,
-                format!("ExtendedPrivKey::new_master failed: {e}"),
-            );
-            return PlatformWalletFFIResult::ErrorWalletOperation;
-        }
-    };
+    let kw_network: Network = network.into();
+    let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
     let secp = Secp256k1::new();
 
     // ---- Walk derivation paths, persist, build pubkey-only rows --------------
@@ -321,15 +267,13 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             Ok(p) => p,
             Err(detail) => {
                 cleanup(rows);
-                write_err(
-                    out_error,
-                    PlatformWalletFFIResult::ErrorWalletOperation,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!(
                         "derive_and_persist: path build failed at \
                          (identity={identity_index}, key={key_index}): {detail}"
                     ),
                 );
-                return PlatformWalletFFIResult::ErrorWalletOperation;
             }
         };
 
@@ -337,15 +281,13 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
-                write_err(
-                    out_error,
-                    PlatformWalletFFIResult::ErrorWalletOperation,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!(
                         "derive_and_persist: derive_priv failed at \
                          (identity={identity_index}, key={key_index}): {e}"
                     ),
                 );
-                return PlatformWalletFFIResult::ErrorWalletOperation;
             }
         };
 
@@ -363,12 +305,10 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             Err(e) => {
                 priv_scalar.zeroize();
                 cleanup(rows);
-                write_err(
-                    out_error,
-                    PlatformWalletFFIResult::ErrorUtf8Conversion,
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                     format!("derivation path contained NUL byte: {e}"),
                 );
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
             }
         };
 
@@ -414,15 +354,13 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             // it falls out of scope here.
             drop(path_cstring);
             cleanup(rows);
-            write_err(
-                out_error,
-                PlatformWalletFFIResult::ErrorWalletOperation,
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
                 format!(
                     "persister callback returned false at \
                      (identity={identity_index}, key={key_index})"
                 ),
             );
-            return PlatformWalletFFIResult::ErrorWalletOperation;
         }
 
         // Detach the pubkey buffer for the FFI return.
@@ -457,21 +395,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
         count: items_count,
     };
 
-    PlatformWalletFFIResult::Success
-}
-
-/// Convenience for stamping an error into `out_error` if it's
-/// non-null. Mirrors the inline pattern the rest of the FFI
-/// surface uses; kept local since the rest of the file is full of
-/// repetitive `if !out_error.is_null()` blocks otherwise.
-unsafe fn write_err(
-    out_error: *mut PlatformWalletFFIError,
-    code: PlatformWalletFFIResult,
-    detail: impl Into<String>,
-) {
-    if !out_error.is_null() {
-        *out_error = PlatformWalletFFIError::new(code, detail.into());
-    }
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]
@@ -626,20 +550,18 @@ mod tests {
             items: std::ptr::null_mut(),
             count: 0,
         };
-        let mut err = PlatformWalletFFIError::success();
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 7, // identity_index
                 3, // key_count
                 resolver,
                 persister,
                 &mut out,
-                &mut err,
             )
         };
-        assert_eq!(rc, PlatformWalletFFIResult::Success);
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.count, 3);
 
         // SAFETY: `capture` is alive (we're about to free it
@@ -692,20 +614,18 @@ mod tests {
             items: std::ptr::null_mut(),
             count: 0,
         };
-        let mut err = PlatformWalletFFIError::success();
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
                 2,
                 resolver,
                 persister,
                 &mut out,
-                &mut err,
             )
         };
-        assert_eq!(rc, PlatformWalletFFIResult::ErrorWalletOperation);
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorWalletOperation);
         assert_eq!(out.count, 0);
         assert!(out.items.is_null());
         unsafe {
@@ -718,21 +638,19 @@ mod tests {
     fn rejects_null_inputs() {
         let (resolver, persister, capture) = make_capturing_handles();
         let wallet_id = [0u8; 32];
-        let mut err = PlatformWalletFFIError::success();
         // Null out_pubkeys.
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
                 1,
                 resolver,
                 persister,
                 std::ptr::null_mut(),
-                &mut err,
             )
         };
-        assert_eq!(rc, PlatformWalletFFIResult::ErrorNullPointer);
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorNullPointer);
 
         // Null wallet id.
         let mut out = IdentityRegistrationKeyDerivationsFFI {
@@ -741,17 +659,16 @@ mod tests {
         };
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 std::ptr::null(),
                 0,
                 1,
                 resolver,
                 persister,
                 &mut out,
-                &mut err,
             )
         };
-        assert_eq!(rc, PlatformWalletFFIResult::ErrorNullPointer);
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         unsafe {
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);
@@ -767,20 +684,18 @@ mod tests {
             items: std::ptr::null_mut(),
             count: 0,
         };
-        let mut err = PlatformWalletFFIError::success();
         let rc = unsafe {
             dash_sdk_derive_and_persist_identity_keys(
-                DashSDKNetwork::SDKTestnet,
+                FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
                 0,
                 resolver,
                 persister,
                 &mut out,
-                &mut err,
             )
         };
-        assert_eq!(rc, PlatformWalletFFIResult::Success);
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(out.count, 0);
         assert_eq!(unsafe { (*capture).rows.lock().unwrap().len() }, 0);
         unsafe {
