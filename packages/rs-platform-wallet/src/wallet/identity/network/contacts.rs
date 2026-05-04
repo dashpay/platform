@@ -225,7 +225,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 user_identity_id,
                 friend_identity_id,
                 ..
-            } = &account.account_type
+            } = &account.managed_account_type
             else {
                 // Routing invariant: dashpay_receival_accounts must
                 // only contain DashpayReceivingFunds. If this ever

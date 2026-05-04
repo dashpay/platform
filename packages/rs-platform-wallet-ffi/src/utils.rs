@@ -1,4 +1,5 @@
 use crate::error::*;
+use crate::{check_ptr, unwrap_result_or_return};
 use std::os::raw::{c_char, c_uchar};
 
 /// Serialize any object to JSON bytes
@@ -7,34 +8,13 @@ pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
     json_string: *const c_char,
     out_bytes: *mut *mut c_uchar,
     out_len: *mut usize,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if json_string.is_null() || out_bytes.is_null() || out_len.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(json_string);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
 
-    let json_str = unsafe {
-        match std::ffi::CStr::from_ptr(json_string).to_str() {
-            Ok(s) => s,
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        "Invalid UTF-8 in JSON string",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
-            }
-        }
-    };
+    let json_str =
+        unwrap_result_or_return!(unsafe { std::ffi::CStr::from_ptr(json_string).to_str() });
 
     let bytes = json_str.as_bytes().to_vec();
     let len = bytes.len();
@@ -46,7 +26,7 @@ pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
         *out_len = len;
     }
 
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
 /// Deserialize JSON bytes to string
@@ -55,52 +35,15 @@ pub unsafe extern "C" fn platform_wallet_deserialize_from_json_bytes(
     bytes: *const c_uchar,
     len: usize,
     out_json_string: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if bytes.is_null() || out_json_string.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(bytes);
+    check_ptr!(out_json_string);
 
     let data = unsafe { std::slice::from_raw_parts(bytes, len) };
-
-    match std::str::from_utf8(data) {
-        Ok(s) => match std::ffi::CString::new(s) {
-            Ok(c_str) => {
-                unsafe { *out_json_string = c_str.into_raw() };
-                PlatformWalletFFIResult::Success
-            }
-            Err(_) => {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorDeserialization,
-                            "Failed to convert to C string",
-                        );
-                    }
-                }
-                PlatformWalletFFIResult::ErrorDeserialization
-            }
-        },
-        Err(_) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        "Invalid UTF-8 in bytes",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorUtf8Conversion
-        }
-    }
+    let s = unwrap_result_or_return!(std::str::from_utf8(data));
+    let c_str = unwrap_result_or_return!(std::ffi::CString::new(s));
+    unsafe { *out_json_string = c_str.into_raw() };
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free bytes allocated by FFI functions
@@ -117,24 +60,11 @@ pub unsafe extern "C" fn platform_wallet_bytes_free(bytes: *mut c_uchar, len: us
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_generate_random_identifier(
     out_id: *mut u8,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_id.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-
+    check_ptr!(out_id);
     let id = dpp::prelude::Identifier::random();
     unsafe { crate::types::write_identifier(out_id, &id) };
-
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
 /// Convert identifier (32 bytes pointed to by `id`) to base58 hex
@@ -143,53 +73,16 @@ pub unsafe extern "C" fn platform_wallet_generate_random_identifier(
 pub unsafe extern "C" fn platform_wallet_identifier_to_hex(
     id: *const u8,
     out_hex: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_hex.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(id);
+    check_ptr!(out_hex);
 
-    let identifier = match unsafe { crate::types::read_identifier(id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identifier: {}", e),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let identifier = unwrap_result_or_return!(unsafe { crate::types::read_identifier(id) });
 
     let hex = identifier.to_string(dpp::platform_value::string_encoding::Encoding::Base58);
-    match std::ffi::CString::new(hex) {
-        Ok(c_str) => {
-            unsafe { *out_hex = c_str.into_raw() };
-            PlatformWalletFFIResult::Success
-        }
-        Err(_) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorSerialization,
-                        "Failed to convert hex to C string",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorSerialization
-        }
-    }
+    let c_str = unwrap_result_or_return!(std::ffi::CString::new(hex));
+    unsafe { *out_hex = c_str.into_raw() };
+    PlatformWalletFFIResult::ok()
 }
 
 /// Convert base58 hex string to identifier (writes 32 bytes into
@@ -198,55 +91,18 @@ pub unsafe extern "C" fn platform_wallet_identifier_to_hex(
 pub unsafe extern "C" fn platform_wallet_identifier_from_hex(
     hex: *const c_char,
     out_id: *mut u8,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if hex.is_null() || out_id.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "Null pointer provided",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(hex);
+    check_ptr!(out_id);
 
-    let hex_str = unsafe {
-        match std::ffi::CStr::from_ptr(hex).to_str() {
-            Ok(s) => s,
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        "Invalid UTF-8 in hex string",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
-            }
-        }
-    };
+    let hex_str = unwrap_result_or_return!(unsafe { std::ffi::CStr::from_ptr(hex).to_str() });
 
-    match dpp::prelude::Identifier::from_string(
+    let identifier = unwrap_result_or_return!(dpp::prelude::Identifier::from_string(
         hex_str,
         dpp::platform_value::string_encoding::Encoding::Base58,
-    ) {
-        Ok(identifier) => {
-            unsafe { crate::types::write_identifier(out_id, &identifier) };
-            PlatformWalletFFIResult::Success
-        }
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Failed to parse identifier: {}", e),
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidIdentifier
-        }
-    }
+    ));
+    unsafe { crate::types::write_identifier(out_id, &identifier) };
+    PlatformWalletFFIResult::ok()
 }
 
 /// Compute hash160 (RIPEMD160(SHA256(data))) of the input bytes.
@@ -295,11 +151,6 @@ mod tests {
 
     #[test]
     fn test_hash160_matches_known_vector() {
-        // Test vector: hash160 of the all-zero 33-byte compressed
-        // pubkey. RIPEMD160(SHA256(0x00 * 33)) = known constant. The
-        // exact value is captured by re-deriving via dashcore — this
-        // guards against accidental changes to either the FFI shape
-        // or the underlying hasher.
         use dashcore::hashes::Hash;
         let input = [0u8; 33];
         let mut out = [0u8; 20];
@@ -339,30 +190,21 @@ mod tests {
             let json = std::ffi::CString::new(r#"{"test":"value"}"#).unwrap();
             let mut bytes: *mut c_uchar = std::ptr::null_mut();
             let mut len: usize = 0;
-            let mut error = PlatformWalletFFIError::success();
 
-            // Serialize
-            let result = platform_wallet_serialize_to_json_bytes(
-                json.as_ptr(),
-                &mut bytes,
-                &mut len,
-                &mut error,
-            );
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result =
+                platform_wallet_serialize_to_json_bytes(json.as_ptr(), &mut bytes, &mut len);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!bytes.is_null());
             assert!(len > 0);
 
-            // Deserialize
             let mut json_out: *mut c_char = std::ptr::null_mut();
-            let result =
-                platform_wallet_deserialize_from_json_bytes(bytes, len, &mut json_out, &mut error);
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result = platform_wallet_deserialize_from_json_bytes(bytes, len, &mut json_out);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!json_out.is_null());
 
             let json_str = std::ffi::CStr::from_ptr(json_out).to_str().unwrap();
             assert_eq!(json_str, r#"{"test":"value"}"#);
 
-            // Cleanup
             platform_wallet_bytes_free(bytes, len);
             crate::platform_wallet_string_free(json_out);
         }
@@ -372,12 +214,8 @@ mod tests {
     fn test_generate_random_identifier() {
         unsafe {
             let mut id = [0u8; 32];
-            let mut error = PlatformWalletFFIError::success();
-
-            let result = platform_wallet_generate_random_identifier(id.as_mut_ptr(), &mut error);
-            assert_eq!(result, PlatformWalletFFIResult::Success);
-
-            // Check that it's not all zeros
+            let result = platform_wallet_generate_random_identifier(id.as_mut_ptr());
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert_ne!(id, [0u8; 32]);
         }
     }
@@ -386,26 +224,19 @@ mod tests {
     fn test_identifier_to_from_hex() {
         unsafe {
             let mut id = [0u8; 32];
-            let mut error = PlatformWalletFFIError::success();
+            platform_wallet_generate_random_identifier(id.as_mut_ptr());
 
-            // Generate random ID
-            platform_wallet_generate_random_identifier(id.as_mut_ptr(), &mut error);
-
-            // Convert to hex
             let mut hex: *mut c_char = std::ptr::null_mut();
-            let result = platform_wallet_identifier_to_hex(id.as_ptr(), &mut hex, &mut error);
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result = platform_wallet_identifier_to_hex(id.as_ptr(), &mut hex);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(!hex.is_null());
 
-            // Convert back from hex
             let mut id2 = [0u8; 32];
-            let result = platform_wallet_identifier_from_hex(hex, id2.as_mut_ptr(), &mut error);
-            assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result = platform_wallet_identifier_from_hex(hex, id2.as_mut_ptr());
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
 
-            // Should match
             assert_eq!(id, id2);
 
-            // Cleanup
             crate::platform_wallet_string_free(hex);
         }
     }

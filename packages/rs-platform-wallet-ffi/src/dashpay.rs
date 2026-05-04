@@ -43,6 +43,7 @@ use crate::established_contact::ESTABLISHED_CONTACT_STORAGE;
 use crate::handle::*;
 use crate::runtime::block_on_worker;
 use crate::types::*;
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 // ---------------------------------------------------------------------------
 // Managed identity lookup
@@ -68,84 +69,19 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
     wallet_handle: Handle,
     identity_id: *const u8,
     out_managed_identity_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_managed_identity_handle.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_managed_identity_handle is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-    let id = match unsafe { read_identifier(identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    check_ptr!(out_managed_identity_handle);
+    let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            // `blocking_read` is safe here — the caller is a non-
-            // tokio FFI thread. Matches the pattern used by
-            // `platform_wallet_get_dashpay_profile`.
-            let wm = wallet.wallet_manager().blocking_read();
-            let info = match wm.get_wallet_info(&wallet.wallet_id()) {
-                Some(i) => i,
-                None => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorInvalidHandle,
-                                "Wallet info not found for wallet handle",
-                            );
-                        }
-                    }
-                    return PlatformWalletFFIResult::ErrorInvalidHandle;
-                }
-            };
-            match info.identity_manager.managed_identity(&id).cloned() {
-                Some(managed) => {
-                    let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
-                    unsafe { *out_managed_identity_handle = handle };
-                    PlatformWalletFFIResult::Success
-                }
-                None => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorIdentityNotFound,
-                                format!("Identity {id} not found in wallet"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorIdentityNotFound
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let wm = wallet.wallet_manager().blocking_read();
+        let info = wm.get_wallet_info(&wallet.wallet_id())?;
+        info.identity_manager.managed_identity(&id).cloned()
+    });
+    let inner = unwrap_option_or_return!(option);
+    let managed = unwrap_option_or_return!(inner);
+    unsafe { *out_managed_identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed) };
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -163,8 +99,7 @@ pub struct ContactRequestHandleArray {
 }
 
 impl ContactRequestHandleArray {
-    /// Construct an empty array (null pointer, zero count). Used as
-    /// the default / failure return.
+    /// Construct an empty array (null pointer, zero count).
     pub fn empty() -> Self {
         Self {
             handles: std::ptr::null_mut(),
@@ -172,8 +107,7 @@ impl ContactRequestHandleArray {
         }
     }
 
-    /// Copy a slice of contact requests into the global handle
-    /// storage and return a fresh array of handles.
+    /// Copy a slice of contact requests into the global handle storage.
     fn from_requests(requests: Vec<ContactRequest>) -> Self {
         if requests.is_empty() {
             return Self::empty();
@@ -236,55 +170,17 @@ pub unsafe extern "C" fn platform_wallet_contact_request_handle_array_free(
 pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
     wallet_handle: Handle,
     out_array: *mut ContactRequestHandleArray,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_array.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_array is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_array);
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move { identity.sync_contact_requests().await });
-            match result {
-                Ok(list) => {
-                    let array = ContactRequestHandleArray::from_requests(list);
-                    unsafe { *out_array = array };
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    unsafe { *out_array = ContactRequestHandleArray::empty() };
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("sync_contact_requests failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.sync_contact_requests().await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let list = unwrap_result_or_return!(result);
+    unsafe { *out_array = ContactRequestHandleArray::from_requests(list) };
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +200,9 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
 ///
 /// Returns a handle into `CONTACT_REQUEST_STORAGE` via
 /// `out_request_handle`. Release via
-/// [`crate::contact_request_destroy`].
+/// [`crate::contact_request_destroy`]. `signer_handle` must be a
+/// valid, non-destroyed handle produced by
+/// `dash_sdk_signer_create_with_ctx`; caller retains ownership.
 ///
 /// CAVEAT — ECDH derivation: the Rust side still derives the
 /// sender's ECDH private key from the wallet seed for the contact
@@ -312,10 +210,6 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
 /// will fail at that step. See the docstring on
 /// [`IdentityWallet::send_contact_request_with_external_signer`](platform_wallet::IdentityWallet::send_contact_request_with_external_signer)
 /// for the planned follow-up to push ECDH across the FFI as well.
-///
-/// # Safety
-/// `signer_handle` must be a valid, non-destroyed handle produced by
-/// `dash_sdk_signer_create_with_ctx`. Caller retains ownership.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
@@ -327,57 +221,16 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     auto_accept_proof_len: usize,
     signer_handle: *mut SignerHandle,
     out_request_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_request_handle.is_null() || signer_handle.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "out_request_handle or signer_handle is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_request_handle);
+    check_ptr!(signer_handle);
 
-    let sender = match read_identifier(sender_identity_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid sender identifier: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let recipient = match read_identifier(recipient_identity_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid recipient identifier: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let sender = unwrap_result_or_return!(read_identifier(sender_identity_id));
+    let recipient = unwrap_result_or_return!(read_identifier(recipient_identity_id));
     let label = if account_label.is_null() {
         None
     } else {
-        match CStr::from_ptr(account_label).to_str() {
-            Ok(s) => Some(s.to_string()),
-            Err(_) => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorUtf8Conversion,
-                        "account_label is not valid UTF-8",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
-            }
-        }
+        Some(unwrap_result_or_return!(CStr::from_ptr(account_label).to_str()).to_string())
     };
     let proof: Option<Vec<u8>> = if auto_accept_proof.is_null() || auto_accept_proof_len == 0 {
         None
@@ -387,43 +240,21 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
 
     let signer_addr = signer_handle as usize;
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity
-                    .send_contact_request_with_external_signer(
-                        &sender, &recipient, label, proof, signer,
-                    )
-                    .await
-            });
-            match result {
-                Ok(request) => {
-                    let handle = CONTACT_REQUEST_STORAGE.insert(request);
-                    *out_request_handle = handle;
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("send_contact_request_with_signer failed: {e}"),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            identity
+                .send_contact_request_with_external_signer(
+                    &sender, &recipient, label, proof, signer,
+                )
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let request = unwrap_result_or_return!(result);
+    *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Accept an incoming contact request using an externally-supplied
@@ -437,78 +268,36 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
 /// `request_handle` must be a live handle from
 /// `CONTACT_REQUEST_STORAGE` (typically obtained via
 /// `managed_identity_get_incoming_contact_request` or
-/// [`platform_wallet_sync_contact_requests`]).
-///
-/// Same ECDH caveat applies as for
-/// [`platform_wallet_send_contact_request_with_signer`].
+/// [`platform_wallet_sync_contact_requests`]). Same ECDH caveat
+/// applies as for [`platform_wallet_send_contact_request_with_signer`].
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
     wallet_handle: Handle,
     request_handle: Handle,
     signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_established_handle.is_null() || signer_handle.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "out_established_handle or signer_handle is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_established_handle);
+    check_ptr!(signer_handle);
 
-    let request = match CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone()) {
-        Some(r) => r,
-        None => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid contact request handle",
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidHandle;
-        }
-    };
+    let request_option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
+    let request = unwrap_option_or_return!(request_option);
 
     let signer_addr = signer_handle as usize;
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity
-                    .accept_contact_request_with_external_signer(&request, signer)
-                    .await
-            });
-            match result {
-                Ok(contact) => {
-                    let handle = ESTABLISHED_CONTACT_STORAGE.insert(contact);
-                    *out_established_handle = handle;
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("accept_contact_request_with_signer failed: {e}"),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            identity
+                .accept_contact_request_with_external_signer(&request, signer)
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let contact = unwrap_result_or_return!(result);
+    *out_established_handle = ESTABLISHED_CONTACT_STORAGE.insert(contact);
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -526,69 +315,17 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
     wallet_handle: Handle,
     our_identity_id: *const u8,
     contact_identity_id: *const u8,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    let our_id = match unsafe { read_identifier(our_identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let contact_id = match unsafe { read_identifier(contact_identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid contact identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let our_id = unwrap_result_or_return!(unsafe { read_identifier(our_identity_id) });
+    let contact_id = unwrap_result_or_return!(unsafe { read_identifier(contact_identity_id) });
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                identity.reject_contact_request(&our_id, &contact_id).await
-            });
-            match result {
-                Ok(()) => PlatformWalletFFIResult::Success,
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("reject_contact_request failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.reject_contact_request(&our_id, &contact_id).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -596,96 +333,30 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
 // ---------------------------------------------------------------------------
 
 /// Query Platform for contact requests sent by `identity_id`.
-/// Returns handles into `CONTACT_REQUEST_STORAGE`. Release the
-/// array via [`platform_wallet_contact_request_handle_array_free`]
-/// and each handle via [`crate::contact_request_destroy`].
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
     wallet_handle: Handle,
     identity_id: *const u8,
     out_array: *mut ContactRequestHandleArray,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_array.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_array is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-    let id = match unsafe { read_identifier(identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    check_ptr!(out_array);
+    let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move { identity.sent_contact_requests(&id).await });
-            match result {
-                Ok(list) => {
-                    let array = ContactRequestHandleArray::from_requests(list);
-                    unsafe { *out_array = array };
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    unsafe { *out_array = ContactRequestHandleArray::empty() };
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("fetch_sent_contact_requests failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.sent_contact_requests(&id).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let list = unwrap_result_or_return!(result);
+    unsafe { *out_array = ContactRequestHandleArray::from_requests(list) };
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
 // Send payment
 // ---------------------------------------------------------------------------
 
-/// Send a Dash payment from `from_identity_id` to
-/// `to_contact_identity_id` (must be an established DashPay
-/// contact). `amount_duffs` is the payment amount in duffs
-/// (1 DASH = 100,000,000 duffs).
-///
-/// On success, `out_txid` is populated with the 32-byte
-/// transaction id of the broadcast Core transaction. The Rust
-/// side also records a [`PaymentEntry`] on
-/// [`ManagedIdentity`](platform_wallet::ManagedIdentity)
-/// via the persister, so the Swift persister observes the
-/// update through the identity changeset callback.
-///
-/// Memo field is optional; pass `memo = null` to omit.
+/// Send a Dash payment from `from_identity_id` to `to_contact_identity_id`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     wallet_handle: Handle,
@@ -694,112 +365,30 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     amount_duffs: u64,
     memo: *const c_char,
     out_txid: *mut [u8; 32],
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_txid.is_null() {
-        if !out_error.is_null() {
-            unsafe {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorNullPointer,
-                    "out_txid is null",
-                );
-            }
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_txid);
 
-    let from_id = match unsafe { read_identifier(from_identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid from_identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let to_id = match unsafe { read_identifier(to_contact_identity_id) } {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                        format!("Invalid to_identity identifier: {e}"),
-                    );
-                }
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let from_id = unwrap_result_or_return!(unsafe { read_identifier(from_identity_id) });
+    let to_id = unwrap_result_or_return!(unsafe { read_identifier(to_contact_identity_id) });
     let memo_str: Option<String> = if memo.is_null() {
         None
     } else {
-        match unsafe { CStr::from_ptr(memo) }.to_str() {
-            Ok(s) => Some(s.to_string()),
-            Err(_) => {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorUtf8Conversion,
-                            "memo is not valid UTF-8",
-                        );
-                    }
-                }
-                return PlatformWalletFFIResult::ErrorUtf8Conversion;
-            }
-        }
+        Some(unwrap_result_or_return!(unsafe { CStr::from_ptr(memo) }.to_str()).to_string())
     };
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                identity
-                    .send_payment(&from_id, &to_id, amount_duffs, memo_str)
-                    .await
-            });
-            match result {
-                Ok((txid, _entry)) => {
-                    // `send_payment` returns `(Txid, PaymentEntry)`.
-                    // The `PaymentEntry` is already recorded on the
-                    // sender's `ManagedIdentity` via the persister, so
-                    // it'll flow to Swift through the identity
-                    // changeset callback. Here we just surface the
-                    // `Txid` — copy the 32-byte little-endian
-                    // representation into the out-param.
-                    use dashcore::hashes::Hash;
-                    let bytes = txid.to_raw_hash().to_byte_array();
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_txid.cast::<u8>(), 32);
-                    }
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        unsafe {
-                            *out_error = PlatformWalletFFIError::new(
-                                PlatformWalletFFIResult::ErrorWalletOperation,
-                                format!("send_dashpay_payment failed: {e}"),
-                            );
-                        }
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move {
+            identity
+                .send_payment(&from_id, &to_id, amount_duffs, memo_str)
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidHandle,
-                        "Invalid platform-wallet handle",
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let (txid, _entry) = unwrap_result_or_return!(result);
+    use dashcore::hashes::Hash;
+    let bytes = txid.to_raw_hash().to_byte_array();
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_txid.cast::<u8>(), 32);
+    }
+    PlatformWalletFFIResult::ok()
 }

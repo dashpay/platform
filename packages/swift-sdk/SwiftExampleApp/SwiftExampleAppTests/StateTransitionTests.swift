@@ -126,7 +126,7 @@ final class StateTransitionTests: XCTestCase {
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
           UInt(key3Private.count),
-          DashSDKNetwork(rawValue: 1)
+          Network.testnet.ffiValue
         )
       }
 
@@ -275,7 +275,7 @@ final class StateTransitionTests: XCTestCase {
           dash_sdk_signer_create_from_private_key(
             keyBytes.bindMemory(to: UInt8.self).baseAddress!,
             UInt(key3Private.count),
-            DashSDKNetwork(rawValue: 1)
+            Network.testnet.ffiValue
           )
         }
 
@@ -369,7 +369,7 @@ final class StateTransitionTests: XCTestCase {
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
         UInt(key3Private.count),
-        DashSDKNetwork(rawValue: 1)
+        Network.testnet.ffiValue
       )
     }
 
@@ -458,7 +458,7 @@ final class StateTransitionTests: XCTestCase {
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
         UInt(key3Private.count),
-        DashSDKNetwork(rawValue: 1)
+        Network.testnet.ffiValue
       )
     }
 
@@ -536,7 +536,7 @@ final class StateTransitionTests: XCTestCase {
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
         UInt(key3Private.count),
-        DashSDKNetwork(rawValue: 1)
+        Network.testnet.ffiValue
       )
     }
 
@@ -656,8 +656,7 @@ final class StateTransitionTests: XCTestCase {
     SDK.initialize()
 
     // Create SDK instance for testnet
-    let testnetNetwork = DashSDKNetwork(rawValue: 1)
-    return try SDK(network: testnetNetwork)
+    return try SDK(network: .testnet)
   }
 
   private func decodePrivateKey(from base58: String) throws -> Data {

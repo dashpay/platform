@@ -3,12 +3,10 @@ import SwiftData
 import SwiftDashSDK
 
 struct TransactionListView: View {
-    /// Per-wallet transaction list. Queries `PersistentTransaction`
-    /// directly with a relationship-traversal predicate — a tx
-    /// belongs to the wallet iff one of its `outputs` or `inputs`
-    /// has `walletId == walletId`. SwiftData lowers `.contains` to
-    /// SQLite, so the fetch is a single sorted query, no Swift
-    /// dedupe, no fault chain.
+    /// Per-wallet transaction list. Queries `PersistentTxo` flat by
+    /// the denormalized `walletId` column and resolves distinct
+    /// creating-or-spending `PersistentTransaction`s in the body —
+    /// same union `WalletDetailView`'s count uses.
     ///
     /// Reached via value-based navigation (see
     /// `WalletsContentView`'s `.navigationDestination` modifiers).
@@ -18,19 +16,38 @@ struct TransactionListView: View {
     /// `@Query`. Value-based push only constructs the destination
     /// at navigate time.
     let walletId: Data
-    @Query private var transactions: [PersistentTransaction]
+    /// Membership: which txids belong to this wallet, via the
+    /// denormalized `walletId` on TXOs.
+    @Query private var walletTxos: [PersistentTxo]
+    @Query private var transactionObservation: [PersistentTransaction]
     @State private var selectedTransaction: PersistentTransaction?
 
     init(walletId: Data) {
         self.walletId = walletId
-        let descriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { tx in
-                tx.outputs.contains { $0.walletId == walletId }
-                    || tx.inputs.contains { $0.walletId == walletId }
-            },
-            sortBy: [SortDescriptor(\PersistentTransaction.firstSeen, order: .reverse)]
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.walletId == walletId }
         )
-        _transactions = Query(descriptor)
+        _walletTxos = Query(descriptor)
+    }
+
+    private var transactions: [PersistentTransaction] {
+        _ = transactionObservation // keep the subscription alive
+        var seen: Set<Data> = []
+        var result: [PersistentTransaction] = []
+        for txo in walletTxos {
+            if let tx = txo.transaction, seen.insert(tx.txid).inserted {
+                result.append(tx)
+            }
+            if let spending = txo.spendingTransaction, seen.insert(spending.txid).inserted {
+                result.append(spending)
+            }
+        }
+        return result.sorted { lhs, rhs in
+            if (lhs.context == 0) != (rhs.context == 0) {
+                return lhs.context == 0
+            }
+            return lhs.firstSeen > rhs.firstSeen
+        }
     }
 
     var body: some View {
@@ -85,24 +102,22 @@ struct TransactionRowView: View {
     let transaction: PersistentTransaction
 
     private var typeIcon: String {
-        switch transaction.netAmount {
-        case let amount where amount > 0:
-            return "arrow.down.circle.fill"
-        case let amount where amount < 0:
-            return "arrow.up.circle.fill"
-        default:
-            return "arrow.triangle.2.circlepath"
+        // direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin
+        switch transaction.direction {
+        case 0: return "arrow.down.circle.fill"
+        case 1: return "arrow.up.circle.fill"
+        case 2: return "arrow.triangle.2.circlepath"
+        case 3: return "shuffle.circle.fill"
+        default: return "questionmark.circle"
         }
     }
 
     private var typeColor: Color {
-        switch transaction.netAmount {
-        case let amount where amount > 0:
-            return .green
-        case let amount where amount < 0:
-            return .red
-        default:
-            return .blue
+        switch transaction.direction {
+        case 0: return .green
+        case 1, 2: return .red
+        case 3: return .blue
+        default: return .secondary
         }
     }
 

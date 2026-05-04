@@ -12,7 +12,7 @@ class ShieldedService: ObservableObject {
 
     private(set) var poolClient: ShieldedPoolClient?
     private var spendingKey: Data?
-    private var currentNetwork: AppNetwork?
+    private var currentNetwork: Network?
 
     /// Initialize (or reinitialize) the shielded pool client.
     ///
@@ -22,7 +22,7 @@ class ShieldedService: ObservableObject {
     /// - Parameters:
     ///   - seed: Wallet seed (>= 32 bytes). First 32 bytes used as spending key.
     ///   - network: Current network.
-    func initialize(seed: Data, network: AppNetwork) {
+    func initialize(seed: Data, network: Network) {
         guard seed.count >= 32 else {
             lastError = "Seed must be at least 32 bytes"
             return
@@ -107,7 +107,7 @@ class ShieldedService: ObservableObject {
 
     // MARK: - Private
 
-    private static func dbPath(for network: AppNetwork) -> String {
+    private static func dbPath(for network: Network) -> String {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docs.appendingPathComponent("shielded_\(network.networkName).sqlite").path
     }

@@ -131,7 +131,7 @@ public enum ContractDownloader {
         suggestedName: String?,
         sdk: SDK,
         modelContext: ModelContext,
-        network: AppNetwork,
+        network: Network,
         existingContracts: [PersistentDataContract]? = nil
     ) async throws -> ContractDownloadResult {
         let trimmedId = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -360,7 +360,7 @@ public enum ContractDownloader {
     public static func previewContractInMemory(
         contractId: String,
         sdk: SDK,
-        network: AppNetwork
+        network: Network
     ) async throws -> ContractPreviewState {
         let trimmedId = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedId.isEmpty else {

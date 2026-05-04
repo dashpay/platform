@@ -189,7 +189,7 @@ public class PlatformWalletPersistenceHandler {
     }
 
     /// Load cached sync state for a specific network.
-    public func loadCachedSyncState(network: AppNetwork) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+    public func loadCachedSyncState(network: Network) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
         onQueue { loadCachedSyncStateOnQueue(network: network) }
     }
 
@@ -198,7 +198,7 @@ public class PlatformWalletPersistenceHandler {
     /// route through this so the `(walletId:)` variant can resolve
     /// the network and read the row in a single queue hop without
     /// recursing into `onQueue`, which would deadlock.
-    private func loadCachedSyncStateOnQueue(network: AppNetwork) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
+    private func loadCachedSyncStateOnQueue(network: Network) -> (syncHeight: UInt64, syncTimestamp: UInt64, lastKnownRecentBlock: UInt64)? {
         let scopeId = syncStateScopeId(for: network)
         let descriptor = FetchDescriptor<PersistentPlatformAddressesSyncState>(
             predicate: #Predicate { $0.walletId == scopeId }
@@ -1418,7 +1418,7 @@ public class PlatformWalletPersistenceHandler {
             print("⚠️ deriveAndStoreIdentityKey: wallet row not found for \(walletId.prefix(4).toHexString())…")
             return nil
         }
-        let network: KeyWalletNetwork = persistentWallet.network?.toKeyWalletNetwork() ?? .testnet
+        let network: Network = persistentWallet.network ?? .testnet
 
         // 2. Fetch the mnemonic UTF-8 bytes for this wallet from the
         //    keychain. Keep the call site off Swift `String` so the
@@ -1825,10 +1825,10 @@ public class PlatformWalletPersistenceHandler {
     /// once at wallet registration with values the Rust side can
     /// contribute but Swift can't easily recompute (network is on the
     /// manager's SDK; birth height is SPV's confirmed tip at creation).
-    func persistWalletMetadata(walletId: Data, networkTag: UInt8, birthHeight: UInt32) {
+    func persistWalletMetadata(walletId: Data, network: Network, birthHeight: UInt32) {
         onQueue {
             let wallet = ensureWalletRecord(walletId: walletId)
-            wallet.network = appNetwork(for: networkTag)
+            wallet.network = network
             wallet.birthHeight = birthHeight
             wallet.lastUpdated = Date()
             if !self.inChangeset { try? backgroundContext.save() }
@@ -1845,22 +1845,6 @@ public class PlatformWalletPersistenceHandler {
             wallet.name = name
             wallet.lastUpdated = Date()
             try? backgroundContext.save()
-        }
-    }
-
-    /// Reverse of the tag convention used by
-    /// `platform_wallet_manager_create_wallet_from_seed`. Note the
-    /// tag ordering (0=mainnet, 1=testnet, 2=devnet, 3=regtest)
-    /// intentionally does not match `AppNetwork.rawValue`
-    /// (which swaps devnet/regtest to align with `KeyWalletNetwork`),
-    /// so this has to stay an explicit switch.
-    private func appNetwork(for tag: UInt8) -> AppNetwork? {
-        switch tag {
-        case 0: return .mainnet
-        case 1: return .testnet
-        case 2: return .devnet
-        case 3: return .regtest
-        default: return nil
         }
     }
 
@@ -2074,7 +2058,7 @@ public class PlatformWalletPersistenceHandler {
 
             var entry = WalletRestoreEntryFFI()
             copyBytes(w.walletId, into: &entry.wallet_id)
-            entry.network = networkTag(for: w.network)
+            entry.network = (w.network ?? .testnet).ffiValue
             entry.accounts = accountsBuffer.map { UnsafePointer($0) }
             entry.accounts_count = UInt(sortedAccounts.count)
             entry.platform_address_balances = addressBalancesBuffer.map { UnsafePointer($0) }
@@ -2297,25 +2281,10 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Inverse of `appNetwork(for:)`. The Rust-side tag convention
-    /// (0=mainnet, 1=testnet, 2=devnet, 3=regtest) differs from
-    /// `AppNetwork.rawValue` ordering, so this has to stay an
-    /// explicit switch. `nil` defaults to testnet (tag=1) —
-    /// matches the old "unknown" fallback during dev.
-    private func networkTag(for network: AppNetwork?) -> UInt8 {
-        switch network {
-        case .mainnet: return 0
-        case .testnet: return 1
-        case .devnet: return 2
-        case .regtest: return 3
-        case .none: return 1
-        }
-    }
-
     /// Build the 32-byte synthetic walletId used as the uniqueness
     /// key for the per-network `PersistentPlatformAddressesSyncState` row. The content
     /// is "platform-sync:<networkName>" zero-padded to 32 bytes.
-    private func syncStateScopeId(for network: AppNetwork) -> Data {
+    private func syncStateScopeId(for network: Network) -> Data {
         let scopeString = "platform-sync:\(network.networkName)"
         var data = Data(scopeString.utf8.prefix(32))
         if data.count < 32 {
@@ -2327,7 +2296,7 @@ public class PlatformWalletPersistenceHandler {
     /// Look up the network for a wallet id by reading the owning
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
-    private func walletNetwork(walletId: Data) -> AppNetwork? {
+    private func walletNetwork(walletId: Data) -> Network? {
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: #Predicate { $0.walletId == walletId }
         )
@@ -3055,7 +3024,7 @@ private func dataFromTuple20(_ tuple: FFIByteTuple20) -> Data {
 private func persistWalletMetadataCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
-    networkTag: UInt8,
+    network: FFINetwork,
     birthHeight: UInt32
 ) -> Int32 {
     guard let context = context,
@@ -3068,7 +3037,7 @@ private func persistWalletMetadataCallback(
     let walletId = Data(bytes: walletIdPtr, count: 32)
     handler.persistWalletMetadata(
         walletId: walletId,
-        networkTag: networkTag,
+        network: Network(ffiNetwork: network),
         birthHeight: birthHeight
     )
     return 0
