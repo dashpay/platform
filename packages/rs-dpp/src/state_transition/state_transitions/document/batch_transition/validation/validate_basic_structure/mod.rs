@@ -122,13 +122,10 @@ impl BatchTransition {
             }
         }
 
-        match result.errors.len() {
-            0 => Ok(()),
-            1 => Err(ProtocolError::ConsensusError(Box::new(
-                result.errors.pop().expect("validated single error count"),
-            ))),
-            _ => Err(ProtocolError::ConsensusErrors(result.errors)),
-        }
+        result
+            .errors_to_consensus_protocol_error()
+            .map(Err)
+            .unwrap_or(Ok(()))
     }
 
     /// Runs the constructor pre-sign validation, converts the batch into a

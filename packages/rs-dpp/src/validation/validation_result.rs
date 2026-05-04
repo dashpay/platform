@@ -79,6 +79,28 @@ impl<E: Debug> SimpleValidationResult<E> {
     }
 }
 
+impl<TData: Clone> ConsensusValidationResult<TData> {
+    /// Convert any accumulated consensus errors into a single
+    /// [`ProtocolError`], preserving multiplicity:
+    ///
+    /// * `0` errors → `None`
+    /// * `1` error  → `Some(ProtocolError::ConsensusError(_))`
+    /// * `>1` errors → `Some(ProtocolError::ConsensusErrors(_))`
+    ///
+    /// Used by callers that translate a structural validation result into a
+    /// short-circuit `Err(ProtocolError)` without dropping additional
+    /// accumulated errors.
+    pub fn errors_to_consensus_protocol_error(mut self) -> Option<ProtocolError> {
+        match self.errors.len() {
+            0 => None,
+            1 => Some(ProtocolError::ConsensusError(Box::new(
+                self.errors.pop().expect("len == 1"),
+            ))),
+            _ => Some(ProtocolError::ConsensusErrors(self.errors)),
+        }
+    }
+}
+
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     pub fn new() -> Self {
         Self {
@@ -701,5 +723,55 @@ mod tests {
     fn test_data_as_borrowed_no_data() {
         let result: ValidationResult<i32, String> = ValidationResult::new();
         assert!(result.data_as_borrowed().is_err());
+    }
+
+    // -- errors_to_consensus_protocol_error() --
+
+    mod errors_to_consensus_protocol_error {
+        use crate::consensus::basic::document::NonceOutOfBoundsError;
+        use crate::consensus::basic::token::InvalidTokenAmountError;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::validation::SimpleConsensusValidationResult;
+        use crate::ProtocolError;
+
+        fn nonce_err() -> ConsensusError {
+            ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
+                NonceOutOfBoundsError::new(u64::MAX),
+            ))
+        }
+
+        fn token_err() -> ConsensusError {
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
+                InvalidTokenAmountError::new(7, 0),
+            ))
+        }
+
+        #[test]
+        fn no_errors_returns_none() {
+            let result = SimpleConsensusValidationResult::new();
+            assert!(result.errors_to_consensus_protocol_error().is_none());
+        }
+
+        #[test]
+        fn single_error_returns_consensus_error_variant() {
+            let result = SimpleConsensusValidationResult::new_with_error(nonce_err());
+            match result.errors_to_consensus_protocol_error() {
+                Some(ProtocolError::ConsensusError(_)) => {}
+                other => panic!("expected ConsensusError variant, got {:?}", other),
+            }
+        }
+
+        #[test]
+        fn multiple_errors_preserved_as_consensus_errors_variant() {
+            let result =
+                SimpleConsensusValidationResult::new_with_errors(vec![nonce_err(), token_err()]);
+            match result.errors_to_consensus_protocol_error() {
+                Some(ProtocolError::ConsensusErrors(errors)) => {
+                    assert_eq!(errors.len(), 2, "all accumulated errors must be preserved");
+                }
+                other => panic!("expected ConsensusErrors variant, got {:?}", other),
+            }
+        }
     }
 }

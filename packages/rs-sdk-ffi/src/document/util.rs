@@ -39,7 +39,7 @@ pub unsafe extern "C" fn dash_sdk_document_destroy(
 
     match result {
         Ok(_) => std::ptr::null_mut(),
-        Err(e) => Box::into_raw(Box::new(e.into())),
+        Err(e) => crate::error::box_dashsdk_error(e.into()),
     }
 }
 

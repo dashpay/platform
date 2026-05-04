@@ -115,7 +115,15 @@ use crate::data_contract::errors::DataContractError;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(
-    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+    Error,
+    Debug,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Encode,
+    Decode,
+    PartialEq,
+    Clone,
+    strum::IntoStaticStr,
 )]
 pub enum BasicError {
     /*

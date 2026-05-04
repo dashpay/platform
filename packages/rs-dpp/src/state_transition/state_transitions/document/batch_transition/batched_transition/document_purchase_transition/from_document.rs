@@ -44,11 +44,9 @@ impl DocumentPurchaseTransition {
                     .into();
                 if let Some(error) = transition
                     .validate_structure(document_type, platform_version)?
-                    .errors
-                    .into_iter()
-                    .next()
+                    .errors_to_consensus_protocol_error()
                 {
-                    return Err(error.into());
+                    return Err(error);
                 }
                 Ok(transition)
             }

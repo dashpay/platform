@@ -9,19 +9,58 @@
 //! consensus errors (singular: the error's own `Display`; plural: `;`-joined).
 //!
 //! Structured details about consensus errors are exposed through a *sidecar*
-//! lookup keyed on the `message` pointer. Callers query
+//! lookup keyed on the heap [`DashSDKError`] pointer returned to the FFI
+//! caller. Callers query
 //! [`dash_sdk_error_consensus_error_count`] and
 //! [`dash_sdk_error_consensus_error_at`] *before* freeing the error with
 //! [`dash_sdk_error_free`]; freeing also releases the sidecar entry.
+//!
+//! # Sidecar contract (pointer-identity)
+//!
+//! The sidecar is keyed on the heap `*mut DashSDKError` pointer that the SDK
+//! returns to the caller (the value of `DashSDKResult.error` or the raw error
+//! pointer returned by an FFI call). Callers must observe the following rules:
+//!
+//! - Always pass the original `*mut DashSDKError` / `*const DashSDKError`
+//!   pointer to [`dash_sdk_error_consensus_error_count`] /
+//!   [`dash_sdk_error_consensus_error_at`]. Querying through a copy of the
+//!   `DashSDKError` value (a separate stack/heap allocation that happens to
+//!   share the same `message` pointer) returns no structured details.
+//! - Structured consensus details must be queried synchronously before the
+//!   error is freed with [`dash_sdk_error_free`]. Once freed, the sidecar
+//!   entry is gone and the pointer value may be reused by future allocations.
+//! - During construction (between `DashSDKError::from(FFIError::SDKError(..))`
+//!   and the final `Box::into_raw`), pending sidecar entries are temporarily
+//!   indexed by the message pointer; this is an implementation detail and is
+//!   not exposed to FFI callers. Sidecar-capable errors — in particular those
+//!   produced by the `From<FFIError>` impl from
+//!   `FFIError::SDKError(dash_sdk::Error::Protocol(_))` — must be returned via
+//!   [`box_dashsdk_error`] (directly or via [`DashSDKResult::error`] /
+//!   [`ffi_result!`]) so the pending entry is promoted to a stable pointer
+//!   key. Hand-crafted [`DashSDKError::new`] values with no pending sidecar
+//!   entry (e.g. local validation errors built without a `From<FFIError>`
+//!   conversion) are outside this contract and may be boxed directly; they
+//!   simply have no structured details to expose.
 
+use dash_sdk::dapi_client::DapiClientError;
 use dash_sdk::dpp::consensus::{codes::ErrorWithCode, ConsensusError};
 use dash_sdk::dpp::ProtocolError;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::ffi::{CString, NulError};
 use std::os::raw::c_char;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use thiserror::Error;
+
+/// Lock a sidecar mutex tolerating poisoning. A panic on another thread that
+/// poisoned the mutex must not permanently disable sidecar lookup or cleanup
+/// — silently dropping details for every subsequent error would be a worse
+/// failure mode than continuing with a recovered guard.
+fn lock_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// Error codes returned by FFI functions
 #[repr(C)]
@@ -79,7 +118,7 @@ pub struct DashSDKConsensusError {
     pub code: u32,
     /// High-level kind, e.g. `BasicError`, `StateError` (owned C string).
     pub kind: *mut c_char,
-    /// Specific error name (currently mirrors `kind`, owned C string).
+    /// Specific consensus error variant name (owned C string).
     pub name: *mut c_char,
     /// Human-readable message (owned C string).
     pub message: *mut c_char,
@@ -127,40 +166,121 @@ struct ConsensusErrorEntry {
     message: String,
 }
 
-/// Sidecar map from the `DashSDKError.message` raw pointer (as `usize`) to the
-/// structured consensus error details. Populated when a `ProtocolError`
-/// containing one or more `ConsensusError`s is converted into a
-/// `DashSDKError`; freed by `dash_sdk_error_free`.
-static CONSENSUS_ERROR_SIDECAR: Lazy<Mutex<HashMap<usize, Vec<ConsensusErrorEntry>>>> =
+/// Pending sidecar map keyed by the `DashSDKError.message` raw pointer
+/// (as `usize`). Populated transiently during `From<FFIError>` conversion
+/// while the resulting value-type `DashSDKError` is still being constructed;
+/// drained by [`box_dashsdk_error`] when the error is boxed for FFI return,
+/// or by [`DashSDKError::drop`] if the value is dropped before being boxed.
+static PENDING_CONSENSUS_ERRORS: Lazy<Mutex<HashMap<usize, Vec<ConsensusErrorEntry>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-fn register_consensus_errors(message_ptr: *mut c_char, errors: Vec<ConsensusErrorEntry>) {
+/// Active sidecar entry keyed in [`ACTIVE_CONSENSUS_ERRORS`]. The
+/// `message_ptr` is captured at boxing time and re-checked on lookup against
+/// the current `DashSDKError.message`. This catches the common stale-pointer
+/// reuse case where the heap allocation of a freed error is recycled for a
+/// brand-new `DashSDKError`: the new value's `message` pointer will not match
+/// the captured one, so we return no details rather than the previous error's
+/// stale entries.
+///
+/// Limit: a true post-free read of a *dangling* pointer (where the underlying
+/// memory has not yet been recycled and still happens to contain the original
+/// `message` field) is undefined behavior at the FFI layer and is
+/// indistinguishable from a valid live pointer at this layer; the
+/// move-only sidecar contract documented at the module level forbids this
+/// usage pattern but cannot be enforced from inside the SDK.
+#[derive(Debug, Clone)]
+struct ActiveSidecarEntry {
+    /// `DashSDKError.message` value at the time of boxing.
+    message_ptr: usize,
+    entries: Vec<ConsensusErrorEntry>,
+}
+
+/// Active sidecar map keyed by the heap `*mut DashSDKError` pointer that is
+/// handed back across the FFI boundary. Populated by [`box_dashsdk_error`];
+/// freed by [`dash_sdk_error_free`]. Keying by the boxed `DashSDKError`
+/// pointer means a copied-by-value `DashSDKError` (which has a different
+/// pointer identity) cannot accidentally resolve another error's sidecar
+/// entry — even if its `message` raw pointer happens to coincide due to
+/// allocator reuse. Each entry also carries the original `message` pointer
+/// so post-free pointer reuse for a different error is detected on lookup.
+static ACTIVE_CONSENSUS_ERRORS: Lazy<Mutex<HashMap<usize, ActiveSidecarEntry>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn register_pending_consensus_errors(message_ptr: *mut c_char, errors: Vec<ConsensusErrorEntry>) {
     if message_ptr.is_null() || errors.is_empty() {
         return;
     }
-    if let Ok(mut map) = CONSENSUS_ERROR_SIDECAR.lock() {
-        map.insert(message_ptr as usize, errors);
-    }
+    let mut map = lock_recover(&PENDING_CONSENSUS_ERRORS);
+    map.insert(message_ptr as usize, errors);
 }
 
-fn take_consensus_errors(message_ptr: *mut c_char) {
-    if message_ptr.is_null() {
-        return;
-    }
-    if let Ok(mut map) = CONSENSUS_ERROR_SIDECAR.lock() {
-        map.remove(&(message_ptr as usize));
-    }
-}
-
-fn with_consensus_errors<R>(
-    message_ptr: *const c_char,
-    f: impl FnOnce(&[ConsensusErrorEntry]) -> R,
-) -> Option<R> {
+fn take_pending_consensus_errors(message_ptr: *mut c_char) -> Option<Vec<ConsensusErrorEntry>> {
     if message_ptr.is_null() {
         return None;
     }
-    let guard = CONSENSUS_ERROR_SIDECAR.lock().ok()?;
-    guard.get(&(message_ptr as usize)).map(|v| f(v.as_slice()))
+    let mut map = lock_recover(&PENDING_CONSENSUS_ERRORS);
+    map.remove(&(message_ptr as usize))
+}
+
+fn take_active_consensus_errors(error_ptr: *mut DashSDKError) {
+    if error_ptr.is_null() {
+        return;
+    }
+    let mut map = lock_recover(&ACTIVE_CONSENSUS_ERRORS);
+    map.remove(&(error_ptr as usize));
+}
+
+fn with_active_consensus_errors<R>(
+    error_ptr: *const DashSDKError,
+    f: impl FnOnce(&[ConsensusErrorEntry]) -> R,
+) -> Option<R> {
+    if error_ptr.is_null() {
+        return None;
+    }
+    // Snapshot the current message pointer for identity verification *before*
+    // taking the lock to keep the unsafe deref scope small. This dereference
+    // is sound under the documented contract (caller passes a live pointer
+    // returned by the SDK that has not yet been freed); a stale dangling
+    // pointer is UB at this point and unavoidable.
+    let current_message = unsafe { (*error_ptr).message } as usize;
+    let guard = lock_recover(&ACTIVE_CONSENSUS_ERRORS);
+    let entry = guard.get(&(error_ptr as usize))?;
+    if entry.message_ptr != current_message {
+        // Pointer key matched but the message field doesn't match the value
+        // we recorded at boxing time — almost certainly a recycled heap
+        // allocation now occupied by a different error. Treat as no sidecar.
+        return None;
+    }
+    Some(f(entry.entries.as_slice()))
+}
+
+/// Box a [`DashSDKError`] for return across the FFI boundary, promoting any
+/// pending consensus-error sidecar entries (keyed by the error's `message`
+/// pointer) to the active sidecar (keyed by the heap error pointer).
+///
+/// Sidecar-capable errors — those built via the `From<FFIError>` impl from
+/// `FFIError::SDKError(dash_sdk::Error::Protocol(_))` — MUST go through this
+/// helper (directly or via [`DashSDKResult::error`] / the [`ffi_result!`]
+/// macro) so the pending sidecar is reachable through the pointer the caller
+/// actually receives. Hand-crafted [`DashSDKError::new`] errors that have no
+/// pending sidecar entry are outside this contract; boxing them with bare
+/// `Box::into_raw` is sound (it just produces an error with no structured
+/// details), though routing them through this helper is also fine and is the
+/// recommended default to keep return paths uniform.
+pub fn box_dashsdk_error(error: DashSDKError) -> *mut DashSDKError {
+    let message_ptr = error.message;
+    let raw = Box::into_raw(Box::new(error));
+    if let Some(entries) = take_pending_consensus_errors(message_ptr) {
+        let mut map = lock_recover(&ACTIVE_CONSENSUS_ERRORS);
+        map.insert(
+            raw as usize,
+            ActiveSidecarEntry {
+                message_ptr: message_ptr as usize,
+                entries,
+            },
+        );
+    }
+    raw
 }
 
 impl DashSDKError {
@@ -184,6 +304,38 @@ impl DashSDKError {
     }
 }
 
+/// Reclaim the owned `message` `CString` and drop any pending sidecar entry
+/// keyed on the message pointer. This makes it safe to `drop` a
+/// `DashSDKError` value built via `From<FFIError>` without ever boxing it
+/// (e.g. test helpers, error-conversion paths that fail before reaching
+/// [`box_dashsdk_error`]) — both the message allocation and the pending
+/// sidecar entry are reclaimed instead of leaking.
+///
+/// `box_dashsdk_error` moves the error into a `Box` and uses `Box::into_raw`,
+/// which suppresses Drop until [`dash_sdk_error_free`] runs `Box::from_raw`,
+/// so successful boxing → free paths still drop exactly once. The active
+/// sidecar (keyed on the heap pointer) is removed by `dash_sdk_error_free`
+/// before the Drop runs.
+impl Drop for DashSDKError {
+    fn drop(&mut self) {
+        if !self.message.is_null() {
+            // Drain any still-pending sidecar entry keyed on this message
+            // pointer. After a successful `box_dashsdk_error` promotion this
+            // is a no-op (the entry has already been moved to the active
+            // map). When the value is dropped without boxing, this prevents
+            // a leak that would later mis-attribute details to a recycled
+            // message allocation.
+            let _ = take_pending_consensus_errors(self.message);
+            // SAFETY: `message` was allocated via `CString::into_raw` in
+            // `DashSDKError::new`; reclaim the allocation exactly once.
+            unsafe {
+                let _ = CString::from_raw(self.message);
+            }
+            self.message = std::ptr::null_mut();
+        }
+    }
+}
+
 impl From<FFIError> for DashSDKError {
     fn from(err: FFIError) -> Self {
         let (code, message) = match &err {
@@ -194,50 +346,12 @@ impl From<FFIError> for DashSDKError {
                         format_protocol_consensus_error(protocol_error)
                     {
                         let error = DashSDKError::new(DashSDKErrorCode::ProtocolError, message);
-                        register_consensus_errors(error.message, entries);
+                        register_pending_consensus_errors(error.message, entries);
                         return error;
                     }
                 }
 
-                // Extract more detailed error information
-                let error_str = sdk_err.to_string();
-
-                // Try to determine error type from the message
-                let (code, detailed_msg) = if error_str.contains("timeout")
-                    || error_str.contains("Timeout")
-                {
-                    (DashSDKErrorCode::Timeout, error_str)
-                } else if error_str.contains("I/O error") || error_str.contains("connection") {
-                    (
-                        DashSDKErrorCode::NetworkError,
-                        format!("Network connection failed: {}", error_str),
-                    )
-                } else if error_str.contains("DAPI") || error_str.contains("dapi") {
-                    // Check for specific DAPI issues
-                    if error_str.contains("No available addresses")
-                        || error_str.contains("empty address list")
-                    {
-                        (DashSDKErrorCode::NetworkError,
-                         "Cannot connect to network: No DAPI addresses configured. The SDK needs masternode quorum information to connect to the network.".to_string())
-                    } else {
-                        (
-                            DashSDKErrorCode::NetworkError,
-                            format!("DAPI error: {}", error_str),
-                        )
-                    }
-                } else if error_str.contains("protocol") || error_str.contains("Protocol") {
-                    (DashSDKErrorCode::ProtocolError, error_str)
-                } else if error_str.contains("not found") || error_str.contains("Not found") {
-                    (DashSDKErrorCode::NotFound, error_str)
-                } else {
-                    // Default to network error with the original message
-                    (
-                        DashSDKErrorCode::NetworkError,
-                        format!("Failed to fetch balances: {}", error_str),
-                    )
-                };
-
-                (code, detailed_msg)
+                classify_sdk_error(sdk_err)
             }
             FFIError::SerializationError(_) => {
                 (DashSDKErrorCode::SerializationError, err.to_string())
@@ -258,6 +372,48 @@ impl From<FFIError> for DashSDKError {
     }
 }
 
+/// Map a non-`Protocol` `dash_sdk::Error` to an FFI `(code, message)` pair by
+/// matching on the variant rather than scanning the formatted message.
+///
+/// Protocol consensus errors are handled separately by the caller (they carry
+/// a structured sidecar). Variants we cannot meaningfully classify fall back
+/// to `InternalError` with a neutral `"SDK error: ..."` prefix so we never
+/// misattribute them to a specific operation.
+fn classify_sdk_error(sdk_err: &dash_sdk::Error) -> (DashSDKErrorCode, String) {
+    match sdk_err {
+        // Non-consensus protocol errors still surface as ProtocolError; their
+        // consensus sibling is handled by the caller before this point.
+        dash_sdk::Error::Protocol(_) => (DashSDKErrorCode::ProtocolError, sdk_err.to_string()),
+        dash_sdk::Error::TimeoutReached(_, _) => (DashSDKErrorCode::Timeout, sdk_err.to_string()),
+        // No-address / exhausted-addresses paths get the explicit operator
+        // hint message.
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+        | dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(_))
+        | dash_sdk::Error::NoAvailableAddressesToRetry(_) => (
+            DashSDKErrorCode::NetworkError,
+            "Cannot connect to network: No DAPI addresses configured. The SDK needs masternode quorum information to connect to the network.".to_string(),
+        ),
+        dash_sdk::Error::DapiClientError(_) => (
+            DashSDKErrorCode::NetworkError,
+            format!("DAPI error: {}", sdk_err),
+        ),
+        dash_sdk::Error::MissingDependency(_, _)
+        | dash_sdk::Error::TotalCreditsNotFound
+        | dash_sdk::Error::EpochNotFound
+        | dash_sdk::Error::IdentityNonceNotFound(_) => {
+            (DashSDKErrorCode::NotFound, sdk_err.to_string())
+        }
+        // Neutral fallback: we could not classify this SDK error as
+        // network/timeout/protocol/not-found, so report it as an internal
+        // SDK error rather than misattributing it to a specific operation
+        // (e.g. "Failed to fetch balances").
+        _ => (
+            DashSDKErrorCode::InternalError,
+            format!("SDK error: {}", sdk_err),
+        ),
+    }
+}
+
 fn consensus_error_kind_name(error: &ConsensusError) -> &'static str {
     match error {
         ConsensusError::DefaultError => "DefaultError",
@@ -268,12 +424,30 @@ fn consensus_error_kind_name(error: &ConsensusError) -> &'static str {
     }
 }
 
+/// Resolve the specific variant identifier of a `ConsensusError`.
+///
+/// The inner consensus enums (`BasicError`, `StateError`, `SignatureError`,
+/// `FeeError`) derive `strum::IntoStaticStr`, which generates a compile-time
+/// `impl From<&Enum> for &'static str` from the enum's structure. Adding a
+/// future variant to one of those enums therefore extends this mapping
+/// automatically with the correct variant identifier; there is no
+/// `Debug`-format parsing or `_` wildcard that could silently drift if a
+/// variant is added or renamed.
+fn consensus_error_variant_name(error: &ConsensusError) -> &'static str {
+    match error {
+        ConsensusError::DefaultError => "DefaultError",
+        ConsensusError::BasicError(inner) => inner.into(),
+        ConsensusError::StateError(inner) => inner.into(),
+        ConsensusError::SignatureError(inner) => inner.into(),
+        ConsensusError::FeeError(inner) => inner.into(),
+    }
+}
+
 fn consensus_error_entry(error: &ConsensusError) -> ConsensusErrorEntry {
-    let name = consensus_error_kind_name(error).to_string();
     ConsensusErrorEntry {
         code: error.code(),
-        kind: name.clone(),
-        name,
+        kind: consensus_error_kind_name(error).to_string(),
+        name: consensus_error_variant_name(error).to_string(),
         message: error.to_string(),
     }
 }
@@ -308,17 +482,23 @@ fn format_protocol_consensus_error(
 /// # Safety
 /// - `error` must be a pointer previously returned by this SDK or null (no-op).
 /// - After this call, `error` becomes invalid and must not be used again.
+/// - Per the move-only sidecar contract documented at the module level, no
+///   alias of `error` (including any copy of its `message` pointer) may be
+///   used to query consensus details after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_error_free(error: *mut DashSDKError) {
     if error.is_null() {
         return;
     }
 
-    let error = Box::from_raw(error);
-    if !error.message.is_null() {
-        take_consensus_errors(error.message);
-        let _ = CString::from_raw(error.message);
-    }
+    // Drop any active sidecar entry keyed on the heap pointer the caller
+    // received. This must happen *before* `Box::from_raw` so the lookup uses
+    // the same `*mut DashSDKError` value the caller saw.
+    take_active_consensus_errors(error);
+
+    // Reclaiming the box runs `DashSDKError::drop`, which frees the message
+    // `CString` and clears any (no-op for boxed paths) pending sidecar entry.
+    let _ = Box::from_raw(error);
 }
 
 /// Returns the number of structured protocol consensus errors associated with
@@ -328,16 +508,18 @@ pub unsafe extern "C" fn dash_sdk_error_free(error: *mut DashSDKError) {
 /// # Safety
 /// - `error` must either be null or a pointer previously returned by this SDK
 ///   that has not yet been freed.
+/// - Must be called synchronously, before [`dash_sdk_error_free`], on the
+///   same `DashSDKError` value the SDK returned (not a copy/alias). See the
+///   module-level move-only sidecar contract.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_error_consensus_error_count(error: *const DashSDKError) -> usize {
     if error.is_null() {
         return 0;
     }
-    let error = &*error;
-    if error.code != DashSDKErrorCode::ProtocolError {
+    if (*error).code != DashSDKErrorCode::ProtocolError {
         return 0;
     }
-    with_consensus_errors(error.message, |entries| entries.len()).unwrap_or(0)
+    with_active_consensus_errors(error, |entries| entries.len()).unwrap_or(0)
 }
 
 /// Returns a newly-allocated [`DashSDKConsensusError`] for the consensus error
@@ -350,6 +532,9 @@ pub unsafe extern "C" fn dash_sdk_error_consensus_error_count(error: *const Dash
 /// # Safety
 /// - `error` must either be null or a pointer previously returned by this SDK
 ///   that has not yet been freed.
+/// - Must be called synchronously, before [`dash_sdk_error_free`], on the
+///   same `DashSDKError` value the SDK returned (not a copy/alias). See the
+///   module-level move-only sidecar contract.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_error_consensus_error_at(
     error: *const DashSDKError,
@@ -358,13 +543,12 @@ pub unsafe extern "C" fn dash_sdk_error_consensus_error_at(
     if error.is_null() {
         return std::ptr::null_mut();
     }
-    let error = &*error;
-    if error.code != DashSDKErrorCode::ProtocolError {
+    if (*error).code != DashSDKErrorCode::ProtocolError {
         return std::ptr::null_mut();
     }
 
     let entry =
-        with_consensus_errors(error.message, |entries| entries.get(index).cloned()).flatten();
+        with_active_consensus_errors(error, |entries| entries.get(index).cloned()).flatten();
     let Some(entry) = entry else {
         return std::ptr::null_mut();
     };
@@ -429,7 +613,7 @@ macro_rules! ffi_result {
             Ok(val) => val,
             Err(e) => {
                 let error: $crate::DashSDKError = e.into();
-                return Box::into_raw(Box::new(error));
+                return $crate::box_dashsdk_error(error);
             }
         }
     };
@@ -440,11 +624,18 @@ mod tests {
     use super::*;
     use dash_sdk::dpp::consensus::basic::document::NonceOutOfBoundsError;
     use dash_sdk::dpp::consensus::basic::token::InvalidTokenAmountError;
+    use dash_sdk::dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+    use dash_sdk::dpp::consensus::fee::fee_error::FeeError;
+    use dash_sdk::dpp::consensus::signature::{
+        IdentityNotFoundError, SignatureError as DppSignatureError,
+    };
+    use dash_sdk::dpp::consensus::state::identity::IdentityAlreadyExistsError;
+    use dash_sdk::dpp::consensus::state::state_error::StateError;
     use dash_sdk::dpp::consensus::{basic::BasicError, ConsensusError};
     use std::ffi::CStr;
 
-    fn error_message(error: &DashSDKError) -> String {
-        unsafe { CStr::from_ptr(error.message) }
+    fn error_message_ptr(error: *const DashSDKError) -> String {
+        unsafe { CStr::from_ptr((*error).message) }
             .to_str()
             .expect("ffi error message should be valid utf-8")
             .to_owned()
@@ -457,11 +648,11 @@ mod tests {
             .to_owned()
     }
 
-    /// Box and free via the public C ABI so the sidecar lifecycle exercised by
-    /// real callers is exercised by the test.
-    fn free_via_ffi(error: DashSDKError) {
-        let raw = Box::into_raw(Box::new(error));
-        unsafe { dash_sdk_error_free(raw) };
+    /// Box the error via the same helper used by real FFI return paths so the
+    /// pending sidecar entries are promoted to the active map keyed by the
+    /// heap `*mut DashSDKError` pointer.
+    fn boxed(error: DashSDKError) -> *mut DashSDKError {
+        box_dashsdk_error(error)
     }
 
     #[test]
@@ -473,31 +664,34 @@ mod tests {
         let sdk_error =
             dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
 
-        let ffi_error = DashSDKError::from(FFIError::SDKError(sdk_error));
-        let message = error_message(&ffi_error);
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        let message = error_message_ptr(ffi_error);
 
-        assert_eq!(ffi_error.code, DashSDKErrorCode::ProtocolError);
+        assert_eq!(
+            unsafe { (*ffi_error).code },
+            DashSDKErrorCode::ProtocolError
+        );
         assert!(message.contains("Nonce is out of bounds"));
         assert!(!message.contains("Failed to fetch balances"));
 
         // Structured sidecar exposes the singular consensus error.
-        let count = unsafe { dash_sdk_error_consensus_error_count(&ffi_error) };
+        let count = unsafe { dash_sdk_error_consensus_error_count(ffi_error) };
         assert_eq!(count, 1);
 
-        let detail_ptr = unsafe { dash_sdk_error_consensus_error_at(&ffi_error, 0) };
+        let detail_ptr = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 0) };
         assert!(!detail_ptr.is_null());
         let detail = unsafe { &*detail_ptr };
         assert_eq!(detail.code, expected_code);
         assert_eq!(cstr(detail.kind), "BasicError");
-        assert_eq!(cstr(detail.name), "BasicError");
+        assert_eq!(cstr(detail.name), "NonceOutOfBoundsError");
         assert!(cstr(detail.message).contains("Nonce is out of bounds"));
         unsafe { dash_sdk_consensus_error_free(detail_ptr) };
 
         // Out-of-range index returns null.
-        let oob = unsafe { dash_sdk_error_consensus_error_at(&ffi_error, 1) };
+        let oob = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 1) };
         assert!(oob.is_null());
 
-        free_via_ffi(ffi_error);
+        unsafe { dash_sdk_error_free(ffi_error) };
     }
 
     #[test]
@@ -513,51 +707,260 @@ mod tests {
         let sdk_error =
             dash_sdk::Error::Protocol(ProtocolError::ConsensusErrors(vec![nonce_err, token_err]));
 
-        let ffi_error = DashSDKError::from(FFIError::SDKError(sdk_error));
-        let message = error_message(&ffi_error);
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        let message = error_message_ptr(ffi_error);
 
-        assert_eq!(ffi_error.code, DashSDKErrorCode::ProtocolError);
+        assert_eq!(
+            unsafe { (*ffi_error).code },
+            DashSDKErrorCode::ProtocolError
+        );
         assert!(message.contains("Nonce is out of bounds"));
         assert!(message.contains("Invalid token amount 0"));
         assert!(message.contains("; "));
         assert!(!message.contains("Multiple consensus errors: ["));
 
-        let count = unsafe { dash_sdk_error_consensus_error_count(&ffi_error) };
+        let count = unsafe { dash_sdk_error_consensus_error_count(ffi_error) };
         assert_eq!(count, 2);
 
-        let first_ptr = unsafe { dash_sdk_error_consensus_error_at(&ffi_error, 0) };
-        let second_ptr = unsafe { dash_sdk_error_consensus_error_at(&ffi_error, 1) };
+        let first_ptr = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 0) };
+        let second_ptr = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 1) };
         assert!(!first_ptr.is_null() && !second_ptr.is_null());
         let first = unsafe { &*first_ptr };
         let second = unsafe { &*second_ptr };
 
         assert_eq!(cstr(first.kind), "BasicError");
-        assert_eq!(cstr(first.name), "BasicError");
+        assert_eq!(cstr(first.name), "NonceOutOfBoundsError");
         assert!(cstr(first.message).contains("Nonce is out of bounds"));
         assert_eq!(first.code, expected_first_code);
 
         assert_eq!(cstr(second.kind), "BasicError");
-        assert_eq!(cstr(second.name), "BasicError");
+        assert_eq!(cstr(second.name), "InvalidTokenAmountError");
         assert!(cstr(second.message).contains("Invalid token amount 0"));
         assert_eq!(second.code, expected_second_code);
 
         unsafe { dash_sdk_consensus_error_free(first_ptr) };
         unsafe { dash_sdk_consensus_error_free(second_ptr) };
 
-        free_via_ffi(ffi_error);
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    /// Pointer-identity contract: a copied `DashSDKError` value that happens
+    /// to share the same `message` pointer as a boxed error MUST NOT expose
+    /// the boxed error's structured sidecar entries. Only the original boxed
+    /// `*mut DashSDKError` resolves the active sidecar.
+    #[test]
+    fn copied_error_value_does_not_resolve_sidecar() {
+        let consensus_error = ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
+            NonceOutOfBoundsError::new(u64::MAX),
+        ));
+        let sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
+
+        let original = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+
+        // Original boxed pointer exposes the sidecar.
+        assert_eq!(
+            unsafe { dash_sdk_error_consensus_error_count(original) },
+            1,
+            "original boxed pointer must expose the sidecar"
+        );
+
+        // Construct a value-copy of the error that shares the same `message`
+        // pointer. Querying through this copy must NOT resolve the sidecar
+        // (different pointer identity).
+        let copy = DashSDKError {
+            code: unsafe { (*original).code },
+            message: unsafe { (*original).message },
+        };
+        assert_eq!(
+            unsafe { dash_sdk_error_consensus_error_count(&copy) },
+            0,
+            "copy must not resolve sidecar via shared message pointer"
+        );
+        let null = unsafe { dash_sdk_error_consensus_error_at(&copy, 0) };
+        assert!(null.is_null(), "copy must not return any structured detail");
+        // The copy aliases the original's owned `message` — `forget` it so
+        // its `Drop` does not double-free; `dash_sdk_error_free(original)`
+        // below releases the allocation.
+        std::mem::forget(copy);
+
+        unsafe { dash_sdk_error_free(original) };
+    }
+
+    /// Dropping a `DashSDKError` produced by `From<FFIError>` without ever
+    /// boxing it must clear the pending sidecar entry keyed on its message
+    /// pointer. Otherwise a later allocation that recycles the same address
+    /// could pick up stale consensus-error details.
+    #[test]
+    fn dropping_unboxed_protocol_error_clears_pending_sidecar() {
+        let consensus_error = ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
+            NonceOutOfBoundsError::new(u64::MAX),
+        ));
+        let sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
+
+        // Build the unboxed error and capture its message pointer key. While
+        // the value is alive, the pending sidecar map should hold an entry
+        // for this key.
+        let error = DashSDKError::from(FFIError::SDKError(sdk_error));
+        let message_key = error.message as usize;
+        assert!(
+            lock_recover(&PENDING_CONSENSUS_ERRORS).contains_key(&message_key),
+            "From<FFIError> must register a pending sidecar entry"
+        );
+
+        // Dropping without boxing must reclaim the entry (and the CString),
+        // not leak it.
+        drop(error);
+        assert!(
+            !lock_recover(&PENDING_CONSENSUS_ERRORS).contains_key(&message_key),
+            "Drop must remove pending sidecar entry"
+        );
+
+        // A subsequent boxed protocol error must show only its own details
+        // even if the prior allocation is reused by the allocator.
+        let next_consensus = ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
+            InvalidTokenAmountError::new(7, 0),
+        ));
+        let next_sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(next_consensus)));
+        let next_ffi = boxed(DashSDKError::from(FFIError::SDKError(next_sdk_error)));
+        let count = unsafe { dash_sdk_error_consensus_error_count(next_ffi) };
+        assert_eq!(count, 1, "fresh error must report exactly its own details");
+        let detail_ptr = unsafe { dash_sdk_error_consensus_error_at(next_ffi, 0) };
+        assert!(!detail_ptr.is_null());
+        let detail = unsafe { &*detail_ptr };
+        assert_eq!(cstr(detail.name), "InvalidTokenAmountError");
+        unsafe { dash_sdk_consensus_error_free(detail_ptr) };
+        unsafe { dash_sdk_error_free(next_ffi) };
+    }
+
+    /// If a recycled `*mut DashSDKError` allocation is subsequently occupied
+    /// by a different error, the active sidecar lookup must reject the stale
+    /// entry rather than mis-attributing details. The mitigation re-checks
+    /// the `message` pointer against the value captured at boxing time.
+    #[test]
+    fn active_sidecar_rejects_message_pointer_mismatch() {
+        let consensus_error = ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
+            NonceOutOfBoundsError::new(u64::MAX),
+        ));
+        let sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
+        let original = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        let original_key = original as usize;
+
+        // Simulate post-free pointer reuse: forge an active-sidecar entry
+        // under `original`'s key whose recorded message pointer does NOT
+        // match `original`'s current message pointer. Lookup must reject it.
+        {
+            let mut map = lock_recover(&ACTIVE_CONSENSUS_ERRORS);
+            map.insert(
+                original_key,
+                ActiveSidecarEntry {
+                    message_ptr: 0xdead_beef_usize,
+                    entries: vec![ConsensusErrorEntry {
+                        code: 9999,
+                        kind: "BasicError".to_string(),
+                        name: "BogusError".to_string(),
+                        message: "stale entry from a freed predecessor".to_string(),
+                    }],
+                },
+            );
+        }
+
+        // The forged entry has the wrong message pointer, so the count must
+        // come back as 0 even though a key match exists.
+        let count = unsafe { dash_sdk_error_consensus_error_count(original) };
+        assert_eq!(
+            count, 0,
+            "stale entry with mismatched message pointer must be rejected"
+        );
+        let null = unsafe { dash_sdk_error_consensus_error_at(original, 0) };
+        assert!(null.is_null(), "lookup must return no structured details");
+
+        unsafe { dash_sdk_error_free(original) };
     }
 
     #[test]
     fn non_consensus_error_reports_zero_consensus_errors() {
-        let ffi_error = DashSDKError::from(FFIError::NotFound("nope".to_string()));
-        assert_eq!(ffi_error.code, DashSDKErrorCode::NotFound);
+        let ffi_error = boxed(DashSDKError::from(FFIError::NotFound("nope".to_string())));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::NotFound);
 
-        let count = unsafe { dash_sdk_error_consensus_error_count(&ffi_error) };
+        let count = unsafe { dash_sdk_error_consensus_error_count(ffi_error) };
         assert_eq!(count, 0);
-        let null = unsafe { dash_sdk_error_consensus_error_at(&ffi_error, 0) };
+        let null = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 0) };
         assert!(null.is_null());
 
-        free_via_ffi(ffi_error);
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn unclassified_sdk_error_uses_neutral_internal_fallback() {
+        // `Generic` is a non-protocol SDK error variant whose Display string
+        // does not match any of the timeout/network/DAPI/protocol/not-found
+        // heuristics, so it exercises the neutral fallback branch.
+        let sdk_error = dash_sdk::Error::Generic("widget exploded".to_string());
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        let message = error_message_ptr(ffi_error);
+
+        assert_eq!(
+            unsafe { (*ffi_error).code },
+            DashSDKErrorCode::InternalError
+        );
+        assert!(
+            !message.contains("Failed to fetch balances"),
+            "neutral fallback must not reference fetch-balances; got: {}",
+            message
+        );
+        assert!(
+            message.starts_with("SDK error:"),
+            "neutral fallback should be prefixed with 'SDK error:'; got: {}",
+            message
+        );
+        assert!(message.contains("widget exploded"));
+
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn timeout_reached_maps_to_timeout_code_structurally() {
+        let sdk_error = dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(5),
+            "fetching identity".to_string(),
+        );
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::Timeout);
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn dapi_no_available_addresses_maps_to_network_with_hint() {
+        let sdk_error = dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses);
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::NetworkError);
+        let message = error_message_ptr(ffi_error);
+        assert!(
+            message.contains("No DAPI addresses configured"),
+            "expected operator hint, got: {message}"
+        );
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn missing_dependency_maps_to_not_found_structurally() {
+        let sdk_error =
+            dash_sdk::Error::MissingDependency("data contract".to_string(), "abc123".to_string());
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::NotFound);
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn epoch_not_found_maps_to_not_found_structurally() {
+        let sdk_error = dash_sdk::Error::EpochNotFound;
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::NotFound);
+        unsafe { dash_sdk_error_free(ffi_error) };
     }
 
     #[test]
@@ -566,5 +969,87 @@ mod tests {
         assert_eq!(count, 0);
         let null = unsafe { dash_sdk_error_consensus_error_at(std::ptr::null(), 0) };
         assert!(null.is_null());
+    }
+
+    /// Representative variant-name extraction for `StateError`. Uses
+    /// `IdentityAlreadyExistsError`, a constructible state-error variant.
+    #[test]
+    fn state_error_extracts_specific_variant_name() {
+        let consensus_error = ConsensusError::StateError(StateError::IdentityAlreadyExistsError(
+            IdentityAlreadyExistsError::new(Default::default()),
+        ));
+        let expected_code = consensus_error.code();
+        let sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
+
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+
+        assert_eq!(
+            unsafe { dash_sdk_error_consensus_error_count(ffi_error) },
+            1
+        );
+        let detail_ptr = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 0) };
+        assert!(!detail_ptr.is_null());
+        let detail = unsafe { &*detail_ptr };
+        assert_eq!(detail.code, expected_code);
+        assert_eq!(cstr(detail.kind), "StateError");
+        assert_eq!(cstr(detail.name), "IdentityAlreadyExistsError");
+        unsafe { dash_sdk_consensus_error_free(detail_ptr) };
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    /// Representative variant-name extraction for `SignatureError`. Uses
+    /// `IdentityNotFoundError`, a constructible signature-error variant.
+    #[test]
+    fn signature_error_extracts_specific_variant_name() {
+        let consensus_error =
+            ConsensusError::SignatureError(DppSignatureError::IdentityNotFoundError(
+                IdentityNotFoundError::new(Default::default()),
+            ));
+        let expected_code = consensus_error.code();
+        let sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
+
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+
+        assert_eq!(
+            unsafe { dash_sdk_error_consensus_error_count(ffi_error) },
+            1
+        );
+        let detail_ptr = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 0) };
+        assert!(!detail_ptr.is_null());
+        let detail = unsafe { &*detail_ptr };
+        assert_eq!(detail.code, expected_code);
+        assert_eq!(cstr(detail.kind), "SignatureError");
+        assert_eq!(cstr(detail.name), "IdentityNotFoundError");
+        unsafe { dash_sdk_consensus_error_free(detail_ptr) };
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    /// Representative variant-name extraction for `FeeError`. Uses
+    /// `BalanceIsNotEnoughError`, a constructible fee-error variant.
+    #[test]
+    fn fee_error_extracts_specific_variant_name() {
+        let consensus_error = ConsensusError::FeeError(FeeError::BalanceIsNotEnoughError(
+            BalanceIsNotEnoughError::new(0, 1),
+        ));
+        let expected_code = consensus_error.code();
+        let sdk_error =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)));
+
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+
+        assert_eq!(
+            unsafe { dash_sdk_error_consensus_error_count(ffi_error) },
+            1
+        );
+        let detail_ptr = unsafe { dash_sdk_error_consensus_error_at(ffi_error, 0) };
+        assert!(!detail_ptr.is_null());
+        let detail = unsafe { &*detail_ptr };
+        assert_eq!(detail.code, expected_code);
+        assert_eq!(cstr(detail.kind), "FeeError");
+        assert_eq!(cstr(detail.name), "BalanceIsNotEnoughError");
+        unsafe { dash_sdk_consensus_error_free(detail_ptr) };
+        unsafe { dash_sdk_error_free(ffi_error) };
     }
 }

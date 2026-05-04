@@ -32,9 +32,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -156,9 +154,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -282,9 +278,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -398,9 +392,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -485,9 +477,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -566,9 +556,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -780,9 +768,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -954,9 +940,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -1167,9 +1151,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -1283,10 +1265,8 @@ public class Addresses: @unchecked Sendable {
             dash_sdk_identity_parse_json(cString)
         }
 
-        guard parseResult.error == nil else {
-            let error = parseResult.error!.pointee
-            defer { dash_sdk_error_free(parseResult.error) }
-            throw SDKError.fromDashSDKError(error)
+        if let errorPtr = parseResult.error {
+            throw SDKError.consumeDashSDKError(errorPtr)
         }
 
         guard let identityHandlePtr = parseResult.data else {
@@ -1341,9 +1321,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -1423,10 +1401,8 @@ public class Addresses: @unchecked Sendable {
             dash_sdk_identity_parse_json(cString)
         }
 
-        guard parseResult.error == nil else {
-            let error = parseResult.error!.pointee
-            defer { dash_sdk_error_free(parseResult.error) }
-            throw SDKError.fromDashSDKError(error)
+        if let errorPtr = parseResult.error {
+            throw SDKError.consumeDashSDKError(errorPtr)
         }
 
         guard let identityHandlePtr = parseResult.data else {
@@ -1448,9 +1424,7 @@ public class Addresses: @unchecked Sendable {
         guard signerResult.error == nil,
               let signer = signerResult.data else {
             if let error = signerResult.error {
-                let sdkError = SDKError.fromDashSDKError(error.pointee)
-                dash_sdk_error_free(error)
-                throw sdkError
+                throw SDKError.consumeDashSDKError(error)
             }
             throw SDKError.internalError("Failed to create signer")
         }
@@ -1494,9 +1468,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -1577,10 +1549,8 @@ public class Addresses: @unchecked Sendable {
             dash_sdk_identity_parse_json(cString)
         }
 
-        guard parseResult.error == nil else {
-            let error = parseResult.error!.pointee
-            defer { dash_sdk_error_free(parseResult.error) }
-            throw SDKError.fromDashSDKError(error)
+        if let errorPtr = parseResult.error {
+            throw SDKError.consumeDashSDKError(errorPtr)
         }
 
         guard let identityHandlePtr = parseResult.data else {
@@ -1603,9 +1573,7 @@ public class Addresses: @unchecked Sendable {
               let signer = signerResult.data else {
             dash_sdk_identity_destroy(identityHandle) // Clean up identity handle
             if let error = signerResult.error {
-                let sdkError = SDKError.fromDashSDKError(error.pointee)
-                dash_sdk_error_free(error)
-                throw sdkError
+                throw SDKError.consumeDashSDKError(error)
             }
             throw SDKError.internalError("Failed to create signer")
         }
@@ -1683,9 +1651,7 @@ public class Addresses: @unchecked Sendable {
 
         // Check for errors
         if let error = result.error {
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {

@@ -131,7 +131,7 @@ pub enum ProtocolError {
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
 
-    #[error("Multiple consensus errors: {0:?}")]
+    #[error("Multiple consensus errors: {}", join_consensus_errors(.0))]
     ConsensusErrors(Vec<ConsensusError>),
 
     #[error(transparent)]
@@ -357,4 +357,15 @@ impl From<InvalidVectorSizeError> for ProtocolError {
     fn from(err: InvalidVectorSizeError) -> Self {
         Self::InvalidVectorSizeError(err)
     }
+}
+
+/// Join the `Display` representation of every inner [`ConsensusError`] with
+/// `"; "`. Used by [`ProtocolError::ConsensusErrors`]'s `Display` impl so the
+/// rendered message is human-readable instead of a `Debug`-formatted `Vec`.
+fn join_consensus_errors(errors: &[ConsensusError]) -> String {
+    errors
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
 }

@@ -14,7 +14,15 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(
-    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Clone,
+    strum::IntoStaticStr,
 )]
 pub enum SignatureError {
     /*

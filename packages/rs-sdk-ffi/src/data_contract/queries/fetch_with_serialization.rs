@@ -53,7 +53,8 @@ impl DashSDKDataContractFetchResult {
             json_string: std::ptr::null_mut(),
             serialized_data: std::ptr::null_mut(),
             serialized_data_len: 0,
-            error: Box::into_raw(Box::new(error)),
+            // Sidecar-aware boxer; see `crate::error::box_dashsdk_error`.
+            error: crate::error::box_dashsdk_error(error),
         }
     }
 }
@@ -205,7 +206,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_result_free(
     }
 
     if !result.error.is_null() {
-        let _ = Box::from_raw(result.error);
+        crate::error::dash_sdk_error_free(result.error);
         result.error = std::ptr::null_mut();
     }
 }

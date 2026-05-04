@@ -516,7 +516,10 @@ impl DashSDKResult {
         DashSDKResult {
             data_type: DashSDKResultDataType::NoData,
             data: std::ptr::null_mut(),
-            error: Box::into_raw(Box::new(error)),
+            // Use the sidecar-aware boxer so any pending consensus-error
+            // entries are promoted to the active map keyed by this heap
+            // pointer. See `crate::error::box_dashsdk_error`.
+            error: crate::error::box_dashsdk_error(error),
         }
     }
 }
@@ -1263,11 +1266,10 @@ pub unsafe extern "C" fn dash_sdk_result_free(result: *mut DashSDKResult) {
 
     // ── Free the error field ──────────────────────────────────────────
     if !res.error.is_null() {
-        let error = Box::from_raw(res.error);
-        if !error.message.is_null() {
-            let _ = std::ffi::CString::from_raw(error.message);
-        }
-        // Box is dropped here, freeing the DashSDKError struct
+        // Delegate to the canonical error free path so any structured
+        // consensus-error sidecar associated with this heap pointer is
+        // released along with the message and struct.
+        super::error::dash_sdk_error_free(res.error);
         res.error = std::ptr::null_mut();
     }
 

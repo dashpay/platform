@@ -62,7 +62,15 @@ use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFound
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
 #[derive(
-    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Clone,
+    strum::IntoStaticStr,
 )]
 pub enum StateError {
     /*

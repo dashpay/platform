@@ -85,22 +85,34 @@ impl WasmSdkError {
     }
 
     fn from_protocol_error(err: ProtocolError, is_retriable: bool) -> Self {
-        let message = err.to_string();
-        let consensus_errors = match &err {
+        let (message, code, consensus_errors) = match &err {
             ProtocolError::ConsensusError(error) => {
-                vec![WasmConsensusError::from_consensus_error(error.as_ref())]
+                let consensus = error.as_ref();
+                (
+                    consensus.to_string(),
+                    consensus.code() as i32,
+                    vec![WasmConsensusError::from_consensus_error(consensus)],
+                )
             }
-            ProtocolError::ConsensusErrors(errors) => errors
-                .iter()
-                .map(WasmConsensusError::from_consensus_error)
-                .collect(),
-            _ => Vec::new(),
+            ProtocolError::ConsensusErrors(errors) => {
+                let message = errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let consensus_errors = errors
+                    .iter()
+                    .map(WasmConsensusError::from_consensus_error)
+                    .collect();
+                (message, -1, consensus_errors)
+            }
+            _ => (err.to_string(), -1, Vec::new()),
         };
 
         Self {
             kind: WasmSdkErrorKind::Protocol,
             message,
-            code: -1,
+            code,
             is_retriable,
             consensus_errors,
         }
@@ -268,20 +280,41 @@ impl From<WasmDppError> for WasmSdkError {
     }
 }
 
+fn consensus_error_kind_name(err: &ConsensusError) -> &'static str {
+    match err {
+        ConsensusError::DefaultError => "DefaultError",
+        ConsensusError::BasicError(_) => "BasicError",
+        ConsensusError::StateError(_) => "StateError",
+        ConsensusError::SignatureError(_) => "SignatureError",
+        ConsensusError::FeeError(_) => "FeeError",
+    }
+}
+
+/// Resolve the specific variant identifier of a `ConsensusError`.
+///
+/// The inner consensus enums (`BasicError`, `StateError`, `SignatureError`,
+/// `FeeError`) derive `strum::IntoStaticStr`, which generates a compile-time
+/// `impl From<&Enum> for &'static str` from the enum's structure. Adding a
+/// future variant to one of those enums therefore extends this mapping
+/// automatically with the correct variant identifier; there is no
+/// `Debug`-format parsing or `_` wildcard that could silently drift if a
+/// variant is added or renamed. Mirrors `consensus_error_variant_name` in
+/// `rs-sdk-ffi`.
+fn consensus_error_variant_name(err: &ConsensusError) -> &'static str {
+    match err {
+        ConsensusError::DefaultError => "DefaultError",
+        ConsensusError::BasicError(inner) => inner.into(),
+        ConsensusError::StateError(inner) => inner.into(),
+        ConsensusError::SignatureError(inner) => inner.into(),
+        ConsensusError::FeeError(inner) => inner.into(),
+    }
+}
+
 impl WasmConsensusError {
     fn from_consensus_error(err: &ConsensusError) -> Self {
-        let name = match err {
-            ConsensusError::DefaultError => "DefaultError",
-            ConsensusError::BasicError(_) => "BasicError",
-            ConsensusError::StateError(_) => "StateError",
-            ConsensusError::SignatureError(_) => "SignatureError",
-            ConsensusError::FeeError(_) => "FeeError",
-        }
-        .to_string();
-
         Self {
-            kind: name.clone(),
-            name,
+            kind: consensus_error_kind_name(err).to_string(),
+            name: consensus_error_variant_name(err).to_string(),
             message: err.to_string(),
             code: err.code(),
         }
@@ -402,21 +435,32 @@ mod tests {
 
     #[test]
     fn protocol_consensus_errors_plural_are_preserved_structurally() {
+        let absent_err: ConsensusError = DocumentTransitionsAreAbsentError::new().into();
+        let absent_message = absent_err.to_string();
         let error = WasmSdkError::from(ProtocolError::ConsensusErrors(vec![
-            DocumentTransitionsAreAbsentError::new().into(),
+            absent_err,
             ConsensusError::DefaultError,
         ]));
 
         assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
         assert!(!error.is_retriable);
         assert_eq!(error.consensus_errors.len(), 2);
-        assert_eq!(error.consensus_errors[0].name, "BasicError");
+        assert_eq!(error.consensus_errors[0].kind, "BasicError");
         assert_eq!(
-            error.consensus_errors[0].message,
-            DocumentTransitionsAreAbsentError::new().to_string()
+            error.consensus_errors[0].name,
+            "DocumentTransitionsAreAbsentError"
         );
+        assert_eq!(error.consensus_errors[0].message, absent_message);
+        assert_eq!(error.consensus_errors[1].kind, "DefaultError");
         assert_eq!(error.consensus_errors[1].name, "DefaultError");
         assert_eq!(error.consensus_errors[1].code, 1);
+        assert_eq!(error.code, -1);
+
+        // Plural messages are joined with "; " for readability,
+        // mirroring the rs-sdk-ffi behavior.
+        let expected_message = format!("{}; {}", absent_message, ConsensusError::DefaultError);
+        assert_eq!(error.message, expected_message);
+        assert!(!error.message.contains("Multiple consensus errors: ["));
     }
 
     #[test]
@@ -429,9 +473,16 @@ mod tests {
         assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
         assert!(!error.is_retriable);
         assert_eq!(error.consensus_errors.len(), 1);
-        assert_eq!(error.consensus_errors[0].name, "BasicError");
+        assert_eq!(error.consensus_errors[0].kind, "BasicError");
+        assert_eq!(
+            error.consensus_errors[0].name,
+            "DocumentTransitionsAreAbsentError"
+        );
         assert_eq!(error.consensus_errors[0].message, expected_message);
         assert_eq!(error.consensus_errors[0].code, expected_code);
+        assert_eq!(error.code, expected_code as i32);
+        // Singular keeps the inner consensus error's Display unchanged.
+        assert_eq!(error.message, expected_message);
     }
 
     #[test]
@@ -446,5 +497,6 @@ mod tests {
         assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
         assert_eq!(error.is_retriable, retriable);
         assert_eq!(error.consensus_errors.len(), 2);
+        assert!(error.message.contains("; "));
     }
 }

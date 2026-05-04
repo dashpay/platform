@@ -154,6 +154,10 @@ impl DocumentCreateTransitionBuilder {
             .map_err(|e| Error::Protocol(e.into()))?;
 
         let mut document = self.document.clone();
+        // The public create builder always normalizes the document id here before
+        // calling the DPP constructor, so the constructor's create-id pre-sign
+        // validation acts as defense-in-depth for this SDK path rather than a
+        // user-reachable builder failure.
         document.set_id(Document::generate_document_id_v0(
             self.data_contract.id_ref(),
             &document.owner_id(),
