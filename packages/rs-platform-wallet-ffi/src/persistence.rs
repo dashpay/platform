@@ -1175,6 +1175,51 @@ fn build_core_address_entry_ffi(
     })
 }
 
+/// Render the BIP32 derivation path string for a derived address from
+/// the structured triple `(account_type, pool_type, derivation_index)`
+/// + the network the address lives on. Mirrors what the address pool
+/// itself does at derive time: take the account-level prefix from
+/// [`AccountType::derivation_path`], append the pool's chain
+/// segment (External → `/0`, Internal → `/1`, Absent → no chain
+/// segment, AbsentHardened → no chain segment), then append the
+/// leaf index (hardened only for AbsentHardened pools).
+///
+/// Returns `None` when the account-level path can't be resolved
+/// (the typed `derivation_path` returns an `Error` for some account
+/// variants). Callers fall back to an empty path string in that
+/// case — `PersistentCoreAddress.address` stays the authoritative
+/// join key, so an empty path is purely a display-side
+/// degradation.
+fn derivation_path_for_derived_address(
+    derived: &platform_wallet::DerivedAddress,
+) -> Option<String> {
+    use key_wallet::bip32::{ChildNumber, DerivationPath};
+    let network: dash_network::Network = (*derived.address.network()).into();
+    let mut path: DerivationPath = derived.account_type.derivation_path(network).ok()?;
+    let leaf = match derived.pool_type {
+        AddressPoolType::External => {
+            // m/.../0/<index>
+            path = path.child(ChildNumber::from_normal_idx(0).ok()?);
+            ChildNumber::from_normal_idx(derived.derivation_index).ok()?
+        }
+        AddressPoolType::Internal => {
+            // m/.../1/<index>
+            path = path.child(ChildNumber::from_normal_idx(1).ok()?);
+            ChildNumber::from_normal_idx(derived.derivation_index).ok()?
+        }
+        AddressPoolType::Absent => {
+            // m/.../<index>
+            ChildNumber::from_normal_idx(derived.derivation_index).ok()?
+        }
+        AddressPoolType::AbsentHardened => {
+            // m/.../<index'>
+            ChildNumber::from_hardened_idx(derived.derivation_index).ok()?
+        }
+    };
+    path = path.child(leaf);
+    Some(path.to_string())
+}
+
 /// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
 /// same `AccountAddressPoolFFI` shape `build_address_pools_for_callback`
 /// produces, so the event-driven gap-limit-extension flow can fan out
@@ -1188,16 +1233,13 @@ fn build_core_address_entry_ffi(
 /// receive that extends Internal AND a separate external receive that
 /// extends External) emits one pool snapshot per pool variant.
 ///
-/// `derivation_path` is intentionally empty on this path —
-/// `key_wallet_manager::DerivedAddress` deliberately omits it ("consumers
-/// can recompute deterministically from `(account_type, pool_type,
-/// derivation_index)` rather than shipping a redundant string"). The
-/// next full pool snapshot (registration-time emit, or a follow-up
-/// path that has access to the wallet manager) overwrites with the
-/// canonical BIP32 string. Empty is safe: `PersistentCoreAddress.address`
-/// stays the authoritative join key, and the storage explorer just
-/// renders an empty derivation-path field for these rows until the
-/// follow-up emit lands.
+/// `derivation_path` is computed deterministically per-entry by
+/// [`derivation_path_for_derived_address`] from the same
+/// `(account_type, pool_type, derivation_index)` triple the pool
+/// itself uses at derive time. Falls back to an empty string only
+/// when the account-level path can't be resolved (`AccountType`
+/// variants whose `derivation_path` errors); the address string
+/// remains the authoritative join key in that case.
 #[allow(clippy::type_complexity)]
 fn build_address_pools_from_derived(
     derived: &[platform_wallet::DerivedAddress],
@@ -1271,9 +1313,16 @@ fn build_address_pools_from_derived(
             };
             let address_c = CString::new(rendered_address)
                 .map_err(|e| format!("derived address contained NUL byte: {}", e))?;
-            // Empty derivation_path placeholder — see fn doc-comment
-            // for rationale.
-            let path_c = CString::new("").expect("empty CString construction cannot fail");
+            // Compute the BIP32 derivation path deterministically
+            // from `(account_type, pool_type, derivation_index)` —
+            // mirrors what the address pool itself does at derive
+            // time. Falls back to an empty string only when the
+            // account-level path can't be resolved (some non-Standard
+            // variants); the address string remains the authoritative
+            // join key on the persister side either way.
+            let path_str = derivation_path_for_derived_address(d).unwrap_or_default();
+            let path_c = CString::new(path_str)
+                .map_err(|e| format!("derivation path contained NUL byte: {}", e))?;
             let address_ptr = address_c.as_ptr();
             let path_ptr = path_c.as_ptr();
             owned_strings.push(address_c);
