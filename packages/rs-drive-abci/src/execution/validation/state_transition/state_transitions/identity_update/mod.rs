@@ -151,8 +151,8 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
-    #[test]
-    fn test_identity_update_that_disables_an_authentication_key() {
+    #[tokio::test]
+    async fn test_identity_update_that_disables_an_authentication_key() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -193,6 +193,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -233,8 +234,8 @@ mod tests {
         assert_eq!(issues.len(), 0);
     }
 
-    #[test]
-    fn test_identity_update_that_adds_an_authentication_key() {
+    #[tokio::test]
+    async fn test_identity_update_that_adds_an_authentication_key() {
         let platform_version = PlatformVersion::latest();
 
         let mut platform = TestPlatformBuilder::new()
@@ -304,6 +305,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -373,8 +375,8 @@ mod tests {
         };
     }
 
-    #[test]
-    fn test_identity_update_that_disables_an_encryption_key() {
+    #[tokio::test]
+    async fn test_identity_update_that_disables_an_encryption_key() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -449,6 +451,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&master_key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -498,8 +501,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_adding_owner_key_not_allowed() {
+    #[tokio::test]
+    async fn test_identity_update_adding_owner_key_not_allowed() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -557,6 +560,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -603,8 +607,8 @@ mod tests {
         assert_eq!(issues.len(), 0);
     }
 
-    #[test]
-    fn test_identity_update_adding_contract_bound_key() {
+    #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key() {
         use crate::execution::validation::state_transition::tests::{
             register_contract_from_bytes, IdentityTestInfo,
         };
@@ -705,7 +709,8 @@ mod tests {
                 identity_nonce: 1,
             },
             platform_version,
-        );
+        )
+        .await;
 
         let secp = Secp256k1::new();
 
@@ -770,6 +775,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&master_key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -836,8 +842,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_adding_contract_bound_key_on_document_level() {
+    #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key_on_document_level() {
         use crate::execution::validation::state_transition::tests::{
             register_contract_from_bytes, IdentityTestInfo,
         };
@@ -1132,7 +1138,8 @@ mod tests {
                 identity_nonce: 1,
             },
             platform_version,
-        );
+        )
+        .await;
 
         let secp = Secp256k1::new();
 
@@ -1198,6 +1205,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&master_key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1265,8 +1273,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_empty_transition_rejected() {
+    #[tokio::test]
+    async fn test_identity_update_empty_transition_rejected() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1306,6 +1314,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1337,8 +1346,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_too_many_keys_to_disable() {
+    #[tokio::test]
+    async fn test_identity_update_too_many_keys_to_disable() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1380,6 +1389,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1411,8 +1421,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_duplicate_key_ids_to_disable() {
+    #[tokio::test]
+    async fn test_identity_update_duplicate_key_ids_to_disable() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1452,6 +1462,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1483,8 +1494,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_disabling_key_id_also_being_added() {
+    #[tokio::test]
+    async fn test_identity_update_disabling_key_id_also_being_added() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1539,6 +1550,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1570,8 +1582,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_wrong_revision() {
+    #[tokio::test]
+    async fn test_identity_update_wrong_revision() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1611,6 +1623,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1640,8 +1653,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_disabling_nonexistent_key() {
+    #[tokio::test]
+    async fn test_identity_update_disabling_nonexistent_key() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1681,6 +1694,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1710,8 +1724,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_adding_key_with_existing_id() {
+    #[tokio::test]
+    async fn test_identity_update_adding_key_with_existing_id() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1796,6 +1810,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 

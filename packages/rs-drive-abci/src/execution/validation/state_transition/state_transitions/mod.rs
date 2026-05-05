@@ -819,11 +819,11 @@ pub(in crate::execution) mod tests {
         UseRng(&'a mut StdRng),
     }
 
-    pub(in crate::execution) fn register_contract_from_bytes(
+    pub(in crate::execution) async fn register_contract_from_bytes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         contract_bytes: Vec<u8>,
-        identity_info: IdentityTestInfo,
+        identity_info: IdentityTestInfo<'_>,
         platform_version: &PlatformVersion,
     ) -> DataContract {
         // Deserialize the data contract from bytes
@@ -869,6 +869,7 @@ pub(in crate::execution) mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create and sign data contract create transition");
 
         // Serialize the state transition
@@ -904,7 +905,7 @@ pub(in crate::execution) mod tests {
         data_contract
     }
 
-    pub(in crate::execution) fn create_dpns_name_contest_give_key_info(
+    pub(in crate::execution) async fn create_dpns_name_contest_give_key_info(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -952,7 +953,8 @@ pub(in crate::execution) mod tests {
                 None,
                 false,
                 platform_version,
-            );
+            )
+            .await;
 
         let (identity_1, signer_1, identity_key_1) = identity_1_info;
 
@@ -977,7 +979,7 @@ pub(in crate::execution) mod tests {
         )
     }
 
-    pub(in crate::execution) fn create_dpns_identity_name_contest(
+    pub(in crate::execution) async fn create_dpns_identity_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1008,12 +1010,13 @@ pub(in crate::execution) mod tests {
             None,
             false,
             platform_version,
-        );
+        )
+        .await;
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
     /// This can be useful if we already created the identities and we reuse the seed
-    pub(in crate::execution) fn create_dpns_identity_name_contest_skip_creating_identities(
+    pub(in crate::execution) async fn create_dpns_identity_name_contest_skip_creating_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1045,11 +1048,12 @@ pub(in crate::execution) mod tests {
             nonce_offset,
             true, //we should also skip preorder
             platform_version,
-        );
+        )
+        .await;
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
-    pub(in crate::execution) fn create_dpns_contract_name_contest(
+    pub(in crate::execution) async fn create_dpns_contract_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1100,12 +1104,13 @@ pub(in crate::execution) mod tests {
             rng,
             name,
             platform_version,
-        );
+        )
+        .await;
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn create_dpns_name_contest_on_identities(
+    async fn create_dpns_name_contest_on_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
         identity_2: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -1244,6 +1249,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_1 =
@@ -1264,6 +1270,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_2 =
@@ -1284,6 +1291,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
@@ -1303,6 +1311,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_2 = documents_batch_create_transition_2
@@ -1406,7 +1415,7 @@ pub(in crate::execution) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn create_dpns_name_contest_on_identities_for_contract_records(
+    async fn create_dpns_name_contest_on_identities_for_contract_records(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
         identity_2: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -1554,6 +1563,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_1 =
@@ -1574,6 +1584,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_2 =
@@ -1594,6 +1605,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
@@ -1613,6 +1625,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_2 = documents_batch_create_transition_2
@@ -1689,7 +1702,7 @@ pub(in crate::execution) mod tests {
         )
     }
 
-    pub(in crate::execution) fn add_contender_to_dpns_name_contest(
+    pub(in crate::execution) async fn add_contender_to_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1772,6 +1785,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_1 =
@@ -1792,6 +1806,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
@@ -2080,7 +2095,7 @@ pub(in crate::execution) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::execution) fn perform_vote(
+    pub(in crate::execution) async fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -2119,6 +2134,7 @@ pub(in crate::execution) mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to make transition vote");
 
         let masternode_vote_serialized_transition = masternode_vote_transition
@@ -2160,7 +2176,7 @@ pub(in crate::execution) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::execution) fn perform_votes(
+    pub(in crate::execution) async fn perform_votes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choice: ResourceVoteChoice,
@@ -2189,14 +2205,15 @@ pub(in crate::execution) mod tests {
                 1 + nonce_offset.unwrap_or_default(),
                 None,
                 platform_version,
-            );
+            )
+            .await;
 
             masternode_infos.push((pro_tx_hash_bytes, voting_identity, signer, voting_key));
         }
         masternode_infos
     }
 
-    pub(in crate::execution) fn perform_votes_multi(
+    pub(in crate::execution) async fn perform_votes_multi(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choices: Vec<(ResourceVoteChoice, u64)>,
@@ -2218,7 +2235,8 @@ pub(in crate::execution) mod tests {
                 count_aggregate,
                 nonce_offset,
                 platform_version,
-            );
+            )
+            .await;
             masternodes_by_vote_choice.insert(resource_vote_choice, masternode_infos);
             count_aggregate += count;
         }
@@ -2677,8 +2695,8 @@ pub(in crate::execution) mod tests {
             (doc, entropy)
         }
 
-        #[test]
-        fn should_err_when_creating_contract_keywords_document() {
+        #[tokio::test]
+        async fn should_err_when_creating_contract_keywords_document() {
             let platform_version = PlatformVersion::latest();
 
             let mut platform = TestPlatformBuilder::new()
@@ -2714,6 +2732,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("batch transition");
 
             let serialized = transition.serialize_to_bytes().unwrap();
@@ -2740,8 +2759,8 @@ pub(in crate::execution) mod tests {
             );
         }
 
-        #[test]
-        fn should_err_when_creating_short_description_document() {
+        #[tokio::test]
+        async fn should_err_when_creating_short_description_document() {
             let platform_version = PlatformVersion::latest();
 
             let mut platform = TestPlatformBuilder::new()
@@ -2777,6 +2796,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("batch transition");
 
             let serialized = transition.serialize_to_bytes().unwrap();
@@ -2803,8 +2823,8 @@ pub(in crate::execution) mod tests {
             );
         }
 
-        #[test]
-        fn should_err_when_creating_full_description_document() {
+        #[tokio::test]
+        async fn should_err_when_creating_full_description_document() {
             let platform_version = PlatformVersion::latest();
 
             let mut platform = TestPlatformBuilder::new()
@@ -2840,6 +2860,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("batch transition");
 
             let serialized = transition.serialize_to_bytes().unwrap();
@@ -2872,7 +2893,7 @@ pub(in crate::execution) mod tests {
         // ──────────────────────────────────────────────────────────────────────────
         //
 
-        fn create_contract_with_keywords_and_description(
+        async fn create_contract_with_keywords_and_description(
             platform: &mut TempPlatform<MockCoreRPCLike>,
         ) -> (Identity, SimpleSigner, IdentityPublicKey) {
             let platform_version = PlatformVersion::latest();
@@ -2905,6 +2926,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("build transition");
 
             let serialized = create_transition.serialize_to_bytes().unwrap();
@@ -2939,15 +2961,15 @@ pub(in crate::execution) mod tests {
             (owner_identity, signer, key)
         }
 
-        #[test]
-        fn owner_can_update_short_description_document() {
+        #[tokio::test]
+        async fn owner_can_update_short_description_document() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
             let (_owner, signer, key) =
-                create_contract_with_keywords_and_description(&mut platform);
+                create_contract_with_keywords_and_description(&mut platform).await;
 
             // 🔎 fetch shortDescription doc through query
             let search_contract =
@@ -2985,6 +3007,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("replace");
 
             let serialized = transition.serialize_to_bytes().unwrap();
@@ -3009,15 +3032,15 @@ pub(in crate::execution) mod tests {
             );
         }
 
-        #[test]
-        fn owner_can_not_delete_keyword_document() {
+        #[tokio::test]
+        async fn owner_can_not_delete_keyword_document() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
             let (_owner, signer, key) =
-                create_contract_with_keywords_and_description(&mut platform);
+                create_contract_with_keywords_and_description(&mut platform).await;
 
             let search_contract =
                 load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -3051,6 +3074,7 @@ pub(in crate::execution) mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("delete");
 
             let serialized = transition.serialize_to_bytes().unwrap();

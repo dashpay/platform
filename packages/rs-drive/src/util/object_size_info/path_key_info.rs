@@ -406,7 +406,7 @@ mod tests {
         let s = format!("{}", pk);
         assert!(s.starts_with("PathKey(path:"));
 
-        let key: &[u8] = &[b'c'];
+        let key: &[u8] = b"c";
         let pk: PathKeyInfo<0> = PathKeyRef((vec![vec![b'd']], key));
         let s = format!("{}", pk);
         assert!(s.starts_with("PathKeyRef(path:"));
@@ -416,7 +416,7 @@ mod tests {
         let s = format!("{}", pk);
         assert!(s.starts_with("PathFixedSizeKey(path:"));
 
-        let key_ref: &[u8] = &[b'y'];
+        let key_ref: &[u8] = b"y";
         let pk: PathKeyInfo<1> = PathFixedSizeKeyRef((path, key_ref));
         let s = format!("{}", pk);
         assert!(s.starts_with("PathFixedSizeKeyRef(path:"));

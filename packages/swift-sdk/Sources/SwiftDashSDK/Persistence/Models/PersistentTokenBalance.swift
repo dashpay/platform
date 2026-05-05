@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting token balance data
 @Model
 public final class PersistentTokenBalance {
+    /// Index `networkRaw` for per-network balance scans. Token-balance
+    /// rows are aggregated per-identity per-token; UI surfaces always
+    /// scope to the active network.
+    #Index<PersistentTokenBalance>([\.networkRaw])
+
     // MARK: - Core Properties
     public var tokenId: String
     public var identityId: Data
@@ -21,7 +26,16 @@ public final class PersistentTokenBalance {
     public var tokenDecimals: Int32?
 
     // MARK: - Network
-    public var network: String
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. See
+    /// `PersistentIdentity.networkRaw` for the full rationale.
+    public var networkRaw: UInt32
+
+    /// Type-safe accessor over `networkRaw`. Setter writes through.
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
 
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify) public var identity: PersistentIdentity?
@@ -36,7 +50,7 @@ public final class PersistentTokenBalance {
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
         tokenDecimals: Int32? = nil,
-        network: String = "testnet"
+        network: Network
     ) {
         self.tokenId = tokenId
         self.identityId = identityId
@@ -48,7 +62,7 @@ public final class PersistentTokenBalance {
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
-        self.network = network
+        self.networkRaw = network.rawValue
     }
 
     // MARK: - Computed Properties

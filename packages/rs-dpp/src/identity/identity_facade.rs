@@ -359,7 +359,7 @@ mod tests {
             let facade = facade_v1();
             let id = Identifier::from([51u8; 32]);
             let identity = facade.create(id, BTreeMap::new()).unwrap();
-            let new_key: IdentityPublicKeyInCreation = IdentityPublicKey::from(sample_pk(1)).into();
+            let new_key: IdentityPublicKeyInCreation = sample_pk(1).into();
             let transition = facade
                 .create_identity_update_transition(
                     identity,

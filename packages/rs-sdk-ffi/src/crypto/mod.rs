@@ -1,7 +1,7 @@
 //! Cryptographic utilities for key validation
 
+use crate::types::{FFINetwork, Network};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::KeyType;
 use std::ffi::{c_char, CStr};
 use zeroize::Zeroizing;
@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 /// # Safety
 /// - `private_key_hex` and `public_key_hex` must be valid, non-null pointers to NUL-terminated C strings that
 ///   remain valid for the duration of the call.
-/// - `key_type` and `is_testnet` are passed by value; no references are retained.
+/// - `key_type` and `network` are passed by value; no references are retained.
 /// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
 ///   the SDK's free routine. It may also return no data (null pointer) to indicate success without payload.
 /// - Passing invalid or dangling pointers results in undefined behavior.
@@ -20,7 +20,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
     private_key_hex: *const c_char,
     public_key_hex: *const c_char,
     key_type: u8,
-    is_testnet: bool,
+    network: FFINetwork,
 ) -> DashSDKResult {
     if private_key_hex.is_null() || public_key_hex.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -80,11 +80,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
         }
     };
 
-    let network = if is_testnet {
-        Network::Testnet
-    } else {
-        Network::Mainnet
-    };
+    let network: Network = network.into();
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key
     let derived_public_key_data =
@@ -134,7 +130,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
     private_key_hex: *const c_char,
-    is_testnet: bool,
+    network: FFINetwork,
 ) -> DashSDKResult {
     if private_key_hex.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -170,12 +166,7 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
         }
     };
 
-    // Create PrivateKey from bytes
-    let network = if is_testnet {
-        Network::Testnet
-    } else {
-        Network::Mainnet
-    };
+    let network: Network = network.into();
 
     let mut key_array = Zeroizing::new([0u8; 32]);
     key_array.copy_from_slice(&private_key_bytes);
@@ -202,14 +193,14 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
 /// # Safety
 /// - `private_key_hex` must be a valid, non-null pointer to a NUL-terminated C string representing a 32-byte hex key
 ///   and remain valid for the duration of the call.
-/// - `key_type` and `is_testnet` are passed by value; no references are retained.
+/// - `key_type` and `network` are passed by value; no references are retained.
 /// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
 ///   the SDK's free routine.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
     private_key_hex: *const c_char,
     key_type: u8,
-    is_testnet: bool,
+    network: FFINetwork,
 ) -> DashSDKResult {
     if private_key_hex.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -259,11 +250,7 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
         }
     };
 
-    let network = if is_testnet {
-        Network::Testnet
-    } else {
-        Network::Mainnet
-    };
+    let network: Network = network.into();
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key
     match key_type.public_key_data_from_private_key_data(&key_array, network) {

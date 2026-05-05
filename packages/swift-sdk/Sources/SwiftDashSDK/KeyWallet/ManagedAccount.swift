@@ -18,9 +18,9 @@ public class ManagedAccount {
     // MARK: - Properties
 
     /// Get the network this account is on
-    public var network: KeyWalletNetwork {
+    public var network: Network {
         let ffiNetwork = managed_core_account_get_network(handle)
-        return KeyWalletNetwork(ffiNetwork: ffiNetwork)
+        return Network(ffiNetwork: ffiNetwork)
     }
 
     /// Get the account type
@@ -30,10 +30,11 @@ public class ManagedAccount {
         return AccountType(ffiType: ffiType)
     }
 
-    /// Check if this is a watch-only account
-    public var isWatchOnly: Bool {
-        return managed_core_account_get_is_watch_only(handle)
-    }
+    // `isWatchOnly` was removed in lockstep with upstream dropping the
+    // per-core-account flag (it's now a wallet-level property on
+    // `WalletType::WatchOnly`). The corresponding C getter
+    // `managed_core_account_get_is_watch_only` is gone too. Query
+    // watch-only from the parent wallet handle if needed.
 
     /// Get the account index
     public var index: UInt32 {
@@ -87,23 +88,21 @@ public class ManagedAccount {
                 buffer.map { String(format: "%02x", $0) }.joined()
             }
 
-            // Convert block hash if present
-            let blockHashHex: String?
-            if ffiTx.context.block_info.height > 0 {
-                blockHashHex = withUnsafeBytes(of: ffiTx.context.block_info.block_hash) { buffer in
-                    buffer.map { String(format: "%02x", $0) }.joined()
-                }
-            } else {
-                blockHashHex = nil
+            // Extract context details from FFITransactionContext
+            let contextDetails = TransactionContextDetails(ffiContext: ffiTx.context)
+
+            let blockHashHex: String? = contextDetails.blockHash.map { data in
+                data.map { String(format: "%02x", $0) }.joined()
             }
 
             let transaction = WalletTransaction(
                 txid: txidHex,
                 netAmount: ffiTx.net_amount,
-                height: ffiTx.context.block_info.height,
+                height: contextDetails.height,
                 blockHash: blockHashHex,
-                timestamp: ffiTx.context.block_info.timestamp,
+                timestamp: UInt64(contextDetails.timestamp),
                 fee: ffiTx.fee > 0 ? ffiTx.fee : nil,
+                isOurs: true // direction-based, inferred from net_amount sign
             )
 
             transactions.append(transaction)
@@ -169,17 +168,20 @@ public struct WalletTransaction: Identifiable {
     /// Block hash if confirmed (hex string)
     public let blockHash: String?
     /// Unix timestamp
-    public let timestamp: UInt32
+    public let timestamp: UInt64
     /// Fee if known
     public let fee: UInt64?
+    /// Whether this is our transaction
+    public let isOurs: Bool
 
     public init(
         txid: String,
         netAmount: Int64,
         height: UInt32,
         blockHash: String?,
-        timestamp: UInt32,
+        timestamp: UInt64,
         fee: UInt64?,
+        isOurs: Bool
     ) {
         self.txid = txid
         self.netAmount = netAmount
@@ -187,6 +189,7 @@ public struct WalletTransaction: Identifiable {
         self.blockHash = blockHash
         self.timestamp = timestamp
         self.fee = fee
+        self.isOurs = isOurs
     }
 
     /// Transaction date

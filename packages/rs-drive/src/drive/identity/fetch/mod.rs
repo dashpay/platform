@@ -423,7 +423,7 @@ mod tests {
                 .expect("should have balance for existing identity");
             assert_eq!(*balance, identities[0].balance());
             assert!(
-                balances.get(&identities[1].id().to_buffer()).is_none(),
+                !balances.contains_key(&identities[1].id().to_buffer()),
                 "non-existent identity should not appear in results"
             );
         }

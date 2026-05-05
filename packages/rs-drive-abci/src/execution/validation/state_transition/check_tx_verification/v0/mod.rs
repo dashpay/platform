@@ -497,7 +497,7 @@ mod tests {
 
     /// Helper to build a signed DataContractCreate StateTransition and return it alongside
     /// the platform instance. This keeps individual tests concise.
-    fn setup_data_contract_create_transition(
+    async fn setup_data_contract_create_transition(
         credits: dpp::fee::Credits,
     ) -> (
         crate::test::helpers::setup::TempPlatform<MockCoreRPCLike>,
@@ -532,6 +532,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create transition");
 
         let state_transition: StateTransition = data_contract_create_transition.into();
@@ -542,11 +543,11 @@ mod tests {
     mod first_time_check {
         use super::*;
 
-        #[test]
-        fn should_return_valid_result_for_data_contract_create() {
+        #[tokio::test]
+        async fn should_return_valid_result_for_data_contract_create() {
             let platform_version = PlatformVersion::latest();
             let (platform, state_transition) =
-                setup_data_contract_create_transition(dash_to_credits!(2.0));
+                setup_data_contract_create_transition(dash_to_credits!(2.0)).await;
 
             let platform_state = platform.state.load();
             let platform_ref = PlatformRef {
@@ -575,12 +576,12 @@ mod tests {
             assert!(validation_result.data.unwrap().is_some());
         }
 
-        #[test]
-        fn should_return_invalid_result_for_insufficient_balance() {
+        #[tokio::test]
+        async fn should_return_invalid_result_for_insufficient_balance() {
             let platform_version = PlatformVersion::latest();
             // Give the identity very little balance -- not enough for the data contract create.
             // The minimum balance pre-check should reject this.
-            let (platform, state_transition) = setup_data_contract_create_transition(1);
+            let (platform, state_transition) = setup_data_contract_create_transition(1).await;
 
             let platform_state = platform.state.load();
             let platform_ref = PlatformRef {
@@ -608,8 +609,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn should_return_invalid_result_for_bad_signature() {
+        #[tokio::test]
+        async fn should_return_invalid_result_for_bad_signature() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -640,6 +641,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expected to create transition");
 
             let mut state_transition: StateTransition = data_contract_create_transition.into();
@@ -673,8 +675,8 @@ mod tests {
         /// A transition whose owner identity does not exist in state must fail
         /// with an IdentityNotFoundError surfaced via the identity-signed
         /// validation branch (not an Err).
-        #[test]
-        fn should_return_invalid_when_owner_identity_not_in_state() {
+        #[tokio::test]
+        async fn should_return_invalid_when_owner_identity_not_in_state() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -709,6 +711,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expected to create transition");
 
             let state_transition: StateTransition = data_contract_create_transition.into();
@@ -747,11 +750,11 @@ mod tests {
             let _ = &mut platform;
         }
 
-        #[test]
-        fn should_return_invalid_result_for_replayed_nonce() {
+        #[tokio::test]
+        async fn should_return_invalid_result_for_replayed_nonce() {
             let platform_version = PlatformVersion::latest();
             let (platform, state_transition) =
-                setup_data_contract_create_transition(dash_to_credits!(2.0));
+                setup_data_contract_create_transition(dash_to_credits!(2.0)).await;
 
             let serialized = state_transition
                 .serialize_to_bytes()
@@ -816,11 +819,11 @@ mod tests {
     mod recheck {
         use super::*;
 
-        #[test]
-        fn should_return_valid_result_for_data_contract_create_recheck() {
+        #[tokio::test]
+        async fn should_return_valid_result_for_data_contract_create_recheck() {
             let platform_version = PlatformVersion::latest();
             let (platform, state_transition) =
-                setup_data_contract_create_transition(dash_to_credits!(2.0));
+                setup_data_contract_create_transition(dash_to_credits!(2.0)).await;
 
             let platform_state = platform.state.load();
             let platform_ref = PlatformRef {
@@ -852,11 +855,11 @@ mod tests {
             );
         }
 
-        #[test]
-        fn should_return_invalid_result_for_replayed_nonce_on_recheck() {
+        #[tokio::test]
+        async fn should_return_invalid_result_for_replayed_nonce_on_recheck() {
             let platform_version = PlatformVersion::latest();
             let (platform, state_transition) =
-                setup_data_contract_create_transition(dash_to_credits!(2.0));
+                setup_data_contract_create_transition(dash_to_credits!(2.0)).await;
 
             let serialized = state_transition
                 .serialize_to_bytes()

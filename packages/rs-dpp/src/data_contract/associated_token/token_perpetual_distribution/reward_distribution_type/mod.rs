@@ -200,6 +200,7 @@ impl RewardDistributionType {
     }
 }
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;

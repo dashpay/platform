@@ -24,7 +24,7 @@ use platform_version::version::PlatformVersion;
 
 impl ShieldTransitionMethodsV0 for ShieldTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
         amount: u64,
@@ -54,10 +54,11 @@ impl ShieldTransitionMethodsV0 for ShieldTransitionV0 {
         let signable_bytes = state_transition.signable_bytes()?;
 
         // Sign each input address
-        shield_transition.input_witnesses = inputs
-            .keys()
-            .map(|address| signer.sign_create_witness(address, &signable_bytes))
-            .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
+        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
+        }
+        shield_transition.input_witnesses = input_witnesses;
 
         Ok(shield_transition.into())
     }

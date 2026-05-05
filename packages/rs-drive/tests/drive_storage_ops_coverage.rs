@@ -1,5 +1,8 @@
 //! Integration-style unit tests for drive storage forms, batch operations,
 //! contract info helpers, and vote poll resolution.
+#![allow(clippy::vec_init_then_push)]
+#![allow(clippy::explicit_into_iter_loop)]
+#![allow(clippy::useless_conversion)]
 
 mod contested_document_resource_storage_form_tests {
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

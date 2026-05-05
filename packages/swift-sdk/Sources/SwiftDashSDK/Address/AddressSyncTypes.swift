@@ -136,8 +136,6 @@ public struct AddressSyncResult: Sendable {
     public let found: [FoundAddress]
     /// Addresses proven absent from the tree.
     public let absent: [AbsentAddress]
-    /// Highest found derivation index, or nil if no addresses were found.
-    public let highestFoundIndex: UInt32?
     /// Checkpoint height from the trunk/branch tree scan (0 if incremental-only).
     public let checkpointHeight: UInt64
     /// New sync height to persist for the next incremental sync call.
@@ -205,13 +203,6 @@ public struct AddressSyncResult: Sendable {
             }
         }
         self.absent = absentArr
-
-        // Highest found index (optional)
-        if ffi.has_highest_found_index {
-            self.highestFoundIndex = ffi.highest_found_index
-        } else {
-            self.highestFoundIndex = nil
-        }
 
         self.checkpointHeight = ffi.checkpoint_height
         self.newSyncHeight = ffi.new_sync_height

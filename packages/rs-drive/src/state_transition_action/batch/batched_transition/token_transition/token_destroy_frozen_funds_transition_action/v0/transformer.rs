@@ -313,6 +313,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 mod tests {
     //! Unit tests for logic fragments of `try_from_{borrowed_,}token_destroy_frozen_funds_transition_with_contract_lookup`
     //! that can be exercised without wiring up a full `Drive`.

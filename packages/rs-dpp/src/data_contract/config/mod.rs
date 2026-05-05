@@ -312,7 +312,7 @@ mod tests {
                 .config
                 .default_current_version;
 
-            assert_eq!(config.version(), expected_version as u16);
+            assert_eq!(config.version(), expected_version);
         }
 
         #[test]
@@ -327,7 +327,7 @@ mod tests {
                 .config
                 .default_current_version;
 
-            assert_eq!(config.version(), expected_version as u16);
+            assert_eq!(config.version(), expected_version);
         }
     }
 

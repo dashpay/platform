@@ -3,7 +3,7 @@ import SwiftDashSDK
 
 struct TransitionCategoryView: View {
     let category: StateTransitionsView.TransitionCategory
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
 
     var transitions: [(key: String, label: String, description: String)] {
         switch category {
@@ -157,7 +157,7 @@ struct TransitionCategoryView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
             TransitionCategoryView(category: .identity)
-                .environmentObject(UnifiedAppState())
+                .environmentObject(AppState())
         }
     }
 }

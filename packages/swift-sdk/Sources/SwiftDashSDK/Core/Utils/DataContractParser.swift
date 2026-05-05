@@ -61,6 +61,21 @@ public struct DataContractParser {
             if let documentsCanBeDeletedContractDefault = contractData["documentsCanBeDeletedContractDefault"] as? Bool {
                 existingContract.documentsCanBeDeletedContractDefault = documentsCanBeDeletedContractDefault
             }
+
+            // Groups — store the raw `groups` block on the contract
+            // so the UI can render members + required power without
+            // re-parsing the full contract JSON. The shape is
+            // `{ "<position>": { "members": { "<idBase58>": power },
+            // "requiredPower": <u32> } }`. Persisted as JSON bytes
+            // because the contents are heterogeneous and the UI
+            // already works in `[String: Any]` via the
+            // `groups` computed accessor.
+            if let groupsDict = contractData["groups"] as? [String: Any] {
+                existingContract.groupsData = try? JSONSerialization.data(
+                    withJSONObject: groupsDict,
+                    options: []
+                )
+            }
         }
     }
 

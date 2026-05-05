@@ -193,8 +193,8 @@ mod tests {
         // Create pre-programmed distributions
         let recipient_id = identity.id();
         let distributions = BTreeMap::from([
-            (1000u64, BTreeMap::from([(recipient_id.clone(), 500u64)])),
-            (2000u64, BTreeMap::from([(recipient_id.clone(), 1000u64)])),
+            (1000u64, BTreeMap::from([(recipient_id, 500u64)])),
+            (2000u64, BTreeMap::from([(recipient_id, 1000u64)])),
         ]);
 
         let distribution = TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 {

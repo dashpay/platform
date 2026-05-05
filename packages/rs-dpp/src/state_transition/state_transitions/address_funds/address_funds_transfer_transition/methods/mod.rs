@@ -24,7 +24,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
@@ -45,7 +45,8 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransition 
                     signer,
                     user_fee_increase,
                     platform_version,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "AddressFundsTransferTransition::try_from_inputs_with_signer".to_string(),

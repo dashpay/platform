@@ -8,7 +8,7 @@ public enum KeyValidation {
         privateKeyHex: String,
         publicKeyHex: String,
         keyType: KeyType,
-        isTestnet: Bool = true
+        network: Network = .testnet
     ) -> Bool {
         // Convert key type to FFI representation
         let ffiKeyType: UInt8
@@ -27,7 +27,7 @@ public enum KeyValidation {
 
         let result = privateKeyHex.withCString { privateKeyCStr in
             publicKeyHex.withCString { publicKeyCStr in
-                dash_sdk_validate_private_key_for_public_key(privateKeyCStr, publicKeyCStr, ffiKeyType, isTestnet)
+                dash_sdk_validate_private_key_for_public_key(privateKeyCStr, publicKeyCStr, ffiKeyType, network.ffiValue)
             }
         }
 
@@ -59,7 +59,7 @@ public enum KeyValidation {
     public static func matchPrivateKeyToPublicKeys(
         privateKeyData: Data,
         publicKeys: [IdentityPublicKey],
-        isTestnet: Bool = true
+        network: Network = .testnet
     ) -> IdentityPublicKey? {
         let privateKeyHex = privateKeyData.toHexString()
 
@@ -70,7 +70,7 @@ public enum KeyValidation {
                 privateKeyHex: privateKeyHex,
                 publicKeyHex: publicKeyHex,
                 keyType: publicKey.keyType,
-                isTestnet: isTestnet
+                network: network
             ) {
                 return publicKey
             }

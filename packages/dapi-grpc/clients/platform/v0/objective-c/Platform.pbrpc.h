@@ -87,6 +87,8 @@
 @class GetIdentityTokenBalancesResponse;
 @class GetIdentityTokenInfosRequest;
 @class GetIdentityTokenInfosResponse;
+@class GetMostRecentShieldedAnchorRequest;
+@class GetMostRecentShieldedAnchorResponse;
 @class GetNullifiersBranchStateRequest;
 @class GetNullifiersBranchStateResponse;
 @class GetNullifiersTrunkStateRequest;
@@ -167,6 +169,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark broadcastStateTransition(BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse)
 
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ */
 - (GRPCUnaryProtoCall *)broadcastStateTransitionWithMessage:(BroadcastStateTransitionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentity(GetIdentityRequest) returns (GetIdentityResponse)
@@ -239,6 +244,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ */
 - (GRPCUnaryProtoCall *)getConsensusParamsWithMessage:(GetConsensusParamsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse)
@@ -400,6 +408,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getShieldedAnchorsWithMessage:(GetShieldedAnchorsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse)
+
+- (GRPCUnaryProtoCall *)getMostRecentShieldedAnchorWithMessage:(GetMostRecentShieldedAnchorRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)
 
 - (GRPCUnaryProtoCall *)getShieldedPoolStateWithMessage:(GetShieldedPoolStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
@@ -434,8 +446,18 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark broadcastStateTransition(BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse)
 
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)broadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler;
 
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTobroadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
@@ -560,8 +582,18 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)getConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler;
 
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTogetConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
@@ -865,6 +897,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getShieldedAnchorsWithRequest:(GetShieldedAnchorsRequest *)request handler:(void(^)(GetShieldedAnchorsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetShieldedAnchorsWithRequest:(GetShieldedAnchorsRequest *)request handler:(void(^)(GetShieldedAnchorsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse)
+
+- (void)getMostRecentShieldedAnchorWithRequest:(GetMostRecentShieldedAnchorRequest *)request handler:(void(^)(GetMostRecentShieldedAnchorResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetMostRecentShieldedAnchorWithRequest:(GetMostRecentShieldedAnchorRequest *)request handler:(void(^)(GetMostRecentShieldedAnchorResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)

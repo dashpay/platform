@@ -207,6 +207,9 @@ impl From<&Bytes32> for String {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
+#[allow(clippy::clone_on_copy)]
+#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
     use rand::SeedableRng;
