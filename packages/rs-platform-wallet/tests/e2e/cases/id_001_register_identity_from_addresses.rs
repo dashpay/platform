@@ -18,15 +18,16 @@ use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
 
-/// Funds the bank submits to the funding address. Sized for the
-/// 50M registration funding plus the bank's own ReduceOutput(0)
-/// fee with comfortable headroom.
-const FUNDING_CREDITS: u64 = 60_000_000;
+/// Funds the bank submits to the funding address. Option C
+/// (DeductFromInput) delivers exactly this amount to the address.
+/// Sized so that after the 50M registration, the residual (20M) clears
+/// the chain-time identity_create_fee minimum (~15.5M) with 5M buffer.
+const FUNDING_CREDITS: u64 = 70_000_000;
 
-/// Floor on the post-fee funding-address balance the wait keys on
-/// before registration runs. Keeps the wait insensitive to fee
-/// fluctuations across protocol bumps.
-const FUNDING_FLOOR: u64 = 50_000_000;
+/// Floor the wait_for_balance keys on before registration runs.
+/// Under Option C the address receives exactly FUNDING_CREDITS, so
+/// the floor equals the funded amount.
+const FUNDING_FLOOR: u64 = 70_000_000;
 
 /// Credits committed to the new identity in the registration
 /// transition. The address loses this exact amount minus the bank's
@@ -116,11 +117,10 @@ async fn id_001_register_identity_from_addresses() {
     );
 
     // Address residual: register_from_addresses consumed the
-    // funding amount; the funding address now holds whatever
-    // remained from the bank's ReduceOutput(0) deposit minus the
-    // 50M committed to the identity. A non-zero residual is normal
-    // (the bank funded with FUNDING_CREDITS; we registered with
-    // REGISTRATION_FUNDING < FUNDING_CREDITS - bank_fee).
+    // registration funding; the address retains FUNDING_CREDITS -
+    // REGISTRATION_FUNDING = 20M minus the chain-time fee. A
+    // non-zero residual is expected and satisfies the chain's
+    // identity_create_fee minimum (~15.5M).
     s.test_wallet
         .sync_balances()
         .await

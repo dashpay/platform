@@ -18,8 +18,10 @@ use dpp::identity::Identity;
 use crate::framework::setup_with_n_identities;
 use crate::framework::wait::wait_for_identity_balance;
 
-/// Per-identity registration funding. Sized for a comfortable
-/// post-fee balance plus headroom for the transfer.
+/// Credits committed to each identity's registration transition.
+/// `setup_with_n_identities` funds each address with
+/// FUNDING_PER + 20_000_000 so the residual (20M) clears the
+/// chain-time identity_create_fee minimum (~15.5M).
 const FUNDING_PER: u64 = 60_000_000;
 
 /// Credits sent from `identity_a` to `identity_b`.

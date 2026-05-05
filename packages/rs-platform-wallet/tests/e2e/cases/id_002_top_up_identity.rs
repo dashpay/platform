@@ -18,12 +18,17 @@ use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
 
-const REGISTER_FUNDING_CREDITS: u64 = 60_000_000;
-const REGISTER_FUNDING_FLOOR: u64 = 50_000_000;
+// Option C (DeductFromInput) delivers exactly the requested credits
+// to the recipient. Floors equal the funded amount.
+//
+// REGISTER: residual = 70M - 50M = 20M, which clears the chain-time
+// identity_create_fee minimum (~15.5M) with 5M buffer.
+const REGISTER_FUNDING_CREDITS: u64 = 70_000_000;
+const REGISTER_FUNDING_FLOOR: u64 = 70_000_000;
 const REGISTRATION_FUNDING: u64 = 50_000_000;
 
 const TOP_UP_FUNDING_CREDITS: u64 = 30_000_000;
-const TOP_UP_FUNDING_FLOOR: u64 = 25_000_000;
+const TOP_UP_FUNDING_FLOOR: u64 = 30_000_000;
 
 /// Credits the top-up commits to the identity. Below
 /// `TOP_UP_FUNDING_CREDITS` so the second address keeps a non-zero

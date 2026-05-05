@@ -204,18 +204,24 @@ pub async fn setup_with_n_identities(
     // same destination. We fund + observe before registration so
     // `register_from_addresses` finds the credits already
     // committed to platform.
+    // After Option C (PR #3579), bank.fund_address delivers exactly
+    // the requested amount. The chain charges identity_create_fee
+    // (~15.5M) from the address residual after registration consumes
+    // `funding_per`. Fund each address with `funding_per + 20_000_000`
+    // so the residual (20M) clears the fee minimum with 5M buffer.
+    const REGISTRATION_HEADROOM: u64 = 20_000_000;
+
     for identity_index in 0..n {
         let funding_addr = base.test_wallet.next_unused_address().await?;
+        let bank_amount = funding_per + REGISTRATION_HEADROOM;
         base.ctx
             .bank()
-            .fund_address(&funding_addr, funding_per)
+            .fund_address(&funding_addr, bank_amount)
             .await?;
-        // `bank.fund_address` uses `[DeductFromInput(0)]` (PR #3579) —
-        // the recipient receives the exact requested amount.
         wait_for_balance(
             &base.test_wallet,
             &funding_addr,
-            funding_per,
+            bank_amount,
             Duration::from_secs(60),
         )
         .await?;

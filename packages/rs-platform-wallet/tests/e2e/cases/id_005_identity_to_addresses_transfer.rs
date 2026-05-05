@@ -20,11 +20,13 @@ use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
 
-/// Bank-funded credits the funding address starts with. Sized to
-/// cover ID-005's 60M registration plus the bank's ReduceOutput
-/// fee with comfortable headroom.
-const FUNDING_CREDITS: u64 = 80_000_000;
-const FUNDING_FLOOR: u64 = 70_000_000;
+/// Bank-funded credits the funding address starts with. Option C
+/// (DeductFromInput) delivers exactly this amount. Sized so the
+/// residual after 70M registration (20M) clears the chain-time
+/// identity_create_fee minimum (~15.5M) with 5M buffer.
+const FUNDING_CREDITS: u64 = 90_000_000;
+/// Under Option C the address receives exactly FUNDING_CREDITS.
+const FUNDING_FLOOR: u64 = 90_000_000;
 
 /// Credits the registration commits to the identity. Sized so the
 /// post-registration balance comfortably covers the 20M transfer
