@@ -1,12 +1,16 @@
 //! ID-007 — Identity-auth addresses are NOT visible to SPV monitor.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-007).
-//! Pinned status: BLOCKED — full test body implemented, gated behind
-//! `#[ignore]`. Tracks closed PR `dashpay/rust-dashcore#554` (the
-//! parked attempt to add `BlockchainIdentities*` `AccountType`
-//! variants and flip `WalletAccountCreationOptions::Default` to
-//! monitor those addresses) and DET follow-up issue
-//! `dash-evo-tool#692`.
+//! Pinned status: FRAMEWORK-READY — full test body implemented,
+//! `#[ignore]`-tagged. SPV runtime is live (Task #15) and the bank's
+//! `send_core_to` helper is wired (CR-003). End-to-end runs need the
+//! bank's Core (Layer-1) receive address to be pre-funded on testnet;
+//! the address is logged at framework init under target
+//! `platform_wallet::e2e::bank`. Tracks closed PR
+//! `dashpay/rust-dashcore#554` (the parked attempt to add
+//! `BlockchainIdentities*` `AccountType` variants and flip
+//! `WalletAccountCreationOptions::Default` to monitor those
+//! addresses) and DET follow-up issue `dash-evo-tool#692`.
 //!
 //! Pins the CURRENT contract:
 //! - identity-auth addresses derived via
@@ -52,10 +56,14 @@ const CORE_SEND_DUFFS: u64 = 100_000;
 /// contract. Marvin's spec uses 30 seconds; matched here.
 const CORE_BALANCE_NEGATIVE_WINDOW: Duration = Duration::from_secs(30);
 
-#[ignore = "ID-007 — BLOCKED on Task #15 (SPV runtime) + Core-funded bank \
-            helper (CR-003 prerequisite). Pins the contract that DIP-9 \
-            identity-auth addresses are NOT in monitored_addresses(). \
-            Tracks closed PR dashpay/rust-dashcore#554."]
+#[ignore = "ID-007 — needs testnet + bank Core (Layer-1) pre-funding. \
+            Framework gates cleared: SPV runtime live (Task #15) and \
+            BankWallet::send_core_to implemented (CR-003). End-to-end \
+            run requires operator-funded bank Core receive address \
+            (logged at framework init under platform_wallet::e2e::bank \
+            target). Pins the contract that DIP-9 identity-auth \
+            addresses are NOT in monitored_addresses(). Tracks closed \
+            PR dashpay/rust-dashcore#554."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_007_identity_auth_addresses_not_monitored() {
     let _ = tracing_subscriber::fmt()
@@ -134,10 +142,11 @@ async fn id_007_identity_auth_addresses_not_monitored() {
     );
 
     // Step 4: send `CORE_SEND_DUFFS` from the bank to `auth_addr_zero`
-    // on Layer-1. Today this is `unimplemented!()` — see
-    // `BankWallet::send_core_to`. When Task #15 + the Core-funded
-    // bank helper land, replace the stub with a real broadcast and
-    // wait for the instant-lock event.
+    // on Layer-1 via `BankWallet::send_core_to` (CR-003). Returns a
+    // broadcast `Txid`; we don't wait for instant-lock because the
+    // negative contract is "the wallet's monitored set never sees
+    // this". The `wait_for_core_balance` call below is what bounds
+    // observation of the (expected absent) UTXO.
     let pre_balance = s
         .base
         .test_wallet
