@@ -44,6 +44,14 @@ struct CreateWalletView: View {
         currentNetwork == .devnet
     }
 
+    // Mirror of the devnet rule: regtest is a developer-only
+    // network and the toggle would clutter the create screen on
+    // mainnet/testnet. Showing it only when the active network is
+    // regtest also matches the wallet-info network picker pattern.
+    var shouldShowRegtest: Bool {
+        currentNetwork == .regtest
+    }
+
     var body: some View {
         Form {
             Section {
@@ -93,6 +101,23 @@ struct CreateWalletView: View {
                                 Image(systemName: "network")
                                     .foregroundColor(.green)
                                 Text("Devnet")
+                                    .font(.body)
+                            }
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
+                    }
+
+                    // Mirror Devnet's gating: only render the local
+                    // (regtest) toggle when the user is actually on
+                    // regtest. Without this row there's no path to
+                    // create a regtest wallet from the active-network
+                    // creation flow.
+                    if shouldShowRegtest {
+                        Toggle(isOn: $createForRegtest) {
+                            HStack {
+                                Image(systemName: "network")
+                                    .foregroundColor(.purple)
+                                Text("Local (Regtest)")
                                     .font(.body)
                             }
                         }
@@ -226,7 +251,7 @@ struct CreateWalletView: View {
     }
 
     private var hasNetworkSelected: Bool {
-        createForMainnet || createForTestnet || createForDevnet
+        createForMainnet || createForTestnet || createForDevnet || createForRegtest
     }
 
     private func setupInitialNetworkSelection() {
@@ -284,6 +309,7 @@ struct CreateWalletView: View {
                     createForMainnet ? Network.mainnet : nil,
                     createForTestnet ? Network.testnet : nil,
                     (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                    (createForRegtest && shouldShowRegtest) ? Network.regtest : nil,
                 ].compactMap { $0 }
 
                 guard let platformNetwork = selectedNetworks.first else {

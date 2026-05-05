@@ -191,8 +191,12 @@ final class SwiftExampleAppUITests: XCTestCase {
 
     @MainActor
     private func failIfRecoveryPromptVisible(in app: XCUIApplication, timeout: TimeInterval) {
-        let recoverWalletAlert = app.alerts["Recover Wallet?"]
-        if recoverWalletAlert.waitForExistence(timeout: timeout) {
+        // Title is plural for N>1 orphans, singular for one — guard
+        // both so a left-over one-wallet keychain mnemonic still
+        // trips this guard.
+        let plural = app.alerts["Recover Wallets?"]
+        let singular = app.alerts["Recover Wallet?"]
+        if plural.waitForExistence(timeout: timeout) || singular.waitForExistence(timeout: 0.5) {
             XCTFail(
                 "Pre-existing orphan-mnemonic recovery alert is blocking the UI test. "
                 + "Clean simulator state or resolve the alert manually before running this flow."

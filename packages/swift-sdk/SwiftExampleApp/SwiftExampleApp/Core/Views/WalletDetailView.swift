@@ -202,6 +202,7 @@ struct WalletInfoView: View {
     @State private var mainnetAccountCount: Int? = nil
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
+    @State private var regtestAccountCount: Int? = nil
 
     // "View Seed Phrase" flow.
     @State private var isAuthorizingSeedPhrase = false
@@ -309,6 +310,25 @@ struct WalletInfoView: View {
                             .disabled(isUpdatingNetworks)
                         }
                     }
+
+                    HStack {
+                        Text("Local (Regtest)")
+                        Spacer()
+                        if regtestEnabled {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Button(action: {
+                                Task {
+                                    await enableNetwork(.regtest)
+                                }
+                            }) {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isUpdatingNetworks)
+                        }
+                    }
                 }
 
                 Section {
@@ -357,6 +377,14 @@ struct WalletInfoView: View {
                             Text("Devnet Accounts")
                             Spacer()
                             Text(devnetAccountCount.map(String.init) ?? "–")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if regtestEnabled {
+                        HStack {
+                            Text("Regtest Accounts")
+                            Spacer()
+                            Text(regtestAccountCount.map(String.init) ?? "–")
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -510,6 +538,7 @@ struct WalletInfoView: View {
         mainnetAccountCount = mainnetEnabled ? count : nil
         testnetAccountCount = testnetEnabled ? count : nil
         devnetAccountCount = devnetEnabled ? count : nil
+        regtestAccountCount = regtestEnabled ? count : nil
     }
 
     private func saveWalletName() {
