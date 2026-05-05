@@ -648,13 +648,16 @@ fn select_inputs_deduct_from_input(
 /// 2. Trim the last prefix entry by `surplus = Σ − total_output` so
 ///    `Σ inputs == Σ outputs`. Earlier entries stay at full balance.
 /// 3. If the trim drops the last entry below `min_input_amount`,
-///    shift consumption from the lex-smallest peer to lift it back up
-///    while keeping the peer ≥ `min_input_amount`. Error out if no
-///    peer has the headroom.
+///    shift consumption from a peer in **balance-descending donor
+///    order** (largest peer first) to lift it back up while keeping
+///    the donor ≥ `min_input_amount`. Picking the largest donor
+///    minimises the chance of the donor falling below the floor and
+///    spreads consumption towards the most-funded available peer.
+///    Error out if no peer has the headroom.
 /// 4. Estimate the fee for the chosen input count and verify
 ///    `output[0] ≥ estimated_fee`; otherwise the chain-time
 ///    `ReduceOutput(0)` deduction would leave the fee uncovered.
-/// 5. Defensive invariant checks.
+/// 5. Explicit runtime invariant checks.
 fn select_inputs_reduce_output(
     candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -756,16 +759,24 @@ fn select_inputs_reduce_output(
     }
 
     // Phase 3: if the trim dropped the last entry below
-    // `min_input_amount`, lift it from the lex-smallest peer with
-    // spare balance. The peer must keep ≥ `min_input_amount` itself.
+    // `min_input_amount`, lift it from a peer in balance-descending
+    // donor order (largest peer first). The donor must keep ≥
+    // `min_input_amount` itself, so we require the donor's balance to
+    // reach `min_input_amount + shift`. Picking the largest peer
+    // maximises the chance of meeting that threshold and concentrates
+    // residual headroom in the most-funded address.
     let last_addr = prefix[last_index].0;
     let last_consumed = selected[&last_addr];
     if last_consumed < min_input_amount && prefix.len() > 1 {
         let shift = min_input_amount - last_consumed;
         let donor_threshold = min_input_amount.saturating_add(shift);
-        let donor_addr = prefix
+        let mut donor_candidates: Vec<&(PlatformAddress, Credits)> = prefix
             .iter()
             .filter(|(addr, _)| *addr != last_addr)
+            .collect();
+        donor_candidates.sort_by(|a, b| b.1.cmp(&a.1));
+        let donor_addr = donor_candidates
+            .into_iter()
             .find(|(_, balance)| *balance >= donor_threshold)
             .map(|(addr, _)| *addr);
         let Some(donor_addr) = donor_addr else {
@@ -1550,6 +1561,186 @@ mod auto_select_tests {
                 assert!(
                     msg.contains("cannot absorb estimated fee"),
                     "expected output-cannot-absorb-fee phrasing, got {msg:?}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// CMT-003 (a): Phase 3 redistribution success path. Two
+    /// candidates both ≥ `min_input_amount`; Phase 2 trims the last
+    /// entry below the per-input minimum; Phase 3 finds a donor in
+    /// balance-descending order and lifts the last entry back to
+    /// `min_input_amount`. Σ inputs == Σ outputs is preserved and
+    /// every shipped input satisfies the floor.
+    #[test]
+    fn reduce_output_phase3_donor_lifts_last_to_min_input() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let addr_a = p2pkh(0x01); // donor (largest balance, balance-descending order)
+        let addr_b = p2pkh(0x02); // tail entry that gets trimmed below min_input
+        let target = p2pkh(0x99);
+
+        // Engineered fixture (assumes min_input == 100_000):
+        // - addr_a = 5_000_000, addr_b = 200_000 (both ≥ min_input).
+        // - total_output = 5_080_000.
+        // - Phase 1: push a (5M < 5.08M), push b (5.2M ≥ 5.08M).
+        // - Phase 2: surplus = 120_000, last (b) consumed = 80_000 < 100_000.
+        // - Phase 3: shift = 20_000, donor_threshold = 120_000;
+        //   addr_a (5M) is the only peer and clears the threshold —
+        //   donor consumption drops by shift, last lifted to min_input.
+        // - Phase 4: output 0 = 5_080_000 ≫ estimated fee.
+        let addr_a_balance = 5_000_000u64;
+        let addr_b_balance = min_input * 2;
+        // Choose total_output so that surplus = addr_a_balance + addr_b_balance - total_output
+        // sits in (addr_b_balance - min_input, addr_b_balance), forcing
+        // the trim below min_input but leaving Phase 1 satisfied.
+        let total_output = addr_a_balance + addr_b_balance - (min_input + min_input / 5);
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        // Sanity guard: this fixture is meaningful only when the
+        // pre-Phase-3 trim actually drops the last entry below
+        // min_input — otherwise the test exercises the wrong branch.
+        let surplus = addr_a_balance + addr_b_balance - total_output;
+        assert!(
+            addr_b_balance.saturating_sub(surplus) < min_input,
+            "fixture broken: pre-lift consumption {} ≥ min_input {}",
+            addr_b_balance.saturating_sub(surplus),
+            min_input,
+        );
+
+        let selected =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("Phase 3 must lift the last entry to min_input via the donor");
+
+        // (1) Σ inputs == Σ outputs (no value created or destroyed by
+        //     the redistribution).
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(input_sum, total_output);
+        // (2) Every shipped input satisfies the per-input minimum.
+        for (addr, amount) in selected.iter() {
+            assert!(
+                *amount >= min_input,
+                "input {} consumes {} below min_input {}",
+                format_address(addr),
+                amount,
+                min_input,
+            );
+        }
+        // (3) Last entry was lifted exactly to min_input.
+        assert_eq!(
+            selected.get(&addr_b),
+            Some(&min_input),
+            "last entry must be lifted to min_input, not above"
+        );
+        // (4) Donor (addr_a, the only peer) absorbed the shift.
+        let shift = min_input - addr_b_balance.saturating_sub(surplus);
+        assert_eq!(
+            selected.get(&addr_a),
+            Some(&(addr_a_balance - shift)),
+            "donor must lose exactly `shift` from full-balance consumption"
+        );
+
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// CMT-003 (b): Phase 3 redistribution failure path. Phase 2
+    /// trims the last entry below `min_input_amount` AND no peer has
+    /// `min_input_amount + shift` of balance to play donor — so
+    /// Phase 3 surfaces the typed `AddressOperation` error rather
+    /// than shipping a sub-minimum input.
+    #[test]
+    fn reduce_output_phase3_no_donor_with_headroom_errors() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        // Both candidates ≥ min_input; neither carries enough headroom
+        // to act as donor. With min_input == 100_000:
+        // - addr_a = 148_000, addr_b = 110_000.
+        // - total_output = 190_000 (≥ min_input, < acc).
+        // - Phase 2: surplus = 68_000, last (b) consumed = 42_000 < 100_000.
+        // - Phase 3: shift = 58_000, donor_threshold = 158_000;
+        //   addr_a (148_000) is the only peer and falls short of 158_000 →
+        //   the donor search returns None and Phase 3 errors out.
+        let addr_a = p2pkh(0x01);
+        let addr_b = p2pkh(0x02);
+        let target = p2pkh(0x99);
+        let addr_a_balance = min_input + min_input / 2 - min_input / 50; // ~148k for 100k min
+        let addr_b_balance = min_input + min_input / 10; // 110k
+        let total_output = addr_a_balance + addr_b_balance - (min_input / 100 * 68); // ~190k
+
+        // Sanity guards: the fixture must exercise Phase 3's no-donor branch.
+        assert!(addr_a_balance >= min_input);
+        assert!(addr_b_balance >= min_input);
+        assert!(total_output >= min_input);
+        let surplus = addr_a_balance + addr_b_balance - total_output;
+        let trimmed = addr_b_balance.saturating_sub(surplus);
+        assert!(
+            trimmed < min_input,
+            "fixture broken: trimmed last {} not below min_input {}",
+            trimmed,
+            min_input
+        );
+        let shift = min_input - trimmed;
+        let donor_threshold = min_input + shift;
+        assert!(
+            addr_a_balance < donor_threshold,
+            "fixture broken: donor a {} clears threshold {}",
+            addr_a_balance,
+            donor_threshold
+        );
+
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("Phase 3 must error when no donor has the headroom");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("Cannot satisfy per-input minimum"),
+                    "expected per-input-minimum redistribution error, got {msg:?}",
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// CMT-003 (c): Phase 1 insufficient-balance error path for
+    /// `select_inputs_reduce_output` — total candidate balance falls
+    /// short of `total_output`, so no covering prefix exists. The
+    /// helper must raise a descriptive `AddressOperation` carrying
+    /// both the available aggregate and the required output sum.
+    #[test]
+    fn reduce_output_insufficient_balance_errors() {
+        let pv = LATEST_PLATFORM_VERSION;
+
+        let addr_a = p2pkh(0xAA);
+        let addr_b = p2pkh(0xBB);
+        let target = p2pkh(0x99);
+        let total_output = 100_000_000u64;
+        // Aggregate (1.5M) ≪ total_output (100M).
+        let candidates = vec![(addr_a, 1_000_000u64), (addr_b, 500_000u64)];
+        let outputs = outputs_for(target, total_output);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("expected insufficient-balance error");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("Insufficient balance"),
+                    "expected 'Insufficient balance' phrasing, got {msg:?}",
+                );
+                assert!(
+                    msg.contains("ReduceOutput(0)"),
+                    "error must name the fee strategy so callers can disambiguate, got {msg:?}",
                 );
             }
             other => panic!("expected AddressOperation, got {other:?}"),
