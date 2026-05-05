@@ -160,13 +160,19 @@ struct TokenDetailsView: View {
             SectionHeader(title: "Token Features")
 
             VStack(alignment: .leading, spacing: 8) {
-                TokenFeatureRow(label: "Can be minted", isEnabled: token.manualMintingRules != nil)
-                TokenFeatureRow(label: "Can be burned", isEnabled: token.manualBurningRules != nil)
-                TokenFeatureRow(label: "Can be frozen", isEnabled: token.freezeRules != nil)
-                TokenFeatureRow(label: "Can be unfrozen", isEnabled: token.unfreezeRules != nil)
-                TokenFeatureRow(label: "Can destroy frozen funds", isEnabled: token.destroyFrozenFundsRules != nil)
+                TokenFeatureRow(label: "Can be minted",
+                                isEnabled: token.manualMintingRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can be burned",
+                                isEnabled: token.manualBurningRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can be frozen",
+                                isEnabled: token.freezeRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can be unfrozen",
+                                isEnabled: token.unfreezeRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can destroy frozen funds",
+                                isEnabled: token.destroyFrozenFundsRules?.hasAuthorizedTakers ?? false)
                 TokenFeatureRow(label: "Transfer to frozen allowed", isEnabled: token.allowTransferToFrozenBalance)
-                TokenFeatureRow(label: "Emergency action available", isEnabled: token.emergencyActionRules != nil)
+                TokenFeatureRow(label: "Emergency action available",
+                                isEnabled: token.emergencyActionRules?.hasAuthorizedTakers ?? false)
                 TokenFeatureRow(label: "Started as paused", isEnabled: token.isPaused)
             }
         }
@@ -392,5 +398,17 @@ struct ControlRuleView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+fileprivate extension ChangeControlRules {
+    /// `true` when this rule exists *and* names someone allowed to act
+    /// on it. A rule with `authorizedToMakeChange == "NoOne"` is a
+    /// feature that's been intentionally shipped-but-locked — for
+    /// truth-in-UI purposes that should read as "not available," the
+    /// same way `TokenActionEvaluator` already denies the matching
+    /// row on the actions screen.
+    var hasAuthorizedTakers: Bool {
+        authorizedToMakeChange != AuthorizedActionTakers.noOne.rawValue
     }
 }

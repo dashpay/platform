@@ -72,8 +72,19 @@ struct TokenMintActionView: View {
             }
 
             Section("Recipient") {
-                Toggle("Mint to self", isOn: $mintToSelf)
-                    .disabled(!token.mintingAllowChoosingDestination)
+                // Label tracks what the toggle actually does:
+                // - When the contract permits a runtime destination,
+                //   "Mint to self" is honest (toggle off → pick recipient).
+                // - When it doesn't, the toggle is force-on/disabled and
+                //   tokens go to the contract's `newTokensDestinationIdentity`,
+                //   not the caller — the literal "Mint to self" lies.
+                Toggle(
+                    token.mintingAllowChoosingDestination
+                        ? "Mint to self"
+                        : "Use configured destination",
+                    isOn: $mintToSelf
+                )
+                .disabled(!token.mintingAllowChoosingDestination)
                 if !mintToSelf {
                     if let wallet = managedWallet {
                         RecipientPickerView(

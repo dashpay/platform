@@ -327,7 +327,23 @@ enum TokenActionResolver {
                 contract: contract,
                 token: token
             )
-            let final = applyPausedGuard(perm, token: token, allowWhenPaused: false)
+            // Even when the caller is authorized, mint is impossible
+            // when the contract neither allows runtime destination
+            // choice nor pins a fixed `newTokensDestinationIdentity` —
+            // Platform rejects with "Destination identity for minting
+            // not set". Surface that here instead of routing the user
+            // to a screen whose submission is guaranteed to fail.
+            let final: TokenActionPermission = {
+                let pausedGuarded = applyPausedGuard(perm, token: token, allowWhenPaused: false)
+                if case .allowed = pausedGuarded,
+                   !token.mintingAllowChoosingDestination,
+                   token.newTokensDestinationIdentity == nil {
+                    return .denied(
+                        reason: "Mint: no destination configured (contract forbids choosing one and didn't pin a recipient)"
+                    )
+                }
+                return pausedGuarded
+            }()
             rows.append(ResolvedTokenAction(kind: .mint, permission: final))
         } else {
             rows.append(ResolvedTokenAction(
@@ -604,16 +620,18 @@ enum TokenActionResolver {
         if token.isPaused {
             return .denied(reason: "Token is paused")
         }
-        // PersistentToken doesn't yet model the current "for sale"
-        // price, so we can't reject up front when the token isn't
-        // actively listed. Defer that check to Platform — the
-        // purchase form sends a sentinel `expectedTotalCost` and the
-        // server returns a readable error if the schedule is unset.
+        // Wave 1: PersistentToken doesn't carry the configured purchase
+        // price. `TokenPurchaseActionView.priceKnown` is hard-coded
+        // `false` until that field lands, so the Buy button is *always*
+        // disabled — routing the user to a permanently-broken screen
+        // is dishonest. Deny here with the same reason the action view
+        // shows. When the price field lands on PersistentToken, this
+        // becomes a real conditional check; until then it short-circuits.
         // TODO: surface direct-purchase price on PersistentToken and
         // gate this row on it (and pre-fill the form's total cost).
         _ = identity
         _ = contract
-        return .allowed
+        return .denied(reason: "Direct-purchase price not available locally yet")
     }
 }
 
