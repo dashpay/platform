@@ -166,11 +166,19 @@ impl BankWallet {
         let seed_bytes = validated.to_seed("");
 
         let network = config.network;
+        // `Some(0)` requests a full historical compact-filter scan
+        // from genesis. The bank is a long-lived testnet address
+        // that may receive Layer-1 funding before any test run
+        // starts; without this, SPV's default "scan from current
+        // tip" window would miss those UTXOs and report
+        // `core_balance=0` even when funded (QA-001 / QA-002 /
+        // QA-003 in `/tmp/bank-core-balance-diagnosis.md`).
         let wallet = manager
             .create_wallet_from_mnemonic(
                 &config.bank_mnemonic,
                 network,
                 key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+                Some(0),
             )
             .await
             .map_err(wallet_err)?;
@@ -371,6 +379,16 @@ impl BankWallet {
     /// log; not transactionally consistent with the wallet's UTXO set.
     pub fn core_balance_confirmed(&self) -> u64 {
         self.wallet.balance().confirmed()
+    }
+
+    /// Bank wallet's SPV birth height — the earliest block SPV's
+    /// compact-filter scan will inspect for this wallet. Surfaced in
+    /// the harness init log so operators can correlate `core_balance=0`
+    /// with the scan window: if the funding tx confirmed below
+    /// `birth_height`, SPV won't see it.
+    pub async fn birth_height(&self) -> u32 {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        self.wallet.state().await.birth_height()
     }
 
     /// First BIP-44 (Core) receive address. Stable across process

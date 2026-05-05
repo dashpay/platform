@@ -97,6 +97,7 @@ impl TestWallet {
                 network,
                 seed_bytes,
                 WalletAccountCreationOptions::Default,
+                None,
             )
             .await
             .map_err(wallet_err)?;

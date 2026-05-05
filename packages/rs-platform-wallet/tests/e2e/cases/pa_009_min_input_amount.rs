@@ -197,7 +197,12 @@ async fn pa_009_cleanup_gate_tracks_platform_version_min_input_amount() {
 
     let post_sweep = ctx
         .manager()
-        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
+        .create_wallet_from_seed_bytes(
+            network,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+            None,
+        )
         .await
         .expect("re-derive post-sweep view of test wallet");
     post_sweep.platform().initialize().await;

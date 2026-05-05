@@ -106,7 +106,12 @@ async fn sweep_one(
 ) -> FrameworkResult<()> {
     let seed_bytes: [u8; 64] = parse_seed_hex(&entry.seed_hex)?;
     let wallet = manager
-        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
+        .create_wallet_from_seed_bytes(
+            network,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+            None,
+        )
         .await
         .map_err(wallet_err)?;
     if wallet.wallet_id() != *hash {

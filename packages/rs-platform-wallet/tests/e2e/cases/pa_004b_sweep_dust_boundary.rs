@@ -224,7 +224,12 @@ async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
     // state of the gone TestWallet. Read straight off chain.
     let post_sweep = ctx
         .manager()
-        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
+        .create_wallet_from_seed_bytes(
+            network,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+            None,
+        )
         .await
         .expect("re-derive post-sweep view of test wallet");
     post_sweep.platform().initialize().await;
