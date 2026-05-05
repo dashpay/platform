@@ -231,16 +231,21 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "Pending dashcore PR https://github.com/dashpay/rust-dashcore/pull/708 \
-                (dashcore hash newtypes need dual-shape visitors so they round-trip \
-                through serde's ContentDeserializer, which always reports \
-                is_human_readable=true even when wrapping bytes from a non-HR \
-                source like platform_value::Value). Same root cause as the \
-                OutPoint/Txid bug fixed locally in commit 09c0a2b771; \
-                ProTxHash/PubkeyHash/QuorumHash trip the same wire on \
-                `tag = \"$formatVersion\"` deserialization through \
-                ContentDeserializer. Once the dashcore PR lands and we bump \
-                the dependency, drop this `#[ignore]`."]
+    #[ignore = "Pending follow-up dashcore PR for the `hashes::serde_macros::SerdeHash` \
+                hex-string visitor (separate from PR #708 which only fixed the \
+                `serde_struct_human_string_impl!` macro used by `OutPoint`). \
+                The hash-newtype `HexVisitor` only implements `visit_str` and \
+                expects a 64-char hex string. Wrapping `ValidatorSet` in \
+                `tag = \"$formatVersion\"` routes deserialization through \
+                serde's `ContentDeserializer` which always reports \
+                `is_human_readable=true`; the bytes from a non-HR \
+                `platform_value::Value` source are then replayed into the HR \
+                branch and `visit_str` sees a 32-byte sequence (interpreted \
+                as 32 UTF-8 chars) instead of the expected 64-char hex form. \
+                Affects `ProTxHash`/`PubkeyHash`/`QuorumHash`. Same root cause \
+                as OutPoint/Txid (commit 09c0a2b771), different macro. Once \
+                upstream adds dual-shape visitors to `hashes::serde_macros` \
+                and we bump the dependency, drop this `#[ignore]`."]
     fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let (original, validator_pubkey, threshold_pubkey) = build_fixture();
