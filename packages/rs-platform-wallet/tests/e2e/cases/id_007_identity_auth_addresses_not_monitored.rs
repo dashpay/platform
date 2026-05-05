@@ -147,14 +147,12 @@ async fn id_007_identity_auth_addresses_not_monitored() {
     // negative contract is "the wallet's monitored set never sees
     // this". The `wait_for_core_balance` call below is what bounds
     // observation of the (expected absent) UTXO.
-    let pre_balance = s
-        .base
-        .test_wallet
-        .platform_wallet()
-        .state()
-        .await
-        .balance()
-        .spendable();
+    // Use the same lock-free confirmed-balance accessor that
+    // `wait_for_core_balance` polls — pinning `pre_balance + 1` against
+    // the same metric the waiter compares against keeps the negative
+    // contract crisp (the timeout fires because `auth_addr_zero` isn't
+    // in `monitored_addresses()`, not because the two readings drift).
+    let pre_balance = s.base.test_wallet.core_balance_confirmed();
     let _txid = s
         .base
         .ctx
