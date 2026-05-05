@@ -27,12 +27,16 @@ const REGISTER_FUNDING_CREDITS: u64 = 150_000_000;
 const REGISTER_FUNDING_FLOOR: u64 = 150_000_000;
 const REGISTRATION_FUNDING: u64 = 50_000_000;
 
-const TOP_UP_FUNDING_CREDITS: u64 = 30_000_000;
-const TOP_UP_FUNDING_FLOOR: u64 = 30_000_000;
+// Top-up funding sized so the address holds enough to cover both
+// `TOP_UP_AMOUNT` (committed to the identity) AND the chain-time
+// IdentityTopUp dynamic fee (~13M observed), with a small buffer.
+// Layout: 25M (top-up) + ~13M (fee) + 7M (buffer) = 45M.
+const TOP_UP_FUNDING_CREDITS: u64 = 45_000_000;
+const TOP_UP_FUNDING_FLOOR: u64 = 45_000_000;
 
 /// Credits the top-up commits to the identity. Below
 /// `TOP_UP_FUNDING_CREDITS` so the second address keeps a non-zero
-/// residual the test can assert on.
+/// residual that absorbs the chain-time top-up fee.
 const TOP_UP_AMOUNT: Credits = 25_000_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -132,37 +136,37 @@ async fn id_002_top_up_identity_from_addresses() {
     );
 
     let delta = on_chain_post.saturating_sub(pre_balance);
-    assert!(
-        delta > 0,
-        "top-up must raise the identity balance: pre={pre_balance} post={on_chain_post}"
-    );
-    assert!(
-        delta < TOP_UP_AMOUNT,
-        "balance delta {delta} must be strictly less than the topped-up amount {TOP_UP_AMOUNT} \
-         (the difference is the on-chain top-up fee)"
-    );
-    let top_up_fee = TOP_UP_AMOUNT.saturating_sub(delta);
-    assert!(
-        top_up_fee > 0,
-        "top-up fee must be non-zero (delta={delta} amount={TOP_UP_AMOUNT})"
+    // Top-up fee is paid from the address residual (the
+    // TOP_UP_FUNDING_CREDITS - TOP_UP_AMOUNT headroom), NOT from the
+    // credits committed to the identity. So the identity balance
+    // delta equals TOP_UP_AMOUNT exactly.
+    assert_eq!(
+        delta, TOP_UP_AMOUNT,
+        "balance delta {delta} should equal TOP_UP_AMOUNT {TOP_UP_AMOUNT} — \
+         top-up fee comes from address residual, not the topped-up credits"
     );
 
-    // Address residual: top_up consumed `TOP_UP_AMOUNT` from
-    // `top_up_addr`; the rest stays as residual modulo top-up fee
-    // mechanics.
+    // Address residual: top_up consumed `TOP_UP_AMOUNT` AND the
+    // chain-time top-up fee from `top_up_addr`. So the residual
+    // ends up below the headroom (TOP_UP_FUNDING_CREDITS -
+    // TOP_UP_AMOUNT).
     s.test_wallet
         .sync_balances()
         .await
         .expect("post-top-up sync");
     let balances = s.test_wallet.balances().await;
     let top_up_residual = balances.get(&top_up_addr).copied().unwrap_or(0);
+    assert!(
+        top_up_residual < TOP_UP_FUNDING_CREDITS - TOP_UP_AMOUNT,
+        "top-up addr residual {top_up_residual} must be less than headroom {} (chain fee should have been deducted from the residual)",
+        TOP_UP_FUNDING_CREDITS - TOP_UP_AMOUNT,
+    );
     tracing::info!(
         target: "platform_wallet::e2e::cases::id_002",
         identity_id = %registered.id,
         pre_balance,
         post_balance = on_chain_post,
         delta,
-        top_up_fee,
         top_up_residual,
         "top-up snapshot"
     );

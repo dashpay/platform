@@ -330,9 +330,14 @@ impl TestWallet {
     ///    under-funded address surfaces as a registration failure
     ///    downstream rather than a clear error here.
     /// 2. Derives MASTER + HIGH ECDSA auth keys at DIP-9 slot
-    ///    `(identity_index, 0)` and `(identity_index, 1)`.
+    ///    `(identity_index, 0)` and `(identity_index, 1)`, plus a
+    ///    TRANSFER + CRITICAL ECDSA key at slot
+    ///    `(identity_index, 2)`. The TRANSFER key is required by DPP
+    ///    (`identity_credit_transfer_transition` v0_methods.rs:63-83)
+    ///    for credit-transfer transitions; without it id_003 / id_005
+    ///    / id-sweep all fail with "no transfer public key".
     /// 3. Builds a placeholder [`Identity`] populated with those
-    ///    two keys.
+    ///    three keys.
     /// 4. Calls
     ///    [`IdentityWallet::register_from_addresses`](platform_wallet::wallet::identity::IdentityWallet::register_from_addresses)
     ///    with the funding map `{addr_1 → funding}`.
@@ -352,9 +357,14 @@ impl TestWallet {
             identity_index,
         )?);
 
-        // Slot 0 → MASTER, slot 1 → HIGH. Match the DET / DPNS
-        // register_name pattern: MASTER is required for identity
-        // mutation, HIGH covers signing for most state transitions.
+        // Slot 0 → MASTER, slot 1 → HIGH, slot 2 → TRANSFER. Match
+        // the DET / DPNS register_name pattern: MASTER is required
+        // for identity mutation, HIGH covers signing for most state
+        // transitions, and TRANSFER is enforced by DPP for credit
+        // transfers (rs-dpp identity_credit_transfer_transition
+        // v0_methods.rs:63-83 calls
+        // `identity.get_first_public_key_matching(Purpose::TRANSFER, ...)`
+        // and rejects if absent).
         let master_key = derive_identity_key(
             &self.seed_bytes,
             network,
@@ -371,6 +381,14 @@ impl TestWallet {
             Purpose::AUTHENTICATION,
             SecurityLevel::HIGH,
         )?;
+        let transfer_key = derive_identity_key(
+            &self.seed_bytes,
+            network,
+            identity_index,
+            2,
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+        )?;
 
         // Build the placeholder identity. `id` is recomputed from
         // the input-address map by the SDK at submit time; we set
@@ -379,6 +397,7 @@ impl TestWallet {
         let mut public_keys: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
         public_keys.insert(master_key.id(), master_key.clone());
         public_keys.insert(high_key.id(), high_key.clone());
+        public_keys.insert(transfer_key.id(), transfer_key.clone());
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys,
@@ -422,6 +441,7 @@ impl TestWallet {
             id: registered.id(),
             master_key,
             high_key,
+            transfer_key,
             signer: identity_signer,
             identity_index,
             funding,
@@ -573,6 +593,10 @@ pub struct RegisteredIdentity {
     pub master_key: IdentityPublicKey,
     /// HIGH auth key (DPP `KeyID = 1`).
     pub high_key: IdentityPublicKey,
+    /// TRANSFER + CRITICAL key (DPP `KeyID = 2`). Required by DPP
+    /// for `IdentityCreditTransferTransition` — see rs-dpp
+    /// `identity_credit_transfer_transition/v0/v0_methods.rs:63-83`.
+    pub transfer_key: IdentityPublicKey,
     /// `Arc`-shared signer pre-derived for this identity's DIP-9 slot.
     /// `Arc` lets callers hand the same signer to multiple state-transition
     /// builders without re-creating the key cache.

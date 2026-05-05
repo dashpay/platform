@@ -102,8 +102,8 @@ async fn id_001_register_identity_from_addresses() {
     );
     assert_eq!(
         on_chain.public_keys().len(),
-        2,
-        "registered identity must carry exactly two keys (MASTER + HIGH)"
+        3,
+        "registered identity must carry exactly three keys (MASTER + HIGH + TRANSFER)"
     );
     assert!(
         on_chain.balance() >= IDENTITY_BALANCE_FLOOR,
@@ -111,23 +111,31 @@ async fn id_001_register_identity_from_addresses() {
         on_chain.balance(),
         IDENTITY_BALANCE_FLOOR
     );
-    assert!(
-        on_chain.balance() < REGISTRATION_FUNDING,
-        "identity balance {} must be strictly less than the funding {} after fee deduction",
+    // The chain-time IdentityCreateFromAddresses fee is paid from the
+    // address residual (the FUNDING_CREDITS - REGISTRATION_FUNDING
+    // headroom), NOT from the credits committed to the identity. So
+    // the identity ends up with exactly REGISTRATION_FUNDING.
+    assert_eq!(
         on_chain.balance(),
-        REGISTRATION_FUNDING
+        REGISTRATION_FUNDING,
+        "identity balance should equal REGISTRATION_FUNDING — fee comes from address residual, not identity balance"
     );
 
-    // Address residual: register_from_addresses consumed the
-    // registration funding; the address retains FUNDING_CREDITS -
-    // REGISTRATION_FUNDING = 100M minus the chain-time dynamic fee
-    // (~96M). The non-zero residual satisfies the fee gate.
+    // Address residual: register_from_addresses consumed
+    // REGISTRATION_FUNDING from the address AND the chain-time
+    // dynamic fee (~96M observed). After both, residual <
+    // FUNDING_CREDITS - REGISTRATION_FUNDING (the headroom).
     s.test_wallet
         .sync_balances()
         .await
         .expect("post-registration sync");
     let balances = s.test_wallet.balances().await;
     let funding_residual = balances.get(&funding_addr).copied().unwrap_or(0);
+    assert!(
+        funding_residual < FUNDING_CREDITS - REGISTRATION_FUNDING,
+        "funding addr residual {funding_residual} must be less than headroom {} (chain fee should have been deducted from the residual)",
+        FUNDING_CREDITS - REGISTRATION_FUNDING,
+    );
     tracing::info!(
         target: "platform_wallet::e2e::cases::id_001",
         identity_id = %registered.id,
