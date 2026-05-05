@@ -26,12 +26,15 @@
 use std::time::Duration;
 
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityBalance;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
-use crate::framework::tokens::{setup_with_token_contract, DEFAULT_TK_FUNDING};
+use crate::framework::tokens::{DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, DEFAULT_TK_FUNDING};
 
 /// Per-step deadline for the post-broadcast contract fetch. The
 /// register helper already awaits the broadcast proof, so the fetch
@@ -39,7 +42,7 @@ use crate::framework::tokens::{setup_with_token_contract, DEFAULT_TK_FUNDING};
 /// trusted-context-provider warmup.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "TK-003: requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_003_register_token_contract() {
     let _ = tracing_subscriber::fmt()
@@ -50,35 +53,65 @@ async fn tk_003_register_token_contract() {
         .with_test_writer()
         .try_init();
 
-    let setup = match setup_with_token_contract_with_master_signing_diagnostic().await {
-        Ok(s) => s,
-        Err(err) => {
-            // Wave 1 editorial note: the framework signs with MASTER.
-            // If chain-side rejection on signing-key class trips, the
-            // helper surfaces it as a `FrameworkError::Sdk` carrying
-            // `InvalidSignatureError`. Promote that to a sharp panic
-            // so Wave 4 (Marvin) sees the trigger in CI logs without
-            // any spelunking.
-            let msg = err.to_string();
-            if msg.contains("InvalidSignatureError") || msg.contains("InvalidIdentityPublicKey") {
-                tracing::error!(
-                    target: "platform_wallet::e2e::cases::tk_003",
-                    %msg,
-                    "TK-003: chain rejected MASTER-signed DataContractCreate"
-                );
-                panic!(
-                    "TK-003: signing key class needs CRITICAL upgrade — see Wave 1 \
-                     editorial note in tokens.rs (master_key vs critical_key on \
-                     RegisteredIdentity, PR #3578). underlying error: {msg}"
-                );
-            }
-            panic!("TK-003 setup failed: {msg}");
-        }
-    };
+    // Register the owner identity first so we can read its credit
+    // balance pre-deploy and assert the contract-create fee delta
+    // against it. We unfold the work that `setup_with_token_contract`
+    // does internally (register identity + register contract) into
+    // two phases so the credit-balance snapshot lands between them.
+    let ctx = E2eContext::init().await.expect("init e2e context");
+    let setup_guard = crate::framework::setup_with_n_identities(1, DEFAULT_TK_FUNDING)
+        .await
+        .expect("register owner identity");
+    let owner = setup_guard
+        .identities
+        .first()
+        .expect("setup_with_n_identities returned empty identities");
+    let owner_id = owner.id;
 
-    let ctx = setup.setup_guard.base.ctx;
-    let contract_id = setup.contract_id;
-    let owner_id = setup.owner.id;
+    let owner_credits_pre_deploy = IdentityBalance::fetch(ctx.sdk(), owner_id)
+        .await
+        .expect("fetch owner credits pre-deploy")
+        .expect("owner identity present");
+
+    let contract_json = crate::framework::tokens::permissive_owner_token_contract_json(
+        owner_id,
+        crate::framework::tokens::DEFAULT_TOKEN_POSITION,
+        DEFAULT_MAX_SUPPLY,
+    );
+    let contract_id =
+        match crate::framework::tokens::register_token_contract_via_sdk(ctx, owner, contract_json)
+            .await
+        {
+            Ok(id) => id,
+            Err(err) => {
+                // Wave 1 editorial note: the framework signs with MASTER.
+                // If chain-side rejection on signing-key class trips, the
+                // helper surfaces it as a `FrameworkError::Sdk` carrying
+                // `InvalidSignatureError`. Promote that to a sharp panic
+                // so Wave 4 (Marvin) sees the trigger in CI logs without
+                // any spelunking.
+                let msg = err.to_string();
+                if msg.contains("InvalidSignatureError") || msg.contains("InvalidIdentityPublicKey")
+                {
+                    tracing::error!(
+                        target: "platform_wallet::e2e::cases::tk_003",
+                        %msg,
+                        "TK-003: chain rejected MASTER-signed DataContractCreate"
+                    );
+                    panic!(
+                        "TK-003: signing key class needs CRITICAL upgrade — see Wave 1 \
+                         editorial note in tokens.rs (master_key vs critical_key on \
+                         RegisteredIdentity, PR #3578). underlying error: {msg}"
+                    );
+                }
+                panic!("TK-003 setup failed: {msg}");
+            }
+        };
+
+    let owner_credits_post_deploy = IdentityBalance::fetch(ctx.sdk(), owner_id)
+        .await
+        .expect("fetch owner credits post-deploy")
+        .expect("owner identity present");
 
     // Round-trip: the chain-derived id returned by the helper must
     // resolve to a real contract whose ownerId matches the registering
@@ -89,6 +122,8 @@ async fn tk_003_register_token_contract() {
         .expect("fetch contract: timed out")
         .expect("fetch contract: SDK error")
         .expect("fetch contract: not found on chain after registration");
+
+    let token_position = crate::framework::tokens::DEFAULT_TOKEN_POSITION;
 
     assert_eq!(
         fetched.id(),
@@ -104,31 +139,46 @@ async fn tk_003_register_token_contract() {
         !fetched.tokens().is_empty(),
         "permissive owner-only contract must declare at least one token slot"
     );
+    let token_config = fetched
+        .tokens()
+        .get(&token_position)
+        .expect("contract must declare a token at the helper's default position");
+
+    // Token shape — assert decimals + max_supply match what the
+    // permissive helper baked into the JSON. A schema-drift in
+    // `permissive_owner_token_contract_json` would otherwise deploy
+    // successfully here without surfacing.
+    assert_eq!(
+        token_config.conventions().decimals(),
+        DEFAULT_DECIMALS,
+        "token decimals must match the helper's default"
+    );
+    assert_eq!(
+        token_config.max_supply(),
+        Some(DEFAULT_MAX_SUPPLY),
+        "token max_supply must match the helper's default"
+    );
+
+    // Credit-fee assertion: the deploy must have decreased the
+    // identity's credit balance by a non-zero amount (contract-create
+    // fee). A regression that quietly stops charging contract-create
+    // fees would surface here.
     assert!(
-        fetched.tokens().contains_key(&setup.token_position),
-        "contract must declare a token at the helper's default position {}",
-        setup.token_position,
+        owner_credits_post_deploy < owner_credits_pre_deploy,
+        "owner credit balance must decrease after the contract-create transition \
+         (pre={owner_credits_pre_deploy} post={owner_credits_post_deploy})"
     );
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::tk_003",
         ?contract_id,
         ?owner_id,
-        token_position = setup.token_position,
+        token_position,
+        decimals = token_config.conventions().decimals(),
+        max_supply = ?token_config.max_supply(),
+        contract_create_fee = owner_credits_pre_deploy - owner_credits_post_deploy,
         "TK-003: token contract registered and fetched successfully"
     );
 
-    setup.setup_guard.teardown().await.expect("teardown");
-}
-
-/// Thin shim around [`setup_with_token_contract`] so the test body
-/// can map the `FrameworkResult` into a structured panic for the
-/// MASTER-vs-CRITICAL signing diagnostic above. Splitting the call
-/// keeps the diagnostic prose and the happy path readable.
-async fn setup_with_token_contract_with_master_signing_diagnostic(
-) -> FrameworkResult<crate::framework::tokens::TokenSetup> {
-    // Late `init` so the diagnostic owns the very first SDK error
-    // (the helper does not retry on `InvalidSignatureError`).
-    let ctx = E2eContext::init().await?;
-    setup_with_token_contract(ctx, DEFAULT_TK_FUNDING).await
+    setup_guard.teardown().await.expect("teardown");
 }

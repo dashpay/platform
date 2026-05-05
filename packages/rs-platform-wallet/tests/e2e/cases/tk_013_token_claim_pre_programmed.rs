@@ -46,7 +46,7 @@ const PAYOUT: TokenAmount = 100;
 /// line with the rest of the TK fixtures.
 const FUNDING: dpp::fee::Credits = 1_000_000_000;
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_013_token_claim_from_pre_programmed_distribution() {
     let _ = tracing_subscriber::fmt()
@@ -98,12 +98,14 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     // `Sdk::token_claim`, so we drive the SDK builder directly here
     // — same chain path, fewer indirections, mirrors the existing
     // `mint_to` framework helper.
-    let data_contract = DataContract::fetch(ctx.sdk(), contract_id)
-        .await
-        .expect("fetch token data contract")
-        .expect("token data contract present on chain");
+    let data_contract = Arc::new(
+        DataContract::fetch(ctx.sdk(), contract_id)
+            .await
+            .expect("fetch token data contract")
+            .expect("token data contract present on chain"),
+    );
     let builder = TokenClaimTransitionBuilder::new(
-        Arc::new(data_contract),
+        Arc::clone(&data_contract),
         DEFAULT_TOKEN_POSITION,
         owner_id,
         TokenDistributionType::PreProgrammed,
@@ -143,6 +145,49 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
         balance_before + PAYOUT,
         "post-claim balance must equal pre-claim + payout (claim from pre-programmed distribution silently fails — balance just doesn't move). \
          observed before={balance_before} after={balance_after} expected_delta={PAYOUT}"
+    );
+
+    // Spec § TK-013: a second claim against the same epoch must fail
+    // with a typed "already claimed" / "no claimable amount" error.
+    // A regression that silently lets the same epoch be claimed
+    // multiple times — exactly the silent-on-failure class of bug
+    // the spec rationale calls out — would otherwise pass undetected.
+    let retry_builder = TokenClaimTransitionBuilder::new(
+        data_contract,
+        DEFAULT_TOKEN_POSITION,
+        owner_id,
+        TokenDistributionType::PreProgrammed,
+    );
+    let retry_result = ctx
+        .sdk()
+        .token_claim(retry_builder, &owner.high_key, owner.signer.as_ref())
+        .await;
+    let err_text = match retry_result {
+        Ok(_) => panic!(
+            "second claim against the same pre-programmed epoch must fail \
+             — regression: payout was credited twice"
+        ),
+        Err(err) => format!("{err}").to_lowercase(),
+    };
+    assert!(
+        err_text.contains("already claimed")
+            || err_text.contains("no claimable amount")
+            || err_text.contains("nothing to claim")
+            || err_text.contains("already paid")
+            || err_text.contains("alreadypaid"),
+        "second-claim error must reference the 'already claimed' / 'no claimable amount' \
+         class (observed: {err_text})"
+    );
+
+    // Sanity: the failed retry must NOT have credited the owner a
+    // second payout.
+    let balance_after_retry = token_balance_of(ctx, contract_id, DEFAULT_TOKEN_POSITION, owner_id)
+        .await
+        .expect("post-retry balance");
+    assert_eq!(
+        balance_after_retry, balance_after,
+        "rejected second claim must not alter the owner balance \
+         (pre={balance_after} post={balance_after_retry})"
     );
 
     setup_guard.teardown().await.expect("teardown");

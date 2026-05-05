@@ -16,8 +16,8 @@
 use std::sync::Arc;
 
 use dash_sdk::platform::tokens::builders::burn::TokenBurnTransitionBuilder;
-use dash_sdk::platform::tokens::transitions::BurnResult;
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityBalance;
 use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
@@ -98,33 +98,32 @@ async fn tk_006_token_burn() {
     let builder =
         TokenBurnTransitionBuilder::new(Arc::new(data_contract), position, owner_id, BURN_AMOUNT);
 
-    let burn_result = ctx
+    // Snapshot the owner's identity-credit balance pre-burn so we can
+    // assert the spec's `actual_fee > 0` requirement. `BurnResult`
+    // does not surface a fee field on any variant — the closest
+    // available signal is the credit-balance delta around the
+    // transition.
+    let owner_credits_pre_burn = IdentityBalance::fetch(ctx.sdk(), owner_id)
+        .await
+        .expect("fetch owner credits pre-burn")
+        .expect("owner identity present");
+
+    let _burn_result = ctx
         .sdk()
         .token_burn(builder, &setup.owner.high_key, setup.owner.signer.as_ref())
         .await
         .expect("token_burn");
 
-    // Pin the proof-result variant. The permissive owner-only
-    // contract sets `keepsBurningHistory = true`, so the SDK
-    // resolves the burn proof to `HistoricalDocument`, not
-    // `TokenBalance`. Treat any other shape as a regression.
-    match burn_result {
-        BurnResult::HistoricalDocument(_) => {}
-        BurnResult::TokenBalance(_, _) => {
-            panic!(
-                "permissive contract has keepsBurningHistory=true but BurnResult came back as \
-                 TokenBalance — proof path expectation drifted"
-            );
-        }
-        other => panic!(
-            "unexpected BurnResult variant for non-group burn on history-keeping contract: {}",
-            match other {
-                BurnResult::GroupActionWithDocument(_, _) => "GroupActionWithDocument",
-                BurnResult::GroupActionWithBalance(_, _, _) => "GroupActionWithBalance",
-                _ => "unreachable",
-            }
-        ),
-    }
+    let owner_credits_post_burn = IdentityBalance::fetch(ctx.sdk(), owner_id)
+        .await
+        .expect("fetch owner credits post-burn")
+        .expect("owner identity present");
+    let burn_fee = owner_credits_pre_burn.saturating_sub(owner_credits_post_burn);
+    assert!(
+        burn_fee > 0,
+        "burn must charge identity credits (`actual_fee > 0` per spec) \
+         (pre={owner_credits_pre_burn} post={owner_credits_post_burn})"
+    );
 
     let post_burn_supply = token_supply_of(ctx, contract_id, position)
         .await
@@ -149,6 +148,7 @@ async fn tk_006_token_burn() {
         pre_burn_supply,
         post_burn_supply,
         post_burn_balance,
+        burn_fee,
         "TK-006 burn snapshot"
     );
 

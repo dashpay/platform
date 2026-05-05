@@ -30,6 +30,7 @@ use std::time::Duration;
 
 use dash_sdk::platform::tokens::builders::transfer::TokenTransferTransitionBuilder;
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityBalance;
 use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
@@ -57,7 +58,7 @@ const TRANSFER_AMOUNT: u64 = 250;
 /// rather than an actual sync wait.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "TK-004: requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_004_token_transfer_round_trip() {
     let _ = tracing_subscriber::fmt()
@@ -150,6 +151,16 @@ async fn tk_004_token_transfer_round_trip() {
     );
 
     // ------ A -> B transfer -----------------------------------------
+    // Snapshot A's identity-credit balance pre-transfer so we can
+    // assert the spec's fee-side requirement (`actual_fee > 0`,
+    // credit balance decreased by the transfer fee). Token transfers
+    // settle in tokens — the credit-side fee is charged against the
+    // sender's identity credits.
+    let a_credits_pre_send = IdentityBalance::fetch(ctx.sdk(), identity_a.id)
+        .await
+        .expect("read A pre-send credits")
+        .expect("A identity present");
+
     transfer_token(
         ctx,
         contract_id,
@@ -160,6 +171,21 @@ async fn tk_004_token_transfer_round_trip() {
     )
     .await
     .expect("transfer A -> B failed");
+
+    let a_credits_post_send = IdentityBalance::fetch(ctx.sdk(), identity_a.id)
+        .await
+        .expect("read A post-send credits")
+        .expect("A identity present");
+    let a_send_fee = a_credits_pre_send.saturating_sub(a_credits_post_send);
+    assert!(
+        a_send_fee > 0,
+        "A's credit balance must decrease by a positive transfer fee \
+         (pre={a_credits_pre_send} post={a_credits_post_send})"
+    );
+    assert!(
+        a_credits_post_send < a_credits_pre_send,
+        "post-send credits must be strictly less than pre-send"
+    );
 
     let b_intermediate = wait_for_token_balance(
         ctx,
@@ -194,6 +220,11 @@ async fn tk_004_token_transfer_round_trip() {
     );
 
     // ------ B -> A transfer (close the loop) ------------------------
+    let b_credits_pre_send = IdentityBalance::fetch(ctx.sdk(), identity_b.id)
+        .await
+        .expect("read B pre-send credits")
+        .expect("B identity present");
+
     transfer_token(
         ctx,
         contract_id,
@@ -204,6 +235,17 @@ async fn tk_004_token_transfer_round_trip() {
     )
     .await
     .expect("transfer B -> A failed");
+
+    let b_credits_post_send = IdentityBalance::fetch(ctx.sdk(), identity_b.id)
+        .await
+        .expect("read B post-send credits")
+        .expect("B identity present");
+    let b_send_fee = b_credits_pre_send.saturating_sub(b_credits_post_send);
+    assert!(
+        b_send_fee > 0,
+        "B's credit balance must decrease by a positive transfer fee on the return leg \
+         (pre={b_credits_pre_send} post={b_credits_post_send})"
+    );
 
     let a_post_roundtrip = wait_for_token_balance(
         ctx,
@@ -235,6 +277,8 @@ async fn tk_004_token_transfer_round_trip() {
         b_post_roundtrip,
         supply_post_mint,
         supply_post_roundtrip,
+        a_send_fee,
+        b_send_fee,
         "TK-004: round-trip balance / supply snapshot"
     );
 
