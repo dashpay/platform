@@ -124,26 +124,30 @@ jobs:
               - packages/rs-sdk/**
               - packages/rs-sdk-ffi/**
 
-      # Drop @dashevo/wasm-dpp / @dashevo/wasm-dpp2 from the JS test
-      # matrix on `pull_request` events so the heaviest entries in
-      # the matrix only run on the nightly schedule + manual
-      # `workflow_dispatch`. Cascading consumers (`dapi-client`,
-      # `wallet-lib`, `dash`, `dashmate`, `platform-test-suite`,
-      # `evo-sdk`) keep running on PRs because they exercise their
-      # own code on top of wasm-dpp's already-built JS artifact —
-      # `tests-build-js.yml` runs `yarn build` across the whole
-      # workspace, so wasm-dpp is still compiled and linkable, just
-      # not test-driven on the PR critical path. To force wasm-dpp
-      # tests on a specific PR, use the `Run workflow` (workflow_dispatch)
-      # button on the Actions tab — that path goes through the
-      # `override` step below and runs every JS package.
+      # Drop @dashevo/wasm-dpp from the JS test matrix on
+      # `pull_request` events so the heaviest entry in the matrix
+      # only runs on the nightly schedule + manual
+      # `workflow_dispatch`. @dashevo/wasm-dpp2 stays on the PR
+      # path — it's a separate, lighter package that should be
+      # exercised on every PR. Cascading consumers
+      # (`dapi-client`, `wallet-lib`, `dash`, `dashmate`,
+      # `platform-test-suite`, `evo-sdk`) also keep running on PRs:
+      # their JS test code exercises behavior on top of wasm-dpp's
+      # already-built artifact, and `tests-build-js.yml` runs
+      # `yarn build` across the whole workspace so the wasm-dpp
+      # output is still compiled and linkable for them — just not
+      # test-driven on the PR critical path. To force wasm-dpp
+      # tests on a specific PR, use the `Run workflow`
+      # (workflow_dispatch) button on the Actions tab — that path
+      # goes through the `override` step below and runs every JS
+      # package.
       - name: Skip wasm-dpp tests on pull_request (nightly-only)
         id: prune-pr-matrix
         if: ${{ github.event_name == 'pull_request' }}
         run: |
           set -eo pipefail
           raw='${{ steps.filter-js.outputs.changes }}'
-          pruned=$(echo "$raw" | jq -c 'map(select(. != "@dashevo/wasm-dpp" and . != "@dashevo/wasm-dpp2"))')
+          pruned=$(echo "$raw" | jq -c 'map(select(. != "@dashevo/wasm-dpp"))')
           echo "js-packages=$pruned" >> "$GITHUB_OUTPUT"
           echo "Pruned wasm-dpp from PR matrix:"
           echo "  before: $raw"
