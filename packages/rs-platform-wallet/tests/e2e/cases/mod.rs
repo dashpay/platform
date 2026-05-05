@@ -18,4 +18,6 @@ pub mod tk_009_token_destroy_frozen;
 pub mod tk_010_token_pause_resume;
 pub mod tk_011_token_price_purchase;
 pub mod tk_012_token_update_config;
+pub mod tk_013_token_claim_pre_programmed;
+pub mod tk_014_token_group_action;
 pub mod transfer;
