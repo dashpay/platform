@@ -149,7 +149,7 @@ Source citations for the "Wallet API exists" column are listed inline per case
 | ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | M |
 | ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | S |
 | ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | M |
-| ID-007 | Identity-auth addresses are visible to SPV monitor (FAILING — pins upstream fix) | P2 | M |
+| ID-007 | Identity-auth addresses are intentionally NOT monitored (pins intended architecture) | P2 | M |
 | TK-001 | Token transfer between two identities | P1 | L |
 | TK-001b | Token transfer of amount 0 | P2 | S |
 | TK-001c | Token transfer across re-issued identity (signer rotation) | P2 | M |
@@ -911,57 +911,57 @@ Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 57** (
 - **Estimated complexity**: M
 - **Rationale**: ID-006 covers `identity_index` boundaries; `key_index` is the parallel axis and currently uncovered.
 
-#### ID-007 — Identity-auth addresses are visible to SPV monitor
+#### ID-007 — Identity-auth addresses are intentionally NOT monitored
 - **Priority**: P2
-- **Status**: FAILING — by design until upstream lands BlockchainIdentities*
-  support. The test asserts the CORRECT behavior (identity-auth addresses
-  ARE monitored, Core balance DOES increase, UTXO set holds the new entry).
-  Will start passing when rust-dashcore's `WalletAccountCreationOptions::Default`
-  exposes the identity-authentication subfeature paths. Tracks closed PR
-  `dashpay/rust-dashcore#554` / DET issue `dash-evo-tool#692`. Test body lives
-  at `tests/e2e/cases/id_007_identity_auth_addresses_monitored.rs`;
-  `#[ignore]`-tagged so a default `cargo test` stays green. End-to-end runs
-  (`cargo test -- --ignored`) currently FAIL by design — green = feature
-  works, red = feature broken. Framework prerequisites are cleared (SPV
-  runtime live, `BankWallet::send_core_to` implemented), and runs are
-  gated on **operator pre-funding the bank's Core (Layer-1) receive address**
-  with at least `100_000 + fee` duffs of testnet DASH (the address is logged
-  at framework init under target `platform_wallet::e2e::bank`).
-- **Wallet feature exercised**: `PlatformWalletInfo::monitored_addresses` (`wallet/platform_wallet_traits.rs:93`) projection for DIP-9 identity-authentication addresses derived via `derive_ecdsa_identity_auth_keypair_from_master` (`wallet/identity/network/identity_handle.rs:143`). Concretely: the `m/9'/coinType'/5'/0'/identity_index'/key_index'` subfeature path, which is not in `WalletAccountCreationOptions::Default` at the pinned `key-wallet` revision.
-- **DET parallel**: `dash-evo-tool#692` (the follow-up issue PR `dashpay/rust-dashcore#554` referenced for the DET-side `spv_account_metadata()` match arm).
+- **Status**: Pass — `tests/e2e/cases/id_007_identity_auth_addresses_not_monitored.rs`
+  pins the intentional architecture that DIP-9 identity-authentication
+  subfeature paths (subfeature `0..3`,
+  `m/9'/coinType'/5'/{0,1,2,3}'/identity_index'/key_index'`) are NOT in
+  `WalletAccountCreationOptions::Default` and therefore NOT in
+  `PlatformWalletInfo::monitored_addresses()`. Sending Core duffs to
+  one of those addresses does NOT increase the wallet's Core balance,
+  and the UTXO set never observes such a send. `#[ignore]`-tagged so a
+  default `cargo test` stays green; `cargo test -- --ignored` runs it
+  end-to-end and is expected to PASS. Documents the intended
+  architecture; closed PR `dashpay/rust-dashcore#554` was a speculative
+  attempt to change this and was correctly rejected. End-to-end runs
+  are gated on **operator pre-funding the bank's Core (Layer-1) receive
+  address** with at least `100_000 + fee` duffs of testnet DASH (the
+  address is logged at framework init under target
+  `platform_wallet::e2e::bank`).
+- **Wallet feature exercised**: `PlatformWalletInfo::monitored_addresses` (`wallet/platform_wallet_traits.rs:93`) projection for DIP-9 identity-authentication addresses derived via `derive_ecdsa_identity_auth_keypair_from_master` (`wallet/identity/network/identity_handle.rs:143`). Concretely: the `m/9'/coinType'/5'/0'/identity_index'/key_index'` subfeature path, which is intentionally excluded from `WalletAccountCreationOptions::Default` because identity-auth keys are pure key material, not funds-bearing addresses.
+- **DET parallel**: `dash-evo-tool/src/backend_task/account_summary.rs:226-229` — explicitly states identity-auth addresses "usually hold zero balance"; `receive_address()` returns BIP-44 paths only and DET's UI hides them outside developer-mode "Identity System" view.
 - **Preconditions**:
   - SPV runtime enabled (Task #15 — gates `CR-001` too).
   - ID-001 helper landed (Wave A).
-  - Bank wallet that holds **Core coins**, not just credits — same prerequisite as `CR-003`. Test is gated until that Core-funded helper exists.
+  - Bank wallet that holds **Core coins**, not just credits — same prerequisite as `CR-003`.
 - **Scenario**:
   1. `let id = setup_with_n_identities(1, 30_000_000).await?.identities[0];`
   2. Compute `auth_addr = P2PKH(derive_ecdsa_identity_auth_keypair_from_master(master, network, identity_index = 0, key_index = 0).public_key)`.
   3. Snapshot `wallet.monitored_addresses()` *before* sending anything.
-  4. Send `100_000` duffs from the Core-funded bank to `auth_addr` on Layer-1; wait for instant-lock.
+  4. Send `100_000` duffs from the Core-funded bank to `auth_addr` on Layer-1.
   5. Snapshot `wallet.monitored_addresses()` *after* the broadcast.
-  6. Wait up to `30s` for the wallet's Core balance to reflect the incoming UTXO; record whether it does.
-- **Assertions** (pin the **correct** contract — green when the feature works, red while upstream remains unfixed):
-  - `auth_addr` **IS** in `monitored_addresses()` both before and after step 4.
-  - The wallet's Core balance **DOES** increase to at least `pre_balance + 1` within the confirmation window after step 6.
-  - The wallet's UTXO set **DOES** contain the new `100_000`-duff UTXO at `auth_addr`.
-  - All three currently fail because `WalletAccountCreationOptions::Default` excludes `BlockchainIdentities*` accounts at the pinned `key-wallet` revision; the test starts passing when upstream lands the fix.
-- **Variants** (covered inline in the same test — registration status is irrelevant, the derivation is pure):
-  - Compute `auth_addr` for `identity_index = 1` (an unregistered slot) — same correct-behavior assertions hold (the address must be monitored regardless of registration state).
-  - Repeat for the BLS subfeature path (`m/9'/coinType'/5'/2'/identity_index'/key_index'`) once `derive_*_bls_identity_auth_keypair_from_master` lands; assert the same correct behavior. (Deferred — TODO comment in the test body.)
+  6. Wait up to `30s` for the wallet's Core balance to reflect the incoming UTXO; expect it does NOT.
+- **Assertions** (pin the **intended** contract — green when the architecture is intact):
+  - `auth_addr` is **NOT** in `monitored_addresses()` both before and after step 4.
+  - The wallet's Core balance does **NOT** increase to `pre_balance + 1` within the negative window after step 6 (the `wait_for_core_balance` call is expected to time out).
+  - The wallet's UTXO set does **NOT** contain a `100_000`-duff UTXO at `auth_addr`.
+  - When this test starts FAILING, a regression has happened: either `WalletAccountCreationOptions::Default` started including `BlockchainIdentities*` `AccountType`s, or some other code path has begun monitoring these addresses without architecture review. Investigate before flipping.
+- **Variants** (covered inline in the same test — registration status is irrelevant, the derivation is pure; same architecture applies):
+  - Compute `auth_addr` for `identity_index = 1` (an unregistered slot) — the address must remain unmonitored regardless of registration state.
+  - Repeat for the BLS subfeature path (`m/9'/coinType'/5'/2'/identity_index'/key_index'`) once `derive_*_bls_identity_auth_keypair_from_master` lands; same intended-contract assertions apply. (Deferred — TODO comment in the test body.)
 - **Harness extensions required**:
   - SPV runtime re-enabled (Task #15 — same prerequisite as `CR-001`).
-  - Core-funded bank wallet helper (same prerequisite as `CR-003`). Stubbed for now via `Bank::send_core_to(..) -> unimplemented!()`; wire through when CR-003 helpers land.
+  - Core-funded bank wallet helper (same prerequisite as `CR-003`).
   - `wait_for_core_balance(wallet, expected_min, timeout)` — landed in `framework/wait.rs` alongside this case (parallel of `wait_for_balance` for Layer-1 balance instead of credits).
   - Wave A's `SeedBackedIdentitySigner` (already needed for `ID-001`).
 - **Estimated complexity**: M (test body is short — most of the cost is the prerequisite SPV + Core-faucet bring-up that `CR-001` and `CR-003` already require).
 - **Funding budget**: `100_000` Core duffs (~0.001 DASH) per run for the Layer-1 send; rounding for Core-tx fee. Negligible compared to the credit budget of any P0/P1 case.
-- **Rationale**: Pins the **correct** contract for "which DIP-9 subfeatures get monitored?" The closed PR `dashpay/rust-dashcore#554` user story explicitly called out identity-auth addresses as a scenario it wanted SPV-monitored; the PR is closed without merge or supersede pointer, and the current contract in the pinned `key-wallet` rev silently excludes them. ID-007 inverts the polarity of the previous defensive-pin: instead of asserting the broken behavior holds (green while the bug exists, misleading), the test asserts the correct behavior and FAILS today. That way:
-  1. anyone who flips `WalletAccountCreationOptions::Default` to include `BlockchainIdentities*` accounts (or any equivalent reshape upstream) sees this test go green, signalling the feature is fixed;
-  2. nobody on the platform side mistakes a green ID-007 for "the feature works" while it doesn't — broken feature stays red.
+- **Rationale**: Pins the **intentional** architecture for "which DIP-9 subfeatures get monitored?" Identity-auth addresses are pure key material — they sign identity state transitions, they don't receive Layer-1 Dash. dash-evo-tool (the canonical Platform client) treats them this way: `account_summary.rs:226-229` explicitly notes they "usually hold zero balance"; `receive_address()` returns BIP-44 paths only; the UI hides them outside developer-mode "Identity System" view. No standard flow sends Layer-1 Dash to these addresses. The closed PR `dashpay/rust-dashcore#554` was a speculative attempt to change this for a hypothetical use case, not a fix for any active bug — its rejection was correct. ID-007 pins the not-monitored contract so any accidental regression — or any deliberate architecture shift — surfaces loudly.
 - **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (default `0` — skip); set it to at least `110_000` (`100_000` send + `~10_000` fee reserve) before invoking ID-007 so the bank's `core_balance_confirmed` reflects the post-scan total instead of a false-zero mid-scan. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
 - **Notes**:
   - Today `derive_ecdsa_identity_auth_keypair_from_master` is the only DIP-9 subfeature `rs-platform-wallet` exposes (subfeature 0, ECDSA). Adding the BLS / Hash160 variants is contingent on the upstream `key-wallet` API gaining BLS derivation helpers.
-  - This is a **failing-by-design feature test**: it asserts the correct end-state and stays red until upstream lands the fix. Contrast with `Found-003` / `Found-004` (defensive pins of broken behavior, green-while-broken — kept where the bug is the contract). ID-007 inverts that polarity because identity-auth monitoring is a feature people will eventually depend on; pretending it works (green) would be misleading.
+  - This is a **defensive pin of intentional behavior**, in the same family as `Found-003` / `Found-004`: green = architecture intact, red = something changed and needs review. The change might be a real architecture shift (in which case flip the assertions in the same PR that wires the change) or an accident (in which case revert the breakage).
 
 ### Tokens (TK)
 
