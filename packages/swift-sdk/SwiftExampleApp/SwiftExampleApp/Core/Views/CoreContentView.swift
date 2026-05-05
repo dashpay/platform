@@ -415,11 +415,7 @@ var body: some View {
                         Spacer()
 
                         Button {
-                            Task {
-                                if let sdk = platformState.sdk {
-                                    await shieldedService.fullSync(sdk: sdk)
-                                }
-                            }
+                            shieldedService.manualSync()
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.clockwise")
