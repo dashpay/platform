@@ -213,10 +213,6 @@ impl PlatformAddressWallet {
                 Some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
             });
         let candidates = build_auto_select_candidates(address_balances, outputs, min_input_amount);
-        // TODO(QA-001-followup): consider a typed
-        // `OutputsCannotFundThemselves` error variant so callers can
-        // distinguish "no funds" from "the only funded address is
-        // also an output" without parsing the downstream message.
 
         match fee_strategy {
             [AddressFundsFeeStrategyStep::DeductFromInput(0)] => select_inputs_deduct_from_input(
