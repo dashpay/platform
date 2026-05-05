@@ -199,8 +199,18 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Perform the actual BLAST address sync via platform-wallet.
     func performSync() async {
         guard !isSyncing else { return }
+        // Silent no-op when the active network has no wallet bound
+        // yet (e.g. the user just switched to a network they
+        // haven't created a wallet on, or pull-to-refreshed an
+        // empty Wallets tab). The previous behavior surfaced
+        // "Platform address wallet not configured" in red, which
+        // reads like a setup bug rather than the benign empty
+        // state it actually is. Callers gate their entry points
+        // (Sync Now button, .refreshable) on the presence of a
+        // wallet too, so reaching here without one is best-effort
+        // safety for race-y dispatches.
         guard let walletManager = walletManager else {
-            lastError = "Platform address wallet not configured"
+            lastError = nil
             return
         }
 

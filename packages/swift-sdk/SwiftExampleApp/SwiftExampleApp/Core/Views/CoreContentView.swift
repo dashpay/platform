@@ -330,7 +330,18 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.mini)
-                        .disabled(platformBalanceSyncService.isSyncing)
+                        // Disable when there's nothing to sync —
+                        // either an active sync is already in
+                        // flight, or the active network has no
+                        // wallet bound to drive BLAST against. The
+                        // service itself short-circuits to a no-op
+                        // in that second case, but disabling the
+                        // button keeps the UI honest about whether
+                        // a tap will do anything.
+                        .disabled(
+                            platformBalanceSyncService.isSyncing
+                                || walletManager.firstWallet == nil
+                        )
 
                         Button {
                             platformBalanceSyncService.clearDisplay()
