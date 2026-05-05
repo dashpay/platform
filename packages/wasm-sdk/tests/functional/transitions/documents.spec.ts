@@ -25,11 +25,64 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
   let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
+  const waitForPlatform = async (ms = 2000) => new Promise((resolve) => { setTimeout(resolve, ms); });
+  const getSingleTokenBalance = async (identityId: string, tokenId: string) => {
+    const balances = await client.getIdentityTokenBalances(identityId, [tokenId]);
+    return balances.get(tokenId);
+  };
+  const buildSimpleTokenConfiguration = (baseSupply: bigint, newTokensDestinationIdentity: string) => {
+    const contractOwner = sdk.AuthorizedActionTakers.ContractOwner();
+    const contractOwnerChangeRules = new sdk.ChangeControlRules({
+      authorizedToMakeChange: contractOwner,
+      adminActionTakers: contractOwner,
+      isChangingAuthorizedActionTakersToNoOneAllowed: true,
+      isChangingAdminActionTakersToNoOneAllowed: true,
+      isSelfChangingAdminActionTakersAllowed: true,
+    });
+
+    return new sdk.TokenConfiguration({
+      conventions: new sdk.TokenConfigurationConvention({
+        en: new sdk.TokenConfigurationLocalization(false, 'ticket', 'tickets'),
+      }, 0),
+      conventionsChangeRules: contractOwnerChangeRules,
+      baseSupply,
+      keepsHistory: new sdk.TokenKeepsHistoryRules({}),
+      maxSupplyChangeRules: contractOwnerChangeRules,
+      distributionRules: new sdk.TokenDistributionRules({
+        perpetualDistributionRules: contractOwnerChangeRules,
+        newTokensDestinationIdentity,
+        newTokensDestinationIdentityRules: contractOwnerChangeRules,
+        mintingAllowChoosingDestination: false,
+        mintingAllowChoosingDestinationRules: contractOwnerChangeRules,
+        changeDirectPurchasePricingRules: contractOwnerChangeRules,
+      }),
+      marketplaceRules: new sdk.TokenMarketplaceRules(
+        sdk.TokenTradeMode.NotTradeable(),
+        contractOwnerChangeRules,
+      ),
+      manualMintingRules: contractOwnerChangeRules,
+      manualBurningRules: contractOwnerChangeRules,
+      freezeRules: contractOwnerChangeRules,
+      unfreezeRules: contractOwnerChangeRules,
+      destroyFrozenFundsRules: contractOwnerChangeRules,
+      emergencyActionRules: contractOwnerChangeRules,
+      mainControlGroupCanBeModified: sdk.AuthorizedActionTakers.NoOne(),
+      description: 'token-paid document flow test token',
+    });
+  };
+  const makeTokenPaymentInfo = (maximumTokenCost: bigint) => ({
+    tokenContractPosition: 0,
+    maximumTokenCost,
+    gasFeesPaidBy: 'DocumentOwner',
+  });
 
   // Store contract and document IDs for use across tests
   let testContractId = null;
   let createdDocumentId = null;
   let mutableDocumentId = null;
+  let tokenPaidContractId = null;
+  let tokenPaidDocumentId = null;
+  let tokenPaidTokenId = null;
 
   before(async () => {
     await init();
@@ -138,7 +191,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       testContractId = publishedContract.id;
 
       // Wait for the contract to be indexed on platform
-      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+      await waitForPlatform();
 
       // Verify the contract is available
       const fetchedContract = await client.getDataContract(testContractId);
@@ -172,7 +225,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       expect(mutableDocumentId).to.exist();
 
       // Wait for the document to be indexed on platform
-      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+      await waitForPlatform();
 
       // Now replace the document with updated content
       // Increment revision to 2 for the update
@@ -219,7 +272,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       expect(documentId).to.exist();
 
       // Wait for the document to be indexed on platform
-      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+      await waitForPlatform();
 
       // Now delete the document using object format
       await client.documentDelete({
@@ -261,7 +314,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       expect(documentId).to.exist();
 
       // Wait for the document to be indexed on platform
-      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+      await waitForPlatform();
 
       // Create document object for transfer (revision incremented)
       const documentForTransfer = new sdk.Document({
@@ -280,6 +333,212 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         identityKey,
         signer,
       });
+    });
+  });
+
+  describe('tokenPaymentInfo document flow', () => {
+    it('should publish a contract with document token costs and fund the seller and buyer', async () => {
+      const { signer: contractSigner, identityKey: contractIdentityKey } = createTestSignerAndKey(sdk, 1, 2);
+      const { signer: tokenSigner, identityKey: tokenIdentityKey } = createTestSignerAndKey(sdk, 1, 1);
+
+      const schema = {
+        tokenPaidListing: {
+          type: 'object',
+          transferable: 1,
+          tradeMode: 1,
+          tokenCost: {
+            create: { tokenPosition: 0, amount: 5, gasFeesPaidBy: 0 },
+            update_price: { tokenPosition: 0, amount: 2, gasFeesPaidBy: 0 },
+            purchase: { tokenPosition: 0, amount: 3, gasFeesPaidBy: 0 },
+          },
+          properties: {
+            title: {
+              type: 'string',
+              maxLength: 100,
+              position: 0,
+            },
+          },
+          required: ['title'],
+          additionalProperties: false,
+        },
+      };
+
+      const tokens = {
+        0: buildSimpleTokenConfiguration(1000n, testData.identityId),
+      };
+
+      const dataContract = new sdk.DataContract({
+        ownerId: testData.identityId,
+        identityNonce: 0n,
+        schemas: schema,
+        tokens,
+        fullValidation: true,
+      });
+
+      const publishedContract = await client.contractPublish({
+        dataContract,
+        identityKey: contractIdentityKey,
+        signer: contractSigner,
+      });
+
+      tokenPaidContractId = publishedContract.id;
+      tokenPaidTokenId = sdk.WasmSdk.calculateTokenIdFromContract(tokenPaidContractId, 0);
+
+      await waitForPlatform();
+
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(1000n);
+
+      await client.tokenTransfer({
+        dataContractId: tokenPaidContractId,
+        tokenPosition: 0,
+        senderId: testData.identityId,
+        recipientId: testData.identityId2,
+        amount: 50n,
+        identityKey: tokenIdentityKey,
+        signer: tokenSigner,
+      });
+
+      await client.tokenTransfer({
+        dataContractId: tokenPaidContractId,
+        tokenPosition: 0,
+        senderId: testData.identityId,
+        recipientId: testData.identityId3,
+        amount: 50n,
+        identityKey: tokenIdentityKey,
+        signer: tokenSigner,
+      });
+
+      await waitForPlatform();
+
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(900n);
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(50n);
+      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(50n);
+    });
+
+    it('should reject create when tokenPaymentInfo is omitted', async () => {
+      expect(tokenPaidContractId).to.exist();
+
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 2, 2);
+      const document = new sdk.Document({
+        properties: { title: `Missing token payment ${Date.now()}` },
+        documentTypeName: 'tokenPaidListing',
+        revision: 1,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+      });
+
+      await expect(client.documentCreate({
+        document,
+        identityKey,
+        signer,
+      })).to.be.rejectedWith('Required token payment info not set');
+    });
+
+    it('should reject create when maximumTokenCost is below the required amount', async () => {
+      expect(tokenPaidContractId).to.exist();
+
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 2, 2);
+      const document = new sdk.Document({
+        properties: { title: `Low token cap ${Date.now()}` },
+        documentTypeName: 'tokenPaidListing',
+        revision: 1,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+      });
+
+      await expect(client.documentCreate({
+        document,
+        identityKey,
+        signer,
+        tokenPaymentInfo: makeTokenPaymentInfo(4n),
+      })).to.be.rejectedWith('Identity has not agreed to pay the required token amount');
+    });
+
+    it('should create, price, and purchase a document with tokenPaymentInfo', async () => {
+      expect(tokenPaidContractId).to.exist();
+      expect(tokenPaidTokenId).to.exist();
+
+      const { signer: sellerDocSigner, identityKey: sellerDocKey } = createTestSignerAndKey(sdk, 2, 2);
+      const { signer: buyerDocSigner, identityKey: buyerDocKey } = createTestSignerAndKey(sdk, 3, 2);
+
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(900n);
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(50n);
+      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(50n);
+
+      const listingTitle = `Token paid listing ${Date.now()}`;
+      const document = new sdk.Document({
+        properties: { title: listingTitle },
+        documentTypeName: 'tokenPaidListing',
+        revision: 1,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+      });
+
+      await client.documentCreate({
+        document,
+        identityKey: sellerDocKey,
+        signer: sellerDocSigner,
+        tokenPaymentInfo: makeTokenPaymentInfo(5n),
+      });
+
+      tokenPaidDocumentId = document.id;
+      expect(tokenPaidDocumentId).to.exist();
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(45n);
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(905n);
+
+      await waitForPlatform();
+
+      const documentForSale = new sdk.Document({
+        properties: { title: listingTitle },
+        documentTypeName: 'tokenPaidListing',
+        revision: 2,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+        id: tokenPaidDocumentId,
+      });
+
+      await client.documentSetPrice({
+        document: documentForSale,
+        price: 1_000_000n,
+        identityKey: sellerDocKey,
+        signer: sellerDocSigner,
+        tokenPaymentInfo: makeTokenPaymentInfo(2n),
+      });
+
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(43n);
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(907n);
+
+      await waitForPlatform();
+
+      const documentToPurchase = new sdk.Document({
+        properties: { title: listingTitle },
+        documentTypeName: 'tokenPaidListing',
+        revision: 3,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+        id: tokenPaidDocumentId,
+      });
+
+      await client.documentPurchase({
+        document: documentToPurchase,
+        buyerId: testData.identityId3,
+        price: 1_000_000n,
+        identityKey: buyerDocKey,
+        signer: buyerDocSigner,
+        tokenPaymentInfo: makeTokenPaymentInfo(3n),
+      });
+
+      const purchasedDocument = await client.getDocument(
+        tokenPaidContractId,
+        'tokenPaidListing',
+        tokenPaidDocumentId,
+      );
+
+      expect(purchasedDocument).to.exist();
+      expect(purchasedDocument.ownerId.toString()).to.equal(testData.identityId3);
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(43n);
+      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(47n);
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(910n);
     });
   });
 });

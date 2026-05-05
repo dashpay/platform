@@ -3,6 +3,7 @@
 //! This module provides WASM bindings for document operations like create, replace, delete, etc.
 
 use crate::error::WasmSdkError;
+use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -11,11 +12,15 @@ use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use dash_sdk::dpp::tokens::token_payment_info::{v0::TokenPaymentInfoV0, TokenPaymentInfo};
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
+use js_sys::Reflect;
+use serde::Deserialize;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
@@ -26,6 +31,97 @@ use wasm_dpp2::utils::{
     IntoWasm,
 };
 use wasm_dpp2::IdentitySignerWasm;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_PAYMENT_INFO_TS: &str = r#"
+/**
+ * Token-based payment metadata for document actions that require token cost agreement.
+ */
+export interface DocumentTokenPaymentInfo {
+  /**
+   * Optional external token contract ID.
+   * If omitted, the token is expected to come from the current document contract.
+   */
+  paymentTokenContractId?: IdentifierLike;
+
+  /**
+   * Token position within the token contract.
+   */
+  tokenContractPosition: number;
+
+  /**
+   * Optional minimum token amount the payer agrees to spend.
+   */
+  minimumTokenCost?: bigint;
+
+  /**
+   * Optional maximum token amount the payer agrees to spend.
+   */
+  maximumTokenCost?: bigint;
+
+  /**
+   * Which party covers gas fees for the document action.
+   */
+  gasFeesPaidBy?: 'DocumentOwner' | 'ContractOwner' | 'PreferContractOwner';
+}
+"#;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenPaymentInfoInput {
+    token_contract_position: u16,
+    minimum_token_cost: Option<u64>,
+    maximum_token_cost: Option<u64>,
+    gas_fees_paid_by: Option<String>,
+}
+
+fn try_from_options_optional_token_payment_info(
+    options: &JsValue,
+) -> Result<Option<TokenPaymentInfo>, WasmSdkError> {
+    let token_payment_info_value = Reflect::get(options, &JsValue::from_str("tokenPaymentInfo"))
+        .map_err(|err| {
+            WasmSdkError::invalid_argument(format!(
+                "Failed to read tokenPaymentInfo option: {:?}",
+                err
+            ))
+        })?;
+
+    if token_payment_info_value.is_null() || token_payment_info_value.is_undefined() {
+        return Ok(None);
+    }
+
+    let payment_token_contract_id = try_from_options_optional::<IdentifierWasm>(
+        &token_payment_info_value,
+        "paymentTokenContractId",
+    )?
+    .map(Into::into);
+
+    let parsed: TokenPaymentInfoInput = deserialize_required_query(
+        token_payment_info_value,
+        "tokenPaymentInfo is required",
+        "token payment info",
+    )?;
+
+    let gas_fees_paid_by = match parsed.gas_fees_paid_by.as_deref() {
+        None | Some("DocumentOwner") => GasFeesPaidBy::DocumentOwner,
+        Some("ContractOwner") => GasFeesPaidBy::ContractOwner,
+        Some("PreferContractOwner") => GasFeesPaidBy::PreferContractOwner,
+        Some(other) => {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "Invalid tokenPaymentInfo.gasFeesPaidBy value '{}'",
+                other
+            )))
+        }
+    };
+
+    Ok(Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+        payment_token_contract_id,
+        token_contract_position: parsed.token_contract_position,
+        minimum_token_cost: parsed.minimum_token_cost,
+        maximum_token_cost: parsed.maximum_token_cost,
+        gas_fees_paid_by,
+    })))
+}
 
 // ============================================================================
 // Document Create
@@ -56,6 +152,11 @@ export interface DocumentCreateOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional token payment agreement for document types with tokenCost.create.
+   */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
    * Optional settings for the broadcast operation.
@@ -126,6 +227,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PutDocument trait for creation
         document
@@ -134,7 +236,7 @@ impl WasmSdk {
                 document_type,
                 Some(entropy_array),
                 identity_key,
-                None, // token_payment_info
+                token_payment_info,
                 &signer,
                 settings,
             )
@@ -173,6 +275,11 @@ export interface DocumentReplaceOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional token payment agreement for document types with tokenCost.replace.
+   */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
    * Optional settings for the broadcast operation.
@@ -229,6 +336,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PutDocument trait for replacement (revision > INITIAL_REVISION triggers replace)
         document
@@ -237,7 +345,7 @@ impl WasmSdk {
                 document_type,
                 None, // entropy not needed for replace
                 identity_key,
-                None, // token_payment_info
+                token_payment_info,
                 &signer,
                 settings,
             )
@@ -286,6 +394,11 @@ export interface DocumentDeleteOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional token payment agreement for document types with tokenCost.delete.
+   */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
    * Optional settings for the broadcast operation.
@@ -368,6 +481,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build and execute delete transition using DocumentDeleteTransitionBuilder
         let builder = DocumentDeleteTransitionBuilder::new(
@@ -376,6 +490,12 @@ impl WasmSdk {
             document_id,
             owner_id,
         );
+
+        let builder = if let Some(token_payment_info) = token_payment_info {
+            builder.with_token_payment_info(token_payment_info)
+        } else {
+            builder
+        };
 
         let builder = if let Some(s) = settings {
             builder.with_settings(s)
@@ -424,6 +544,11 @@ export interface DocumentTransferOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional token payment agreement for document types with tokenCost.transfer.
+   */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
    * Optional settings for the broadcast operation.
@@ -491,6 +616,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use TransferDocument trait
         document
@@ -499,7 +625,7 @@ impl WasmSdk {
                 self.inner_sdk(),
                 document_type,
                 identity_key,
-                None, // token_payment_info
+                token_payment_info,
                 &signer,
                 settings,
             )
@@ -548,6 +674,11 @@ export interface DocumentPurchaseOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional token payment agreement for document types with tokenCost.purchase.
+   */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
    * Optional settings for the broadcast operation.
@@ -609,6 +740,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PurchaseDocument trait
         document
@@ -618,7 +750,7 @@ impl WasmSdk {
                 document_type,
                 buyer_id,
                 identity_key,
-                None, // token_payment_info
+                token_payment_info,
                 &signer,
                 settings,
             )
@@ -662,6 +794,11 @@ export interface DocumentSetPriceOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional token payment agreement for document types with tokenCost.update_price.
+   */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
    * Optional settings for the broadcast operation.
@@ -720,6 +857,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use UpdatePriceOfDocument trait
         document
@@ -728,7 +866,7 @@ impl WasmSdk {
                 self.inner_sdk(),
                 document_type,
                 identity_key,
-                None, // token_payment_info
+                token_payment_info,
                 &signer,
                 settings,
             )
