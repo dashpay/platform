@@ -20,16 +20,18 @@ use crate::framework::prelude::*;
 
 /// Funds the bank submits to the funding address. Option C
 /// (DeductFromInput) delivers exactly this amount to the address.
-/// Sized so that after the 50M registration, the residual (100M)
+/// Sized so that after the 50M registration, the residual (130M)
 /// covers the chain-time IdentityCreateFromAddresses dynamic fee
-/// (~96M, from validate_fees_of_event_v0 PaidFromAddressInputs) with
-/// 4M buffer.
-const FUNDING_CREDITS: u64 = 150_000_000;
+/// (~110.86M, from validate_fees_of_event_v0 PaidFromAddressInputs;
+/// grew from ~96M after the slot-2 TRANSFER key was added in
+/// `173b2e15ce`, +~550 bytes × 27_000 credits/byte ≈ +14.85M) with
+/// ~19M buffer.
+const FUNDING_CREDITS: u64 = 180_000_000;
 
 /// Floor the wait_for_balance keys on before registration runs.
 /// Under Option C the address receives exactly FUNDING_CREDITS, so
 /// the floor equals the funded amount.
-const FUNDING_FLOOR: u64 = 150_000_000;
+const FUNDING_FLOOR: u64 = 180_000_000;
 
 /// Credits committed to the new identity in the registration
 /// transition. The address loses this exact amount minus the bank's
