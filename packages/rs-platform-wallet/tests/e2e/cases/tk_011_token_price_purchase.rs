@@ -35,7 +35,7 @@ const PRICE_PER_TOKEN: u64 = 1_000;
 const PURCHASE_AMOUNT: u64 = 10;
 const TOTAL_AGREED_PRICE: u64 = 10_000;
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_011_set_price_and_direct_purchase_round_trip() {
     let _ = tracing_subscriber::fmt()
@@ -64,9 +64,10 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
     let owner_token_pre = token_balance_of(ctx, contract_id, position, owner.id)
         .await
         .expect("owner token balance pre-purchase");
-    assert!(
-        owner_token_pre >= MINT_AMOUNT,
-        "owner mint must settle before set_price (balance={owner_token_pre})"
+    assert_eq!(
+        owner_token_pre, MINT_AMOUNT,
+        "owner balance must equal the freshly-minted amount on a fresh contract \
+         (got {owner_token_pre})"
     );
 
     let buyer_token_pre = token_balance_of(ctx, contract_id, position, buyer.id)

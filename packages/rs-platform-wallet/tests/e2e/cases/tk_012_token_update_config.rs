@@ -35,7 +35,7 @@ use crate::framework::tokens::{
 /// Doubled max_supply target — `TEST_SPEC.md` TK-012 step 2.
 const NEW_MAX_SUPPLY: u64 = 2_000_000_000_000_000;
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_012_update_token_config_max_supply() {
     let _ = tracing_subscriber::fmt()

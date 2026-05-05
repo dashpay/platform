@@ -43,9 +43,10 @@ use dash_sdk::platform::transition::put_contract::PutContract;
 use dash_sdk::platform::Fetch;
 
 use crate::framework::prelude::*;
+use crate::framework::setup_with_n_identities;
 use crate::framework::tokens::{
-    setup_with_token_and_three_identities, token_balance_of, token_supply_of, DEFAULT_BASE_SUPPLY,
-    DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION,
+    token_balance_of, token_supply_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY,
+    DEFAULT_TOKEN_POSITION,
 };
 use crate::framework::wallet_factory::RegisteredIdentity;
 
@@ -62,7 +63,7 @@ const MINT_AMOUNT: TokenAmount = 42;
 /// Group is at position 0 in the contract, threshold 2-of-3.
 const GROUP_POSITION: GroupContractPosition = 0;
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_014_token_group_action_mint_co_sign() {
     let _ = tracing_subscriber::fmt()
@@ -73,20 +74,18 @@ async fn tk_014_token_group_action_mint_co_sign() {
         .with_test_writer()
         .try_init();
 
-    let ctx = E2eContext::init().await.expect("e2e context init");
-
-    // Bootstrap three identities. The contract the helper publishes
-    // has no group config, so we discard its `contract_id` and
-    // re-deploy our own with a 2-of-3 group at position 0.
-    let three = setup_with_token_and_three_identities(ctx, FUNDING)
+    // Register three identities only — TK-014 needs a group-gated
+    // contract that the framework's `setup_with_token_and_three_identities`
+    // helper does not yet support, so we skip the helper's
+    // permissive-contract deploy and publish the group-gated contract
+    // ourselves below. Saves one full contract-create fee per run.
+    let setup_guard = setup_with_n_identities(3, FUNDING)
         .await
-        .expect("setup_with_token_and_three_identities");
-    let setup = three.setup;
-    let peers = three.peers;
-    let ctx = setup.setup_guard.base.ctx;
-    let owner = &setup.owner;
-    let peer_a = &peers[0];
-    let peer_b = &peers[1];
+        .expect("register three identities");
+    let ctx = setup_guard.base.ctx;
+    let owner = &setup_guard.identities[0];
+    let peer_a = &setup_guard.identities[1];
+    let peer_b = &setup_guard.identities[2];
     let recipient_id = peer_a.id;
 
     let group_member_ids = [owner.id, peer_a.id, peer_b.id];
@@ -279,7 +278,7 @@ async fn tk_014_token_group_action_mint_co_sign() {
         }
     }
 
-    setup.setup_guard.teardown().await.expect("teardown");
+    setup_guard.teardown().await.expect("teardown");
 }
 
 /// Drive `Sdk::token_mint` with the supplied `group_info`. Mirrors

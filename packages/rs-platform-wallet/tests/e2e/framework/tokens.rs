@@ -558,6 +558,14 @@ pub async fn wait_for_token_balance(
 /// to `setup`, funded with `funding` credits from the bank. Used by
 /// TK cases that need a third party past the helpers' baseline
 /// (e.g. an unauthorised-mint variant).
+///
+/// Hot-path note: this helper calls
+/// [`TestWallet::sync_balances`] after every single registration to
+/// keep the funding-address `(balance, nonce)` cache consistent.
+/// Calling this in a tight loop is `O(n)` full-wallet syncs — if a
+/// test ever needs to register many identities post-setup, batch the
+/// registrations and call `sync_balances` once at the end instead of
+/// reusing this helper per iteration.
 pub async fn register_extra_identity(
     ctx: &E2eContext,
     setup: &mut TokenSetup,

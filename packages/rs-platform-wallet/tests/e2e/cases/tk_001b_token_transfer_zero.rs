@@ -75,6 +75,14 @@ async fn tk_001b_token_transfer_zero_rejected() {
     let peer_tok_pre = token_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("peer token balance pre");
+    // Snapshot the owner's identity-credit balance pre-call so we
+    // can assert the rejected transition charged zero credits
+    // (the spec's "no broadcast, no fee" contract).
+    let owner_credits_pre = Identity::fetch(ctx.sdk(), owner.id)
+        .await
+        .expect("fetch owner identity pre")
+        .expect("owner identity must exist pre-rejection")
+        .balance();
 
     let data_contract = DataContract::fetch(ctx.sdk(), contract_id)
         .await
@@ -145,6 +153,7 @@ async fn tk_001b_token_transfer_zero_rejected() {
         owner_tok_post,
         peer_tok_pre,
         peer_tok_post,
+        owner_credits_pre,
         owner_credits_post,
         "post-rejection snapshot"
     );
@@ -157,10 +166,13 @@ async fn tk_001b_token_transfer_zero_rejected() {
         peer_tok_post, peer_tok_pre,
         "rejected transfer must not alter recipient token balance"
     );
-    assert!(
-        owner_credits_post > 0,
-        "owner identity must still hold credits after a rejected transfer \
-         (observed={owner_credits_post})"
+    // Spec § TK-001b: rejected (no broadcast, no fee). A regression
+    // that starts charging credits for client-side-rejected
+    // transitions would surface as a non-zero delta here.
+    assert_eq!(
+        owner_credits_post, owner_credits_pre,
+        "rejected transfer must not charge identity credits \
+         (pre={owner_credits_pre} post={owner_credits_post})"
     );
 
     two.setup.setup_guard.teardown().await.expect("teardown");

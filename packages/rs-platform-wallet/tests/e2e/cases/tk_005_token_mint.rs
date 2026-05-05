@@ -11,6 +11,12 @@
 //! - Pre-mint supply is `0` (matches `DEFAULT_BASE_SUPPLY`).
 //! - Post-mint supply equals the sum of both mint amounts.
 
+use std::sync::Arc;
+
+use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
+use dash_sdk::platform::Fetch;
+use dpp::data_contract::DataContract;
+
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_contract, token_balance_of, token_supply_of, DEFAULT_TK_FUNDING,
@@ -66,19 +72,36 @@ async fn tk_005_token_mint() {
         "pre-mint owner balance must be 0; got {pre_balance}"
     );
 
-    // Mint #1 — owner → owner.
-    mint_to(
-        ctx,
-        contract_id,
+    // Mint #1 — owner → (implicit recipient via `recipient_id: None`).
+    // The framework `mint_to` always sets `issued_to_identity_id`, so
+    // we drive the SDK builder directly here to keep the
+    // `recipient_id: None` (default-to-owner) branch covered. The
+    // contract's `mintingAllowChoosingDestination` is true and
+    // `newTokensDestinationIdentity` is the owner, so the protocol
+    // routes the mint to the owner anyway.
+    let data_contract = Arc::new(
+        DataContract::fetch(ctx.sdk(), contract_id)
+            .await
+            .expect("fetch data contract")
+            .expect("contract present"),
+    );
+    let builder_implicit = TokenMintTransitionBuilder::new(
+        Arc::clone(&data_contract),
         position,
+        owner_id,
         MINT_AMOUNT_A,
-        &setup.owner,
-        &setup.owner,
-    )
-    .await
-    .expect("first mint to owner");
+    );
+    ctx.sdk()
+        .token_mint(
+            builder_implicit,
+            &setup.owner.high_key,
+            setup.owner.signer.as_ref(),
+        )
+        .await
+        .expect("first mint (implicit recipient)");
 
-    // Mint #2 — owner → owner (explicit recipient via builder).
+    // Mint #2 — owner → owner (explicit recipient via the framework
+    // `mint_to` helper, which sets `issued_to_identity_id`).
     mint_to(
         ctx,
         contract_id,

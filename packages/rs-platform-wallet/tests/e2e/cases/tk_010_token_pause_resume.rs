@@ -30,11 +30,15 @@ use crate::framework::tokens::{
 };
 
 const MINT_AMOUNT: u64 = 1_000;
+/// Initial peer seed (owner mints this amount to peer pre-pause) so
+/// the spec's "both identities have a non-zero token balance"
+/// pre-condition holds.
+const PEER_SEED: u64 = 25;
 const SEED_TRANSFER: u64 = 100;
 const POST_RESUME_TRANSFER: u64 = 50;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     let _ = tracing_subscriber::fmt()
@@ -55,20 +59,34 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     let contract_id = s.setup.contract_id;
     let position = s.setup.token_position;
 
-    // Step 1: owner mints to self, then seeds peer with a small balance
-    // so the post-resume transfer has somewhere to land. The pause path
-    // is exercised by the owner -> peer transfer in step 3.
+    // Step 1: owner mints to self and seeds peer with a small
+    // balance. Spec § TK-010 precondition asks for "two identities;
+    // both have a non-zero token balance" — the pre-pause peer mint
+    // makes the regulatory case (pause must block transfers from a
+    // funded peer too) actually reachable.
     mint_to(ctx, contract_id, position, MINT_AMOUNT, owner, owner)
         .await
         .expect("owner mint to self");
+    mint_to(ctx, contract_id, position, PEER_SEED, peer, owner)
+        .await
+        .expect("owner mint to peer (precondition seed)");
 
-    // Pre-pause sanity: owner balance reflects the mint, token is not paused.
+    // Pre-pause sanity: balances are exactly the minted amounts on a
+    // fresh contract (no historical seed possible because the
+    // contract was freshly deployed in setup).
     let owner_pre = token_balance_of(ctx, contract_id, position, owner.id)
         .await
         .expect("owner balance pre-pause");
-    assert!(
-        owner_pre >= MINT_AMOUNT,
-        "owner mint must be observable before pause (balance={owner_pre})"
+    assert_eq!(
+        owner_pre, MINT_AMOUNT,
+        "owner balance must equal the freshly-minted amount (got {owner_pre})"
+    );
+    let peer_pre = token_balance_of(ctx, contract_id, position, peer.id)
+        .await
+        .expect("peer balance pre-pause");
+    assert_eq!(
+        peer_pre, PEER_SEED,
+        "peer balance must equal PEER_SEED post seed-mint (got {peer_pre})"
     );
     let paused_before = token_is_paused_of(ctx, contract_id, position)
         .await
@@ -152,9 +170,14 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     let peer_post = token_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("peer balance post-resume");
-    assert!(
-        peer_post >= POST_RESUME_TRANSFER,
-        "peer must observe the post-resume transfer (balance={peer_post})"
+    // Spec § TK-010 step 5: "succeeds" — peer balance grows by
+    // exactly POST_RESUME_TRANSFER from its pre-pause value (the
+    // mid-pause attempt was rejected, so it had no effect).
+    assert_eq!(
+        peer_post,
+        peer_pre + POST_RESUME_TRANSFER,
+        "peer balance must equal the seed plus the post-resume transfer \
+         (pre={peer_pre} post={peer_post} expected_delta={POST_RESUME_TRANSFER})"
     );
 
     tracing::info!(
