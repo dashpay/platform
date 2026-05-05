@@ -1413,6 +1413,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const isLocal = options.network === NETWORK_LOCAL || name === 'local';
             const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
 
+            // Flip `core.compactFilters` to true for every config —
+            // pre-3.1.0 configs predate the field entirely (template
+            // emitted nothing, dashcore left the cfilter index off),
+            // so a missing-or-false value here always means
+            // "inherited the old implicit-off default" rather than
+            // "user explicitly opted out". The base config now
+            // ships with this flag on; this backfill brings every
+            // already-set-up cluster up to that line so the iOS
+            // BIP157 SPV flow against `local_seed` (and any other
+            // dashmate node) works without manual editing.
+            if (options.core) {
+              options.core.compactFilters = true;
+            }
+
             if (options.platform?.drive?.tenderdash?.docker
               && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
               options.platform.drive.tenderdash.docker.image = defaultConfig

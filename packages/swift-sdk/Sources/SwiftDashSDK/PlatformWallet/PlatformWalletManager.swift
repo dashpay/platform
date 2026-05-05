@@ -97,17 +97,33 @@ public class PlatformWalletManager: ObservableObject {
                 "dash_sdk_get_inner_sdk_ptr returned NULL for the supplied SDK"
             )
         }
-        try configure(sdkPointer: UnsafeRawPointer(innerSdkPtr), modelContainer: modelContainer)
+        // The Rust manager is network-locked at construction
+        // (`WalletManager::new(sdk.network)`); thread that same
+        // network through to the persistence handler so its
+        // `loadWalletList` only restores wallets bound to this
+        // network, matching the per-network manager design.
+        try configure(
+            sdkPointer: UnsafeRawPointer(innerSdkPtr),
+            modelContainer: modelContainer,
+            network: sdk.network
+        )
     }
 
     /// Configure with a raw Sdk pointer (advanced usage).
-    public func configure(sdkPointer: UnsafeRawPointer, modelContainer: ModelContainer? = nil) throws {
+    public func configure(
+        sdkPointer: UnsafeRawPointer,
+        modelContainer: ModelContainer? = nil,
+        network: Network? = nil
+    ) throws {
         var handle: Handle = NULL_HANDLE
 
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
         if let container = modelContainer {
-            let h = PlatformWalletPersistenceHandler(modelContainer: container)
+            let h = PlatformWalletPersistenceHandler(
+                modelContainer: container,
+                network: network
+            )
             persistence = h.makeCallbacks()
             handler = h
         } else {
