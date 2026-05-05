@@ -130,6 +130,26 @@ var body: some View {
                         value: filterHeightsDisplay
                     )
 
+                    // Block time of the SPV chain tip — a stale
+                    // value across polls means core stopped
+                    // producing blocks even though our SPV client
+                    // is healthy. Hidden until the first tip
+                    // header is stored.
+                    if let tipTime = walletManager.spvTipBlockTime {
+                        HStack {
+                            Text("Block Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(tipTime, style: .relative) ago")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(AppDate.formatted(tipTime, dateStyle: .omitted, timeStyle: .shortened))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     // Controls row
                     HStack(spacing: 8) {
                         Spacer()
@@ -360,11 +380,25 @@ var body: some View {
                             Text("Syncing...")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                        } else {
-                            Image(systemName: "shield.checkered")
-                                .foregroundColor(.purple)
+                        } else if let lastSync = shieldedService.lastSyncTime {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
                                 .font(.caption)
-                            Text("Ready")
+                            Text("Last sync: \(lastSync, style: .relative)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else if !shieldedService.isBound {
+                            Image(systemName: "shield.slash")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not bound")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "circle.dashed")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not synced yet")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -402,6 +436,42 @@ var body: some View {
                         }
                     }
 
+                    // Sync counters since launch — `total_scanned`
+                    // is the wire-level encrypted-note count (every
+                    // pass), while new + spent are the wallet-side
+                    // outcomes (only ours).
+                    if shieldedService.syncCountSinceLaunch > 0 {
+                        let svc = shieldedService
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Queries Since Launch")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(svc.syncCountSinceLaunch) syncs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 12) {
+                                QueryCountBadge(
+                                    label: "Scanned",
+                                    count: UInt32(min(svc.totalScanned, UInt64(UInt32.max))),
+                                    color: .blue
+                                )
+                                QueryCountBadge(
+                                    label: "New",
+                                    count: UInt32(min(svc.totalNewNotes, UInt64(UInt32.max))),
+                                    color: .purple
+                                )
+                                QueryCountBadge(
+                                    label: "Spent",
+                                    count: UInt32(min(svc.totalNewlySpent, UInt64(UInt32.max))),
+                                    color: .orange
+                                )
+                            }
+                        }
+                    }
+
                     // Error display
                     if let error = shieldedService.lastError {
                         Text(error)
@@ -415,11 +485,7 @@ var body: some View {
                         Spacer()
 
                         Button {
-                            Task {
-                                if let sdk = platformState.sdk {
-                                    await shieldedService.fullSync(sdk: sdk)
-                                }
-                            }
+                            Task { await shieldedService.manualSync() }
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.clockwise")
