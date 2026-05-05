@@ -762,6 +762,15 @@ fn select_inputs_deduct_from_input(
     // order. Tail consumptions below `min_input_amount` get folded into
     // the fee target — `validate_structure` would otherwise reject the
     // transition with `InputBelowMinimumError`.
+    //
+    // INTENTIONAL(CMT-005): single-target fold-back is the simplest
+    // correct behaviour. Multi-peer redistribution (e.g. spread the
+    // sub-minimum tail across earlier prefix entries with headroom
+    // before folding the residue) is a defensible optimisation but
+    // adds combinatorial complexity for a borderline case (sub-min
+    // tail when the fee target is already at `fee_target_max`); the
+    // simpler form ships first, optimisation is a follow-up if real
+    // workloads surface it.
     let mut fee_target_consumed = fee_target_min;
     let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
     let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
@@ -946,6 +955,15 @@ fn select_inputs_reduce_output(
     // reach `min_input_amount + shift`. Picking the largest peer
     // maximises the chance of meeting that threshold and concentrates
     // residual headroom in the most-funded address.
+    //
+    // INTENTIONAL(CMT-006): single-donor walk is the simplest correct
+    // behaviour. Spreading the shift across multiple donors (e.g.
+    // accumulate `shift_remaining` from each candidate, capped at
+    // `donor.balance − min_input_amount`, until exhausted) is a
+    // defensible optimisation — symmetric to CMT-005 on the
+    // ReduceOutput side — but adds combinatorial complexity for the
+    // same borderline case; the simpler form ships first, optimisation
+    // is a follow-up if needed.
     let last_addr = prefix[last_index].0;
     let last_consumed = selected[&last_addr];
     if last_consumed < min_input_amount && prefix.len() > 1 {
@@ -1018,6 +1036,14 @@ fn select_inputs_reduce_output(
     // either raise output 0 or switch to `[DeductFromInput(0)]`.
     //
     // See https://github.com/dashpay/platform/issues/3040.
+    //
+    // INTENTIONAL(CMT-004): the warn-band is a temporary workaround for
+    // upstream platform #3040 (chain-time fee differs from the static
+    // `estimate_min_fee` for `[ReduceOutput(0)]`). The 3x safety
+    // multiple is a heuristic, not a proven boundary; a tracing_test
+    // would over-pin a value we expect to revisit when #3040 is fixed
+    // upstream. Constant intentionally kept private — it's not part of
+    // any public contract.
     const REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE: Credits = 3;
     let safe_threshold = estimated_fee.saturating_mul(REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE);
     if output_0 < safe_threshold {
