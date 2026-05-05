@@ -134,28 +134,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 .build()
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            // Re-validate the selected outpoints are still spendable while
-            // we still hold the write lock. The lock makes our build atomic
-            // against other callers on this handle, but external mempool /
-            // block events processed before we acquired the lock may have
-            // invalidated UTXOs that were still in the spendable set when
-            // `select_inputs` ran.
-            //
-            // We deliberately do NOT mark the inputs as spent here — that
-            // happens after a successful broadcast (see #3466 review). A
-            // failed broadcast must not leave UTXOs falsely marked spent.
+            // Sanity-check that the builder only selected outpoints from
+            // the same height-aware spendable set we handed to input
+            // selection. We deliberately do NOT mark the inputs as spent here
+            // — that happens after a successful broadcast (see #3466 review).
+            // A failed broadcast must not leave UTXOs falsely marked spent.
             let selected: BTreeSet<OutPoint> =
                 tx.input.iter().map(|txin| txin.previous_output).collect();
-            let still_spendable: BTreeSet<OutPoint> = info
-                .get_spendable_utxos()
-                .into_iter()
-                .map(|utxo| utxo.outpoint)
-                .collect();
-            if !selected.is_subset(&still_spendable) {
+            let spendable_outpoints: BTreeSet<OutPoint> =
+                spendable.iter().map(|utxo| utxo.outpoint).collect();
+            if !selected.is_subset(&spendable_outpoints) {
                 return Err(PlatformWalletError::TransactionBuild(
-                    "Selected UTXOs are no longer available (concurrent transaction). \
-                     Please retry."
-                        .to_string(),
+                    "Transaction builder selected an unavailable UTXO. Please retry.".to_string(),
                 ));
             }
 
@@ -164,6 +154,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // Broadcast first; if the network rejects we leave wallet state
         // untouched so the caller can retry without manual sync repair.
+        // This is intentional even if the remote accepted the transaction
+        // but the broadcast path returned an error: in that ambiguous case
+        // later attempts may reuse the same inputs locally, but the network
+        // rejects the duplicate spend instead of us marking UTXOs spent for
+        // a transaction that might not have propagated.
         self.broadcast_transaction(&tx).await?;
 
         // Now that the tx is in flight, register it as a mempool transaction
@@ -173,17 +168,53 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // network resolves that race exactly as it does on `v3.1-dev`
         // today, but neither caller corrupts local state on a transient
         // broadcast failure.
+        //
+        // Broadcast-first semantics: by the time we get here the network has
+        // already accepted the transaction, so the two warning paths below
+        // intentionally do NOT convert into a post-success `Err`. They
+        // simply mean local wallet state did not get updated to reflect the
+        // mempool spend / change output. Recovery in both cases:
+        //
+        //   * The next `send_to_addresses` from the same handle may reselect
+        //     the same UTXOs because they still look spendable locally. That
+        //     follow-up transaction will be rejected by the network as a
+        //     duplicate spend (the broadcaster surfaces that as an error to
+        //     the caller), so funds are never double-spent on-chain.
+        //   * Once mempool/block sync catches up, the wallet will see the
+        //     original transaction and reconcile its UTXO set, after which
+        //     subsequent sends pick up the correct change outputs.
+        //
+        // The two cases differ in what they imply:
+        //
+        //   * `!check_result.is_relevant` is the expected transient: the
+        //     wallet just hasn't ingested the tx yet (or some derivation
+        //     path/script is unrecognised), and a later sync will fix it.
+        //   * The `else` branch (wallet missing in the manager) is NOT a
+        //     normal transient — the broadcast succeeded against a
+        //     `CoreWallet` handle whose underlying wallet entry is gone
+        //     from the manager. That is a broken/inconsistent local handle
+        //     and the warning exists so operators can spot it; future
+        //     sends through the same handle will keep failing the lookup
+        //     above and surface a clean `WalletNotFound` error.
         {
             let mut wm = self.wallet_manager.write().await;
-            let (wallet, info) =
-                wm.get_wallet_mut_and_info_mut(&self.wallet_id)
-                    .ok_or_else(|| {
-                        crate::error::PlatformWalletError::WalletNotFound(
-                            "Wallet not found in wallet manager".to_string(),
-                        )
-                    })?;
-            info.check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
-                .await;
+            if let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
+                let check_result = info
+                    .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
+                    .await;
+                if !check_result.is_relevant {
+                    tracing::warn!(
+                        txid = %tx.txid(),
+                        "broadcast transaction was not relevant during post-broadcast wallet registration"
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    txid = %tx.txid(),
+                    "wallet missing during post-broadcast transaction registration"
+                );
+            }
         }
 
         Ok(tx)
