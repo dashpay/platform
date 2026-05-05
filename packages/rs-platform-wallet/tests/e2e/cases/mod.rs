@@ -8,4 +8,7 @@ pub mod tk_004_token_transfer_round_trip;
 pub mod tk_005_token_mint;
 pub mod tk_005b_token_mint_to_other;
 pub mod tk_006_token_burn;
+pub mod tk_007_token_freeze;
+pub mod tk_008_token_unfreeze;
+pub mod tk_009_token_destroy_frozen;
 pub mod transfer;
