@@ -75,6 +75,17 @@ impl PlatformAddressWallet {
             InputSelection::Auto => {
                 // Auto-select supports `[DeductFromInput(0)]` and
                 // `[ReduceOutput(0)]`; any other shape must use `Explicit`.
+                //
+                // Note for `[ReduceOutput(0)]` callers: the static
+                // fee estimate used inside `auto_select_inputs` may
+                // undershoot the chain-time fee (platform #3040 —
+                // https://github.com/dashpay/platform/issues/3040),
+                // so a small `output[0]` can be greenlit locally and
+                // then rejected on-chain. The selector emits a
+                // borderline-warning (tier (a) mitigation) when
+                // output 0 sits within a safety multiple of the
+                // static estimate; callers worried about chain-time
+                // shortfall should prefer `[DeductFromInput(0)]`.
                 if !matches!(
                     fee_strategy.as_slice(),
                     [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -794,20 +805,24 @@ fn select_inputs_reduce_output(
     // Phase 4: ReduceOutput(0) takes the fee from output 0 at chain
     // time; verify the chosen output 0 has enough to absorb it.
     //
-    // KNOWN BUG — platform #3040: `PlatformAddressWallet::estimate_fee_for_inputs` returns
-    // `AddressFundsTransferTransition::estimate_min_fee`, which models only
-    // the static `state_transition_min_fees` floor. The chain-time fee
-    // includes storage + processing costs that scale with the actual
-    // operation set; for 1in/1out we've seen ~6.5M static vs ~14.94M
-    // real, leaving the auto-selector to greenlight a transition that
-    // then fails on-chain with `AddressesNotEnoughFundsError`.
+    // KNOWN BUG — platform #3040
+    // (https://github.com/dashpay/platform/issues/3040):
+    // `PlatformAddressWallet::estimate_fee_for_inputs` returns
+    // `AddressFundsTransferTransition::estimate_min_fee`, which models
+    // only the static `state_transition_min_fees` floor. The chain-time
+    // fee includes storage + processing costs that scale with the
+    // actual operation set; for 1in/1out we've seen ~6.5M static vs
+    // ~14.94M real, leaving the auto-selector to greenlight a
+    // transition that then fails on-chain with
+    // `AddressesNotEnoughFundsError`.
     //
-    // Until #3040 is fixed at the dpp layer, callers with small `output[0]`
-    // (where `output[0]` >= static estimate but < chain-time fee) should
-    // prefer `[DeductFromInput(0)]` so any shortfall comes out of an input
-    // rather than the absorbing output. The Phase 4 check below remains as
-    // the static lower-bound gate; it cannot reject the chain-time-only
-    // failure mode.
+    // Until #3040 is fixed at the dpp layer, callers with small
+    // `output[0]` (where `output[0]` >= static estimate but <
+    // chain-time fee) should prefer `[DeductFromInput(0)]` so any
+    // shortfall comes out of an input rather than the absorbing
+    // output. The Phase 4 check below is the static lower-bound gate;
+    // the diagnostic immediately afterwards (mitigation tier (a) for
+    // CMT-001) is the runtime warning when output 0 is borderline.
     let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
         selected.len(),
         output_count,
@@ -822,6 +837,33 @@ fn select_inputs_reduce_output(
              under [ReduceOutput(0)]; raise output 0 or use a different fee strategy",
             output_0, estimated_fee,
         )));
+    }
+
+    // CMT-001 / platform #3040 mitigation tier (a): warn when output 0
+    // sits in the borderline band (>= static estimate but within a
+    // safety multiple of it), since chain-time fees observed in
+    // practice can exceed the static estimate by ~2.3x. Below the
+    // multiple, the transition is at risk of `AddressesNotEnoughFundsError`
+    // on-chain even though the local check passed. Callers should
+    // either raise output 0 or switch to `[DeductFromInput(0)]`.
+    //
+    // See https://github.com/dashpay/platform/issues/3040.
+    const REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE: Credits = 3;
+    let safe_threshold = estimated_fee.saturating_mul(REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE);
+    if output_0 < safe_threshold {
+        tracing::warn!(
+            output_0,
+            estimated_fee,
+            safety_multiple = REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE,
+            "[ReduceOutput(0)] output 0 ({} credits) is within {}x of the static estimated \
+             fee ({} credits); chain-time fee may exceed the static estimate (platform #3040, \
+             https://github.com/dashpay/platform/issues/3040), risking on-chain rejection with \
+             AddressesNotEnoughFundsError. Consider raising output 0 or switching to \
+             [DeductFromInput(0)].",
+            output_0,
+            REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE,
+            estimated_fee,
+        );
     }
 
     // Phase 5: explicit runtime invariant checks. Fail loudly here
@@ -1835,12 +1877,9 @@ mod auto_select_tests {
                 .collect();
         let address_balances = [(addr_a, min_input * 5), (addr_b, min_input * 4)];
 
-        let err = detect_no_selectable_inputs(
-            address_balances.iter().copied(),
-            &outputs,
-            min_input,
-        )
-        .expect("expected NoSelectableInputs");
+        let err =
+            detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
+                .expect("expected NoSelectableInputs");
         match &err {
             PlatformWalletError::NoSelectableInputs {
                 funded_outputs,
@@ -1886,12 +1925,9 @@ mod auto_select_tests {
         let address_balances = [(addr_a, min_input / 2), (addr_b, min_input / 4)];
         let outputs = outputs_for(target, min_input);
 
-        let err = detect_no_selectable_inputs(
-            address_balances.iter().copied(),
-            &outputs,
-            min_input,
-        )
-        .expect("expected NoSelectableInputs for sub-min aggregate");
+        let err =
+            detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
+                .expect("expected NoSelectableInputs for sub-min aggregate");
         match &err {
             PlatformWalletError::NoSelectableInputs {
                 funded_outputs,
@@ -1931,11 +1967,8 @@ mod auto_select_tests {
         let outputs = outputs_for(addr_a, min_input);
         let address_balances = [(addr_a, 0u64), (addr_b, 0u64)];
 
-        let err = detect_no_selectable_inputs(
-            address_balances.iter().copied(),
-            &outputs,
-            min_input,
-        );
+        let err =
+            detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input);
         assert!(
             err.is_none(),
             "all-zero balances mean generic insufficient-balance, not the typed error"
@@ -1955,12 +1988,9 @@ mod auto_select_tests {
         let outputs = outputs_for(addr_out, min_input);
         let address_balances = [(addr_out, min_input * 5), (addr_dust, min_input / 3)];
 
-        let err = detect_no_selectable_inputs(
-            address_balances.iter().copied(),
-            &outputs,
-            min_input,
-        )
-        .expect("expected NoSelectableInputs combining both cases");
+        let err =
+            detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
+                .expect("expected NoSelectableInputs combining both cases");
         match err {
             PlatformWalletError::NoSelectableInputs {
                 funded_outputs,
