@@ -191,12 +191,18 @@ final class SwiftExampleAppUITests: XCTestCase {
 
     @MainActor
     private func failIfRecoveryPromptVisible(in app: XCUIApplication, timeout: TimeInterval) {
-        // Title is plural for N>1 orphans, singular for one — guard
-        // both so a left-over one-wallet keychain mnemonic still
-        // trips this guard.
-        let plural = app.alerts["Recover Wallets?"]
-        let singular = app.alerts["Recover Wallet?"]
-        if plural.waitForExistence(timeout: timeout) || singular.waitForExistence(timeout: 0.5) {
+        // Title is plural for N>1 orphans, singular for one — match
+        // either label in a single predicate-based query so the
+        // total wait stays bounded by `timeout` and both variants
+        // are detected symmetrically.
+        let recoveryAlert = app.alerts.matching(
+            NSPredicate(
+                format: "label == %@ OR label == %@",
+                "Recover Wallets?",
+                "Recover Wallet?"
+            )
+        ).firstMatch
+        if recoveryAlert.waitForExistence(timeout: timeout) {
             XCTFail(
                 "Pre-existing orphan-mnemonic recovery alert is blocking the UI test. "
                 + "Clean simulator state or resolve the alert manually before running this flow."

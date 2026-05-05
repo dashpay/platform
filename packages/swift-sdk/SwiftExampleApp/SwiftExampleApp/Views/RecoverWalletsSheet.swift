@@ -19,9 +19,9 @@ struct OrphanWalletEntry: Identifiable, Hashable {
 }
 
 /// Sheet that consolidates orphan-mnemonic recovery into a single
-/// surface. Lists every orphan side-by-side with a `Same pin code`
-/// toggle so the user can authorize once for the wallets that share
-/// a passcode, and only get a separate prompt for the rows they
+/// surface. Lists every orphan side-by-side with a `Same PIN` toggle
+/// so the user can authorize once for the wallets that share a
+/// passcode, and only get a separate prompt for the rows they
 /// uncheck.
 ///
 /// All authentication and re-derivation logic lives on the parent
@@ -61,7 +61,7 @@ struct RecoverWalletsSheet: View {
         _localEntries = State(initialValue: entries)
     }
 
-    /// Hide the per-row "Same pin code" toggle when there's only one
+    /// Hide the per-row "Same PIN" toggle when there's only one
     /// orphan — the consolidation choice is meaningless for a single
     /// wallet and the toggle would just clutter the row.
     private var isMultiWallet: Bool { localEntries.count > 1 }
@@ -104,6 +104,7 @@ struct RecoverWalletsSheet: View {
                         onCancel()
                         dismiss()
                     }
+                    .accessibilityIdentifier("recoverWallets.cancelButton")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Authorize") {
@@ -111,6 +112,7 @@ struct RecoverWalletsSheet: View {
                         dismiss()
                     }
                     .fontWeight(.semibold)
+                    .accessibilityIdentifier("recoverWallets.authorizeButton")
                 }
             }
         }
@@ -140,7 +142,7 @@ struct RecoverWalletsSheet: View {
             }
             if isMultiWallet {
                 Toggle(isOn: entry.samePinCode) {
-                    Text("Same pin code")
+                    Text("Same PIN")
                         .font(.callout)
                 }
                 .toggleStyle(.switch)
@@ -164,7 +166,7 @@ struct RecoverWalletsSheet: View {
     private var footerHelp: String {
         if separateCount == 0 {
             return "All \(sharedCount) wallets will be authorized in one prompt. "
-                + "Uncheck \"Same pin code\" on any wallet that uses a different code."
+                + "Uncheck \"Same PIN\" on any wallet that uses a different code."
         }
         if sharedCount == 0 {
             return "Each wallet will prompt for its own authorization."

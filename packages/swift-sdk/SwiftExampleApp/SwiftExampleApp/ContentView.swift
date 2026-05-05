@@ -300,6 +300,12 @@ struct ContentView: View {
             }
         }
 
+        // Per-wallet auth failures accumulate so the user sees every
+        // one when the loop ends rather than the last one clobbering
+        // earlier messages. Mirrors the same `[String]` pattern
+        // `deleteStoredMnemonics` uses for cross-wallet error
+        // aggregation.
+        var perWalletFailures: [String] = []
         for entry in separate {
             let reason = "Re-derive \"\(entry.displayName)\" from its stored recovery phrase."
             switch await runAuthPrompt(reason: reason) {
@@ -321,9 +327,17 @@ struct ContentView: View {
                 showDeletePrompt = true
                 return
             case .failed(let detail):
-                recoveryError = "Authorization failed: \(detail)"
+                perWalletFailures.append("\(entry.displayName): \(detail)")
                 continue
             }
+        }
+        if !perWalletFailures.isEmpty {
+            // One combined prompt at the end, joining every wallet's
+            // failure into one message so none get lost.
+            let prefix = perWalletFailures.count == 1
+                ? "Authorization failed: "
+                : "Authorization failed for \(perWalletFailures.count) wallets:\n"
+            recoveryError = prefix + perWalletFailures.joined(separator: "\n")
         }
 
         // Drop the entries we just recreated. If the user skipped
