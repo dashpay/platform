@@ -158,24 +158,26 @@ impl E2eContext {
         let bank = BankWallet::load(&manager, &config).await?;
 
         // Surface the bank's Core (Layer-1) balance and primary
-        // receive address at init. Most tests don't need duffs, so a
-        // zero balance is not fatal — the operator only needs to act
-        // when a CR-/ID-007-class case actually calls `send_core_to`.
-        // Logged once per process to make funding the bank a
-        // single-line task. Errors fetching the address are demoted
-        // to a warning so framework init isn't gated on Core paths
-        // that most tests bypass entirely.
+        // receive address at init with a visual marker so it's easy
+        // to spot in test output. Most tests don't need duffs — a
+        // zero balance is not fatal — but CR-/ID-007-class cases
+        // require the address to be pre-funded with testnet duffs
+        // before they can run end-to-end. Logged once per process so
+        // funding the bank is a single-line copy-paste task. Errors
+        // fetching the address are demoted to a warning so framework
+        // init isn't gated on Core paths that most tests bypass
+        // entirely.
         match bank.primary_core_receive_address().await {
             Ok(addr) => tracing::info!(
                 target: "platform_wallet::e2e::bank",
-                core_balance_duffs = bank.core_balance_confirmed(),
-                core_address = %addr,
-                "Bank Core (Layer-1) status"
+                bank_core_addr = %addr,
+                bank_core_balance = bank.core_balance_confirmed(),
+                "═══ BANK CORE ADDRESS (fund here for CR-* / ID-007 tests) ═══"
             ),
             Err(err) => tracing::warn!(
                 target: "platform_wallet::e2e::bank",
                 error = %err,
-                core_balance_duffs = bank.core_balance_confirmed(),
+                bank_core_balance = bank.core_balance_confirmed(),
                 "Bank Core address derivation failed; pre-flight log incomplete"
             ),
         }
