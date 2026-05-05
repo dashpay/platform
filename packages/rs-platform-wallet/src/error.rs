@@ -73,9 +73,6 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
-    #[error("Arithmetic overflow on Credits in {context}")]
-    ArithmeticOverflow { context: String },
-
     #[error(
         "all funded addresses are also outputs of this transfer: {outputs:?}; \
          either rotate to a fresh receive address or use \
