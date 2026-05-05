@@ -25,9 +25,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use simple_signer::signer::SimpleSigner;
 
 use super::config::Config;
-use super::wallet_factory::{
-    default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB,
-};
+use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB};
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
@@ -153,6 +151,13 @@ impl BankWallet {
     /// Fund `target` with `credits` from the bank's primary
     /// account.
     ///
+    /// Recipients receive the **exact** `credits` amount; the fee
+    /// is deducted from the bank's input via
+    /// [`bank_fee_strategy`]. The bank therefore consumes
+    /// `credits + fee` from its own platform-addresses pool —
+    /// verify the bank balance is sufficiently above
+    /// `min_bank_credits` before calling.
+    ///
     /// Submits the transfer immediately and returns the resulting
     /// [`PlatformAddressChangeSet`]. Does NOT wait for the chain to
     /// observe the credit — callers follow up with
@@ -173,7 +178,7 @@ impl BankWallet {
                 DEFAULT_ACCOUNT_INDEX_PUB,
                 InputSelection::Auto,
                 outputs,
-                default_fee_strategy(),
+                bank_fee_strategy(),
                 Some(PlatformVersion::latest()),
                 &self.signer,
             )
