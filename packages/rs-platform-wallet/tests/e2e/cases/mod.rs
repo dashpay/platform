@@ -6,6 +6,7 @@
 //! TEST_SPEC.md priorities (P1, P2, ID-, DP-, DPNS-, TK-, …) follow
 //! in subsequent PRs.
 
+pub mod dpns_001_register_name;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_003_identity_to_identity_transfer;

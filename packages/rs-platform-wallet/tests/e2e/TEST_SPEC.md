@@ -1374,7 +1374,7 @@ so that when SPV lands, the test bodies can be written without further design.
 
 #### DPNS-001 — Register and resolve a `.dash` name
 - **Priority**: P0
-- **Status**: STUB — placeholder for follow-up PR (Wave A + DPNS helpers).
+- **Status**: STUB — implemented in `cases/dpns_001_register_name.rs`; `#[ignore]`-gated, run with `cargo test -- --ignored`.
 - **Wallet feature exercised**: `wallet/identity/network/dpns.rs:176` (`register_name_with_external_signer`); `dpns.rs:281` (`resolve_name`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/register_dpns.rs:14` (`test_register_dpns_name`).
 - **Preconditions**: ID-001 helper; identity has `≥ 100_000_000` credits (DPNS register fee + headroom).
