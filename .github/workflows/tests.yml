@@ -42,7 +42,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
-      js-packages: ${{ steps.override.outputs.js-packages || steps.filter-js.outputs.changes }}
+      js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
@@ -123,6 +123,31 @@ jobs:
               - packages/swift-sdk/**
               - packages/rs-sdk/**
               - packages/rs-sdk-ffi/**
+
+      # Drop @dashevo/wasm-dpp / @dashevo/wasm-dpp2 from the JS test
+      # matrix on `pull_request` events so the heaviest entries in
+      # the matrix only run on the nightly schedule + manual
+      # `workflow_dispatch`. Cascading consumers (`dapi-client`,
+      # `wallet-lib`, `dash`, `dashmate`, `platform-test-suite`,
+      # `evo-sdk`) keep running on PRs because they exercise their
+      # own code on top of wasm-dpp's already-built JS artifact —
+      # `tests-build-js.yml` runs `yarn build` across the whole
+      # workspace, so wasm-dpp is still compiled and linkable, just
+      # not test-driven on the PR critical path. To force wasm-dpp
+      # tests on a specific PR, use the `Run workflow` (workflow_dispatch)
+      # button on the Actions tab — that path goes through the
+      # `override` step below and runs every JS package.
+      - name: Skip wasm-dpp tests on pull_request (nightly-only)
+        id: prune-pr-matrix
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -eo pipefail
+          raw='${{ steps.filter-js.outputs.changes }}'
+          pruned=$(echo "$raw" | jq -c 'map(select(. != "@dashevo/wasm-dpp" and . != "@dashevo/wasm-dpp2"))')
+          echo "js-packages=$pruned" >> "$GITHUB_OUTPUT"
+          echo "Pruned wasm-dpp from PR matrix:"
+          echo "  before: $raw"
+          echo "  after:  $pruned"
 
       - name: Override all outputs for workflow_dispatch
         id: override
