@@ -11,13 +11,16 @@ use std::time::{Duration, Instant};
 
 use dash_sdk::platform::Fetch;
 use dash_sdk::Sdk;
+use dash_spv::sync::ProgressPercentage;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use platform_wallet::SpvRuntime;
 
+use super::bank::BankWallet;
 use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
 
@@ -181,6 +184,121 @@ pub async fn wait_for_core_balance(
             )));
         }
         tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
+    }
+}
+
+/// Wait for the bank wallet's confirmed Core (Layer-1) balance to
+/// reach at least `min_duffs`.
+///
+/// Used by the harness right after [`BankWallet::load`] to gate the
+/// "ready to issue Core sends" milestone on the SPV compact-filter
+/// scan having actually walked far enough to observe the bank's
+/// pre-funded UTXOs (Marvin's QA-001 — without this gate, a cold-cache
+/// run samples the balance while SPV is still ~52 s into a ~15 min
+/// scan and reports `confirmed=0` for an address that's been funded
+/// since last week).
+///
+/// Polls [`BankWallet::core_balance_confirmed`] every
+/// [`BACKSTOP_WAKE_INTERVAL`] until the threshold is met. Emits a
+/// progress log every [`BANK_FUNDED_PROGRESS_INTERVAL`] including the
+/// SPV filter-scan height vs the chain tip — operators can tell
+/// "scan at 1.2M of 1.47M, still walking" (alive) from "scan at tip,
+/// balance still 0" (real funding problem). Returns the observed
+/// balance on success, [`FrameworkError::Cleanup`] on timeout.
+pub async fn wait_for_bank_funded(
+    bank: &BankWallet,
+    spv: Option<&SpvRuntime>,
+    min_duffs: u64,
+    timeout: Duration,
+) -> FrameworkResult<u64> {
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut next_progress_log = start + BANK_FUNDED_PROGRESS_INTERVAL;
+
+    loop {
+        let observed = bank.core_balance_confirmed();
+        if observed >= min_duffs {
+            tracing::info!(
+                target: "platform_wallet::e2e::wait",
+                observed,
+                min_duffs,
+                elapsed = ?start.elapsed(),
+                "bank Core funding gate cleared"
+            );
+            return Ok(observed);
+        }
+
+        let now = Instant::now();
+        if now >= next_progress_log {
+            log_bank_funded_progress(spv, observed, min_duffs, start.elapsed()).await;
+            next_progress_log = now + BANK_FUNDED_PROGRESS_INTERVAL;
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
+        if remaining.is_zero() {
+            log_bank_funded_progress(spv, observed, min_duffs, start.elapsed()).await;
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_bank_funded timed out after {timeout:?} \
+                 (observed={observed} duffs, min_duffs={min_duffs})"
+            )));
+        }
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
+    }
+}
+
+/// Period between info-level progress lines emitted by
+/// [`wait_for_bank_funded`].
+pub const BANK_FUNDED_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
+
+/// One info-level progress line for [`wait_for_bank_funded`]. Pulls
+/// the SPV filter-scan height + tip when the runtime is available so
+/// the operator can distinguish "scan still walking" from "scan at
+/// tip, balance genuinely zero".
+async fn log_bank_funded_progress(
+    spv: Option<&SpvRuntime>,
+    observed: u64,
+    target: u64,
+    elapsed: Duration,
+) {
+    let snapshot = match spv {
+        Some(rt) => rt.sync_progress().await,
+        None => None,
+    };
+    let filters = snapshot
+        .as_ref()
+        .and_then(|p| p.filters().ok())
+        .map(|f| (f.current_height(), f.target_height()));
+    let headers = snapshot
+        .as_ref()
+        .and_then(|p| p.headers().ok())
+        .map(|h| (h.current_height(), h.target_height()));
+
+    match (filters, headers) {
+        (Some((scan_height, scan_tip)), _) => tracing::info!(
+            target: "platform_wallet::e2e::wait",
+            observed,
+            target,
+            scan_height,
+            scan_tip,
+            ?elapsed,
+            "waiting for bank Core funding (SPV compact-filter scan in progress)"
+        ),
+        (None, Some((tip, target_tip))) => tracing::info!(
+            target: "platform_wallet::e2e::wait",
+            observed,
+            target,
+            header_height = tip,
+            header_tip = target_tip,
+            ?elapsed,
+            "waiting for bank Core funding (filters not yet reporting; headers shown)"
+        ),
+        (None, None) => tracing::info!(
+            target: "platform_wallet::e2e::wait",
+            observed,
+            target,
+            ?elapsed,
+            "waiting for bank Core funding (no SPV progress snapshot yet)"
+        ),
     }
 }
 

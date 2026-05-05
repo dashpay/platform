@@ -41,6 +41,11 @@ pub mod vars {
     /// bank's first platform address on first run and persist its id
     /// to the workdir slot".
     pub const BANK_IDENTITY_ID: &str = "PLATFORM_WALLET_E2E_BANK_IDENTITY_ID";
+    /// Optional minimum bank Core (Layer-1) balance, in duffs, that
+    /// the harness waits for before flagging the bank as ready. `0`
+    /// (default) skips the gate; CR-* / ID-007-class cases that need
+    /// Core duffs raise the floor and accept the cold-cache wait.
+    pub const BANK_CORE_GATE: &str = "PLATFORM_WALLET_E2E_BANK_CORE_GATE";
 }
 
 /// Default minimum bank balance in credits.
@@ -91,6 +96,11 @@ pub struct Config {
     /// auto-registers a bank identity on first run and persists its
     /// id under the workdir slot.
     pub bank_identity_id: Option<String>,
+    /// Minimum bank Core (Layer-1) balance, in duffs, the harness
+    /// gates on before completing init. `0` (default) skips the gate.
+    /// CR-* / ID-007-class operators raise this floor and accept the
+    /// cold-cache compact-filter scan wait.
+    pub bank_core_gate_duffs: u64,
 }
 
 impl std::fmt::Debug for Config {
@@ -106,6 +116,7 @@ impl std::fmt::Debug for Config {
             .field("trusted_context_url", &self.trusted_context_url)
             .field("p2p_port", &self.p2p_port)
             .field("bank_identity_id", &self.bank_identity_id)
+            .field("bank_core_gate_duffs", &self.bank_core_gate_duffs)
             .finish()
     }
 }
@@ -122,6 +133,7 @@ impl Default for Config {
             trusted_context_url: None,
             p2p_port: default_p2p_port(network),
             bank_identity_id: None,
+            bank_core_gate_duffs: 0,
         }
     }
 }
@@ -209,6 +221,23 @@ impl Config {
             .map(|raw| raw.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let bank_core_gate_duffs = match std::env::var(vars::BANK_CORE_GATE) {
+            Ok(raw) => {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    0
+                } else {
+                    trimmed.parse::<u64>().map_err(|err| {
+                        FrameworkError::Config(format!(
+                            "{} = {raw:?} is not a valid u64: {err}",
+                            vars::BANK_CORE_GATE
+                        ))
+                    })?
+                }
+            }
+            Err(_) => 0,
+        };
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -218,6 +247,7 @@ impl Config {
             trusted_context_url,
             p2p_port,
             bank_identity_id,
+            bank_core_gate_duffs,
         })
     }
 
