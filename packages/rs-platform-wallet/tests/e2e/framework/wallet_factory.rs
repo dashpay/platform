@@ -434,6 +434,21 @@ pub(crate) fn default_fee_strategy() -> AddressFundsFeeStrategy {
     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]
 }
 
+/// Bank-funding fee strategy: deduct fee from input #0 so the
+/// recipient receives the **exact** requested amount.
+///
+/// Used by [`super::bank::BankWallet::fund_address`] so
+/// downstream calls — e.g. `register_identity_from_addresses(
+/// {addr: N}, ...)` — don't have to compensate for fee
+/// deduction at the recipient.
+///
+/// Tests that need the alternative `ReduceOutput(0)` semantics
+/// (e.g. PA-002b verifying `Σ outputs + fee == input balance`)
+/// should call [`default_fee_strategy`] explicitly.
+pub(crate) fn bank_fee_strategy() -> AddressFundsFeeStrategy {
+    vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]
+}
+
 /// Rebalance an explicit-input map so its sum equals `Σ outputs`.
 ///
 /// `AddressFundsTransferTransition` validation rejects with
