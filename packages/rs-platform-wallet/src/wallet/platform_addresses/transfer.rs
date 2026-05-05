@@ -389,6 +389,212 @@ where
     }
 }
 
+/// Closed-set tag for the auto-selector strategies the wallet
+/// currently supports. Mirrors the protocol-side
+/// `AddressFundsFeeStrategyStep` shape but collapses the parameterised
+/// variants the wallet is not yet able to honour. Adding a new
+/// strategy here forces the compiler to surface every dispatch site
+/// that needs to learn about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FeeStrategyShape {
+    /// `[DeductFromInput(0)]` — fee comes off the lex-smallest input
+    /// at chain time; the selector preserves headroom on that input.
+    DeductFromInputZero,
+    /// `[ReduceOutput(0)]` — fee is absorbed by output 0 at chain
+    /// time; the selector skips input-side fee headroom.
+    ReduceOutputZero,
+}
+
+impl FeeStrategyShape {
+    /// Short label for diagnostics (matches the `AddressFundsFeeStrategyStep`
+    /// debug shape so test assertions keying off the strategy name keep
+    /// working).
+    fn label(self) -> &'static str {
+        match self {
+            FeeStrategyShape::DeductFromInputZero => "DeductFromInput(0)",
+            FeeStrategyShape::ReduceOutputZero => "ReduceOutput(0)",
+        }
+    }
+}
+
+/// Read-only inputs both auto-selectors thread through every phase.
+/// Bundling them avoids re-passing the same five arguments to the
+/// shared helpers and per-strategy bodies.
+///
+/// `outputs` and `platform_version` are kept here even though the
+/// current shared helpers don't reach into them — the per-strategy
+/// bodies still take them as direct args today, but new helpers
+/// (e.g. a future shared Phase-1 prefix walker) will reach into the
+/// context rather than re-threading the original five arguments.
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+struct SelectionContext<'a> {
+    outputs: &'a BTreeMap<PlatformAddress, Credits>,
+    total_output: Credits,
+    output_count: usize,
+    min_input_amount: Credits,
+    fee_strategy: &'a [AddressFundsFeeStrategyStep],
+    platform_version: &'a PlatformVersion,
+}
+
+impl<'a> SelectionContext<'a> {
+    fn new(
+        outputs: &'a BTreeMap<PlatformAddress, Credits>,
+        total_output: Credits,
+        fee_strategy: &'a [AddressFundsFeeStrategyStep],
+        platform_version: &'a PlatformVersion,
+    ) -> Self {
+        let output_count = outputs.len();
+        let min_input_amount = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        Self {
+            outputs,
+            total_output,
+            output_count,
+            min_input_amount,
+            fee_strategy,
+            platform_version,
+        }
+    }
+}
+
+/// Phase 0: strategy gate + `total_output >= min_input_amount` guard.
+/// Identical in both selectors before the refactor; pulled out so the
+/// per-strategy bodies start at Phase 1.
+fn check_preconditions(
+    ctx: &SelectionContext<'_>,
+    expected: FeeStrategyShape,
+) -> Result<(), PlatformWalletError> {
+    let matches_expected = match expected {
+        FeeStrategyShape::DeductFromInputZero => matches!(
+            ctx.fee_strategy,
+            [AddressFundsFeeStrategyStep::DeductFromInput(0)]
+        ),
+        FeeStrategyShape::ReduceOutputZero => matches!(
+            ctx.fee_strategy,
+            [AddressFundsFeeStrategyStep::ReduceOutput(0)]
+        ),
+    };
+    if !matches_expected {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "select_inputs_{} only supports fee_strategy = [{}]; other shapes \
+             must route through the dispatcher",
+            match expected {
+                FeeStrategyShape::DeductFromInputZero => "deduct_from_input",
+                FeeStrategyShape::ReduceOutputZero => "reduce_output",
+            },
+            expected.label(),
+        )));
+    }
+
+    // No input can simultaneously be ≥ `min_input_amount` AND sum to
+    // `total_output` if `total_output < min_input_amount`. Reject
+    // upfront rather than tripping the per-input minimum check
+    // downstream.
+    if ctx.total_output < ctx.min_input_amount {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Transfer amount {} is below the protocol minimum input amount {}; \
+             a transfer cannot be split across inputs in a way that satisfies \
+             the per-input minimum",
+            ctx.total_output, ctx.min_input_amount,
+        )));
+    }
+
+    Ok(())
+}
+
+/// Phase 1.5 hardening: every entry in `candidates` ≥ `min_input_amount`.
+///
+/// Used by `select_inputs_reduce_output`, where Phase 2 sets
+/// `consumed = balance` for every non-last entry — a sub-minimum
+/// candidate would silently produce an invalid transition.
+///
+/// Production callers filter via `build_auto_select_candidates`, but
+/// the helpers are module-scope and reachable from tests / future
+/// callers. Failing loudly here surfaces the upstream invariant
+/// violation with a precise message instead of letting Phase 5's
+/// generic "Internal selection error" catch it.
+///
+/// Note: not used by `select_inputs_deduct_from_input`. Deduct
+/// intentionally folds sub-minimum tail consumption back into the fee
+/// target rather than rejecting it (the redistribute path), so a
+/// blanket pre-filter would erase a documented algorithm path.
+fn check_candidate_min(
+    ctx: &SelectionContext<'_>,
+    candidates: &[(PlatformAddress, Credits)],
+) -> Result<(), PlatformWalletError> {
+    if let Some((bad_addr, bad_balance)) = candidates
+        .iter()
+        .find(|(_, balance)| *balance < ctx.min_input_amount)
+    {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Candidate {} has balance {} below min_input_amount {}; \
+             callers must pre-filter via build_auto_select_candidates \
+             before invoking the selector",
+            format_address(bad_addr),
+            bad_balance,
+            ctx.min_input_amount,
+        )));
+    }
+    Ok(())
+}
+
+/// Phase 5 shared post-conditions: `Σ inputs == total_output` and
+/// every selected input ≥ `min_input_amount`. Both selectors run
+/// these; strategy-specific assertions (e.g. fee-target identity for
+/// Deduct) stay inline in the per-strategy bodies.
+///
+/// Returns `Err` rather than `debug_assert!` (CMT-004 triage): even
+/// in release builds we'd rather surface a malformed selection than
+/// ship it.
+fn assert_selection_validates(
+    selected: &BTreeMap<PlatformAddress, Credits>,
+    ctx: &SelectionContext<'_>,
+    _shape: FeeStrategyShape,
+) -> Result<(), PlatformWalletError> {
+    let input_sum: Credits = selected.values().sum();
+    if input_sum != ctx.total_output {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: Σ inputs ({}) != total_output ({})",
+            input_sum, ctx.total_output
+        )));
+    }
+    if let Some((bad_addr, bad_amount)) = selected
+        .iter()
+        .find(|(_, amount)| **amount < ctx.min_input_amount)
+    {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: input {} consumes {} below min_input_amount {}",
+            format_address(bad_addr),
+            bad_amount,
+            ctx.min_input_amount,
+        )));
+    }
+    Ok(())
+}
+
+/// Build a strategy-aware "Insufficient balance" diagnostic so the
+/// two selectors emit consistent error shapes. The `requirement_label`
+/// describes what the inputs were required to cover (`outputs +
+/// estimated fee` for Deduct, `outputs sum` for Reduce); the optional
+/// trailer carries strategy-specific context (e.g. how Reduce absorbs
+/// the fee from output 0).
+fn insufficient_balance_error(
+    available: Credits,
+    required: Credits,
+    requirement_label: &str,
+    trailer: Option<&str>,
+) -> PlatformWalletError {
+    let trailer = trailer.map(|t| format!("; {}", t)).unwrap_or_default();
+    PlatformWalletError::AddressOperation(format!(
+        "Insufficient balance: available {} credits, required {} ({}){}",
+        available, required, requirement_label, trailer,
+    ))
+}
+
 /// `[DeductFromInput(0)]` selector. Order-agnostic: walks
 /// `candidates` as-is and picks the smallest covering prefix.
 ///
@@ -424,35 +630,14 @@ fn select_inputs_deduct_from_input(
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-    if !matches!(
-        fee_strategy,
-        [AddressFundsFeeStrategyStep::DeductFromInput(0)]
-    ) {
-        return Err(PlatformWalletError::AddressOperation(
-            "select_inputs_deduct_from_input only supports fee_strategy = \
-             [DeductFromInput(0)]; other shapes must route through the dispatcher"
-                .to_string(),
-        ));
-    }
+    let ctx = SelectionContext::new(outputs, total_output, fee_strategy, platform_version);
+    check_preconditions(&ctx, FeeStrategyShape::DeductFromInputZero)?;
 
-    let output_count = outputs.len();
-    let min_input_amount = platform_version
-        .dpp
-        .state_transitions
-        .address_funds
-        .min_input_amount;
-
-    // No input can simultaneously be ≥ `min_input_amount` AND sum to
-    // `total_output` if `total_output < min_input_amount`. Reject upfront
-    // rather than tripping the per-input minimum check downstream.
-    if total_output < min_input_amount {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Transfer amount {} is below the protocol minimum input amount {}; \
-             a transfer cannot be split across inputs in a way that satisfies \
-             the per-input minimum",
-            total_output, min_input_amount,
-        )));
-    }
+    let SelectionContext {
+        output_count,
+        min_input_amount,
+        ..
+    } = ctx;
 
     // Phase 1-3: extend the prefix one candidate at a time until it
     // covers `total_output + estimated_fee` AND the lex-smallest
@@ -531,11 +716,17 @@ fn select_inputs_deduct_from_input(
         // "covered but no headroom-feasible fee target".
         let required_total = total_output.saturating_add(last_estimated_fee);
         if accumulated < required_total {
-            return Err(PlatformWalletError::AddressOperation(format!(
-                "Insufficient balance: available {} credits, required {} \
-                 (outputs {} + estimated fee {})",
-                accumulated, required_total, total_output, last_estimated_fee,
-            )));
+            return Err(insufficient_balance_error(
+                accumulated,
+                required_total,
+                &format!(
+                    "outputs {} + estimated fee {}; [{}]",
+                    total_output,
+                    last_estimated_fee,
+                    FeeStrategyShape::DeductFromInputZero.label(),
+                ),
+                None,
+            ));
         }
         return Err(PlatformWalletError::AddressOperation(format!(
             "Cannot satisfy fee headroom: no covering prefix of the available inputs \
@@ -604,13 +795,10 @@ fn select_inputs_deduct_from_input(
     // rather than ship a transition the validator would reject.
     // Evaluated in release as well as debug — production code must
     // never silently produce a malformed inputs map.
-    let input_sum: Credits = selected.values().sum();
-    if input_sum != total_output {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Internal selection error: Σ inputs ({}) != total_output ({})",
-            input_sum, total_output
-        )));
-    }
+    //
+    // Σ-equality and per-input-min checks are shared with Reduce.
+    // Fee-target identity and headroom are Deduct-specific.
+    assert_selection_validates(&selected, &ctx, FeeStrategyShape::DeductFromInputZero)?;
     if selected.keys().next().copied() != Some(fee_target_addr) {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Internal selection error: fee target {} is not the BTreeMap index-0 \
@@ -626,17 +814,6 @@ fn select_inputs_deduct_from_input(
             format_address(&fee_target_addr),
             fee_target_balance.saturating_sub(fee_target_consumed),
             estimated_fee,
-        )));
-    }
-    if let Some((bad_addr, bad_amount)) = selected
-        .iter()
-        .find(|(_, amount)| **amount < min_input_amount)
-    {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Internal selection error: input {} consumes {} below min_input_amount {}",
-            format_address(bad_addr),
-            bad_amount,
-            min_input_amount,
         )));
     }
 
@@ -676,33 +853,14 @@ fn select_inputs_reduce_output(
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-    if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
-        return Err(PlatformWalletError::AddressOperation(
-            "select_inputs_reduce_output only supports fee_strategy = \
-             [ReduceOutput(0)]; other shapes must route through the dispatcher"
-                .to_string(),
-        ));
-    }
+    let ctx = SelectionContext::new(outputs, total_output, fee_strategy, platform_version);
+    check_preconditions(&ctx, FeeStrategyShape::ReduceOutputZero)?;
 
-    let output_count = outputs.len();
-    let min_input_amount = platform_version
-        .dpp
-        .state_transitions
-        .address_funds
-        .min_input_amount;
-
-    // Same upfront guard as the DeductFromInput(0) helper: a single
-    // input cannot satisfy `≥ min_input_amount` and sum to a smaller
-    // `total_output` — reject loudly rather than tripping the
-    // per-input minimum check downstream.
-    if total_output < min_input_amount {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Transfer amount {} is below the protocol minimum input amount {}; \
-             a transfer cannot be split across inputs in a way that satisfies \
-             the per-input minimum",
-            total_output, min_input_amount,
-        )));
-    }
+    let SelectionContext {
+        output_count,
+        min_input_amount,
+        ..
+    } = ctx;
 
     // Phase 1: walk `candidates` until the running sum covers
     // `total_output`. Last entry will be trimmed in Phase 2.
@@ -722,11 +880,15 @@ fn select_inputs_reduce_output(
     }
 
     if accumulated < total_output {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Insufficient balance: available {} credits, required {} \
-             (outputs sum; ReduceOutput(0) absorbs the fee from output 0)",
-            accumulated, total_output,
-        )));
+        return Err(insufficient_balance_error(
+            accumulated,
+            total_output,
+            &format!(
+                "outputs sum; [{}] absorbs the fee from output 0",
+                FeeStrategyShape::ReduceOutputZero.label(),
+            ),
+            None,
+        ));
     }
 
     // Phase 1.5: enforce `min_input_amount` on every prefix entry.
@@ -736,19 +898,7 @@ fn select_inputs_reduce_output(
     // `build_auto_select_candidates`, but this helper is module-scope
     // and reachable from tests / future callers — fail loudly when the
     // upstream invariant is bypassed.
-    if let Some((bad_addr, bad_balance)) = prefix
-        .iter()
-        .find(|(_, balance)| *balance < min_input_amount)
-    {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Candidate {} has balance {} below min_input_amount {}; \
-             callers must pre-filter via build_auto_select_candidates \
-             before invoking select_inputs_reduce_output",
-            format_address(bad_addr),
-            bad_balance,
-            min_input_amount,
-        )));
-    }
+    check_candidate_min(&ctx, &prefix)?;
 
     // Phase 2: every prefix entry consumes its full balance except
     // the last, which absorbs the surplus.
@@ -869,24 +1019,7 @@ fn select_inputs_reduce_output(
     // Phase 5: explicit runtime invariant checks. Fail loudly here
     // rather than ship a transition the validator would reject.
     // Evaluated in release as well as debug.
-    let input_sum: Credits = selected.values().sum();
-    if input_sum != total_output {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Internal selection error: Σ inputs ({}) != total_output ({})",
-            input_sum, total_output
-        )));
-    }
-    if let Some((bad_addr, bad_amount)) = selected
-        .iter()
-        .find(|(_, amount)| **amount < min_input_amount)
-    {
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Internal selection error: input {} consumes {} below min_input_amount {}",
-            format_address(bad_addr),
-            bad_amount,
-            min_input_amount,
-        )));
-    }
+    assert_selection_validates(&selected, &ctx, FeeStrategyShape::ReduceOutputZero)?;
 
     Ok(selected)
 }
